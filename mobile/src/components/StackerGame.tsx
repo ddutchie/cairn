@@ -10,8 +10,19 @@ import {
 } from "react-native";
 import { X } from "lucide-react-native";
 import { listBreakoutBricks, type BrickKind } from "@/db/queries";
+import { getMeta, setMeta } from "@/db";
 import { haptics } from "@/haptics";
+import { InlineConfetti } from "@/components/Confetti";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
+
+// Persisted best score key (device-global meta — survives source switches,
+// never synced).
+const STACKER_BEST_KEY = "stacker_best";
+function loadStackerBest(): number {
+  const raw = getMeta(STACKER_BEST_KEY);
+  const n = raw ? parseInt(raw, 10) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 // ── Layout / physics constants ────────────────────────────────────────────────
 const STONE_H = 30; // height of each stacked stone
@@ -139,9 +150,15 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
   }
   const [snap, setSnap] = useState<Snapshot>({ tower: [], moving: null, particles: [] });
   const [score, setScore] = useState(0);
-  const [best, setBest] = useState(0);
+  // Best score persists across sessions via the meta store. Seeded once on mount.
+  const [best, setBest] = useState(loadStackerBest);
   const [combo, setCombo] = useState(0);
   const [status, setStatus] = useState<"playing" | "lost">("playing");
+  // Bumped to fire a confetti burst inside the modal (the app-root ConfettiHost
+  // renders behind this fullscreen Modal, so it can't be seen here). 0 = idle.
+  const [celebrate, setCelebrate] = useState(0);
+  // Whether the just-finished run set a new personal best (drives the overlay).
+  const [newRecord, setNewRecord] = useState(false);
   const rafRef = useRef<number | null>(null);
 
   const publish = useCallback(() => {
@@ -191,6 +208,7 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
     setScore(0);
     setCombo(0);
     setStatus("playing");
+    setNewRecord(false);
     spawnMoving();
     publish();
   }, [gameState, nextLabel, spawnMoving, publish]);
@@ -210,9 +228,22 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
       // Missed the tower entirely → game over.
       g.moving = null;
       g.running = false;
-      haptics.error();
       setStatus("lost");
-      setBest((b) => Math.max(b, score));
+      // New personal best? Celebrate with a confetti burst; otherwise the
+      // standard error buzz. Persist the record either way. (Toasts live behind
+      // this fullscreen Modal, so the win is announced in the end overlay.)
+      const prevBest = loadStackerBest();
+      const isRecord = score > prevBest;
+      if (isRecord) {
+        setMeta(STACKER_BEST_KEY, String(score));
+        setBest(score);
+        haptics.success();
+        setCelebrate((n) => n + 1);
+      } else {
+        haptics.error();
+        setBest((b) => Math.max(b, score));
+      }
+      setNewRecord(isRecord);
       publish();
       return;
     }
@@ -419,7 +450,7 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
         {/* End overlay */}
         {status !== "playing" ? (
           <View style={styles.overlay} pointerEvents="box-none">
-            <Text style={styles.overlayTitle}>Toppled!</Text>
+            <Text style={styles.overlayTitle}>{newRecord ? "New high score!" : "Toppled!"}</Text>
             <Text style={styles.overlaySub}>
               Stacked {score}{best > 0 ? `  ·  best ${Math.max(best, score)}` : ""}
             </Text>
@@ -431,6 +462,10 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
             </Pressable>
           </View>
         ) : null}
+
+        {/* Confetti on a new personal best — rendered inside the Modal so it's
+            visible over the game (the app-root host sits behind it). */}
+        <InlineConfetti fireKey={celebrate} />
       </Pressable>
     </Modal>
   );

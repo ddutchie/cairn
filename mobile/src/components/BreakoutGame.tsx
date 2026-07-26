@@ -12,6 +12,7 @@ import {
 import { X } from "lucide-react-native";
 import { listBreakoutBricks, type BrickKind } from "@/db/queries";
 import { haptics } from "@/haptics";
+import { InlineConfetti } from "@/components/Confetti";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 // ── Layout / physics constants ────────────────────────────────────────────────
@@ -128,6 +129,9 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
   const [snap, setSnap] = useState<Snapshot>({ ballX: W / 2, ballY: H / 2, paddleX: W / 2 - PADDLE_W / 2, bricks: [], particles: [] });
   const [score, setScore] = useState(0);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
+  // Bumped to fire a confetti burst inside the Modal on a win (the app-root
+  // ConfettiHost renders behind this fullscreen Modal). 0 = idle.
+  const [celebrate, setCelebrate] = useState(0);
   const rafRef = useRef<number | null>(null);
 
   const publish = useCallback(() => {
@@ -166,6 +170,7 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
     g.paused = AppState.currentState !== "active";
     setScore(0);
     setStatus("playing");
+    setCelebrate(0);
     publish();
   }, [W, H, buildBricks, publish, gameState]);
 
@@ -249,6 +254,8 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           g.running = false;
           haptics.success();
           setStatus("won");
+          // Clearing every brick is the big moment — celebrate with confetti.
+          setCelebrate((n) => n + 1);
         } else if (b.y - BALL_R > fieldBottom) {
           g.running = false;
           haptics.error();
@@ -370,6 +377,10 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
             </Pressable>
           </View>
         ) : null}
+
+        {/* Confetti on clearing the board — inside the Modal so it shows over
+            the game (the app-root host sits behind it). */}
+        <InlineConfetti fireKey={celebrate} />
       </View>
     </Modal>
   );
