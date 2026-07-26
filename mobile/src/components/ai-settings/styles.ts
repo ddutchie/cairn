@@ -120,6 +120,60 @@ export function makeAiSettingsStyles(t: Theme) {
     modelChipText: { ...typeScale.caption, color: t.textSecondary, flexShrink: 1 },
     modelChipTextActive: { color: t.accentFg, fontWeight: "600" },
 
+    // Model search + scrollable list (replaces the wrapping chips when the
+    // endpoint returns many models).
+    modelSearch: {
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      ...typeScale.body,
+      color: t.textPrimary,
+      marginTop: 2,
+    },
+    modelListMeta: { ...typeScale.caption, color: t.textTertiary, marginTop: 4 },
+    modelList: {
+      marginTop: 4,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 10,
+      backgroundColor: t.surface2,
+      maxHeight: 240,
+      overflow: "hidden",
+    },
+    modelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
+      borderBottomWidth: 1,
+      borderBottomColor: t.border,
+    },
+    modelRowActive: { backgroundColor: t.accentDim },
+    modelRowText: { ...typeScale.body, color: t.textPrimary, flexShrink: 1 },
+    modelRowTextActive: { color: t.accent, fontWeight: "600" },
+    modelRowEmpty: { ...typeScale.caption, color: t.textTertiary, paddingHorizontal: 12, paddingVertical: 14 },
+
+    // Remaining-credits badge (providers that expose a balance, e.g. OpenRouter).
+    creditsCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginTop: 2,
+    },
+    creditsMain: { flex: 1, gap: 2 },
+    creditsValue: { ...typeScale.control, color: t.textPrimary, fontWeight: "600" },
+    creditsSub: { ...typeScale.caption, color: t.textTertiary },
+
     // Saved-provider switcher chips.
     providerChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
     providerChip: {

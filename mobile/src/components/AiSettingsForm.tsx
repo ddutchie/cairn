@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, Wallet } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
@@ -48,13 +48,20 @@ import {
   type AppleQuotaStatus,
   type AppleReasoningLevel,
 } from "@modules/apple-llm";
-import { listModels } from "@/chat/providers/openai";
+import { listModels, getKeyInfo, type ProviderKeyInfo } from "@/chat/providers/openai";
 import { contextLimitForModel } from "@/chat/models-dev";
 import { useAiSettingsStyles } from "./ai-settings/styles";
 import { SegmentButton } from "./ai-settings/SegmentButton";
 import { Field } from "./ai-settings/Field";
 import { QuotaBar } from "./ai-settings/QuotaBar";
 import { ProviderList } from "./ai-settings/ProviderList";
+
+/** Format a USD credit amount compactly (e.g. $12.34, $0.0500, $1,234). */
+function formatCredits(n: number): string {
+  const abs = Math.abs(n);
+  const digits = abs > 0 && abs < 1 ? 4 : 2;
+  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
+}
 
 /**
  * AI settings form body. Presented as a native `formSheet` route
@@ -130,6 +137,11 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [models, setModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  // Free-text filter over the fetched model ids (providers can return 50+).
+  const [modelQuery, setModelQuery] = useState("");
+  // Remaining credits for providers that expose it (e.g. OpenRouter). null =
+  // not supported / unknown, so the display is hidden.
+  const [keyInfo, setKeyInfo] = useState<ProviderKeyInfo | null>(null);
 
   // Load saved providers (runs the flat→list migration) + the active provider's
   // key on mount. The active provider's baseUrl/model are already reflected by
@@ -198,6 +210,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       setHadKey(key != null);
       setModels([]);
       setModelsError(null);
+      setModelQuery("");
+      setKeyInfo(null);
       haptics.selection();
     } finally {
       providerOpInFlight.current = false;
@@ -233,6 +247,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       setHadKey(false);
       setModels([]);
       setModelsError(null);
+      setModelQuery("");
+      setKeyInfo(null);
       haptics.selection();
     } finally {
       providerOpInFlight.current = false;
@@ -278,8 +294,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     }
     setFetchingModels(true);
     setModelsError(null);
+    const base = baseUrl.trim() || DEFAULT_OPENAI_BASE_URL;
     try {
-      const ids = await listModels(baseUrl.trim() || DEFAULT_OPENAI_BASE_URL, key);
+      const ids = await listModels(base, key);
       setModels(ids);
       if (ids.length === 0) setModelsError("The endpoint returned no models.");
     } catch (e) {
@@ -287,6 +304,10 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     } finally {
       setFetchingModels(false);
     }
+    // Best-effort credits lookup alongside models (never blocks / throws).
+    getKeyInfo(base, key)
+      .then((info) => setKeyInfo(info))
+      .catch(() => setKeyInfo(null));
   };
 
   const save = async () => {
@@ -312,6 +333,17 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // OpenAI fields show when OpenAI is the effective selection: no chooser (only
   // OpenAI available) or the user picked it explicitly.
   const usingOpenAI = !showChooser || pref === "openai";
+
+  // Case-insensitive filter over the fetched model ids. The selected model is
+  // always kept in view (pinned first) even if it doesn't match the query.
+  const filteredModels = useMemo(() => {
+    const q = modelQuery.trim().toLowerCase();
+    const matches = q ? models.filter((id) => id.toLowerCase().includes(q)) : models;
+    if (model && !matches.includes(model) && models.includes(model)) {
+      return [model, ...matches];
+    }
+    return matches;
+  }, [models, modelQuery, model]);
 
   return (
     <View style={styles.flex}>
@@ -486,6 +518,26 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   </Text>
                 </View>
 
+                {keyInfo && (keyInfo.remaining != null || keyInfo.usage != null) && (
+                  <View style={styles.creditsCard}>
+                    <Wallet size={16} color={t.accent} />
+                    <View style={styles.creditsMain}>
+                      <Text style={styles.creditsValue}>
+                        {keyInfo.remaining != null
+                          ? `${formatCredits(keyInfo.remaining)} credits left`
+                          : `${formatCredits(keyInfo.usage ?? 0)} used`}
+                      </Text>
+                      <Text style={styles.creditsSub}>
+                        {keyInfo.limit != null
+                          ? `of ${formatCredits(keyInfo.limit)} limit${keyInfo.usage != null ? ` · ${formatCredits(keyInfo.usage)} used` : ""}`
+                          : keyInfo.isFreeTier
+                            ? "Free tier"
+                            : "Reported by your provider"}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
                 <View style={styles.field}>
                   <View style={styles.modelHeader}>
                     <Text style={styles.fieldLabel}>Model</Text>
@@ -515,23 +567,60 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   />
                   {modelsError && <Text style={styles.modelsError}>{modelsError}</Text>}
                   {models.length > 0 && (
-                    <View style={styles.modelChips}>
-                      {models.map((id) => (
-                        <Pressable
-                          key={id}
-                          style={[styles.modelChip, model === id && styles.modelChipActive]}
-                          onPress={() => setModel(id)}
-                        >
-                          {model === id && <Check size={11} color={t.accentFg} />}
-                          <Text
-                            style={[styles.modelChipText, model === id && styles.modelChipTextActive]}
-                            numberOfLines={1}
+                    <>
+                      {/* Search box appears once the endpoint returns models —
+                          providers like OpenRouter return 50+, so filtering is
+                          essential for browsing. */}
+                      <TextInput
+                        style={styles.modelSearch}
+                        value={modelQuery}
+                        onChangeText={setModelQuery}
+                        placeholder={`Search ${models.length} models…`}
+                        placeholderTextColor={t.textTertiary}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        clearButtonMode="while-editing"
+                      />
+                      <Text style={styles.modelListMeta}>
+                        {modelQuery.trim()
+                          ? `${filteredModels.length} of ${models.length} match`
+                          : `${models.length} models`}
+                      </Text>
+                      <View style={styles.modelList}>
+                        {filteredModels.length === 0 ? (
+                          <Text style={styles.modelRowEmpty}>No models match “{modelQuery.trim()}”.</Text>
+                        ) : (
+                          <ScrollView
+                            style={{ maxHeight: 240 }}
+                            nestedScrollEnabled
+                            keyboardShouldPersistTaps="handled"
                           >
-                            {id}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
+                            {filteredModels.map((id) => {
+                              const active = model === id;
+                              return (
+                                <Pressable
+                                  key={id}
+                                  style={[styles.modelRow, active && styles.modelRowActive]}
+                                  onPress={() => setModel(id)}
+                                >
+                                  {active ? (
+                                    <Check size={14} color={t.accent} />
+                                  ) : (
+                                    <View style={{ width: 14 }} />
+                                  )}
+                                  <Text
+                                    style={[styles.modelRowText, active && styles.modelRowTextActive]}
+                                    numberOfLines={1}
+                                  >
+                                    {id}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </ScrollView>
+                        )}
+                      </View>
+                    </>
                   )}
                 </View>
 
