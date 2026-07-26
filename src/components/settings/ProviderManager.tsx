@@ -30,7 +30,8 @@ const EMPTY_PROVIDERS: SavedProvider[] = [];
 export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   const {
     savedProviders, activeProviderId, activeModel,
-    addSavedProvider, updateSavedProvider, deleteSavedProvider, selectProvider, setModel,
+    addSavedProvider, updateSavedProvider, deleteSavedProvider, selectProvider,
+    setAgentConfig, setAIConfig,
   } = useCairnStore(useShallow((s) => ({
     // The list is always shared — read it from aiConfig.
     savedProviders:      s.aiConfig.savedProviders,
@@ -41,11 +42,18 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
     updateSavedProvider: s.updateSavedProvider,
     deleteSavedProvider: s.deleteSavedProvider,
     selectProvider:      kind === "agent" ? s.selectAgentProvider : s.selectSavedProvider,
-    // Model is a PER-SURFACE choice on the config, not the shared provider.
-    setModel:            kind === "agent"
-      ? (model: string) => s.setAgentConfig({ model })
-      : (model: string) => s.setAIConfig({ model }),
+    // Select the STABLE store actions — never build new closures inside the
+    // selector, or useShallow's snapshot never caches and we spin an infinite
+    // render loop.
+    setAgentConfig:      s.setAgentConfig,
+    setAIConfig:         s.setAIConfig,
   })));
+
+  // Model is a PER-SURFACE choice on the config, not the shared provider.
+  // Build the wrapper OUTSIDE the selector against the stable actions above.
+  const setModel = kind === "agent"
+    ? (model: string) => setAgentConfig({ model })
+    : (model: string) => setAIConfig({ model });
 
   const providers = savedProviders ?? EMPTY_PROVIDERS;
   const active = providers.find((p) => p.id === activeProviderId);
