@@ -1,0 +1,87 @@
+/**
+ * Regression tests for writeNoteFile's write strategy.
+ *
+ * The "note deleted right after linking to a task" data-loss bug came from a
+ * metadata-only write (link_note_to_task) rewriting the note's .md via tmp-file
+ * + rename. A rename-over-an-existing-file changes the inode, which chokidar
+ * reports as unlink+add of the note's own path; the cross-process
+ * mcp_active_writes lock can already be released by the time that unlink is
+ * delivered, so the file-watcher tombstones the note row.
+ *
+ * writeNoteFile must therefore write IN PLACE (no rename) when the file's path
+ * is unchanged, and only use tmp+rename for a genuine relocation.
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import { writeNoteFile, type NoteFileData } from "./notes-io";
+
+let tmpDir: string;
+
+const BASE: NoteFileData = {
+  id: "n1",
+  projectId: "proj1",
+  workspaceId: "ws1",
+  title: "My Note",
+  content: "Hello body.",
+  tagIds: [],
+  linkedNoteIds: [],
+  linkedCardIds: [],
+  isPinned: false,
+  folder: "",
+  createdAt: "2025-01-01T00:00:00.000Z",
+  updatedAt: "2025-01-01T00:00:00.000Z",
+  projectName: "My Project",
+};
+
+beforeEach(() => {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-notesio-"));
+});
+
+afterEach(() => {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+describe("writeNoteFile write strategy", () => {
+  it("writes a new note directly at its path", () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+    expect(fs.existsSync(fp)).toBe(true);
+    expect(fs.readFileSync(fp, "utf-8")).toContain("Hello body.");
+  });
+
+  it("does NOT rename (no unlink event) on a same-path metadata rewrite", () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+    const inoBefore = fs.statSync(fp).ino;
+
+    // A link-style update: same title/folder → same path, only linkedCardIds change.
+    writeNoteFile(tmpDir, { ...BASE, linkedCardIds: ["c1"] });
+
+    // The whole point of the fix: a same-path rewrite must be IN PLACE, so the
+    // inode is unchanged (a tmp+rename would replace the inode → chokidar
+    // unlink → cross-process delete race). No new/other files either.
+    const inoAfter = fs.statSync(fp).ino;
+    expect(inoAfter).toBe(inoBefore);
+    expect(fs.readdirSync(path.join(tmpDir, "My Project"))).toEqual(["My Note.md"]);
+
+    const contents = fs.readFileSync(fp, "utf-8");
+    expect(contents).toContain("Hello body."); // content preserved
+    expect(contents).toContain("c1"); // link metadata written
+  });
+
+  it("relocates when the title changes, removing the old file", () => {
+    writeNoteFile(tmpDir, BASE);
+    const oldFp = path.join(tmpDir, "My Project", "My Note.md");
+    expect(fs.existsSync(oldFp)).toBe(true);
+
+    writeNoteFile(tmpDir, { ...BASE, title: "Renamed Note" });
+
+    const newFp = path.join(tmpDir, "My Project", "Renamed Note.md");
+    expect(fs.existsSync(newFp)).toBe(true);
+    expect(fs.existsSync(oldFp)).toBe(false); // old path cleaned up
+    expect(fs.readFileSync(newFp, "utf-8")).toContain("Hello body.");
+  });
+});

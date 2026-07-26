@@ -174,9 +174,33 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
   // Merge: non-Cairn keys first, then Cairn keys on top (Cairn always wins).
   const frontmatter: Record<string, unknown> = { ...existingExtra, ...cairnFields };
 
-  // Atomic write: write to a .tmp file first, then rename into place.
+  const serialized = matter.stringify(note.content ?? "", frontmatter);
+
+  // Same-location rewrite (the common case: content/metadata edit, or a
+  // link/tag/pin change that doesn't move the file) → write IN PLACE.
+  //
+  // We deliberately do NOT use the tmp-file + rename dance here. A
+  // rename-over-an-existing-file changes the file's inode, which chokidar
+  // reports as unlink+add of the note's own path. The file-watcher runs in a
+  // separate process from the MCP server, and its only cross-process guard
+  // against treating that unlink as a real delete is the mcp_active_writes lock
+  // — but chokidar delivers the unlink event asynchronously, often AFTER the
+  // MCP tool has already released the lock. That race let a metadata-only write
+  // (e.g. link_note_to_task) tombstone the note. An in-place writeFileSync emits
+  // only a `change` event, never an `unlink`, so the delete path can't fire.
+  // (Atomicity is preserved for the risky case — a real relocation — below.)
+  if (existingPath && existingPath === newPath) {
+    fs.writeFileSync(newPath, serialized, "utf-8");
+    return;
+  }
+
+  // Relocation (title or folder changed → the file moves to a new path). Write
+  // the new path atomically via tmp+rename, THEN remove the old file. Here the
+  // unlink of the OLD path is expected and is what the watcher's relocation
+  // guards (suppressedNoteIds / mcp_active_writes / noteFileStillExists) exist
+  // to handle.
   const tmpPath = newPath + ".tmp";
-  fs.writeFileSync(tmpPath, matter.stringify(note.content ?? "", frontmatter), "utf-8");
+  fs.writeFileSync(tmpPath, serialized, "utf-8");
   fs.renameSync(tmpPath, newPath);
 
   // Now safe to remove the old file (rename already succeeded)
