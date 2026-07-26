@@ -98,7 +98,6 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       // genuinely has nothing new — not when the mark we just consumed for THIS
       // note was cleared by us (that re-render must not erase the highlight).
       if (processedMarkRef.current?.noteId !== noteId) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setChangedLines([]);
       }
       return;
