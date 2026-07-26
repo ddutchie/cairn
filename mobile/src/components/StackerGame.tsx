@@ -209,6 +209,10 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
     setCombo(0);
     setStatus("playing");
     setNewRecord(false);
+    // Clear any leftover confetti trigger from a previous run — otherwise a
+    // stale non-zero `celebrate` fires a burst the instant the game reopens
+    // (and keeps the cannon mounted, dragging the frame rate down).
+    setCelebrate(0);
     spawnMoving();
     publish();
   }, [gameState, nextLabel, spawnMoving, publish]);

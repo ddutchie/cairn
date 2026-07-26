@@ -33,7 +33,13 @@ function confettiColors(t: Theme): string[] {
 export function InlineConfetti({ fireKey }: { fireKey: number }) {
   const t = useTheme();
   const { width } = useWindowDimensions();
-  if (fireKey <= 0) return null;
+  // Track the last fireKey whose burst has finished, so we unmount the cannon
+  // once it's done. Without this the ~90 animated confetti views stay mounted
+  // after the burst and re-render on every parent frame (the games re-render
+  // ~60fps), dragging the frame rate to a crawl.
+  const [doneKey, setDoneKey] = useState(0);
+
+  if (fireKey <= 0 || fireKey === doneKey) return null;
   return (
     <ConfettiCannon
       key={fireKey}
@@ -45,6 +51,7 @@ export function InlineConfetti({ fireKey }: { fireKey: number }) {
       fadeOut
       autoStart
       colors={confettiColors(t)}
+      onAnimationEnd={() => setDoneKey(fireKey)}
     />
   );
 }
