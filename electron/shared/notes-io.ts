@@ -190,7 +190,7 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
   // only a `change` event, never an `unlink`, so the delete path can't fire.
   // (Atomicity is preserved for the risky case — a real relocation — below.)
   if (existingPath && existingPath === newPath) {
-    fs.writeFileSync(newPath, serialized, "utf-8");
+    writeInPlaceDurable(newPath, serialized);
     return;
   }
 
@@ -210,6 +210,53 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
     // parents it emptied) so stale, note-less folders don't linger in the
     // notes tree — but never remove the project root itself.
     pruneEmptyDirsUpTo(path.dirname(existingPath), projectNotesDir(workspacePath, projectName));
+  }
+}
+
+/**
+ * Overwrite an existing note file IN PLACE (keeping its inode/path — so the
+ * file-watcher sees a `change`, never an `unlink`+`add`, and can't misfire the
+ * cross-process delete race) while still surviving a mid-write crash.
+ *
+ * A bare truncating writeFileSync isn't crash-safe: if the process dies partway
+ * through, the note is left truncated/corrupt. We therefore back the current
+ * bytes up to a sibling `.bak` first, write the new content, fsync it to disk,
+ * and only then drop the backup. On any error we restore the original from the
+ * backup so a failed write never destroys the note. The rename-based atomic
+ * write can't be used here because renaming over the target swaps its inode.
+ */
+function writeInPlaceDurable(targetPath: string, serialized: string): void {
+  const backupPath = targetPath + ".bak";
+  let backedUp = false;
+  try {
+    try {
+      fs.copyFileSync(targetPath, backupPath);
+      backedUp = true;
+    } catch {
+      // No readable original to back up (shouldn't happen on this branch, since
+      // existingPath was found) — proceed without a backup rather than block.
+    }
+
+    const fd = fs.openSync(targetPath, "w");
+    try {
+      fs.writeFileSync(fd, serialized, "utf-8");
+      fs.fsyncSync(fd); // durability: flush to disk before we drop the backup
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    if (backedUp) {
+      try { fs.unlinkSync(backupPath); } catch { /* best-effort cleanup */ }
+    }
+  } catch (err) {
+    // Write failed — restore the original bytes so the note survives intact.
+    if (backedUp) {
+      try {
+        fs.copyFileSync(backupPath, targetPath);
+        fs.unlinkSync(backupPath);
+      } catch { /* best-effort restore */ }
+    }
+    throw err;
   }
 }
 

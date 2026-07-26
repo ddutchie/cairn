@@ -68,9 +68,12 @@ export function ConfettiHost() {
   const [burst, setBurst] = useState(0);
 
   useEffect(() => {
-    externalFire = () => setBurst((n) => n + 1);
+    const fire = () => setBurst((n) => n + 1);
+    externalFire = fire;
     return () => {
-      if (externalFire) externalFire = null;
+      // Only detach if we're still the registered fire fn (identity check —
+      // matches the Toast externalShow bridge), so a remount can't clobber it.
+      if (externalFire === fire) externalFire = null;
     };
   }, []);
 

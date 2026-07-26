@@ -12,7 +12,7 @@
  * is unchanged, and only use tmp+rename for a genuine relocation.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -70,6 +70,33 @@ describe("writeNoteFile write strategy", () => {
     const contents = fs.readFileSync(fp, "utf-8");
     expect(contents).toContain("Hello body."); // content preserved
     expect(contents).toContain("c1"); // link metadata written
+    // No stray backup file left behind after a successful in-place write.
+    expect(fs.readdirSync(path.join(tmpDir, "My Project"))).toEqual(["My Note.md"]);
+  });
+
+  it("preserves the original note if an in-place rewrite fails mid-write", () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+    const original = fs.readFileSync(fp, "utf-8");
+
+    // Simulate a crash during the in-place write: the fd write throws.
+    const realWrite = fs.writeFileSync;
+    const spy = vi.spyOn(fs, "writeFileSync").mockImplementation(((target: unknown, ...rest: unknown[]) => {
+      // Only fail the fd write (numeric fd), not the .bak copy (which uses copyFileSync).
+      if (typeof target === "number") throw new Error("disk full");
+      return (realWrite as (...a: unknown[]) => unknown)(target, ...rest);
+    }) as typeof fs.writeFileSync);
+
+    try {
+      expect(() => writeNoteFile(tmpDir, { ...BASE, content: "corrupt-me" })).toThrow();
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The note must still hold its original bytes (restored from backup), and no
+    // .bak artifact should linger.
+    expect(fs.readFileSync(fp, "utf-8")).toBe(original);
+    expect(fs.readdirSync(path.join(tmpDir, "My Project"))).toEqual(["My Note.md"]);
   });
 
   it("relocates when the title changes, removing the old file", () => {

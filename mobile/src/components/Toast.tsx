@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, AccessibilityInfo } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useAnimatedStyle,
@@ -171,6 +171,13 @@ function ToastCard({ state, onDone }: { state: ToastState; onDone: () => void })
   useEffect(() => {
     opacity.value = withTiming(1, { duration: 180 });
     translateY.value = withSpring(0, { damping: 16, stiffness: 240, mass: 0.5 });
+
+    // The toast is pointerEvents="none" and purely visual, so announce it to
+    // screen readers (VoiceOver / TalkBack) — otherwise its message is silent
+    // for assistive-tech users.
+    AccessibilityInfo.announceForAccessibility(
+      state.detail ? `${state.message}. ${state.detail}` : state.message,
+    );
 
     const timer = setTimeout(() => {
       opacity.value = withTiming(0, { duration: 200 });
