@@ -13,7 +13,14 @@ import { writeOwnOplog, readSourceOplog } from "./fs-transport";
 
 export interface SyncResult {
   drained: number;
+  /** Peer ops that ACTUALLY changed our DB (0 when already converged). Drives
+   * the data-changed signal — a bare read that applied nothing must NOT fire it,
+   * or every quiet sync cycle would re-query every screen (see controller.ts). */
   peerOpsApplied: number;
+  /** Total peer oplog entries READ this cycle. A steady non-zero read with 0
+   * applied is normal (the whole oplog is re-read every time), not a loop.
+   * Distinct from peerOpsApplied — mirrors desktop-sync's peerOpsRead. */
+  peerOpsRead: number;
   conflictCopies: number;
   connected: boolean;
   reason?: string; // when connected=false
@@ -38,16 +45,16 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 
 export async function syncNow(): Promise<SyncResult> {
   if (!(await iCloudAvailable())) {
-    return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason: "iCloud not available — sign in to iCloud in Settings." };
+    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "iCloud not available — sign in to iCloud in Settings." };
   }
   const folder = await getSyncFolderPath();
   if (!folder) {
-    return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason: "Couldn't open the iCloud Cairn folder." };
+    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "Couldn't open the iCloud Cairn folder." };
   }
 
   const workspaceId = getActiveSource();
   if (!workspaceId) {
-    return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason: "No sync source selected." };
+    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "No sync source selected." };
   }
 
   const engine = getEngine();
@@ -62,17 +69,23 @@ export async function syncNow(): Promise<SyncResult> {
     // 3. Read peers for THIS source only (source-isolation boundary).
     const peerEntries = await withTimeout(readSourceOplog(folder, workspaceId, engine.deviceId), ICLOUD_IO_TIMEOUT_MS, "readSourceOplog");
 
-    // 4. Reconcile.
-    const { conflictCopies } = engine.applyRemote(peerEntries);
+    // 4. Reconcile. `applied` is the ops that actually changed our DB (stale /
+    // echoed ops are skipped by the HLC guard); `peerEntries` is the raw read.
+    const { conflictCopies, applied } = engine.applyRemote(peerEntries);
 
-    // 5. Re-publish if reconcile changed our oplog.
+    // 5. Re-publish if we READ any peer ops (reconcile may have merged array
+    // unions even when nothing "applied"), so peers converge. Gated on the read
+    // count, not the applied count.
     if (peerEntries.length > 0) {
       await withTimeout(writeOwnOplog(folder, engine.deviceId, workspaceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
     }
 
     return {
       drained,
-      peerOpsApplied: peerEntries.length,
+      // Report APPLIED, not READ — the data-changed signal keys off this, so a
+      // quiet cycle (0 applied) must not trigger an app-wide re-query storm.
+      peerOpsApplied: applied.length,
+      peerOpsRead: peerEntries.length,
       conflictCopies: conflictCopies.length,
       connected: true,
     };
@@ -80,7 +93,7 @@ export async function syncNow(): Promise<SyncResult> {
     // A stalled/failed iCloud call resolves to connected:false so the scheduler
     // (controller.requestSync) clears its in-flight guard and can retry later.
     const reason = e instanceof TimeoutError ? e.message : `Sync failed: ${e instanceof Error ? e.message : String(e)}`;
-    return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason };
+    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason };
   }
 }
 

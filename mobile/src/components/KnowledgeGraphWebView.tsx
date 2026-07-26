@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Text, Pressable, ActivityIndicator, StyleSheet, AppState } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import {
@@ -110,6 +110,34 @@ export function KnowledgeGraphWebView({
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(t), [t]);
   const ref = useRef<WebView>(null);
+
+  // iOS reclaims a backgrounded WKWebView's content process under memory
+  // pressure, leaving the graph blank. reload() on a dead process is unreliable
+  // (it frequently no-ops or restores a blank document — that's why swapping the
+  // layout type "fixes" it: the type change regenerates `html` and remounts).
+  // So instead of reload(), we REMOUNT the WebView by bumping a key, which tears
+  // down the dead native view and builds a fresh one from the in-memory `html`.
+  //   • webKey        — bumping it forces the remount.
+  //   • terminatedRef — set when a process death is observed while backgrounded,
+  //                     so we can rebuild on the NEXT foreground (the terminate
+  //                     callback itself may arrive while JS is suspended, or the
+  //                     remount won't stick until the view is visible again).
+  const [webKey, setWebKey] = useState(0);
+  const terminatedRef = useRef(false);
+  const remount = useCallback(() => setWebKey((k) => k + 1), []);
+  const handleTerminate = useCallback(() => {
+    if (AppState.currentState === "active") remount();
+    else terminatedRef.current = true; // rebuild when we return to the foreground
+  }, [remount]);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active" && terminatedRef.current) {
+        terminatedRef.current = false;
+        remount();
+      }
+    });
+    return () => sub.remove();
+  }, [remount]);
 
   const [modeInternal, setModeInternal] = useState<GraphMode>("force");
   const mode = modeProp ?? modeInternal;
@@ -314,7 +342,6 @@ export function KnowledgeGraphWebView({
     if (labelFirst.current) { labelFirst.current = false; return; }
     if (mode === "force") pushUpdate({ labelMode });
   }, [labelMode, mode, pushUpdate]);
-
   const linksFirst = useRef(true);
   useEffect(() => {
     if (linksFirst.current) { linksFirst.current = false; return; }
@@ -489,10 +516,18 @@ export function KnowledgeGraphWebView({
       <View style={styles.canvasWrap}>
         <WebView
           ref={ref}
+          key={webKey}
           originWhitelist={["*"]}
           source={{ html }}
           style={styles.web}
           onMessage={onMessage}
+          onLoadEnd={() => {
+            // After any (re)load — including a post-termination remount — the
+            // fresh document reflects whatever html was last generated at a
+            // structural change. Re-push the live force-mode toggles so a
+            // rebuild can't revert hulls/labels/links the user changed since.
+            if (mode === "force") pushUpdate({ showHulls, labelMode, links: linksPayload });
+          }}
           onShouldStartLoadWithRequest={(req) =>
             req.url === "about:blank" || req.url.startsWith("data:") || req.navigationType === "other"
           }
@@ -500,11 +535,13 @@ export function KnowledgeGraphWebView({
           setSupportMultipleWindows={false}
           scrollEnabled={false}
           // iOS kills the WKWebView content process when the app is backgrounded
-          // under memory pressure, leaving the graph blank (live updates go via
-          // injectJavaScript, which silently no-ops on a dead process). Reload to
-          // rebuild the D3 document. Android equivalent is onRenderProcessGone.
-          onContentProcessDidTerminate={() => ref.current?.reload()}
-          onRenderProcessGone={() => ref.current?.reload()}
+          // under memory pressure, leaving the graph blank (and injectJavaScript
+          // updates silently no-op on a dead process). reload() is unreliable
+          // here, so handleTerminate REMOUNTS the WebView (fresh native view from
+          // the in-memory html) — immediately if foregrounded, else on the next
+          // foreground. Android equivalent is onRenderProcessGone.
+          onContentProcessDidTerminate={handleTerminate}
+          onRenderProcessGone={handleTerminate}
         />
 
         {/* Legend + zoom-to-fit — bottom row. Keys are left-aligned, the fit

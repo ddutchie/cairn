@@ -80,7 +80,10 @@ export default function SyncScreen() {
         {last && last.connected && (
           <View style={styles.result}>
             <Text style={styles.resultLine}>Local changes sent: {last.drained}</Text>
-            <Text style={styles.resultLine}>Peer changes applied: {last.peerOpsApplied}</Text>
+            <Text style={styles.resultLine}>
+              Peer changes applied: {last.peerOpsApplied}
+              {last.peerOpsRead > last.peerOpsApplied ? `  (${last.peerOpsRead} read)` : ""}
+            </Text>
             <Text style={styles.resultLine}>
               Conflict copies: {last.conflictCopies}
               {last.conflictCopies > 0 ? "  (tap below to resolve)" : ""}

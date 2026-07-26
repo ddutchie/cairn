@@ -25,14 +25,33 @@ const META_FETCHED_AT = "registry.fetchedAt"; // ISO of last successful fetch
 /** Give up on a slow/hung manifest fetch and fall back to the cache. */
 const FETCH_TIMEOUT_MS = 20_000;
 
+// In-memory memo of the last parsed manifest, keyed by the raw JSON string it
+// was parsed from. getCachedManifest() is called repeatedly (Tools screen init,
+// getRegistryServices, tool assembly) and parseManifest re-validates the WHOLE
+// manifest each time — expensive as the catalog grows. Caching by raw string
+// keeps it correct (any setMeta write changes the raw → cache miss → re-parse)
+// while skipping redundant JSON.parse + schema validation on the hot path.
+let _memoRaw: string | null = null;
+let _memoManifest: CommunityManifest | null = null;
+
 /** The cached manifest, or null if nothing has been fetched yet / cache is corrupt. */
 export function getCachedManifest(): CommunityManifest | null {
   const raw = getMeta(META_MANIFEST);
-  if (!raw) return null;
+  if (!raw) {
+    _memoRaw = null;
+    _memoManifest = null;
+    return null;
+  }
+  if (raw === _memoRaw) return _memoManifest;
   try {
-    return parseManifest(JSON.parse(raw));
+    const manifest = parseManifest(JSON.parse(raw));
+    _memoRaw = raw;
+    _memoManifest = manifest;
+    return manifest;
   } catch {
     // A corrupt cache should never break browse — treat as "no cache".
+    _memoRaw = null;
+    _memoManifest = null;
     return null;
   }
 }
