@@ -13,6 +13,7 @@ import { initDatabase } from "@/db";
 import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
 import { UpdateBanner } from "@/components/UpdateBanner";
+import { ToastProvider } from "@/components/Toast";
 import { SourcePicker } from "@/components/SourcePicker";
 import { useTheme } from "@/theme";
 
@@ -134,19 +135,21 @@ export default function RootLayout() {
               iOS 26 liquid-glass toolbar buttons don't flash a light background
               in dark mode (see Expo "Stack Toolbar → Common problems"). */}
           <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
-            <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-              <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
-              <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
-              <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
-              <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
-              <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
-              <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal" }} />
-              <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
-              <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal" }} />
-              <Stack.Screen name="settings/tools" options={{ title: "Tools & Services", presentation: "modal" }} />
-            </Stack>
+            <ToastProvider>
+              <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+                <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
+                <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
+                <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+                <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
+                <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
+                <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal" }} />
+                <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
+                <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal" }} />
+                <Stack.Screen name="settings/tools" options={{ title: "Tools & Services", presentation: "modal" }} />
+              </Stack>
+            </ToastProvider>
           </ThemeProvider>
           <UpdateBanner />
         </SafeAreaProvider>

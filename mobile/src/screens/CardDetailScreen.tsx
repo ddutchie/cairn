@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Calendar, X } from "lucide-react-native";
-import { getCard, listColumns, updateTask, moveCardToColumn, archiveCard, tagsForCard, noteTagIds, setCardTags, type ColumnRow } from "@/db/queries";
+import { getCard, listColumns, listCards, updateTask, moveCardToColumn, archiveCard, tagsForCard, noteTagIds, setCardTags, type ColumnRow } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
 import { DueDatePickerSheet } from "@/components/DueDatePickerSheet";
@@ -11,6 +11,7 @@ import { PriorityChips, ColumnChips } from "@/components/TaskChips";
 import { NotFound } from "@/components/NotFound";
 import { ICON_CHECK, ICON_MORE, ICON_ARCHIVE } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
+import { celebrateTaskDone, isDoneColumn } from "@/gamification/rewards";
 import { formatDate } from "@cairn/shared/format/date";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
@@ -58,7 +59,20 @@ export function CardDetailScreen() {
       assignee: assignee.trim() || null,
     });
     setCardTags(card.id, tagIds);
-    if (columnId && columnId !== card.column_id) moveCardToColumn(card.id, columnId);
+    if (columnId && columnId !== card.column_id) {
+      // Celebrate if this save moves the card INTO a done column from a
+      // non-done one (mirrors the board drag-to-done reward).
+      const fromCol = columns.find((c) => c.id === card.column_id);
+      const toCol = columns.find((c) => c.id === columnId);
+      moveCardToColumn(card.id, columnId);
+      if (isDoneColumn(toCol) && !isDoneColumn(fromCol)) {
+        const doneColIds = new Set(columns.filter((c) => isDoneColumn(c)).map((c) => c.id));
+        const remainingOpen = listCards(card.project_id).filter(
+          (c) => c.id !== card.id && !doneColIds.has(c.column_id),
+        ).length;
+        celebrateTaskDone(remainingOpen);
+      }
+    }
     router.back();
   };
 

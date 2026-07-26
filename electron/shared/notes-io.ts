@@ -174,9 +174,33 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
   // Merge: non-Cairn keys first, then Cairn keys on top (Cairn always wins).
   const frontmatter: Record<string, unknown> = { ...existingExtra, ...cairnFields };
 
-  // Atomic write: write to a .tmp file first, then rename into place.
+  const serialized = matter.stringify(note.content ?? "", frontmatter);
+
+  // Same-location rewrite (the common case: content/metadata edit, or a
+  // link/tag/pin change that doesn't move the file) → write IN PLACE.
+  //
+  // We deliberately do NOT use the tmp-file + rename dance here. A
+  // rename-over-an-existing-file changes the file's inode, which chokidar
+  // reports as unlink+add of the note's own path. The file-watcher runs in a
+  // separate process from the MCP server, and its only cross-process guard
+  // against treating that unlink as a real delete is the mcp_active_writes lock
+  // — but chokidar delivers the unlink event asynchronously, often AFTER the
+  // MCP tool has already released the lock. That race let a metadata-only write
+  // (e.g. link_note_to_task) tombstone the note. An in-place writeFileSync emits
+  // only a `change` event, never an `unlink`, so the delete path can't fire.
+  // (Atomicity is preserved for the risky case — a real relocation — below.)
+  if (existingPath && existingPath === newPath) {
+    writeInPlaceDurable(newPath, serialized);
+    return;
+  }
+
+  // Relocation (title or folder changed → the file moves to a new path). Write
+  // the new path atomically via tmp+rename, THEN remove the old file. Here the
+  // unlink of the OLD path is expected and is what the watcher's relocation
+  // guards (suppressedNoteIds / mcp_active_writes / noteFileStillExists) exist
+  // to handle.
   const tmpPath = newPath + ".tmp";
-  fs.writeFileSync(tmpPath, matter.stringify(note.content ?? "", frontmatter), "utf-8");
+  fs.writeFileSync(tmpPath, serialized, "utf-8");
   fs.renameSync(tmpPath, newPath);
 
   // Now safe to remove the old file (rename already succeeded)
@@ -186,6 +210,53 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
     // parents it emptied) so stale, note-less folders don't linger in the
     // notes tree — but never remove the project root itself.
     pruneEmptyDirsUpTo(path.dirname(existingPath), projectNotesDir(workspacePath, projectName));
+  }
+}
+
+/**
+ * Overwrite an existing note file IN PLACE (keeping its inode/path — so the
+ * file-watcher sees a `change`, never an `unlink`+`add`, and can't misfire the
+ * cross-process delete race) while still surviving a mid-write crash.
+ *
+ * A bare truncating writeFileSync isn't crash-safe: if the process dies partway
+ * through, the note is left truncated/corrupt. We therefore back the current
+ * bytes up to a sibling `.bak` first, write the new content, fsync it to disk,
+ * and only then drop the backup. On any error we restore the original from the
+ * backup so a failed write never destroys the note. The rename-based atomic
+ * write can't be used here because renaming over the target swaps its inode.
+ */
+function writeInPlaceDurable(targetPath: string, serialized: string): void {
+  const backupPath = targetPath + ".bak";
+  let backedUp = false;
+  try {
+    try {
+      fs.copyFileSync(targetPath, backupPath);
+      backedUp = true;
+    } catch {
+      // No readable original to back up (shouldn't happen on this branch, since
+      // existingPath was found) — proceed without a backup rather than block.
+    }
+
+    const fd = fs.openSync(targetPath, "w");
+    try {
+      fs.writeFileSync(fd, serialized, "utf-8");
+      fs.fsyncSync(fd); // durability: flush to disk before we drop the backup
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    if (backedUp) {
+      try { fs.unlinkSync(backupPath); } catch { /* best-effort cleanup */ }
+    }
+  } catch (err) {
+    // Write failed — restore the original bytes so the note survives intact.
+    if (backedUp) {
+      try {
+        fs.copyFileSync(backupPath, targetPath);
+        fs.unlinkSync(backupPath);
+      } catch { /* best-effort restore */ }
+    }
+    throw err;
   }
 }
 

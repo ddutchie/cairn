@@ -385,7 +385,7 @@ export function getNoteRange(id: string, startLine: number, endLine?: number): u
 
 export function listColumns(projectId: string): ColumnRow[] {
   return getDb().getAllSync<ColumnRow>(
-    `SELECT id, project_id, name, "order" FROM board_columns
+    `SELECT id, project_id, name, type, "order" FROM board_columns
      WHERE deleted_at IS NULL AND project_id = ? ORDER BY "order"`,
     projectId,
   );

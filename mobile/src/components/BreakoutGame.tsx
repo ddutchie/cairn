@@ -12,6 +12,7 @@ import {
 import { X } from "lucide-react-native";
 import { listBreakoutBricks, type BrickKind } from "@/db/queries";
 import { haptics } from "@/haptics";
+import { InlineConfetti } from "@/components/Confetti";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 // ── Layout / physics constants ────────────────────────────────────────────────
@@ -128,6 +129,9 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
   const [snap, setSnap] = useState<Snapshot>({ ballX: W / 2, ballY: H / 2, paddleX: W / 2 - PADDLE_W / 2, bricks: [], particles: [] });
   const [score, setScore] = useState(0);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
+  // Bumped to fire a confetti burst inside the Modal on a win (the app-root
+  // ConfettiHost renders behind this fullscreen Modal). 0 = idle.
+  const [celebrate, setCelebrate] = useState(0);
   const rafRef = useRef<number | null>(null);
 
   const publish = useCallback(() => {
@@ -166,6 +170,7 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
     g.paused = AppState.currentState !== "active";
     setScore(0);
     setStatus("playing");
+    setCelebrate(0);
     publish();
   }, [W, H, buildBricks, publish, gameState]);
 
@@ -209,11 +214,13 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           haptics.rigid();
         }
 
-        // Bricks.
-        let liveCount = 0;
+        // Bricks: handle at most one collision this frame, then count how many
+        // bricks remain alive. The collision detection breaks out early, so the
+        // live count MUST be computed in its own pass over every brick —
+        // otherwise a hit on an early brick makes it look like the board is
+        // clear (false "won").
         for (const br of g.bricks) {
           if (!br.alive) continue;
-          liveCount++;
           if (
             b.x + BALL_R >= br.x &&
             b.x - BALL_R <= br.x + br.w &&
@@ -221,7 +228,6 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
             b.y - BALL_R <= br.y + br.h
           ) {
             br.alive = false;
-            liveCount--;
             b.vy = -b.vy; // bounce vertically (simple + reliable for a grid)
             spawnParticles(g.particles, br, t);
             haptics.impactMedium();
@@ -229,6 +235,8 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
             break;
           }
         }
+        let liveCount = 0;
+        for (const br of g.bricks) if (br.alive) liveCount++;
 
         // Advance particles (gravity + fade), dropping dead ones.
         if (g.particles.length) {
@@ -249,6 +257,8 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           g.running = false;
           haptics.success();
           setStatus("won");
+          // Clearing every brick is the big moment — celebrate with confetti.
+          setCelebrate((n) => n + 1);
         } else if (b.y - BALL_R > fieldBottom) {
           g.running = false;
           haptics.error();
@@ -370,6 +380,10 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
             </Pressable>
           </View>
         ) : null}
+
+        {/* Confetti on clearing the board — inside the Modal so it shows over
+            the game (the app-root host sits behind it). */}
+        <InlineConfetti fireKey={celebrate} />
       </View>
     </Modal>
   );
@@ -419,6 +433,7 @@ function makeStyles(t: Theme) {
     },
     playAgainText: { ...typeScale.control, color: t.accentFg },
     overlayClose: { marginTop: 14 },
-    overlayCloseText: { ...typeScale.control, color: t.textTertiary },
+    // textSecondary (not textTertiary) so it stays legible over the scrim overlay.
+    overlayCloseText: { ...typeScale.control, color: t.textSecondary },
   });
 }

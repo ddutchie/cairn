@@ -14,7 +14,7 @@ import { PriorityChips, ColumnChips } from "@/components/TaskChips";
  */
 export default function NewCard() {
   useModalOpenHaptic();
-  const { project, column } = useLocalSearchParams<{ project: string; column?: string }>();
+  const { project, column, back } = useLocalSearchParams<{ project: string; column?: string; back?: string }>();
   const router = useRouter();
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -31,7 +31,11 @@ export default function NewCard() {
   const save = () => {
     if (!project || !canSave) return;
     const id = createTask(project, columnId, title.trim(), { description, priority });
-    router.replace(`/card/${id}`);
+    // Replace this modal with the new card's detail. Forward `back` (the project
+    // name) so the card's header shows "< {Project}" instead of the raw route
+    // group name ("(tabs)") — the root-stack card route can't infer the
+    // originating tab's title on its own.
+    router.replace({ pathname: "/card/[id]", params: { id, ...(back ? { back } : {}) } });
   };
 
   return (
@@ -39,7 +43,7 @@ export default function NewCard() {
       <Stack.Screen
         options={{
           title: "New Task",
-          headerBackTitle: "Board",
+          headerBackTitle: back || "Board",
         }}
       />
       <Stack.Toolbar placement="right">

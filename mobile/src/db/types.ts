@@ -26,6 +26,8 @@ export interface ColumnRow {
   id: string;
   project_id: string;
   name: string;
+  /** Column semantics — "done" columns trigger the task-complete celebration. */
+  type: string;
   order: number;
 }
 
