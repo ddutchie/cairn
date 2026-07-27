@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
-import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
+import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, listUnindexedCards, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
 import { ResultRow } from "@/components/ResultRow";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
@@ -154,7 +154,7 @@ export default function SearchScreen() {
       const s = embeddingIndexStats(ws);
       live += s.liveNotes + s.liveCards;
       indexed += s.indexedNotes + s.indexedCards;
-      missing.push(...listUnindexedNotes(ws));
+      missing.push(...listUnindexedNotes(ws), ...listUnindexedCards(ws));
     }
     setStats({ live, indexed });
     setUnindexed(missing);
@@ -197,19 +197,27 @@ export default function SearchScreen() {
       );
     }
     if (unindexed.length === 0) {
-      lines.push("\nEverything with content is indexed.");
+      const gap = stats ? stats.live - stats.indexed : 0;
+      if (gap > 0) {
+        lines.push(
+          `\n${gap} item${gap === 1 ? "" : "s"} counted as not indexed, but every note and task with content already has an index entry. This usually means stale index rows from a previous on-device model — tap Reindex to rebuild.`,
+        );
+      } else {
+        lines.push("\nEverything with content is indexed.");
+      }
     }
+    const gap = stats ? stats.live - stats.indexed : 0;
     Alert.alert(
       "Semantic index",
       lines.join("\n"),
-      withContent.length > 0
+      withContent.length > 0 || gap > 0
         ? [
             { text: "Reindex now", onPress: () => void forceReindex() },
             { text: "OK", style: "cancel" as const },
           ]
         : [{ text: "OK", style: "cancel" as const }],
     );
-  }, [unindexed, forceReindex]);
+  }, [unindexed, forceReindex, stats]);
 
 
   // Refresh stats whenever semantic mode is on or the tab regains focus.
@@ -309,7 +317,7 @@ export default function SearchScreen() {
           headerRight: semanticAvailable
             ? () => (
                 <View style={styles.headerRight}>
-                  {semanticMode && unindexed.length > 0 ? (
+                  {semanticMode && stats && stats.indexed < stats.live ? (
                     <Pressable
                       onPress={showIndexInfo}
                       hitSlop={8}

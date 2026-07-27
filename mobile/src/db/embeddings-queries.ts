@@ -283,7 +283,13 @@ export function embeddingIndexStats(workspaceId: string): {
     )?.n ?? 0;
   const liveCards =
     db.getFirstSync<{ n: number }>(
-      `SELECT COUNT(*) n FROM task_cards WHERE ${LIVE} AND workspace_id = ?`,
+      // A card embeds `description ?? title`, so it's embeddable if EITHER the
+      // title or the description has text. A card with both blank produces no
+      // sections and can never be indexed — exclude it from the total, same as
+      // empty notes above.
+      `SELECT COUNT(*) n FROM task_cards
+       WHERE ${LIVE} AND workspace_id = ?
+         AND (TRIM(COALESCE(title, '')) <> '' OR TRIM(COALESCE(description, '')) <> '')`,
       workspaceId,
     )?.n ?? 0;
   const indexedCards =
@@ -328,6 +334,31 @@ export function listUnindexedNotes(workspaceId: string): UnindexedNote[] {
           SELECT 1 FROM note_embeddings e WHERE e.note_id = n.id
         )
       ORDER BY contentLen DESC, n.title`,
+    workspaceId,
+  );
+}
+
+/**
+ * Live task cards with no rows in `task_embeddings` — the card equivalent of
+ * listUnindexedNotes. A card embeds `description ?? title`, so `contentLen` is
+ * the longer of the two trimmed lengths (0 only when both are blank). The Search
+ * index count sums notes AND cards, so an unindexed CARD (not a note) can be why
+ * the total falls short — this surfaces those too.
+ */
+export function listUnindexedCards(workspaceId: string): UnindexedNote[] {
+  return getDb().getAllSync<UnindexedNote>(
+    `SELECT c.id AS id,
+            c.title AS title,
+            MAX(
+              LENGTH(TRIM(COALESCE(c.title, ''))),
+              LENGTH(TRIM(COALESCE(c.description, '')))
+            ) AS contentLen
+       FROM task_cards c
+      WHERE ${LIVE} AND c.workspace_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM task_embeddings e WHERE e.card_id = c.id
+        )
+      ORDER BY contentLen DESC, c.title`,
     workspaceId,
   );
 }
