@@ -111,4 +111,45 @@ describe("writeNoteFile write strategy", () => {
     expect(fs.existsSync(oldFp)).toBe(false); // old path cleaned up
     expect(fs.readFileSync(newFp, "utf-8")).toContain("Hello body.");
   });
+
+  it("handles a case-only folder difference per filesystem semantics", () => {
+    // The note's .md lives in an on-disk "research" directory, but a later write
+    // supplies folder "Research" (differs only in case). Behaviour must follow
+    // the filesystem:
+    //   • case-INSENSITIVE FS (macOS/Windows): the two paths alias the same
+    //     inode → in-place rewrite, file preserved (this was the data-loss bug).
+    //   • case-SENSITIVE FS (Linux): they are genuinely different files → a real
+    //     relocation, with no stale case-folded duplicate left behind.
+    writeNoteFile(tmpDir, { ...BASE, folder: "research" });
+    const lowerFp = path.join(tmpDir, "My Project", "research", "My Note.md");
+    const upperFp = path.join(tmpDir, "My Project", "Research", "My Note.md");
+    expect(fs.existsSync(lowerFp)).toBe(true);
+    const inoBefore = fs.statSync(lowerFp).ino;
+
+    // Detect aliasing BEFORE the second write: does the case-variant path
+    // resolve to the same file the lowercase one does?
+    const aliased =
+      fs.existsSync(upperFp) &&
+      fs.realpathSync.native(lowerFp) === fs.realpathSync.native(upperFp);
+
+    writeNoteFile(tmpDir, { ...BASE, folder: "Research", linkedCardIds: ["c1"] });
+
+    if (aliased) {
+      // Case-insensitive FS: same file, rewritten in place (inode unchanged),
+      // content + link metadata preserved. No second directory materialises.
+      expect(fs.existsSync(lowerFp)).toBe(true);
+      expect(fs.statSync(lowerFp).ino).toBe(inoBefore);
+      const contents = fs.readFileSync(lowerFp, "utf-8");
+      expect(contents).toContain("Hello body.");
+      expect(contents).toContain("c1");
+    } else {
+      // Case-sensitive FS: relocated to the new-cased directory, old file gone,
+      // and no leftover duplicate under the old "research" directory.
+      expect(fs.existsSync(upperFp)).toBe(true);
+      expect(fs.existsSync(lowerFp)).toBe(false);
+      const contents = fs.readFileSync(upperFp, "utf-8");
+      expect(contents).toContain("Hello body.");
+      expect(contents).toContain("c1");
+    }
+  });
 });
