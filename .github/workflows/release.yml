@@ -189,6 +189,7 @@ jobs:
           node -e "const fs = require('fs'); ['win32-arm64', 'win32-x64'].forEach(p => fs.rmSync('node_modules/node-pty/prebuilds/' + p, { recursive: true, force: true }))"
           node scripts/build-mcp-binary.js --mac
           chmod +x dist-mcp/cairn-mcp dist-mcp/cairn-mcp-x64
+          npm run smoke-test:mcp
           npx electron-builder --mac --publish onTagOrDraft
 
   # ── Windows ───────────────────────────────────────────────────────────────
@@ -265,6 +266,7 @@ jobs:
           node -e "const fs = require('fs'); ['darwin', 'linux'].forEach(p => fs.rmSync('node_modules/onnxruntime-node/bin/napi-v3/' + p, { recursive: true, force: true }))"
           node -e "const fs = require('fs'); ['darwin-arm64', 'darwin-x64'].forEach(p => fs.rmSync('node_modules/node-pty/prebuilds/' + p, { recursive: true, force: true }))"
           node scripts/build-mcp-binary.js --win
+          npm run smoke-test:mcp
           npx electron-builder --win --publish onTagOrDraft
 
   # ── Linux ─────────────────────────────────────────────────────────────────
@@ -335,6 +337,7 @@ jobs:
           node -e "const fs = require('fs'); ['darwin-arm64', 'darwin-x64', 'win32-arm64', 'win32-x64'].forEach(p => fs.rmSync('node_modules/node-pty/prebuilds/' + p, { recursive: true, force: true }))"
           node scripts/build-mcp-binary.js --linux
           chmod +x dist-mcp/cairn-mcp-linux
+          npm run smoke-test:mcp
           npx electron-builder --linux --publish onTagOrDraft
 
   # ── Publish the release ───────────────────────────────────────────────────

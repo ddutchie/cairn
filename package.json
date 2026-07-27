@@ -31,6 +31,7 @@
     "type-check:all": "npm run type-check && npm run type-check:electron && npm run type-check:shared",
     "mcp": "node dist-mcp/mcp-server.bundle.js",
     "smoke-test": "node scripts/smoke-test.js",
+    "smoke-test:mcp": "node scripts/smoke-test-mcp.js",
     "test:e2e": "playwright test",
     "test:bundle": "npm run compile && vitest run electron/bundle-guard.test.ts electron/native-deps-guard.test.ts electron/mcp-server.test.ts",
     "test:e2e:ui": "playwright test --ui",

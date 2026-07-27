@@ -135,22 +135,25 @@ function findInDir(dir: string, noteId: string): string | null {
  * writeNoteFile misclassify a metadata-only write as a relocation and unlink
  * the file it just wrote — deleting the note.
  *
- * We rely solely on real inode identity (fs.realpathSync resolves case +
- * symlinks). On a case-insensitive FS a case-variant of an existing file
- * resolves to the same real path, so that scenario is caught here. We do NOT
- * fall back to a case-folded string compare: on a case-SENSITIVE FS (Linux)
- * `Research/x.md` and `research/x.md` are genuinely different files, and folding
- * would wrongly treat a real relocation as in-place (skipping the move + leaving
- * a stale duplicate). When two distinct paths can't both be resolved, assume
- * they differ.
+ * We compare real file identity via `statSync` device + inode. We deliberately
+ * do NOT use `fs.realpathSync(.native)`: inside the packaged MCP binary (yao-pkg)
+ * pkg's patched `fs.realpathSync.native` does NOT canonicalise case for real
+ * files — it returns the path as given — so a case-variant of an existing file
+ * compares unequal, sending the write down the relocation branch and DELETING
+ * the note. `statSync` dev+ino is resolved by the real OS syscall and reports
+ * the same inode for both casings under both plain Node and pkg (verified).
+ *
+ * When either path can't be stat'd (e.g. the target doesn't exist yet — a
+ * genuine relocation, or a case-SENSITIVE FS where the variant truly is a
+ * different, absent file), we return false so the relocation proceeds.
  */
 function isSameFile(a: string, b: string): boolean {
   if (a === b) return true;
   try {
-    if (fs.existsSync(a) && fs.existsSync(b)) {
-      return fs.realpathSync.native(a) === fs.realpathSync.native(b);
-    }
-  } catch { /* unresolvable — treat as different */ }
+    const sa = fs.statSync(a);
+    const sb = fs.statSync(b);
+    return sa.dev === sb.dev && sa.ino === sb.ino;
+  } catch { /* one side missing/unstattable — treat as different */ }
   return false;
 }
 
