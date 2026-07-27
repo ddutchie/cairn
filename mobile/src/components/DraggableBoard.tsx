@@ -18,6 +18,8 @@ import { stripMarkdown } from "@cairn/shared/notes/text";
 
 const COLUMN_WIDTH = 260;
 const COLUMN_GAP = 12;
+// Gap between the columns / action bar and the bottom safe area (tab bar).
+const BOARD_BOTTOM_GAP = 12;
 
 // Special drop-zone ids for the archive / delete action bar. Prefixed so they
 // can never collide with a real column id. onDrop routes these to the archive /
@@ -117,7 +119,11 @@ export function DraggableBoard({
   }
 
   return (
-    <View ref={ctrl.setContainer} style={{ flex: 1 }} collapsable={false}>
+    <View
+      ref={ctrl.setContainer}
+      style={{ flex: 1, paddingBottom: bottomInset + BOARD_BOTTOM_GAP }}
+      collapsable={false}
+    >
       <Animated.ScrollView
         ref={ctrl.scrollRef}
         onScroll={ctrl.scrollHandler}
@@ -149,16 +155,13 @@ export function DraggableBoard({
         // A real row BELOW the columns (not an overlay), so the drop zones sit
         // in genuinely empty space and a card dropped here can't be mistaken for
         // a column drop. Collapsed to nothing when idle (board keeps full
-        // height); expands while a card is lifted. Because it lays out AFTER the
-        // lift, useDragController's zones would measure stale — so we re-measure
-        // once it's expanded (see the effect below).
+        // height); expands while a card is lifted. The container already pads the
+        // safe-area + gap at the bottom, so the bar only needs a top gap — it
+        // rests directly on that padding. Because it lays out AFTER the lift,
+        // useDragController's zones would measure stale — so we re-measure once
+        // it's expanded (see the effect above).
         <View
-          style={[
-            styles.actionBar,
-            ctrl.dragging
-              ? { paddingBottom: bottomInset, paddingTop: 8 }
-              : styles.actionBarCollapsed,
-          ]}
+          style={[styles.actionBar, ctrl.dragging ? styles.actionBarOpen : styles.actionBarCollapsed]}
           pointerEvents="none"
         >
           {onArchive ? (
@@ -380,7 +383,7 @@ function makeStyles(t: Theme) {
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
     emptyText: { ...typeScale.caption, color: t.textTertiary, textAlign: "center" },
     boardScroll: { flex: 1 },
-    board: { padding: 12, paddingTop: 0, paddingBottom: 12, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
+    board: { padding: 12, paddingTop: 0, paddingBottom: 0, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
     column: { width: COLUMN_WIDTH, backgroundColor: t.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: t.border },
     columnHighlight: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 12, borderWidth: 1.5, borderColor: t.accent, backgroundColor: withAlpha(t.accent, 0.06) },
     columnCards: { flex: 1 },
@@ -404,6 +407,7 @@ function makeStyles(t: Theme) {
       paddingHorizontal: 12,
       flexShrink: 0,
     },
+    actionBarOpen: { paddingTop: BOARD_BOTTOM_GAP },
     actionBarCollapsed: { height: 0, overflow: "hidden", opacity: 0 },
     actionZone: {
       flex: 1,

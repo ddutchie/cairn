@@ -34,7 +34,7 @@ import { OverviewTab } from "@/components/overview/OverviewTab";
 import { EmptyState } from "@/components/EmptyState";
 import { celebrateTaskDone, isDoneColumn } from "@/gamification/rewards";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
-import { useTheme, TAB_BAR_BASE, type Theme } from "@/theme";
+import { useTheme, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 import { NoteRowItem } from "./project/NoteRowItem";
 import { FolderRow } from "./project/FolderRow";
@@ -400,7 +400,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
         <DraggableBoard
           columns={columns}
           cards={cards}
-          bottomInset={insets.bottom + (nested ? TAB_BAR_BASE : 0)}
+          bottomInset={insets.bottom}
           onMove={(cardId, colId) => {
             // Detect a genuine "into done" transition before mutating: the card
             // must be moving INTO a done column from a non-done one — not a
