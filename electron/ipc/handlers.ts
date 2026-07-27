@@ -135,6 +135,9 @@ export function registerAppHandlers(
   registerIpcHandle("app:mcpServerPath", () => handle(() => {
     const appPath = app.getAppPath();
     const unpackedPath = appPath.replace(/\.asar$/, ".asar.unpacked");
+    // Every packaged app ships exactly ONE MCP binary for its arch, named
+    // canonically per platform (the afterPack hook renames the arch-specific
+    // macOS build to `cairn-mcp`). So this is a straight platform switch.
     const binaryName = process.platform === "win32" ? "cairn-mcp.exe"
       : process.platform === "linux" ? "cairn-mcp-linux"
         : "cairn-mcp";

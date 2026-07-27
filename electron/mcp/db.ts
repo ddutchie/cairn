@@ -30,17 +30,38 @@ export {
 export function resolveMcpNativeBinding(): string | undefined {
   const execDir = path.dirname(process.execPath);
   const arch = process.arch;
-  const candidates = [
-    // pkg binary extracts its embedded asset next to the executable.
-    path.join(execDir, "better_sqlite3.node"),
-    // Dev / bundled runtime — arch-separated prebuilds.
-    path.join(__dirname, "..", "pkg-native", arch, "better_sqlite3.node"),
-    path.join(__dirname, "..", "..", "pkg-native", arch, "better_sqlite3.node"),
-    // Legacy flat layout (pre-arch-split) — kept as a fallback.
-    path.join(__dirname, "..", "pkg-native", "better_sqlite3.node"),
-    path.join(__dirname, "..", "..", "pkg-native", "better_sqlite3.node"),
-  ];
-  return candidates.find((p) => fs.existsSync(p));
+
+  // Inside the packaged (pkg) binary, `__dirname` is a virtual `/snapshot/…`
+  // path. A native .node addon CANNOT be loaded from pkg's virtual filesystem —
+  // and worse, `fs.existsSync` returns TRUE for an embedded `/snapshot` path, so
+  // returning it as `nativeBinding` makes better-sqlite3 `require()` it and the
+  // binary crashes at startup. When packaged we therefore consider ONLY real
+  // on-disk paths next to the executable (the arch-matched sidecar staged by
+  // build-mcp-binary.js). In dev we use the arch-separated pkg-native prebuilds.
+  const inPkg = Boolean((process as unknown as { pkg?: unknown }).pkg);
+
+  const candidates = inPkg
+    ? [
+        // Packaged: real sidecar next to the executable, by arch, then flat.
+        path.join(execDir, `better_sqlite3-${arch}.node`),
+        path.join(execDir, "better_sqlite3.node"),
+      ]
+    : [
+        // Dev / bundled runtime — arch-separated prebuilds, then legacy flat.
+        path.join(__dirname, "..", "pkg-native", arch, "better_sqlite3.node"),
+        path.join(__dirname, "..", "..", "pkg-native", arch, "better_sqlite3.node"),
+        path.join(__dirname, "..", "pkg-native", "better_sqlite3.node"),
+        path.join(__dirname, "..", "..", "pkg-native", "better_sqlite3.node"),
+      ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      /* unreadable — keep looking */
+    }
+  }
+  return undefined;
 }
 
 export const MCP_NATIVE_BINDING = resolveMcpNativeBinding();

@@ -6,6 +6,11 @@ directories:
   output: dist-app
   buildResources: build-resources
 
+# Strip the non-target arch's native binaries from each per-arch pack (mac/win
+# build arch: [arm64, x64]; without this every app ships BOTH arches' natives —
+# incl. the ~84 MB other-arch MCP binary — as dead weight). See scripts/after-pack.js.
+afterPack: scripts/after-pack.js
+
 files:
   # Electron main + preload — esbuild bundles (all JS deps inlined)
   - dist-electron/**/*
@@ -16,6 +21,13 @@ files:
   - dist-mcp/cairn-mcp.exe
   - dist-mcp/cairn-mcp-linux
   - dist-mcp/cairn-mcp-x64
+  # Arch-matched better-sqlite3 sidecars staged next to the MCP binary by
+  # build-mcp-binary.js. resolveMcpNativeBinding() loads these by process.arch so
+  # the standalone binary can open the DB when run outside the app (agents run it
+  # with the app closed). Without them the packaged binary crashes on startup
+  # probing an un-embedded pkg snapshot path.
+  - dist-mcp/better_sqlite3-arm64.node
+  - dist-mcp/better_sqlite3-x64.node
   # Next.js static export
   - out/**/*
   # Electron-ABI better-sqlite3 binaries, arch-separated (electron-native/<arch>/)
@@ -57,6 +69,8 @@ asarUnpack:
   - dist-mcp/cairn-mcp.exe
   - dist-mcp/cairn-mcp-linux
   - dist-mcp/cairn-mcp-x64
+  - dist-mcp/better_sqlite3-arm64.node
+  - dist-mcp/better_sqlite3-x64.node
   - node_modules/better-sqlite3/**/*
   - node_modules/bindings/**/*
   - node_modules/file-uri-to-path/**/*

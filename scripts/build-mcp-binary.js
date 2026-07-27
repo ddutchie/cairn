@@ -25,9 +25,9 @@ const bundlePath = path.join(root, "dist-mcp", "mcp-server.bundle.js");
 const outDir = path.join(root, "dist-mcp");
 
 // better-sqlite3 pkg-Node prebuilds are arch-separated (pkg-native/<arch>/).
-// pkg embeds a single asset path, so before each target we stage the matching
-// arch binary at pkg-native/better_sqlite3.node (the path in pkg.config.js).
-const stagedNativePath = path.join(root, "pkg-native", "better_sqlite3.node");
+// We ship the matching arch binding as a real sidecar next to the binary
+// (dist-mcp/better_sqlite3-<arch>.node) rather than embedding it in the pkg
+// snapshot — pkg cannot load a native .node from its virtual filesystem.
 function nativeForArch(arch) {
   return path.join(root, "pkg-native", arch, "better_sqlite3.node");
 }
@@ -68,14 +68,15 @@ if (!fs.existsSync(bundlePath)) {
 fs.mkdirSync(outDir, { recursive: true });
 
 for (const target of targets) {
-  // Stage the matching-arch better-sqlite3 binary for pkg to embed.
+  // The arch-matched better-sqlite3 binding is shipped as a real sidecar next to
+  // the output binary (not embedded in the pkg snapshot — pkg can't load a .node
+  // from its virtual FS). resolveMcpNativeBinding() loads it via process.execPath.
   const archNative = nativeForArch(target.arch);
   if (!fs.existsSync(archNative)) {
     console.error(`[build-mcp-binary] Native binding not found: ${archNative}`);
     console.error("Run npm run rebuild first.");
     process.exit(1);
   }
-  fs.copyFileSync(archNative, stagedNativePath);
 
   const outPath = path.join(outDir, target.out);
   console.log(`\n[build-mcp-binary] Building ${target.id} (${target.arch}) → ${target.out}`);
@@ -86,6 +87,15 @@ for (const target of targets) {
     ` --output ${outPath}`
   );
   console.log(`[build-mcp-binary] Written: ${outPath}`);
+
+  // Stage the arch-matched native binding NEXT TO the output binary as
+  // `better_sqlite3-<arch>.node` — a real on-disk path resolveMcpNativeBinding()
+  // loads via process.execPath. Deterministic and loadable when the binary runs
+  // standalone (agents run it with the app closed). Multiple mac arches
+  // (cairn-mcp arm64 + cairn-mcp-x64) coexist in dist-mcp/ via the arch suffix.
+  const sidecar = path.join(outDir, `better_sqlite3-${target.arch}.node`);
+  fs.copyFileSync(archNative, sidecar);
+  console.log(`[build-mcp-binary] Staged native binding: ${path.basename(sidecar)}`);
 }
 
 console.log("\n[build-mcp-binary] Done.");
