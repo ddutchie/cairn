@@ -189,7 +189,7 @@ export function DraggableBoard({
 
       {ctrl.dragging ? (
         <DragOverlay ctrl={ctrl}>
-          <BoardDragClone card={ctrl.dragging} tagMap={tagMap} t={t} styles={styles} />
+          <BoardDragClone card={ctrl.dragging} tagMap={tagMap} ctrl={ctrl} t={t} styles={styles} />
         </DragOverlay>
       ) : null}
     </View>
@@ -219,15 +219,29 @@ function ActionZone({
   styles: ReturnType<typeof makeStyles>;
 }) {
   const hoverStyle = useZoneHighlight(ctrl, zoneId);
+  // Inverse of the hover highlight — fades the dashed base border OUT as the
+  // solid highlight fades IN, so we never show both dashed + solid at once.
+  const { hoverZoneId, sourceZoneId } = ctrl;
+  const baseStyle = useAnimatedStyle(() => {
+    const active = hoverZoneId.value === zoneId && sourceZoneId.value !== zoneId;
+    return { opacity: active ? 0 : 1 };
+  });
   return (
     <View
       ref={(node: View | null) => ctrl.registerZone(zoneId, node)}
-      style={[styles.actionZone, { borderColor: withAlpha(color, 0.5) }]}
+      style={styles.actionZone}
       collapsable={false}
     >
+      {/* Dashed idle border — its own layer so it can crossfade with the solid
+          hover border instead of both being visible at once. */}
       <Animated.View
         pointerEvents="none"
-        style={[styles.actionZoneHighlight, { backgroundColor: withAlpha(color, 0.18), borderColor: color }, hoverStyle]}
+        style={[styles.actionZoneBorder, { borderColor: withAlpha(color, 0.5), borderStyle: "dashed" }, baseStyle]}
+      />
+      {/* Solid hover fill + border, faded in while the finger is over the zone. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.actionZoneBorder, { backgroundColor: withAlpha(color, 0.18), borderColor: color }, hoverStyle]}
       />
       {icon}
       <Text style={[styles.actionZoneLabel, { color }]}>{label}</Text>
@@ -236,22 +250,33 @@ function ActionZone({
 }
 
 /** The card clone rendered inside the drag overlay. Isolated so the tag lookup
- *  isn't flagged as ref access at the container level. */
+ *  isn't flagged as ref access at the container level. Its outline turns the
+ *  action zone's colour (warning for archive, danger for delete) while the
+ *  finger hovers that zone, so the card itself signals the pending action. */
 function BoardDragClone({
   card,
   tagMap,
+  ctrl,
   t,
   styles,
 }: {
   card: CardRow;
   tagMap: Map<string, TagRow[]>;
+  ctrl: DragController<CardRow>;
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
 }) {
+  const { hoverZoneId } = ctrl;
+  const outlineStyle = useAnimatedStyle(() => {
+    const z = hoverZoneId.value;
+    if (z === DELETE_ZONE) return { borderColor: t.danger };
+    if (z === ARCHIVE_ZONE) return { borderColor: t.warning };
+    return { borderColor: t.accent };
+  });
   return (
-    <View style={[styles.card, styles.cardLiftedOverlay, elevation.xl]}>
+    <Animated.View style={[styles.card, styles.cardLiftedOverlay, elevation.xl, outlineStyle]}>
       <CardBody card={card} tags={tagMap.get(card.id)} t={t} styles={styles} />
-    </View>
+    </Animated.View>
   );
 }
 
@@ -413,15 +438,15 @@ function makeStyles(t: Theme) {
       flex: 1,
       height: 64,
       borderRadius: 12,
-      borderWidth: 1.5,
-      borderStyle: "dashed",
       backgroundColor: t.surface,
       alignItems: "center",
       justifyContent: "center",
       gap: 4,
       overflow: "hidden",
     },
-    actionZoneHighlight: {
+    // Shared border layer (dashed idle + solid hover crossfade over it). Absolute
+    // fill so the two states can fade independently without both being visible.
+    actionZoneBorder: {
       position: "absolute",
       top: 0,
       left: 0,
