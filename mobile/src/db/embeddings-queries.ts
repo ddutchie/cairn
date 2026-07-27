@@ -263,9 +263,17 @@ export function embeddingIndexStats(workspaceId: string): {
   sections: number;
 } {
   const db = getDb();
+  // Only notes with embeddable content count toward the denominator. A note
+  // whose body is empty/whitespace produces zero sections (splitIntoSections
+  // returns [] on `content.trim() === ""`, see shared/notes/sections.ts), so it
+  // can never be "indexed" — counting it in the total made a fully-caught-up
+  // index read as e.g. "209 of 212" and look like a failure. Match the split's
+  // emptiness test here so "all indexed" actually reaches 100%.
   const liveNotes =
     db.getFirstSync<{ n: number }>(
-      `SELECT COUNT(*) n FROM notes WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND workspace_id = ?`,
+      `SELECT COUNT(*) n FROM notes
+       WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND workspace_id = ?
+         AND content IS NOT NULL AND TRIM(content) <> ''`,
       workspaceId,
     )?.n ?? 0;
   const indexedNotes =
