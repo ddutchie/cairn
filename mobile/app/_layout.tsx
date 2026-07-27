@@ -14,7 +14,7 @@ import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { ToastProvider } from "@/components/Toast";
-import { SourcePicker } from "@/components/SourcePicker";
+import { OnboardingGuide } from "@/components/OnboardingGuide";
 import { useTheme } from "@/theme";
 
 // Keep the native splash up until the DB is ready, so there's no flash between
@@ -27,7 +27,7 @@ export default function RootLayout() {
   const scheme = useColorScheme();
   // Bootstrap the meta DB and re-open a previously-selected source (if any)
   // during first render. Multi-source: a fresh install has NO active source yet,
-  // so we show the SourcePicker instead of the app until one is chosen.
+  // so we show the OnboardingGuide instead of the app until one is chosen.
   const [{ ready, error }] = useState<{ ready: boolean; error: string | null }>(() => {
     try {
       initDatabase();
@@ -108,13 +108,15 @@ export default function RootLayout() {
     );
   }
 
-  // No source selected yet — show the picker (scans the shared folder). Once a
-  // source is chosen, getDb()/getEngine() resolve and the app proceeds.
+  // No source selected yet — show the guided onboarding (scans the shared
+  // folder, walks the user through connecting the desktop, and lets them tap a
+  // discovered workspace to connect). Once a source is chosen, getDb()/
+  // getEngine() resolve and the app proceeds.
   if (!hasSource) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
-          <SourcePicker onSelected={() => setHasSource(true)} />
+          <OnboardingGuide onConnected={() => setHasSource(true)} />
         </SafeAreaProvider>
       </GestureHandlerRootView>
     );
