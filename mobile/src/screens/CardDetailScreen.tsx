@@ -82,7 +82,6 @@ export function CardDetailScreen() {
       { text: "Cancel", style: "cancel" },
       {
         text: "Archive",
-        style: "destructive",
         onPress: () => {
           haptics.warning();
           archiveCard(card.id);
@@ -122,7 +121,10 @@ export function CardDetailScreen() {
       />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon={ICON_MORE} accessibilityLabel="Task actions">
-          <Stack.Toolbar.MenuAction icon={ICON_ARCHIVE} destructive onPress={toolbarPress(onArchive)}>
+          {/* Archive is recoverable, so it's NOT destructive — kept in the
+              default colour to distinguish it from the red Delete below (the
+              native iOS menu can't tint an action amber like the board zone). */}
+          <Stack.Toolbar.MenuAction icon={ICON_ARCHIVE} onPress={toolbarPress(onArchive)}>
             Archive
           </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon={ICON_DELETE} destructive onPress={toolbarPress(onDelete)}>
