@@ -244,7 +244,19 @@ async function embedNoteInner(note: EmbeddableNote, info: AppleEmbeddingsInfo): 
       const hash = hashText(text);
       const prev = existing.get(sec.idx);
       if (prev && prev.content_hash === hash && prev.model === key) continue; // unchanged
-      const vec = await embedOne(text, info.dimension);
+      // Isolate per-section embed failures: the native embedder can throw on
+      // certain inputs (e.g. a body of only symbols/links that tokenises to
+      // nothing, so it returns a mismatched count — see modules/apple-embeddings
+      // embedTexts). Without this guard one bad note aborted the ENTIRE
+      // workspace pass (the throw unwound to catchUpIndex's outer catch), so
+      // every note after it was left unindexed. Skip the section and carry on.
+      let vec: Float32Array | null = null;
+      try {
+        vec = await embedOne(text, info.dimension);
+      } catch (e) {
+        console.warn(`[embeddings] skipped note ${note.id} section ${sec.idx}:`, e);
+        continue;
+      }
       if (!vec) continue;
       upsertNoteEmbedding({
         noteId: note.id,
@@ -296,7 +308,13 @@ export async function reindexWorkspace(
       // Notes are embedded sequentially (native embed is already batched per
       // note); this keeps memory + CPU steady on-device.
       for (const n of batch) {
-        await embedNoteInner(n, info);
+        try {
+          await embedNoteInner(n, info);
+        } catch (e) {
+          // One note must never abort the whole pass (belt-and-suspenders on top
+          // of the per-section guard) — the rest still get indexed.
+          console.warn(`[embeddings] note ${n.id} failed to index:`, e);
+        }
         done++;
       }
       onProgress?.({ done, total: notes.length });
@@ -507,7 +525,15 @@ async function embedCardInner(card: EmbeddableCard, info: AppleEmbeddingsInfo): 
       const hash = hashText(text);
       const prev = existing.get(sec.idx);
       if (prev && prev.content_hash === hash && prev.model === key) continue;
-      const vec = await embedOne(text, info.dimension);
+      // Same per-section isolation as notes: a native embed failure on one card
+      // must not abort the whole card pass. Skip and continue.
+      let vec: Float32Array | null = null;
+      try {
+        vec = await embedOne(text, info.dimension);
+      } catch (e) {
+        console.warn(`[embeddings] skipped card ${card.id} section ${sec.idx}:`, e);
+        continue;
+      }
       if (!vec) continue;
       upsertCardEmbedding({
         cardId: card.id,
@@ -539,7 +565,11 @@ export async function reindexWorkspaceCards(
   for (let i = 0; i < cards.length; i += EMBED_BATCH) {
     const batch = cards.slice(i, i + EMBED_BATCH);
     for (const c of batch) {
-      await embedCardInner(c, info);
+      try {
+        await embedCardInner(c, info);
+      } catch (e) {
+        console.warn(`[embeddings] card ${c.id} failed to index:`, e);
+      }
       done++;
     }
     onProgress?.({ done, total: cards.length });

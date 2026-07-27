@@ -2,14 +2,14 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
-import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
+import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
 import { ResultRow } from "@/components/ResultRow";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { IndexingBar } from "@/components/IndexingBar";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { Sparkles } from "lucide-react-native";
+import { Sparkles, Info } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { haptics } from "@/haptics";
@@ -45,6 +45,7 @@ export default function SearchScreen() {
   const [hits, setHits] = useState<SemanticHit[]>([]);
   const [reindexing, setReindexing] = useState(false);
   const [stats, setStats] = useState<{ live: number; indexed: number } | null>(null);
+  const [unindexed, setUnindexed] = useState<UnindexedNote[]>([]);
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
   const insets = useSafeAreaInsets();
@@ -148,13 +149,41 @@ export default function SearchScreen() {
   const refreshStats = useCallback(() => {
     let live = 0;
     let indexed = 0;
+    const missing: UnindexedNote[] = [];
     for (const ws of listWorkspaceIds()) {
       const s = embeddingIndexStats(ws);
       live += s.liveNotes + s.liveCards;
       indexed += s.indexedNotes + s.indexedCards;
+      missing.push(...listUnindexedNotes(ws));
     }
     setStats({ live, indexed });
+    setUnindexed(missing);
   }, []);
+
+  // Explain what isn't indexed and why (info affordance next to the count).
+  const showIndexInfo = useCallback(() => {
+    const withContent = unindexed.filter((n) => n.contentLen > 0);
+    const emptyCount = unindexed.length - withContent.length;
+    const lines: string[] = [
+      "Only notes with body text an embedding can be built from are added to the semantic index.",
+    ];
+    if (emptyCount > 0) {
+      lines.push(
+        `\n${emptyCount} empty note${emptyCount === 1 ? "" : "s"} (no body text) — nothing to index. These aren't counted in the total.`,
+      );
+    }
+    if (withContent.length > 0) {
+      const names = withContent.slice(0, 8).map((n) => `• ${n.title || "Untitled"}`).join("\n");
+      const more = withContent.length > 8 ? `\n…and ${withContent.length - 8} more` : "";
+      lines.push(
+        `\n${withContent.length} note${withContent.length === 1 ? "" : "s"} with content that hasn't been embedded yet. Pull down to reindex — if one keeps failing, its body may have no indexable words (only symbols, links, or an image). Add some text and reindex to include it:\n\n${names}${more}`,
+      );
+    }
+    if (unindexed.length === 0) {
+      lines.push("\nEverything with content is indexed.");
+    }
+    Alert.alert("Semantic index", lines.join("\n"));
+  }, [unindexed]);
 
   // Pull-to-refresh on the Semantic list: force a full catch-up (embeds any
   // not-yet-indexed notes/cards — e.g. ones just synced from desktop), then
@@ -351,8 +380,22 @@ export default function SearchScreen() {
             {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
           </View>
         ) : (
-          // Resting (no query) → branded Cairn empty state.
-          <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} pinned insetTop={insets.top} />
+          // Resting (no query) → branded Cairn empty state. When some items
+          // aren't indexed, offer an info affordance explaining which and why.
+          <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} pinned insetTop={insets.top}>
+            {semanticMode && unindexed.length > 0 ? (
+              <Pressable
+                onPress={showIndexInfo}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Why aren't all items indexed?"
+                style={styles.infoBtn}
+              >
+                <Info size={14} color={t.textTertiary} />
+                <Text style={styles.infoBtnText}>Why not all indexed?</Text>
+              </Pressable>
+            ) : null}
+          </EmptyState>
         )
       ) : null}
 
@@ -419,5 +462,17 @@ function makeStyles(t: Theme) {
     hintBias: { height: "25%" },
     hint: { textAlign: "center", color: t.textTertiary },
     statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },
+    infoBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: t.border,
+      backgroundColor: t.surface,
+    },
+    infoBtnText: { ...typeScale.caption, color: t.textSecondary },
   });
 }

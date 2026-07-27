@@ -299,6 +299,40 @@ export function embeddingIndexStats(workspaceId: string): {
   return { liveNotes, indexedNotes, liveCards, indexedCards, sections };
 }
 
+/** One live note that is NOT represented in the semantic index, with enough
+ *  context to explain why. `contentLen` is the trimmed body length; a note with
+ *  content but still no embedding rows points at an embed failure rather than an
+ *  empty note. */
+export interface UnindexedNote {
+  id: string;
+  title: string;
+  /** Trimmed length of the note body (0 = empty). */
+  contentLen: number;
+}
+
+/**
+ * Live notes that have no rows in `note_embeddings` — i.e. the ones making the
+ * "N of M indexed" count fall short. Includes empty notes (contentLen 0) and,
+ * more importantly, notes WITH content that still failed to embed, so the UI can
+ * explain the gap instead of leaving it a mystery. Ordered content-first so the
+ * genuinely-suspicious ones surface at the top.
+ */
+export function listUnindexedNotes(workspaceId: string): UnindexedNote[] {
+  return getDb().getAllSync<UnindexedNote>(
+    `SELECT n.id AS id,
+            n.title AS title,
+            LENGTH(TRIM(COALESCE(n.content, ''))) AS contentLen
+       FROM notes n
+      WHERE ${LIVE} AND n.type='note' AND ${NOT_CONFLICT} AND n.workspace_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM note_embeddings e WHERE e.note_id = n.id
+        )
+      ORDER BY contentLen DESC, n.title`,
+    workspaceId,
+  );
+}
+
+
 /** Resolve a note's title for search-result display. */
 export function noteTitleById(noteId: string): string {
   const row = getDb().getFirstSync<{ title: string }>(
