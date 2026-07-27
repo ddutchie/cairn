@@ -160,31 +160,6 @@ export default function SearchScreen() {
     setUnindexed(missing);
   }, []);
 
-  // Explain what isn't indexed and why (info affordance next to the count).
-  const showIndexInfo = useCallback(() => {
-    const withContent = unindexed.filter((n) => n.contentLen > 0);
-    const emptyCount = unindexed.length - withContent.length;
-    const lines: string[] = [
-      "Only notes with body text an embedding can be built from are added to the semantic index.",
-    ];
-    if (emptyCount > 0) {
-      lines.push(
-        `\n${emptyCount} empty note${emptyCount === 1 ? "" : "s"} (no body text) — nothing to index. These aren't counted in the total.`,
-      );
-    }
-    if (withContent.length > 0) {
-      const names = withContent.slice(0, 8).map((n) => `• ${n.title || "Untitled"}`).join("\n");
-      const more = withContent.length > 8 ? `\n…and ${withContent.length - 8} more` : "";
-      lines.push(
-        `\n${withContent.length} note${withContent.length === 1 ? "" : "s"} with content that hasn't been embedded yet. Pull down to reindex — if one keeps failing, its body may have no indexable words (only symbols, links, or an image). Add some text and reindex to include it:\n\n${names}${more}`,
-      );
-    }
-    if (unindexed.length === 0) {
-      lines.push("\nEverything with content is indexed.");
-    }
-    Alert.alert("Semantic index", lines.join("\n"));
-  }, [unindexed]);
-
   // Pull-to-refresh on the Semantic list: force a full catch-up (embeds any
   // not-yet-indexed notes/cards — e.g. ones just synced from desktop), then
   // re-run the query + refresh the stats readout.
@@ -201,6 +176,41 @@ export default function SearchScreen() {
       setReindexing(false);
     }
   }, [query, typeFilter, run, refreshStats]);
+
+  // Explain what isn't indexed and why (info affordance in the header).
+  const showIndexInfo = useCallback(() => {
+    const withContent = unindexed.filter((n) => n.contentLen > 0);
+    const emptyCount = unindexed.length - withContent.length;
+    const lines: string[] = [
+      "Only notes with body text an embedding can be built from are added to the semantic index.",
+    ];
+    if (emptyCount > 0) {
+      lines.push(
+        `\n${emptyCount} empty note${emptyCount === 1 ? "" : "s"} (no body text) — nothing to index. These aren't counted in the total.`,
+      );
+    }
+    if (withContent.length > 0) {
+      const names = withContent.slice(0, 8).map((n) => `• ${n.title || "Untitled"}`).join("\n");
+      const more = withContent.length > 8 ? `\n…and ${withContent.length - 8} more` : "";
+      lines.push(
+        `\n${withContent.length} note${withContent.length === 1 ? "" : "s"} with content that hasn't been embedded yet. Reindex to try again — if one keeps failing, its body may have no indexable words (only symbols, links, or an image). Add some text and reindex to include it:\n\n${names}${more}`,
+      );
+    }
+    if (unindexed.length === 0) {
+      lines.push("\nEverything with content is indexed.");
+    }
+    Alert.alert(
+      "Semantic index",
+      lines.join("\n"),
+      withContent.length > 0
+        ? [
+            { text: "Reindex now", onPress: () => void forceReindex() },
+            { text: "OK", style: "cancel" as const },
+          ]
+        : [{ text: "OK", style: "cancel" as const }],
+    );
+  }, [unindexed, forceReindex]);
+
 
   // Refresh stats whenever semantic mode is on or the tab regains focus.
   useFocusEffect(
@@ -290,23 +300,37 @@ export default function SearchScreen() {
             hideWhenScrolling: false,
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
-          // ✨ Semantic ranking toggle (on by default when supported). Hidden
-          // entirely when the device can't do on-device embeddings. Sits at the
-          // trailing edge beside the full-width search field; iOS 26+ wraps it in
-          // its own glass toolbar button, so we render just the bare icon and let
-          // colour (accent vs tertiary) signal on/off.
+          // Header trailing controls: an optional info button (shown when
+          // semantic mode is on and some items aren't indexed — always visible
+          // here, unlike an empty-state child that can hide behind the list/tab
+          // bar) plus the ✨ semantic ranking toggle. The toggle is hidden
+          // entirely when the device can't do on-device embeddings. iOS 26+
+          // wraps each in its own glass toolbar button.
           headerRight: semanticAvailable
             ? () => (
-                <Pressable
-                  onPress={toggleSemantic}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Semantic search"
-                  accessibilityState={{ selected: semanticMode }}
-                  style={styles.semBtn}
-                >
-                  <Sparkles size={18} color={semanticMode ? t.accent : t.textTertiary} />
-                </Pressable>
+                <View style={styles.headerRight}>
+                  {semanticMode && unindexed.length > 0 ? (
+                    <Pressable
+                      onPress={showIndexInfo}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Why aren't all items indexed?"
+                      style={styles.semBtn}
+                    >
+                      <Info size={18} color={t.warning} />
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    onPress={toggleSemantic}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Semantic search"
+                    accessibilityState={{ selected: semanticMode }}
+                    style={styles.semBtn}
+                  >
+                    <Sparkles size={18} color={semanticMode ? t.accent : t.textTertiary} />
+                  </Pressable>
+                </View>
               )
             : undefined,
         }}
@@ -380,22 +404,10 @@ export default function SearchScreen() {
             {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
           </View>
         ) : (
-          // Resting (no query) → branded Cairn empty state. When some items
-          // aren't indexed, offer an info affordance explaining which and why.
-          <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} pinned insetTop={insets.top}>
-            {semanticMode && unindexed.length > 0 ? (
-              <Pressable
-                onPress={showIndexInfo}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Why aren't all items indexed?"
-                style={styles.infoBtn}
-              >
-                <Info size={14} color={t.textTertiary} />
-                <Text style={styles.infoBtnText}>Why not all indexed?</Text>
-              </Pressable>
-            ) : null}
-          </EmptyState>
+          // Resting (no query) → branded Cairn empty state. The "why not all
+          // indexed?" affordance lives in the header (see headerRight) so it's
+          // always visible and never hides behind the list or tab bar.
+          <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} pinned insetTop={insets.top} />
         )
       ) : null}
 
@@ -462,17 +474,6 @@ function makeStyles(t: Theme) {
     hintBias: { height: "25%" },
     hint: { textAlign: "center", color: t.textTertiary },
     statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },
-    infoBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      paddingVertical: 8,
-      paddingHorizontal: 14,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: t.border,
-      backgroundColor: t.surface,
-    },
-    infoBtnText: { ...typeScale.caption, color: t.textSecondary },
+    headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   });
 }
