@@ -125,6 +125,31 @@ function findInDir(dir: string, noteId: string): string | null {
   return null;
 }
 
+/**
+ * True when two paths denote the SAME file on disk.
+ *
+ * Needed because a plain string `===` is unsafe on case-insensitive filesystems
+ * (macOS/Windows default): a note whose stored folder/title differs only in
+ * CASE from its on-disk location yields a differently-cased computed path that
+ * still refers to the same inode. Treating that as a distinct file makes
+ * writeNoteFile misclassify a metadata-only write as a relocation and unlink
+ * the file it just wrote — deleting the note.
+ *
+ * Prefer real inode identity (fs.realpathSync resolves case + symlinks); when a
+ * path can't be resolved (e.g. the target doesn't exist yet), fall back to a
+ * case-insensitive string compare of the normalized paths, which is correct on
+ * the case-insensitive filesystems this guards.
+ */
+function isSameFile(a: string, b: string): boolean {
+  if (a === b) return true;
+  try {
+    if (fs.existsSync(a) && fs.existsSync(b)) {
+      return fs.realpathSync.native(a) === fs.realpathSync.native(b);
+    }
+  } catch { /* fall through to string compare */ }
+  return path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase();
+}
+
 export interface NoteFileData {
   id: string;
   projectId: string;
@@ -152,6 +177,15 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
 
   const existingPath = findNoteFilePath(workspacePath, projectName, note.id);
   const newPath = resolveNoteFilePath(workspacePath, projectName, note.title, note.id, folder);
+  // Whether existingPath and newPath denote the SAME file on disk. A plain
+  // string `===` is wrong on case-insensitive filesystems (macOS/Windows
+  // default): a note whose stored folder/title differs only in CASE from its
+  // on-disk path (e.g. folder "Research" vs the directory "research") computes a
+  // different-cased newPath, is misclassified as a relocation, and the "remove
+  // the old file" step then unlinks the very file it just wrote (both casings
+  // are the same inode) — deleting the note. Compare the real resolved paths so
+  // a case-only difference is treated as an in-place rewrite, not a move.
+  const sameFile = existingPath != null && isSameFile(existingPath, newPath);
 
   // Read existing non-Cairn frontmatter (Obsidian tags, aliases, cssclass, etc.)
   const existingExtra = readExistingFrontmatter(existingPath ?? newPath);
@@ -189,8 +223,12 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
   // (e.g. link_note_to_task) tombstone the note. An in-place writeFileSync emits
   // only a `change` event, never an `unlink`, so the delete path can't fire.
   // (Atomicity is preserved for the risky case — a real relocation — below.)
-  if (existingPath && existingPath === newPath) {
-    writeInPlaceDurable(newPath, serialized);
+  if (sameFile) {
+    // Write to the path already on disk (existingPath), not the recomputed
+    // newPath — they may differ only by case, and writing newPath on a
+    // case-insensitive FS would rewrite the same file under a new-cased name
+    // (still one inode) while leaving the DB↔disk casing subtly split.
+    writeInPlaceDurable(existingPath, serialized);
     return;
   }
 
@@ -204,7 +242,7 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
   fs.renameSync(tmpPath, newPath);
 
   // Now safe to remove the old file (rename already succeeded)
-  if (existingPath && existingPath !== newPath) {
+  if (existingPath && !isSameFile(existingPath, newPath)) {
     try { fs.unlinkSync(existingPath); } catch { /* ignore */ }
     // A folder move can leave the old subfolder empty. Prune it (and any
     // parents it emptied) so stale, note-less folders don't linger in the

@@ -111,4 +111,29 @@ describe("writeNoteFile write strategy", () => {
     expect(fs.existsSync(oldFp)).toBe(false); // old path cleaned up
     expect(fs.readFileSync(newFp, "utf-8")).toContain("Hello body.");
   });
+
+  it("does not delete the note when the folder differs only by case", () => {
+    // Reproduces the data-loss bug: a note stored under folder "Research" whose
+    // .md lives in the on-disk directory "research". On a case-insensitive FS
+    // the recomputed path differs only in case, so a metadata-only write must
+    // NOT be treated as a relocation (which would unlink the file it rewrote).
+    writeNoteFile(tmpDir, { ...BASE, folder: "research" });
+    const fp = path.join(tmpDir, "My Project", "research", "My Note.md");
+    expect(fs.existsSync(fp)).toBe(true);
+    const inoBefore = fs.statSync(fp).ino;
+
+    // A link-style write with the folder cased differently ("Research").
+    writeNoteFile(tmpDir, { ...BASE, folder: "Research", linkedCardIds: ["c1"] });
+
+    // The file must survive (case-insensitive FS: same inode, still present),
+    // and no differently-cased sibling directory/file should be orphaned.
+    expect(fs.existsSync(fp)).toBe(true);
+    const contents = fs.readFileSync(fp, "utf-8");
+    expect(contents).toContain("Hello body.");
+    expect(contents).toContain("c1");
+    // On a case-insensitive FS the inode is unchanged (true in-place write).
+    if (fs.existsSync(fp)) {
+      expect(fs.statSync(fp).ino).toBe(inoBefore);
+    }
+  });
 });
