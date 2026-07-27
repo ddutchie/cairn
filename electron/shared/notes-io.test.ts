@@ -112,28 +112,44 @@ describe("writeNoteFile write strategy", () => {
     expect(fs.readFileSync(newFp, "utf-8")).toContain("Hello body.");
   });
 
-  it("does not delete the note when the folder differs only by case", () => {
-    // Reproduces the data-loss bug: a note stored under folder "Research" whose
-    // .md lives in the on-disk directory "research". On a case-insensitive FS
-    // the recomputed path differs only in case, so a metadata-only write must
-    // NOT be treated as a relocation (which would unlink the file it rewrote).
+  it("handles a case-only folder difference per filesystem semantics", () => {
+    // The note's .md lives in an on-disk "research" directory, but a later write
+    // supplies folder "Research" (differs only in case). Behaviour must follow
+    // the filesystem:
+    //   • case-INSENSITIVE FS (macOS/Windows): the two paths alias the same
+    //     inode → in-place rewrite, file preserved (this was the data-loss bug).
+    //   • case-SENSITIVE FS (Linux): they are genuinely different files → a real
+    //     relocation, with no stale case-folded duplicate left behind.
     writeNoteFile(tmpDir, { ...BASE, folder: "research" });
-    const fp = path.join(tmpDir, "My Project", "research", "My Note.md");
-    expect(fs.existsSync(fp)).toBe(true);
-    const inoBefore = fs.statSync(fp).ino;
+    const lowerFp = path.join(tmpDir, "My Project", "research", "My Note.md");
+    const upperFp = path.join(tmpDir, "My Project", "Research", "My Note.md");
+    expect(fs.existsSync(lowerFp)).toBe(true);
+    const inoBefore = fs.statSync(lowerFp).ino;
 
-    // A link-style write with the folder cased differently ("Research").
+    // Detect aliasing BEFORE the second write: does the case-variant path
+    // resolve to the same file the lowercase one does?
+    const aliased =
+      fs.existsSync(upperFp) &&
+      fs.realpathSync.native(lowerFp) === fs.realpathSync.native(upperFp);
+
     writeNoteFile(tmpDir, { ...BASE, folder: "Research", linkedCardIds: ["c1"] });
 
-    // The file must survive (case-insensitive FS: same inode, still present),
-    // and no differently-cased sibling directory/file should be orphaned.
-    expect(fs.existsSync(fp)).toBe(true);
-    const contents = fs.readFileSync(fp, "utf-8");
-    expect(contents).toContain("Hello body.");
-    expect(contents).toContain("c1");
-    // On a case-insensitive FS the inode is unchanged (true in-place write).
-    if (fs.existsSync(fp)) {
-      expect(fs.statSync(fp).ino).toBe(inoBefore);
+    if (aliased) {
+      // Case-insensitive FS: same file, rewritten in place (inode unchanged),
+      // content + link metadata preserved. No second directory materialises.
+      expect(fs.existsSync(lowerFp)).toBe(true);
+      expect(fs.statSync(lowerFp).ino).toBe(inoBefore);
+      const contents = fs.readFileSync(lowerFp, "utf-8");
+      expect(contents).toContain("Hello body.");
+      expect(contents).toContain("c1");
+    } else {
+      // Case-sensitive FS: relocated to the new-cased directory, old file gone,
+      // and no leftover duplicate under the old "research" directory.
+      expect(fs.existsSync(upperFp)).toBe(true);
+      expect(fs.existsSync(lowerFp)).toBe(false);
+      const contents = fs.readFileSync(upperFp, "utf-8");
+      expect(contents).toContain("Hello body.");
+      expect(contents).toContain("c1");
     }
   });
 });

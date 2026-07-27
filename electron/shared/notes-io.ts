@@ -135,10 +135,14 @@ function findInDir(dir: string, noteId: string): string | null {
  * writeNoteFile misclassify a metadata-only write as a relocation and unlink
  * the file it just wrote — deleting the note.
  *
- * Prefer real inode identity (fs.realpathSync resolves case + symlinks); when a
- * path can't be resolved (e.g. the target doesn't exist yet), fall back to a
- * case-insensitive string compare of the normalized paths, which is correct on
- * the case-insensitive filesystems this guards.
+ * We rely solely on real inode identity (fs.realpathSync resolves case +
+ * symlinks). On a case-insensitive FS a case-variant of an existing file
+ * resolves to the same real path, so that scenario is caught here. We do NOT
+ * fall back to a case-folded string compare: on a case-SENSITIVE FS (Linux)
+ * `Research/x.md` and `research/x.md` are genuinely different files, and folding
+ * would wrongly treat a real relocation as in-place (skipping the move + leaving
+ * a stale duplicate). When two distinct paths can't both be resolved, assume
+ * they differ.
  */
 function isSameFile(a: string, b: string): boolean {
   if (a === b) return true;
@@ -146,8 +150,8 @@ function isSameFile(a: string, b: string): boolean {
     if (fs.existsSync(a) && fs.existsSync(b)) {
       return fs.realpathSync.native(a) === fs.realpathSync.native(b);
     }
-  } catch { /* fall through to string compare */ }
-  return path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase();
+  } catch { /* unresolvable — treat as different */ }
+  return false;
 }
 
 export interface NoteFileData {
