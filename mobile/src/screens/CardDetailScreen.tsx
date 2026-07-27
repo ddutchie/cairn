@@ -2,15 +2,16 @@ import { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Calendar, X } from "lucide-react-native";
-import { getCard, listColumns, listCards, updateTask, moveCardToColumn, archiveCard, tagsForCard, noteTagIds, setCardTags, type ColumnRow } from "@/db/queries";
+import { getCard, listColumns, listCards, updateTask, moveCardToColumn, archiveCard, deleteCard, tagsForCard, noteTagIds, setCardTags, type ColumnRow } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
 import { DueDatePickerSheet } from "@/components/DueDatePickerSheet";
 import { MarkdownView } from "@/components/MarkdownView";
 import { PriorityChips, ColumnChips } from "@/components/TaskChips";
 import { NotFound } from "@/components/NotFound";
-import { ICON_CHECK, ICON_MORE, ICON_ARCHIVE } from "@/components/toolbar-icons";
+import { ICON_CHECK, ICON_MORE, ICON_ARCHIVE, ICON_DELETE } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
+import { toast } from "@/components/Toast";
 import { celebrateTaskDone, isDoneColumn } from "@/gamification/rewards";
 import { formatDate } from "@cairn/shared/format/date";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
@@ -91,6 +92,22 @@ export function CardDetailScreen() {
     ]);
   };
 
+  const onDelete = () => {
+    Alert.alert("Delete task?", `"${card.title}" will be deleted. This can't be undone.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          haptics.impactHeavy();
+          deleteCard(card.id);
+          toast.success("Task deleted");
+          router.back();
+        },
+      },
+    ]);
+  };
+
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <Stack.Screen
@@ -107,6 +124,9 @@ export function CardDetailScreen() {
         <Stack.Toolbar.Menu icon={ICON_MORE} accessibilityLabel="Task actions">
           <Stack.Toolbar.MenuAction icon={ICON_ARCHIVE} destructive onPress={toolbarPress(onArchive)}>
             Archive
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon={ICON_DELETE} destructive onPress={toolbarPress(onDelete)}>
+            Delete
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
         <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Save" onPress={toolbarPress(save, "confirm")}>
