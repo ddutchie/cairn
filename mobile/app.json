@@ -8,6 +8,7 @@
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "ios": {
+      "icon": "./assets/CairnMacIcon.icon",
       "supportsTablet": true,
       "bundleIdentifier": "com.gerardslee.cairn",
       "infoPlist": {
