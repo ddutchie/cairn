@@ -13,6 +13,8 @@ import {
   moveCardToColumn,
   moveNoteToProject,
   moveNotesToFolder,
+  archiveCard,
+  deleteCard,
   pinNote,
   softDeleteNote,
   tagsByRow,
@@ -27,6 +29,7 @@ import { NotePickerSheet, type PickerOption } from "@/components/NotePickerSheet
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
+import { toast } from "@/components/Toast";
 import { OverviewTab } from "@/components/overview/OverviewTab";
 import { EmptyState } from "@/components/EmptyState";
 import { celebrateTaskDone, isDoneColumn } from "@/gamification/rewards";
@@ -422,6 +425,33 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
           }}
           onOpenCard={(cid) => router.push(cardHref(cid))}
           onAddCard={(colId) => router.push({ pathname: "/card/new", params: { project: id, column: colId, back: project?.name || "Project" } })}
+          onArchive={(card) => {
+            archiveCard(card.id);
+            load();
+            haptics.success();
+            toast.success("Task archived", { detail: card.title });
+          }}
+          onDelete={(card) => {
+            // Destructive — confirm first. Deleting soft-deletes (tombstone) and
+            // syncs the removal to peers, matching the desktop delete zone.
+            Alert.alert(
+              "Delete task?",
+              `"${card.title}" will be deleted. This can't be undone.`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Delete",
+                  style: "destructive",
+                  onPress: () => {
+                    deleteCard(card.id);
+                    load();
+                    haptics.impactHeavy();
+                    toast.success("Task deleted");
+                  },
+                },
+              ],
+            );
+          }}
         />
       )}
 

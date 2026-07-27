@@ -6,7 +6,7 @@
    (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
 import { memo, useCallback, useMemo } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
-import { Plus } from "lucide-react-native";
+import { Plus, Archive, Trash2 } from "lucide-react-native";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { GestureDetector } from "react-native-gesture-handler";
 import { PressableScale } from "@/components/PressableScale";
@@ -18,6 +18,12 @@ import { stripMarkdown } from "@cairn/shared/notes/text";
 
 const COLUMN_WIDTH = 260;
 const COLUMN_GAP = 12;
+
+// Special drop-zone ids for the archive / delete action bar. Prefixed so they
+// can never collide with a real column id. onDrop routes these to the archive /
+// delete handlers instead of a column move.
+const ARCHIVE_ZONE = "__archive__";
+const DELETE_ZONE = "__delete__";
 
 // Stable empty-array reference for columns with no cards, so BoardColumn's
 // memoisation isn't defeated by a fresh `[]` each render.
@@ -40,6 +46,8 @@ export function DraggableBoard({
   onMove,
   onOpenCard,
   onAddCard,
+  onArchive,
+  onDelete,
 }: {
   columns: ColumnRow[];
   cards: CardRow[];
@@ -47,6 +55,10 @@ export function DraggableBoard({
   onMove: (cardId: string, colId: string) => void;
   onOpenCard: (id: string) => void;
   onAddCard: (colId: string) => void;
+  /** Drop a card on the Archive zone. */
+  onArchive?: (card: CardRow) => void;
+  /** Drop a card on the Delete zone. */
+  onDelete?: (card: CardRow) => void;
 }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -67,12 +79,16 @@ export function DraggableBoard({
 
   const onDrop = useCallback(
     (card: CardRow, target: string | null) => {
-      if (target) onMove(card.id, target);
+      if (target === ARCHIVE_ZONE) onArchive?.(card);
+      else if (target === DELETE_ZONE) onDelete?.(card);
+      else if (target) onMove(card.id, target);
     },
-    [onMove],
+    [onMove, onArchive, onDelete],
   );
 
   const ctrl = useDragController<CardRow>({ getId: (c) => c.id, onDrop, scrollAxis: "x" });
+  // Whether the action bar (archive/delete drop zones) is wired up at all.
+  const hasActions = !!onArchive || !!onDelete;
 
   if (columns.length === 0) {
     return (
@@ -111,11 +127,81 @@ export function DraggableBoard({
         ))}
       </Animated.ScrollView>
 
+      {hasActions ? (
+        // Always mounted (so the drag core can measure the zone frames in
+        // panGesture.onBegin, which runs BEFORE dragging state flips true), but
+        // only visible while a card is lifted. Never intercepts touches.
+        <View
+          style={[styles.actionBar, { bottom: 12 + bottomInset, opacity: ctrl.dragging ? 1 : 0 }]}
+          pointerEvents="none"
+        >
+          {onArchive ? (
+            <ActionZone
+              zoneId={ARCHIVE_ZONE}
+              label="Archive"
+              icon={<Archive size={20} color={t.warning} />}
+              color={t.warning}
+              ctrl={ctrl}
+              styles={styles}
+            />
+          ) : null}
+          {onDelete ? (
+            <ActionZone
+              zoneId={DELETE_ZONE}
+              label="Delete"
+              icon={<Trash2 size={20} color={t.danger} />}
+              color={t.danger}
+              ctrl={ctrl}
+              styles={styles}
+            />
+          ) : null}
+        </View>
+      ) : null}
+
       {ctrl.dragging ? (
         <DragOverlay ctrl={ctrl}>
           <BoardDragClone card={ctrl.dragging} tagMap={tagMap} t={t} styles={styles} />
         </DragOverlay>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * A drop target in the action bar (Archive / Delete). Registers itself with the
+ * drag controller so the shared hit-test picks it up, and lights up (via
+ * useZoneHighlight, UI-thread) when the finger hovers it mid-drag. The bar
+ * itself is pointerEvents="none" so it never blocks scrolls, but the zones are
+ * only measured rectangles — the drag engine hit-tests them by frame, not touch.
+ */
+function ActionZone({
+  zoneId,
+  label,
+  icon,
+  color,
+  ctrl,
+  styles,
+}: {
+  zoneId: string;
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+  ctrl: DragController<CardRow>;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const hoverStyle = useZoneHighlight(ctrl, zoneId);
+  return (
+    <View
+      ref={(node: View | null) => ctrl.registerZone(zoneId, node)}
+      style={[styles.actionZone, { borderColor: withAlpha(color, 0.5) }]}
+      collapsable={false}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.actionZoneHighlight, { backgroundColor: withAlpha(color, 0.18), borderColor: color }, hoverStyle]}
+      />
+      {icon}
+      <Text style={[styles.actionZoneLabel, { color }]}>{label}</Text>
     </View>
   );
 }
@@ -282,5 +368,36 @@ function makeStyles(t: Theme) {
     priorityDot: { width: 8, height: 8, borderRadius: 4 },
     cardTitle: { flex: 1, ...typeScale.label, fontWeight: "500", color: t.textPrimary },
     cardDesc: { ...typeScale.caption, color: t.textSecondary, marginTop: 8, lineHeight: 17 },
+    // Action bar: a pinned row of drop zones that appears only while a card is
+    // lifted, so archive/delete are reachable by dragging a card onto them.
+    actionBar: {
+      position: "absolute",
+      left: 12,
+      right: 12,
+      flexDirection: "row",
+      gap: 12,
+    },
+    actionZone: {
+      flex: 1,
+      height: 64,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderStyle: "dashed",
+      backgroundColor: t.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+      overflow: "hidden",
+    },
+    actionZoneHighlight: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderRadius: 12,
+      borderWidth: 1.5,
+    },
+    actionZoneLabel: { ...typeScale.label, fontWeight: "600" },
   });
 }
