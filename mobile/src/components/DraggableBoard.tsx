@@ -4,7 +4,7 @@
    SharedValues, but those are reanimated UI-thread values only ever read inside
    worklets / useAnimatedStyle — never during JS render. The plain fields
    (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { Plus, Archive, Trash2 } from "lucide-react-native";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
@@ -90,6 +90,24 @@ export function DraggableBoard({
   // Whether the action bar (archive/delete drop zones) is wired up at all.
   const hasActions = !!onArchive || !!onDelete;
 
+  // The action bar collapses when idle, so its zone frames aren't laid out when
+  // the drag core measures on panGesture.onBegin (that fires before the lift).
+  // Re-measure once a lift expands the bar so the zones become hittable. A
+  // double rAF lets the expanded layout flush before we read the frames.
+  const dragging = ctrl.dragging;
+  const remeasure = ctrl.remeasure;
+  useEffect(() => {
+    if (!dragging || !hasActions) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => remeasure());
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [dragging, hasActions, remeasure]);
+
   if (columns.length === 0) {
     return (
       <View style={styles.emptyWrap}>
@@ -109,7 +127,7 @@ export function DraggableBoard({
         horizontal
         scrollEnabled={!ctrl.scrollLocked}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.board, { paddingBottom: 12 + bottomInset }]}
+        contentContainerStyle={styles.board}
         style={styles.boardScroll}
       >
         {columns.map((col) => (
@@ -128,11 +146,19 @@ export function DraggableBoard({
       </Animated.ScrollView>
 
       {hasActions ? (
-        // Always mounted (so the drag core can measure the zone frames in
-        // panGesture.onBegin, which runs BEFORE dragging state flips true), but
-        // only visible while a card is lifted. Never intercepts touches.
+        // A real row BELOW the columns (not an overlay), so the drop zones sit
+        // in genuinely empty space and a card dropped here can't be mistaken for
+        // a column drop. Collapsed to nothing when idle (board keeps full
+        // height); expands while a card is lifted. Because it lays out AFTER the
+        // lift, useDragController's zones would measure stale — so we re-measure
+        // once it's expanded (see the effect below).
         <View
-          style={[styles.actionBar, { bottom: 12 + bottomInset, opacity: ctrl.dragging ? 1 : 0 }]}
+          style={[
+            styles.actionBar,
+            ctrl.dragging
+              ? { paddingBottom: bottomInset, paddingTop: 8 }
+              : styles.actionBarCollapsed,
+          ]}
           pointerEvents="none"
         >
           {onArchive ? (
@@ -354,7 +380,7 @@ function makeStyles(t: Theme) {
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
     emptyText: { ...typeScale.caption, color: t.textTertiary, textAlign: "center" },
     boardScroll: { flex: 1 },
-    board: { padding: 12, paddingTop: 0, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
+    board: { padding: 12, paddingTop: 0, paddingBottom: 12, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
     column: { width: COLUMN_WIDTH, backgroundColor: t.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: t.border },
     columnHighlight: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 12, borderWidth: 1.5, borderColor: t.accent, backgroundColor: withAlpha(t.accent, 0.06) },
     columnCards: { flex: 1 },
@@ -368,15 +394,17 @@ function makeStyles(t: Theme) {
     priorityDot: { width: 8, height: 8, borderRadius: 4 },
     cardTitle: { flex: 1, ...typeScale.label, fontWeight: "500", color: t.textPrimary },
     cardDesc: { ...typeScale.caption, color: t.textSecondary, marginTop: 8, lineHeight: 17 },
-    // Action bar: a pinned row of drop zones that appears only while a card is
-    // lifted, so archive/delete are reachable by dragging a card onto them.
+    // Action bar: a row of drop zones laid out BELOW the columns (a sibling of
+    // the board scroll, not an overlay), so a card dropped here lands in empty
+    // space rather than over a column. Collapsed to zero height when idle; the
+    // component re-measures the zones after it expands on a lift.
     actionBar: {
-      position: "absolute",
-      left: 12,
-      right: 12,
       flexDirection: "row",
       gap: 12,
+      paddingHorizontal: 12,
+      flexShrink: 0,
     },
+    actionBarCollapsed: { height: 0, overflow: "hidden", opacity: 0 },
     actionZone: {
       flex: 1,
       height: 64,
