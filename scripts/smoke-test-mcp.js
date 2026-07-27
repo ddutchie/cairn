@@ -85,7 +85,9 @@ function seedDb() {
     ["esbuild", path.join(root, "electron/db/schema.ts"),
      "--bundle", "--platform=node", "--format=cjs",
      "--external:better-sqlite3", "--outfile=" + tmpSchema],
-    { stdio: "ignore", cwd: root },
+    // On Windows `npx` is `npx.cmd`, which execFileSync can't run without a
+    // shell; enable shell only there so POSIX runners keep the safer no-shell path.
+    { stdio: "ignore", cwd: root, shell: process.platform === "win32" },
   );
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { applySchema } = require(tmpSchema);
@@ -127,27 +129,41 @@ const child = spawn(BIN, [], {
   stdio: ["pipe", "pipe", "pipe"],
 });
 
-let stdout = "";
-child.stdout.on("data", (d) => (stdout += d.toString()));
+// A spawn failure (binary not executable, bad arch, missing loader) otherwise
+// surfaces as a silent "no response" timeout — report it directly.
+child.on("error", (err) => fail(`failed to launch ${BIN}: ${err.message}`));
+
 let stderr = "";
 child.stderr.on("data", (d) => (stderr += d.toString()));
 
 const send = (o) => child.stdin.write(JSON.stringify(o) + "\n");
 
-send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
-setTimeout(() => {
-  send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "link_note_to_task", arguments: { noteId: "note1", cardId: "card1" } } });
-}, 700);
+// Response-driven flow: parse complete newline-delimited JSON-RPC messages and
+// react when id:1 (initialize) and id:2 (tools/call) arrive, instead of racing
+// fixed sleeps. A generous timeout remains only as a fallback for a hung/crashed
+// binary that never replies.
+let buffer = "";
+let initialized = false;
+let done = false;
 
-setTimeout(() => {
-  child.kill();
+const timeout = setTimeout(() => {
+  if (done) return;
+  console.error(stderr);
+  finish(false, "timed out waiting for JSON-RPC responses (binary hung or DB not found)");
+}, 15000);
 
-  const linkResp = stdout.split("\n").find((l) => l.includes('"id":2'));
-  if (!linkResp) {
-    console.error(stderr);
-    fail("no response to link_note_to_task (binary failed to start or DB not found)");
+function finish(ok, msg, linkResp) {
+  if (done) return;
+  done = true;
+  clearTimeout(timeout);
+  try { child.kill(); } catch { /* already gone */ }
+
+  if (!ok) {
+    if (linkResp) console.error(`     link response: ${linkResp}`);
+    fail(msg);
   }
 
+  // ── Assertions: the linked note's file must be preserved in place ──────────
   // Case-sensitive existence check: read the lowercase "research" directory and
   // confirm SmokeNote.md is STILL there by exact name. A plain
   // fs.existsSync(notePath) is case-BLIND on macOS — if the buggy relocation
@@ -158,13 +174,9 @@ setTimeout(() => {
     survivedExactCase = fs.readdirSync(noteDir).includes("SmokeNote.md");
   } catch { /* dir gone */ }
 
-  // Also detect a stale duplicate directory left by a relocation (case-variant).
-  const upperDir = path.join(ws, projectDirName, "Research");
+  // Detect a stale duplicate directory left by a relocation (case-variant).
   let duplicateDir = false;
   try {
-    // On a case-insensitive FS readdir of the project dir returns ONE entry for
-    // research/Research; a genuine relocation still leaves the file under the
-    // wrong-cased name. Compare the on-disk directory entry's exact casing.
     const projEntries = fs.readdirSync(path.join(ws, projectDirName));
     duplicateDir = projEntries.includes("Research") && !projEntries.includes("research");
   } catch { /* ignore */ }
@@ -172,7 +184,7 @@ setTimeout(() => {
   const inoAfter = survivedExactCase ? fs.statSync(notePath).ino : null;
 
   if (!survivedExactCase) {
-    console.error(`     link response: ${linkResp}`);
+    if (linkResp) console.error(`     link response: ${linkResp}`);
     fail("linked note's .md file was DELETED or relocated by link_note_to_task (regression!)");
   }
   if (duplicateDir) {
@@ -186,4 +198,24 @@ setTimeout(() => {
   console.log("\n1 passed, 0 failed\n");
   fs.rmSync(ws, { recursive: true, force: true });
   process.exit(0);
-}, 3000);
+}
+
+child.stdout.on("data", (d) => {
+  buffer += d.toString();
+  let nl;
+  while ((nl = buffer.indexOf("\n")) !== -1) {
+    const line = buffer.slice(0, nl).trim();
+    buffer = buffer.slice(nl + 1);
+    if (!line) continue;
+    let msg;
+    try { msg = JSON.parse(line); } catch { continue; } // ignore non-JSON log lines
+    if (msg.id === 1 && !initialized) {
+      initialized = true;
+      send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "link_note_to_task", arguments: { noteId: "note1", cardId: "card1" } } });
+    } else if (msg.id === 2) {
+      finish(true, null, line);
+    }
+  }
+});
+
+send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
