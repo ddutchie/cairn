@@ -112,7 +112,7 @@ export function EmbeddingsCard() {
               : "All notes are indexed. On-device embeddings power semantic search — your notes never leave the device."}
           </Text>
 
-          {showDetails && unindexed.length > 0 && (
+          {behind > 0 && showDetails && unindexed.length > 0 && (
             <View style={styles.details}>
               <Text style={styles.detailsIntro}>
                 A note is only added to the semantic index if it has body text an

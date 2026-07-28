@@ -192,8 +192,15 @@ export function useDragController<T>({
   const registerZone = useCallback((zoneId: string, node: View | null, scrollIndependent = false) => {
     if (node) {
       zoneRefs.current[zoneId] = node;
+      // Keep the flag in sync with the current registration: set it when the
+      // zone is scroll-independent, clear it when it isn't (a zone can be
+      // re-registered with a different value for the same id).
       if (scrollIndependent && !scrollIndependentZones.value[zoneId]) {
         scrollIndependentZones.value = { ...scrollIndependentZones.value, [zoneId]: true };
+      } else if (!scrollIndependent && scrollIndependentZones.value[zoneId]) {
+        const next = { ...scrollIndependentZones.value };
+        delete next[zoneId];
+        scrollIndependentZones.value = next;
       }
     } else {
       delete zoneRefs.current[zoneId];
