@@ -160,6 +160,8 @@ function makeStreamer(config: OpenAIConfig) {
     const toolAccum = new Map<number, ToolAccum>();
     let finishReason: string | undefined;
     let promptTokens: number | undefined;
+    let completionTokens: number | undefined;
+    let reasoningTokens: number | undefined;
 
     // Build the ring usage from the server's prompt_tokens + the model's context
     // window (models.dev, cached). Undefined when the endpoint reported no usage.
@@ -167,7 +169,7 @@ function makeStreamer(config: OpenAIConfig) {
       if (promptTokens == null) return undefined;
       // Manual override wins; else look up the model in models.dev; else default.
       const contextLimit = config.contextLimit ?? (await contextLimitForModel(config.model));
-      return { promptTokens, contextLimit };
+      return { promptTokens, contextLimit, completionTokens, reasoningTokens };
     };
 
     const flushTools = function* (): Generator<StreamEvent> {
@@ -228,6 +230,15 @@ function makeStreamer(config: OpenAIConfig) {
           // Usage arrives in its own chunk (choices empty) when include_usage is on.
           if (typeof chunk.usage?.prompt_tokens === "number") {
             promptTokens = chunk.usage.prompt_tokens;
+          }
+          const usageAny = chunk.usage as
+            | { completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } }
+            | undefined;
+          if (typeof usageAny?.completion_tokens === "number") {
+            completionTokens = usageAny.completion_tokens;
+          }
+          if (typeof usageAny?.completion_tokens_details?.reasoning_tokens === "number") {
+            reasoningTokens = usageAny.completion_tokens_details.reasoning_tokens;
           }
           const choice = chunk.choices?.[0];
           if (!choice) continue;

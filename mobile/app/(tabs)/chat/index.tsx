@@ -272,6 +272,9 @@ export default function ChatScreen() {
                   promptTokens={usage.promptTokens}
                   contextLimit={usage.contextLimit}
                   estimated={usage.estimated}
+                  breakdown={usage.breakdown}
+                  completionTokens={usage.completionTokens}
+                  reasoningTokens={usage.reasoningTokens}
                 />
               )
               : undefined,

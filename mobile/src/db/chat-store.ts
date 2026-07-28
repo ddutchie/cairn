@@ -9,6 +9,8 @@
 
 import { getDb } from "./index";
 
+import type { ChatUsage } from "@/chat/providers/types";
+
 export interface StoredMessage {
   role: "user" | "assistant";
   content: string;
@@ -130,7 +132,7 @@ export function clearChatHistory(): void {
 const USAGE_KEY = "chat.lastUsage";
 
 /** Persist the most recent context-window usage for the ring. */
-export function saveLastChatUsage(usage: { promptTokens: number; contextLimit: number; estimated?: boolean }): void {
+export function saveLastChatUsage(usage: ChatUsage): void {
   getDb().runSync(
     "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     USAGE_KEY,
@@ -139,13 +141,20 @@ export function saveLastChatUsage(usage: { promptTokens: number; contextLimit: n
 }
 
 /** Load the last persisted context-window usage, or null. */
-export function loadLastChatUsage(): { promptTokens: number; contextLimit: number; estimated?: boolean } | null {
+export function loadLastChatUsage(): ChatUsage | null {
   const row = getDb().getFirstSync<{ value: string }>("SELECT value FROM app_settings WHERE key = ?", USAGE_KEY);
   if (!row?.value) return null;
   try {
-    const u = JSON.parse(row.value) as { promptTokens?: number; contextLimit?: number; estimated?: boolean };
+    const u = JSON.parse(row.value) as Partial<ChatUsage>;
     if (typeof u.promptTokens === "number" && typeof u.contextLimit === "number" && u.contextLimit > 0) {
-      return { promptTokens: u.promptTokens, contextLimit: u.contextLimit, estimated: u.estimated };
+      return {
+        promptTokens: u.promptTokens,
+        contextLimit: u.contextLimit,
+        estimated: u.estimated,
+        breakdown: u.breakdown,
+        completionTokens: u.completionTokens,
+        reasoningTokens: u.reasoningTokens,
+      };
     }
   } catch {
     /* ignore */
