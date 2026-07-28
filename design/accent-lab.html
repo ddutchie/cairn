@@ -290,6 +290,28 @@
   .pass { color: var(--success); font-weight: 600; }
   .fail { color: var(--danger); font-weight: 600; }
 
+  /* graph legend comparison */
+  .graph-cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 780px) { .graph-cmp { grid-template-columns: 1fr; } }
+  .graph-panel {
+    border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+    padding: 1rem;
+  }
+  .graph-panel-title { font-size: .78rem; font-weight: 600; margin-bottom: .9rem; color: var(--text-secondary); }
+  .graph-legend {
+    display: flex; flex-wrap: wrap; gap: 1.1rem;
+    padding: .8rem 1rem; border: 1px solid var(--border-subtle); border-radius: 10px;
+    background: var(--background);
+  }
+  .graph-legend.edges { margin-top: .6rem; }
+  .leg-item { display: flex; align-items: center; gap: .5rem; font-size: .82rem; color: var(--text-secondary); }
+  .leg-dot { width: 13px; height: 13px; border-radius: 50%; flex: none; }
+  .leg-dot.proj { width: 16px; height: 16px; }
+  .leg-dot.tag { width: 10px; height: 10px; }
+  .leg-line { width: 26px; height: 0; flex: none; }
+  .leg-line.solid { border-top: 3px solid; }
+  .leg-line.dashed { border-top: 3px dashed; }
+
   .foot { margin-top: 3rem; font-size: .74rem; color: var(--text-tertiary); text-align: center; }
 </style>
 </head>
@@ -324,6 +346,28 @@
 
     <h2 class="section">Contrast check · accent-fg on accent (WCAG)</h2>
     <div class="contrast" id="contrast"></div>
+
+    <h2 class="section">Knowledge graph legend · accent-collision check</h2>
+    <p class="lab-note" style="margin-bottom:1rem">
+      Graph node/edge colours are token-driven. Today <b>Project</b> = <span class="mono">accent</span>,
+      Note = info, Card = success, Tag = warning; and Linked/Wikilink/Semantic edges all = accent.
+      When the accent is a <b>green</b> (Sage, Pine, Teal), Project collides with Card (success green)
+      and the accent edges cluster with the note-card edge. Compare the current mapping with a
+      proposed <b>fixed categorical</b> node palette (independent of the accent) below — switch schemes
+      to see which stays legible.
+    </p>
+    <div class="graph-cmp">
+      <div class="graph-panel">
+        <div class="graph-panel-title">Current — node types keyed to tokens (Project = accent)</div>
+        <div class="graph-legend" id="legendCurrent"></div>
+        <div class="graph-legend edges" id="edgesCurrent"></div>
+      </div>
+      <div class="graph-panel">
+        <div class="graph-panel-title">Proposed — fixed categorical node palette (accent-independent)</div>
+        <div class="graph-legend" id="legendProposed"></div>
+        <div class="graph-legend edges" id="edgesProposed"></div>
+      </div>
+    </div>
 
     <h2 class="section">Mock · Board view</h2>
     <div class="mock">
@@ -571,6 +615,7 @@ function applyScheme(){
   renderPalette();
   renderContrast();
   markCards();
+  renderGraphLegend();
 }
 
 function markCards(){
@@ -666,6 +711,68 @@ function renderContrast(){
       <div class="ratio mono">${r.toFixed(2)}:1 · ${verdict}</div>
     </div>`;
   }).join('');
+}
+
+/* ── Knowledge graph legend comparison ─────────────────────────
+   Proposed fixed categorical node palette — deliberately INDEPENDENT of the
+   accent so Project never collides with Card/success. Project gets a stable
+   violet; the rest keep their semantic hues. Tuned per theme. */
+const NODE_PALETTE = {
+  proposed: {
+    dark:  { project:"#a78bfa", note:"#60a5fa", card:"#3ecf8e", tag:"#f59e0b" },
+    light: { project:"#7c5cd6", note:"#2563eb", card:"#1a9e68", tag:"#d97706" },
+  },
+};
+
+function cssVar(name){ return getComputedStyle(root).getPropertyValue(name).trim(); }
+
+function renderGraphLegend(){
+  const accent = SCHEMES[current][theme].accent;
+  const info = cssVar('--info'), success = cssVar('--success'),
+        warning = cssVar('--warning'), border = cssVar('--border');
+
+  // Current: node types keyed to tokens (project = accent).
+  const curNodes = [
+    ['Project', accent, 'proj'],
+    ['Note', info, ''],
+    ['Card', success, ''],
+    ['Tag', warning, 'tag'],
+  ];
+  // Proposed: fixed categorical palette (project independent of accent).
+  const p = NODE_PALETTE.proposed[theme];
+  const propNodes = [
+    ['Project', p.project, 'proj'],
+    ['Note', p.note, ''],
+    ['Card', p.card, ''],
+    ['Tag', p.tag, 'tag'],
+  ];
+  const nodeHtml = arr => arr.map(([label,color,cls])=>
+    `<div class="leg-item"><span class="leg-dot ${cls}" style="background:${color}"></span>${label}</div>`
+  ).join('');
+
+  // Edges. Current: Linked/Wikilink/Semantic all = accent. Proposed: keep
+  // structural edges on semantic hues, reserve accent for wikilink only, and
+  // give Semantic a neutral-tinted dashed so it doesn't merge with the accent.
+  const curEdges = [
+    ['Linked', success, 'solid'],
+    ['Wikilink', accent, 'solid'],
+    ['Semantic', accent, 'dashed'],
+    ['Co-mention', border, 'dashed'],
+  ];
+  const propEdges = [
+    ['Linked', success, 'solid'],
+    ['Wikilink', accent, 'solid'],
+    ['Semantic', cssVar('--text-tertiary'), 'dashed'],
+    ['Co-mention', border, 'dashed'],
+  ];
+  const edgeHtml = arr => arr.map(([label,color,style])=>
+    `<div class="leg-item"><span class="leg-line ${style}" style="border-top-color:${color}"></span>${label}</div>`
+  ).join('');
+
+  document.getElementById('legendCurrent').innerHTML = nodeHtml(curNodes);
+  document.getElementById('legendProposed').innerHTML = nodeHtml(propNodes);
+  document.getElementById('edgesCurrent').innerHTML = edgeHtml(curEdges);
+  document.getElementById('edgesProposed').innerHTML = edgeHtml(propEdges);
 }
 
 applyScheme();

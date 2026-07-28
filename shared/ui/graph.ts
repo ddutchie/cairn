@@ -20,15 +20,20 @@ export type GraphEdgeType =
 /** Semantic colour token — resolved per-platform to a real colour. */
 export type ThemeToken =
   | "accent" | "info" | "success" | "warning" | "border"
-  | "background" | "textPrimary" | "textSecondary" | "textTertiary";
+  | "background" | "textPrimary" | "textSecondary" | "textTertiary"
+  | "nodeProject";
 
 // ── node styling ─────────────────────────────────────────────────────────────
 
-/** Node type → colour token. Tags render in the TYPE (warning) colour — never
- *  their own tag colour — so the legend keys stay meaningful. */
+/** Node type → colour token. Project uses a FIXED categorical colour
+ *  (`nodeProject`) rather than the accent: the accent is user-selectable and can
+ *  be green (Sage/Pine/Teal), which would collide with Card's success green.
+ *  A stable violet keeps the four node types distinct under every accent. Tags
+ *  render in the TYPE (warning) colour — never their own tag colour — so the
+ *  legend keys stay meaningful. */
 export function nodeTypeToken(type: GraphNodeType): ThemeToken {
   switch (type) {
-    case "project": return "accent";
+    case "project": return "nodeProject";
     case "note":    return "info";
     case "card":    return "success";
     case "tag":     return "warning";
@@ -54,14 +59,14 @@ export function edgeStyle(type: string): EdgeStyle {
     case "note-note":      return { token: "info",    opacity: 0.6,  dash: false };
     case "note-card":      return { token: "success", opacity: 0.6,  dash: false };
     case "tag-member":     return { token: "warning", opacity: 0.5,  dash: false };
-    case "project-member": return { token: "accent",  opacity: 0.35, dash: false };
+    case "project-member": return { token: "nodeProject", opacity: 0.35, dash: false };
     case "flow-edge":      return { token: "accent",  opacity: 0.8,  dash: false };
     case "flow-ref":       return { token: "accent",  opacity: 0.5,  dash: true  };
     case "co-mention":     return { token: "border",  opacity: 0.5,  dash: true  };
     case "keyword":        return { token: "border",  opacity: 0.4,  dash: true  };
     case "assignee":       return { token: "border",  opacity: 0.4,  dash: true  };
     case "wikilink":       return { token: "accent",  opacity: 0.75, dash: false };
-    case "semantic":       return { token: "accent",  opacity: 0.5,  dash: true  };
+    case "semantic":       return { token: "textTertiary", opacity: 0.6, dash: true };
     default:               return { token: "border",  opacity: 0.4,  dash: false };
   }
 }
@@ -203,7 +208,7 @@ export function buildHierarchy(graph: HierarchyInput): HierarchyNode {
 /** Sunburst node type → colour token. Branch/workspace groupings use secondary. */
 export function sunburstTypeToken(type: HierarchyNode["type"]): ThemeToken {
   switch (type) {
-    case "project": return "accent";
+    case "project": return "nodeProject";
     case "note":    return "info";
     case "card":    return "success";
     case "tag":     return "warning";

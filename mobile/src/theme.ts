@@ -30,6 +30,9 @@ export interface Theme {
   warning: string;
   danger: string;
   info: string;
+  /** Knowledge-graph "Project" node colour — fixed (accent-independent) so it
+   *  never collides with Card/success green when a green accent is chosen. */
+  nodeProject: string;
   /** Modal/sheet backdrop dimming colour (already includes its own alpha). */
   scrim: string;
 }
@@ -52,6 +55,7 @@ export const darkTheme: Theme = {
   warning: "#f59e0b",
   danger: "#ef4444",
   info: "#60a5fa",
+  nodeProject: "#a78bfa",
   scrim: "rgba(0,0,0,0.5)",
 };
 
@@ -77,6 +81,7 @@ export const lightTheme: Theme = {
   warning: "#d97706",
   danger: "#dc2626",
   info: "#2563eb",
+  nodeProject: "#7c5cd6",
   scrim: "rgba(0,0,0,0.4)",
 };
 

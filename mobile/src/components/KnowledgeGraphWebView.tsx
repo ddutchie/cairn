@@ -54,6 +54,7 @@ function tokenColor(token: ThemeToken, t: Theme): string {
     case "textPrimary": return t.textPrimary;
     case "textSecondary": return t.textSecondary;
     case "textTertiary": return t.textTertiary;
+    case "nodeProject": return t.nodeProject;
   }
 }
 

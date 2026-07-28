@@ -33,6 +33,9 @@
   --warning: #f59e0b;
   --danger: #ef4444;
   --info: #60a5fa;
+  /* Knowledge-graph "Project" node colour. Fixed (accent-independent) so it
+     never collides with Card/success green when the accent is a green preset. */
+  --node-project: #a78bfa;
 }
 
 /* Light theme — applied via data-theme="light" on <html> */
@@ -58,6 +61,7 @@
   --warning: #d97706;
   --danger: #dc2626;
   --info: #2563eb;
+  --node-project: #7c5cd6;
 }
 
 @theme inline {
