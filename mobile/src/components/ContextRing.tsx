@@ -1,28 +1,32 @@
-import { useMemo } from "react";
-import { Alert, StyleSheet } from "react-native";
+import { useMemo, useState } from "react";
+import { Alert, Platform, Pressable, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { Button, Section } from "@expo/ui/swift-ui";
-import { GlassMenu } from "@/components/GlassMenu";
+import { Host, Popover, RNHostView, Button, VStack, HStack, Spacer, Text, Divider } from "@expo/ui/swift-ui";
+import { font, foregroundStyle, frame, padding, monospacedDigit } from "@expo/ui/swift-ui/modifiers";
 import { useTheme } from "@/theme";
+import { haptics } from "@/haptics";
 import type { ChatUsage } from "@/chat/providers/types";
 import type { TokenBreakdown } from "@/chat/token-breakdown";
+
+const POPOVER_WIDTH = 260;
 
 /**
  * Context-window usage ring — the mobile analogue of the desktop ContextRing
  * (src/components/agent/ContextRing.tsx). A compact SVG donut whose arc fills
  * with the fraction of the model's context window used by the conversation.
  *
- * Tapping it opens a NATIVE glass menu (GlassMenu → @expo/ui Menu) showing the
- * full breakdown as native single-line rows — the category name and its token
- * count — grouped under the summary section, plus an Output section (answer /
- * thinking / total) once a turn completes. (SwiftUI menu rows are single-line
- * only, so the count shares the row with the name.)
+ * Tapping it opens a NATIVE SwiftUI popover (@expo/ui Popover) whose content is
+ * arbitrary SwiftUI — so each row is a real two-column layout
+ * (`HStack { name · Spacer · count }`) with the token counts right-aligned in a
+ * proper column, unlike a native Menu (which forces single-line, system-styled
+ * rows). The trigger is a native Button hosting the RN ring, so the tap is
+ * consumed at the SwiftUI layer and never leaks to iOS's status-bar
+ * "scroll to top" gesture (the reason a plain RN view in headerLeft misbehaved).
  *
- * Why native (not a custom Modal/popover): a native Menu host consumes the tap
- * at the SwiftUI layer, so a tap on the ring in the header never leaks to iOS's
- * status-bar "scroll to top" gesture (which a custom RN view in headerLeft does
- * trigger). Threshold colours match desktop: accent <=65%, warning 65–85%,
- * danger >85%. Non-iOS falls back to an Alert with the same figures.
+ * Shows the per-category split (system prompt, tool definitions, MCP & services,
+ * conversation, tool outputs) plus an Output section (answer / thinking / total)
+ * once a turn completes. Threshold colours match desktop: accent <=65%,
+ * warning 65–85%, danger >85%. Non-iOS falls back to an SVG ring + Alert.
  */
 export function ContextRing({
   promptTokens,
@@ -45,6 +49,7 @@ export function ContextRing({
   stroke?: number;
 }) {
   const t = useTheme();
+  const [open, setOpen] = useState(false);
 
   const { pct, colour, r, circ, dash } = useMemo(() => {
     const p = contextLimit > 0 ? Math.min(promptTokens / contextLimit, 1) : 0;
@@ -62,7 +67,6 @@ export function ContextRing({
   const pctLabel = `${estimated ? "~" : ""}${Math.round(pct * 100)}%`;
   const half = size / 2;
 
-  // Per-category rows, in the same order/colour intent as desktop.
   const categories = useMemo(() => {
     const b = breakdown;
     return [
@@ -78,6 +82,9 @@ export function ContextRing({
   const thinkingTokens = reasoningTokens ?? 0;
   const answerTokens = Math.max(0, (completionTokens ?? 0) - thinkingTokens);
   const hasOutput = typeof completionTokens === "number" && completionTokens > 0;
+
+  const a11yLabel = `Context ${pctLabel} used${estimated ? " (estimated)" : ""}. Tap for details.`;
+  const summaryTitle = `${pctLabel} full · ${formatTokenCount(promptTokens)} / ${formatTokenCount(contextLimit)} tokens${estimated ? " (est.)" : ""}`;
 
   const ring = (
     <Svg width={size} height={size}>
@@ -97,10 +104,7 @@ export function ContextRing({
     </Svg>
   );
 
-  const a11yLabel = `Context ${pctLabel} used${estimated ? " (estimated)" : ""}. Tap for details.`;
-  const summaryTitle = `${pctLabel} full · ${formatTokenCount(promptTokens)} / ${formatTokenCount(contextLimit)} tokens${estimated ? " (est.)" : ""}`;
-
-  // Non-iOS fallback: an Alert listing the same breakdown.
+  // Non-iOS: SVG ring that opens an Alert with the same breakdown.
   const showDetailAlert = () => {
     const lines = [
       summaryTitle,
@@ -117,65 +121,83 @@ export function ContextRing({
     Alert.alert("Context usage", lines.join("\n"), [{ text: "OK" }]);
   };
 
-  return (
-    <GlassMenu
-      trigger={ring}
-      accessibilityLabel={a11yLabel}
-      onFallbackPress={showDetailAlert}
-      triggerStyle={styles.trigger}
-    >
-      {/* Summary as the section title → small, muted caption; per-category rows
-          below it. Single-line rows (menu rows can't wrap); counts are padded
-          into a right-aligned column with figure spaces (digit-width) so their
-          right edges line up. */}
-      <Section title={summaryTitle}>
-        {categories.length > 0 ? (
-          rowLabels(categories.map((c) => ({ name: c.label, count: c.count }))).map((label, i) => (
-            <Button key={categories[i].label} label={label} onPress={noop} />
-          ))
-        ) : (
-          <Button label="Breakdown appears after the next message" systemImage="clock" onPress={noop} />
-        )}
-      </Section>
+  if (Platform.OS !== "ios") {
+    return (
+      <Pressable
+        onPress={showDetailAlert}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={a11yLabel}
+        style={styles.trigger}
+      >
+        {ring}
+      </Pressable>
+    );
+  }
 
-      {hasOutput ? (
-        <Section title="Output">
-          {rowLabels([
-            { name: "Answer", count: answerTokens },
-            ...(thinkingTokens > 0 ? [{ name: "Thinking", count: thinkingTokens }] : []),
-            { name: "Total", count: completionTokens as number },
-          ]).map((label) => (
-            <Button key={label} label={label} onPress={noop} />
-          ))}
-        </Section>
-      ) : null}
+  // iOS: native Button trigger (swallows the tap) + native Popover whose content
+  // is arbitrary SwiftUI, letting us right-align the counts in a real column.
+  const secondary = foregroundStyle({ type: "hierarchical", style: "secondary" });
+  const countModifiers = [font({ textStyle: "subheadline" }), monospacedDigit(), secondary];
 
-      {estimated ? (
-        <Section>
-          <Button label="Estimated for this provider" systemImage="questionmark.circle" onPress={noop} />
-        </Section>
-      ) : null}
-    </GlassMenu>
+  // Plain render helper (NOT a component) so it isn't re-created each render —
+  // keeps a stable element identity and satisfies react-hooks/static-components.
+  const row = (name: string, value: string) => (
+    <HStack key={name} alignment="center" spacing={12}>
+      <Text modifiers={[font({ textStyle: "subheadline" })]}>{name}</Text>
+      <Spacer />
+      <Text modifiers={countModifiers}>{value}</Text>
+    </HStack>
   );
-}
 
-function noop() {}
+  return (
+    <Host matchContents style={styles.host}>
+      <Popover isPresented={open} onIsPresentedChange={setOpen} arrowEdge="top">
+        <Popover.Trigger>
+          <Button
+            onPress={() => {
+              haptics.selection();
+              setOpen(true);
+            }}
+          >
+            <RNHostView matchContents>{ring}</RNHostView>
+          </Button>
+        </Popover.Trigger>
 
-/**
- * Build single-line menu-row labels with the token counts right-aligned into a
- * column. Menu rows use one flat string, so we left-pad each formatted count
- * with FIGURE SPACE (U+2007, the width of a digit in most fonts) to a common
- * width — this lines up the numbers' right edges. A few EN spaces separate the
- * name from the count column.
- */
-function rowLabels(rows: { name: string; count: number }[]): string[] {
-  const counts = rows.map((r) => formatTokenCount(r.count));
-  const width = Math.max(...counts.map((c) => c.length));
-  const FIGURE_SPACE = "\u2007";
-  return rows.map((r, i) => {
-    const padded = FIGURE_SPACE.repeat(width - counts[i].length) + counts[i];
-    return `${r.name}\u2003\u2003${padded}`;
-  });
+        <Popover.Content>
+          <VStack alignment="leading" spacing={10} modifiers={[padding({ all: 16 }), frame({ width: POPOVER_WIDTH })]}>
+            <Text modifiers={[font({ textStyle: "footnote" }), secondary]}>{summaryTitle}</Text>
+
+            {categories.length > 0 ? (
+              <VStack alignment="leading" spacing={8}>
+                {categories.map((c) => row(c.label, formatTokenCount(c.count)))}
+              </VStack>
+            ) : (
+              <Text modifiers={[font({ textStyle: "footnote" }), secondary]}>
+                A detailed breakdown appears after the next message.
+              </Text>
+            )}
+
+            {hasOutput ? (
+              <>
+                <Divider />
+                <Text modifiers={[font({ textStyle: "caption", weight: "semibold" })]}>Output</Text>
+                <VStack alignment="leading" spacing={8}>
+                  {row("Answer", formatTokenCount(answerTokens))}
+                  {thinkingTokens > 0 ? row("Thinking", formatTokenCount(thinkingTokens)) : null}
+                  {row("Total", formatTokenCount(completionTokens as number))}
+                </VStack>
+              </>
+            ) : null}
+
+            {estimated ? (
+              <Text modifiers={[font({ textStyle: "caption2" }), secondary]}>Estimated for this provider.</Text>
+            ) : null}
+          </VStack>
+        </Popover.Content>
+      </Popover>
+    </Host>
+  );
 }
 
 /** Compact token count: 1234 → "1.2K". */
@@ -188,5 +210,6 @@ function formatTokenCount(num: number): string {
 export type ContextRingUsage = ChatUsage;
 
 const styles = StyleSheet.create({
-  trigger: { paddingHorizontal: 4 },
+  trigger: { paddingHorizontal: 4, alignItems: "center", justifyContent: "center" },
+  host: { paddingHorizontal: 4 },
 });
