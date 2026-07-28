@@ -181,14 +181,20 @@ export function buildGraphHtml(payload: string): string {
             svg.transition().duration(450).call(zoom.transform, tf);
           };
 
-          // Auto zoom-to-fit shortly after first render: nodes spawn near the
-          // centre, then the force sim spreads them out over ~1s. Wait for them
-          // to settle, then frame the whole graph so the user lands on a fitted
-          // view instead of an overlapping clump. Guarded so it doesn't fight a
-          // manual pan/zoom the user makes in the meantime.
+          // Auto zoom-to-fit once the force simulation settles (its 'end' event
+          // fires when alpha decays below the threshold). Nodes spawn near the
+          // centre and spread out over the run, so fitting on 'end' frames the
+          // settled graph — adapting to however long layout takes — instead of a
+          // fixed guess. Guarded so it doesn't fight a manual pan/zoom the user
+          // makes while the sim is still running, and only auto-fits once.
           var userInteracted = false;
+          var didAutoFit = false;
           svg.on('pointerdown.autofit wheel.autofit', function () { userInteracted = true; });
-          setTimeout(function () { if (!userInteracted) window.__fit(); }, 1100);
+          sim.on('end', function () {
+            if (didAutoFit || userInteracted) return;
+            didAutoFit = true;
+            window.__fit();
+          });
 
           node.call(d3.drag()
             .on('start', function (e, d) { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
