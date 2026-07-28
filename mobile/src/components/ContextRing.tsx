@@ -247,7 +247,17 @@ export function ContextRing({
       <Pressable
         ref={triggerRef}
         onPress={openPopover}
-        hitSlop={10}
+        // Asymmetric hit target: DON'T extend the touchable area upward — the
+        // ring sits just under the status bar, and an upward slop pushes the
+        // target into the status-bar strip, where iOS interprets the tap as a
+        // "scroll to top" gesture (yanking the chat list to the top) instead of
+        // a button press. Native bar buttons (the right toolbar) never do this
+        // because they don't reach into the status bar. Widen sideways/below only.
+        hitSlop={{ top: 0, bottom: 12, left: 12, right: 12 }}
+        // Claim the touch as ours and cancel it from other responders (the
+        // scroll view's status-bar gesture) so it can't double as scroll-to-top.
+        onStartShouldSetResponder={() => true}
+        onResponderTerminationRequest={() => false}
         accessibilityRole="button"
         accessibilityLabel={a11yLabel}
         style={styles.trigger}
