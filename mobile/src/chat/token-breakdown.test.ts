@@ -1,4 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// `./tokens` pulls in js-tiktoken (a mobile-only dependency, absent from the
+// root node_modules that this vitest project resolves against on CI). These
+// tests only assert token counts are >0 / ===0, never exact values, so a
+// framework-free chars/4 estimate is a faithful stand-in and keeps the mobile
+// vitest project dependency-free as intended (see vitest.config.ts).
+vi.mock("./tokens", () => ({
+  countTextTokens: (text: string) => (text ? Math.ceil(text.length / 4) : 0),
+}));
+
 import {
   computeBreakdown,
   scaleBreakdown,
