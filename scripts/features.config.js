@@ -217,6 +217,19 @@ const FEATURES = [
       "Great For Cleanup: The tidy way to consolidate duplicate or overlapping projects — including two projects that accidentally share a name.",
     ],
   },
+  {
+    id: "v2.5.15-accent-colors",
+    version: "v2.5.15",
+    title: "Pick Your Accent Color",
+    category: "Appearance",
+    description: "Make Cairn yours — choose from ten curated accent colors, each tuned for both light and dark themes.",
+    highlights: [
+      "Ten Curated Presets: Sage Moss (the new default), Cairn Teal, Terracotta, Amber Gold, Obsidian Indigo, Slate Blue, Rust Coral, Deep Plum, Pine Green, and Copper Bronze — set it in Settings → General or the topbar Quick Settings.",
+      "Tuned Per Theme: Every preset ships a separate light and dark variant designed for Cairn's warm-neutral surfaces, and all foreground pairings meet WCAG AA contrast.",
+      "Everywhere, Instantly: Your accent applies live across the whole app — buttons, links, tags, nav, the note editor — follows theme switches, and even tints the launch splash.",
+      "Mobile Too: The mobile app gets the same ten presets from a new Appearance screen — your choice is saved on-device and applies across the app.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

@@ -2,14 +2,14 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
-import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
+import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, listUnindexedCards, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
 import { ResultRow } from "@/components/ResultRow";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { IndexingBar } from "@/components/IndexingBar";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { Sparkles } from "lucide-react-native";
+import { Sparkles, Info } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { haptics } from "@/haptics";
@@ -45,6 +45,7 @@ export default function SearchScreen() {
   const [hits, setHits] = useState<SemanticHit[]>([]);
   const [reindexing, setReindexing] = useState(false);
   const [stats, setStats] = useState<{ live: number; indexed: number } | null>(null);
+  const [unindexed, setUnindexed] = useState<UnindexedNote[]>([]);
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
   const insets = useSafeAreaInsets();
@@ -148,12 +149,15 @@ export default function SearchScreen() {
   const refreshStats = useCallback(() => {
     let live = 0;
     let indexed = 0;
+    const missing: UnindexedNote[] = [];
     for (const ws of listWorkspaceIds()) {
       const s = embeddingIndexStats(ws);
       live += s.liveNotes + s.liveCards;
       indexed += s.indexedNotes + s.indexedCards;
+      missing.push(...listUnindexedNotes(ws), ...listUnindexedCards(ws));
     }
     setStats({ live, indexed });
+    setUnindexed(missing);
   }, []);
 
   // Pull-to-refresh on the Semantic list: force a full catch-up (embeds any
@@ -172,6 +176,49 @@ export default function SearchScreen() {
       setReindexing(false);
     }
   }, [query, typeFilter, run, refreshStats]);
+
+  // Explain what isn't indexed and why (info affordance in the header).
+  const showIndexInfo = useCallback(() => {
+    const withContent = unindexed.filter((n) => n.contentLen > 0);
+    const emptyCount = unindexed.length - withContent.length;
+    const lines: string[] = [
+      "Only items with body text an embedding can be built from are added to the semantic index.",
+    ];
+    if (emptyCount > 0) {
+      lines.push(
+        `\n${emptyCount} empty item${emptyCount === 1 ? "" : "s"} (no body text) — nothing to index. These aren't counted in the total.`,
+      );
+    }
+    if (withContent.length > 0) {
+      const names = withContent.slice(0, 8).map((n) => `• ${n.title || "Untitled"}`).join("\n");
+      const more = withContent.length > 8 ? `\n…and ${withContent.length - 8} more` : "";
+      lines.push(
+        `\n${withContent.length} item${withContent.length === 1 ? "" : "s"} with content that hasn't been embedded yet. Reindex to try again — if one keeps failing, its body may have no indexable words (only symbols, links, or an image). Add some text and reindex to include it:\n\n${names}${more}`,
+      );
+    }
+    if (unindexed.length === 0) {
+      const gap = stats ? stats.live - stats.indexed : 0;
+      if (gap > 0) {
+        lines.push(
+          `\n${gap} item${gap === 1 ? "" : "s"} counted as not indexed, but every note and task with content already has an index entry. This usually means stale index rows from a previous on-device model — tap Reindex to rebuild.`,
+        );
+      } else {
+        lines.push("\nEverything with content is indexed.");
+      }
+    }
+    const gap = stats ? stats.live - stats.indexed : 0;
+    Alert.alert(
+      "Semantic index",
+      lines.join("\n"),
+      withContent.length > 0 || gap > 0
+        ? [
+            { text: "Reindex now", onPress: () => void forceReindex() },
+            { text: "OK", style: "cancel" as const },
+          ]
+        : [{ text: "OK", style: "cancel" as const }],
+    );
+  }, [unindexed, forceReindex, stats]);
+
 
   // Refresh stats whenever semantic mode is on or the tab regains focus.
   useFocusEffect(
@@ -261,23 +308,37 @@ export default function SearchScreen() {
             hideWhenScrolling: false,
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
-          // ✨ Semantic ranking toggle (on by default when supported). Hidden
-          // entirely when the device can't do on-device embeddings. Sits at the
-          // trailing edge beside the full-width search field; iOS 26+ wraps it in
-          // its own glass toolbar button, so we render just the bare icon and let
-          // colour (accent vs tertiary) signal on/off.
+          // Header trailing controls: an optional info button (shown when
+          // semantic mode is on and some items aren't indexed — always visible
+          // here, unlike an empty-state child that can hide behind the list/tab
+          // bar) plus the ✨ semantic ranking toggle. The toggle is hidden
+          // entirely when the device can't do on-device embeddings. iOS 26+
+          // wraps each in its own glass toolbar button.
           headerRight: semanticAvailable
             ? () => (
-                <Pressable
-                  onPress={toggleSemantic}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Semantic search"
-                  accessibilityState={{ selected: semanticMode }}
-                  style={styles.semBtn}
-                >
-                  <Sparkles size={18} color={semanticMode ? t.accent : t.textTertiary} />
-                </Pressable>
+                <View style={styles.headerRight}>
+                  {semanticMode && stats && stats.indexed < stats.live ? (
+                    <Pressable
+                      onPress={showIndexInfo}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Why aren't all items indexed?"
+                      style={styles.semBtn}
+                    >
+                      <Info size={18} color={t.warning} />
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    onPress={toggleSemantic}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Semantic search"
+                    accessibilityState={{ selected: semanticMode }}
+                    style={styles.semBtn}
+                  >
+                    <Sparkles size={18} color={semanticMode ? t.accent : t.textTertiary} />
+                  </Pressable>
+                </View>
               )
             : undefined,
         }}
@@ -351,7 +412,9 @@ export default function SearchScreen() {
             {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
           </View>
         ) : (
-          // Resting (no query) → branded Cairn empty state.
+          // Resting (no query) → branded Cairn empty state. The "why not all
+          // indexed?" affordance lives in the header (see headerRight) so it's
+          // always visible and never hides behind the list or tab bar.
           <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} pinned insetTop={insets.top} />
         )
       ) : null}
@@ -419,5 +482,6 @@ function makeStyles(t: Theme) {
     hintBias: { height: "25%" },
     hint: { textAlign: "center", color: t.textTertiary },
     statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },
+    headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   });
 }

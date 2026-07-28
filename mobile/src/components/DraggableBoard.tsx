@@ -4,9 +4,9 @@
    SharedValues, but those are reanimated UI-thread values only ever read inside
    worklets / useAnimatedStyle — never during JS render. The plain fields
    (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
-import { Plus } from "lucide-react-native";
+import { Plus, Archive, Trash2 } from "lucide-react-native";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { GestureDetector } from "react-native-gesture-handler";
 import { PressableScale } from "@/components/PressableScale";
@@ -18,6 +18,14 @@ import { stripMarkdown } from "@cairn/shared/notes/text";
 
 const COLUMN_WIDTH = 260;
 const COLUMN_GAP = 12;
+// Gap between the columns / action bar and the bottom safe area (tab bar).
+const BOARD_BOTTOM_GAP = 12;
+
+// Special drop-zone ids for the archive / delete action bar. Prefixed so they
+// can never collide with a real column id. onDrop routes these to the archive /
+// delete handlers instead of a column move.
+const ARCHIVE_ZONE = "__archive__";
+const DELETE_ZONE = "__delete__";
 
 // Stable empty-array reference for columns with no cards, so BoardColumn's
 // memoisation isn't defeated by a fresh `[]` each render.
@@ -40,6 +48,8 @@ export function DraggableBoard({
   onMove,
   onOpenCard,
   onAddCard,
+  onArchive,
+  onDelete,
 }: {
   columns: ColumnRow[];
   cards: CardRow[];
@@ -47,6 +57,10 @@ export function DraggableBoard({
   onMove: (cardId: string, colId: string) => void;
   onOpenCard: (id: string) => void;
   onAddCard: (colId: string) => void;
+  /** Drop a card on the Archive zone. */
+  onArchive?: (card: CardRow) => void;
+  /** Drop a card on the Delete zone. */
+  onDelete?: (card: CardRow) => void;
 }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -67,12 +81,34 @@ export function DraggableBoard({
 
   const onDrop = useCallback(
     (card: CardRow, target: string | null) => {
-      if (target) onMove(card.id, target);
+      if (target === ARCHIVE_ZONE) onArchive?.(card);
+      else if (target === DELETE_ZONE) onDelete?.(card);
+      else if (target) onMove(card.id, target);
     },
-    [onMove],
+    [onMove, onArchive, onDelete],
   );
 
   const ctrl = useDragController<CardRow>({ getId: (c) => c.id, onDrop, scrollAxis: "x" });
+  // Whether the action bar (archive/delete drop zones) is wired up at all.
+  const hasActions = !!onArchive || !!onDelete;
+
+  // The action bar collapses when idle, so its zone frames aren't laid out when
+  // the drag core measures on panGesture.onBegin (that fires before the lift).
+  // Re-measure once a lift expands the bar so the zones become hittable. A
+  // double rAF lets the expanded layout flush before we read the frames.
+  const dragging = ctrl.dragging;
+  const remeasure = ctrl.remeasure;
+  useEffect(() => {
+    if (!dragging || !hasActions) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => remeasure());
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [dragging, hasActions, remeasure]);
 
   if (columns.length === 0) {
     return (
@@ -83,7 +119,11 @@ export function DraggableBoard({
   }
 
   return (
-    <View ref={ctrl.setContainer} style={{ flex: 1 }} collapsable={false}>
+    <View
+      ref={ctrl.setContainer}
+      style={{ flex: 1, paddingBottom: bottomInset + BOARD_BOTTOM_GAP }}
+      collapsable={false}
+    >
       <Animated.ScrollView
         ref={ctrl.scrollRef}
         onScroll={ctrl.scrollHandler}
@@ -93,7 +133,7 @@ export function DraggableBoard({
         horizontal
         scrollEnabled={!ctrl.scrollLocked}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.board, { paddingBottom: 12 + bottomInset }]}
+        contentContainerStyle={styles.board}
         style={styles.boardScroll}
       >
         {columns.map((col) => (
@@ -111,32 +151,132 @@ export function DraggableBoard({
         ))}
       </Animated.ScrollView>
 
+      {hasActions ? (
+        // A real row BELOW the columns (not an overlay), so the drop zones sit
+        // in genuinely empty space and a card dropped here can't be mistaken for
+        // a column drop. Collapsed to nothing when idle (board keeps full
+        // height); expands while a card is lifted. The container already pads the
+        // safe-area + gap at the bottom, so the bar only needs a top gap — it
+        // rests directly on that padding. Because it lays out AFTER the lift,
+        // useDragController's zones would measure stale — so we re-measure once
+        // it's expanded (see the effect above).
+        <View
+          style={[styles.actionBar, ctrl.dragging ? styles.actionBarOpen : styles.actionBarCollapsed]}
+          pointerEvents="none"
+        >
+          {onArchive ? (
+            <ActionZone
+              zoneId={ARCHIVE_ZONE}
+              label="Archive"
+              icon={<Archive size={20} color={t.warning} />}
+              color={t.warning}
+              ctrl={ctrl}
+              styles={styles}
+            />
+          ) : null}
+          {onDelete ? (
+            <ActionZone
+              zoneId={DELETE_ZONE}
+              label="Delete"
+              icon={<Trash2 size={20} color={t.danger} />}
+              color={t.danger}
+              ctrl={ctrl}
+              styles={styles}
+            />
+          ) : null}
+        </View>
+      ) : null}
+
       {ctrl.dragging ? (
         <DragOverlay ctrl={ctrl}>
-          <BoardDragClone card={ctrl.dragging} tagMap={tagMap} t={t} styles={styles} />
+          <BoardDragClone card={ctrl.dragging} tagMap={tagMap} ctrl={ctrl} t={t} styles={styles} />
         </DragOverlay>
       ) : null}
     </View>
   );
 }
 
+/**
+ * A drop target in the action bar (Archive / Delete). Registers itself with the
+ * drag controller so the shared hit-test picks it up, and lights up (via
+ * useZoneHighlight, UI-thread) when the finger hovers it mid-drag. The bar
+ * itself is pointerEvents="none" so it never blocks scrolls, but the zones are
+ * only measured rectangles — the drag engine hit-tests them by frame, not touch.
+ */
+function ActionZone({
+  zoneId,
+  label,
+  icon,
+  color,
+  ctrl,
+  styles,
+}: {
+  zoneId: string;
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+  ctrl: DragController<CardRow>;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const hoverStyle = useZoneHighlight(ctrl, zoneId);
+  // Inverse of the hover highlight — fades the dashed base border OUT as the
+  // solid highlight fades IN, so we never show both dashed + solid at once.
+  const { hoverZoneId, sourceZoneId } = ctrl;
+  const baseStyle = useAnimatedStyle(() => {
+    const active = hoverZoneId.value === zoneId && sourceZoneId.value !== zoneId;
+    return { opacity: active ? 0 : 1 };
+  });
+  return (
+    <View
+      ref={(node: View | null) => ctrl.registerZone(zoneId, node, true)}
+      style={styles.actionZone}
+      collapsable={false}
+    >
+      {/* Dashed idle border — its own layer so it can crossfade with the solid
+          hover border instead of both being visible at once. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.actionZoneBorder, { borderColor: withAlpha(color, 0.5), borderStyle: "dashed" }, baseStyle]}
+      />
+      {/* Solid hover fill + border, faded in while the finger is over the zone. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.actionZoneBorder, { backgroundColor: withAlpha(color, 0.18), borderColor: color }, hoverStyle]}
+      />
+      {icon}
+      <Text style={[styles.actionZoneLabel, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
 /** The card clone rendered inside the drag overlay. Isolated so the tag lookup
- *  isn't flagged as ref access at the container level. */
+ *  isn't flagged as ref access at the container level. Its outline turns the
+ *  action zone's colour (warning for archive, danger for delete) while the
+ *  finger hovers that zone, so the card itself signals the pending action. */
 function BoardDragClone({
   card,
   tagMap,
+  ctrl,
   t,
   styles,
 }: {
   card: CardRow;
   tagMap: Map<string, TagRow[]>;
+  ctrl: DragController<CardRow>;
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
 }) {
+  const { hoverZoneId } = ctrl;
+  const outlineStyle = useAnimatedStyle(() => {
+    const z = hoverZoneId.value;
+    if (z === DELETE_ZONE) return { borderColor: t.danger };
+    if (z === ARCHIVE_ZONE) return { borderColor: t.warning };
+    return { borderColor: t.accent };
+  });
   return (
-    <View style={[styles.card, styles.cardLiftedOverlay, elevation.xl]}>
+    <Animated.View style={[styles.card, styles.cardLiftedOverlay, elevation.xl, outlineStyle]}>
       <CardBody card={card} tags={tagMap.get(card.id)} t={t} styles={styles} />
-    </View>
+    </Animated.View>
   );
 }
 
@@ -268,7 +408,7 @@ function makeStyles(t: Theme) {
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
     emptyText: { ...typeScale.caption, color: t.textTertiary, textAlign: "center" },
     boardScroll: { flex: 1 },
-    board: { padding: 12, paddingTop: 0, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
+    board: { padding: 12, paddingTop: 0, paddingBottom: 0, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
     column: { width: COLUMN_WIDTH, backgroundColor: t.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: t.border },
     columnHighlight: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 12, borderWidth: 1.5, borderColor: t.accent, backgroundColor: withAlpha(t.accent, 0.06) },
     columnCards: { flex: 1 },
@@ -282,5 +422,39 @@ function makeStyles(t: Theme) {
     priorityDot: { width: 8, height: 8, borderRadius: 4 },
     cardTitle: { flex: 1, ...typeScale.label, fontWeight: "500", color: t.textPrimary },
     cardDesc: { ...typeScale.caption, color: t.textSecondary, marginTop: 8, lineHeight: 17 },
+    // Action bar: a row of drop zones laid out BELOW the columns (a sibling of
+    // the board scroll, not an overlay), so a card dropped here lands in empty
+    // space rather than over a column. Collapsed to zero height when idle; the
+    // component re-measures the zones after it expands on a lift.
+    actionBar: {
+      flexDirection: "row",
+      gap: 12,
+      paddingHorizontal: 12,
+      flexShrink: 0,
+    },
+    actionBarOpen: { paddingTop: BOARD_BOTTOM_GAP },
+    actionBarCollapsed: { height: 0, overflow: "hidden", opacity: 0 },
+    actionZone: {
+      flex: 1,
+      height: 64,
+      borderRadius: 12,
+      backgroundColor: t.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+      overflow: "hidden",
+    },
+    // Shared border layer (dashed idle + solid hover crossfade over it). Absolute
+    // fill so the two states can fade independently without both being visible.
+    actionZoneBorder: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderRadius: 12,
+      borderWidth: 1.5,
+    },
+    actionZoneLabel: { ...typeScale.label, fontWeight: "600" },
   });
 }

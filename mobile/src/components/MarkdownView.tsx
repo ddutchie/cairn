@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useMemo, type ReactNode } from "react";
-import { Linking, Text, View, Pressable } from "react-native";
+import { Linking, Text, View, Pressable, type StyleProp, type TextStyle } from "react-native";
 import Markdown, { MarkdownIt, type RenderRules, type ASTNode } from "react-native-markdown-display";
 import markdownItMark from "markdown-it-mark";
 import { useRouter } from "expo-router";
@@ -24,6 +24,7 @@ import {
   cardIdFromUrl,
   isColorLiteral,
   toggleCheckboxInSource,
+  CELL_CHECKBOX_RE,
   type WikilinkResolver,
 } from "@cairn/shared/notes/markdown";
 import { headingSlug } from "@cairn/shared/notes/toc";
@@ -163,13 +164,38 @@ const markdownItInstance = MarkdownIt({ breaks: true, linkify: true, typographer
  * stash `{ isTask, checked, taskIndex }` on the `list_item_open` token's meta.
  * Stripping here (not in the render rule) is what stops the literal `[x]` from
  * rendering twice — the marker is gone from the children by render time.
+ *
+ * Table cells are also scanned: GFM crams a whole checklist into one cell
+ * (`- [ ] a<br>- [x] b`), which markdown-it keeps as a single text token. We
+ * stash `{ cellTasks: [{ checked, taskIndex }] }` on the cell's inline token so
+ * the td/th render rule can draw checkboxes. Both list items and cell checkboxes
+ * share ONE document-order `taskIndex` counter so it lines up with
+ * toggleCheckboxInSource (which counts list-lines and table-cell tokens in the
+ * same order).
  */
 function taskListPlugin(md: MdItLike) {
   md.core.ruler.after("inline", "cairn_task_lists", (state) => {
     const tokens = state.tokens as MdToken[];
     let taskIndex = 0;
     for (let i = 0; i < tokens.length; i++) {
-      if (tokens[i].type !== "list_item_open") continue;
+      const tok = tokens[i];
+
+      if (tok.type === "td_open" || tok.type === "th_open") {
+        // A table cell's inline content is the next token (html is off, so
+        // `<br>` stays literal in one text token). Enumerate every checkbox
+        // token in document order, record its global taskIndex, and stash the
+        // segments (text/checkbox parts) on the cell-open token so the td/th
+        // render rule can draw the checklist.
+        const inline = tokens[i + 1];
+        if (!inline || inline.type !== "inline") continue;
+        const segments = buildCellSegments(inline.content, () => taskIndex++);
+        if (segments.some((s) => s.kind === "checkbox")) {
+          tok.meta = { ...(tok.meta as object), cellSegments: segments };
+        }
+        continue;
+      }
+
+      if (tok.type !== "list_item_open") continue;
       // Find the inline token inside this list item (list_item_open →
       // paragraph_open → inline).
       const inline = tokens[i + 2];
@@ -189,6 +215,40 @@ function taskListPlugin(md: MdItLike) {
     }
     return true;
   });
+}
+
+/** A rendered piece of a table cell: literal text or a checkbox. */
+type CellSegment =
+  | { kind: "text"; text: string }
+  | { kind: "checkbox"; checked: boolean; taskIndex: number };
+
+/**
+ * Split a table cell's raw text into ordered text / checkbox segments. `next()`
+ * hands back (and advances) the shared document-order task index so cell
+ * checkboxes line up with list-item checkboxes for toggleCheckboxInSource. The
+ * leading list marker (`- `) and surrounding `<br>` are dropped from the text so
+ * the checklist renders cleanly.
+ */
+function buildCellSegments(raw: string, next: () => number): CellSegment[] {
+  const segments: CellSegment[] = [];
+  const re = new RegExp(CELL_CHECKBOX_RE.source, CELL_CHECKBOX_RE.flags);
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  const pushText = (text: string) => {
+    // Strip literal <br> tags (used as in-cell line breaks) → newlines.
+    const cleaned = text.replace(/<br\s*\/?>/gi, "\n");
+    if (cleaned) segments.push({ kind: "text", text: cleaned });
+  };
+  while ((m = re.exec(raw)) !== null) {
+    const lead = m[1] ?? "";
+    // Keep the boundary char (space/newline) but drop the list marker.
+    const boundary = /^<br/i.test(lead) ? "\n" : lead;
+    pushText(raw.slice(lastIndex, m.index) + boundary);
+    segments.push({ kind: "checkbox", checked: m[3].toLowerCase() === "x", taskIndex: next() });
+    lastIndex = re.lastIndex;
+  }
+  pushText(raw.slice(lastIndex));
+  return segments;
 }
 
 /**
@@ -357,6 +417,56 @@ function makeRules(
     }
   };
 
+  // Render a table cell. When taskListPlugin recorded checkbox segments on the
+  // cell (a GFM checklist crammed into one cell), draw the text + tappable
+  // checkbox icons ourselves; otherwise fall back to the default children.
+  const renderTableCell = (
+    node: ASTNode,
+    children: ReactNode,
+    textStyle: StyleProp<TextStyle>,
+  ): ReactNode => {
+    const segments = (node as { sourceMeta?: { cellSegments?: CellSegment[] } }).sourceMeta
+      ?.cellSegments;
+    const cellStyle = { flex: 1, padding: 8 } as const;
+    if (!segments || segments.length === 0) {
+      return (
+        <View key={node.key} style={cellStyle}>
+          {children}
+        </View>
+      );
+    }
+    const interactive = !!onChangeContent;
+    return (
+      <View key={node.key} style={cellStyle}>
+        <Text style={textStyle}>
+          {segments.map((seg, i) => {
+            if (seg.kind === "text") return <Text key={i}>{seg.text}</Text>;
+            return (
+              <Text key={i}>
+                <Pressable
+                  disabled={!interactive}
+                  hitSlop={8}
+                  onPress={
+                    interactive
+                      ? () => onChangeContent?.(toggleCheckboxInSource(source, seg.taskIndex))
+                      : undefined
+                  }
+                >
+                  {seg.checked ? (
+                    <CheckSquare size={17} color={t.accent} />
+                  ) : (
+                    <Square size={17} color={t.textTertiary} />
+                  )}
+                </Pressable>
+                {" "}
+              </Text>
+            );
+          })}
+        </Text>
+      </View>
+    );
+  };
+
   return {
     // Syntax-highlighted fenced / indented code blocks; mermaid → diagram.
     fence: (node) => {
@@ -501,6 +611,15 @@ function makeRules(
         </View>
       );
     },
+
+    // Table cells. If taskListPlugin found checkbox tokens in the cell, render
+    // the reconstructed text/checkbox segments ourselves (with tappable icons)
+    // instead of the default inline children — GFM cells can hold a whole
+    // checklist that markdown-it leaves as literal `[ ]` text.
+    td: (node, children, _parent, styles) =>
+      renderTableCell(node, children, styles.td),
+    th: (node, children, _parent, styles) =>
+      renderTableCell(node, children, styles.th),
 
     // Inline code — render a colour swatch before CSS colour literals.
     code_inline: (node, _children, _parent, styles) => {

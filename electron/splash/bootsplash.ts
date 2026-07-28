@@ -13,6 +13,7 @@
 import { app, BrowserWindow } from "electron";
 import * as fs from "fs";
 import * as path from "path";
+import { resolveAccentPreset } from "../../shared/ui/accents";
 
 export type SplashStep =
   | "update"
@@ -315,10 +316,27 @@ ${initialVars}
 function getThemeColors(): Record<string, string> {
   // Mirrors the app's real design tokens in src/app/globals.css so the splash
   // matches the window that follows it (light branch = [data-theme="light"]).
+  // The accent is the user's chosen preset (persisted in theme.json by
+  // setAccent), resolved for the active theme; falls back to the default.
+  let accentId: string | undefined;
+  let isLight = false;
+  try {
+    const themeFile = path.join(app.getPath("userData"), "theme.json");
+    if (fs.existsSync(themeFile)) {
+      const j = JSON.parse(fs.readFileSync(themeFile, "utf8"));
+      isLight = j.theme === "light";
+      accentId = typeof j.accent === "string" ? j.accent : undefined;
+    }
+  } catch {
+    // ignore — use dark defaults
+  }
+  const preset = resolveAccentPreset(accentId);
+  const accent = isLight ? preset.light.accent : preset.dark.accent;
+
   const light: Record<string, string> = {
     text: "#1a1917",          // --text-primary (light)
     "text-dim": "#9e9a94",    // --text-tertiary (light)
-    accent: "#6457e8",        // --accent (light)
+    accent,                   // --accent (light, chosen preset)
     "progress-bg": "#f0eeeb", // --surface-2 (light)
     success: "#1a9e68",       // --success (light)
     error: "#dc2626",         // --danger (light)
@@ -327,22 +345,13 @@ function getThemeColors(): Record<string, string> {
   const dark: Record<string, string> = {
     text: "#e8e4dc",          // --text-primary (dark)
     "text-dim": "#66635f",    // --text-tertiary (dark)
-    accent: "#7c6af7",        // --accent (dark)
+    accent,                   // --accent (dark, chosen preset)
     "progress-bg": "#1a1a1a", // --surface-2 (dark)
     success: "#3ecf8e",       // --success (dark)
     error: "#ef4444",         // --danger (dark)
     background: "#0d0d0d",    // --background (dark)
   };
-  try {
-    const themeFile = path.join(app.getPath("userData"), "theme.json");
-    if (fs.existsSync(themeFile)) {
-      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
-      if (t === "light") return light;
-    }
-  } catch {
-    // ignore — use dark defaults
-  }
-  return dark;
+  return isLight ? light : dark;
 }
 
 export class BootSplash {

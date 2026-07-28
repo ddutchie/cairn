@@ -160,6 +160,8 @@ function makeStreamer(config: OpenAIConfig) {
     const toolAccum = new Map<number, ToolAccum>();
     let finishReason: string | undefined;
     let promptTokens: number | undefined;
+    let completionTokens: number | undefined;
+    let reasoningTokens: number | undefined;
 
     // Build the ring usage from the server's prompt_tokens + the model's context
     // window (models.dev, cached). Undefined when the endpoint reported no usage.
@@ -167,7 +169,7 @@ function makeStreamer(config: OpenAIConfig) {
       if (promptTokens == null) return undefined;
       // Manual override wins; else look up the model in models.dev; else default.
       const contextLimit = config.contextLimit ?? (await contextLimitForModel(config.model));
-      return { promptTokens, contextLimit };
+      return { promptTokens, contextLimit, completionTokens, reasoningTokens };
     };
 
     const flushTools = function* (): Generator<StreamEvent> {
@@ -218,7 +220,11 @@ function makeStreamer(config: OpenAIConfig) {
               };
               finish_reason?: string;
             }[];
-            usage?: { prompt_tokens?: number };
+            usage?: {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+              completion_tokens_details?: { reasoning_tokens?: number };
+            };
           };
           try {
             chunk = JSON.parse(payload);
@@ -228,6 +234,12 @@ function makeStreamer(config: OpenAIConfig) {
           // Usage arrives in its own chunk (choices empty) when include_usage is on.
           if (typeof chunk.usage?.prompt_tokens === "number") {
             promptTokens = chunk.usage.prompt_tokens;
+          }
+          if (typeof chunk.usage?.completion_tokens === "number") {
+            completionTokens = chunk.usage.completion_tokens;
+          }
+          if (typeof chunk.usage?.completion_tokens_details?.reasoning_tokens === "number") {
+            reasoningTokens = chunk.usage.completion_tokens_details.reasoning_tokens;
           }
           const choice = chunk.choices?.[0];
           if (!choice) continue;

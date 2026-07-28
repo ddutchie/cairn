@@ -19,6 +19,7 @@ import {
   type ChatUsage,
 } from "./providers/types";
 import { toolsForAgent, allToolMap } from "./tools";
+import { computeBreakdown, scaleBreakdown } from "./token-breakdown";
 
 // Max model round-trips per user turn. Each turn is one model call; a turn that
 // requests tools runs them all, then loops for the model's follow-up (which sees
@@ -126,6 +127,24 @@ export async function runAgent(
   // Context-window usage from the latest turn's finish event (Apple provider).
   let usage: ChatUsage | undefined;
 
+  // Attach an on-device prompt-token breakdown to the provider's usage so the
+  // context ring can show the per-category split (system / tools / MCP /
+  // conversation / tool outputs) like desktop. Computed from the exact messages
+  // the model saw this run, then rescaled to the provider's authoritative
+  // promptTokens so the segments sum to the number the ring displays.
+  const withBreakdown = (u: ChatUsage | undefined): ChatUsage | undefined => {
+    if (!u) return u;
+    if (u.breakdown) return u; // provider already supplied one
+    try {
+      const estimate = computeBreakdown(conversation, tools);
+      const breakdown =
+        u.promptTokens > 0 ? scaleBreakdown(estimate, u.promptTokens) : estimate;
+      return { ...u, breakdown };
+    } catch {
+      return u; // never let breakdown counting break a turn
+    }
+  };
+
   // Ensure the conversation is led by an up-to-date system prompt. Refresh it
   // each run so the injected current date doesn't go stale in a long session.
   if (conversation[0]?.role === "system") {
@@ -206,7 +225,7 @@ export async function runAgent(
       // Ensure the assistant turn is in history even if empty-ish.
       if (assistant.parts.length === 0) assistant.parts.push({ type: "text", text: finalText });
       conversation.push(assistant);
-      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, usage });
+      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, usage: withBreakdown(usage) });
       return finalText;
     }
 
@@ -247,7 +266,7 @@ export async function runAgent(
     conversation.push(assistant);
     // Loop for the model's follow-up turn (it now sees the tool outputs).
     if (finishReason === "stop") {
-      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, usage });
+      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, usage: withBreakdown(usage) });
       return finalText;
     }
   }
@@ -258,7 +277,7 @@ export async function runAgent(
   // half-finished answer off as complete.
   const limitNote = `I reached the maximum of ${MAX_TURNS} steps. Any changes made have been saved — try a more focused request.`;
   const msg = finalText ? `${finalText}\n\n${limitNote}` : limitNote;
-  onEvent?.({ type: "final", text: msg, reasoning: reasoning || undefined, usage });
+  onEvent?.({ type: "final", text: msg, reasoning: reasoning || undefined, usage: withBreakdown(usage) });
   return msg;
 }
 

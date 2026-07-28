@@ -17,10 +17,14 @@ import { RadialTreeCanvas } from "./RadialTreeCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 
+// Edge-type legend. Mirrors the tokens in shared/ui/graph.ts `edgeStyle()`:
+// structural note links = success, wikilinks = accent, semantic = a neutral
+// dashed (so it never merges with the accent when the accent is green),
+// co-mention = a faint border dashed.
 const EDGE_LEGEND: Array<{ label: string; color: string; dash: boolean }> = [
-  { label: "Linked",   color: "var(--accent)",  dash: false },
+  { label: "Linked",   color: "var(--success)", dash: false },
   { label: "Wikilink", color: "var(--accent)",  dash: false },
-  { label: "Semantic", color: "var(--accent)",  dash: true  },
+  { label: "Semantic", color: "var(--text-tertiary)", dash: true },
   { label: "Co-mention", color: "var(--border)", dash: true },
 ];
 

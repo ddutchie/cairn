@@ -68,8 +68,11 @@ export interface DragController<T> {
   originX: SharedValue<number>;
   originY: SharedValue<number>;
 
-  /** Ref callback to register a drop zone's measurable node by id. */
-  registerZone: (zoneId: string, node: View | null) => void;
+  /** Ref callback to register a drop zone's measurable node by id.
+   *  Pass `scrollIndependent: true` for zones that live OUTSIDE the scroll view
+   *  (e.g. action zones fixed below the list) so the hit-test doesn't shift them
+   *  by the scroll delta. */
+  registerZone: (zoneId: string, node: View | null, scrollIndependent?: boolean) => void;
   /** Ref callback for the drag container (its origin is measured on drag begin). */
   setContainer: (node: View | null) => void;
   /** Re-measure the container origin + every zone frame (call on drag begin). */
@@ -135,6 +138,10 @@ export function useDragController<T>({
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
   const frames = useSharedValue<Record<string, ZoneFrame>>({});
+  // Ids of zones that live outside the scroll view — their measured frames must
+  // NOT be scroll-corrected in the hit-test (see zoneAt). Mirrored into a shared
+  // value so the UI-thread worklet can read it.
+  const scrollIndependentZones = useSharedValue<Record<string, boolean>>({});
 
   // Auto-scroll state (all UI-thread). scrollOffset tracks the scrollable's live
   // position; offsetAtMeasure is the offset when `frames` were captured, so the
@@ -182,10 +189,28 @@ export function useDragController<T>({
   const [dragging, setDragging] = useState<T | null>(null);
   const [scrollLocked, setScrollLocked] = useState(false);
 
-  const registerZone = useCallback((zoneId: string, node: View | null) => {
-    if (node) zoneRefs.current[zoneId] = node;
-    else delete zoneRefs.current[zoneId];
-  }, []);
+  const registerZone = useCallback((zoneId: string, node: View | null, scrollIndependent = false) => {
+    if (node) {
+      zoneRefs.current[zoneId] = node;
+      // Keep the flag in sync with the current registration: set it when the
+      // zone is scroll-independent, clear it when it isn't (a zone can be
+      // re-registered with a different value for the same id).
+      if (scrollIndependent && !scrollIndependentZones.value[zoneId]) {
+        scrollIndependentZones.value = { ...scrollIndependentZones.value, [zoneId]: true };
+      } else if (!scrollIndependent && scrollIndependentZones.value[zoneId]) {
+        const next = { ...scrollIndependentZones.value };
+        delete next[zoneId];
+        scrollIndependentZones.value = next;
+      }
+    } else {
+      delete zoneRefs.current[zoneId];
+      if (scrollIndependentZones.value[zoneId]) {
+        const next = { ...scrollIndependentZones.value };
+        delete next[zoneId];
+        scrollIndependentZones.value = next;
+      }
+    }
+  }, [scrollIndependentZones]);
 
   const setContainer = useCallback((node: View | null) => {
     containerRef.current = node;
@@ -257,11 +282,15 @@ export function useDragController<T>({
       const zoneAt = (absX: number, absY: number): string | null => {
         "worklet";
         const f = frames.value;
+        const indep = scrollIndependentZones.value;
         const delta = scrollOffset.value - offsetAtMeasure.value;
         for (const id in f) {
           const r = f[id];
-          const rx = scrollAxis === "x" ? r.x - delta : r.x;
-          const ry = scrollAxis === "y" ? r.y - delta : r.y;
+          // Zones outside the scroll view (action zones) don't move with the
+          // scroll, so their frames must not be shifted by the scroll delta.
+          const d = indep[id] ? 0 : delta;
+          const rx = scrollAxis === "x" ? r.x - d : r.x;
+          const ry = scrollAxis === "y" ? r.y - d : r.y;
           if (absX >= rx && absX <= rx + r.width && absY >= ry && absY <= ry + r.height) return id;
         }
         return null;
@@ -333,7 +362,7 @@ export function useDragController<T>({
           }
         });
     },
-    [frames, longPressMs, liftOffsetY, remeasure, beginDrag, endDrag, sourceZoneId, hoverZoneId, dragX, dragY, dragW, scrollAxis, scrollOffset, offsetAtMeasure, viewport, maxScroll, scrollRef],
+    [frames, longPressMs, liftOffsetY, remeasure, beginDrag, endDrag, sourceZoneId, hoverZoneId, dragX, dragY, dragW, scrollAxis, scrollOffset, offsetAtMeasure, scrollIndependentZones, viewport, maxScroll, scrollRef],
   );
 
   // getId is accepted for API symmetry / future keying; not needed internally

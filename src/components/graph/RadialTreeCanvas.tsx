@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from "react"
 import { ChevronLeft } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
-import { resolveCssVar, withAlpha } from "./analyticsUtils";
+import { resolveCssVar, withAlpha, tokenToCssVar } from "./analyticsUtils";
 import { useFontScale, useThemeRepaint } from "./analyticsHooks";
 import {
   buildHierarchy as sharedBuildHierarchy,
@@ -28,12 +28,7 @@ interface Props {
 type HNode = HierarchyNode;
 
 function colorForType(type: string): string {
-  const token = sunburstTypeToken(type as HNode["type"]);
-  const cssVar = token === "textPrimary" ? "--text-primary"
-    : token === "textSecondary" ? "--text-secondary"
-    : token === "textTertiary" ? "--text-tertiary"
-    : `--${token}`;
-  return resolveCssVar(cssVar);
+  return resolveCssVar(tokenToCssVar(sunburstTypeToken(type as HNode["type"])));
 }
 
 const INNER_R = 38;

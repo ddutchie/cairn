@@ -22,6 +22,16 @@ export function resolveCssVar(varName: string): string {
 }
 
 /**
+ * Map a shared graph `ThemeToken` (camelCase, e.g. "textPrimary", "nodeProject")
+ * to its CSS custom-property name (kebab-case, e.g. "--text-primary",
+ * "--node-project"). Single source of truth for the token→var conversion used by
+ * the graph canvases and the store's `nodeTypeColor`.
+ */
+export function tokenToCssVar(token: string): string {
+  return `--${token.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+}
+
+/**
  * Apply an alpha (0–1) to any CSS colour for canvas use.
  * Hex inputs use a fast `#rrggbbaa` path; every other format (rgb(), oklch(),
  * var(), …) is wrapped in `color-mix(in srgb, …, transparent)` so transparency

@@ -67,15 +67,31 @@ describe("toggleCheckboxInSource — table-cell checkboxes", () => {
     expect(out.split("\n")[1]).toBe("| --- | --- |");
   });
 
-  it("ignores non-cell-leading checkbox text when indexing cells", () => {
-    // Only the cell-leading `[ ]` renders as a checkbox (mirrors
-    // renderCellWithCheckboxes); the mid-cell literal "[ ]" must not consume an
-    // index or be toggled.
+  it("indexes every whitespace-bounded checkbox in a cell, in order", () => {
+    // Cells can hold a whole checklist, so mid-cell checkboxes DO render and DO
+    // consume an index (mirrors renderCellWithCheckboxes). A `[ ]` fused to a
+    // word (no boundary) is still ignored.
     const row = "| [ ] | note [ ] here | [ ] |";
-    // index 0 → first cell-leading box; index 1 → the THIRD cell's leading box
-    // (the literal mid-text box in cell 2 is skipped entirely).
+    // index 0 → cell 1's box; index 1 → cell 2's box; index 2 → cell 3's box.
     expect(toggleCheckboxInSource(row, 0)).toBe("| [x] | note [ ] here | [ ] |");
-    expect(toggleCheckboxInSource(row, 1)).toBe("| [ ] | note [ ] here | [x] |");
+    expect(toggleCheckboxInSource(row, 1)).toBe("| [ ] | note [x] here | [ ] |");
+    expect(toggleCheckboxInSource(row, 2)).toBe("| [ ] | note [ ] here | [x] |");
+  });
+
+  it("handles multiple dash-prefixed checkboxes in one cell (space-separated)", () => {
+    const row = "| Setup | - [ ] install - [x] configure |";
+    expect(toggleCheckboxInSource(row, 0)).toBe("| Setup | - [x] install - [x] configure |");
+    expect(toggleCheckboxInSource(row, 1)).toBe("| Setup | - [ ] install - [ ] configure |");
+  });
+
+  it("handles a <br>-separated checklist inside one cell", () => {
+    const row = "| Onboarding | - [ ] Create account<br>- [ ] Verify email<br>- [x] Set password |";
+    expect(toggleCheckboxInSource(row, 0)).toBe(
+      "| Onboarding | - [x] Create account<br>- [ ] Verify email<br>- [x] Set password |",
+    );
+    expect(toggleCheckboxInSource(row, 2)).toBe(
+      "| Onboarding | - [ ] Create account<br>- [ ] Verify email<br>- [ ] Set password |",
+    );
   });
 });
 

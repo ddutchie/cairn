@@ -31,7 +31,8 @@ interface UseSyncSourcesResult {
 /**
  * Scan the shared iCloud folder for published workspaces (sources) — the common
  * `getSyncFolderPath()` + `listSources(folder, getDeviceId())` round-trip shared
- * by the first-run SourcePicker and the header WorkspaceHeaderMenu.
+ * by the header WorkspaceHeaderMenu (the first-run OnboardingGuide runs its own
+ * scan so it can drive the guided-checklist phases directly).
  *
  * The two call sites differ only in options: the picker gates on iCloud
  * availability and shows errors (`gateOnICloud`), while the header switcher

@@ -144,6 +144,7 @@ export function buildGraphHtml(payload: string): string {
                 .attr('x2', function (d) { return d.target.x; })
                 .attr('y2', function (d) { return d.target.y; });
               node.attr('transform', function (d) { return 'translate(' + d.x + ',' + d.y + ')'; });
+              maybeAutoFit();
             });
 
           var zoom = d3.zoom().scaleExtent([0.2, 6]).on('zoom', function (e) {
@@ -180,6 +181,27 @@ export function buildGraphHtml(payload: string): string {
             var tf = d3.zoomIdentity.translate(W / 2, H / 2).scale(k).translate(-cx, -cy);
             svg.transition().duration(450).call(zoom.transform, tf);
           };
+
+          // Auto zoom-to-fit as soon as the layout is VISUALLY settled, rather
+          // than waiting for the simulation to fully cool. The force sim keeps
+          // ticking long after motion is imperceptible (alpha decays toward
+          // ~0.001), so watch alpha during ticks and fit once it drops below a
+          // "good enough" threshold — the graph looks settled but we skip the
+          // slow tail. Guarded so it fits only once and backs off if the user
+          // pans/zooms first.
+          var userInteracted = false;
+          var didAutoFit = false;
+          var AUTOFIT_ALPHA = 0.15;
+          svg.on('pointerdown.autofit wheel.autofit', function () { userInteracted = true; });
+          function maybeAutoFit() {
+            if (didAutoFit || userInteracted) return;
+            if (sim.alpha() > AUTOFIT_ALPHA) return;
+            didAutoFit = true;
+            window.__fit();
+          }
+          // Fallback: if the sim somehow ends without a qualifying tick, fit then.
+          sim.on('end', maybeAutoFit);
+
 
           node.call(d3.drag()
             .on('start', function (e, d) { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })

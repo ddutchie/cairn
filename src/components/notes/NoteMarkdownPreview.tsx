@@ -16,6 +16,7 @@ import { renderCodeFence } from "./markdown-code-fence";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
 import { makeLatexPlugins, InlineCode, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
+import { renderCellWithCheckboxes } from "./note-markdown-components";
 
 // ── NoteMarkdownPreview ───────────────────────────────────────────────────────
 
@@ -245,6 +246,12 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: 
                 </table>
               </div>
             );
+          },
+          td({ children, style }: { children?: React.ReactNode; style?: React.CSSProperties }) {
+            return <td style={style}>{renderCellWithCheckboxes(children)}</td>;
+          },
+          th({ children, style }: { children?: React.ReactNode; style?: React.CSSProperties }) {
+            return <th style={style}>{renderCellWithCheckboxes(children)}</th>;
           },
         } as import("react-markdown").Components)}
       >

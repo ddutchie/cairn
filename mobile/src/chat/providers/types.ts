@@ -15,6 +15,8 @@
  * agent loop (agent.ts) is provider-agnostic.
  */
 
+import type { TokenBreakdown } from "../token-breakdown";
+
 export type RorkRole = "system" | "user" | "assistant";
 
 export interface TextPart {
@@ -87,6 +89,16 @@ export interface ChatUsage {
    *  tokenizer family, e.g. Rork/Gemini counted with o200k_base). The ring shows
    *  a "~" and an "estimated" hint. */
   estimated?: boolean;
+  /** Per-category prompt-token split (system prompt, tools, MCP, conversation,
+   *  tool outputs, …). Computed on-device by the agent loop; drives the detailed
+   *  breakdown in the context ring. Absent for a turn where it couldn't be built. */
+  breakdown?: TokenBreakdown;
+  /** Completion tokens the model produced this turn (answer + reasoning), if the
+   *  provider reported them. */
+  completionTokens?: number;
+  /** Subset of completionTokens spent on reasoning/thinking (0/undefined if the
+   *  provider didn't split it out). */
+  reasoningTokens?: number;
 }
 
 /** A provider streams normalised events for a turn. */

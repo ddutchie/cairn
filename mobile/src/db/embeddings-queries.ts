@@ -263,9 +263,17 @@ export function embeddingIndexStats(workspaceId: string): {
   sections: number;
 } {
   const db = getDb();
+  // Only notes with embeddable content count toward the denominator. A note
+  // whose body is empty/whitespace produces zero sections (splitIntoSections
+  // returns [] on `content.trim() === ""`, see shared/notes/sections.ts), so it
+  // can never be "indexed" — counting it in the total made a fully-caught-up
+  // index read as e.g. "209 of 212" and look like a failure. Match the split's
+  // emptiness test here so "all indexed" actually reaches 100%.
   const liveNotes =
     db.getFirstSync<{ n: number }>(
-      `SELECT COUNT(*) n FROM notes WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND workspace_id = ?`,
+      `SELECT COUNT(*) n FROM notes
+       WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND workspace_id = ?
+         AND content IS NOT NULL AND TRIM(content) <> ''`,
       workspaceId,
     )?.n ?? 0;
   const indexedNotes =
@@ -275,7 +283,13 @@ export function embeddingIndexStats(workspaceId: string): {
     )?.n ?? 0;
   const liveCards =
     db.getFirstSync<{ n: number }>(
-      `SELECT COUNT(*) n FROM task_cards WHERE ${LIVE} AND workspace_id = ?`,
+      // A card embeds `description ?? title`, so it's embeddable if EITHER the
+      // title or the description has text. A card with both blank produces no
+      // sections and can never be indexed — exclude it from the total, same as
+      // empty notes above.
+      `SELECT COUNT(*) n FROM task_cards
+       WHERE ${LIVE} AND workspace_id = ?
+         AND (TRIM(COALESCE(title, '')) <> '' OR TRIM(COALESCE(description, '')) <> '')`,
       workspaceId,
     )?.n ?? 0;
   const indexedCards =
@@ -290,6 +304,65 @@ export function embeddingIndexStats(workspaceId: string): {
     )?.n ?? 0;
   return { liveNotes, indexedNotes, liveCards, indexedCards, sections };
 }
+
+/** One live note that is NOT represented in the semantic index, with enough
+ *  context to explain why. `contentLen` is the trimmed body length; a note with
+ *  content but still no embedding rows points at an embed failure rather than an
+ *  empty note. */
+export interface UnindexedNote {
+  id: string;
+  title: string;
+  /** Trimmed length of the note body (0 = empty). */
+  contentLen: number;
+}
+
+/**
+ * Live notes that have no rows in `note_embeddings` — i.e. the ones making the
+ * "N of M indexed" count fall short. Includes empty notes (contentLen 0) and,
+ * more importantly, notes WITH content that still failed to embed, so the UI can
+ * explain the gap instead of leaving it a mystery. Ordered content-first so the
+ * genuinely-suspicious ones surface at the top.
+ */
+export function listUnindexedNotes(workspaceId: string): UnindexedNote[] {
+  return getDb().getAllSync<UnindexedNote>(
+    `SELECT n.id AS id,
+            n.title AS title,
+            LENGTH(TRIM(COALESCE(n.content, ''))) AS contentLen
+       FROM notes n
+      WHERE ${LIVE} AND n.type='note' AND ${NOT_CONFLICT} AND n.workspace_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM note_embeddings e WHERE e.note_id = n.id
+        )
+      ORDER BY contentLen DESC, n.title`,
+    workspaceId,
+  );
+}
+
+/**
+ * Live task cards with no rows in `task_embeddings` — the card equivalent of
+ * listUnindexedNotes. A card embeds `description ?? title`, so `contentLen` is
+ * the longer of the two trimmed lengths (0 only when both are blank). The Search
+ * index count sums notes AND cards, so an unindexed CARD (not a note) can be why
+ * the total falls short — this surfaces those too.
+ */
+export function listUnindexedCards(workspaceId: string): UnindexedNote[] {
+  return getDb().getAllSync<UnindexedNote>(
+    `SELECT c.id AS id,
+            c.title AS title,
+            MAX(
+              LENGTH(TRIM(COALESCE(c.title, ''))),
+              LENGTH(TRIM(COALESCE(c.description, '')))
+            ) AS contentLen
+       FROM task_cards c
+      WHERE ${LIVE} AND c.workspace_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM task_embeddings e WHERE e.card_id = c.id
+        )
+      ORDER BY contentLen DESC, c.title`,
+    workspaceId,
+  );
+}
+
 
 /** Resolve a note's title for search-result display. */
 export function noteTitleById(noteId: string): string {

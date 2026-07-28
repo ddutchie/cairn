@@ -137,9 +137,10 @@ export function filterGraphEdges(
   );
 }
 
-/** Node type → CSS variable colour token */
+/** Node type → CSS variable colour token (camelCase token → kebab-case var). */
 export function nodeTypeColor(type: GraphNodeType): string {
-  return `var(--${nodeTypeToken(type)})`;
+  const token = nodeTypeToken(type).replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+  return `var(--${token})`;
 }
 
 /** Edge type → display label */

@@ -9,6 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { ViewVisibilitySettings } from "./ViewVisibilitySettings";
+import { AccentPicker } from "@/components/ui/accent-picker";
 
 const FONT_SCALE_OPTIONS: { value: FontScale; label: string; description: string }[] = [
   { value: 1,   label: "XS", description: "100%" },
@@ -68,6 +69,9 @@ export function GeneralSettings() {
             </button>
           ))}
         </div>
+      </SettingsRow>
+      <SettingsRow label="Accent color" description="The highlight color used across the app">
+        <AccentPicker className="w-48" />
       </SettingsRow>
       <SettingsRow label="Font size" description="Scale the UI text up or down">
         <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">

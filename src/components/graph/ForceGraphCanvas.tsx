@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from "react"
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
-import { resolveCssVar, withAlpha } from "./analyticsUtils";
+import { resolveCssVar, withAlpha, tokenToCssVar } from "./analyticsUtils";
 import { useFontScale, useThemeRepaint } from "./analyticsHooks";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
@@ -42,7 +42,7 @@ interface Props {
 
 /** Resolve a shared graph theme token to a concrete CSS-var colour. */
 function tokenColor(token: ThemeToken): string {
-  return resolveCssVar(`--${token === "textPrimary" ? "text-primary" : token === "textSecondary" ? "text-secondary" : token === "textTertiary" ? "text-tertiary" : token}`);
+  return resolveCssVar(tokenToCssVar(token));
 }
 
 function hexForType(type: GraphNode["type"]): string {

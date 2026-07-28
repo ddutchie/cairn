@@ -22,9 +22,21 @@
  */
 import { buildPdfHtml, type PdfTheme, pdfSafeFilename } from "@cairn/shared/notes/pdf-template";
 import { calloutsToHtml, wikilinksToChips, transformOutsideCode } from "@cairn/shared/notes/note-html";
+import { CELL_CHECKBOX_RE } from "@cairn/shared/notes/markdown";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { File, Paths } from "expo-file-system";
+
+// Minimal structural types for markdown-it tokens used by tableCheckboxPlugin
+// (markdown-it ships no @types in this RN toolchain).
+interface MdItToken {
+  type: string;
+  content: string;
+  meta?: { checked?: boolean } | null;
+  children?: MdItToken[] | null;
+  constructor: MdItTokenCtor;
+}
+type MdItTokenCtor = new (type: string, tag: string, nesting: number) => MdItToken;
 
 // markdown-it has no bundled @types here; require + minimal typing. These use
 // require (not import) because the packages ship no ESM/type entrypoint in this
@@ -33,6 +45,8 @@ import { File, Paths } from "expo-file-system";
 const MarkdownIt = require("markdown-it") as new (opts?: Record<string, unknown>) => {
   render(src: string): string;
   use(plugin: unknown): unknown;
+  core: { ruler: { after: (a: string, n: string, fn: (state: { tokens: MdItToken[] }) => boolean) => void } };
+  renderer: { rules: Record<string, (tokens: MdItToken[], idx: number) => string> };
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const markdownItMark = require("markdown-it-mark");
@@ -41,6 +55,80 @@ const markdownItMark = require("markdown-it-mark");
 // fragments reach the output only via the sentinel swap below.
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false });
 md.use(markdownItMark);
+md.use(tableCheckboxPlugin);
+
+/**
+ * markdown-it plugin: recover GFM task-list checkboxes crammed into table cells.
+ *
+ * GFM only parses inline content inside cells, so a whole checklist
+ * (`- [ ] a<br>- [x] b`) survives as a literal text token. With `html:false`
+ * the `<br>` and `[ ]` would render as visible text. This core rule walks each
+ * table cell's inline token, splits its text on the checkbox grammar, and
+ * replaces it with `cairn_checkbox` tokens (rendered as a real checkbox glyph)
+ * and `html_inline` line breaks. Custom token renderers emit HTML regardless of
+ * the `html:false` flag, so no arbitrary user HTML is enabled by this.
+ */
+function tableCheckboxPlugin(mdInstance: {
+  core: { ruler: { after: (a: string, n: string, fn: (state: { tokens: MdItToken[] }) => boolean) => void } };
+  renderer: { rules: Record<string, (tokens: MdItToken[], idx: number) => string> };
+}): void {
+  mdInstance.renderer.rules.cairn_checkbox = (tokens, idx) => {
+    const checked = tokens[idx].meta?.checked === true;
+    // Static (non-interactive) checkbox glyph for print. Matches list checkboxes.
+    return checked
+      ? '<span class="cairn-cb cairn-cb-on">\u2611</span> '
+      : '<span class="cairn-cb">\u2610</span> ';
+  };
+
+  mdInstance.core.ruler.after("inline", "cairn_table_checkboxes", (state) => {
+    const tokens = state.tokens;
+    let inCell = false;
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (tok.type === "td_open" || tok.type === "th_open") { inCell = true; continue; }
+      if (tok.type === "td_close" || tok.type === "th_close") { inCell = false; continue; }
+      if (!inCell || tok.type !== "inline") continue;
+
+      const raw = tok.content;
+      const re = new RegExp(CELL_CHECKBOX_RE.source, CELL_CHECKBOX_RE.flags);
+      if (!re.test(raw)) continue;
+      re.lastIndex = 0;
+
+      const newChildren: MdItToken[] = [];
+      const pushText = (text: string) => {
+        // Convert literal <br> to a hardbreak token so cell checklists wrap.
+        const parts = text.split(/<br\s*\/?>/i);
+        parts.forEach((part, pi) => {
+          if (part) {
+            const t = new (tok.constructor as MdItTokenCtor)("text", "", 0);
+            t.content = part;
+            newChildren.push(t);
+          }
+          if (pi < parts.length - 1) {
+            newChildren.push(new (tok.constructor as MdItTokenCtor)("hardbreak", "br", 0));
+          }
+        });
+      };
+
+      let lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(raw)) !== null) {
+        const lead = m[1] ?? "";
+        const boundary = /^<br/i.test(lead) ? "<br>" : lead;
+        pushText(raw.slice(lastIndex, m.index) + boundary);
+        const cb = new (tok.constructor as MdItTokenCtor)("cairn_checkbox", "", 0);
+        cb.meta = { checked: m[3].toLowerCase() === "x" };
+        newChildren.push(cb);
+        lastIndex = re.lastIndex;
+      }
+      pushText(raw.slice(lastIndex));
+
+      tok.children = newChildren;
+    }
+    return true;
+  });
+}
+
 
 // Opaque, collision-proof sentinel wrapping a trusted HTML fragment. Uses
 // private-use unicode + a random token so it cannot appear in note content or
