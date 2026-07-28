@@ -125,11 +125,13 @@ export function ContextRing({
       triggerStyle={styles.trigger}
     >
       {/* Summary as the section title → small, muted caption; per-category rows
-          below it (single-line: "Name   Count", since menu rows can't wrap). */}
+          below it. Single-line rows (menu rows can't wrap); counts are padded
+          into a right-aligned column with figure spaces (digit-width) so their
+          right edges line up. */}
       <Section title={summaryTitle}>
         {categories.length > 0 ? (
-          categories.map((c) => (
-            <Button key={c.label} label={`${c.label}   ${formatTokenCount(c.count)}`} onPress={noop} />
+          rowLabels(categories.map((c) => ({ name: c.label, count: c.count }))).map((label, i) => (
+            <Button key={categories[i].label} label={label} onPress={noop} />
           ))
         ) : (
           <Button label="Breakdown appears after the next message" systemImage="clock" onPress={noop} />
@@ -138,9 +140,13 @@ export function ContextRing({
 
       {hasOutput ? (
         <Section title="Output">
-          <Button label={`Answer   ${formatTokenCount(answerTokens)}`} onPress={noop} />
-          {thinkingTokens > 0 ? <Button label={`Thinking   ${formatTokenCount(thinkingTokens)}`} onPress={noop} /> : null}
-          <Button label={`Total   ${formatTokenCount(completionTokens as number)}`} onPress={noop} />
+          {rowLabels([
+            { name: "Answer", count: answerTokens },
+            ...(thinkingTokens > 0 ? [{ name: "Thinking", count: thinkingTokens }] : []),
+            { name: "Total", count: completionTokens as number },
+          ]).map((label) => (
+            <Button key={label} label={label} onPress={noop} />
+          ))}
         </Section>
       ) : null}
 
@@ -154,6 +160,23 @@ export function ContextRing({
 }
 
 function noop() {}
+
+/**
+ * Build single-line menu-row labels with the token counts right-aligned into a
+ * column. Menu rows use one flat string, so we left-pad each formatted count
+ * with FIGURE SPACE (U+2007, the width of a digit in most fonts) to a common
+ * width — this lines up the numbers' right edges. A few EN spaces separate the
+ * name from the count column.
+ */
+function rowLabels(rows: { name: string; count: number }[]): string[] {
+  const counts = rows.map((r) => formatTokenCount(r.count));
+  const width = Math.max(...counts.map((c) => c.length));
+  const FIGURE_SPACE = "\u2007";
+  return rows.map((r, i) => {
+    const padded = FIGURE_SPACE.repeat(width - counts[i].length) + counts[i];
+    return `${r.name}\u2003\u2003${padded}`;
+  });
+}
 
 /** Compact token count: 1234 → "1.2K". */
 function formatTokenCount(num: number): string {
