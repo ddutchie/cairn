@@ -139,6 +139,10 @@ body {
 .prose-cairn tr:nth-child(even) td { background: var(--surface-2); }
 /* Wikilink chips */
 .wikilink-chip { display: inline-flex; align-items: center; gap: 3px; color: var(--accent); font-size: 0.85em; }
+/* Table-cell task-list checkboxes (mobile PDF recovers these as glyphs; desktop
+ * PDF captures real <input type=checkbox> from the rendered DOM). */
+.cairn-cb { color: var(--text-secondary); font-size: 1.05em; line-height: 1; }
+.cairn-cb-on { color: var(--accent); }
 /* Callout blocks — the React <Callout> component emits inline styles using
  * color-mix() against CSS vars that don't all exist in this template (e.g.
  * --success, --warning). We define those vars here and add a stable

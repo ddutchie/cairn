@@ -123,19 +123,36 @@ export function isColorLiteral(text: string): boolean {
 }
 
 /**
+ * Matches a task-list checkbox token as it can appear *inside a table cell*.
+ *
+ * GFM only parses inline content inside table cells, so a whole checklist can be
+ * crammed into one cell — e.g. `- [ ] a - [x] b` or `- [ ] a<br>- [x] b`. Each
+ * item may (but need not) carry a leading list marker (`- `, `* `, `+ `). This
+ * global regex enumerates every checkbox token in a cell, in left-to-right
+ * order, so the renderer and the source-toggle logic agree on checkbox order.
+ *
+ *   group 1 — the optional leading list marker + whitespace (may be empty)
+ *   group 2 — the checkbox state character: " ", "x", or "X"
+ */
+export const CELL_CHECKBOX_RE = /(^|[^\S\r\n]|<br\s*\/?>)((?:[-*+][^\S\r\n]+)?)\[([ xX])\]/gi;
+
+/**
  * Toggle the Nth rendered task-list checkbox in a markdown source string.
  *
  * Shared with the desktop editor (was note-editor-utils.ts). Scans line by line
  * so it can distinguish list-marker checkboxes (one per line, at the start) from
- * table-cell checkboxes (several per line, inside `| … |`). `index` is the
- * zero-based order in which checkboxes render.
+ * table-cell checkboxes (potentially several per cell, inside `| … |`). `index`
+ * is the zero-based order in which checkboxes render.
+ *
+ * Table cells can hold a whole checklist (multiple `[ ]`/`[x]` tokens, optionally
+ * dash-prefixed and/or separated by `<br>`), so within a table row we walk every
+ * token in every cell rather than only the leading one.
  */
 export function toggleCheckboxInSource(source: string, index: number): string {
   if (index < 0) return source;
 
   const listLineRe = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\]/;
   const tableRowRe = /^\s*\|.*\|/;
-  const cellLeadingRe = /^(\s*)\[([ xX])\]/;
 
   let seen = 0;
   let changed = false;
@@ -155,23 +172,18 @@ export function toggleCheckboxInSource(source: string, index: number): string {
     }
 
     if (tableRowRe.test(line)) {
-      const cells = line.split("|");
-      let lineChanged = false;
-      const newCells = cells.map((cell) => {
-        if (changed) return cell;
-        const cm = cell.match(cellLeadingRe);
-        if (!cm) return cell;
+      const re = new RegExp(CELL_CHECKBOX_RE.source, CELL_CHECKBOX_RE.flags);
+      const next = line.replace(re, (full, lead: string, marker: string, state: string) => {
+        if (changed) return full;
         if (seen === index) {
-          seen += 1;
           changed = true;
-          lineChanged = true;
-          const next = cm[2] === " " ? "[x]" : "[ ]";
-          return cell.replace(cellLeadingRe, `${cm[1]}${next}`);
+          const flipped = state === " " ? "x" : " ";
+          return `${lead}${marker}[${flipped}]`;
         }
         seen += 1;
-        return cell;
+        return full;
       });
-      return lineChanged ? newCells.join("|") : line;
+      return changed ? next : line;
     }
 
     return line;

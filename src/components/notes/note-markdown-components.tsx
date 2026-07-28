@@ -8,6 +8,7 @@ import { headingSlug } from "./TableOfContents";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
 import { InlineCode } from "@/lib/markdown/pipeline";
+import { CELL_CHECKBOX_RE } from "../../../shared/notes/markdown";
 import type { Note } from "@/types";
 
 /**
@@ -28,42 +29,76 @@ function childrenToText(node: React.ReactNode): string {
 }
 
 /**
- * Render a table cell's children, converting any leading `[ ]` / `[x]` token
- * into a clickable checkbox. GFM table cells only parse inline content, so
+ * Render a table cell's children, converting every `[ ]` / `[x]` task-list
+ * token into a checkbox. GFM only parses *inline* content inside table cells, so
  * remark-gfm never emits checkbox nodes inside `<td>`/`<th>` — we recover them
- * here so table task-lists are interactive like list task-items.
+ * here so table task-lists render like list task-items.
  *
- * Only the first text child is inspected (the token must lead the cell, mirroring
- * GFM task-list semantics: `| [x] done | …`). Toggle wiring maps the rendered
- * checkbox back to source order via toggleCheckboxInSource().
+ * A single cell can hold a whole checklist: multiple tokens, each optionally
+ * dash-prefixed (`- [ ]`), separated by plain text or `<br>` (which arrives as a
+ * separate `<br>` React element between text children). We walk every string
+ * child, split it on CELL_CHECKBOX_RE, and interleave checkboxes with the
+ * surrounding text — preserving non-string children (e.g. `<br>`, `<strong>`) in
+ * place so left-to-right DOM order matches source order (and toggleCheckboxInSource).
+ *
+ * When `onToggle` is provided the checkboxes are interactive (note preview /
+ * editor); otherwise they render read-only (previews, chat, PDF).
  */
 export function renderCellWithCheckboxes(
   children: React.ReactNode,
-  onToggle: (el: HTMLInputElement) => void
+  onToggle?: (el: HTMLInputElement) => void
 ): React.ReactNode {
   const arr = React.Children.toArray(children);
   if (arr.length === 0) return children;
 
-  const first = arr[0];
-  if (typeof first !== "string") return children;
-
-  const m = first.match(/^\s*\[([ xX])\]\s?/);
-  if (!m) return children;
-
-  const checked = m[1] !== " ";
-  const rest = first.slice(m[0].length);
-  return (
-    <>
-      <input
-        type="checkbox"
-        checked={checked}
-        className="cursor-pointer accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px] mr-1"
-        onChange={(e) => onToggle(e.currentTarget)}
-      />
-      {rest}
-      {arr.slice(1)}
-    </>
+  // Fast path: nothing looks like a checkbox token → return children untouched.
+  const hasToken = arr.some(
+    (c) => typeof c === "string" && /\[[ xX]\]/.test(c)
   );
+  if (!hasToken) return children;
+
+  const out: React.ReactNode[] = [];
+  let key = 0;
+
+  for (const child of arr) {
+    if (typeof child !== "string") {
+      out.push(child);
+      continue;
+    }
+
+    const re = new RegExp(CELL_CHECKBOX_RE.source, CELL_CHECKBOX_RE.flags);
+    let lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(child)) !== null) {
+      // Text before the token, including the boundary char (group 1) and any
+      // list marker (group 2) that we don't want to swallow visually.
+      const lead = m[1] ?? "";
+      const marker = m[2] ?? "";
+      const before = child.slice(lastIndex, m.index) + lead;
+      if (before) out.push(<React.Fragment key={`t${key++}`}>{before}</React.Fragment>);
+      // Drop the list marker (`- `) — the checkbox replaces it visually.
+      void marker;
+      const checked = m[3] !== " ";
+      out.push(
+        <input
+          key={`c${key++}`}
+          type="checkbox"
+          checked={checked}
+          readOnly={!onToggle}
+          className={cn(
+            "accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px] mr-1",
+            onToggle ? "cursor-pointer" : "cursor-default"
+          )}
+          onChange={onToggle ? (e) => onToggle(e.currentTarget) : undefined}
+        />
+      );
+      lastIndex = re.lastIndex;
+    }
+    const tail = child.slice(lastIndex);
+    if (tail) out.push(<React.Fragment key={`t${key++}`}>{tail}</React.Fragment>);
+  }
+
+  return <>{out}</>;
 }
 
 /**

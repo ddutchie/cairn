@@ -7,6 +7,7 @@ import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
 import { rehypeEscapeUnknownTags } from "@/lib/markdown/pipeline";
 import { renderCodeFence } from "@/components/notes/markdown-code-fence";
+import { renderCellWithCheckboxes } from "@/components/notes/note-markdown-components";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { revealNote, revealCard } from "@/lib/events";
@@ -237,12 +238,12 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
         tr: ({ children }) => <tr className={`border-b ${ruleBorder}`}>{children}</tr>,
         th: ({ children }) => (
           <th className={`px-2.5 py-1.5 text-left font-semibold border ${thClass}`}>
-            {children}
+            {renderCellWithCheckboxes(children)}
           </th>
         ),
         td: ({ children }) => (
           <td className={`px-2.5 py-1.5 border ${tdClass}`}>
-            {children}
+            {renderCellWithCheckboxes(children)}
           </td>
         ),
       }}
