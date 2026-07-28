@@ -182,18 +182,18 @@ export default function SearchScreen() {
     const withContent = unindexed.filter((n) => n.contentLen > 0);
     const emptyCount = unindexed.length - withContent.length;
     const lines: string[] = [
-      "Only notes with body text an embedding can be built from are added to the semantic index.",
+      "Only items with body text an embedding can be built from are added to the semantic index.",
     ];
     if (emptyCount > 0) {
       lines.push(
-        `\n${emptyCount} empty note${emptyCount === 1 ? "" : "s"} (no body text) — nothing to index. These aren't counted in the total.`,
+        `\n${emptyCount} empty item${emptyCount === 1 ? "" : "s"} (no body text) — nothing to index. These aren't counted in the total.`,
       );
     }
     if (withContent.length > 0) {
       const names = withContent.slice(0, 8).map((n) => `• ${n.title || "Untitled"}`).join("\n");
       const more = withContent.length > 8 ? `\n…and ${withContent.length - 8} more` : "";
       lines.push(
-        `\n${withContent.length} note${withContent.length === 1 ? "" : "s"} with content that hasn't been embedded yet. Reindex to try again — if one keeps failing, its body may have no indexable words (only symbols, links, or an image). Add some text and reindex to include it:\n\n${names}${more}`,
+        `\n${withContent.length} item${withContent.length === 1 ? "" : "s"} with content that hasn't been embedded yet. Reindex to try again — if one keeps failing, its body may have no indexable words (only symbols, links, or an image). Add some text and reindex to include it:\n\n${names}${more}`,
       );
     }
     if (unindexed.length === 0) {

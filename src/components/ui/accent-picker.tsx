@@ -27,20 +27,32 @@ import { ACCENT_PRESETS, resolveAccentPreset } from "../../../shared/ui/accents"
 
 function useIsLightTheme(): boolean {
   const theme = useCairnStore((s) => s.theme);
-  return (
-    theme === "light" ||
-    (theme === "system" &&
+  // Track the OS colour scheme reactively so swatches re-render the moment the
+  // system flips light/dark while theme is "system" (a bare matchMedia read
+  // would only update on the next unrelated render).
+  const [systemLight, setSystemLight] = React.useState(
+    () =>
       typeof window !== "undefined" &&
-      window.matchMedia("(prefers-color-scheme: light)").matches)
+      window.matchMedia("(prefers-color-scheme: light)").matches
   );
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = (e: MediaQueryListEvent) => setSystemLight(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return theme === "light" || (theme === "system" && systemLight);
 }
 
 export function AccentPicker({
   variant = "dropdown",
   className,
+  id,
 }: {
   variant?: "dropdown" | "grid";
   className?: string;
+  id?: string;
 }) {
   const accentColor = useCairnStore((s) => s.accentColor);
   const setAccentColor = useCairnStore((s) => s.setAccentColor);
@@ -93,6 +105,7 @@ export function AccentPicker({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
+          id={id}
           aria-label="Accent color"
           className={cn(
             "flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]",

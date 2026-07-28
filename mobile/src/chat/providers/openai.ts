@@ -220,7 +220,11 @@ function makeStreamer(config: OpenAIConfig) {
               };
               finish_reason?: string;
             }[];
-            usage?: { prompt_tokens?: number };
+            usage?: {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+              completion_tokens_details?: { reasoning_tokens?: number };
+            };
           };
           try {
             chunk = JSON.parse(payload);
@@ -231,14 +235,11 @@ function makeStreamer(config: OpenAIConfig) {
           if (typeof chunk.usage?.prompt_tokens === "number") {
             promptTokens = chunk.usage.prompt_tokens;
           }
-          const usageAny = chunk.usage as
-            | { completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } }
-            | undefined;
-          if (typeof usageAny?.completion_tokens === "number") {
-            completionTokens = usageAny.completion_tokens;
+          if (typeof chunk.usage?.completion_tokens === "number") {
+            completionTokens = chunk.usage.completion_tokens;
           }
-          if (typeof usageAny?.completion_tokens_details?.reasoning_tokens === "number") {
-            reasoningTokens = usageAny.completion_tokens_details.reasoning_tokens;
+          if (typeof chunk.usage?.completion_tokens_details?.reasoning_tokens === "number") {
+            reasoningTokens = chunk.usage.completion_tokens_details.reasoning_tokens;
           }
           const choice = chunk.choices?.[0];
           if (!choice) continue;

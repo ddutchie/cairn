@@ -442,19 +442,22 @@ function makeRules(
           {segments.map((seg, i) => {
             if (seg.kind === "text") return <Text key={i}>{seg.text}</Text>;
             return (
-              <Text
-                key={i}
-                onPress={
-                  interactive
-                    ? () => onChangeContent?.(toggleCheckboxInSource(source, seg.taskIndex))
-                    : undefined
-                }
-              >
-                {seg.checked ? (
-                  <CheckSquare size={15} color={t.accent} />
-                ) : (
-                  <Square size={15} color={t.textTertiary} />
-                )}
+              <Text key={i}>
+                <Pressable
+                  disabled={!interactive}
+                  hitSlop={8}
+                  onPress={
+                    interactive
+                      ? () => onChangeContent?.(toggleCheckboxInSource(source, seg.taskIndex))
+                      : undefined
+                  }
+                >
+                  {seg.checked ? (
+                    <CheckSquare size={17} color={t.accent} />
+                  ) : (
+                    <Square size={17} color={t.textTertiary} />
+                  )}
+                </Pressable>
                 {" "}
               </Text>
             );

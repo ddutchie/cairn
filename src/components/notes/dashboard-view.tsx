@@ -163,10 +163,10 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
 
       // Syntax palette shared with CodeBlock via SYNTAX_COLORS (see syntax-palette.ts)
       const sc = (name: keyof typeof SYNTAX_COLORS) => SYNTAX_COLORS[name][isDark ? "dark" : "light"];
-      // Follow the user's chosen accent (injected as --accent on <html>).
-      const accent =
-        getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() ||
-        (isDark ? "#8faf6f" : "#5c7a3f");
+      // Follow the user's chosen accent live via the CSS custom property (injected
+      // as --accent on <html>) rather than snapshotting it with getComputedStyle,
+      // so accent changes stay in sync without re-initialising the editor.
+      const accent = "var(--accent)";
       const highlightStyle = HighlightStyle.define([
         { tag: [tags.tagName, tags.angleBracket],        color: sc("variable") },
         { tag: tags.attributeName,                        color: isDark ? sc("variable") : sc("func") },

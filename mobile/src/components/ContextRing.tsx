@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Alert, Platform, Pressable, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Host, Popover, RNHostView, Button, VStack, HStack, Spacer, Text, Divider, Rectangle } from "@expo/ui/swift-ui";
-import { font, foregroundStyle, frame, padding, monospacedDigit, clipShape } from "@expo/ui/swift-ui/modifiers";
+import { font, foregroundStyle, frame, padding, monospacedDigit, clipShape, accessibilityLabel } from "@expo/ui/swift-ui/modifiers";
 import { useTheme } from "@/theme";
 import { haptics } from "@/haptics";
 import type { ChatUsage } from "@/chat/providers/types";
@@ -166,8 +166,16 @@ export function ContextRing({
   // points proportional to its share of the context window, clipped to a
   // capsule. Rebuilds the desktop segmented bar in SwiftUI (no menu-row limits).
   const limit = Math.max(contextLimit, 1);
-  const segWidths = categories.map((c) => Math.max(2, (c.count / limit) * BAR_INNER_WIDTH));
-  const usedWidth = segWidths.reduce((a, b) => a + b, 0);
+  let segWidths = categories.map((c) => Math.max(2, (c.count / limit) * BAR_INNER_WIDTH));
+  let usedWidth = segWidths.reduce((a, b) => a + b, 0);
+  // Each segment is floored at 2pt for visibility, so with many categories the
+  // sum can exceed the bar — proportionally scale every segment down so they
+  // all fit inside the capsule without clipping.
+  if (usedWidth > BAR_INNER_WIDTH) {
+    const scale = BAR_INNER_WIDTH / usedWidth;
+    segWidths = segWidths.map((w) => w * scale);
+    usedWidth = BAR_INNER_WIDTH;
+  }
   const trackWidth = Math.max(0, BAR_INNER_WIDTH - usedWidth);
   const bar = (
     <HStack spacing={0} modifiers={[frame({ width: BAR_INNER_WIDTH, height: BAR_HEIGHT }), clipShape("capsule")]}>
@@ -184,6 +192,7 @@ export function ContextRing({
       <Popover isPresented={open} onIsPresentedChange={setOpen} arrowEdge="top">
         <Popover.Trigger>
           <Button
+            modifiers={[accessibilityLabel(a11yLabel)]}
             onPress={() => {
               haptics.selection();
               setOpen(true);

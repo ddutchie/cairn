@@ -228,7 +228,7 @@ function ActionZone({
   });
   return (
     <View
-      ref={(node: View | null) => ctrl.registerZone(zoneId, node)}
+      ref={(node: View | null) => ctrl.registerZone(zoneId, node, true)}
       style={styles.actionZone}
       collapsable={false}
     >

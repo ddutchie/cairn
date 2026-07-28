@@ -72,7 +72,7 @@ export function QuickSettings() {
         {/* Accent colour */}
         <DropdownMenuLabel className="mt-2">Accent color</DropdownMenuLabel>
         <div className="px-1 pb-2">
-          <AccentPicker className="w-full" />
+          <AccentPicker variant="grid" className="w-full" />
         </div>
 
         <DropdownMenuSeparator />

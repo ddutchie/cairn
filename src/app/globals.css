@@ -17,7 +17,7 @@
   --border-subtle: #1f1f1f;
   --accent: #8faf6f;
   --accent-hover: #a6c487;
-  --accent-dim: rgba(143, 175, 111, 0.15);
+  --accent-dim: color-mix(in srgb, var(--accent) 15%, transparent);
   /* Static fallback accent = "Sage Moss" preset (shared/ui/accents.ts,
      DEFAULT_ACCENT_ID). The user's chosen accent is injected at runtime as
      inline --accent* vars on <html> by applyAccent(); these values are what
@@ -50,7 +50,7 @@
   --border-subtle: #eae7e3;
   --accent: #5c7a3f;
   --accent-hover: #4d6733;
-  --accent-dim: rgba(92, 122, 63, 0.12);
+  --accent-dim: color-mix(in srgb, var(--accent) 12%, transparent);
   --accent-fg: #ffffff;
   --muted: #a09c96;
   --muted-fg: #66635f;

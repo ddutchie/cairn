@@ -513,8 +513,13 @@ async function embedCardInner(card: EmbeddableCard, info: AppleEmbeddingsInfo): 
   singleCardInFlight.add(card.id);
   try {
     const key = modelKey(info);
-    // Always embed at least the title; description is the body.
-    const sections = splitIntoSections(card.title, card.description ?? card.title);
+    // Always embed at least the title; description is the body. Fall back to the
+    // title when the description is null OR blank/whitespace — otherwise a card
+    // with a non-null but empty description would split into zero sections and
+    // never index, even though the liveCards count (which trims) treats it as
+    // embeddable. Keeping this in sync avoids a permanently-short index count.
+    const body = card.description?.trim() ? card.description : card.title;
+    const sections = splitIntoSections(card.title, body);
     if (sections.length === 0) {
       deleteCardEmbeddings(card.id);
       return;

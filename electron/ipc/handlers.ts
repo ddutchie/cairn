@@ -107,9 +107,23 @@ export function registerAppHandlers(
     readWorkspaceConfig(userDataPath) === null
   ));
 
-  registerIpcHandle("app:setTheme", (_e, theme: string) => handle(() => {
+  // Merge a partial update into theme.json without clobbering the other keys.
+  // theme.json holds BOTH `theme` and `accent` so the boot splash can restore
+  // them; writing one setting must preserve the other (see app:setTheme /
+  // app:setAccent below).
+  const mergeThemeFile = (patch: Record<string, unknown>) => {
     const themeFile = path.join(userDataPath, "theme.json");
-    fs.writeFileSync(themeFile, JSON.stringify({ theme }), "utf8");
+    let existing: Record<string, unknown> = {};
+    try {
+      if (fs.existsSync(themeFile)) existing = JSON.parse(fs.readFileSync(themeFile, "utf8"));
+    } catch {
+      // ignore malformed file — overwrite below
+    }
+    fs.writeFileSync(themeFile, JSON.stringify({ ...existing, ...patch }), "utf8");
+  };
+
+  registerIpcHandle("app:setTheme", (_e, theme: string) => handle(() => {
+    mergeThemeFile({ theme });
     // On Windows, update the native title bar overlay to match the new theme.
     // Use --surface values (not backgroundColor) to match TitleBar's bg-[var(--surface)].
     // height:39 not 40 — Windows 1px window border makes 40 clip the border-b below the bar.
@@ -125,14 +139,7 @@ export function registerAppHandlers(
   registerIpcHandle("app:setAccent", (_e, accent: string) => handle(() => {
     // Persist the accent id alongside the theme so the next boot's splash can
     // render the right accent. Merge into the existing theme.json.
-    const themeFile = path.join(userDataPath, "theme.json");
-    let existing: Record<string, unknown> = {};
-    try {
-      if (fs.existsSync(themeFile)) existing = JSON.parse(fs.readFileSync(themeFile, "utf8"));
-    } catch {
-      // ignore malformed file — overwrite below
-    }
-    fs.writeFileSync(themeFile, JSON.stringify({ ...existing, accent }), "utf8");
+    mergeThemeFile({ accent });
   }));
 
   registerIpcHandle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => handle(async () => {

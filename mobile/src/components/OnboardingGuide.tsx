@@ -116,7 +116,11 @@ export function OnboardingGuide({
   }, [scan]);
 
   useEffect(() => {
-    if (probe.phase !== "waiting") return;
+    // Keep scanning while we're waiting for the desktop to publish OR still
+    // trying to reach the folder ("checking" — e.g. a scan failed before
+    // folderReady). Both should retry automatically so a transient failure
+    // doesn't leave the guide stuck without a manual Refresh.
+    if (probe.phase !== "waiting" && probe.phase !== "checking") return;
     const iv = setInterval(() => void scan(), 6000);
     return () => clearInterval(iv);
   }, [probe.phase, scan]);

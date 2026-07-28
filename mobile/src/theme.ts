@@ -8,7 +8,7 @@
  */
 
 import { Platform, useColorScheme } from "react-native";
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, useMemo } from "react";
 import { getMeta, setMeta } from "@/db";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID, ACCENT_PRESETS, type AccentPreset } from "@cairn/shared/ui/accents";
 
@@ -236,8 +236,10 @@ export const hasTabBarSearchField =
 export function useTheme(): Theme {
   const scheme = useColorScheme();
   const accentId = useAccent();
-  const base = scheme === "light" ? lightTheme : darkTheme;
-  return applyAccentToTheme(base, accentId, scheme === "light");
+  return useMemo(() => {
+    const base = scheme === "light" ? lightTheme : darkTheme;
+    return applyAccentToTheme(base, accentId, scheme === "light");
+  }, [scheme, accentId]);
 }
 
 /** True when the current system colour scheme is dark (default when unset). */

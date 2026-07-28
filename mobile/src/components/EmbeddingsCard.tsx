@@ -93,7 +93,7 @@ export function EmbeddingsCard() {
               <Text style={styles.count}>
                 {stats ? `${stats.indexed} of ${stats.total} notes indexed` : "—"}
               </Text>
-              {unindexed.length > 0 && (
+              {behind > 0 && unindexed.length > 0 && (
                 <Pressable
                   onPress={() => setShowDetails((v) => !v)}
                   hitSlop={10}
