@@ -1,40 +1,29 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Animated,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { useMemo } from "react";
+import { Alert, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { GlassView, GlassContainer } from "expo-glass-effect";
-import { useTheme, type as typeScale, withAlpha, elevation, type Theme } from "@/theme";
-import { glassActive } from "@/components/GlassBar";
-import { haptics } from "@/haptics";
+import { Button, Section } from "@expo/ui/swift-ui";
+import { tint } from "@expo/ui/swift-ui/modifiers";
+import { GlassMenu } from "@/components/GlassMenu";
+import { useTheme } from "@/theme";
 import type { ChatUsage } from "@/chat/providers/types";
 import type { TokenBreakdown } from "@/chat/token-breakdown";
-
-/** Width of the popover card. */
-const POPOVER_WIDTH = 264;
-/** Gap between the ring and the popover, and from the screen edge. */
-const POPOVER_GAP = 6;
-const SCREEN_MARGIN = 10;
 
 /**
  * Context-window usage ring — the mobile analogue of the desktop ContextRing
  * (src/components/agent/ContextRing.tsx). A compact SVG donut whose arc fills
  * with the fraction of the model's context window used by the conversation.
  *
- * Tapping it pops a native-feeling Liquid Glass popover (expo-glass-effect)
- * anchored beneath the ring — rather than a bottom sheet — showing the full
- * breakdown desktop shows: a segmented bar + legend of where the prompt tokens
- * go (system prompt, tool definitions, MCP / external services, conversation,
- * tool outputs) and, once a turn completes, the output (answer / thinking)
- * split. On devices without Liquid Glass it falls back to a solid themed card.
- * Threshold colours match desktop: accent <=65%, warning 65–85%, danger >85%.
+ * Tapping it opens a NATIVE glass menu (GlassMenu → @expo/ui Menu) showing the
+ * full breakdown as native rows: a per-category list (system prompt, tool
+ * definitions, MCP & services, conversation, tool outputs — each with a colour
+ * dot SF Symbol) grouped under the summary section, plus an Output section
+ * (answer / thinking / total) once a turn completes.
+ *
+ * Why native (not a custom Modal/popover): a native Menu host consumes the tap
+ * at the SwiftUI layer, so a tap on the ring in the header never leaks to iOS's
+ * status-bar "scroll to top" gesture (which a custom RN view in headerLeft does
+ * trigger). Threshold colours match desktop: accent <=65%, warning 65–85%,
+ * danger >85%. Non-iOS falls back to an Alert with the same figures.
  */
 export function ContextRing({
   promptTokens,
@@ -57,16 +46,6 @@ export function ContextRing({
   stroke?: number;
 }) {
   const t = useTheme();
-  const styles = useMemo(() => makeStyles(t), [t]);
-  const insets = useSafeAreaInsets();
-  const { width: screenW } = useWindowDimensions();
-
-  const [open, setOpen] = useState(false);
-  // Screen-space anchor rect of the ring, measured on open so the popover sits
-  // directly beneath it (like a native menu popping from its button).
-  const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const triggerRef = useRef<View>(null);
-  const [progress] = useState(() => new Animated.Value(0));
 
   const { pct, colour, r, circ, dash } = useMemo(() => {
     const p = contextLimit > 0 ? Math.min(promptTokens / contextLimit, 1) : 0;
@@ -84,7 +63,7 @@ export function ContextRing({
   const pctLabel = `${estimated ? "~" : ""}${Math.round(pct * 100)}%`;
   const half = size / 2;
 
-  // Category segments, in the same order/colour intent as desktop.
+  // Per-category rows, in the same order/colour intent as desktop.
   const categories = useMemo(() => {
     const b = breakdown;
     return [
@@ -94,38 +73,12 @@ export function ContextRing({
       { label: "Skills", count: b?.skills ?? 0, color: t.warning },
       { label: "Conversation", count: b?.conversation ?? 0, color: t.success },
       { label: "Tool outputs", count: b?.toolOutputs ?? 0, color: t.danger },
-    ];
+    ].filter((c) => c.count > 0);
   }, [breakdown, t]);
 
   const thinkingTokens = reasoningTokens ?? 0;
   const answerTokens = Math.max(0, (completionTokens ?? 0) - thinkingTokens);
-  const hasBreakdown = categories.some((c) => c.count > 0);
-
-  const openPopover = useCallback(() => {
-    haptics.selection();
-    // Measure the ring in window coords so the popover anchors under it. Open
-    // immediately (fallback placement) and refine once the measure lands, so a
-    // slow/failed measure never leaves the popover unopened.
-    setAnchor(null);
-    setOpen(true);
-    triggerRef.current?.measureInWindow((x, y, w, h) => {
-      if (Number.isFinite(x) && Number.isFinite(y)) setAnchor({ x, y, w, h });
-    });
-  }, []);
-
-  // Play the pop-in when opening; reset when closed.
-  useEffect(() => {
-    if (open) {
-      Animated.spring(progress, {
-        toValue: 1,
-        useNativeDriver: true,
-        friction: 9,
-        tension: 120,
-      }).start();
-    } else {
-      progress.setValue(0);
-    }
-  }, [open, progress]);
+  const hasOutput = typeof completionTokens === "number" && completionTokens > 0;
 
   const ring = (
     <Svg width={size} height={size}>
@@ -146,177 +99,80 @@ export function ContextRing({
   );
 
   const a11yLabel = `Context ${pctLabel} used${estimated ? " (estimated)" : ""}. Tap for details.`;
+  const summaryTitle = `${pctLabel} full · ${formatTokenCount(promptTokens)} / ${formatTokenCount(contextLimit)} tokens${estimated ? " (est.)" : ""}`;
 
-  // Popover placement: sit just below the ring, right-aligned to its right edge
-  // but clamped inside the screen. Falls back to top-right under the safe area
-  // if we have no anchor rect yet.
-  const top = anchor ? anchor.y + anchor.h + POPOVER_GAP : insets.top + 44;
-  const rawLeft = anchor ? anchor.x + anchor.w / 2 - POPOVER_WIDTH * 0.18 : SCREEN_MARGIN;
-  const left = Math.max(
-    SCREEN_MARGIN,
-    Math.min(rawLeft, screenW - POPOVER_WIDTH - SCREEN_MARGIN),
-  );
+  // Non-iOS fallback: an Alert listing the same breakdown.
+  const showDetailAlert = () => {
+    const lines = [
+      summaryTitle,
+      "",
+      ...(categories.length
+        ? categories.map((c) => `• ${c.label}: ${formatTokenCount(c.count)}`)
+        : ["A detailed breakdown appears after the next message."]),
+    ];
+    if (hasOutput) {
+      lines.push("", "Output", `• Answer: ${formatTokenCount(answerTokens)}`);
+      if (thinkingTokens > 0) lines.push(`• Thinking: ${formatTokenCount(thinkingTokens)}`);
+      lines.push(`• Total: ${formatTokenCount(completionTokens as number)}`);
+    }
+    Alert.alert("Context usage", lines.join("\n"), [{ text: "OK" }]);
+  };
 
-  // Origin for the scale animation = horizontal offset of the ring within the card.
-  const originX = anchor ? Math.min(Math.max(anchor.x + anchor.w / 2 - left, 12), POPOVER_WIDTH - 12) : POPOVER_WIDTH / 2;
-
-  const cardScale = progress.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] });
-  const cardTranslateY = progress.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] });
-
-  const content = (
-    <View style={styles.cardInner}>
-      {/* Summary row */}
-      <View style={styles.summaryRow}>
-        <Text style={styles.pctText}>{pctLabel} Full</Text>
-        <Text style={styles.totalText}>
-          {estimated ? "~" : ""}
-          {formatTokenCount(promptTokens)} / {formatTokenCount(contextLimit)}
-        </Text>
-      </View>
-
-      {/* Segmented bar */}
-      <View style={styles.bar}>
-        {hasBreakdown ? (
-          categories.map((c) => {
-            const widthPct = contextLimit > 0 ? (c.count / contextLimit) * 100 : 0;
-            if (widthPct <= 0) return null;
-            return (
-              <View
-                key={c.label}
-                style={{ width: `${widthPct}%`, height: "100%", backgroundColor: c.color }}
-              />
-            );
-          })
+  return (
+    <GlassMenu
+      trigger={ring}
+      accessibilityLabel={a11yLabel}
+      onFallbackPress={showDetailAlert}
+      triggerStyle={styles.trigger}
+    >
+      {/* Summary as the section title → small, muted caption; per-category rows
+          below it. Each row is informational (no-op onPress); the coloured dot
+          SF Symbol stands in for the desktop legend swatch. */}
+      <Section title={summaryTitle}>
+        {categories.length > 0 ? (
+          categories.map((c) => (
+            <Button
+              key={c.label}
+              systemImage="circle.fill"
+              label={`${c.label}   ${formatTokenCount(c.count)}`}
+              modifiers={[tint(c.color)]}
+              onPress={noop}
+            />
+          ))
         ) : (
-          <View style={{ width: `${Math.round(pct * 100)}%`, height: "100%", backgroundColor: colour }} />
+          <Button
+            label="Breakdown appears after the next message"
+            systemImage="clock"
+            onPress={noop}
+          />
         )}
-      </View>
+      </Section>
 
-      {/* Legend */}
-      {hasBreakdown ? (
-        <View style={styles.legend}>
-          {categories.map((c) => {
-            if (c.count === 0) return null;
-            return (
-              <View key={c.label} style={styles.legendRow}>
-                <View style={styles.legendLabel}>
-                  <View style={[styles.swatch, { backgroundColor: c.color }]} />
-                  <Text style={styles.legendText} numberOfLines={1}>{c.label}</Text>
-                </View>
-                <Text style={styles.legendCount}>{formatTokenCount(c.count)}</Text>
-              </View>
-            );
-          })}
-        </View>
-      ) : (
-        <Text style={styles.hint}>A detailed breakdown appears after the next message.</Text>
-      )}
-
-      {/* Output breakdown — after a turn reports completion tokens. */}
-      {typeof completionTokens === "number" && completionTokens > 0 ? (
-        <View style={styles.outputSection}>
-          <Text style={styles.outputTitle}>Output</Text>
-          <View style={styles.legendRow}>
-            <Text style={styles.legendText}>Answer</Text>
-            <Text style={styles.legendCount}>{formatTokenCount(answerTokens)}</Text>
-          </View>
+      {hasOutput ? (
+        <Section title="Output">
+          <Button label={`Answer   ${formatTokenCount(answerTokens)}`} systemImage="text.alignleft" onPress={noop} />
           {thinkingTokens > 0 ? (
-            <View style={styles.legendRow}>
-              <View style={styles.legendLabel}>
-                <View style={[styles.swatch, { backgroundColor: t.accent }]} />
-                <Text style={styles.legendText}>Thinking</Text>
-              </View>
-              <Text style={styles.legendCount}>{formatTokenCount(thinkingTokens)}</Text>
-            </View>
+            <Button
+              label={`Thinking   ${formatTokenCount(thinkingTokens)}`}
+              systemImage="brain"
+              modifiers={[tint(t.accent)]}
+              onPress={noop}
+            />
           ) : null}
-          <View style={styles.legendRow}>
-            <Text style={styles.legendTextMuted}>Total</Text>
-            <Text style={styles.legendCountMuted}>{formatTokenCount(completionTokens)}</Text>
-          </View>
-        </View>
+          <Button label={`Total   ${formatTokenCount(completionTokens as number)}`} systemImage="sum" onPress={noop} />
+        </Section>
       ) : null}
 
       {estimated ? (
-        <Text style={styles.estimatedNote}>Estimated for this provider.</Text>
+        <Section>
+          <Button label="Estimated for this provider" systemImage="questionmark.circle" onPress={noop} />
+        </Section>
       ) : null}
-    </View>
-  );
-
-  return (
-    <>
-      <Pressable
-        ref={triggerRef}
-        onPress={openPopover}
-        // Asymmetric hit target: DON'T extend the touchable area upward — the
-        // ring sits just under the status bar, and an upward slop pushes the
-        // target into the status-bar strip, where iOS interprets the tap as a
-        // "scroll to top" gesture (yanking the chat list to the top) instead of
-        // a button press. Native bar buttons (the right toolbar) never do this
-        // because they don't reach into the status bar. Widen sideways/below only.
-        hitSlop={{ top: 0, bottom: 12, left: 12, right: 12 }}
-        // Claim the touch as ours and cancel it from other responders (the
-        // scroll view's status-bar gesture) so it can't double as scroll-to-top.
-        onStartShouldSetResponder={() => true}
-        onResponderTerminationRequest={() => false}
-        accessibilityRole="button"
-        accessibilityLabel={a11yLabel}
-        style={styles.trigger}
-      >
-        {ring}
-      </Pressable>
-
-      <Modal visible={open} transparent animationType="none" statusBarTranslucent onRequestClose={() => setOpen(false)}>
-        {/* Tap-anywhere backdrop dismisses (native-menu behaviour). */}
-        <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
-          <Animated.View
-            // Stop the press from bubbling to the backdrop so taps inside the
-            // card don't dismiss it.
-            onStartShouldSetResponder={() => true}
-            style={[
-              styles.card,
-              {
-                top,
-                left,
-                width: POPOVER_WIDTH,
-                // NOTE: never animate `opacity` here — setting opacity on a
-                // GlassView OR any parent makes the glass effect stop rendering
-                // entirely (Expo glass-effect known issue). The popover opens
-                // with a scale/slide spring only; the Modal itself does not fade
-                // (animationType="none") so nothing dims the glass.
-                transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
-              },
-              elevation.xl,
-            ]}
-          >
-            {glassActive ? (
-              // GlassContainer merges the arrow + card into one continuous glass
-              // element (they blend where they meet). No tintColor / background —
-              // the native glass material provides the backing on its own.
-              <GlassContainer spacing={14} style={styles.glassContainer}>
-                <GlassView
-                  style={[styles.arrow, { left: originX - 6 }]}
-                  glassEffectStyle="regular"
-                />
-                <GlassView
-                  style={styles.glass}
-                  glassEffectStyle="regular"
-                  isInteractive
-                >
-                  {content}
-                </GlassView>
-              </GlassContainer>
-            ) : (
-              <>
-                <View style={[styles.glass, styles.solidCard]}>{content}</View>
-                <View style={[styles.arrow, styles.arrowSolid, { left: originX - 6 }]} />
-              </>
-            )}
-          </Animated.View>
-        </Pressable>
-      </Modal>
-    </>
+    </GlassMenu>
   );
 }
+
+function noop() {}
 
 /** Compact token count: 1234 → "1.2K". */
 function formatTokenCount(num: number): string {
@@ -327,83 +183,6 @@ function formatTokenCount(num: number): string {
 /** Convenience: build props from a ChatUsage object. */
 export type ContextRingUsage = ChatUsage;
 
-function makeStyles(t: Theme) {
-  return StyleSheet.create({
-    trigger: { paddingHorizontal: 4, alignItems: "center", justifyContent: "center" },
-    // Light scrim so the popover reads over the content without a heavy dim
-    // (native menus barely darken the backdrop).
-    backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.12)" },
-    card: {
-      position: "absolute",
-      borderRadius: 16,
-    },
-    glassContainer: {
-      borderRadius: 16,
-    },
-    glass: {
-      borderRadius: 16,
-      overflow: "hidden",
-    },
-    // Fallback surface when Liquid Glass isn't available.
-    solidCard: {
-      backgroundColor: t.surface2,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.border,
-    },
-    // A small square rotated 45° peeking above the card toward the ring. In the
-    // glass path this is a second GlassView (tinted like the card, merged by the
-    // GlassContainer); in the fallback it gets a solid fill via arrowSolid.
-    arrow: {
-      position: "absolute",
-      top: -5,
-      width: 12,
-      height: 12,
-      borderRadius: 2,
-      transform: [{ rotate: "45deg" }],
-    },
-    arrowSolid: {
-      backgroundColor: t.surface2,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderLeftWidth: StyleSheet.hairlineWidth,
-      borderColor: t.border,
-    },
-    cardInner: { paddingHorizontal: 14, paddingVertical: 12, gap: 4 },
-    summaryRow: {
-      flexDirection: "row",
-      alignItems: "baseline",
-      justifyContent: "space-between",
-    },
-    pctText: { ...typeScale.subtitle, fontWeight: "700", color: t.textPrimary },
-    totalText: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
-    bar: {
-      flexDirection: "row",
-      height: 8,
-      borderRadius: 4,
-      overflow: "hidden",
-      backgroundColor: withAlpha(t.border, 0.6),
-      marginVertical: 12,
-    },
-    legend: { gap: 9 },
-    legendRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-    },
-    legendLabel: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 0 },
-    swatch: { width: 10, height: 10, borderRadius: 3 },
-    legendText: { ...typeScale.caption, color: t.textSecondary },
-    legendTextMuted: { ...typeScale.caption, color: t.textTertiary },
-    legendCount: { ...typeScale.caption, fontWeight: "600", color: t.textPrimary, fontVariant: ["tabular-nums"] },
-    legendCountMuted: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
-    hint: { ...typeScale.caption, color: t.textTertiary, marginTop: 2 },
-    outputSection: {
-      marginTop: 14,
-      paddingTop: 12,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: withAlpha(t.border, 0.8),
-      gap: 9,
-    },
-    outputTitle: { ...typeScale.label, color: t.textPrimary, marginBottom: 2 },
-    estimatedNote: { ...typeScale.micro, color: t.textTertiary, marginTop: 12 },
-  });
-}
+const styles = StyleSheet.create({
+  trigger: { paddingHorizontal: 4 },
+});
