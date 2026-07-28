@@ -1,8 +1,7 @@
 import { useMemo } from "react";
 import { Alert, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { Button, Section, VStack, Text } from "@expo/ui/swift-ui";
-import { font, foregroundStyle } from "@expo/ui/swift-ui/modifiers";
+import { Button, Section } from "@expo/ui/swift-ui";
 import { GlassMenu } from "@/components/GlassMenu";
 import { useTheme } from "@/theme";
 import type { ChatUsage } from "@/chat/providers/types";
@@ -14,10 +13,10 @@ import type { TokenBreakdown } from "@/chat/token-breakdown";
  * with the fraction of the model's context window used by the conversation.
  *
  * Tapping it opens a NATIVE glass menu (GlassMenu → @expo/ui Menu) showing the
- * full breakdown as native rows. Each row is two lines — the category name on
- * top and its token count below in a smaller, muted style — grouped under the
- * summary section, plus an Output section (answer / thinking / total) once a
- * turn completes.
+ * full breakdown as native single-line rows — the category name and its token
+ * count — grouped under the summary section, plus an Output section (answer /
+ * thinking / total) once a turn completes. (SwiftUI menu rows are single-line
+ * only, so the count shares the row with the name.)
  *
  * Why native (not a custom Modal/popover): a native Menu host consumes the tap
  * at the SwiftUI layer, so a tap on the ring in the header never leaks to iOS's
@@ -126,11 +125,12 @@ export function ContextRing({
       triggerStyle={styles.trigger}
     >
       {/* Summary as the section title → small, muted caption; per-category rows
-          below it. Each row is two lines: the name on top and the token count
-          below in a smaller, muted (hierarchical secondary) style. */}
+          below it (single-line: "Name   Count", since menu rows can't wrap). */}
       <Section title={summaryTitle}>
         {categories.length > 0 ? (
-          categories.map((c) => <TwoLineRow key={c.label} title={c.label} value={formatTokenCount(c.count)} />)
+          categories.map((c) => (
+            <Button key={c.label} label={`${c.label}   ${formatTokenCount(c.count)}`} onPress={noop} />
+          ))
         ) : (
           <Button label="Breakdown appears after the next message" systemImage="clock" onPress={noop} />
         )}
@@ -138,9 +138,9 @@ export function ContextRing({
 
       {hasOutput ? (
         <Section title="Output">
-          <TwoLineRow title="Answer" value={formatTokenCount(answerTokens)} />
-          {thinkingTokens > 0 ? <TwoLineRow title="Thinking" value={formatTokenCount(thinkingTokens)} /> : null}
-          <TwoLineRow title="Total" value={formatTokenCount(completionTokens as number)} />
+          <Button label={`Answer   ${formatTokenCount(answerTokens)}`} onPress={noop} />
+          {thinkingTokens > 0 ? <Button label={`Thinking   ${formatTokenCount(thinkingTokens)}`} onPress={noop} /> : null}
+          <Button label={`Total   ${formatTokenCount(completionTokens as number)}`} onPress={noop} />
         </Section>
       ) : null}
 
@@ -150,29 +150,6 @@ export function ContextRing({
         </Section>
       ) : null}
     </GlassMenu>
-  );
-}
-
-/**
- * A menu row with a two-line custom label: `title` on top (body) and `value`
- * below in a smaller, muted style. Uses Button's custom-children label (a
- * leading-aligned VStack of two styled Text views) instead of a flat string.
- */
-function TwoLineRow({ title, value }: { title: string; value: string }) {
-  return (
-    <Button onPress={noop}>
-      <VStack alignment="leading" spacing={1}>
-        <Text modifiers={[font({ textStyle: "body" })]}>{title}</Text>
-        <Text
-          modifiers={[
-            font({ textStyle: "caption" }),
-            foregroundStyle({ type: "hierarchical", style: "secondary" }),
-          ]}
-        >
-          {value}
-        </Text>
-      </VStack>
-    </Button>
   );
 }
 
