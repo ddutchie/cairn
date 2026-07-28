@@ -1,14 +1,18 @@
 import { useMemo, useState } from "react";
 import { Alert, Platform, Pressable, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { Host, Popover, RNHostView, Button, VStack, HStack, Spacer, Text, Divider } from "@expo/ui/swift-ui";
-import { font, foregroundStyle, frame, padding, monospacedDigit } from "@expo/ui/swift-ui/modifiers";
+import { Host, Popover, RNHostView, Button, VStack, HStack, Spacer, Text, Divider, Rectangle } from "@expo/ui/swift-ui";
+import { font, foregroundStyle, frame, padding, monospacedDigit, clipShape } from "@expo/ui/swift-ui/modifiers";
 import { useTheme } from "@/theme";
 import { haptics } from "@/haptics";
 import type { ChatUsage } from "@/chat/providers/types";
 import type { TokenBreakdown } from "@/chat/token-breakdown";
 
+// Inner width of the popover content (POPOVER_WIDTH minus the 16pt padding each
+// side) — the segmented bar's segments are sized in points against this.
 const POPOVER_WIDTH = 260;
+const BAR_INNER_WIDTH = POPOVER_WIDTH - 32;
+const BAR_HEIGHT = 8;
 
 /**
  * Context-window usage ring — the mobile analogue of the desktop ContextRing
@@ -70,14 +74,14 @@ export function ContextRing({
   const categories = useMemo(() => {
     const b = breakdown;
     return [
-      { label: "System prompt", count: b?.systemPrompt ?? 0 },
-      { label: "Tool definitions", count: b?.tools ?? 0 },
-      { label: "MCP & services", count: b?.mcp ?? 0 },
-      { label: "Skills", count: b?.skills ?? 0 },
-      { label: "Conversation", count: b?.conversation ?? 0 },
-      { label: "Tool outputs", count: b?.toolOutputs ?? 0 },
+      { label: "System prompt", count: b?.systemPrompt ?? 0, color: t.textSecondary },
+      { label: "Tool definitions", count: b?.tools ?? 0, color: t.accent },
+      { label: "MCP & services", count: b?.mcp ?? 0, color: t.info },
+      { label: "Skills", count: b?.skills ?? 0, color: t.warning },
+      { label: "Conversation", count: b?.conversation ?? 0, color: t.success },
+      { label: "Tool outputs", count: b?.toolOutputs ?? 0, color: t.danger },
     ].filter((c) => c.count > 0);
-  }, [breakdown]);
+  }, [breakdown, t]);
 
   const thinkingTokens = reasoningTokens ?? 0;
   const answerTokens = Math.max(0, (completionTokens ?? 0) - thinkingTokens);
@@ -138,15 +142,40 @@ export function ContextRing({
   // iOS: native Button trigger (swallows the tap) + native Popover whose content
   // is arbitrary SwiftUI, letting us right-align the counts in a real column.
   const secondary = foregroundStyle({ type: "hierarchical", style: "secondary" });
-  const countModifiers = [font({ textStyle: "subheadline" }), monospacedDigit(), secondary];
 
   // Plain render helper (NOT a component) so it isn't re-created each render —
   // keeps a stable element identity and satisfies react-hooks/static-components.
-  const row = (name: string, value: string) => (
+  // `valueColor` tints the count to match its category; omit for muted grey.
+  const row = (name: string, value: string, valueColor?: string) => (
     <HStack key={name} alignment="center" spacing={12}>
       <Text modifiers={[font({ textStyle: "subheadline" })]}>{name}</Text>
       <Spacer />
-      <Text modifiers={countModifiers}>{value}</Text>
+      <Text
+        modifiers={[
+          font({ textStyle: "subheadline", weight: "medium" }),
+          monospacedDigit(),
+          valueColor ? foregroundStyle(valueColor) : secondary,
+        ]}
+      >
+        {value}
+      </Text>
+    </HStack>
+  );
+
+  // Native multi-segment bar: an HStack of coloured rectangles, each sized in
+  // points proportional to its share of the context window, clipped to a
+  // capsule. Rebuilds the desktop segmented bar in SwiftUI (no menu-row limits).
+  const limit = Math.max(contextLimit, 1);
+  const segWidths = categories.map((c) => Math.max(2, (c.count / limit) * BAR_INNER_WIDTH));
+  const usedWidth = segWidths.reduce((a, b) => a + b, 0);
+  const trackWidth = Math.max(0, BAR_INNER_WIDTH - usedWidth);
+  const bar = (
+    <HStack spacing={0} modifiers={[frame({ width: BAR_INNER_WIDTH, height: BAR_HEIGHT }), clipShape("capsule")]}>
+      {categories.map((c, i) => (
+        <Rectangle key={c.label} modifiers={[foregroundStyle(c.color), frame({ width: segWidths[i] })]} />
+      ))}
+      {/* Unused-context track fills the remainder. */}
+      {trackWidth > 0 ? <Rectangle modifiers={[foregroundStyle(t.surface3), frame({ width: trackWidth })]} /> : null}
     </HStack>
   );
 
@@ -169,9 +198,12 @@ export function ContextRing({
             <Text modifiers={[font({ textStyle: "footnote" }), secondary]}>{summaryTitle}</Text>
 
             {categories.length > 0 ? (
-              <VStack alignment="leading" spacing={8}>
-                {categories.map((c) => row(c.label, formatTokenCount(c.count)))}
-              </VStack>
+              <>
+                {bar}
+                <VStack alignment="leading" spacing={8}>
+                  {categories.map((c) => row(c.label, formatTokenCount(c.count), c.color))}
+                </VStack>
+              </>
             ) : (
               <Text modifiers={[font({ textStyle: "footnote" }), secondary]}>
                 A detailed breakdown appears after the next message.
