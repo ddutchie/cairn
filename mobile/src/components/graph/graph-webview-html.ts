@@ -191,7 +191,7 @@ export function buildGraphHtml(payload: string): string {
           // pans/zooms first.
           var userInteracted = false;
           var didAutoFit = false;
-          var AUTOFIT_ALPHA = 0.08;
+          var AUTOFIT_ALPHA = 0.15;
           svg.on('pointerdown.autofit wheel.autofit', function () { userInteracted = true; });
           function maybeAutoFit() {
             if (didAutoFit || userInteracted) return;
