@@ -8,6 +8,7 @@ import type { ID, AppUIState, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
 import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY } from "@/lib/constants";
+import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -292,6 +293,30 @@ export function applyFontScale(scale: FontScale): void {
   document.documentElement.style.setProperty("--font-scale", String(scale));
 }
 
+// ── Accent colour ─────────────────────────────────────────────────────────────
+
+export const ACCENT_KEY = "accentColor";
+
+/**
+ * Apply an accent preset by id. The accent trio depends on BOTH the preset and
+ * the current theme (dark vs light), which plain CSS `[data-theme]` selectors
+ * can't express — so we resolve the right variant here and inject the four
+ * accent CSS variables inline on `<html>` (same override mechanism as
+ * `applyFontScale`). Reads the live `data-theme` attribute so it must run after
+ * `applyTheme`.
+ */
+export function applyAccent(accentId: string): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  const preset = resolveAccentPreset(accentId);
+  const mode = root.getAttribute("data-theme") === "light" ? "light" : "dark";
+  const v = preset[mode];
+  root.style.setProperty("--accent", v.accent);
+  root.style.setProperty("--accent-hover", v.hover);
+  root.style.setProperty("--accent-fg", v.fg);
+  root.style.setProperty("--accent-dim", v.dim);
+}
+
 // Single MQ listener — stored so we can remove it before re-adding
 let _systemMqHandler: ((e: MediaQueryListEvent) => void) | null = null;
 let _systemMq: MediaQueryList | null = null;
@@ -310,6 +335,8 @@ export function applyTheme(theme: Theme): void {
     const mq = window.matchMedia("(prefers-color-scheme: light)");
     const handler = (e: MediaQueryListEvent) => {
       document.documentElement.setAttribute("data-theme", e.matches ? "light" : "dark");
+      // Accent variants differ per theme — re-resolve when the OS flips.
+      applyAccent(storage.get<string>(ACCENT_KEY) ?? DEFAULT_ACCENT_ID);
     };
     mq.addEventListener("change", handler);
     _systemMq = mq;
@@ -318,6 +345,9 @@ export function applyTheme(theme: Theme): void {
   } else {
     document.documentElement.setAttribute("data-theme", theme);
   }
+
+  // The active data-theme just changed; re-resolve the accent trio for it.
+  applyAccent(storage.get<string>(ACCENT_KEY) ?? DEFAULT_ACCENT_ID);
 }
 
 // ── Slice interface ───────────────────────────────────────────────────────────
@@ -343,6 +373,10 @@ export interface UISlice extends AppUIState {
   // Theme
   theme: Theme;
   setTheme: (theme: Theme) => void;
+
+  // Accent colour
+  accentColor: string;
+  setAccentColor: (accentId: string) => void;
 
   // Font scale
   fontScale: FontScale;
@@ -442,6 +476,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   aiConfig: DEFAULT_AI_CONFIG,
   agentConfig: DEFAULT_AGENT_CONFIG,
   theme: "dark" as Theme,
+  accentColor: DEFAULT_ACCENT_ID,
   fontScale: DEFAULT_FONT_SCALE, // 1.2 = M (~16.8px)
   hiddenViews: new Set<ToggleableView>(),
   chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
@@ -575,6 +610,16 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     applyTheme(theme);
     if (typeof window !== "undefined" && window.electron) {
       window.electron.setTheme(theme);
+    }
+  },
+
+  // ── Accent colour ──────────────────────────────
+  setAccentColor(accentId: string) {
+    set({ accentColor: accentId });
+    storage.set(ACCENT_KEY, accentId);
+    applyAccent(accentId);
+    if (typeof window !== "undefined" && window.electron?.setAccent) {
+      window.electron.setAccent(accentId);
     }
   },
 

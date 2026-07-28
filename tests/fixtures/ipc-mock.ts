@@ -306,6 +306,7 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     getWorkspacePath:      () => Promise.resolve("/mock/workspace"),
     needsWorkspaceSetup:   () => Promise.resolve(needsSetup),
     setTheme:              noop,
+    setAccent:             noop,
     initWorkspace:         () => Promise.resolve({ requiresRestart: false }),
     relaunch:              noop,
     resetAllData:          noop,

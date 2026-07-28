@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cairn · Accent Color Lab</title>
+<style>
+  /* ── Base neutrals (mirror Cairn's real tokens) ───────────────
+     These stay fixed; only the accent trio changes per scheme.
+     Cairn's neutrals are warm (cream/stone), not pure gray. */
+
+  :root, [data-theme="dark"] {
+    color-scheme: dark;
+    --background: #0d0d0d;
+    --foreground: #e8e4dc;
+    --surface: #141414;
+    --surface-2: #1a1a1a;
+    --surface-3: #222222;
+    --border: #2a2a2a;
+    --border-subtle: #1f1f1f;
+    --muted: #666360;
+    --muted-fg: #a09c96;
+    --text-primary: #e8e4dc;
+    --text-secondary: #9e9a94;
+    --text-tertiary: #66635f;
+    --success: #3ecf8e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --info: #60a5fa;
+  }
+
+  [data-theme="light"] {
+    color-scheme: light;
+    --background: #f5f4f1;
+    --foreground: #1a1917;
+    --surface: #ffffff;
+    --surface-2: #f0eeeb;
+    --surface-3: #e8e5e1;
+    --border: #dddad6;
+    --border-subtle: #eae7e3;
+    --muted: #a09c96;
+    --muted-fg: #66635f;
+    --text-primary: #1a1917;
+    --text-secondary: #4a4744;
+    --text-tertiary: #9e9a94;
+    --success: #1a9e68;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --info: #2563eb;
+  }
+
+  /* Accent tokens are injected by JS as inline style on <html>:
+     --accent, --accent-hover, --accent-fg, --accent-dim */
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { font-size: 14px; }
+
+  body {
+    font-family: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    background: var(--background);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+    transition: background .25s ease, color .25s ease;
+  }
+
+  .serif { font-family: "New York","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
+  .mono  { font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+
+  a { color: inherit; }
+
+  /* ── Top control bar ─────────────────────────────────── */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 1rem;
+    padding: .75rem 1.25rem;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .topbar h1 {
+    font-size: 1rem; font-weight: 600; letter-spacing: -.01em;
+    display: flex; align-items: center; gap: .55rem;
+  }
+  .topbar h1 .dot {
+    width: 14px; height: 14px; border-radius: 4px;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+  .topbar .spacer { flex: 1; }
+
+  .seg {
+    display: inline-flex; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 2px;
+  }
+  .seg button {
+    font: inherit; font-size: .8rem; cursor: pointer;
+    border: 0; background: transparent; color: var(--text-secondary);
+    padding: .3rem .7rem; border-radius: 6px; transition: all .15s;
+  }
+  .seg button.on {
+    background: var(--surface); color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  }
+
+  select {
+    font: inherit; font-size: .82rem;
+    background: var(--surface-2); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: .38rem .6rem; cursor: pointer;
+  }
+
+  .btn {
+    font: inherit; font-size: .82rem; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text-primary); border-radius: 8px; padding: .38rem .7rem;
+    transition: all .15s;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn-accent {
+    background: var(--accent); color: var(--accent-fg); border-color: transparent;
+  }
+  .btn-accent:hover { background: var(--accent-hover); }
+
+  /* ── Layout ──────────────────────────────────────────── */
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 1.5rem 1.25rem 5rem; }
+
+  .lab-note {
+    font-size: .8rem; color: var(--text-tertiary);
+    margin-bottom: 1.5rem; max-width: 62ch;
+  }
+
+  h2.section {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--text-tertiary); font-weight: 600;
+    margin: 2.5rem 0 1rem; padding-bottom: .5rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* ── Scheme chooser grid ─────────────────────────────── */
+  .scheme-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: .75rem; margin-bottom: 1rem;
+  }
+  .scheme-card {
+    cursor: pointer; text-align: left;
+    border: 1.5px solid var(--border); border-radius: 12px;
+    background: var(--surface); padding: .85rem; transition: all .18s;
+    display: flex; flex-direction: column; gap: .6rem;
+  }
+  .scheme-card:hover { border-color: var(--muted); transform: translateY(-1px); }
+  .scheme-card.on {
+    border-color: var(--sc-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc-accent) 22%, transparent);
+  }
+  .scheme-card .swatches { display: flex; gap: 5px; }
+  .scheme-card .sw { flex:1; height: 34px; border-radius: 7px; }
+  .scheme-card .name { font-size: .84rem; font-weight: 600; }
+  .scheme-card .desc { font-size: .72rem; color: var(--text-tertiary); line-height: 1.35; }
+  .scheme-card .hex { font-size: .68rem; color: var(--text-tertiary); }
+
+  /* ── Palette readout ─────────────────────────────────── */
+  .palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap: .6rem; }
+  .chip {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    background: var(--surface);
+  }
+  .chip .fill { height: 56px; }
+  .chip .meta { padding: .45rem .55rem; }
+  .chip .meta .k { font-size: .72rem; font-weight: 600; }
+  .chip .meta .v { font-size: .68rem; color: var(--text-tertiary); }
+
+  /* ── Mock app frame ──────────────────────────────────── */
+  .mock {
+    border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
+    background: var(--background); display: grid;
+    grid-template-columns: 210px 1fr; min-height: 520px;
+    box-shadow: 0 20px 60px -30px rgba(0,0,0,.6);
+  }
+  .sidebar {
+    background: var(--surface); border-right: 1px solid var(--border);
+    padding: 1rem .75rem; display: flex; flex-direction: column; gap: .15rem;
+  }
+  .sb-brand {
+    display: flex; align-items: center; gap: .5rem; font-weight: 600;
+    font-size: .95rem; padding: .2rem .4rem .8rem;
+  }
+  .sb-brand .mark { width: 20px; height: 20px; border-radius: 6px; background: var(--accent); }
+  .sb-section { font-size: .66rem; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--text-tertiary); padding: .8rem .5rem .3rem; }
+  .nav {
+    display: flex; align-items: center; gap: .55rem;
+    padding: .4rem .55rem; border-radius: 8px; font-size: .82rem;
+    color: var(--text-secondary); cursor: pointer;
+  }
+  .nav:hover { background: var(--surface-2); }
+  .nav.active { background: var(--accent-dim); color: var(--accent); font-weight: 500; }
+  .nav .ic { width: 15px; height: 15px; border-radius: 4px; background: currentColor; opacity: .7; }
+  .nav.active .ic { opacity: 1; }
+  .proj-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+  .main-head {
+    padding: 1rem 1.25rem; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: .8rem;
+  }
+  .main-head .title { font-size: 1.15rem; font-weight: 600; letter-spacing: -.01em; }
+  .badge {
+    font-size: .68rem; padding: .12rem .5rem; border-radius: 999px;
+    background: var(--accent-dim); color: var(--accent); font-weight: 600;
+  }
+  .main-body { padding: 1.1rem 1.25rem; overflow: auto; }
+
+  /* Kanban */
+  .board { display: grid; grid-template-columns: repeat(3,1fr); gap: .8rem; }
+  .col { background: var(--surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: .6rem; }
+  .col-head { display:flex; align-items:center; justify-content:space-between;
+    font-size: .74rem; font-weight: 600; color: var(--text-secondary); padding: .2rem .3rem .55rem; }
+  .col-head .count { background: var(--surface-3); border-radius: 6px; padding: 0 .4rem; font-size: .68rem; color: var(--text-tertiary); }
+  .card {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px;
+    padding: .6rem .65rem; margin-bottom: .5rem;
+  }
+  .card .ct { font-size: .8rem; font-weight: 500; margin-bottom: .4rem; }
+  .card .row { display: flex; align-items: center; gap: .4rem; }
+  .pill { font-size: .64rem; padding: .1rem .4rem; border-radius: 6px; font-weight: 600; }
+  .pill.p-urgent { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+  .pill.p-high { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); }
+  .pill.p-med { background: var(--accent-dim); color: var(--accent); }
+  .tag { font-size: .64rem; padding: .1rem .4rem; border-radius: 6px; background: var(--surface-3); color: var(--text-tertiary); }
+  .card .avatar { width: 18px; height: 18px; border-radius: 50%; margin-left: auto;
+    background: var(--accent); color: var(--accent-fg); font-size: .6rem; font-weight: 700;
+    display: grid; place-items: center; }
+
+  /* Note editor */
+  .note-doc { max-width: 640px; }
+  .note-doc h1 { font-size: 1.6rem; letter-spacing: -.02em; margin-bottom: .4rem; }
+  .note-doc .meta { font-size: .74rem; color: var(--text-tertiary); margin-bottom: 1.1rem; display:flex; gap:.6rem; align-items:center; }
+  .note-doc p { font-size: .9rem; color: var(--text-secondary); margin-bottom: .9rem; }
+  .wikilink { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-dim); font-weight: 500; }
+  .wikilink:hover { border-bottom-color: var(--accent); }
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-dim);
+    padding: .7rem .85rem; border-radius: 0 8px 8px 0; margin-bottom: .9rem;
+  }
+  .callout .ch { color: var(--accent); font-weight: 600; font-size: .78rem; margin-bottom: .2rem; display:flex; gap:.4rem; align-items:center; }
+  .callout p { margin: 0; color: var(--text-secondary); font-size: .82rem; }
+  .cm-tag { color: var(--accent); background: var(--accent-dim); padding: 0 .3rem; border-radius: 4px; font-size: .8rem; }
+  code.inline { font-family: "Geist Mono",monospace; background: var(--surface-2); border:1px solid var(--border-subtle);
+    padding: .05rem .3rem; border-radius: 5px; font-size: .82rem; color: var(--text-primary); }
+  .checkbox { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--accent);
+    display:inline-grid; place-items:center; vertical-align: -2px; margin-right: .4rem; }
+  .checkbox.done { background: var(--accent); }
+  .checkbox.done::after { content:"✓"; color: var(--accent-fg); font-size: .6rem; font-weight:800; }
+
+  /* Right column widgets */
+  .widgets { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin-top: 1rem; }
+  .w {
+    border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: .9rem;
+  }
+  .w h3 { font-size: .78rem; font-weight: 600; margin-bottom: .7rem; }
+  /* progress */
+  .bar { height: 7px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin-bottom: .5rem; }
+  .bar > span { display:block; height:100%; background: var(--accent); border-radius:999px; }
+  .link { color: var(--accent); font-size: .8rem; font-weight: 500; cursor:pointer; }
+  /* toggle */
+  .switch { width: 34px; height: 20px; border-radius: 999px; background: var(--surface-3); position: relative; cursor:pointer; transition: background .18s; }
+  .switch.on { background: var(--accent); }
+  .switch::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+    background:#fff; transition: transform .18s; }
+  .switch.on::after { transform: translateX(14px); }
+  .field-row { display:flex; align-items:center; justify-content:space-between; padding:.4rem 0; font-size:.82rem; color: var(--text-secondary); }
+  .input { width:100%; background: var(--surface-2); border:1px solid var(--border); border-radius:8px;
+    padding:.4rem .55rem; color: var(--text-primary); font: inherit; font-size:.82rem; }
+  .input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+
+  /* graph mock */
+  .graph { display:flex; align-items:center; justify-content:center; }
+
+  /* contrast readout */
+  .contrast { display:flex; gap: 1rem; flex-wrap: wrap; }
+  .contrast .cbox {
+    border:1px solid var(--border); border-radius: 10px; padding: .7rem .85rem; min-width: 180px;
+    font-size: .74rem;
+  }
+  .contrast .sample { border-radius: 7px; padding: .5rem .6rem; margin-bottom: .5rem; font-weight: 600; }
+  .contrast .ratio { color: var(--text-tertiary); }
+  .pass { color: var(--success); font-weight: 600; }
+  .fail { color: var(--danger); font-weight: 600; }
+
+  .foot { margin-top: 3rem; font-size: .74rem; color: var(--text-tertiary); text-align: center; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <h1><span class="dot"></span> Cairn · Accent Lab</h1>
+    <div class="spacer"></div>
+    <label class="mono" style="font-size:.75rem;color:var(--text-tertiary)">scheme</label>
+    <select id="schemeSelect"></select>
+    <div class="seg" id="themeSeg">
+      <button data-theme-btn="dark" class="on">Dark</button>
+      <button data-theme-btn="light">Light</button>
+    </div>
+    <button class="btn" id="prevBtn">‹</button>
+    <button class="btn" id="nextBtn">›</button>
+  </div>
+
+  <div class="wrap">
+    <p class="lab-note">
+      Cairn's neutrals are intentionally <b>warm</b> (cream / stone), not pure gray. Only the
+      accent trio (<span class="mono">--accent · --accent-hover · --accent-fg · --accent-dim</span>)
+      changes between schemes below — everything else is Cairn's real token set. Toggle Dark/Light and
+      cycle schemes to judge each candidate against real UI surfaces. The current shipping accent is
+      <b>Obsidian Indigo</b>.
+    </p>
+
+    <h2 class="section">Choose a scheme</h2>
+    <div class="scheme-grid" id="schemeGrid"></div>
+
+    <h2 class="section">Accent palette (active scheme · active theme)</h2>
+    <div class="palette" id="palette"></div>
+
+    <h2 class="section">Contrast check · accent-fg on accent (WCAG)</h2>
+    <div class="contrast" id="contrast"></div>
+
+    <h2 class="section">Mock · Board view</h2>
+    <div class="mock">
+      <aside class="sidebar">
+        <div class="sb-brand"><span class="mark"></span> Cairn</div>
+        <div class="nav active"><span class="ic"></span> Overview</div>
+        <div class="nav"><span class="ic"></span> Notes</div>
+        <div class="nav"><span class="ic"></span> Board</div>
+        <div class="nav"><span class="ic"></span> Idea Flow</div>
+        <div class="nav"><span class="ic"></span> Graph</div>
+        <div class="sb-section">Projects</div>
+        <div class="nav"><span class="proj-dot" style="background:var(--accent)"></span> Cairn Core</div>
+        <div class="nav"><span class="proj-dot" style="background:var(--info)"></span> Mobile</div>
+        <div class="nav"><span class="proj-dot" style="background:var(--success)"></span> Website</div>
+        <div style="flex:1"></div>
+        <button class="btn btn-accent" style="width:100%">+ New card</button>
+      </aside>
+      <div class="main">
+        <div class="main-head">
+          <span class="title">Cairn Core</span>
+          <span class="badge">12 open</span>
+          <div class="spacer" style="flex:1"></div>
+          <button class="btn">Filter</button>
+          <button class="btn btn-accent">Share</button>
+        </div>
+        <div class="main-body">
+          <div class="board">
+            <div class="col">
+              <div class="col-head">Todo <span class="count">3</span></div>
+              <div class="card">
+                <div class="ct">Redesign accent color system</div>
+                <div class="row"><span class="pill p-urgent">Urgent</span><span class="tag">design</span><span class="avatar">GB</span></div>
+              </div>
+              <div class="card">
+                <div class="ct">Audit undefined CSS tokens</div>
+                <div class="row"><span class="pill p-med">Medium</span><span class="tag">tech-debt</span></div>
+              </div>
+              <div class="card">
+                <div class="ct">Mobile theme parity pass</div>
+                <div class="row"><span class="pill p-high">High</span><span class="tag">mobile</span></div>
+              </div>
+            </div>
+            <div class="col">
+              <div class="col-head">In progress <span class="count">2</span></div>
+              <div class="card">
+                <div class="ct">Knowledge graph radial layout</div>
+                <div class="row"><span class="pill p-high">High</span><span class="avatar">AI</span></div>
+              </div>
+              <div class="card">
+                <div class="ct">Semantic note search</div>
+                <div class="row"><span class="pill p-med">Medium</span><span class="tag">embeddings</span></div>
+              </div>
+            </div>
+            <div class="col">
+              <div class="col-head">Done <span class="count">4</span></div>
+              <div class="card">
+                <div class="ct">Idea Flow node editor</div>
+                <div class="row"><span class="tag">flow</span><span class="avatar">GB</span></div>
+              </div>
+              <div class="card">
+                <div class="ct">Dashboard HTML runtime</div>
+                <div class="row"><span class="tag">dash</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="widgets">
+            <div class="w">
+              <h3>Sprint progress</h3>
+              <div class="bar"><span style="width:68%"></span></div>
+              <div style="font-size:.74rem;color:var(--text-tertiary)">17 / 25 tasks · <span class="link">view report</span></div>
+              <div class="bar" style="margin-top:.8rem"><span style="width:42%"></span></div>
+              <div style="font-size:.74rem;color:var(--text-tertiary)">Coverage 42%</div>
+            </div>
+            <div class="w">
+              <h3>Quick settings</h3>
+              <div class="field-row">Enable AI agent <span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+              <div class="field-row">Auto-index codebase <span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+              <div class="field-row">Local embeddings <span class="switch" onclick="this.classList.toggle('on')"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="section">Mock · Note editor (Obsidian-style markdown)</h2>
+    <div class="mock" style="grid-template-columns: 210px 1fr;">
+      <aside class="sidebar">
+        <div class="sb-brand"><span class="mark"></span> Cairn</div>
+        <div class="sb-section">Notes</div>
+        <div class="nav active"><span class="ic"></span> Design Language</div>
+        <div class="nav"><span class="ic"></span> Accent Research</div>
+        <div class="nav"><span class="ic"></span> Meeting · 07-28</div>
+        <div class="nav"><span class="ic"></span> Roadmap Q3</div>
+        <div style="flex:1"></div>
+        <div class="input" contenteditable="true" style="color:var(--text-tertiary)">Search notes…</div>
+      </aside>
+      <div class="main">
+        <div class="main-head">
+          <span class="title serif">Design Language</span>
+          <span class="badge">pinned</span>
+        </div>
+        <div class="main-body">
+          <article class="note-doc">
+            <div class="meta">
+              <span class="cm-tag">#design</span>
+              <span class="cm-tag">#branding</span>
+              <span>· edited 2m ago</span>
+            </div>
+            <p>The accent must feel distinct from <a class="wikilink" href="#">[[Obsidian]]</a> while staying calm
+              and readable across both themes. See <a class="wikilink" href="#">[[Accent Research]]</a> for the full palette study.</p>
+            <div class="callout">
+              <div class="ch">◆ Note</div>
+              <p>Cairn's neutrals are warm-toned. A cold tech-blue clashes; earthy or jewel tones harmonize.</p>
+            </div>
+            <p>Open decisions to validate against real screens:</p>
+            <p style="margin-bottom:.4rem">
+              <span class="checkbox done"></span> Pick a candidate accent trio<br>
+            </p>
+            <p style="margin-bottom:.4rem">
+              <span class="checkbox"></span> Verify <code class="inline">--accent-fg</code> passes WCAG AA on buttons
+            </p>
+            <p style="margin-bottom:.9rem">
+              <span class="checkbox"></span> Propagate to <code class="inline">mobile/src/theme.ts</code> + splash
+            </p>
+            <p>Try the token in context: a <a class="wikilink" href="#">link</a>, a
+              <code class="inline">var(--accent)</code> reference, and an inline
+              <span class="cm-tag">#tag</span> all share the accent hue.</p>
+            <button class="btn btn-accent">Primary action</button>
+            <button class="btn" style="margin-left:.5rem">Secondary</button>
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <p class="foot mono">Cairn accent lab · standalone · edit the SCHEMES array to add candidates</p>
+  </div>
+
+<script>
+/* ── Candidate schemes ─────────────────────────────────────────
+   Each has dark + light accent trios. accentFg is chosen for AA
+   contrast on the accent background. dim = low-alpha wash. */
+const SCHEMES = [
+  {
+    id: "sage",
+    name: "Sage Moss",
+    desc: "DEFAULT · muted natural green. Calm, organic, pairs with warm neutrals.",
+    dark:  { accent:"#8faf6f", hover:"#a6c487", fg:"#131c0b", dim:"rgba(143,175,111,.15)" },
+    light: { accent:"#5c7a3f", hover:"#4d6733", fg:"#ffffff", dim:"rgba(92,122,63,.12)" },
+  },
+  {
+    id: "teal",
+    name: "Cairn Teal",
+    desc: "Calm blue-green — stone & water. Reads clean on warm cream.",
+    dark:  { accent:"#2dd4bf", hover:"#5eead4", fg:"#052e2b", dim:"rgba(45,212,191,.15)" },
+    light: { accent:"#0a7568", hover:"#08655a", fg:"#ffffff", dim:"rgba(10,117,104,.12)" },
+  },
+  {
+    id: "terracotta",
+    name: "Terracotta",
+    desc: "Warm clay orange-red. Leans into the cairn/earth identity.",
+    dark:  { accent:"#f0876a", hover:"#f6a487", fg:"#2b0d05", dim:"rgba(240,135,106,.15)" },
+    light: { accent:"#b84e30", hover:"#a54428", fg:"#ffffff", dim:"rgba(184,78,48,.12)" },
+  },
+  {
+    id: "amber",
+    name: "Amber Gold",
+    desc: "Warm ochre. Editorial, papery, premium — very on-brand for notes.",
+    dark:  { accent:"#e5a94e", hover:"#f0bd6c", fg:"#2a1c04", dim:"rgba(229,169,78,.15)" },
+    light: { accent:"#a06a15", hover:"#8a5c12", fg:"#ffffff", dim:"rgba(160,106,21,.12)" },
+  },
+  {
+    id: "obsidian",
+    name: "Obsidian Indigo",
+    desc: "Previous accent. Cool violet — Obsidian's signature.",
+    dark:  { accent:"#7c6af7", hover:"#9281ff", fg:"#16082e", dim:"rgba(124,106,247,.15)" },
+    light: { accent:"#6457e8", hover:"#7c6af7", fg:"#ffffff", dim:"rgba(100,87,232,.12)" },
+  },
+  {
+    id: "slate",
+    name: "Slate Blue",
+    desc: "Desaturated pro blue (Linear-esque). Safe, calm, unopinionated.",
+    dark:  { accent:"#6b91d6", hover:"#88a9e2", fg:"#0a1526", dim:"rgba(107,145,214,.15)" },
+    light: { accent:"#3f66b3", hover:"#35569b", fg:"#ffffff", dim:"rgba(63,102,179,.12)" },
+  },
+  {
+    id: "coral",
+    name: "Rust Coral",
+    desc: "Warmer pink-red. Energetic yet earthy; strong for accents.",
+    dark:  { accent:"#f2708a", hover:"#f793a6", fg:"#2c0710", dim:"rgba(242,112,138,.15)" },
+    light: { accent:"#c73e5c", hover:"#af3450", fg:"#ffffff", dim:"rgba(199,62,92,.12)" },
+  },
+  {
+    id: "plum",
+    name: "Deep Plum",
+    desc: "Warmer, richer purple — still 'ink' but distinct from Obsidian.",
+    dark:  { accent:"#b981d8", hover:"#cc9be5", fg:"#1e0a26", dim:"rgba(185,129,216,.15)" },
+    light: { accent:"#8b4fad", hover:"#794296", fg:"#ffffff", dim:"rgba(139,79,173,.12)" },
+  },
+  {
+    id: "pine",
+    name: "Pine Green",
+    desc: "Deep evergreen. Grounded and serious; good with cream + ink.",
+    dark:  { accent:"#4fae82", hover:"#6cc39a", fg:"#04140c", dim:"rgba(79,174,130,.15)" },
+    light: { accent:"#217a53", hover:"#1b6746", fg:"#ffffff", dim:"rgba(33,122,83,.12)" },
+  },
+  {
+    id: "copper",
+    name: "Copper Bronze",
+    desc: "Metallic warm brown-orange. Distinctive, tactile, craft feel.",
+    dark:  { accent:"#d69663", hover:"#e3ac80", fg:"#261407", dim:"rgba(214,150,99,.15)" },
+    light: { accent:"#a5652f", hover:"#8d5626", fg:"#ffffff", dim:"rgba(165,101,47,.12)" },
+  },
+];
+
+const root = document.documentElement;
+let current = 0;
+let theme = "dark";
+
+/* ── contrast math (WCAG) ─────────────────────────────── */
+function hexToRgb(h){
+  h = h.replace('#','');
+  if (h.length === 8) h = h.slice(0,6); // ignore stray alpha
+  if (h.length === 3) h = h.split('').map(c=>c+c).join('');
+  return [0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
+}
+function lum(rgb){
+  const a = rgb.map(v=>{ v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4); });
+  return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
+}
+function contrast(a,b){
+  const L1 = lum(hexToRgb(a)), L2 = lum(hexToRgb(b));
+  const hi = Math.max(L1,L2), lo = Math.min(L1,L2);
+  return (hi+0.05)/(lo+0.05);
+}
+
+function applyScheme(){
+  const s = SCHEMES[current];
+  const t = s[theme];
+  root.style.setProperty('--accent', t.accent);
+  root.style.setProperty('--accent-hover', t.hover);
+  root.style.setProperty('--accent-fg', t.fg);
+  root.style.setProperty('--accent-dim', t.dim);
+  root.setAttribute('data-theme', theme);
+  renderPalette();
+  renderContrast();
+  markCards();
+}
+
+function markCards(){
+  document.querySelectorAll('.scheme-card').forEach((c,i)=>{
+    c.classList.toggle('on', i===current);
+  });
+  document.getElementById('schemeSelect').value = String(current);
+}
+
+/* ── build scheme chooser ─────────────────────────────── */
+const grid = document.getElementById('schemeGrid');
+const sel = document.getElementById('schemeSelect');
+SCHEMES.forEach((s,i)=>{
+  const t = s[theme];
+  const card = document.createElement('button');
+  card.className = 'scheme-card';
+  card.style.setProperty('--sc-accent', s.dark.accent);
+  card.dataset.i = i;
+  card.innerHTML = `
+    <div class="swatches">
+      <div class="sw" style="background:${s.light.accent}"></div>
+      <div class="sw" style="background:${s.dark.accent}"></div>
+      <div class="sw" style="background:${s.dark.hover}"></div>
+    </div>
+    <div class="name">${s.name}</div>
+    <div class="desc">${s.desc}</div>
+    <div class="hex mono">${s.dark.accent} · ${s.light.accent}</div>`;
+  card.addEventListener('click', ()=>{ current=i; applyScheme(); });
+  grid.appendChild(card);
+
+  const opt = document.createElement('option');
+  opt.value = i; opt.textContent = s.name;
+  sel.appendChild(opt);
+});
+
+sel.addEventListener('change', e=>{ current = +e.target.value; applyScheme(); });
+document.getElementById('prevBtn').onclick = ()=>{ current=(current-1+SCHEMES.length)%SCHEMES.length; applyScheme(); };
+document.getElementById('nextBtn').onclick = ()=>{ current=(current+1)%SCHEMES.length; applyScheme(); };
+
+document.querySelectorAll('[data-theme-btn]').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    theme = b.dataset.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach(x=>x.classList.toggle('on', x===b));
+    applyScheme();
+  });
+});
+
+/* keyboard: arrows cycle schemes, t toggles theme */
+window.addEventListener('keydown', e=>{
+  if (e.target.isContentEditable) return;
+  if (e.key==='ArrowRight'){ current=(current+1)%SCHEMES.length; applyScheme(); }
+  if (e.key==='ArrowLeft'){ current=(current-1+SCHEMES.length)%SCHEMES.length; applyScheme(); }
+  if (e.key==='t' || e.key==='T'){
+    theme = theme==='dark' ? 'light':'dark';
+    document.querySelectorAll('[data-theme-btn]').forEach(x=>x.classList.toggle('on', x.dataset.themeBtn===theme));
+    applyScheme();
+  }
+});
+
+function renderPalette(){
+  const s = SCHEMES[current][theme];
+  const items = [
+    ['--accent', s.accent],
+    ['--accent-hover', s.hover],
+    ['--accent-fg', s.fg],
+    ['--accent-dim', s.dim],
+  ];
+  document.getElementById('palette').innerHTML = items.map(([k,v])=>`
+    <div class="chip">
+      <div class="fill" style="background:${v}"></div>
+      <div class="meta"><div class="k mono">${k}</div><div class="v mono">${v}</div></div>
+    </div>`).join('');
+}
+
+function renderContrast(){
+  const s = SCHEMES[current][theme];
+  const bg = getComputedStyle(root).getPropertyValue('--background').trim();
+  const surf = getComputedStyle(root).getPropertyValue('--surface').trim();
+  const rows = [
+    ['accent-fg on accent (button label)', s.fg, s.accent],
+    ['accent on background (link text)', s.accent, bg],
+    ['accent on surface (link on card)', s.accent, surf],
+  ];
+  document.getElementById('contrast').innerHTML = rows.map(([label,fg,bgc])=>{
+    const r = contrast(fg,bgc);
+    const aa = r>=4.5, aaLarge = r>=3;
+    const verdict = aa ? `<span class="pass">AA ✓</span>` :
+                    aaLarge ? `<span class="pass">AA-Large ✓</span> <span class="fail">AA ✕</span>` :
+                    `<span class="fail">✕ fail</span>`;
+    return `<div class="cbox">
+      <div class="sample" style="background:${bgc};color:${fg}">Aa Cairn</div>
+      <div>${label}</div>
+      <div class="ratio mono">${r.toFixed(2)}:1 · ${verdict}</div>
+    </div>`;
+  }).join('');
+}
+
+applyScheme();
+</script>
+</body>
+</html>

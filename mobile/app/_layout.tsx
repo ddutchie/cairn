@@ -150,6 +150,7 @@ export default function RootLayout() {
                 <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
                 <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal" }} />
                 <Stack.Screen name="settings/tools" options={{ title: "Tools & Services", presentation: "modal" }} />
+                <Stack.Screen name="settings/appearance" options={{ title: "Appearance", presentation: "modal" }} />
               </Stack>
             </ToastProvider>
           </ThemeProvider>

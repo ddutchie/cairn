@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
+import { AccentPicker } from "@/components/ui/accent-picker";
 
 // ── Theme options ─────────────────────────────────────────────────────────────
 
@@ -64,6 +65,14 @@ export function QuickSettings() {
             onChange={setTheme}
             className="w-full text-[0.714rem]"
           />
+        </div>
+
+        <DropdownMenuSeparator />
+
+        {/* Accent colour */}
+        <DropdownMenuLabel className="mt-2">Accent color</DropdownMenuLabel>
+        <div className="px-1 pb-2">
+          <AccentPicker className="w-full" />
         </div>
 
         <DropdownMenuSeparator />

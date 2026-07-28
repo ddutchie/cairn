@@ -10,6 +10,8 @@ import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
+import { ICON_SETTINGS } from "@/components/toolbar-icons";
+import { toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, elevation, type as typeScale } from "@/theme";
 
@@ -39,6 +41,11 @@ export default function ProjectsScreen() {
       <WorkspaceHeaderMenu />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button {...syncBadge} />
+        <Stack.Toolbar.Button
+          icon={ICON_SETTINGS}
+          accessibilityLabel="Appearance settings"
+          onPress={toolbarPress(() => router.push("/settings/appearance"))}
+        />
       </Stack.Toolbar>
     </>
   );

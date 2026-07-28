@@ -409,6 +409,7 @@ const api = {
   getWorkspacePath: () => invoke<string | null>("app:getWorkspacePath"),
   needsWorkspaceSetup: () => invoke<boolean>("app:needsWorkspaceSetup"),
   setTheme: (theme: string) => invoke("app:setTheme", theme),
+  setAccent: (accent: string) => invoke("app:setAccent", accent),
   initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
   relaunch: () => invoke("app:relaunch"),
   resetAllData: () => invoke("app:reset"),

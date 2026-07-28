@@ -15,13 +15,15 @@
   --surface-3: #222222;
   --border: #2a2a2a;
   --border-subtle: #1f1f1f;
-  --accent: #7c6af7;
-  --accent-hover: #9281ff;
-  --accent-dim: rgba(124, 106, 247, 0.15);
-  /* Dark accent (#7c6af7) is too light for white text at small sizes (only
-     3.99:1, fails AA). A near-black foreground reaches 4.75:1. Light theme
-     keeps #ffffff (5.16:1 on its darker accent). */
-  --accent-fg: #16082e;
+  --accent: #8faf6f;
+  --accent-hover: #a6c487;
+  --accent-dim: rgba(143, 175, 111, 0.15);
+  /* Static fallback accent = "Sage Moss" preset (shared/ui/accents.ts,
+     DEFAULT_ACCENT_ID). The user's chosen accent is injected at runtime as
+     inline --accent* vars on <html> by applyAccent(); these values are what
+     the app paints before hydration and if JS is disabled. Dark Sage
+     (#8faf6f) needs a near-black fg for AA (fg #131c0b → 7.12:1). */
+  --accent-fg: #131c0b;
   --muted: #666360;
   --muted-fg: #a09c96;
   --text-primary: #e8e4dc;
@@ -43,9 +45,9 @@
   --surface-3: #e8e5e1;
   --border: #dddad6;
   --border-subtle: #eae7e3;
-  --accent: #6457e8;
-  --accent-hover: #7c6af7;
-  --accent-dim: rgba(100, 87, 232, 0.12);
+  --accent: #5c7a3f;
+  --accent-hover: #4d6733;
+  --accent-dim: rgba(92, 122, 63, 0.12);
   --accent-fg: #ffffff;
   --muted: #a09c96;
   --muted-fg: #66635f;

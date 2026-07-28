@@ -163,6 +163,10 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
 
       // Syntax palette shared with CodeBlock via SYNTAX_COLORS (see syntax-palette.ts)
       const sc = (name: keyof typeof SYNTAX_COLORS) => SYNTAX_COLORS[name][isDark ? "dark" : "light"];
+      // Follow the user's chosen accent (injected as --accent on <html>).
+      const accent =
+        getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() ||
+        (isDark ? "#8faf6f" : "#5c7a3f");
       const highlightStyle = HighlightStyle.define([
         { tag: [tags.tagName, tags.angleBracket],        color: sc("variable") },
         { tag: tags.attributeName,                        color: isDark ? sc("variable") : sc("func") },
@@ -182,10 +186,10 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
         ".cm-scroller": { overflow: "auto" },
         ".cm-content": { padding: "12px 16px", caretColor: isDark ? "#e8e4dc" : "#1a1917" },
         ".cm-line": { lineHeight: "1.6" },
-        "&.cm-focused .cm-cursor": { borderLeftColor: isDark ? "#7c6af7" : "#6457e8" },
+        "&.cm-focused .cm-cursor": { borderLeftColor: accent },
         ".cm-gutters": { display: "none" },
         "&, .cm-gutters": { backgroundColor: isDark ? "#161616" : "#f8f7f5", color: isDark ? "#abb2bf" : "#374151", border: "none" },
-        ".cm-selectionBackground, ::selection": { backgroundColor: isDark ? "rgba(124,106,247,0.25)" : "rgba(100,87,232,0.15)" },
+        ".cm-selectionBackground, ::selection": { backgroundColor: `color-mix(in srgb, ${accent} ${isDark ? "25%" : "15%"}, transparent)` },
       }, { dark: isDark });
 
       view = new EditorView({

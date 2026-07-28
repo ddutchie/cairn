@@ -25,8 +25,9 @@ import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY } from "./slices/ui";
 import type { FontScale } from "./slices/ui";
+import { DEFAULT_ACCENT_ID } from "../../shared/ui/accents";
 import { createWorkspaceSlice } from "./slices/workspace";
 import type { WorkspaceSlice } from "./slices/workspace";
 import { createNotesSlice } from "./slices/notes";
@@ -201,6 +202,13 @@ function restorePersistedTheme(set: PartialSetter): void {
   } else {
     applyTheme("dark");
   }
+
+  // Accent must resolve AFTER the theme (its trio depends on the active
+  // data-theme). applyTheme already re-applies the stored accent, but we also
+  // sync it into the store state so the settings picker reflects the choice.
+  const savedAccent = storage.get<string>(ACCENT_KEY) ?? DEFAULT_ACCENT_ID;
+  set({ accentColor: savedAccent });
+  applyAccent(savedAccent);
 
   const savedFontScale = storage.get<FontScale>(FONT_SCALE_KEY);
   if (savedFontScale) {

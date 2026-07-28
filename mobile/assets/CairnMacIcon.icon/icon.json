@@ -1,8 +1,8 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "display-p3:0.56494,0.68604,0.57666,1.00000",
-      "display-p3:0.56494,0.68604,0.57666,1.00000"
+      "extended-gray:1.00000,1.00000",
+      "extended-gray:1.00000,1.00000"
     ],
     "orientation" : {
       "start" : {
@@ -24,15 +24,37 @@
           "fill" : "none",
           "glass" : false,
           "hidden" : false,
-          "image-name" : "Cairn_Stack.png",
-          "name" : "Cairn_Stack",
-          "position" : {
-            "scale" : 0.61,
-            "translation-in-points" : [
-              0,
-              0
-            ]
-          }
+          "image-name-specializations" : [
+            {
+              "value" : "Cairn_Stack.png"
+            },
+            {
+              "idiom" : "square",
+              "value" : "Cairn_NB.png"
+            }
+          ],
+          "name" : "Cairn_NB",
+          "position-specializations" : [
+            {
+              "value" : {
+                "scale" : 0.61,
+                "translation-in-points" : [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "idiom" : "square",
+              "value" : {
+                "scale" : 1.2,
+                "translation-in-points" : [
+                  0,
+                  0
+                ]
+              }
+            }
+          ]
         }
       ],
       "lighting" : "individual",

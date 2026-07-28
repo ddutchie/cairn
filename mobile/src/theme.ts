@@ -8,6 +8,9 @@
  */
 
 import { Platform, useColorScheme } from "react-native";
+import { useSyncExternalStore } from "react";
+import { getMeta, setMeta } from "@/db";
+import { resolveAccentPreset, DEFAULT_ACCENT_ID, ACCENT_PRESETS, type AccentPreset } from "@cairn/shared/ui/accents";
 
 export interface Theme {
   background: string;
@@ -38,10 +41,10 @@ export const darkTheme: Theme = {
   surface3: "#222222",
   border: "#2a2a2a",
   borderSubtle: "#1f1f1f",
-  accent: "#7c6af7",
-  accentHover: "#9281ff",
-  accentDim: "rgba(124, 106, 247, 0.15)",
-  accentFg: "#16082e",
+  accent: "#8faf6f",
+  accentHover: "#a6c487",
+  accentDim: "rgba(143, 175, 111, 0.15)",
+  accentFg: "#131c0b",
   textPrimary: "#e8e4dc",
   textSecondary: "#9e9a94",
   textTertiary: "#66635f",
@@ -63,9 +66,9 @@ export const lightTheme: Theme = {
   // hairline row separators where a hard edge would be too heavy.
   border: "#cdc9c4",
   borderSubtle: "#e4e0dc",
-  accent: "#6457e8",
-  accentHover: "#7c6af7",
-  accentDim: "rgba(100, 87, 232, 0.12)",
+  accent: "#5c7a3f",
+  accentHover: "#4d6733",
+  accentDim: "rgba(92, 122, 63, 0.12)",
   accentFg: "#ffffff",
   textPrimary: "#1a1917",
   textSecondary: "#4a4744",
@@ -222,15 +225,84 @@ export const hasTabBarSearchField =
   Platform.OS === "ios" && parseInt(String(Platform.Version), 10) < 27;
 
 
-/** Returns the theme for the current system colour scheme. */
+/** Returns the theme for the current system colour scheme, with the user's
+ *  chosen accent preset overlaid. Reactive to both the system scheme and
+ *  in-app accent changes. */
 export function useTheme(): Theme {
   const scheme = useColorScheme();
-  return scheme === "light" ? lightTheme : darkTheme;
+  const accentId = useAccent();
+  const base = scheme === "light" ? lightTheme : darkTheme;
+  return applyAccentToTheme(base, accentId, scheme === "light");
 }
 
 /** True when the current system colour scheme is dark (default when unset). */
 export function useIsDark(): boolean {
   return useColorScheme() !== "light";
+}
+
+// ── Accent preset (user choice, persisted in the device-global meta DB) ─────────
+
+const ACCENT_META_KEY = "accentColor";
+
+// ACCENT_PRESETS / DEFAULT_ACCENT_ID / AccentPreset are imported at the top and
+// re-exported below so screens (the picker) can pull them from "@/theme".
+export { ACCENT_PRESETS, DEFAULT_ACCENT_ID };
+export type { AccentPreset };
+
+// A tiny external store so changing the accent re-renders every useTheme()
+// consumer. The value is cached in-memory (seeded lazily from meta) and mirrored
+// to the meta DB on write.
+let _accentId: string | null = null;
+const _accentListeners = new Set<() => void>();
+
+function readAccentFromMeta(): string {
+  try {
+    return getMeta(ACCENT_META_KEY) ?? DEFAULT_ACCENT_ID;
+  } catch {
+    return DEFAULT_ACCENT_ID;
+  }
+}
+
+/** Current accent preset id (cached; reads meta once). */
+export function getAccentId(): string {
+  if (_accentId === null) _accentId = readAccentFromMeta();
+  return _accentId;
+}
+
+/** Persist + broadcast a new accent preset id. No-op if unchanged. */
+export function setAccentId(id: string): void {
+  const next = resolveAccentPreset(id).id; // normalise unknown ids to default
+  if (_accentId === next) return;
+  _accentId = next;
+  try {
+    setMeta(ACCENT_META_KEY, next);
+  } catch {
+    // best-effort; in-memory value still drives the UI this session
+  }
+  for (const l of _accentListeners) l();
+}
+
+function subscribeAccent(cb: () => void): () => void {
+  _accentListeners.add(cb);
+  return () => _accentListeners.delete(cb);
+}
+
+/** Reactive hook: the current accent preset id. */
+export function useAccent(): string {
+  return useSyncExternalStore(subscribeAccent, getAccentId, getAccentId);
+}
+
+/** Overlay a preset's accent trio (for the given theme mode) onto a base theme. */
+export function applyAccentToTheme(base: Theme, accentId: string, isLight: boolean): Theme {
+  const preset: AccentPreset = resolveAccentPreset(accentId);
+  const v = isLight ? preset.light : preset.dark;
+  return {
+    ...base,
+    accent: v.accent,
+    accentHover: v.hover,
+    accentDim: v.dim,
+    accentFg: v.fg,
+  };
 }
 
 /**

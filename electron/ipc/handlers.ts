@@ -122,6 +122,19 @@ export function registerAppHandlers(
     }
   }));
 
+  registerIpcHandle("app:setAccent", (_e, accent: string) => handle(() => {
+    // Persist the accent id alongside the theme so the next boot's splash can
+    // render the right accent. Merge into the existing theme.json.
+    const themeFile = path.join(userDataPath, "theme.json");
+    let existing: Record<string, unknown> = {};
+    try {
+      if (fs.existsSync(themeFile)) existing = JSON.parse(fs.readFileSync(themeFile, "utf8"));
+    } catch {
+      // ignore malformed file — overwrite below
+    }
+    fs.writeFileSync(themeFile, JSON.stringify({ ...existing, accent }), "utf8");
+  }));
+
   registerIpcHandle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => handle(async () => {
     writeWorkspaceConfig(userDataPath, newPath);
     fs.mkdirSync(newPath, { recursive: true });
