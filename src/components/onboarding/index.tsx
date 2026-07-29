@@ -124,6 +124,15 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         await initWorkspacePath(chosenFolder);
       }
       await createWorkspace(trimmed, wsIcon);
+      // The workspace record now exists. Re-scan the chosen folder so any
+      // existing Obsidian vault folders (or loose root .md files) are turned
+      // into projects + notes. The initial scan in initWorkspace ran before the
+      // workspace existed, so it couldn't auto-create projects.
+      try {
+        await window.electron?.rescanWorkspace?.();
+      } catch {
+        // Best-effort — onboarding shouldn't block on the rescan.
+      }
       setStep("appearance");
     } finally {
       setSubmitting(false);

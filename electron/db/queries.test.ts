@@ -24,6 +24,7 @@ import {
   getNoteById,
   getNoteByIdIncludingTombstoned,
   moveNoteToProject,
+  rewriteInboundWikilinks,
   createColumn,
   createCard,
   updateCard,
@@ -1061,5 +1062,75 @@ describe("mergeProject", () => {
     expect(() => mergeProject(db, "src", "src")).toThrow(/into itself/);
     expect(() => mergeProject(db, "nope", "dst")).toThrow(/Source project not found/);
     expect(() => mergeProject(db, "src", "nope")).toThrow(/Target project not found/);
+  });
+});
+
+// ── rewriteInboundWikilinks ────────────────────────────────────────────────
+
+describe("rewriteInboundWikilinks", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+    seedProject(db);
+  });
+
+  function mkNote(id: string, title: string, content: string) {
+    return createNote(db, { id, projectId: "proj1", workspaceId: "ws1", title, content });
+  }
+
+  it("rewrites bare, aliased, and section wikilinks to the new title", () => {
+    mkNote("target", "Old Title", "# Old\n\nBody.");
+    mkNote("a", "A", "See [[Old Title]] for details.");
+    mkNote("b", "B", "Alias: [[Old Title|the old one]].");
+    mkNote("c", "C", "Section: [[Old Title#Heading]].");
+
+    const updated = rewriteInboundWikilinks(db, "target", "Old Title", "New Title");
+
+    expect(updated.map((n) => n.id).sort()).toEqual(["a", "b", "c"]);
+    expect(getNoteById(db, "a")!.content).toBe("See [[New Title]] for details.");
+    expect(getNoteById(db, "b")!.content).toBe("Alias: [[New Title|the old one]].");
+    expect(getNoteById(db, "c")!.content).toBe("Section: [[New Title#Heading]].");
+  });
+
+  it("does not rewrite a title that is only a PREFIX of another wikilink", () => {
+    mkNote("target", "Note", "body");
+    mkNote("a", "A", "Link to [[Notebook]] and [[Note]].");
+
+    const updated = rewriteInboundWikilinks(db, "target", "Note", "Journal");
+
+    // [[Notebook]] must survive; only the exact [[Note]] is rewritten.
+    expect(getNoteById(db, "a")!.content).toBe("Link to [[Notebook]] and [[Journal]].");
+    expect(updated).toHaveLength(1);
+  });
+
+  it("returns [] and changes nothing when no note links to the title", () => {
+    mkNote("target", "Lonely", "body");
+    mkNote("a", "A", "No links here.");
+    const updated = rewriteInboundWikilinks(db, "target", "Lonely", "Renamed");
+    expect(updated).toEqual([]);
+    expect(getNoteById(db, "a")!.content).toBe("No links here.");
+  });
+
+  it("skips the renamed note itself and archived/deleted notes", () => {
+    mkNote("target", "Old", "Self [[Old]] ref.");
+    mkNote("arch", "Arch", "[[Old]]");
+    updateNote(db, "arch", { archivedAt: "2025-01-01T00:00:00.000Z" });
+    mkNote("del", "Del", "[[Old]]");
+    deleteNote(db, "del");
+    mkNote("live", "Live", "[[Old]]");
+
+    const updated = rewriteInboundWikilinks(db, "target", "Old", "New");
+
+    expect(updated.map((n) => n.id)).toEqual(["live"]);
+    expect(getNoteById(db, "target")!.content).toBe("Self [[Old]] ref."); // untouched
+  });
+
+  it("is a no-op when the title is unchanged", () => {
+    mkNote("target", "Same", "x");
+    mkNote("a", "A", "[[Same]]");
+    expect(rewriteInboundWikilinks(db, "target", "Same", "Same")).toEqual([]);
+    expect(getNoteById(db, "a")!.content).toBe("[[Same]]");
   });
 });

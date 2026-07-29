@@ -17,7 +17,7 @@ import matter from "gray-matter";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "./db/schema";
-import { createWorkspace, createProject } from "./db/queries";
+import { createWorkspace, createProject, updateProject } from "./db/queries";
 import {
   toSlug,
   writeNoteFile,
@@ -25,6 +25,7 @@ import {
   notesDir,
   adoptExternalNoteFile,
   syncNotesFromDisk,
+  importVaultProjects,
 } from "./notes-files";
 import type { NoteData } from "./notes-files";
 
@@ -566,3 +567,310 @@ describe("mixed Cairn and Obsidian files", () => {
     expect(rows[0].folder).toBe("sub-folder");
   });
 });
+
+// ── Test: auto-create projects from vault folders (no pre-existing project) ─
+//
+// Regression coverage for the reported bug: users point Cairn at an existing
+// Obsidian vault (or copy a folder of notes into the workspace) and nothing
+// shows up, because the old scan only imported notes into projects that
+// already existed. Now the scan discovers top-level folders and loose root
+// .md files and creates projects for them.
+
+describe("importVaultProjects auto-creates projects from folders", () => {
+  let db: Database.Database;
+
+  /** Seed ONLY a workspace (no projects) — the exact failing scenario. */
+  function seedWorkspaceOnly(wsId = "ws1") {
+    createWorkspace(db, { id: wsId, name: "Test Workspace" });
+    return wsId;
+  }
+
+  beforeEach(() => { db = makeDb(); });
+
+  it("creates a project per top-level folder that has notes, then imports them", () => {
+    seedWorkspaceOnly();
+
+    // An Obsidian vault with two top-level folders, no matching DB projects.
+    writePlainMdFile(path.join(tmpDir, "Journal"), "2025-01-01.md", "# Jan 1\n\nEntry.");
+    writeObsidianFile(path.join(tmpDir, "Projects"), "Roadmap.md",
+      { title: "Roadmap", tags: ["planning"] }, "\n# Roadmap\n\nBig plans.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as { name: string }[];
+    expect(projects.map((p) => p.name)).toEqual(["Journal", "Projects"]);
+
+    // Notes imported under their auto-created projects.
+    const journal = db.prepare(
+      "SELECT n.title FROM notes n JOIN projects p ON n.project_id = p.id WHERE p.name = 'Journal'",
+    ).all() as { title: string }[];
+    expect(journal.map((r) => r.title)).toEqual(["2025-01-01"]);
+
+    const proj = db.prepare(
+      "SELECT n.title FROM notes n JOIN projects p ON n.project_id = p.id WHERE p.name = 'Projects'",
+    ).all() as { title: string }[];
+    expect(proj.map((r) => r.title)).toEqual(["Roadmap"]);
+  });
+
+  it("creates default board columns for each auto-created project", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Note.md", "# Note\n\nBody.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const proj = db.prepare("SELECT id FROM projects WHERE name = 'Journal'").get() as { id: string };
+    const cols = db.prepare("SELECT type FROM board_columns WHERE project_id = ? ORDER BY \"order\"").all(proj.id) as { type: string }[];
+    expect(cols.map((c) => c.type)).toEqual(["backlog", "todo", "in_progress", "review", "done"]);
+  });
+
+  it("imports loose root .md files into a catch-all project named after the vault folder", () => {
+    seedWorkspaceOnly();
+
+    // Loose files sitting directly in the vault root (not in any subfolder).
+    writePlainMdFile(tmpDir, "Inbox Idea.md", "# Idea\n\nA loose thought.");
+    writeObsidianFile(tmpDir, "Quick Note.md", { title: "Quick Note" }, "\n# Quick\n\nAnother.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    // Exactly one project, named after the vault folder.
+    const projects = db.prepare("SELECT id, name FROM projects").all() as { id: string; name: string }[];
+    expect(projects).toHaveLength(1);
+    expect(projects[0].name).toBe(path.basename(tmpDir));
+
+    const titles = db.prepare("SELECT title FROM notes WHERE project_id = ? ORDER BY title").all(projects[0].id) as { title: string }[];
+    expect(titles.map((r) => r.title)).toEqual(["Inbox Idea", "Quick Note"]);
+  });
+
+  it("skips .obsidian, .git and infra folders when discovering projects", () => {
+    seedWorkspaceOnly();
+
+    fs.mkdirSync(path.join(tmpDir, ".obsidian"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, ".obsidian", "app.md"), "# nope\n", "utf-8");
+    fs.mkdirSync(path.join(tmpDir, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, ".git", "x.md"), "# nope\n", "utf-8");
+    writePlainMdFile(path.join(tmpDir, "assets"), "ignore.md", "# no\n");
+    writePlainMdFile(path.join(tmpDir, "Real"), "Note.md", "# Real\n\nBody.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT name FROM projects").all() as { name: string }[];
+    expect(projects.map((p) => p.name)).toEqual(["Real"]);
+  });
+
+  it("does not create a project for an empty top-level folder (no .md files)", () => {
+    seedWorkspaceOnly();
+    fs.mkdirSync(path.join(tmpDir, "Empty"), { recursive: true });
+    writePlainMdFile(path.join(tmpDir, "HasNotes"), "Note.md", "# Note\n\nBody.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT name FROM projects").all() as { name: string }[];
+    expect(projects.map((p) => p.name)).toEqual(["HasNotes"]);
+  });
+
+  it("discovers notes in nested subfolders and preserves the folder path", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Research", "papers", "2024"), "Deep.md", "# Deep\n\nNested.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const row = db.prepare(
+      "SELECT n.title, n.folder FROM notes n JOIN projects p ON n.project_id = p.id WHERE p.name = 'Research'",
+    ).get() as { title: string; folder: string } | undefined;
+    expect(row?.title).toBe("Deep");
+    expect(row?.folder).toBe(path.join("papers", "2024"));
+  });
+
+  it("is idempotent — a second scan creates no duplicate projects or notes", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Note.md", "# Note\n\nBody.");
+
+    syncNotesFromDisk(db, tmpDir);
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT name FROM projects").all() as { name: string }[];
+    expect(projects).toHaveLength(1);
+    const notes = db.prepare("SELECT id FROM notes").all();
+    expect(notes).toHaveLength(1);
+  });
+
+  it("does nothing (no crash) when there is no workspace yet — onboarding first scan", () => {
+    // No workspace seeded — mirrors reinitialise() running before createWorkspace.
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Note.md", "# Note\n\nBody.");
+
+    const created = importVaultProjects(db, tmpDir);
+    expect(created).toBe(0);
+    const projects = db.prepare("SELECT name FROM projects").all();
+    expect(projects).toHaveLength(0);
+
+    // But once a workspace exists, a rescan picks everything up.
+    createWorkspace(db, { id: "ws1", name: "Test Workspace" });
+    syncNotesFromDisk(db, tmpDir);
+    const after = db.prepare("SELECT name FROM projects").all() as { name: string }[];
+    expect(after.map((p) => p.name)).toEqual(["Journal"]);
+  });
+
+  it("leaves existing projects alone and only creates the missing ones", () => {
+    createWorkspace(db, { id: "ws1", name: "Test Workspace" });
+    createProject(db, { id: "proj-existing", workspaceId: "ws1", name: "Journal" });
+
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Old.md", "# Old\n\nBody.");
+    writePlainMdFile(path.join(tmpDir, "NewFolder"), "New.md", "# New\n\nBody.");
+
+    const created = importVaultProjects(db, tmpDir);
+    expect(created).toBe(1); // only NewFolder
+
+    const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as { name: string }[];
+    expect(projects.map((p) => p.name)).toEqual(["Journal", "NewFolder"]);
+  });
+
+  it("creates a project for a folder whose slug matches an ARCHIVED project, and imports its notes", () => {
+    // Regression for the review finding: importVaultProjects and
+    // adoptExternalNoteFile must agree on which projects "exist". Both consider
+    // only LIVE projects, so an archived project's slug never shadows a folder.
+    createWorkspace(db, { id: "ws1", name: "Test Workspace" });
+    const archived = createProject(db, { id: "proj-arch", workspaceId: "ws1", name: "Journal" });
+    updateProject(db, archived.id, { archivedAt: "2025-01-01T00:00:00.000Z" });
+
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nBody.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    // A NEW live project must be created for the folder…
+    const live = db.prepare(
+      "SELECT id, name FROM projects WHERE archived_at IS NULL AND name = 'Journal'",
+    ).all() as { id: string; name: string }[];
+    expect(live).toHaveLength(1);
+    expect(live[0].id).not.toBe("proj-arch");
+
+    // …and the note must be imported under it (not black-holed).
+    const notes = db.prepare("SELECT title FROM notes WHERE project_id = ?").all(live[0].id) as { title: string }[];
+    expect(notes.map((n) => n.title)).toEqual(["Entry"]);
+  });
+
+  it("attaches discovered projects to the supplied workspace, not just the oldest", () => {
+    // Multi-workspace: importVaultProjects must honour an explicit workspaceId.
+    createWorkspace(db, { id: "ws-old", name: "Older" });
+    createWorkspace(db, { id: "ws-new", name: "Newer" });
+
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Note.md", "# Note\n\nBody.");
+
+    const created = importVaultProjects(db, tmpDir, "ws-new");
+    expect(created).toBe(1);
+
+    const proj = db.prepare("SELECT workspace_id FROM projects WHERE name = 'Journal'").get() as { workspace_id: string };
+    expect(proj.workspace_id).toBe("ws-new");
+  });
+
+  it("falls back to the oldest workspace when the supplied id doesn't exist", () => {
+    createWorkspace(db, { id: "ws-old", name: "Older" });
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Note.md", "# Note\n\nBody.");
+
+    const created = importVaultProjects(db, tmpDir, "does-not-exist");
+    expect(created).toBe(1);
+    const proj = db.prepare("SELECT workspace_id FROM projects WHERE name = 'Journal'").get() as { workspace_id: string };
+    expect(proj.workspace_id).toBe("ws-old");
+  });
+
+  it("auto-created projects get a complete set of default columns (transactional)", () => {
+    createWorkspace(db, { id: "ws1", name: "Test Workspace" });
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Note.md", "# Note\n\nBody.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const proj = db.prepare("SELECT id FROM projects WHERE name = 'Journal'").get() as { id: string };
+    const count = db.prepare("SELECT COUNT(*) AS n FROM board_columns WHERE project_id = ?").get(proj.id) as { n: number };
+    expect(count.n).toBe(5);
+  });
+});
+
+// ── Test: filename stability protects Obsidian wikilinks ──────────────────
+//
+// Obsidian resolves [[wikilinks]] by filename. Cairn must NOT rename a note's
+// .md file just because its title differs from the filename (or a content/tag
+// edit happened) — only an explicit rename (renameFile:true) may do so.
+
+describe("filename stability (Obsidian wikilink safety)", () => {
+  let db: Database.Database;
+  beforeEach(() => { db = makeDb(); });
+
+  /** List the .md filenames inside a project folder. */
+  function mdFilesIn(projectName: string): string[] {
+    const dir = path.join(notesDir(tmpDir), toSlug(projectName));
+    return fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort();
+  }
+
+  it("keeps the original filename when an adopted note's title differs from its filename", () => {
+    seedProject(db, "ArchWiz");
+    const projectDir = path.join(notesDir(tmpDir), toSlug("ArchWiz"));
+
+    // Vault file "EP.md" whose frontmatter title is "Electron Process".
+    const fp = writeObsidianFile(projectDir, "EP.md", {
+      title: "Electron Process",
+    }, "\n# Electron Process\n\nOriginal.");
+
+    const adopted = adoptExternalNoteFile(db, tmpDir, fp);
+    expect(adopted).not.toBeNull();
+
+    // Simulate a Cairn CONTENT edit (no rename intent).
+    writeNoteFile(tmpDir, {
+      ...adopted!,
+      content: "# Electron Process\n\nEdited in Cairn.",
+      projectName: "ArchWiz",
+    });
+
+    // The file must STILL be EP.md — not renamed to electron-process.md — so
+    // any [[EP]] wikilink elsewhere keeps resolving.
+    expect(mdFilesIn("ArchWiz")).toEqual(["EP.md"]);
+    expect(fs.existsSync(fp)).toBe(true);
+  });
+
+  it("keeps the filename on a metadata-only change (pin/tags)", () => {
+    seedProject(db, "ArchWiz");
+    const projectDir = path.join(notesDir(tmpDir), toSlug("ArchWiz"));
+    const fp = writeObsidianFile(projectDir, "Notes On Kernels.md", {
+      title: "A Completely Different Title",
+    }, "\n# Kernels\n\nBody.");
+
+    const adopted = adoptExternalNoteFile(db, tmpDir, fp);
+    writeNoteFile(tmpDir, { ...adopted!, isPinned: true, projectName: "ArchWiz" });
+
+    expect(mdFilesIn("ArchWiz")).toEqual(["Notes On Kernels.md"]);
+  });
+
+  it("DOES rename the file when renameFile is explicitly set (rename_note path)", () => {
+    seedProject(db, "ArchWiz");
+    const projectDir = path.join(notesDir(tmpDir), toSlug("ArchWiz"));
+    const fp = writeObsidianFile(projectDir, "Old Name.md", {
+      title: "Old Name",
+    }, "\n# Old\n\nBody.");
+    const adopted = adoptExternalNoteFile(db, tmpDir, fp);
+
+    // Explicit rename — filename should follow the new title.
+    writeNoteFile(tmpDir, {
+      ...adopted!,
+      title: "Brand New Name",
+      projectName: "ArchWiz",
+      renameFile: true,
+    });
+
+    expect(mdFilesIn("ArchWiz")).toEqual(["Brand New Name.md"]);
+    expect(fs.existsSync(fp)).toBe(false); // old file gone
+  });
+
+  it("relocates the file on a folder change even without renameFile", () => {
+    seedProject(db, "ArchWiz");
+    const projectDir = path.join(notesDir(tmpDir), toSlug("ArchWiz"));
+    const fp = writeObsidianFile(projectDir, "Movable.md", { title: "Movable" }, "\n# M\n\nBody.");
+    const adopted = adoptExternalNoteFile(db, tmpDir, fp);
+
+    // Folder change (root → "sub") must move the file, keeping its filename.
+    writeNoteFile(tmpDir, { ...adopted!, folder: "sub", projectName: "ArchWiz" });
+
+    expect(fs.existsSync(fp)).toBe(false); // old root path gone
+    const moved = path.join(projectDir, "sub", "Movable.md");
+    expect(fs.existsSync(moved)).toBe(true);
+  });
+});
+
+

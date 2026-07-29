@@ -52,7 +52,7 @@ import {
   toIdeaFlowEdge,
   type McpNotification
 } from "../shared/db-mappers";
-import { normalizeNoteTitle } from "../shared/text-utils";
+import { normalizeNoteTitle, stripMarkdown } from "../shared/text-utils";
 
 /** Re-export for callers that only need a new ID without importing utils directly. */
 export { newId as generateId };
@@ -370,6 +370,59 @@ export function findLiveNoteByTitle(db: Database.Database, projectId: string, ti
     .all(projectId) as Record<string, unknown>[];
   const hit = rows.find((r) => normalizeNoteTitle(String(r.title ?? "")) === target);
   return hit ? toNote(hit) : undefined;
+}
+
+/**
+ * Rewrite inbound `[[wikilinks]]` when a note is renamed, updating the DB rows
+ * of every OTHER note whose content links to the old title.
+ *
+ * A rename changes the note's on-disk filename, and Obsidian resolves
+ * `[[links]]` by filename — so without this, every note pointing at
+ * `[[Old Title]]` would dangle. This is the single source of truth for that
+ * rewrite, shared by BOTH the MCP `rename_note` tool and the desktop
+ * `db:note:update` handler (a title edit in the note editor) so the two paths
+ * behave identically.
+ *
+ * Rewrites the bare form `[[Old Title]]` and the aliased/section forms
+ * `[[Old Title|alias]]` and `[[Old Title#heading]]`, preserving the suffix.
+ * Does NOT write any `.md` files — it only mutates the DB and returns the
+ * affected note rows so the caller can persist them to disk (the caller owns
+ * file I/O, watcher suppression, and locking). Must be run inside the same
+ * transaction as the title update. Returns [] when nothing links to the note.
+ */
+export function rewriteInboundWikilinks(
+  db: Database.Database,
+  renamedNoteId: string,
+  oldTitle: string,
+  newTitle: string,
+): ReturnType<typeof toNote>[] {
+  if (oldTitle === newTitle) return [];
+  // Candidate rows: live notes (not the renamed one) whose content mentions the
+  // old title inside a wikilink. Pre-filter in SQL with LIKE to avoid scanning
+  // every note's body in JS; the precise rewrite happens below.
+  const candidates = db.prepare(
+    `SELECT * FROM notes
+       WHERE id != ? AND deleted_at IS NULL AND archived_at IS NULL
+         AND content LIKE ?`,
+  ).all(renamedNoteId, `%[[${oldTitle}%`) as Record<string, unknown>[];
+
+  const updated: ReturnType<typeof toNote>[] = [];
+  for (const row of candidates) {
+    const content = String(row.content ?? "");
+    // Replace [[Old]], [[Old|alias]], [[Old#heading]] — match the title only
+    // when it's immediately followed by ]], |, or # so we never rewrite a title
+    // that is a prefix of another note's title.
+    const escaped = oldTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`\\[\\[${escaped}(?=[\\]|#])`, "g");
+    const next = content.replace(re, `[[${newTitle}`);
+    if (next === content) continue; // LIKE matched but no real wikilink — skip
+    const u = updateNote(db, String(row.id), {
+      content: next,
+      contentText: stripMarkdown(next),
+    });
+    updated.push(u);
+  }
+  return updated;
 }
 
 export function createNote(db: Database.Database, n: {

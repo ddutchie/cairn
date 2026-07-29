@@ -411,6 +411,7 @@ const api = {
   setTheme: (theme: string) => invoke("app:setTheme", theme),
   setAccent: (accent: string) => invoke("app:setAccent", accent),
   initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
+  rescanWorkspace: () => invoke<{ projectsCreated: number }>("app:rescanWorkspace"),
   relaunch: () => invoke("app:relaunch"),
   resetAllData: () => invoke("app:reset"),
   getAiSettings: () => invoke<Record<string, unknown> | null>("app:getAiSettings"),

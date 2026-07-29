@@ -48,7 +48,7 @@ import { registerSettingsHandlers } from "./settings-handlers";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
 import * as q from "../db/queries";
-import { writeNoteFile, deleteNoteFile } from "../notes-files";
+import { writeNoteFile, deleteNoteFile, importVaultProjects, syncNotesFromDisk } from "../notes-files";
 import { suppressNextChange } from "../file-watcher";
 import { getProjectName } from "./result-helpers";
 import { broadcastEvent } from "./registry";
@@ -149,6 +149,30 @@ export function registerAppHandlers(
       await onReinitialise(newPath);
     }
     return { ok: true };
+  }));
+
+  // Re-scan the current workspace for on-disk projects and notes. Used by the
+  // onboarding wizard AFTER the workspace record is created (the first scan in
+  // reinitialise runs before createWorkspace, so it can't auto-create projects
+  // yet — this catches the vault's folders once a workspace exists). Also useful
+  // as a manual "refresh from disk" action. Returns the number of projects the
+  // scan auto-created from folders.
+  registerIpcHandle("app:rescanWorkspace", () => handle(() => {
+    // Resolve the workspace that owns ctx.workspacePath so discovered projects
+    // attach to the right workspace (falls back to oldest inside the import).
+    const wsId = (ctx.db.prepare(
+      "SELECT id FROM workspaces ORDER BY created_at LIMIT 1",
+    ).get() as { id?: string } | undefined)?.id;
+    // syncNotesFromDisk runs importVaultProjects itself, then imports notes —
+    // one scan, no double walk. Capture the created count separately since sync
+    // doesn't return it.
+    const created = importVaultProjects(ctx.db, ctx.workspacePath, wsId);
+    syncNotesFromDisk(ctx.db, ctx.workspacePath, wsId);
+    const activeWin = ctx.getWin();
+    if (activeWin && !activeWin.isDestroyed()) {
+      activeWin.webContents.send("db:changed");
+    }
+    return { projectsCreated: created };
   }));
 
   // ── App paths (for MCP config generation) ─────────

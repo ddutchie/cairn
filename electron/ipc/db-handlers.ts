@@ -276,14 +276,46 @@ export function registerDbHandlers(ctx: DbContext): void {
     if (patch.content !== undefined && patch.contentText === undefined) {
       enrichedPatch.contentText = stripMarkdown(patch.content);
     }
+    // Did the title actually change? A title edit is an explicit rename → the
+    // .md filename should be re-derived (renameFile:true) AND inbound
+    // [[wikilinks]] in other notes rewritten, exactly like the MCP rename_note
+    // tool. Every other update (content, tags, pin, links) must KEEP the
+    // existing filename so we don't rename files out from under Obsidian
+    // wikilinks. Compare against the current row BEFORE the update.
+    const prevNote = q.getNoteById(ctx.db, id);
+    const prevTitle = prevNote?.title;
+    const titleChanged =
+      typeof patch.title === "string" && patch.title !== prevTitle;
     // Suppress before the update so the watcher's unlink event (fired when
     // writeNoteFile renames the file) is ignored before it can delete the row.
     suppressNextChange(id);
-    const note = q.updateNote(ctx.db, id, enrichedPatch);
+
+    // Rewrite inbound wikilinks + apply the update in one transaction so a crash
+    // can't leave the title changed but links dangling (or vice-versa).
+    let relinked: ReturnType<typeof q.updateNote>[] = [];
+    const note = ctx.db.transaction(() => {
+      const u = q.updateNote(ctx.db, id, enrichedPatch);
+      if (titleChanged && prevTitle) {
+        relinked = q.rewriteInboundWikilinks(ctx.db, id, prevTitle, patch.title as string);
+      }
+      return u;
+    })();
+
     if (note.type !== "dashboard") {
       writeNoteFile(ctx.workspacePath, {
         ...note,
         projectName: getProjectName(ctx.db, note.projectId),
+        renameFile: titleChanged,
+      });
+    }
+    // Persist the .md files of every note whose wikilinks we rewrote. Suppress
+    // each so the watcher doesn't echo our own write back into the DB.
+    for (const other of relinked) {
+      if (other.type === "dashboard") continue;
+      suppressNextChange(other.id);
+      writeNoteFile(ctx.workspacePath, {
+        ...other,
+        projectName: getProjectName(ctx.db, other.projectId),
       });
     }
     invalidateRelationshipCache(ctx.db, id);
