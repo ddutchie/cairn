@@ -123,7 +123,11 @@ export function makeCalendarStyles(t: Theme) {
       paddingVertical: 2,
     },
     chipDot: { width: 6, height: 6, borderRadius: 3 },
-    chipText: { flex: 1, fontSize: 9.5, lineHeight: 12 },
+    // No fixed lineHeight: a hardcoded one doesn't scale with the OS text-size
+    // setting, so at large Dynamic Type the enlarged glyphs get clipped by the
+    // stale line box. Letting it derive from the (scaled) fontSize keeps the
+    // chip legible; the chip's own maxFontSizeMultiplier bounds the growth.
+    chipText: { flex: 1, fontSize: 9.5 },
     // Downward pointer tail under the lifted drag clone — a CSS triangle,
     // centred, in the accent colour, tip aligned to the finger (see liftOffsetY).
     dragTail: {
