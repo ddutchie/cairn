@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, FolderOpen, Terminal, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup, SettingsRow } from "./shared";
@@ -27,6 +27,13 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
   );
   const [saving, setSaving] = useState(false);
   const [repoTemplateExists, setRepoTemplateExists] = useState(false);
+  const [codeDirInput, setCodeDirInput] = useState(activeProject?.codeDirectory ?? "");
+
+  // Keep the code-directory field in sync when the active project changes.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCodeDirInput(activeProject?.codeDirectory ?? "");
+  }, [activeProject?.id, activeProject?.codeDirectory]);
 
   useEffect(() => {
     const currentProjectId = activeProject?.id;
@@ -60,6 +67,29 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
 
   function update(field: keyof ProjectSettings, value: string | boolean | undefined) {
     setSettings((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function saveCodeDir() {
+    if (!activeProject) return;
+    const next = codeDirInput.trim() || null;
+    if (next !== (activeProject.codeDirectory ?? null)) {
+      updateProject(activeProject.id, { codeDirectory: next });
+    }
+  }
+
+  async function pickCodeDir() {
+    if (!activeProject) return;
+    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
+    if (result?.data) {
+      setCodeDirInput(result.data);
+      updateProject(activeProject.id, { codeDirectory: result.data });
+    }
+  }
+
+  function clearCodeDir() {
+    if (!activeProject) return;
+    setCodeDirInput("");
+    updateProject(activeProject.id, { codeDirectory: null });
   }
 
   async function save() {
@@ -115,6 +145,34 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
           </p>
         </div>
       )}
+
+      <SettingsGroup title="Code Directory" description="The local folder this project's coding agent, editor, diff, git and architecture views operate on.">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Terminal size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] pointer-events-none" />
+            <input
+              value={codeDirInput}
+              onChange={(e) => setCodeDirInput(e.target.value)}
+              onBlur={saveCodeDir}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+              placeholder="No code directory set — the agent workspace is disabled…"
+              spellCheck={false}
+              className="w-full pl-8 pr-3 py-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-xs font-mono placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+          </div>
+          {typeof window !== "undefined" && window.electron && (
+            <Button variant="outline" size="sm" onClick={pickCodeDir} className="flex-shrink-0">
+              <FolderOpen size={13} />
+              Browse
+            </Button>
+          )}
+          {codeDirInput && (
+            <Button variant="ghost" size="icon" onClick={clearCodeDir} title="Clear code directory" aria-label="Clear code directory" className="flex-shrink-0">
+              <X size={13} />
+            </Button>
+          )}
+        </div>
+      </SettingsGroup>
 
       <SettingsGroup title="Git & PR" description="Settings for commit messages, PR descriptions, and git workflow.">
         
