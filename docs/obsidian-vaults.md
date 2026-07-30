@@ -17,7 +17,8 @@ When you open a workspace folder — during onboarding, on every app launch, or
 when you copy a folder in while Cairn is running — Cairn scans the folder and:
 
 1. **Creates a project for every top-level folder** that contains at least one
-   `.md` file (recursively). The project's name is the folder's name.
+   non-skipped `.md` file (searched recursively). The project's name is the
+   folder's name.
 2. **Creates one catch-all project** — named after the vault folder — for any
    loose `.md` files that sit directly in the vault root.
 3. **Imports each `.md` file** as a note under the matching project, preserving
@@ -31,9 +32,10 @@ so you won't get duplicate projects or notes.
 - Dot-folders: `.obsidian`, `.git`, `.trash`, etc.
 - Infrastructure folders: `assets`, `attachments`.
 
-Everything else with `.md` files becomes a project. If your vault has many
-organisational folders (`inbox`, `archive`, `daily`, …) you'll get a project for
-each — you can merge, rename, or archive projects afterwards in Cairn.
+A top-level folder becomes a project only if it holds at least one non-skipped
+`.md` file (searched recursively). If your vault has many organisational folders
+(`inbox`, `archive`, `daily`, …) you'll get a project for each — you can merge,
+rename, or archive projects afterwards in Cairn.
 
 ## What Cairn writes to your notes
 
@@ -93,7 +95,9 @@ Obsidian resolves `[[wikilinks]]` by **filename**. Cairn respects this:
   Even if a note's `title` property differs from its filename (common in
   Obsidian), the file stays put — so your wikilinks keep resolving.
 - **Renaming a note in Cairn does rename the file** — and Cairn rewrites inbound
-  `[[wikilinks]]` in your other notes to match, the same way Obsidian would.
+  `[[wikilinks]]` in your other notes to match. Rewriting covers the standard
+  wikilink forms (`[[Note]]`, `[[Note|alias]]`, `[[Note#heading]]`, and
+  `![[Note]]` embeds); Markdown-style links (`[text](Note.md)`) are not rewritten.
 - **Moving a note to another folder/project** relocates the file, keeping its
   filename.
 

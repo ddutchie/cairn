@@ -431,45 +431,56 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
   lockNote(db, noteId as string);
   try {
     for (const otherNote of relinked) {
-      const otherProj = snap.projects.find((p) => p.id === otherNote.projectId);
-      writeNoteFile(workspacePath, {
-        id: otherNote.id,
-        projectId: otherNote.projectId,
-        workspaceId: otherNote.workspaceId as string,
-        title: otherNote.title as string,
-        content: otherNote.content,
-        tagIds: otherNote.tagIds as string[],
-        linkedNoteIds: otherNote.linkedNoteIds as string[],
-        linkedCardIds: otherNote.linkedCardIds as string[],
-        isPinned: otherNote.isPinned as boolean,
-        folder: (otherNote.folder as string) ?? "",
-        createdAt: otherNote.createdAt as string,
-        updatedAt: otherNote.updatedAt as string,
-        archivedAt: otherNote.archivedAt as string | undefined,
-        projectName: otherProj?.name ?? otherNote.projectId as string,
-      });
+      // Isolate each relinked write — a single failure must not abort the loop
+      // or the primary rename below (the DB rewrite is already committed).
+      // Mirrors the db:project:merge / desktop db:note:update relocation loops.
+      try {
+        const otherProj = snap.projects.find((p) => p.id === otherNote.projectId);
+        writeNoteFile(workspacePath, {
+          id: otherNote.id,
+          projectId: otherNote.projectId,
+          workspaceId: otherNote.workspaceId as string,
+          title: otherNote.title as string,
+          content: otherNote.content,
+          tagIds: otherNote.tagIds as string[],
+          linkedNoteIds: otherNote.linkedNoteIds as string[],
+          linkedCardIds: otherNote.linkedCardIds as string[],
+          isPinned: otherNote.isPinned as boolean,
+          folder: (otherNote.folder as string) ?? "",
+          createdAt: otherNote.createdAt as string,
+          updatedAt: otherNote.updatedAt as string,
+          archivedAt: otherNote.archivedAt as string | undefined,
+          projectName: otherProj?.name ?? otherNote.projectId as string,
+        });
+      } catch (e) {
+        console.warn("[rename_note] failed to persist relinked note file:", e instanceof Error ? e.message : e);
+      }
     }
 
-    // Write note file to disk. renameFile:true — this is an explicit rename, so
-    // the .md filename is re-derived from the new title (inbound wikilinks were
-    // rewritten above). This is the ONE writer that intentionally renames files.
-    writeNoteFile(workspacePath, {
-      id: note.id,
-      projectId: note.projectId,
-      workspaceId: note.workspaceId as string,
-      title: newTitle,
-      content: updatedNote?.content ?? note.content as string,
-      tagIds: note.tagIds as string[],
-      linkedNoteIds: note.linkedNoteIds as string[],
-      linkedCardIds: note.linkedCardIds as string[],
-      isPinned: note.isPinned as boolean,
-      folder: (note.folder as string) ?? "",
-      createdAt: note.createdAt as string,
-      updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
-      archivedAt: note.archivedAt as string | undefined,
-      projectName: project?.name ?? note.projectId as string,
-      renameFile: true,
-    });
+    // Write the renamed note file to disk. renameFile:true — this is an explicit
+    // rename, so the .md filename is re-derived from the new title (inbound
+    // wikilinks were rewritten above). This is the ONE writer that intentionally
+    // renames files. Dashboards are SQLite-only (no .md file), so skip them —
+    // matching the desktop db:note:update guard.
+    if (note.type !== "dashboard") {
+      writeNoteFile(workspacePath, {
+        id: note.id,
+        projectId: note.projectId,
+        workspaceId: note.workspaceId as string,
+        title: newTitle,
+        content: updatedNote?.content ?? note.content as string,
+        tagIds: note.tagIds as string[],
+        linkedNoteIds: note.linkedNoteIds as string[],
+        linkedCardIds: note.linkedCardIds as string[],
+        isPinned: note.isPinned as boolean,
+        folder: (note.folder as string) ?? "",
+        createdAt: note.createdAt as string,
+        updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
+        archivedAt: note.archivedAt as string | undefined,
+        projectName: project?.name ?? note.projectId as string,
+        renameFile: true,
+      });
+    }
   } finally {
     unlockNote(db, noteId as string);
   }
