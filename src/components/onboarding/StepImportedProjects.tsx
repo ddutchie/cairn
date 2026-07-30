@@ -64,7 +64,7 @@ export function StepImportedProjects({ projects, onBack, onContinue }: Props) {
         <button
           type="button"
           onClick={onContinue}
-          className="w-full py-2 rounded-lg text-sm font-medium bg-[var(--accent)] text-[var(--accent-fg,#fff)] hover:bg-[var(--accent-hover)] transition-all"
+          className="w-full py-2 rounded-lg text-sm font-medium bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[var(--accent-hover)] transition-all"
         >
           Looks good — continue
         </button>
