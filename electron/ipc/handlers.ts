@@ -163,17 +163,66 @@ export function registerAppHandlers(
   // the workspace it just created. When omitted, importVaultProjects falls back
   // to the oldest workspace.
   registerIpcHandle("app:rescanWorkspace", (_e, { workspaceId }: { workspaceId?: string } = {}) => handle(() => {
+    // Snapshot the live project ids BEFORE the scan so we can report exactly
+    // which projects the import newly created (for the onboarding summary).
+    const beforeIds = new Set(
+      (ctx.db.prepare("SELECT id FROM projects WHERE archived_at IS NULL").all() as { id: string }[])
+        .map((r) => r.id),
+    );
     // Run the discovery pass once and capture its count. syncNotesFromDisk below
     // also calls importVaultProjects, but by then every folder already maps to a
     // project so it short-circuits before any tree walk (idempotent no-op) — it
     // then imports the notes into those projects.
     const created = importVaultProjects(ctx.db, ctx.workspacePath, workspaceId);
     syncNotesFromDisk(ctx.db, ctx.workspacePath, workspaceId);
+
+    // Report the newly-created projects with their imported note counts so the
+    // onboarding wizard can show "we found these projects" instead of prompting
+    // to create one.
+    const createdProjects = (
+      ctx.db.prepare("SELECT id, name FROM projects WHERE archived_at IS NULL ORDER BY created_at").all() as
+        { id: string; name: string }[]
+    )
+      .filter((p) => !beforeIds.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        noteCount: (ctx.db.prepare(
+          "SELECT COUNT(*) AS n FROM notes WHERE project_id = ? AND type = 'note' AND archived_at IS NULL AND deleted_at IS NULL",
+        ).get(p.id) as { n: number }).n,
+      }));
+
     const activeWin = ctx.getWin();
     if (activeWin && !activeWin.isDestroyed()) {
       activeWin.webContents.send("db:changed");
     }
-    return { projectsCreated: created };
+    return { projectsCreated: created, createdProjects };
+  }));
+
+  // Read-only probe of a folder the user is about to adopt as a workspace. Used
+  // by onboarding to surface "Obsidian vault detected" on the folder-select
+  // step. Cheap: checks for a `.obsidian` dir and counts top-level markdown /
+  // folders without recursing the whole tree.
+  registerIpcHandle("app:probeWorkspaceFolder", (_e, { folder }: { folder: string }) => handle(() => {
+    const result = { isObsidianVault: false, markdownCount: 0, folderCount: 0 };
+    if (!folder || typeof folder !== "string") return result;
+    try {
+      result.isObsidianVault = fs.existsSync(path.join(folder, ".obsidian"));
+      const SKIP = new Set(["assets", "attachments"]);
+      for (const entry of fs.readdirSync(folder)) {
+        if (entry.startsWith(".")) continue;
+        let stat: fs.Stats;
+        try { stat = fs.lstatSync(path.join(folder, entry)); } catch { continue; }
+        if (stat.isDirectory()) {
+          if (!SKIP.has(entry)) result.folderCount++;
+        } else if (entry.endsWith(".md") && !entry.endsWith(".md.tmp")) {
+          result.markdownCount++;
+        }
+      }
+    } catch {
+      // Unreadable folder — return the zeroed default rather than throwing.
+    }
+    return result;
   }));
 
   // ── App paths (for MCP config generation) ─────────

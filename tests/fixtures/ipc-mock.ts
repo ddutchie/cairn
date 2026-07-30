@@ -308,6 +308,8 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     setTheme:              noop,
     setAccent:             noop,
     initWorkspace:         () => Promise.resolve({ requiresRestart: false }),
+    rescanWorkspace:       () => Promise.resolve({ projectsCreated: 0, createdProjects: [] }),
+    probeWorkspaceFolder:  () => Promise.resolve({ isObsidianVault: false, markdownCount: 0, folderCount: 0 }),
     relaunch:              noop,
     resetAllData:          noop,
     platform:              "darwin",

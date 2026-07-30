@@ -17,9 +17,13 @@ export type OnboardingStep =
   | "embeddings"
   | "views"
   | "create-project"
+  | "imported-projects"
   | "done";
 
-/** Steps that show the progress dots (post-workspace steps only). */
+/** Steps that show the progress dots (post-workspace steps only). The
+ *  create-project and imported-projects steps are mutually exclusive
+ *  alternatives that occupy the SAME slot, so only create-project appears here;
+ *  imported-projects is normalised to it in Shell. */
 export const PROGRESS_STEPS: OnboardingStep[] = ["appearance", "ai-setup", "mcp", "embeddings", "views", "create-project", "done"];
 
 // ── Font scale options ────────────────────────────────────────────────────────
@@ -90,7 +94,10 @@ export function Shell({
   children: React.ReactNode;
   step: OnboardingStep;
 }) {
-  const idx = PROGRESS_STEPS.indexOf(step);
+  // imported-projects is the vault-import alternative to create-project; it
+  // shares the same progress slot.
+  const progressStep = step === "imported-projects" ? "create-project" : step;
+  const idx = PROGRESS_STEPS.indexOf(progressStep);
   const showProgress = idx >= 0;
   // useState (not useRef) so that NavRow re-renders when the footer mounts.
   const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WORKSPACE_ICONS, WorkspaceIcon } from "@/lib/workspace-icons";
 import { Shell } from "./shared";
@@ -12,6 +12,8 @@ interface Props {
   icon: string;
   submitting: boolean;
   showBack: boolean;
+  /** True when the chosen folder contains a `.obsidian` directory. */
+  isObsidianVault?: boolean;
   onBack: () => void;
   onNameChange: (v: string) => void;
   onIconChange: (v: string) => void;
@@ -24,6 +26,7 @@ export function StepWorkspaceDetails({
   icon,
   submitting,
   showBack,
+  isObsidianVault = false,
   onBack,
   onNameChange,
   onIconChange,
@@ -58,6 +61,17 @@ export function StepWorkspaceDetails({
             <p className="text-xs text-[var(--text-tertiary)] font-mono truncate">{chosenFolder}</p>
           )}
         </div>
+
+        {isObsidianVault && (
+          <div className="flex items-start gap-2 bg-[var(--accent-dim)] border border-[color-mix(in_srgb,var(--accent)_35%,transparent)] rounded-lg px-3 py-2">
+            <Sparkles size={14} className="text-[var(--accent)] shrink-0 mt-0.5" />
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+              <span className="font-medium text-[var(--text-primary)]">Obsidian vault detected.</span>{" "}
+              Your existing folders will become projects and your notes will be
+              imported automatically — no need to set anything up.
+            </p>
+          </div>
+        )}
 
         {/* Icon picker */}
         <div className="flex flex-wrap gap-2">
