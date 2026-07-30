@@ -203,6 +203,38 @@ function tok(s: string): number {
   return encode(s).length;
 }
 
+/**
+ * Flat per-image token estimate. Vision models bill images by tiles, not by the
+ * length of the base64 payload — so counting the data URL characters (which we
+ * used to do implicitly when the multimodal `content` array got stringified)
+ * over-counts by orders of magnitude. ~1.1k tokens is a reasonable single-image
+ * approximation across OpenAI/Anthropic/Gemini for a typical attachment.
+ */
+const IMAGE_TOKEN_ESTIMATE = 1100;
+
+/**
+ * Count tokens for a message's `content`, which may be a plain string or an
+ * OpenAI multimodal parts array (`[{type:"text"...}, {type:"image_url"...}]`).
+ * Text parts are tokenised; image parts contribute a flat estimate instead of
+ * the base64 data URL length.
+ */
+function tokContent(content: unknown): number {
+  if (typeof content === "string") return tok(content);
+  if (Array.isArray(content)) {
+    let total = 0;
+    for (const part of content) {
+      const p = part as Record<string, unknown>;
+      if (p?.type === "image_url" || p?.image_url) {
+        total += IMAGE_TOKEN_ESTIMATE;
+      } else if (typeof p?.text === "string") {
+        total += tok(p.text);
+      }
+    }
+    return total;
+  }
+  return 0;
+}
+
 export function calculatePromptBreakdown(
   systemPrompt: string | undefined,
   messages: OpenAIMessage[],
@@ -281,8 +313,7 @@ export function calculatePromptBreakdown(
       continue;
     }
 
-    const textContent = msg.content ?? "";
-    const textTokens = tok(textContent);
+    const textTokens = tokContent(msg.content);
     const toolCallsTokens = msg.tool_calls ? tok(JSON.stringify(msg.tool_calls)) : 0;
 
     if (msg.role === "tool") {

@@ -675,11 +675,13 @@ export async function runAgentLoop(
           callbacks.onToken(delta.content);
         }
 
-        // Reasoning / thinking stream (Claude thinking_delta, OpenAI delta.reasoning).
+        // Reasoning / thinking stream (Claude thinking_delta, OpenAI delta.reasoning,
+        // DeepSeek/Qwen-style delta.reasoning_content).
         // Not merged into content or tool-call JSON; surfaced as a separate panel.
-        if (delta.reasoning) {
-          reasoningBuffer += delta.reasoning;
-          callbacks.onThought?.(delta.reasoning);
+        const thought = delta.reasoning_content ?? delta.reasoning;
+        if (thought) {
+          reasoningBuffer += thought;
+          callbacks.onThought?.(thought);
         }
 
         if (delta.tool_calls) {

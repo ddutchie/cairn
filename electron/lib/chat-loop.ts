@@ -86,14 +86,17 @@ export async function runToolLoop(
             res.usage.completion_tokens_details?.reasoning_tokens ?? 0,
           );
         }
-        const rawMsg = choice.message as OpenAIMessage & { reasoning?: string };
-        if (rawMsg.reasoning) {
-          accumulatedReasoning += rawMsg.reasoning;
-          if (onThought) onThought(rawMsg.reasoning);
+        const rawMsg = choice.message as OpenAIMessage & { reasoning?: string; reasoning_content?: string };
+        const rawThought = rawMsg.reasoning_content ?? rawMsg.reasoning;
+        if (rawThought) {
+          accumulatedReasoning += rawThought;
+          if (onThought) onThought(rawThought);
         }
         // Strip reasoning before assigning — it must not enter the messages
-        // array that gets re-sent to the API on subsequent rounds.
-        const { reasoning: _r, ...msgWithoutReasoning } = rawMsg;
+        // array that gets re-sent to the API on subsequent rounds. Both
+        // `reasoning` and `reasoning_content` must be stripped (DeepSeek docs:
+        // re-sending reasoning_content on assistant messages causes 400s).
+        const { reasoning: _r, reasoning_content: _rc, ...msgWithoutReasoning } = rawMsg;
         assistantMsg = msgWithoutReasoning;
 
         // Self-Healing Parser for On-Device XML-style tool calls and tokenizers
@@ -185,12 +188,14 @@ export async function runToolLoop(
             if (onToken) onToken(delta.content);
           }
 
-          // Reasoning / thinking stream (Claude thinking_delta, OpenAI delta.reasoning).
+          // Reasoning / thinking stream (Claude thinking_delta, OpenAI delta.reasoning,
+          // DeepSeek/Qwen-style delta.reasoning_content).
           // Models that don't expose reasoning text simply never emit this field —
           // the panel stays hidden. Reasoning is NOT merged into content/tool JSON.
-          if (delta.reasoning) {
-            accumulatedReasoning += delta.reasoning;
-            if (onThought) onThought(delta.reasoning);
+          const thought = delta.reasoning_content ?? delta.reasoning;
+          if (thought) {
+            accumulatedReasoning += thought;
+            if (onThought) onThought(thought);
           }
 
           if (delta.tool_calls) {

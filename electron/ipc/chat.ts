@@ -135,20 +135,11 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       return;
     }
 
-    // Check if the model supports vision before including images
-    const modelLc = (model ?? "").toLowerCase();
-    const supportsVision = provider !== "localllm" && (
-      modelLc.includes("vision") ||
-      modelLc.includes("gpt-4o") ||
-      modelLc.startsWith("claude-3") ||
-      modelLc.startsWith("claude-sonnet-4") ||
-      modelLc.includes("gemini")
-    );
-
-    if (req.images?.length && !supportsVision) {
-      req.message = "[Images omitted — model does not support vision]\n\n" + req.message;
-      req.images = undefined;
-    }
+    // Images are always passed through to the model. We can't reliably guess
+    // vision support from a model id — cloud APIs, custom OpenAI-compatible
+    // endpoints, and on-device models (some, like Gemma, DO support vision)
+    // all expose arbitrary names. So we forward the images and let the model /
+    // endpoint decide; a non-vision model will simply say it can't see them.
 
     const userMessage: OpenAIMessage = req.images?.length
       ? ({
