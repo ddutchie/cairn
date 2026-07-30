@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import * as q from "./db/queries";
 import { newId } from "./db/utils";
 import { toSlug, stripMarkdown } from "./shared/text-utils";
+import { DEFAULT_COLUMNS } from "./db/defaults";
 import {
   readExistingFrontmatter,
   notesDir,
@@ -54,11 +55,234 @@ export {
 //
 // Also cleans up any stale *.md.tmp files left by a crash during an atomic write.
 
-export function syncNotesFromDisk(db: Database.Database, workspacePath: string): void {
+export function syncNotesFromDisk(db: Database.Database, workspacePath: string, workspaceId?: string): void {
   const root = notesDir(workspacePath);
   if (!fs.existsSync(root)) return;
   cleanStaleTmpFiles(root);
+  // Auto-create projects for any top-level folders (and loose root .md files)
+  // that don't yet have a matching project in the DB. This is what lets a user
+  // point Cairn at an existing Obsidian vault — or copy a folder of notes into
+  // the workspace — and have projects + notes appear. Best-effort: if there is
+  // no workspace yet (first-run onboarding, before createWorkspace), the import
+  // is a no-op and notes are picked up on the next scan once the workspace
+  // exists. See importVaultProjects.
+  try {
+    importVaultProjects(db, workspacePath, workspaceId);
+  } catch (err) {
+    console.error("[sync] importVaultProjects failed:", err);
+  }
   syncDir(db, root, workspacePath);
+}
+
+/**
+ * Resolve the set of folder slugs already owned by a LIVE (non-archived)
+ * project. Shared by importVaultProjects (to decide which folders still need a
+ * project) and adoptExternalNoteFile (to resolve a file's owning project) so the
+ * two can never disagree about what "already exists" — a divergence there would
+ * let a folder whose slug matches an ARCHIVED project be skipped by the import
+ * yet fail adoption, silently dropping every note in it.
+ */
+function activeProjectsBySlug(
+  db: Database.Database,
+): Map<string, { id: string; name: string; workspace_id: string }> {
+  const rows = db.prepare(
+    "SELECT id, name, workspace_id FROM projects WHERE archived_at IS NULL",
+  ).all() as { id: string; name: string; workspace_id: string }[];
+  const bySlug = new Map<string, { id: string; name: string; workspace_id: string }>();
+  for (const r of rows) {
+    // First writer wins on a slug collision (stable, arbitrary but deterministic).
+    const slug = toSlug(r.name);
+    if (!bySlug.has(slug)) bySlug.set(slug, r);
+  }
+  return bySlug;
+}
+
+/**
+ * Discover projects from folders on disk and create them in the DB.
+ *
+ * Cairn stores each project's notes under `<workspace>/<toSlug(project.name)>/`.
+ * Historically the scan could only import a `.md` file if a project with the
+ * matching folder slug already existed — so pointing Cairn at an Obsidian vault
+ * (or copying a folder of notes in) imported nothing, because no project rows
+ * existed for those folders.
+ *
+ * This pass closes that gap. For the resolved workspace it will:
+ *
+ *   1. Create a project for every top-level folder that contains at least one
+ *      `.md` file (recursively), UNLESS a LIVE project with that slug already
+ *      exists. The project's name is the folder's on-disk name.
+ *   2. Create a single catch-all project (named after the workspace/vault
+ *      folder) for loose `.md` files that live directly in the vault root, if
+ *      any exist and no project already owns the root slug.
+ *
+ * Skips dot-directories (`.obsidian`, `.git`, `.trash`) and the known
+ * infrastructure folders (`assets`, `attachments`). Idempotent — folders that
+ * already map to a project are left untouched, so it is safe to run on every
+ * boot and inside the file watcher.
+ *
+ * `workspaceId` — the workspace the discovered projects belong to. Callers that
+ * know the active workspace (rescan IPC, file watcher) should pass it so that in
+ * a multi-workspace install the projects attach to the RIGHT workspace, not just
+ * the oldest. When omitted (first-run onboarding, where exactly one workspace
+ * exists) it falls back to the oldest workspace.
+ *
+ * Returns the number of projects created.
+ */
+export function importVaultProjects(
+  db: Database.Database,
+  workspacePath: string,
+  workspaceId?: string,
+): number {
+  const root = notesDir(workspacePath);
+  if (!fs.existsSync(root)) return 0;
+
+  // Resolve the workspace to attach new projects to. Prefer the caller-supplied
+  // id; otherwise fall back to the oldest (primary) workspace. If none exists yet
+  // (onboarding runs the first scan BEFORE createWorkspace), we can't create
+  // projects — bail; the next scan after the workspace exists picks it all up.
+  let wsId = workspaceId;
+  if (!wsId) {
+    const wsRow = db.prepare(
+      "SELECT id FROM workspaces ORDER BY created_at LIMIT 1",
+    ).get() as { id?: string } | undefined;
+    wsId = wsRow?.id;
+  } else {
+    // Validate the supplied id actually exists (defensive — a stale id would
+    // create orphaned projects). Fall back to oldest if not.
+    const exists = db.prepare("SELECT 1 FROM workspaces WHERE id = ?").get(wsId);
+    if (!exists) {
+      const wsRow = db.prepare(
+        "SELECT id FROM workspaces ORDER BY created_at LIMIT 1",
+      ).get() as { id?: string } | undefined;
+      wsId = wsRow?.id;
+    }
+  }
+  if (!wsId) return 0;
+
+  const SKIP_DIRS = new Set(["assets", "attachments"]);
+  // Live-project slugs only — must match adoptExternalNoteFile's resolution set.
+  const existingSlugs = new Set(activeProjectsBySlug(db).keys());
+
+  let created = 0;
+  let hasLooseRootMd = false;
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(root);
+  } catch {
+    return 0;
+  }
+
+  for (const entry of entries) {
+    if (entry.startsWith(".")) continue; // .obsidian, .git, .trash, etc.
+    const fp = path.join(root, entry);
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(fp);
+    } catch {
+      continue;
+    }
+
+    if (stat.isDirectory()) {
+      if (SKIP_DIRS.has(entry)) continue;
+      // Legacy `notes/` handling mirrors syncDir: only treat it as a project
+      // folder when it's part of an Obsidian vault or has direct .md files.
+      if (entry === "notes" && !isImportableNotesFolder(workspacePath)) continue;
+      const slug = toSlug(entry);
+      // Slug check BEFORE the (recursive) dirHasMarkdown walk: a folder that
+      // already maps to a project must not pay for a full subtree scan on every
+      // boot / file-add event.
+      if (existingSlugs.has(slug)) continue;
+      if (!dirHasMarkdown(fp)) continue; // empty of notes — not a project
+      ensureProject(db, wsId, entry);
+      existingSlugs.add(slug);
+      created++;
+    } else if (entry.endsWith(".md") && !entry.endsWith(".md.tmp")) {
+      hasLooseRootMd = true;
+    }
+  }
+
+  // Loose .md files directly in the vault root → catch-all project named after
+  // the vault folder. Only create it if such files exist and no project already
+  // claims the root slug. (If a top-level folder already slugs to the vault name,
+  // its project owns the slug and the loose files fold into it — documented in
+  // docs/obsidian-vaults.md.)
+  if (hasLooseRootMd) {
+    const vaultName = path.basename(root) || "Notes";
+    const slug = toSlug(vaultName);
+    if (!existingSlugs.has(slug)) {
+      ensureProject(db, wsId, vaultName);
+      existingSlugs.add(slug);
+      created++;
+    }
+  }
+
+  return created;
+}
+
+/** True if a root `notes/` folder should be scanned as a project (vault or has direct .md). */
+function isImportableNotesFolder(workspacePath: string): boolean {
+  if (fs.existsSync(path.join(workspacePath, ".obsidian"))) return true;
+  const notesPath = path.join(workspacePath, "notes");
+  try {
+    return fs.readdirSync(notesPath).some(
+      (e) => e.endsWith(".md") && fs.lstatSync(path.join(notesPath, e)).isFile(),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Recursively test whether `dir` contains at least one `.md` file (ignoring dot-dirs). */
+function dirHasMarkdown(dir: string): boolean {
+  let items: string[];
+  try {
+    items = fs.readdirSync(dir);
+  } catch {
+    return false;
+  }
+  for (const item of items) {
+    if (item.startsWith(".")) continue;
+    const fp = path.join(dir, item);
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(fp);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (dirHasMarkdown(fp)) return true;
+    } else if (item.endsWith(".md") && !item.endsWith(".md.tmp")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Create a project (plus the default board columns) named `name` in `workspaceId`.
+ * Returns the new project id. Callers are responsible for slug-uniqueness checks.
+ *
+ * The project row + all default columns are created in a single transaction, so
+ * a failure partway through can never leave a project with a partial/empty board
+ * (mirrors the db:project:create handler).
+ */
+export function ensureProject(db: Database.Database, workspaceId: string, name: string): string {
+  const projectId = newId();
+  db.transaction(() => {
+    q.createProject(db, { id: projectId, workspaceId, name });
+    for (const col of DEFAULT_COLUMNS) {
+      q.createColumn(db, {
+        id: newId(),
+        projectId,
+        workspaceId,
+        name: col.name,
+        type: col.type,
+        order: col.order,
+      });
+    }
+  })();
+  console.log(`[sync] Auto-created project "${name}" from vault folder.`);
+  return projectId;
 }
 
 /**
@@ -279,14 +503,18 @@ export function adoptExternalNoteFile(
     const segments = rel.split(path.sep);
     if (segments.length < 1) return null;
 
-    const projectSlug = segments[0];
+    // A file directly in the vault root (segments === ["Note.md"]) has no owning
+    // folder. It belongs to the catch-all project named after the vault folder
+    // (created by importVaultProjects). Anything deeper is owned by its
+    // top-level folder.
+    const isRootFile = segments.length === 1;
+    const projectSlug = isRootFile ? toSlug(path.basename(root) || "Notes") : segments[0];
 
-    // Find the project whose slug matches the folder name
-    const projects = db.prepare(
-      "SELECT id, name, workspace_id FROM projects WHERE archived_at IS NULL"
-    ).all() as { id: string; name: string; workspace_id: string }[];
-
-    const project = projects.find((p) => toSlug(p.name) === projectSlug);
+    // Resolve the owning project via the SAME live-project slug map that
+    // importVaultProjects uses — so a folder the import created (or skipped
+    // because a live project already owns the slug) always resolves here, and
+    // an ARCHIVED project's slug never shadows a real folder.
+    const project = activeProjectsBySlug(db).get(projectSlug);
     if (!project) return null;
 
     // Read file content and any existing frontmatter (Obsidian fields, etc.)

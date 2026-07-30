@@ -99,12 +99,30 @@ describe("writeNoteFile write strategy", () => {
     expect(fs.readdirSync(path.join(tmpDir, "My Project"))).toEqual(["My Note.md"]);
   });
 
-  it("relocates when the title changes, removing the old file", () => {
+  it("keeps the filename on a bare title change (Obsidian wikilink safety)", () => {
+    // Filename-stability policy: a title change alone is metadata — the .md must
+    // NOT be renamed (that would break Obsidian [[wikilinks]], which resolve by
+    // filename). Renaming is opt-in via renameFile (see next test).
     writeNoteFile(tmpDir, BASE);
     const oldFp = path.join(tmpDir, "My Project", "My Note.md");
     expect(fs.existsSync(oldFp)).toBe(true);
 
     writeNoteFile(tmpDir, { ...BASE, title: "Renamed Note" });
+
+    // Same file, new title in frontmatter, filename unchanged.
+    expect(fs.existsSync(oldFp)).toBe(true);
+    expect(fs.readdirSync(path.join(tmpDir, "My Project"))).toEqual(["My Note.md"]);
+    const contents = fs.readFileSync(oldFp, "utf-8");
+    expect(contents).toContain("title: Renamed Note");
+    expect(contents).toContain("Hello body.");
+  });
+
+  it("relocates when renameFile is set, removing the old file (explicit rename)", () => {
+    writeNoteFile(tmpDir, BASE);
+    const oldFp = path.join(tmpDir, "My Project", "My Note.md");
+    expect(fs.existsSync(oldFp)).toBe(true);
+
+    writeNoteFile(tmpDir, { ...BASE, title: "Renamed Note", renameFile: true });
 
     const newFp = path.join(tmpDir, "My Project", "Renamed Note.md");
     expect(fs.existsSync(newFp)).toBe(true);

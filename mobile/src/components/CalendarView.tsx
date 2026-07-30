@@ -286,7 +286,7 @@ export function CalendarView({
       {/* Weekday header */}
       <View style={styles.weekHeader}>
         {WEEKDAYS.map((d) => (
-          <Text key={d} style={styles.weekday}>
+          <Text key={d} style={styles.weekday} numberOfLines={1} maxFontSizeMultiplier={1.3}>
             {d}
           </Text>
         ))}

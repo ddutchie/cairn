@@ -276,15 +276,63 @@ export function registerDbHandlers(ctx: DbContext): void {
     if (patch.content !== undefined && patch.contentText === undefined) {
       enrichedPatch.contentText = stripMarkdown(patch.content);
     }
+    // Did the title actually change? A title edit is an explicit rename → the
+    // .md filename should be re-derived (renameFile:true) AND inbound
+    // [[wikilinks]] in other notes rewritten, exactly like the MCP rename_note
+    // tool. Every other update (content, tags, pin, links) must KEEP the
+    // existing filename so we don't rename files out from under Obsidian
+    // wikilinks. Compare against the current row BEFORE the update.
+    const prevNote = q.getNoteById(ctx.db, id);
+    const prevTitle = prevNote?.title;
+    const titleChanged =
+      typeof patch.title === "string" && patch.title !== prevTitle;
     // Suppress before the update so the watcher's unlink event (fired when
     // writeNoteFile renames the file) is ignored before it can delete the row.
     suppressNextChange(id);
-    const note = q.updateNote(ctx.db, id, enrichedPatch);
+
+    // Rewrite inbound wikilinks + apply the update in one transaction so a crash
+    // can't leave the title changed but links dangling (or vice-versa).
+    // Old link targets = the old title AND the note's on-disk filename stem
+    // (adopted vault notes are often linked by filename, not title). Resolve the
+    // filename before the update relocates it.
+    let relinked: ReturnType<typeof q.updateNote>[] = [];
+    let oldTargets: string[] = [];
+    if (titleChanged && prevTitle) {
+      const projName = getProjectName(ctx.db, prevNote!.projectId);
+      const fp = findNoteFilePath(ctx.workspacePath, projName, id);
+      const stem = fp ? path.basename(fp, ".md") : null;
+      oldTargets = [prevTitle, ...(stem ? [stem] : [])];
+    }
+    const note = ctx.db.transaction(() => {
+      const u = q.updateNote(ctx.db, id, enrichedPatch);
+      if (oldTargets.length > 0) {
+        relinked = q.rewriteInboundWikilinks(ctx.db, id, oldTargets, patch.title as string);
+      }
+      return u;
+    })();
+
     if (note.type !== "dashboard") {
       writeNoteFile(ctx.workspacePath, {
         ...note,
         projectName: getProjectName(ctx.db, note.projectId),
+        renameFile: titleChanged,
       });
+    }
+    // Persist the .md files of every note whose wikilinks we rewrote. Suppress
+    // each so the watcher doesn't echo our own write back into the DB. Each write
+    // is isolated — a single failure must not abort the rest (the DB rewrite is
+    // already committed; mirrors the db:project:merge relocation loop).
+    for (const other of relinked) {
+      if (other.type === "dashboard") continue;
+      try {
+        suppressNextChange(other.id);
+        writeNoteFile(ctx.workspacePath, {
+          ...other,
+          projectName: getProjectName(ctx.db, other.projectId),
+        });
+      } catch (e) {
+        console.warn("[note:update] failed to persist relinked note file:", e instanceof Error ? e.message : e);
+      }
     }
     invalidateRelationshipCache(ctx.db, id);
     if (note.workspaceId) {

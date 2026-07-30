@@ -230,6 +230,19 @@ const FEATURES = [
       "Mobile Too: The mobile app gets the same ten presets from a new Appearance screen — your choice is saved on-device and applies across the app.",
     ],
   },
+  {
+    id: "v2.5.16-vault-import",
+    version: "v2.5.16",
+    title: "Open an Obsidian Vault",
+    category: "Integrations",
+    description: "Point Cairn at an existing Obsidian vault — or drop a folder of notes into your workspace — and your projects and notes appear automatically.",
+    highlights: [
+      "Folders Become Projects: Every top-level folder that holds notes is turned into a project and its `.md` files are imported, recursively, keeping their subfolder paths. Loose notes in the vault root land in a project named after the vault.",
+      "Live Import: Copy a folder of notes into your workspace while Cairn is running and it's picked up on the spot — no restart, no manual project setup.",
+      "Wikilink-Safe Editing: Editing a note's content, tags, or links never renames its file, so your `[[wikilinks]]` keep resolving. Renaming a note rewrites the inbound links in your other notes to match — just like Obsidian.",
+      "Stays Compatible: Your Obsidian properties (tags, aliases, cssclasses, custom fields) are preserved on every save, and `.obsidian`, `.git`, and attachment folders are skipped.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

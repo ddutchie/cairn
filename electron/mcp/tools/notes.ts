@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
+import path from "path";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
 import { stripMarkdown, normalizeNoteTitle } from "../../shared/text-utils";
@@ -14,6 +15,7 @@ import {
   getNoteVersion,
   writeNoteFile,
   deleteNoteFile,
+  findNoteFilePath,
   resolveTagNames
 } from "../db";
 import { traceTool } from "../../lib/tool-trace";
@@ -399,19 +401,23 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
   );
   if (collision) return { error: `A note with the title "${newTitle}" already exists in this project` };
 
-  // Collect notes whose wikilinks need rewriting before the DB transaction.
-  const oldLink = `[[${note.title}]]`;
-  const newLink = `[[${newTitle}]]`;
-  const linkedNotes = snap.notes.filter(
-    (n) => n.id !== noteId && n.content && n.content.includes(oldLink)
-  );
+  // Rewrite the renamed note's title AND all inbound [[wikilinks]] in other
+  // notes atomically. rewriteInboundWikilinks is the shared source of truth
+  // (also used by the desktop db:note:update handler) and returns the affected
+  // note rows so we can persist their .md files below.
+  //
+  // Old targets = the current title AND the note's on-disk filename stem. An
+  // adopted vault note is often linked by FILENAME ([[EP]]) rather than its
+  // frontmatter title, so both must be rewritten. Resolve the filename before
+  // the transaction (it relocates the file).
+  const existingFp = findNoteFilePath(workspacePath, project?.name ?? note.projectId as string, note.id as string);
+  const filenameStem = existingFp ? path.basename(existingFp, ".md") : null;
+  const oldTargets = [note.title as string, ...(filenameStem ? [filenameStem] : [])];
 
+  let relinked: ReturnType<typeof q.updateNote>[] = [];
   const updatedNote = db.transaction(() => {
     const u = q.updateNote(db, noteId, { title: newTitle });
-    for (const otherNote of linkedNotes) {
-      const newContent = otherNote.content.split(oldLink).join(newLink);
-      q.updateNote(db, otherNote.id, { content: newContent, contentText: stripMarkdown(newContent) });
-    }
+    relinked = q.rewriteInboundWikilinks(db, noteId as string, oldTargets, newTitle);
     return u;
   })();
 
@@ -422,52 +428,81 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
   // its .md (new slug path), so writeNoteFile unlinks the old path. Without the
   // lock, the file watcher would see that unlink, find no matching suppression,
   // and delete the row — destroying the note we just renamed.
+  const failedRelinkIds: string[] = [];
   lockNote(db, noteId as string);
   try {
-    for (const otherNote of linkedNotes) {
-      const newContent = otherNote.content.split(oldLink).join(newLink);
-      const otherProj = snap.projects.find((p) => p.id === otherNote.projectId);
-      writeNoteFile(workspacePath, {
-        id: otherNote.id,
-        projectId: otherNote.projectId,
-        workspaceId: otherNote.workspaceId as string,
-        title: otherNote.title as string,
-        content: newContent,
-        tagIds: otherNote.tagIds as string[],
-        linkedNoteIds: otherNote.linkedNoteIds as string[],
-        linkedCardIds: otherNote.linkedCardIds as string[],
-        isPinned: otherNote.isPinned as boolean,
-        folder: (otherNote.folder as string) ?? "",
-        createdAt: otherNote.createdAt as string,
-        updatedAt: new Date().toISOString(),
-        archivedAt: otherNote.archivedAt as string | undefined,
-        projectName: otherProj?.name ?? otherNote.projectId as string,
-      });
+    for (const otherNote of relinked) {
+      // Isolate each relinked write — a single failure must not abort the loop
+      // or the primary rename below (the DB rewrite is already committed).
+      // Mirrors the db:project:merge / desktop db:note:update relocation loops.
+      try {
+        const otherProj = snap.projects.find((p) => p.id === otherNote.projectId);
+        writeNoteFile(workspacePath, {
+          id: otherNote.id,
+          projectId: otherNote.projectId,
+          workspaceId: otherNote.workspaceId as string,
+          title: otherNote.title as string,
+          content: otherNote.content,
+          tagIds: otherNote.tagIds as string[],
+          linkedNoteIds: otherNote.linkedNoteIds as string[],
+          linkedCardIds: otherNote.linkedCardIds as string[],
+          isPinned: otherNote.isPinned as boolean,
+          folder: (otherNote.folder as string) ?? "",
+          createdAt: otherNote.createdAt as string,
+          updatedAt: otherNote.updatedAt as string,
+          archivedAt: otherNote.archivedAt as string | undefined,
+          projectName: otherProj?.name ?? otherNote.projectId as string,
+        });
+      } catch (e) {
+        failedRelinkIds.push(otherNote.id as string);
+        console.warn("[rename_note] failed to persist relinked note file:", e instanceof Error ? e.message : e);
+      }
     }
 
-    // Write note file to disk (writeNoteFile renames/moves the path dynamically if title changes)
-    writeNoteFile(workspacePath, {
-      id: note.id,
-      projectId: note.projectId,
-      workspaceId: note.workspaceId as string,
-      title: newTitle,
-      content: updatedNote?.content ?? note.content as string,
-      tagIds: note.tagIds as string[],
-      linkedNoteIds: note.linkedNoteIds as string[],
-      linkedCardIds: note.linkedCardIds as string[],
-      isPinned: note.isPinned as boolean,
-      folder: (note.folder as string) ?? "",
-      createdAt: note.createdAt as string,
-      updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
-      archivedAt: note.archivedAt as string | undefined,
-      projectName: project?.name ?? note.projectId as string,
-    });
+    // Write the renamed note file to disk. renameFile:true — this is an explicit
+    // rename, so the .md filename is re-derived from the new title (inbound
+    // wikilinks were rewritten above). This is the ONE writer that intentionally
+    // renames files. Dashboards are SQLite-only (no .md file), so skip them —
+    // matching the desktop db:note:update guard.
+    if (note.type !== "dashboard") {
+      writeNoteFile(workspacePath, {
+        id: note.id,
+        projectId: note.projectId,
+        workspaceId: note.workspaceId as string,
+        title: newTitle,
+        content: updatedNote?.content ?? note.content as string,
+        tagIds: note.tagIds as string[],
+        linkedNoteIds: note.linkedNoteIds as string[],
+        linkedCardIds: note.linkedCardIds as string[],
+        isPinned: note.isPinned as boolean,
+        folder: (note.folder as string) ?? "",
+        createdAt: note.createdAt as string,
+        updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
+        archivedAt: note.archivedAt as string | undefined,
+        projectName: project?.name ?? note.projectId as string,
+        renameFile: true,
+      });
+    }
   } finally {
     unlockNote(db, noteId as string);
   }
 
   insertNotification(db, "update_note", "Note renamed", `"${note.title}" renamed to "${newTitle}"`);
-  return { id: note.id, title: newTitle, action: "renamed", updatedAt: updatedNote?.updatedAt };
+  return {
+    id: note.id,
+    title: newTitle,
+    action: "renamed",
+    updatedAt: updatedNote?.updatedAt,
+    // Surface partial failure: the DB (title + inbound wikilinks) is committed,
+    // but these linked notes' .md files could not be rewritten on disk, so their
+    // on-disk links still point at the old title until the next successful save.
+    ...(failedRelinkIds.length > 0
+      ? {
+          partialWarning: `Renamed, but ${failedRelinkIds.length} linked note file(s) could not be updated on disk: ${failedRelinkIds.join(", ")}`,
+          failedRelinkIds,
+        }
+      : {}),
+  };
 }
 
 export function bulk_move_notes(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {

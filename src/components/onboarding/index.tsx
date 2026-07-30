@@ -13,6 +13,7 @@ import { StepMCP } from "./StepMCP";
 import { StepEmbeddings } from "./StepEmbeddings";
 import { StepViews } from "./StepViews";
 import { StepCreateProject } from "./StepCreateProject";
+import { StepImportedProjects, type ImportedProject } from "./StepImportedProjects";
 import { StepDone } from "./StepDone";
 import type { ToggleableView } from "@/store/slices/ui";
 
@@ -37,6 +38,12 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   const [wsName, setWsName] = useState("");
   const [wsIcon, setWsIcon] = useState(DEFAULT_WORKSPACE_ICON);
   const [submitting, setSubmitting] = useState(false);
+  // Vault detection (populated by probing the chosen folder).
+  const [isObsidianVault, setIsObsidianVault] = useState(false);
+  // Projects auto-created from the vault by the post-workspace rescan. When
+  // non-empty we show a "found these projects" summary instead of prompting the
+  // user to create their first project.
+  const [importedProjects, setImportedProjects] = useState<ImportedProject[]>([]);
 
   // ── View visibility (local copy; committed when user hits Next on StepViews) ─
   const [localHidden, setLocalHidden] = useState<Set<ToggleableView>>(new Set(hiddenViews));
@@ -82,7 +89,13 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   // Pre-populate folder path when skipping the folder-picker step
   useEffect(() => {
     if (initialStep !== "choose-folder") {
-      getWorkspacePath().then((p) => { if (p) setChosenFolder(p); });
+      getWorkspacePath().then((p) => {
+        if (!p) return;
+        setChosenFolder(p);
+        window.electron?.probeWorkspaceFolder?.(p)
+          .then((probe) => setIsObsidianVault(!!probe?.isObsidianVault))
+          .catch(() => {});
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialStep]);
@@ -106,6 +119,14 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       const folder = await selectAndInitWorkspace();
       if (!folder) return;
       setChosenFolder(folder);
+      // Probe the folder so the details step can hint that an Obsidian vault was
+      // detected. Best-effort — a failed probe just skips the hint.
+      try {
+        const probe = await window.electron?.probeWorkspaceFolder?.(folder);
+        setIsObsidianVault(!!probe?.isObsidianVault);
+      } catch {
+        setIsObsidianVault(false);
+      }
       setStep("workspace-details");
     } finally {
       setSubmitting(false);
@@ -123,7 +144,20 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       if (chosenFolder && initialStep === "choose-folder") {
         await initWorkspacePath(chosenFolder);
       }
-      await createWorkspace(trimmed, wsIcon);
+      const ws = await createWorkspace(trimmed, wsIcon);
+      // The workspace record now exists. Re-scan the chosen folder so any
+      // existing Obsidian vault folders (or loose root .md files) are turned
+      // into projects + notes, attached to the workspace we just created. The
+      // initial scan in initWorkspace ran before the workspace existed, so it
+      // couldn't auto-create projects. Capture the created projects so a later
+      // step can show them instead of prompting to create one.
+      try {
+        const res = await window.electron?.rescanWorkspace?.(ws.id);
+        setImportedProjects(res?.createdProjects ?? []);
+      } catch {
+        // Best-effort — onboarding shouldn't block on the rescan.
+        setImportedProjects([]);
+      }
       setStep("appearance");
     } finally {
       setSubmitting(false);
@@ -174,6 +208,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         icon={wsIcon}
         submitting={submitting}
         showBack={step === "workspace-details" && initialStep === "choose-folder"}
+        isObsidianVault={isObsidianVault}
         onBack={() => setStep("choose-folder")}
         onNameChange={setWsName}
         onIconChange={setWsIcon}
@@ -243,7 +278,9 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         onBack={() => setStep("embeddings")}
         onNext={() => {
           setHiddenViews([...localHidden]);
-          setStep("create-project");
+          // If the vault scan already created projects, show a summary of them
+          // instead of prompting the user to create their first project.
+          setStep(importedProjects.length > 0 ? "imported-projects" : "create-project");
         }}
       />
     );
@@ -264,10 +301,20 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     );
   }
 
+  if (step === "imported-projects") {
+    return (
+      <StepImportedProjects
+        projects={importedProjects}
+        onBack={() => setStep("views")}
+        onContinue={() => setStep("done")}
+      />
+    );
+  }
+
   // step === "done"
   return (
     <StepDone
-      onBack={() => setStep("create-project")}
+      onBack={() => setStep(importedProjects.length > 0 ? "imported-projects" : "create-project")}
       onComplete={onComplete}
     />
   );

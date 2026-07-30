@@ -281,9 +281,9 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       {/* Header / stats bar */}
-      <div className="flex items-center gap-3 px-4 h-11 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
+      <div className="flex items-center gap-x-3 gap-y-2 px-4 py-2 min-h-11 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0 flex-wrap">
         <Boxes size={15} className="text-[var(--accent)] flex-shrink-0" />
-        <div className="flex items-center gap-4 text-xs text-[var(--text-secondary)] min-w-0">
+        <div className="flex items-center gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)] min-w-0 flex-wrap">
           <Stat label="files" value={overview?.fileCount ?? "—"} />
           <Stat label="symbols" value={overview?.totalSymbols ?? "—"} />
           <Stat label="references" value={overview?.totalRelations ?? "—"} />

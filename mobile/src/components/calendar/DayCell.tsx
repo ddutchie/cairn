@@ -60,6 +60,9 @@ export function DayCell({
               styles.dayNum,
               { color: cell.isToday ? t.accentFg : cell.inMonth ? t.textSecondary : t.textTertiary },
             ]}
+            // The day number sits in a fixed 18pt circle — cap OS text scaling
+            // so it can't overflow/clip at max Dynamic Type.
+            maxFontSizeMultiplier={1.3}
           >
             {cell.date.getDate()}
           </Text>
@@ -78,7 +81,11 @@ export function DayCell({
             styles={styles}
           />
         ))}
-        {overflow > 0 ? <Text style={styles.moreText}>+{overflow} more</Text> : null}
+        {overflow > 0 ? (
+          <Text style={styles.moreText} maxFontSizeMultiplier={1.3}>
+            +{overflow} more
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );

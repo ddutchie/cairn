@@ -20,7 +20,7 @@ import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
-import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile } from "./notes-files";
+import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile, importVaultProjects } from "./notes-files";
 import { findNoteFilePath, noteDir } from "./shared/notes-io";
 import * as q from "./db/queries";
 
@@ -173,12 +173,50 @@ function skipIfOrphan(
   return true;
 }
 
+// Rate-limit the "discover new project folders" walk on the watcher path. A
+// bulk copy-in (dragging a folder of hundreds of notes) fires one `add` event
+// per file; without this guard each would re-walk the whole tree + re-query the
+// projects table (O(files × tree) ≈ O(n²)). We run importVaultProjects at most
+// once per short window, and ONLY when a file couldn't otherwise be adopted (its
+// owning folder has no live project yet). Files landing in an existing project
+// folder adopt on the first try and never trigger a scan.
+let lastVaultScanAt = 0;
+const VAULT_SCAN_MIN_INTERVAL_MS = 1500;
+
+function maybeImportVaultProjects(db: Database.Database, workspacePath: string): boolean {
+  const now = Date.now();
+  if (now - lastVaultScanAt < VAULT_SCAN_MIN_INTERVAL_MS) return false;
+  lastVaultScanAt = now;
+  try {
+    // Let importVaultProjects resolve the target workspace itself (it falls back
+    // to the oldest — the watcher has no reliable non-oldest signal from a path
+    // alone). Discovered projects attach there.
+    importVaultProjects(db, workspacePath);
+    return true;
+  } catch {
+    return false; // best-effort
+  }
+}
+
 function handleFileAdd(filePath: string, workspacePath: string, db: Database.Database, onChanged: () => void): void {
   if (!filePath.endsWith(".md")) return;
   let note = parseNoteFile(filePath);
   const hadCairnId = note !== null;
-  // Plain .md file with no Cairn frontmatter — try to adopt it
-  if (!note) note = adoptExternalNoteFile(db, workspacePath, filePath);
+  // Plain .md file with no Cairn frontmatter — try to adopt it.
+  if (!note) {
+    note = adoptExternalNoteFile(db, workspacePath, filePath);
+    // Adoption failed → the file's top-level folder has no live project yet
+    // (e.g. the user just dragged an Obsidian folder in). Kick off a project
+    // discovery pass (rate-limited so a bulk copy-in doesn't re-walk the tree
+    // per file), then retry adoption. We retry regardless of whether the scan
+    // actually ran this call: a scan triggered by an earlier file in the same
+    // burst may have already created the owning project, so a file arriving
+    // inside the rate-limit window can still be adopted now.
+    if (!note) {
+      maybeImportVaultProjects(db, workspacePath);
+      note = adoptExternalNoteFile(db, workspacePath, filePath);
+    }
+  }
   if (!note) return;
   if (skipIfOrphan(filePath, note.id, hadCairnId, db)) return;
   pathToNoteId.set(filePath, note.id);

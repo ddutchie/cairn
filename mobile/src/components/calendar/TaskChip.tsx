@@ -44,6 +44,10 @@ export function TaskChip({
       <Text
         style={[styles.chipText, { color: overdue ? t.danger : t.textPrimary }]}
         numberOfLines={1}
+        // Day-cell chips live in fixed-height grid rows, so cap how far the OS
+        // text-size setting can enlarge them — otherwise at max Dynamic Type the
+        // glyphs outgrow the chip's line box and get clipped top & bottom.
+        maxFontSizeMultiplier={1.3}
       >
         {card.title}
       </Text>
