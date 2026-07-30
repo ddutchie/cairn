@@ -188,13 +188,10 @@ function maybeImportVaultProjects(db: Database.Database, workspacePath: string):
   if (now - lastVaultScanAt < VAULT_SCAN_MIN_INTERVAL_MS) return false;
   lastVaultScanAt = now;
   try {
-    // Attach discovered projects to the workspace that owns this folder (the
-    // watcher only ever watches the active workspace's path). Resolve its id so
-    // multi-workspace installs don't misattribute to the oldest workspace.
-    const wsId = (db.prepare(
-      "SELECT id FROM workspaces ORDER BY created_at LIMIT 1",
-    ).get() as { id?: string } | undefined)?.id;
-    importVaultProjects(db, workspacePath, wsId);
+    // Let importVaultProjects resolve the target workspace itself (it falls back
+    // to the oldest — the watcher has no reliable non-oldest signal from a path
+    // alone). Discovered projects attach there.
+    importVaultProjects(db, workspacePath);
     return true;
   } catch {
     return false; // best-effort
@@ -209,11 +206,14 @@ function handleFileAdd(filePath: string, workspacePath: string, db: Database.Dat
   if (!note) {
     note = adoptExternalNoteFile(db, workspacePath, filePath);
     // Adoption failed → the file's top-level folder has no live project yet
-    // (e.g. the user just dragged an Obsidian folder in). Discover projects
-    // from folders (rate-limited), then retry adoption ONCE. Doing the scan
-    // only on failure means files copied into an existing project folder never
-    // pay for a tree walk.
-    if (!note && maybeImportVaultProjects(db, workspacePath)) {
+    // (e.g. the user just dragged an Obsidian folder in). Kick off a project
+    // discovery pass (rate-limited so a bulk copy-in doesn't re-walk the tree
+    // per file), then retry adoption. We retry regardless of whether the scan
+    // actually ran this call: a scan triggered by an earlier file in the same
+    // burst may have already created the owning project, so a file arriving
+    // inside the rate-limit window can still be adopted now.
+    if (!note) {
+      maybeImportVaultProjects(db, workspacePath);
       note = adoptExternalNoteFile(db, workspacePath, filePath);
     }
   }

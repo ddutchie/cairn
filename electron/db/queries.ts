@@ -385,35 +385,57 @@ export function findLiveNoteByTitle(db: Database.Database, projectId: string, ti
  *
  * Rewrites the bare form `[[Old Title]]` and the aliased/section forms
  * `[[Old Title|alias]]` and `[[Old Title#heading]]`, preserving the suffix.
- * Does NOT write any `.md` files — it only mutates the DB and returns the
- * affected note rows so the caller can persist them to disk (the caller owns
- * file I/O, watcher suppression, and locking). Must be run inside the same
- * transaction as the title update. Returns [] when nothing links to the note.
+ * `oldTargets` may be a single old title or several (e.g. the title AND the
+ * note's original on-disk filename stem — Obsidian links imported notes by
+ * filename, which can differ from the title). Each distinct target is rewritten
+ * to `newTitle`. Candidates are scoped to the renamed note's own workspace and
+ * to real notes (dashboards/templates carry no wikilinks). Does NOT write any
+ * `.md` files — it only mutates the DB and returns the affected note rows so the
+ * caller can persist them to disk (the caller owns file I/O, watcher
+ * suppression, and locking). Must be run inside the same transaction as the
+ * title update. Returns [] when nothing links to the note.
  */
 export function rewriteInboundWikilinks(
   db: Database.Database,
   renamedNoteId: string,
-  oldTitle: string,
+  oldTargets: string | string[],
   newTitle: string,
 ): ReturnType<typeof toNote>[] {
-  if (oldTitle === newTitle) return [];
-  // Candidate rows: live notes (not the renamed one) whose content mentions the
-  // old title inside a wikilink. Pre-filter in SQL with LIKE to avoid scanning
-  // every note's body in JS; the precise rewrite happens below.
+  // Distinct, non-empty old targets that actually differ from the new title.
+  const targets = Array.from(
+    new Set((Array.isArray(oldTargets) ? oldTargets : [oldTargets]).filter((t) => t && t !== newTitle)),
+  );
+  if (targets.length === 0) return [];
+
+  // Scope to the renamed note's workspace — wikilinks resolve within a vault
+  // (workspace), so a note in another workspace can never link here, and
+  // scanning them would be both wrong and wasteful.
+  const owner = db.prepare("SELECT workspace_id FROM notes WHERE id = ?").get(renamedNoteId) as
+    | { workspace_id: string }
+    | undefined;
+  if (!owner) return [];
+
+  // Candidate rows: live NOTES (not dashboards/templates, not the renamed one)
+  // in the same workspace whose content mentions any old target inside a
+  // wikilink. Pre-filter in SQL with LIKE to avoid scanning every body in JS;
+  // the precise rewrite happens below.
+  const likeClause = targets.map(() => "content LIKE ?").join(" OR ");
   const candidates = db.prepare(
     `SELECT * FROM notes
-       WHERE id != ? AND deleted_at IS NULL AND archived_at IS NULL
-         AND content LIKE ?`,
-  ).all(renamedNoteId, `%[[${oldTitle}%`) as Record<string, unknown>[];
+       WHERE id != ? AND workspace_id = ? AND type = 'note'
+         AND deleted_at IS NULL AND archived_at IS NULL
+         AND (${likeClause})`,
+  ).all(renamedNoteId, owner.workspace_id, ...targets.map((t) => `%[[${t}%`)) as Record<string, unknown>[];
+
+  // One combined regex over all targets. Match a target only when immediately
+  // followed by ]], |, or # so we never rewrite a title that is a PREFIX of
+  // another note's title. Metacharacters in each target are escaped.
+  const escaped = targets.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const re = new RegExp(`\\[\\[(?:${escaped.join("|")})(?=[\\]|#])`, "g");
 
   const updated: ReturnType<typeof toNote>[] = [];
   for (const row of candidates) {
     const content = String(row.content ?? "");
-    // Replace [[Old]], [[Old|alias]], [[Old#heading]] — match the title only
-    // when it's immediately followed by ]], |, or # so we never rewrite a title
-    // that is a prefix of another note's title.
-    const escaped = oldTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`\\[\\[${escaped}(?=[\\]|#])`, "g");
     const next = content.replace(re, `[[${newTitle}`);
     if (next === content) continue; // LIKE matched but no real wikilink — skip
     const u = updateNote(db, String(row.id), {

@@ -590,15 +590,19 @@ describe("importVaultProjects auto-creates projects from folders", () => {
   it("creates a project per top-level folder that has notes, then imports them", () => {
     seedWorkspaceOnly();
 
-    // An Obsidian vault with two top-level folders, no matching DB projects.
+    // An Obsidian vault with top-level folders, no matching DB projects. One
+    // folder has a space in its name ("My Journal") to exercise
+    // adoptExternalNoteFile's slug-vs-raw-segment resolution, not just simple
+    // single-word folder names.
     writePlainMdFile(path.join(tmpDir, "Journal"), "2025-01-01.md", "# Jan 1\n\nEntry.");
     writeObsidianFile(path.join(tmpDir, "Projects"), "Roadmap.md",
       { title: "Roadmap", tags: ["planning"] }, "\n# Roadmap\n\nBig plans.");
+    writePlainMdFile(path.join(tmpDir, "My Journal"), "Entry.md", "# Entry\n\nWith a space.");
 
     syncNotesFromDisk(db, tmpDir);
 
     const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as { name: string }[];
-    expect(projects.map((p) => p.name)).toEqual(["Journal", "Projects"]);
+    expect(projects.map((p) => p.name)).toEqual(["Journal", "My Journal", "Projects"]);
 
     // Notes imported under their auto-created projects.
     const journal = db.prepare(
@@ -610,6 +614,14 @@ describe("importVaultProjects auto-creates projects from folders", () => {
       "SELECT n.title FROM notes n JOIN projects p ON n.project_id = p.id WHERE p.name = 'Projects'",
     ).all() as { title: string }[];
     expect(proj.map((r) => r.title)).toEqual(["Roadmap"]);
+
+    // The spaced folder resolved correctly (raw segment "My Journal" ==
+    // toSlug("My Journal")) and its note landed in the right project.
+    const spaced = db.prepare(
+      "SELECT n.title, n.folder FROM notes n JOIN projects p ON n.project_id = p.id WHERE p.name = 'My Journal'",
+    ).all() as { title: string; folder: string }[];
+    expect(spaced.map((r) => r.title)).toEqual(["Entry"]);
+    expect(spaced[0].folder).toBe("");
   });
 
   it("creates default board columns for each auto-created project", () => {
@@ -870,6 +882,25 @@ describe("filename stability (Obsidian wikilink safety)", () => {
     expect(fs.existsSync(fp)).toBe(false); // old root path gone
     const moved = path.join(projectDir, "sub", "Movable.md");
     expect(fs.existsSync(moved)).toBe(true);
+  });
+
+  it("preserves the on-disk filename on a folder move when title ≠ filename", () => {
+    // Regression: a folder-only move must NOT re-derive the filename from the
+    // title. An adopted note "EP.md" whose title is "Electron Process" must move
+    // as EP.md, not electron-process.md — otherwise [[EP]] wikilinks break.
+    seedProject(db, "ArchWiz");
+    const projectDir = path.join(notesDir(tmpDir), toSlug("ArchWiz"));
+    const fp = writeObsidianFile(projectDir, "EP.md", { title: "Electron Process" }, "\n# EP\n\nBody.");
+    const adopted = adoptExternalNoteFile(db, tmpDir, fp);
+    expect(adopted!.title).toBe("Electron Process");
+
+    // Move to subfolder "kernel" with renameFile OFF (a plain move).
+    writeNoteFile(tmpDir, { ...adopted!, folder: "kernel", projectName: "ArchWiz" });
+
+    expect(fs.existsSync(fp)).toBe(false);                       // old path gone
+    const moved = path.join(projectDir, "kernel", "EP.md");      // filename preserved
+    expect(fs.existsSync(moved)).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "kernel", "electron-process.md"))).toBe(false);
   });
 });
 

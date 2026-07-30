@@ -74,9 +74,13 @@ export function resolveNoteFilePath(
   title: string,
   noteId: string,
   folder = "",
+  /** Explicit filename stem (no extension). Defaults to toSlug(title). Used to
+   *  preserve an existing on-disk filename across a folder-only move so Obsidian
+   *  wikilinks (which resolve by filename) don't break. */
+  filenameStem?: string,
 ): string {
   const dir = noteDir(workspacePath, projectName, folder);
-  const slug = toSlug(title);
+  const slug = filenameStem ?? toSlug(title);
   const candidate = path.join(dir, `${slug}.md`);
 
   if (!fs.existsSync(candidate)) return candidate;
@@ -205,8 +209,10 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
   // So: when a file for this note already exists AND it already lives in the
   // target folder, KEEP its current filename — UNLESS renameFile is set (an
   // explicit rename_note, which also rewrites inbound wikilinks). We only compute
-  // a fresh slug-based path when there is no file yet (brand-new note), the note
-  // genuinely moved to a different folder, or a rename was explicitly requested.
+  // a fresh slug-based path when there is no file yet (brand-new note) or a
+  // rename was explicitly requested. A folder-only MOVE (existing file, different
+  // folder, renameFile off) also preserves the existing filename — the file
+  // relocates but is not renamed, so wikilinks by filename survive.
   const existingDir = existingPath ? path.dirname(existingPath) : null;
   const stayInPlace =
     !note.renameFile &&
@@ -214,9 +220,16 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
     existingDir != null &&
     isSameFile(existingDir, dir);
 
+  // Preserve the on-disk basename for any non-explicit-rename write that has an
+  // existing file (covers both in-place edits and folder-only moves).
+  const preservedStem =
+    !note.renameFile && existingPath != null
+      ? path.basename(existingPath, ".md")
+      : undefined;
+
   const newPath = stayInPlace
     ? existingPath!
-    : resolveNoteFilePath(workspacePath, projectName, note.title, note.id, folder);
+    : resolveNoteFilePath(workspacePath, projectName, note.title, note.id, folder, preservedStem);
   // Whether existingPath and newPath denote the SAME file on disk. A plain
   // string `===` is wrong on case-insensitive filesystems (macOS/Windows
   // default): a note whose stored folder/title differs only in CASE from its

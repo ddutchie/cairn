@@ -1133,4 +1133,57 @@ describe("rewriteInboundWikilinks", () => {
     expect(rewriteInboundWikilinks(db, "target", "Same", "Same")).toEqual([]);
     expect(getNoteById(db, "a")!.content).toBe("[[Same]]");
   });
+
+  it("escapes regex metacharacters in the old title (e.g. 'C++ (draft)')", () => {
+    mkNote("target", "C++ (draft)", "body");
+    mkNote("a", "A", "See [[C++ (draft)]] and [[C++ (draft)|notes]].");
+    // A different note whose title is NOT the target must be left alone.
+    mkNote("b", "B", "Unrelated [[C sharp]].");
+
+    const updated = rewriteInboundWikilinks(db, "target", "C++ (draft)", "C Plus Plus");
+
+    expect(updated.map((n) => n.id)).toEqual(["a"]);
+    expect(getNoteById(db, "a")!.content).toBe("See [[C Plus Plus]] and [[C Plus Plus|notes]].");
+    expect(getNoteById(db, "b")!.content).toBe("Unrelated [[C sharp]].");
+  });
+
+  it("rewrites links matching either the title OR the filename stem (array targets)", () => {
+    // Imported vault note: title differs from its on-disk filename ("EP").
+    mkNote("target", "Electron Process", "body");
+    mkNote("a", "A", "By title [[Electron Process]] and by filename [[EP]].");
+
+    const updated = rewriteInboundWikilinks(db, "target", ["Electron Process", "EP"], "Electron Runtime");
+
+    expect(updated.map((n) => n.id)).toEqual(["a"]);
+    expect(getNoteById(db, "a")!.content).toBe(
+      "By title [[Electron Runtime]] and by filename [[Electron Runtime]].",
+    );
+  });
+
+  it("only rewrites real notes — dashboards/templates are left untouched", () => {
+    mkNote("target", "Old", "body");
+    createNote(db, { id: "dash", projectId: "proj1", workspaceId: "ws1", title: "Dash", content: "[[Old]]", type: "dashboard" });
+    createNote(db, { id: "tpl", projectId: "proj1", workspaceId: "ws1", title: "Tpl", content: "[[Old]]", type: "template" });
+    mkNote("note", "Note", "[[Old]]");
+
+    const updated = rewriteInboundWikilinks(db, "target", "Old", "New");
+
+    expect(updated.map((n) => n.id)).toEqual(["note"]);
+    expect(getNoteById(db, "dash")!.content).toBe("[[Old]]");
+    expect(getNoteById(db, "tpl")!.content).toBe("[[Old]]");
+  });
+
+  it("only rewrites notes in the renamed note's workspace", () => {
+    // Second workspace/project with a note linking to the same title.
+    createWorkspace(db, { id: "ws2", name: "Other" });
+    createProject(db, { id: "proj2", workspaceId: "ws2", name: "Other Project" });
+    mkNote("target", "Shared", "body");
+    mkNote("same-ws", "Same WS", "[[Shared]]");
+    createNote(db, { id: "other-ws", projectId: "proj2", workspaceId: "ws2", title: "Other WS", content: "[[Shared]]" });
+
+    const updated = rewriteInboundWikilinks(db, "target", "Shared", "Renamed");
+
+    expect(updated.map((n) => n.id)).toEqual(["same-ws"]);
+    expect(getNoteById(db, "other-ws")!.content).toBe("[[Shared]]"); // cross-workspace link untouched
+  });
 });

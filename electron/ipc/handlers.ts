@@ -157,17 +157,18 @@ export function registerAppHandlers(
   // yet — this catches the vault's folders once a workspace exists). Also useful
   // as a manual "refresh from disk" action. Returns the number of projects the
   // scan auto-created from folders.
-  registerIpcHandle("app:rescanWorkspace", () => handle(() => {
-    // Resolve the workspace that owns ctx.workspacePath so discovered projects
-    // attach to the right workspace (falls back to oldest inside the import).
-    const wsId = (ctx.db.prepare(
-      "SELECT id FROM workspaces ORDER BY created_at LIMIT 1",
-    ).get() as { id?: string } | undefined)?.id;
-    // syncNotesFromDisk runs importVaultProjects itself, then imports notes —
-    // one scan, no double walk. Capture the created count separately since sync
-    // doesn't return it.
-    const created = importVaultProjects(ctx.db, ctx.workspacePath, wsId);
-    syncNotesFromDisk(ctx.db, ctx.workspacePath, wsId);
+  //
+  // workspaceId identifies the workspace that owns ctx.workspacePath so
+  // discovered projects attach to it — the caller (onboarding) knows the id of
+  // the workspace it just created. When omitted, importVaultProjects falls back
+  // to the oldest workspace.
+  registerIpcHandle("app:rescanWorkspace", (_e, { workspaceId }: { workspaceId?: string } = {}) => handle(() => {
+    // Run the discovery pass once and capture its count. syncNotesFromDisk below
+    // also calls importVaultProjects, but by then every folder already maps to a
+    // project so it short-circuits before any tree walk (idempotent no-op) — it
+    // then imports the notes into those projects.
+    const created = importVaultProjects(ctx.db, ctx.workspacePath, workspaceId);
+    syncNotesFromDisk(ctx.db, ctx.workspacePath, workspaceId);
     const activeWin = ctx.getWin();
     if (activeWin && !activeWin.isDestroyed()) {
       activeWin.webContents.send("db:changed");

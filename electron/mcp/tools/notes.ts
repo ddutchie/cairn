@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
+import path from "path";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
 import { stripMarkdown, normalizeNoteTitle } from "../../shared/text-utils";
@@ -14,6 +15,7 @@ import {
   getNoteVersion,
   writeNoteFile,
   deleteNoteFile,
+  findNoteFilePath,
   resolveTagNames
 } from "../db";
 import { traceTool } from "../../lib/tool-trace";
@@ -403,10 +405,19 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
   // notes atomically. rewriteInboundWikilinks is the shared source of truth
   // (also used by the desktop db:note:update handler) and returns the affected
   // note rows so we can persist their .md files below.
+  //
+  // Old targets = the current title AND the note's on-disk filename stem. An
+  // adopted vault note is often linked by FILENAME ([[EP]]) rather than its
+  // frontmatter title, so both must be rewritten. Resolve the filename before
+  // the transaction (it relocates the file).
+  const existingFp = findNoteFilePath(workspacePath, project?.name ?? note.projectId as string, note.id as string);
+  const filenameStem = existingFp ? path.basename(existingFp, ".md") : null;
+  const oldTargets = [note.title as string, ...(filenameStem ? [filenameStem] : [])];
+
   let relinked: ReturnType<typeof q.updateNote>[] = [];
   const updatedNote = db.transaction(() => {
     const u = q.updateNote(db, noteId, { title: newTitle });
-    relinked = q.rewriteInboundWikilinks(db, noteId as string, note.title as string, newTitle);
+    relinked = q.rewriteInboundWikilinks(db, noteId as string, oldTargets, newTitle);
     return u;
   })();
 

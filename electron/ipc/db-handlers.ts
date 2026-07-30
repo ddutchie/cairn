@@ -292,11 +292,21 @@ export function registerDbHandlers(ctx: DbContext): void {
 
     // Rewrite inbound wikilinks + apply the update in one transaction so a crash
     // can't leave the title changed but links dangling (or vice-versa).
+    // Old link targets = the old title AND the note's on-disk filename stem
+    // (adopted vault notes are often linked by filename, not title). Resolve the
+    // filename before the update relocates it.
     let relinked: ReturnType<typeof q.updateNote>[] = [];
+    let oldTargets: string[] = [];
+    if (titleChanged && prevTitle) {
+      const projName = getProjectName(ctx.db, prevNote!.projectId);
+      const fp = findNoteFilePath(ctx.workspacePath, projName, id);
+      const stem = fp ? path.basename(fp, ".md") : null;
+      oldTargets = [prevTitle, ...(stem ? [stem] : [])];
+    }
     const note = ctx.db.transaction(() => {
       const u = q.updateNote(ctx.db, id, enrichedPatch);
-      if (titleChanged && prevTitle) {
-        relinked = q.rewriteInboundWikilinks(ctx.db, id, prevTitle, patch.title as string);
+      if (oldTargets.length > 0) {
+        relinked = q.rewriteInboundWikilinks(ctx.db, id, oldTargets, patch.title as string);
       }
       return u;
     })();
@@ -309,14 +319,20 @@ export function registerDbHandlers(ctx: DbContext): void {
       });
     }
     // Persist the .md files of every note whose wikilinks we rewrote. Suppress
-    // each so the watcher doesn't echo our own write back into the DB.
+    // each so the watcher doesn't echo our own write back into the DB. Each write
+    // is isolated — a single failure must not abort the rest (the DB rewrite is
+    // already committed; mirrors the db:project:merge relocation loop).
     for (const other of relinked) {
       if (other.type === "dashboard") continue;
-      suppressNextChange(other.id);
-      writeNoteFile(ctx.workspacePath, {
-        ...other,
-        projectName: getProjectName(ctx.db, other.projectId),
-      });
+      try {
+        suppressNextChange(other.id);
+        writeNoteFile(ctx.workspacePath, {
+          ...other,
+          projectName: getProjectName(ctx.db, other.projectId),
+        });
+      } catch (e) {
+        console.warn("[note:update] failed to persist relinked note file:", e instanceof Error ? e.message : e);
+      }
     }
     invalidateRelationshipCache(ctx.db, id);
     if (note.workspaceId) {

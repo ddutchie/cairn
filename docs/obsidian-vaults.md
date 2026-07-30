@@ -37,8 +37,10 @@ each — you can merge, rename, or archive projects afterwards in Cairn.
 
 ## What Cairn writes to your notes
 
-Cairn manages a fixed set of frontmatter keys and **preserves every other key
-verbatim** on every save:
+Cairn manages a fixed set of frontmatter keys and **preserves all your other
+keys and their values** on every save. The frontmatter is re-serialised as YAML,
+so its formatting may be normalised — comments, quoting style, and key ordering
+can change even though the data is kept (see *First-touch git diffs* below):
 
 ```yaml
 ---
@@ -75,7 +77,8 @@ properties (`tags`, `aliases`, `cssclasses`).
 ### Fully compatible
 
 - **Obsidian properties** (`tags`, `aliases`, `cssclasses`, `date`, `publish`,
-  custom keys, and nested values) round-trip untouched.
+  custom keys, and nested values) are preserved — their values survive every
+  save (the YAML formatting may be re-normalised, see below).
 - **Obsidian tags** in a note's `tags:` property are imported as Cairn tags.
 - **Body content** — `[[wikilinks]]`, `![[embeds]]`, task checkboxes, inline
   `#tags` — is never modified by import.
