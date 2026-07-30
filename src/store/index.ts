@@ -338,9 +338,18 @@ export const useCairnStore = create<CairnStore>()(
       // letting a field-poor backend object reset them to DEFAULT_AI_CONFIG on
       // every hydrate (the "maxSteps reverts to 30" bug).
       const localAiConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
+      // On a REFRESH hydrate (fired after write-tool turns and every db:changed
+      // event) the in-memory aiConfig is the source of truth for the live
+      // session — the user may have just changed the model, and the async
+      // saveAiSettings write may not have landed in the backend cache yet.
+      // Layering the (possibly stale) backend cache on top would silently revert
+      // that selection, which is the "have to clear chat twice for the new model
+      // to apply" bug. So on refresh we prefer the current in-memory config over
+      // the backend cache; on the initial hydrate the backend cache wins.
+      const currentAiConfig = isRefresh ? get().aiConfig : undefined;
       const savedConfig = backendAiConfig
-        ? { ...localAiConfig, ...backendAiConfig }
-        : localAiConfig;
+        ? { ...localAiConfig, ...backendAiConfig, ...currentAiConfig }
+        : (currentAiConfig ?? localAiConfig);
       if (savedConfig) {
         if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
           savedConfig.provider = "localllm";

@@ -418,7 +418,15 @@ export async function runDispatchLoop(
       if (m.name) out.name = m.name;
       return out;
     }),
-    { role: "user", content: req.message },
+    req.images?.length
+      ? ({
+          role: "user",
+          content: [
+            { type: "text", text: req.message },
+            ...req.images.map((img) => ({ type: "image_url", image_url: { url: img.dataUrl } })),
+          ],
+        } as unknown as OpenAIMessage)
+      : { role: "user", content: req.message },
   ];
 
   const maxSteps = req.config?.maxSteps ?? 12;
@@ -482,14 +490,16 @@ export async function runDispatchLoop(
     }
 
     const choice = data.choices?.[0];
-    const assistantMsg = choice?.message as OpenAIMessage & { reasoning?: string } | undefined;
+    const assistantMsg = choice?.message as OpenAIMessage & { reasoning?: string; reasoning_content?: string } | undefined;
     if (!assistantMsg) {
       return { content: "No response from dispatch model.", reasoning: finalReasoning, metrics };
     }
-    if (assistantMsg.reasoning) finalReasoning += assistantMsg.reasoning;
+    const dispatchThought = assistantMsg.reasoning_content ?? assistantMsg.reasoning;
+    if (dispatchThought) finalReasoning += dispatchThought;
 
-    // Strip reasoning before pushing back into history.
-    const { reasoning: _r, ...msgClean } = assistantMsg;
+    // Strip reasoning before pushing back into history. Both `reasoning` and
+    // `reasoning_content` must go (re-sending reasoning_content causes 400s).
+    const { reasoning: _r, reasoning_content: _rc, ...msgClean } = assistantMsg;
 
     if (!msgClean.tool_calls?.length) {
       finalContent = (msgClean.content ?? "").trim();
