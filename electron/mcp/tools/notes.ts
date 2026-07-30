@@ -428,6 +428,7 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
   // its .md (new slug path), so writeNoteFile unlinks the old path. Without the
   // lock, the file watcher would see that unlink, find no matching suppression,
   // and delete the row — destroying the note we just renamed.
+  const failedRelinkIds: string[] = [];
   lockNote(db, noteId as string);
   try {
     for (const otherNote of relinked) {
@@ -453,6 +454,7 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
           projectName: otherProj?.name ?? otherNote.projectId as string,
         });
       } catch (e) {
+        failedRelinkIds.push(otherNote.id as string);
         console.warn("[rename_note] failed to persist relinked note file:", e instanceof Error ? e.message : e);
       }
     }
@@ -486,7 +488,21 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
   }
 
   insertNotification(db, "update_note", "Note renamed", `"${note.title}" renamed to "${newTitle}"`);
-  return { id: note.id, title: newTitle, action: "renamed", updatedAt: updatedNote?.updatedAt };
+  return {
+    id: note.id,
+    title: newTitle,
+    action: "renamed",
+    updatedAt: updatedNote?.updatedAt,
+    // Surface partial failure: the DB (title + inbound wikilinks) is committed,
+    // but these linked notes' .md files could not be rewritten on disk, so their
+    // on-disk links still point at the old title until the next successful save.
+    ...(failedRelinkIds.length > 0
+      ? {
+          partialWarning: `Renamed, but ${failedRelinkIds.length} linked note file(s) could not be updated on disk: ${failedRelinkIds.join(", ")}`,
+          failedRelinkIds,
+        }
+      : {}),
+  };
 }
 
 export function bulk_move_notes(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
