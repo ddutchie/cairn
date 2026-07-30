@@ -48,8 +48,13 @@ describe("calculatePromptBreakdown image handling", () => {
     expect(b.conversation).toBeLessThan(20);
   });
 
-  it("is dominated by the flat per-image estimate, not payload size", () => {
-    const small = calculatePromptBreakdown(undefined, [
+  it("adds a nonzero flat image cost independent of base64 payload length", () => {
+    // Same text, no image — the baseline the image cost is measured against.
+    const textOnly = calculatePromptBreakdown(undefined, [
+      { role: "user", content: "hi" },
+    ]);
+    // Same text + a tiny image.
+    const smallImg = calculatePromptBreakdown(undefined, [
       {
         role: "user",
         content: [
@@ -58,8 +63,14 @@ describe("calculatePromptBreakdown image handling", () => {
         ],
       } as unknown as OpenAIMessage,
     ]);
-    const big = calculatePromptBreakdown(undefined, [multimodalUser("hi")]);
-    // A 400x larger base64 payload must not change the count — images are flat.
-    expect(big.conversation).toBe(small.conversation);
+    // Same text + a 400x larger image payload.
+    const bigImg = calculatePromptBreakdown(undefined, [multimodalUser("hi")]);
+
+    // The image adds a nonzero flat cost on top of the text-only baseline...
+    expect(smallImg.conversation).toBeGreaterThan(textOnly.conversation);
+    // ...and that cost is exactly the flat per-image estimate.
+    expect(smallImg.conversation - textOnly.conversation).toBe(1100);
+    // ...and it does NOT scale with the base64 payload length.
+    expect(bigImg.conversation).toBe(smallImg.conversation);
   });
 });
