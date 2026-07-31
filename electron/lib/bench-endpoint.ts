@@ -14,7 +14,7 @@
  * `CAIRN_SKIP_LIVE_TESTS=1` remains a hard override that force-skips.
  */
 
-import { normaliseBaseUrl } from "./llm";
+import { normaliseBaseUrl, buildApiUrl } from "./llm";
 
 export const BASE_URL = normaliseBaseUrl(
   process.env.TEST_LLM_BASE_URL?.trim() || "http://localhost:1234/v1",
@@ -34,7 +34,7 @@ export const LIVE_TESTS_ENABLED =
 /** True if the given (or default) endpoint is reachable. */
 export async function endpointUp(url: string = BASE_URL, key: string = API_KEY): Promise<boolean> {
   try {
-    const res = await fetch(`${url}/v1/models`, {
+    const res = await fetch(buildApiUrl(url, "models"), {
       headers: key ? { Authorization: `Bearer ${key}` } : {},
       signal: AbortSignal.timeout(2500),
     });

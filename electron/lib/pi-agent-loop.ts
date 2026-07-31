@@ -16,7 +16,7 @@
 
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
-import { isLocalEndpoint, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "./llm";
+import { isLocalEndpoint, calculatePromptBreakdown, scaleBreakdown, buildApiUrl, type TokenBreakdown } from "./llm";
 import {
   readTool,  readToolDefinition,
   writeTool, writeToolDefinition,
@@ -563,7 +563,7 @@ export async function runAgentLoop(
 
       let fetchError: string | null = null;
       try {
-        response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        response = await fetch(buildApiUrl(baseUrl, "chat/completions"), {
           method: "POST",
           headers,
           signal,

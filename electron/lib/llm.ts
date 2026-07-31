@@ -5,13 +5,39 @@
 import { encode } from "gpt-tokenizer";
 
 /**
- * Normalise a user-supplied base URL.
- * Strips trailing slashes and a trailing /v1 segment so that both
- * "http://localhost:3042" and "http://localhost:3042/v1" produce the same result.
- * The callers always append /v1/chat/completions themselves.
+ * Normalise a user-supplied base URL by stripping trailing slashes.
+ *
+ * We intentionally do NOT strip a trailing "/v1" here. Some gateways expose an
+ * OpenAI-compatible surface *below* the version segment (e.g.
+ * "https://api-gateway.merge.dev/v1/openai"), so blindly removing "/v1" would
+ * corrupt the path. Version-segment handling is deferred to buildApiUrl, which
+ * only appends "/v1" when the base doesn't already contain one.
  */
 export function normaliseBaseUrl(raw: string): string {
-  return raw.replace(/\/+$/, "").replace(/\/v1$/, "");
+  return raw.replace(/\/+$/, "");
+}
+
+/**
+ * Build a full OpenAI-compatible endpoint URL from a (normalised) base URL and
+ * an API path such as "chat/completions", "models", or "key".
+ *
+ * The "/v1" version segment is added automatically, but only when the base URL
+ * does not already contain a "/v1" path segment. This supports both:
+ *   - "https://api.openai.com"                → ".../v1/chat/completions"
+ *   - "https://api.openai.com/v1"             → ".../v1/chat/completions"
+ *   - "https://api-gateway.merge.dev/v1/openai" → ".../v1/openai/chat/completions"
+ */
+export function buildApiUrl(baseUrl: string, path: string): string {
+  const base = baseUrl.replace(/\/+$/, "");
+  const cleanPath = path.replace(/^\/+/, "");
+  let pathname: string;
+  try {
+    pathname = new URL(/^https?:\/\//i.test(base) ? base : `http://${base}`).pathname;
+  } catch {
+    pathname = base;
+  }
+  const hasVersion = /(^|\/)v\d+(\/|$)/.test(pathname);
+  return hasVersion ? `${base}/${cleanPath}` : `${base}/v1/${cleanPath}`;
 }
 
 /** Returns true if the given base URL points to a local server. */
@@ -74,7 +100,7 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
-  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const response = await fetch(buildApiUrl(config.baseUrl, "chat/completions"), {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -154,7 +180,7 @@ export async function* streamCompletion(
     body.stream_options = { include_usage: true };
   }
 
-  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const response = await fetch(buildApiUrl(config.baseUrl, "chat/completions"), {
     method: "POST",
     headers,
     body: JSON.stringify(body),

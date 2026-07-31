@@ -17,6 +17,7 @@ export type ToggleableView = "board" | "flow" | "calendar" | "calendar-all" | "a
 
 export const HIDDEN_VIEWS_KEY = "hiddenViews";
 export const SEEN_FEATURES_KEY = "seenFeatures";
+export const FAVORITE_MODELS_KEY = "favoriteModels";
 
 
 
@@ -65,6 +66,27 @@ type ProviderCarrier = {
  */
 function mirrorProvider<C extends ProviderCarrier>(config: C, p: SavedProvider): C {
   return { ...config, activeProviderId: p.id, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model };
+}
+
+/**
+ * De-duplicate a saved-provider list by id, keeping the LAST occurrence of each
+ * id (so a later edit wins over an earlier stale copy) while preserving order.
+ * Guards against duplicate React keys / doubled entries that can otherwise creep
+ * into persisted state, and self-heals any already-corrupted stored list on the
+ * next write or on hydration.
+ */
+export function dedupeProviders(list: SavedProvider[]): SavedProvider[] {
+  const byId = new Map<string, SavedProvider>();
+  for (const p of list) byId.set(p.id, p);
+  // Preserve first-seen order while using the last value for each id.
+  const seen = new Set<string>();
+  const out: SavedProvider[] = [];
+  for (const p of list) {
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    out.push(byId.get(p.id)!);
+  }
+  return out;
 }
 
 /** Re-sync only the CONNECTION (baseUrl/apiKey) from a provider, keeping the
@@ -130,7 +152,11 @@ export async function migrateLlmKeysToKeychain(
   let changed = false;
 
   // 1. Saved providers: convert each provider's raw key to a keychain ref.
-  const providers = ai.savedProviders ?? [];
+  //    Also de-duplicate by id up front so a corrupted/doubled persisted list
+  //    self-heals on hydration (duplicate ids → duplicate React keys downstream).
+  const rawProviders = ai.savedProviders ?? [];
+  const providers = dedupeProviders(rawProviders);
+  if (providers.length !== rawProviders.length) changed = true;
   const migratedProviders: SavedProvider[] = [];
   for (const p of providers) {
     if (p.apiKey && !isKeyRef(p.apiKey)) {
@@ -387,6 +413,11 @@ export interface UISlice extends AppUIState {
   toggleViewVisibility: (view: ToggleableView) => void;
   setHiddenViews: (views: ToggleableView[]) => void;
 
+  // Favorited model ids (global, cross-provider). Favorited models sort to the
+  // top of every model picker. Persisted to localStorage.
+  favoriteModels: Set<string>;
+  toggleFavoriteModel: (model: string) => void;
+
   // Chat panel width
   chatPanelWidth: number;
   setChatPanelWidth: (width: number) => void;
@@ -479,6 +510,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   accentColor: DEFAULT_ACCENT_ID,
   fontScale: DEFAULT_FONT_SCALE, // 1.2 = M (~16.8px)
   hiddenViews: new Set<ToggleableView>(),
+  favoriteModels: new Set<string>(),
   chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
   notesSidebarWidth: DEFAULT_NOTES_SIDEBAR_WIDTH,
   notesCollapsedFolders: {},
@@ -502,7 +534,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   addSavedProvider(provider, selectFor = "ai") {
     const id = genId();
     set((s) => {
-      const list = [...(s.aiConfig.savedProviders ?? []), { id, ...provider }];
+      const list = dedupeProviders([...(s.aiConfig.savedProviders ?? []), { id, ...provider }]);
       const added: SavedProvider = { id, ...provider };
       // AI config always owns the list; select it there when asked.
       const nextAi: AIConfig =
@@ -522,7 +554,9 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   updateSavedProvider(id, patch) {
     set((s) => {
-      const list = (s.aiConfig.savedProviders ?? []).map((p) => (p.id === id ? { ...p, ...patch } : p));
+      const list = dedupeProviders(
+        (s.aiConfig.savedProviders ?? []).map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      );
       // Re-mirror into whichever config(s) have this provider active.
       const nextAi: AIConfig = { ...reconcileConfig(s.aiConfig, list), savedProviders: list };
       const nextAgent: AgentConfig = reconcileConfig(s.agentConfig, list);
@@ -534,7 +568,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   deleteSavedProvider(id) {
     set((s) => {
-      const list = (s.aiConfig.savedProviders ?? []).filter((p) => p.id !== id);
+      const list = dedupeProviders((s.aiConfig.savedProviders ?? []).filter((p) => p.id !== id));
       const nextAi: AIConfig = { ...reconcileConfig(s.aiConfig, list), savedProviders: list };
       const nextAgent: AgentConfig = reconcileConfig(s.agentConfig, list);
       persistAi(nextAi);
@@ -601,6 +635,17 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     const hidden = new Set<ToggleableView>(views);
     storage.set(HIDDEN_VIEWS_KEY, [...hidden]);
     set({ hiddenViews: hidden });
+  },
+
+  // ── Favorite models ────────────────────────────
+  toggleFavoriteModel(model) {
+    set((s) => {
+      const next = new Set(s.favoriteModels);
+      if (next.has(model)) next.delete(model);
+      else next.add(model);
+      storage.set(FAVORITE_MODELS_KEY, [...next]);
+      return { favoriteModels: next };
+    });
   },
 
   // ── Theme ──────────────────────────────────────

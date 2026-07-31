@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
-import { ChevronDown, RefreshCw, Check, Pencil } from "lucide-react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { ChevronDown, RefreshCw, Check, Pencil, Star, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
@@ -78,6 +80,28 @@ export function ModelPicker({
   const customRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (custom) customRef.current?.focus(); }, [custom]);
 
+  // Search filter over the model list (reset each time the menu re-opens).
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const { favoriteModels, toggleFavoriteModel } = useCairnStore(
+    useShallow((s) => ({ favoriteModels: s.favoriteModels, toggleFavoriteModel: s.toggleFavoriteModel })),
+  );
+
+  // Filter by query, then split into favorites-first sections. Favorites keep
+  // their original list order; non-favorites follow. The active value always
+  // stays reachable even if it isn't in the fetched list.
+  const { favs, rest } = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q ? options.filter((m) => m.toLowerCase().includes(q)) : options;
+    const favs: string[] = [];
+    const rest: string[] = [];
+    for (const m of filtered) (favoriteModels.has(m) ? favs : rest).push(m);
+    return { favs, rest };
+  }, [options, query, favoriteModels]);
+
+  const noMatches = query.trim() !== "" && favs.length === 0 && rest.length === 0;
+
   const triggerPad = size === "md" ? "px-2.5 py-1.5 text-xs" : "px-2 py-1 text-[0.714rem]";
 
   if (custom) {
@@ -128,7 +152,29 @@ export function ModelPicker({
             <ChevronDown size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align={align} className="max-w-[240px] max-h-64 overflow-y-auto">
+        <DropdownMenuContent
+          align={align}
+          className="max-w-[260px] w-[240px] max-h-72 overflow-y-auto"
+          onCloseAutoFocus={() => setQuery("")}
+          onOpenAutoFocus={(e: Event) => { e.preventDefault(); requestAnimationFrame(() => searchRef.current?.focus()); }}
+        >
+          {/* Search box — filters the list below. Kept out of the scrollable rows
+              so it stays pinned while scrolling. stopPropagation prevents Radix's
+              typeahead from hijacking keystrokes. */}
+          <div className="sticky top-0 z-10 bg-[var(--surface-1)] px-1 pt-1 pb-1.5">
+            <div className="flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1">
+              <Search size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
+                placeholder="Search models…"
+                className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
+              />
+            </div>
+          </div>
+
           <DropdownMenuItem
             onSelect={(e) => { e.preventDefault(); onRefresh(); }}
             className="text-[var(--text-secondary)]"
@@ -151,20 +197,92 @@ export function ModelPicker({
               No models — Refresh or add a custom one.
             </div>
           )}
-          {options.map((m) => (
-            <DropdownMenuItem
+          {noMatches && (
+            <div className="px-2.5 py-1.5 text-[0.643rem] text-[var(--text-tertiary)]">
+              No models match &ldquo;{query.trim()}&rdquo;.
+            </div>
+          )}
+          {favs.length > 0 && (
+            <>
+              <div className="px-2.5 pt-1 pb-0.5 text-[0.607rem] uppercase tracking-wide text-[var(--text-tertiary)]">
+                Favorites
+              </div>
+              {favs.map((m) => (
+                <ModelRow
+                  key={m}
+                  model={m}
+                  active={m === value}
+                  favorite
+                  onSelect={() => onChange(m)}
+                  onToggleFavorite={() => toggleFavoriteModel(m)}
+                />
+              ))}
+              {rest.length > 0 && <DropdownMenuSeparator />}
+            </>
+          )}
+          {rest.map((m) => (
+            <ModelRow
               key={m}
+              model={m}
+              active={m === value}
+              favorite={false}
               onSelect={() => onChange(m)}
-              className={cn("font-mono text-xs", m === value && "text-[var(--accent)]")}
-            >
-              <span className="w-3.5 flex-shrink-0">
-                {m === value && <Check size={12} />}
-              </span>
-              <TruncatedModel text={m} />
-            </DropdownMenuItem>
+              onToggleFavorite={() => toggleFavoriteModel(m)}
+            />
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
+  );
+}
+
+/**
+ * A single model row inside the picker: a favorite star (toggles without closing
+ * the menu), the active-check gutter, and the truncated model id. Selecting the
+ * row picks the model; clicking the star only toggles the favorite.
+ */
+function ModelRow({
+  model,
+  active,
+  favorite,
+  onSelect,
+  onToggleFavorite,
+}: {
+  model: string;
+  active: boolean;
+  favorite: boolean;
+  onSelect: () => void;
+  onToggleFavorite: () => void;
+}) {
+  return (
+    <DropdownMenuItem
+      onSelect={onSelect}
+      className={cn("group font-mono text-xs", active && "text-[var(--accent)]")}
+    >
+      <button
+        type="button"
+        aria-label={favorite ? "Unfavorite model" : "Favorite model"}
+        title={favorite ? "Unfavorite" : "Favorite"}
+        // Radix Menu.Item triggers selection on pointerup / click. Stop those
+        // events at the star so tapping it only toggles the favorite instead of
+        // selecting the model and closing the menu. (Don't preventDefault on
+        // pointerdown — that would suppress the follow-up click in some engines.)
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(); }}
+        className={cn(
+          "flex-shrink-0 flex items-center justify-center rounded p-0.5 -ml-0.5 transition-colors",
+          favorite
+            ? "text-[var(--accent)] hover:text-[var(--text-tertiary)]"
+            : "text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 hover:text-[var(--accent)]",
+        )}
+      >
+        <Star size={12} className={favorite ? "fill-current" : ""} />
+      </button>
+      <span className="w-3.5 flex-shrink-0">
+        {active && <Check size={12} />}
+      </span>
+      <TruncatedModel text={model} />
+    </DropdownMenuItem>
   );
 }
