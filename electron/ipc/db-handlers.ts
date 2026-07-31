@@ -14,7 +14,7 @@ import path from "path";
 import { registerIpcHandle, registerIpcOn } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
-import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders, stripMarkdown, findNoteFilePath } from "../notes-files";
+import { writeNoteFile, deleteNoteFile, hardDeleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders, stripMarkdown, findNoteFilePath } from "../notes-files";
 import { suppressNextChange } from "../file-watcher";
 import { executeTool as executeMcpTool } from "../mcp/tools";
 import { executeReadTool } from "../lib/read-tools";
@@ -171,7 +171,10 @@ export function registerDbHandlers(ctx: DbContext): void {
       // The notes folder is keyed by the project NAME slug, not the id, and
       // names are not unique. Only remove the folder if no surviving project
       // still shares that slug — otherwise we'd wipe a duplicate's .md files.
-      const survivorNames = q.getProjects(ctx.db).map((p) => p.name);
+      // Scope survivors to this project's workspace: folders live under this
+      // workspace's tree, so a same-named project in ANOTHER workspace is not a
+      // real survivor and must not block the delete.
+      const survivorNames = q.getProjects(ctx.db, project.workspaceId).map((p) => p.name);
       deleteProjectNotesDir(ctx.workspacePath, project.name, survivorNames);
     }
   }));
@@ -209,9 +212,11 @@ export function registerDbHandlers(ctx: DbContext): void {
           }
           // Remove the source project's on-disk folder (now that its notes have
           // been rewritten under the target). Best-effort, and only when no
-          // surviving project still shares the source name's slug.
+          // surviving project shares the source name's slug — scoped to the
+          // target's workspace (both folders live under this workspace's tree).
           try {
-            const survivorNames = q.getProjects(ctx.db).map((p) => p.name);
+            const mergeWsId = q.getProjectById(ctx.db, targetId)?.workspaceId;
+            const survivorNames = q.getProjects(ctx.db, mergeWsId).map((p) => p.name);
             deleteProjectNotesDir(ctx.workspacePath, result.sourceName, survivorNames);
           } catch (e) {
             console.warn("[merge] failed to remove source project folder:", e instanceof Error ? e.message : e);
@@ -404,8 +409,12 @@ export function registerDbHandlers(ctx: DbContext): void {
           // New file is in place; deleting the stale old copy is best-effort
           // (a failure here only leaves a duplicate that the watcher would
           // re-import into the old project — non-fatal, and the DB move stands).
+          // Use a synchronous HARD delete (not the OS-trash remover): this is a
+          // move-internal duplicate, not a user delete, so it must not land in
+          // the Trash and must be gone before we return, or an async trasher
+          // would race the file-watcher re-importing it into the old project.
           try {
-            deleteNoteFile(ctx.workspacePath, oldProjectName, id);
+            hardDeleteNoteFile(ctx.workspacePath, oldProjectName, id);
           } catch (e) {
             console.warn("[notes] failed to remove old-project file after move:", e instanceof Error ? e.message : e);
           }

@@ -85,13 +85,14 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   const [toolCalls, setToolCalls]               = useState<ChatToolCall[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingThought, setStreamingThought] = useState("");
-  // Pending questions are tagged with the thread they arrived on. The chat
-  // panel + this hook are a single persistent instance that switches threads by
-  // changing `threadId` (no remount), so a bare array would render under
-  // whatever thread is active. Keying by threadId scopes the form to its own
-  // thread (and restores it if the user switches back).
-  const [pendingQuestionsState, setPendingQuestionsState] =
-    useState<{ threadId: string | null; questions: PendingQuestion[] } | null>(null);
+  // Pending questions are keyed by the thread they arrived on. The chat panel +
+  // this hook are a single persistent instance that switches threads by changing
+  // `threadId` (no remount), so a single slot would render under whatever thread
+  // is active and get overwritten when a second thread also asks questions.
+  // A per-thread map scopes each form to its own thread and preserves an
+  // unanswered form when the user switches away and back.
+  const [pendingQuestionsByThread, setPendingQuestionsByThread] =
+    useState<Record<string, PendingQuestion[]>>({});
   const [subagents, setSubagents] = useState<ChatSubagent[]>([]);
 
   const threadIdRef  = useRef<string | null>(null);
@@ -107,8 +108,8 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
 
   // Only surface pending questions that belong to the currently-active thread.
   const pendingQuestions =
-    pendingQuestionsState && pendingQuestionsState.threadId === threadId
-      ? pendingQuestionsState.questions
+    threadId && pendingQuestionsByThread[threadId]
+      ? pendingQuestionsByThread[threadId]
       : null;
 
   useEffect(() => {
@@ -127,9 +128,13 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       if (!isForThisThread(e)) return;
       if (e.tool === "ask_questions") {
         const qs = (e.args.questions as PendingQuestion[] | undefined) ?? [];
-        // Tag with the thread these questions arrived for, so the form only
-        // renders in that thread (not whichever thread is active later).
-        setPendingQuestionsState({ threadId: threadIdRef.current, questions: qs });
+        // Store under the thread these questions arrived for, so the form only
+        // renders in that thread (not whichever thread is active later) and a
+        // second thread's questions don't clobber this one's.
+        const forThread = e.threadId ?? threadIdRef.current;
+        if (forThread) {
+          setPendingQuestionsByThread((prev) => ({ ...prev, [forThread]: qs }));
+        }
       } else {
         if (e.tool === "suggest_connections") {
           const incoming = (e.args.actions ?? []) as SuggestedAction[];
@@ -336,7 +341,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     pendingActionsRef.current = [];
     setSubagents([]);
     subagentsRef.current = [];
-    setPendingQuestionsState(null);
+    clearQuestionsForThread(threadId);
     if (threadId) {
       setThreadUsage(threadId, undefined);
     }
@@ -357,8 +362,20 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     // Keep pendingQuestions — user may still want to answer after stopping
   }
 
+  // Drop a single thread's pending questions (answered/cleared), leaving other
+  // threads' unanswered forms intact.
+  function clearQuestionsForThread(tid: string | null) {
+    if (!tid) return;
+    setPendingQuestionsByThread((prev) => {
+      if (!(tid in prev)) return prev;
+      const next = { ...prev };
+      delete next[tid];
+      return next;
+    });
+  }
+
   function clearQuestions() {
-    setPendingQuestionsState(null);
+    clearQuestionsForThread(threadId);
   }
 
   return { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions };

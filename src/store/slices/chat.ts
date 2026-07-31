@@ -93,12 +93,23 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     );
     const dbMessages = messageLists.flat();
 
+    // A newer workspace switch may have superseded this (async) load while we
+    // awaited IPC. If so, bail before touching state so a stale load can't
+    // overwrite the current workspace's chat or active-thread pointer.
+    if (get().activeWorkspaceId !== workspaceId) return;
+
     set((s) => {
       // Merge threads: keep any in-memory thread not yet in the DB; otherwise
-      // take the DB row (it's the persisted truth).
+      // take the DB row (it's the persisted truth) — but carry over the
+      // in-memory `lastUsage`, which chat_threads does not persist and would
+      // otherwise be lost (blanking the live token-usage gauge).
+      const memById = new Map(s.chatThreads.map((t) => [t.id, t]));
       const dbThreadIds = new Set(dbThreads.map((t) => t.id));
       const mergedThreads = [
-        ...dbThreads,
+        ...dbThreads.map((t) => {
+          const mem = memById.get(t.id);
+          return mem?.lastUsage ? { ...t, lastUsage: mem.lastUsage } : t;
+        }),
         ...s.chatThreads.filter((t) => !dbThreadIds.has(t.id)),
       ];
 
@@ -114,10 +125,14 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     });
     get().persist();
 
-    // Restore the last-active thread if it still exists; otherwise leave it for
-    // the UI's getOrCreateThread to pick a scoped thread.
+    // Restore the last-active thread if it still exists AND belongs to the
+    // workspace we just loaded; otherwise leave it for the UI's
+    // getOrCreateThread to pick a scoped thread.
     const saved = storage.get<string>(ACTIVE_CHAT_THREAD_KEY);
-    if (saved && get().chatThreads.some((t) => t.id === saved)) {
+    if (
+      saved &&
+      get().chatThreads.some((t) => t.id === saved && t.workspaceId === workspaceId)
+    ) {
       set({ activeChatThreadId: saved });
     }
   },

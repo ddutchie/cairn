@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { writeNoteFile, deleteProjectNotesDir, deleteNoteFile, setPathRemover, type NoteFileData, type PathRemover } from "./notes-io";
+import { writeNoteFile, deleteProjectNotesDir, deleteNoteFile, hardDeleteNoteFile, setPathRemover, type NoteFileData, type PathRemover } from "./notes-io";
 
 let tmpDir: string;
 
@@ -283,5 +283,42 @@ describe("setPathRemover — pluggable trash vs hard delete", () => {
     deleteNoteFile(tmpDir, BASE.projectName!, BASE.id);
 
     expect(fs.existsSync(fp)).toBe(false);
+  });
+
+  it("falls back to a hard delete when an ASYNC remover rejects", async () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+
+    // Async trasher that rejects (e.g. shell.trashItem unavailable). removePath
+    // wraps it in a promise whose .catch performs the hard-delete fallback.
+    const remover: PathRemover = () => Promise.reject(new Error("no trash"));
+    setPathRemover(remover);
+
+    deleteNoteFile(tmpDir, BASE.projectName!, BASE.id);
+
+    // Removal completes asynchronously — flush the microtask queue, then assert
+    // the fallback fs delete ran.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fs.existsSync(fp)).toBe(false);
+  });
+});
+
+describe("hardDeleteNoteFile — sync delete that bypasses the OS-trash remover", () => {
+  afterEach(() => setPathRemover());
+
+  it("deletes synchronously even when an async trasher is injected", () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+
+    // An injected (async, fire-and-forget) trasher must NOT be used for the
+    // move-internal cleanup — hardDeleteNoteFile always does a sync fs delete so
+    // the stale old-project copy is gone before the move handler returns.
+    const trashed: string[] = [];
+    setPathRemover((t) => { trashed.push(t); return Promise.resolve(); });
+
+    hardDeleteNoteFile(tmpDir, BASE.projectName!, BASE.id);
+
+    expect(trashed).toEqual([]);            // trasher untouched
+    expect(fs.existsSync(fp)).toBe(false);  // file gone synchronously
   });
 });

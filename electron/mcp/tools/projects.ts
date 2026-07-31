@@ -64,7 +64,10 @@ export function delete_project(db: Database.Database, snap: Snapshot, workspaceP
   // the project NAME slug (not the id) and names are not unique, so blindly
   // deleting it would destroy a same-named duplicate's .md files (data loss).
   q.deleteProject(db, args.projectId as string);
-  const survivorNames = q.getProjects(db).map((p) => p.name);
+  // Scope survivors to this project's workspace — a same-named project in
+  // another workspace lives in a different folder tree and must not block this
+  // delete.
+  const survivorNames = q.getProjects(db, project.workspaceId).map((p) => p.name);
   deleteProjectNotesDir(workspacePath, project.name, survivorNames);
   insertNotification(db, "delete_project", "Project deleted", `"${project.name}" was deleted`);
   return { deleted: true, id: args.projectId, name: project.name };

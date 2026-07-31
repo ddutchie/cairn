@@ -17,12 +17,15 @@ import { toSlug } from "./text-utils";
 // bundled into the standalone MCP process, which has no Electron `shell`.
 //
 // So we keep the sync fs removal as the default, and let the Electron main
-// process inject a trasher via `setPathRemover`. Callers stay synchronous; an
-// async trasher is fire-and-forget (the DB row is already deleted by the time
-// we get here, so the file-watcher can't misread the removal as data loss).
-export type PathRemover = (targetPath: string, opts: { recursive: boolean }) => void;
+// process inject a trasher via `setPathRemover`. The trasher MAY be async
+// (shell.trashItem returns a promise); `removePath` returns that promise so
+// callers that need the file to actually be gone before continuing (e.g. the
+// move-to-project source cleanup) can await it. Fire-and-forget callers can
+// ignore the return — the DB row is already deleted, so the file-watcher can't
+// misread the removal as data loss.
+export type PathRemover = (targetPath: string, opts: { recursive: boolean }) => void | Promise<void>;
 
-const hardRemove: PathRemover = (targetPath, opts) => {
+const hardRemove = (targetPath: string, opts: { recursive: boolean }): void => {
   if (opts.recursive) {
     fs.rmSync(targetPath, { recursive: true, force: true });
   } else {
@@ -43,13 +46,18 @@ export function setPathRemover(remover?: PathRemover): void {
 }
 
 /** Remove a file or folder using the active remover; falls back to a hard
- *  delete if the remover throws (e.g. trashItem unavailable on a headless box). */
-function removePath(targetPath: string, opts: { recursive: boolean }): void {
-  if (!fs.existsSync(targetPath)) return;
+ *  delete if the remover throws (e.g. trashItem unavailable on a headless box).
+ *  Returns a promise that resolves once removal is complete (the remover may be
+ *  async), so callers that must not race a follow-up can await it. */
+function removePath(targetPath: string, opts: { recursive: boolean }): Promise<void> {
+  if (!fs.existsSync(targetPath)) return Promise.resolve();
   try {
-    pathRemover(targetPath, opts);
+    return Promise.resolve(pathRemover(targetPath, opts)).catch(() => {
+      try { hardRemove(targetPath, opts); } catch { /* ignore */ }
+    });
   } catch {
     try { hardRemove(targetPath, opts); } catch { /* ignore */ }
+    return Promise.resolve();
   }
 }
 
@@ -442,6 +450,28 @@ export function deleteNoteFile(
     removePath(fp, { recursive: false });
     // Deleting the last note in a subfolder empties it — prune the vacated
     // folder(s), stopping at the project root.
+    pruneEmptyDirsUpTo(path.dirname(fp), projectNotesDir(workspacePath, projectName));
+  }
+}
+
+/**
+ * Synchronously HARD-delete a note's .md file (bypassing the OS-trash remover).
+ *
+ * Use for internal bookkeeping deletes that are not user "delete" actions — e.g.
+ * removing the stale copy of a note in its OLD project folder after a
+ * move-to-project. Such a file is a duplicate, not a deletion, so it must NOT
+ * land in the user's Trash; and it must be gone before the handler returns, or
+ * the file-watcher could re-import it into the old project (an async trasher
+ * would race that). A synchronous fs delete guarantees both.
+ */
+export function hardDeleteNoteFile(
+  workspacePath: string,
+  projectName: string,
+  noteId: string,
+): void {
+  const fp = findNoteFilePath(workspacePath, projectName, noteId);
+  if (fp && fs.existsSync(fp)) {
+    try { fs.unlinkSync(fp); } catch { /* ignore */ }
     pruneEmptyDirsUpTo(path.dirname(fp), projectNotesDir(workspacePath, projectName));
   }
 }
