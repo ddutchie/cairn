@@ -18,6 +18,7 @@
  */
 
 import type { AgentLLMConfig, AgentMessage, AgentToolResultMsg, PiAgentSession } from "./pi-agent-loop";
+import { buildApiUrl } from "./llm";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export async function generateSummary(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+  const response = await fetch(buildApiUrl(baseUrl, "chat/completions"), {
     method: "POST",
     headers,
     signal,

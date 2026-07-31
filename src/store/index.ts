@@ -25,7 +25,7 @@ import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY } from "./slices/ui";
 import type { FontScale } from "./slices/ui";
 import { DEFAULT_ACCENT_ID } from "../../shared/ui/accents";
 import { createWorkspaceSlice } from "./slices/workspace";
@@ -235,6 +235,11 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   const savedSeenFeatures = storage.get<string[]>(SEEN_FEATURES_KEY);
   if (savedSeenFeatures) {
     set({ seenFeatures: savedSeenFeatures });
+  }
+
+  const savedFavoriteModels = storage.get<string[]>(FAVORITE_MODELS_KEY);
+  if (savedFavoriteModels) {
+    set({ favoriteModels: new Set(savedFavoriteModels) });
   }
 
   const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);

@@ -15,6 +15,7 @@
 import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
 import type { OpenAIMessage } from "./llm";
+import { buildApiUrl } from "./llm";
 import { TOOLS, type ChatRequest } from "./tools";
 import { executeTool } from "../ipc/chat-executor";
 import { executeExternalTool, isExternalToolName, externalToolLabel } from "./external-tools";
@@ -137,7 +138,7 @@ export async function runToolLoop(
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-        response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        response = await fetch(buildApiUrl(baseUrl, "chat/completions"), {
           method: "POST",
           headers,
           signal,

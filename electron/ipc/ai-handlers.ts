@@ -10,7 +10,7 @@
 import { registerIpcHandle } from "./registry";
 import { err, handle, type DbContext } from "./result-helpers";
 import { generatePrd } from "../lib/prd";
-import { callLLM, isLocalEndpoint, normaliseBaseUrl, type LLMConfig } from "../lib/llm";
+import { callLLM, isLocalEndpoint, normaliseBaseUrl, buildApiUrl, type LLMConfig } from "../lib/llm";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 
@@ -116,7 +116,7 @@ export function registerAiHandlers(ctx: DbContext): void {
         const ac = new AbortController();
         const timer = setTimeout(() => ac.abort(), 12_000);
         try {
-          const res = await fetch(`${url}/v1/models`, { headers, signal: ac.signal });
+          const res = await fetch(buildApiUrl(url, "models"), { headers, signal: ac.signal });
           if (!res.ok) throw new Error(`${res.status}`);
           const data = (await res.json()) as { data?: Array<{ id: string }> };
           return (data?.data ?? [])
@@ -146,7 +146,7 @@ export function registerAiHandlers(ctx: DbContext): void {
         const ac = new AbortController();
         const timer = setTimeout(() => ac.abort(), 12_000);
         try {
-          const res = await fetch(`${url}/v1/key`, {
+          const res = await fetch(buildApiUrl(url, "key"), {
             headers: { Authorization: `Bearer ${realKey}` },
             signal: ac.signal,
           });

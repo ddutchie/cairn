@@ -6,6 +6,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Check, X, Server, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SavedProvider } from "@/store/slices/ui";
+import { dedupeProviders } from "@/store/slices/ui";
 import { SettingsRow } from "./shared";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown";
 import { ModelPicker } from "@/components/ui/model-picker";
@@ -55,11 +56,14 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
     ? (model: string) => setAgentConfig({ model })
     : (model: string) => setAIConfig({ model });
 
-  const providers = savedProviders ?? EMPTY_PROVIDERS;
+  // Defensive de-dup by id: guarantees unique React keys in the list below even
+  // if a corrupted/doubled list is still in memory before hydration self-heals.
+  const providers = dedupeProviders(savedProviders ?? EMPTY_PROVIDERS);
   const active = providers.find((p) => p.id === activeProviderId);
 
   // null = form closed; "new" = adding; otherwise the id being edited.
   const [editing, setEditing] = useState<null | "new" | string>(null);
+  const formOpen = editing !== null;
 
   const editingProvider = typeof editing === "string" && editing !== "new"
     ? providers.find((p) => p.id === editing)
@@ -74,13 +78,15 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
         <div className="flex flex-col gap-1.5 items-end w-64">
           <div className="flex gap-1.5 w-full">
             <DropdownMenu>
-              <DropdownMenuTrigger asChild disabled={providers.length === 0}>
+              <DropdownMenuTrigger asChild disabled={providers.length === 0 || formOpen}>
                 <button
+                  disabled={formOpen}
+                  title={formOpen ? "Finish or cancel the open provider form first" : undefined}
                   className={cn(
                     "flex-1 flex items-center justify-between gap-2 pl-2.5 pr-2 py-1.5 text-xs rounded-md",
                     "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)]",
                     "hover:border-[var(--muted)] focus:outline-none focus:border-[var(--accent)] transition-colors cursor-pointer",
-                    providers.length === 0 && "opacity-50 cursor-not-allowed",
+                    (providers.length === 0 || formOpen) && "opacity-50 cursor-not-allowed",
                   )}
                 >
                   <span className="flex items-center gap-1.5 min-w-0">
@@ -114,15 +120,19 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
             </DropdownMenu>
             <button
               onClick={() => setEditing("new")}
+              disabled={formOpen}
               aria-label="Add provider"
-              title="Add a provider"
-              className="px-2 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer"
+              title={formOpen ? "Finish or cancel the open provider form first" : "Add a provider"}
+              className={cn(
+                "px-2 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer",
+                formOpen && "opacity-50 cursor-not-allowed hover:border-[var(--border)] hover:text-[var(--text-tertiary)]",
+              )}
             >
               <Plus size={11} /> Add
             </button>
           </div>
 
-          {active && (
+          {active && !formOpen && (
             <div className="flex gap-1.5">
               <button
                 onClick={() => setEditing(active.id)}
@@ -147,7 +157,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
       {/* Quick model switch for THIS surface's active provider — writes to the
           config (aiConfig/agentConfig), not the shared provider, so chat and the
           agent can run different models on the same connection. */}
-      {active && (
+      {active && !formOpen && (
         <ActiveModelRow
           key={active.id}
           provider={active}

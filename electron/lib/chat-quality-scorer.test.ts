@@ -36,7 +36,7 @@ import {
   updateNote, updateCard, createTag, getFullSnapshot,
 } from "../db/queries";
 import { buildSystemPrompt, type ChatRequest } from "./tools";
-import { normaliseBaseUrl } from "./llm";
+import { normaliseBaseUrl, buildApiUrl } from "./llm";
 import { BASE_URL, MODEL, API_KEY, endpointUp, LIVE_TESTS_ENABLED } from "./bench-endpoint";
 import { runToolLoop } from "./chat-loop";
 import { runDispatchLoop } from "./chat-subagent-loop";
@@ -178,7 +178,7 @@ Return JSON exactly like:
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (JUDGE_API_KEY) headers["Authorization"] = `Bearer ${JUDGE_API_KEY}`;
 
-  const res = await fetch(`${JUDGE_BASE_URL}/v1/chat/completions`, {
+  const res = await fetch(buildApiUrl(JUDGE_BASE_URL, "chat/completions"), {
     method: "POST", headers,
     body: JSON.stringify({
       model: JUDGE_MODEL,

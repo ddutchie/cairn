@@ -11,8 +11,14 @@ export const DropdownMenuTrigger = RadixDropdown.Trigger;
 export function DropdownMenuContent({
   className,
   children,
+  onOpenAutoFocus,
   ...props
-}: RadixDropdown.DropdownMenuContentProps) {
+}: RadixDropdown.DropdownMenuContentProps & {
+  // onOpenAutoFocus is implemented by Radix's Content at runtime but typed as a
+  // private prop (stripped from the public content props). Re-expose it so
+  // callers can focus a custom element (e.g. a search box) on open.
+  onOpenAutoFocus?: (event: Event) => void;
+}) {
   return (
     <RadixDropdown.Portal>
       <RadixDropdown.Content
@@ -23,6 +29,9 @@ export function DropdownMenuContent({
           className
         )}
         sideOffset={6}
+        {...(onOpenAutoFocus
+          ? ({ onOpenAutoFocus } as Record<string, unknown>)
+          : {})}
         {...props}
       >
         {children}

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createUISlice, SEEN_FEATURES_KEY } from "./ui";
+import { createUISlice, SEEN_FEATURES_KEY, dedupeProviders } from "./ui";
 
 // Mock the persistence layer so we can assert markFeatureAsSeen's storage
 // contract (node project has no window, so storage.set is otherwise a no-op).
@@ -205,5 +205,61 @@ describe("createUISlice — tour & seen-features state", () => {
     const { get } = setup();
     get().setTutorialStepIndex(4);
     expect(get().tutorialStepIndex).toBe(4);
+  });
+});
+
+describe("dedupeProviders", () => {
+  const P = (id: string, name = id) => ({ id, name, baseUrl: "https://x", apiKey: "", model: "m" });
+
+  it("returns the list unchanged when all ids are unique", () => {
+    const list = [P("a"), P("b"), P("c")];
+    expect(dedupeProviders(list)).toEqual(list);
+  });
+
+  it("removes duplicate ids, keeping first-seen order", () => {
+    const out = dedupeProviders([P("a"), P("b"), P("a"), P("c")]);
+    expect(out.map((p) => p.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps the LAST value for a duplicated id (later edit wins)", () => {
+    const out = dedupeProviders([P("a", "old"), P("b"), P("a", "new")]);
+    expect(out.find((p) => p.id === "a")?.name).toBe("new");
+  });
+
+  it("handles an empty list", () => {
+    expect(dedupeProviders([])).toEqual([]);
+  });
+});
+
+describe("toggleFavoriteModel", () => {
+  const setup = () => {
+    let state: any = {};
+    const mockSet = (updater: any) => {
+      const next = typeof updater === "function" ? updater(state) : updater;
+      state = { ...state, ...next };
+    };
+    const mockGet = () => state;
+    const slice = createUISlice(mockSet, mockGet, {} as any);
+    state = { ...state, ...slice };
+    return { get: () => state };
+  };
+
+  it("starts with no favorites", () => {
+    const { get } = setup();
+    expect(get().favoriteModels.size).toBe(0);
+  });
+
+  it("adds a model on first toggle and removes it on the second", () => {
+    const { get } = setup();
+    get().toggleFavoriteModel("gpt-4o");
+    expect(get().favoriteModels.has("gpt-4o")).toBe(true);
+    get().toggleFavoriteModel("gpt-4o");
+    expect(get().favoriteModels.has("gpt-4o")).toBe(false);
+  });
+
+  it("persists favorites to storage on toggle", () => {
+    const { get } = setup();
+    get().toggleFavoriteModel("claude-sonnet");
+    expect(storageSet).toHaveBeenCalledWith("favoriteModels", ["claude-sonnet"]);
   });
 });

@@ -20,7 +20,7 @@ import type { BrowserWindow, IpcMainEvent } from "electron";
 import type { Database } from "better-sqlite3";
 import { registerIpcOn } from "./registry";
 import { getCachedConfig } from "../lib/config-cache";
-import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
+import { isLocalEndpoint, normaliseBaseUrl, buildApiUrl } from "../lib/llm";
 import { newId } from "../db/utils";
 import * as q from "../db/queries";
 import * as builder from "../lib/tool-builder";
@@ -78,7 +78,7 @@ async function callModel(
 ): Promise<OpenAIMessage> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
-  const res = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const res = await fetch(buildApiUrl(config.baseUrl, "chat/completions"), {
     method: "POST",
     headers,
     signal,

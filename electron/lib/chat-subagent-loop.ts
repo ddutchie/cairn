@@ -20,7 +20,7 @@
 
 import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
-import type { OpenAIMessage } from "./llm";
+import { buildApiUrl, type OpenAIMessage } from "./llm";
 import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
 import { parseToolArgs } from "./parse-tool-args";
@@ -338,7 +338,7 @@ async function forceFinalAnswer(
   if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
 
   try {
-    const response = await fetch(`${cfg.baseUrl}/v1/chat/completions`, {
+    const response = await fetch(buildApiUrl(cfg.baseUrl, "chat/completions"), {
       method: "POST",
       headers,
       signal,
@@ -443,7 +443,7 @@ export async function runDispatchLoop(
 
     let response: Response;
     try {
-      response = await fetch(`${cfg.baseUrl}/v1/chat/completions`, {
+      response = await fetch(buildApiUrl(cfg.baseUrl, "chat/completions"), {
         method: "POST",
         headers,
         signal,
