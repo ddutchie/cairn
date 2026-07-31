@@ -16,10 +16,12 @@ import {
   NoteFileData as NoteData,
   writeNoteFile,
   deleteNoteFile,
+  hardDeleteNoteFile,
   deleteProjectNotesDir,
   renameProjectNotesDir,
   parseNoteFile,
   pruneEmptyDirsUpTo,
+  setPathRemover,
   CAIRN_FRONTMATTER_KEYS
 } from "./shared/notes-io";
 
@@ -35,10 +37,12 @@ export {
   NoteData,
   writeNoteFile,
   deleteNoteFile,
+  hardDeleteNoteFile,
   deleteProjectNotesDir,
   renameProjectNotesDir,
   parseNoteFile,
-  pruneEmptyDirsUpTo
+  pruneEmptyDirsUpTo,
+  setPathRemover
 };
 
 

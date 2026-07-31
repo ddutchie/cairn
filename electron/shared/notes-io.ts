@@ -9,6 +9,58 @@ import fs from "fs";
 import matter from "gray-matter";
 import { toSlug } from "./text-utils";
 
+// ── Pluggable path removal (OS trash vs hard delete) ──────────────────────
+//
+// User-initiated note/project deletes should go to the OS trash/recycle bin so
+// they can be restored from Finder/Explorer. Electron exposes `shell.trashItem`
+// for this, but it is a main-process-only, async API — and this module is also
+// bundled into the standalone MCP process, which has no Electron `shell`.
+//
+// So we keep the sync fs removal as the default, and let the Electron main
+// process inject a trasher via `setPathRemover`. The trasher MAY be async
+// (shell.trashItem returns a promise); `removePath` returns that promise so
+// callers that need the file to actually be gone before continuing (e.g. the
+// move-to-project source cleanup) can await it. Fire-and-forget callers can
+// ignore the return — the DB row is already deleted, so the file-watcher can't
+// misread the removal as data loss.
+export type PathRemover = (targetPath: string, opts: { recursive: boolean }) => void | Promise<void>;
+
+const hardRemove = (targetPath: string, opts: { recursive: boolean }): void => {
+  if (opts.recursive) {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+  } else {
+    fs.unlinkSync(targetPath);
+  }
+};
+
+let pathRemover: PathRemover = hardRemove;
+
+/**
+ * Override how deleted note files/folders are removed from disk. The Electron
+ * main process injects an OS-trash implementation (shell.trashItem) so deletes
+ * are recoverable. Pass no argument to reset to a hard fs delete (used by the
+ * MCP process, which has no Electron shell).
+ */
+export function setPathRemover(remover?: PathRemover): void {
+  pathRemover = remover ?? hardRemove;
+}
+
+/** Remove a file or folder using the active remover; falls back to a hard
+ *  delete if the remover throws (e.g. trashItem unavailable on a headless box).
+ *  Returns a promise that resolves once removal is complete (the remover may be
+ *  async), so callers that must not race a follow-up can await it. */
+function removePath(targetPath: string, opts: { recursive: boolean }): Promise<void> {
+  if (!fs.existsSync(targetPath)) return Promise.resolve();
+  try {
+    return Promise.resolve(pathRemover(targetPath, opts)).catch(() => {
+      try { hardRemove(targetPath, opts); } catch { /* ignore */ }
+    });
+  } catch {
+    try { hardRemove(targetPath, opts); } catch { /* ignore */ }
+    return Promise.resolve();
+  }
+}
+
 // ── Cairn-owned frontmatter keys ──────────────
 // Only these keys are managed by Cairn. All other frontmatter fields
 // (Obsidian tags, aliases, cssclass, date, publish, etc.) are preserved
@@ -395,7 +447,7 @@ export function deleteNoteFile(
 ): void {
   const fp = findNoteFilePath(workspacePath, projectName, noteId);
   if (fp) {
-    try { fs.unlinkSync(fp); } catch { /* ignore */ }
+    removePath(fp, { recursive: false });
     // Deleting the last note in a subfolder empties it — prune the vacated
     // folder(s), stopping at the project root.
     pruneEmptyDirsUpTo(path.dirname(fp), projectNotesDir(workspacePath, projectName));
@@ -403,17 +455,48 @@ export function deleteNoteFile(
 }
 
 /**
+ * Synchronously HARD-delete a note's .md file (bypassing the OS-trash remover).
+ *
+ * Use for internal bookkeeping deletes that are not user "delete" actions — e.g.
+ * removing the stale copy of a note in its OLD project folder after a
+ * move-to-project. Such a file is a duplicate, not a deletion, so it must NOT
+ * land in the user's Trash; and it must be gone before the handler returns, or
+ * the file-watcher could re-import it into the old project (an async trasher
+ * would race that). A synchronous fs delete guarantees both.
+ */
+export function hardDeleteNoteFile(
+  workspacePath: string,
+  projectName: string,
+  noteId: string,
+): void {
+  const fp = findNoteFilePath(workspacePath, projectName, noteId);
+  if (fp && fs.existsSync(fp)) {
+    try { fs.unlinkSync(fp); } catch { /* ignore */ }
+    pruneEmptyDirsUpTo(path.dirname(fp), projectNotesDir(workspacePath, projectName));
+  }
+}
+
+/**
  * Delete the entire project notes folder (and all .md files inside it).
  * Called when a project is deleted.
+ *
+ * IMPORTANT: the on-disk folder is keyed by the project NAME slug, not the
+ * project id, and project names are not unique. If another project still
+ * shares this slug, deleting the folder would destroy that surviving
+ * project's .md files (data loss). Pass `otherProjectNames` — the names of
+ * every project that still exists AFTER this one is removed from the DB — so
+ * we can skip the delete when a sibling still occupies the same folder.
  */
 export function deleteProjectNotesDir(
   workspacePath: string,
   projectName: string,
+  otherProjectNames: string[] = [],
 ): void {
+  const slug = toSlug(projectName);
+  // Guard: never remove a folder that a surviving same-slug project depends on.
+  if (otherProjectNames.some((n) => toSlug(n) === slug)) return;
   const dir = projectNotesDir(workspacePath, projectName);
-  if (fs.existsSync(dir)) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
-  }
+  removePath(dir, { recursive: true });
 }
 
 /**

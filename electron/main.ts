@@ -28,7 +28,7 @@ import { registerGitHandlers } from "./ipc/git";
 import { registerPiAgentHandler } from "./ipc/pi-agent";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
-import { syncNotesFromDisk, writeNoteFile, deleteNoteFile } from "./notes-files";
+import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
 import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies } from "./db/queries";
 import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
@@ -220,6 +220,16 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(async () => {
   const outDir = path.join(__dirname, "../out");
   setupProtocol(outDir);
+
+  // Route deleted note files/folders to the OS trash (Finder/Explorer) so a
+  // user can restore them, instead of a permanent fs delete. shell.trashItem is
+  // async + main-process-only; we fire-and-forget (the DB row is already gone)
+  // and fall back to a hard delete if trashing fails (e.g. no desktop trash).
+  setPathRemover((targetPath) => {
+    shell.trashItem(targetPath).catch(() => {
+      try { fs.rmSync(targetPath, { recursive: true, force: true }); } catch { /* ignore */ }
+    });
+  });
 
   const userDataPath = app.getPath("userData");
 

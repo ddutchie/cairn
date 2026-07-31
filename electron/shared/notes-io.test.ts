@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { writeNoteFile, type NoteFileData } from "./notes-io";
+import { writeNoteFile, deleteProjectNotesDir, deleteNoteFile, hardDeleteNoteFile, setPathRemover, type NoteFileData, type PathRemover } from "./notes-io";
 
 let tmpDir: string;
 
@@ -169,5 +169,156 @@ describe("writeNoteFile write strategy", () => {
       expect(contents).toContain("Hello body.");
       expect(contents).toContain("c1");
     }
+  });
+});
+
+/**
+ * Regression tests for the project-delete data-loss bug.
+ *
+ * Project note folders on disk are keyed by the project NAME slug, not the id,
+ * and project names are NOT unique. So two projects sharing a name (e.g. a
+ * duplicate "Personal" created by a timed-out+retried request) share one
+ * folder. Deleting one used to `fs.rmSync` the shared folder unconditionally,
+ * destroying the survivor's .md files. deleteProjectNotesDir must skip the
+ * delete when a surviving project still occupies the same slug.
+ */
+describe("deleteProjectNotesDir slug-collision guard", () => {
+  it("removes the folder when no other project shares the slug", () => {
+    const dir = path.join(tmpDir, "Personal");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "note.md"), "keep me");
+
+    deleteProjectNotesDir(tmpDir, "Personal", []);
+
+    expect(fs.existsSync(dir)).toBe(false);
+  });
+
+  it("does NOT remove the folder when a surviving project shares the slug", () => {
+    const dir = path.join(tmpDir, "Personal");
+    fs.mkdirSync(dir, { recursive: true });
+    const fp = path.join(dir, "note.md");
+    fs.writeFileSync(fp, "another project's data");
+
+    // A same-named duplicate still exists → the shared folder must be preserved.
+    deleteProjectNotesDir(tmpDir, "Personal", ["Personal"]);
+
+    expect(fs.existsSync(fp)).toBe(true);
+    expect(fs.readFileSync(fp, "utf-8")).toBe("another project's data");
+  });
+
+  it("guards on the slug, not the exact name (spacing variants collide)", () => {
+    // "My  Project" (double space) and "My Project" both slugify to "My Project".
+    const dir = path.join(tmpDir, "My Project");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "note.md"), "data");
+
+    deleteProjectNotesDir(tmpDir, "My Project", ["My  Project"]);
+
+    expect(fs.existsSync(dir)).toBe(true);
+  });
+
+  it("is a no-op when the folder does not exist", () => {
+    expect(() => deleteProjectNotesDir(tmpDir, "Nonexistent", [])).not.toThrow();
+  });
+});
+
+/**
+ * The Electron main process routes deletes to the OS trash via setPathRemover
+ * (shell.trashItem) so notes/projects are restorable. The MCP process (no
+ * Electron shell) keeps the default hard fs delete. These tests verify the
+ * injection point without depending on a real desktop trash.
+ */
+describe("setPathRemover — pluggable trash vs hard delete", () => {
+  afterEach(() => setPathRemover()); // always reset to the fs default
+
+  it("routes note-file deletes through the injected remover", () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+    expect(fs.existsSync(fp)).toBe(true);
+
+    const trashed: string[] = [];
+    const remover: PathRemover = (target) => { trashed.push(target); };
+    setPathRemover(remover);
+
+    deleteNoteFile(tmpDir, BASE.projectName!, BASE.id);
+
+    // The injected remover was called with the note's path; because our fake
+    // remover doesn't actually delete, the file is still on disk (proving the
+    // hard fs.unlinkSync no longer runs directly).
+    expect(trashed).toEqual([fp]);
+    expect(fs.existsSync(fp)).toBe(true);
+  });
+
+  it("routes project-folder deletes through the injected remover", () => {
+    const dir = path.join(tmpDir, "My Project");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "note.md"), "data");
+
+    const trashed: string[] = [];
+    setPathRemover((target) => { trashed.push(target); });
+
+    deleteProjectNotesDir(tmpDir, "My Project", []);
+
+    expect(trashed).toEqual([dir]);
+    expect(fs.existsSync(dir)).toBe(true); // fake remover didn't delete
+  });
+
+  it("falls back to a hard delete when the remover throws", () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+
+    setPathRemover(() => { throw new Error("trash unavailable"); });
+
+    deleteNoteFile(tmpDir, BASE.projectName!, BASE.id);
+
+    // Fallback fs delete ran → file is gone despite the trasher failing.
+    expect(fs.existsSync(fp)).toBe(false);
+  });
+
+  it("hard-deletes by default (MCP process, no shell injected)", () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+
+    // No setPathRemover call → default hardRemove.
+    deleteNoteFile(tmpDir, BASE.projectName!, BASE.id);
+
+    expect(fs.existsSync(fp)).toBe(false);
+  });
+
+  it("falls back to a hard delete when an ASYNC remover rejects", async () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+
+    // Async trasher that rejects (e.g. shell.trashItem unavailable). removePath
+    // wraps it in a promise whose .catch performs the hard-delete fallback.
+    const remover: PathRemover = () => Promise.reject(new Error("no trash"));
+    setPathRemover(remover);
+
+    deleteNoteFile(tmpDir, BASE.projectName!, BASE.id);
+
+    // Removal completes asynchronously — flush the microtask queue, then assert
+    // the fallback fs delete ran.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fs.existsSync(fp)).toBe(false);
+  });
+});
+
+describe("hardDeleteNoteFile — sync delete that bypasses the OS-trash remover", () => {
+  afterEach(() => setPathRemover());
+
+  it("deletes synchronously even when an async trasher is injected", () => {
+    writeNoteFile(tmpDir, BASE);
+    const fp = path.join(tmpDir, "My Project", "My Note.md");
+
+    // An injected (async, fire-and-forget) trasher must NOT be used for the
+    // move-internal cleanup — hardDeleteNoteFile always does a sync fs delete so
+    // the stale old-project copy is gone before the move handler returns.
+    const trashed: string[] = [];
+    setPathRemover((t) => { trashed.push(t); return Promise.resolve(); });
+
+    hardDeleteNoteFile(tmpDir, BASE.projectName!, BASE.id);
+
+    expect(trashed).toEqual([]);            // trasher untouched
+    expect(fs.existsSync(fp)).toBe(false);  // file gone synchronously
   });
 });

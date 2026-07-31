@@ -36,6 +36,8 @@ import { createBoardSlice } from "./slices/board";
 import type { BoardSlice } from "./slices/board";
 import { createTagsSlice } from "./slices/tags";
 import type { TagsSlice } from "./slices/tags";
+import { createCommandsSlice } from "./slices/commands";
+import type { CommandsSlice } from "./slices/commands";
 import { createChatSlice } from "./slices/chat";
 import type { ChatSlice } from "./slices/chat";
 import { createSelectorsSlice } from "./slices/selectors";
@@ -102,6 +104,7 @@ export interface CairnStore
     BoardSlice,
     TagsSlice,
     ChatSlice,
+    CommandsSlice,
     SelectorsSlice,
     GraphSlice,
     CodingAgentsSlice,
@@ -260,6 +263,7 @@ export const useCairnStore = create<CairnStore>()(
     ...createBoardSlice(...a),
     ...createTagsSlice(...a),
     ...createChatSlice(...a),
+    ...createCommandsSlice(...a),
     ...createSelectorsSlice(...a),
     ...createGraphSlice(...a),
     ...createCodingAgentsSlice(...a),
@@ -515,6 +519,28 @@ export const useCairnStore = create<CairnStore>()(
               return valid ? saved : (snap.projects?.[0]?.id ?? null);
             })(),
       });
+
+      // Chat threads/messages live in SQLite (write path in the chat slice) but
+      // aren't in the snapshot above. On the initial hydrate, read them back so
+      // conversations survive restarts + app updates — Chromium localStorage
+      // (the only other copy) can be cleared or relocated by an update. On a
+      // refresh hydrate we skip this to avoid clobbering in-flight chat state.
+      if (!isRefresh) {
+        const wsId = get().activeWorkspaceId;
+        if (wsId) {
+          void get().loadChatFromDb(wsId);
+        }
+      }
+
+      // Workspace-global slash commands live in SQLite (command:* IPC) and aren't
+      // in the snapshot. Refetch on every hydrate (cheap) so commands created in
+      // another window / after a workspace switch stay in sync.
+      {
+        const wsId = get().activeWorkspaceId;
+        if (wsId) {
+          void get().fetchCommands(wsId);
+        }
+      }
     },
 
     persist() {

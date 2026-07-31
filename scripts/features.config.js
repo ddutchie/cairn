@@ -243,6 +243,19 @@ const FEATURES = [
       "Stays Compatible: Your Obsidian properties (tags, aliases, cssclasses, custom fields) are preserved on every save, and `.obsidian`, `.git`, and attachment folders are skipped.",
     ],
   },
+  {
+    id: "v2.5.18-custom-commands",
+    version: "v2.5.18",
+    title: "Custom Slash Commands",
+    category: "AI & Chat",
+    description: "Create your own slash commands for the chat and coding-agent inputs — and see every built-in documented in one place — from the new Settings → Commands page.",
+    highlights: [
+      "Make Your Own: Give a command a name, a description, and the text it inserts, then trigger it by typing `/` in any chat or agent input.",
+      "Scoped Where You Want: Choose whether each command shows in the AI chat panel, the coding-agent input, or both.",
+      "Built-ins, Documented: Every command that ships with Cairn is now listed in one place — and a custom command with the same name overrides what a built-in inserts.",
+      "Browse Community: Install ready-made commands from the cairn-community registry with one click, then tweak them to taste.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

@@ -867,7 +867,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
           <div
             className="absolute top-0 inset-x-0 z-10 flex items-center gap-2 px-4 py-1.5 text-xs"
             style={{
-              background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+              background: "color-mix(in srgb, var(--accent) 12%, var(--background))",
               borderBottom: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
               color: "var(--accent)",
             }}
@@ -885,7 +885,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
           <div
             className="absolute top-0 inset-x-0 z-10 flex items-center gap-2 px-4 py-1.5 text-xs animate-fade-in"
             style={{
-              background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+              background: "color-mix(in srgb, var(--accent) 12%, var(--background))",
               borderBottom: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
               color: "var(--accent)",
             }}

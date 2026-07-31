@@ -53,9 +53,14 @@ interface RegistryServiceEntry extends RegistryEntryMeta {
     enabled: boolean;
   };
 }
+interface RegistryCommandEntry extends RegistryEntryMeta {
+  definition: {
+    name: string; description?: string; insertText: string; scope: "chat" | "agent" | "both";
+  };
+}
 interface CommunityManifest {
   version: number; updatedAt: string;
-  mcpServers: RegistryMcpEntry[]; services: RegistryServiceEntry[];
+  mcpServers: RegistryMcpEntry[]; services: RegistryServiceEntry[]; commands: RegistryCommandEntry[];
 }
 interface RegistryFetchResult {
   manifest: CommunityManifest; fromCache: boolean; cachedAt?: string; error?: string;
@@ -209,6 +214,14 @@ const api = {
     create: (args: unknown) => invoke("db:tag:create", args),
     update: (id: string, patch: unknown) => invoke("db:tag:update", { id, patch }),
     delete: (id: string) => invoke("db:tag:delete", { id }),
+  },
+
+  // ── Slash commands ───────────────────────────
+  command: {
+    list:   (workspaceId?: string) => invoke("db:command:list", { workspaceId }),
+    create: (args: unknown) => invoke("db:command:create", args),
+    update: (id: string, patch: unknown) => invoke("db:command:update", { id, patch }),
+    delete: (id: string) => invoke("db:command:delete", { id }),
   },
 
   // ── Chat ─────────────────────────────────────

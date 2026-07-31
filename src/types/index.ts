@@ -12,6 +12,33 @@ export interface Tag {
   workspaceId: ID;
 }
 
+// ── Slash commands ────────────────────────────
+/** Which input pane(s) a slash command appears in. */
+export type SlashCommandScope = "chat" | "agent" | "both";
+
+/** Where a slash command came from. Built-ins are code constants, not rows. */
+export type SlashCommandSource = "builtin" | "custom" | "community";
+
+/**
+ * A workspace-global, user-defined (or community-installed) slash command.
+ * Persisted in the `slash_commands` table. Built-in commands are represented at
+ * runtime with the same shape (source: "builtin") but are NOT stored in the DB.
+ */
+export interface CustomSlashCommand {
+  id: ID;
+  workspaceId: ID;
+  name: string;
+  description: string;
+  /** Text inserted into the input when the command is chosen. */
+  insertText: string;
+  scope: SlashCommandScope;
+  source: SlashCommandSource;
+  /** Provenance link back to a cairn-community manifest entry, if installed. */
+  communityId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Workspace ─────────────────────────────────
 export interface Workspace {
   id: ID;
@@ -321,12 +348,26 @@ export interface RegistryServiceEntry extends RegistryEntryMeta {
   definition: RegistryServiceDefinition;
 }
 
+/** The install-relevant subset of a community slash command. */
+export interface RegistryCommandDefinition {
+  name: string;
+  description?: string;
+  insertText: string;
+  scope: SlashCommandScope;
+}
+
+export interface RegistryCommandEntry extends RegistryEntryMeta {
+  definition: RegistryCommandDefinition;
+}
+
 /** The parsed cairn-community manifest. */
 export interface CommunityManifest {
   version: number;
   updatedAt: string;
   mcpServers: RegistryMcpEntry[];
   services: RegistryServiceEntry[];
+  /** Community slash commands (manifest v2+). Empty on older manifests. */
+  commands: RegistryCommandEntry[];
 }
 
 /** Result of a registry fetch — the manifest plus cache provenance. */
@@ -640,6 +681,7 @@ export type SettingsSection =
   | "embeddings"
   | "agents"
   | "tools"
+  | "commands"
   | "mobile"
   | "sync"
   | "data"
