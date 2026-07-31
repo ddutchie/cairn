@@ -26,9 +26,15 @@ export function normaliseBaseUrl(raw: string): string {
  *   - "https://api.openai.com"                → ".../v1/chat/completions"
  *   - "https://api.openai.com/v1"             → ".../v1/chat/completions"
  *   - "https://api-gateway.merge.dev/v1/openai" → ".../v1/openai/chat/completions"
+ *
+ * Any query string or fragment on the base URL is preserved and re-appended
+ * AFTER the path (e.g. "https://host/v1?token=x" → ".../v1/chat/completions?token=x").
  */
 export function buildApiUrl(baseUrl: string, path: string): string {
-  const base = baseUrl.replace(/\/+$/, "");
+  // Peel off any ?query / #fragment so it doesn't land in the middle of the path.
+  const suffixStart = baseUrl.search(/[?#]/);
+  const suffix = suffixStart === -1 ? "" : baseUrl.slice(suffixStart);
+  const base = (suffixStart === -1 ? baseUrl : baseUrl.slice(0, suffixStart)).replace(/\/+$/, "");
   const cleanPath = path.replace(/^\/+/, "");
   let pathname: string;
   try {
@@ -37,7 +43,8 @@ export function buildApiUrl(baseUrl: string, path: string): string {
     pathname = base;
   }
   const hasVersion = /(^|\/)v\d+(\/|$)/.test(pathname);
-  return hasVersion ? `${base}/${cleanPath}` : `${base}/v1/${cleanPath}`;
+  const endpoint = hasVersion ? `${base}/${cleanPath}` : `${base}/v1/${cleanPath}`;
+  return `${endpoint}${suffix}`;
 }
 
 /** Returns true if the given base URL points to a local server. */

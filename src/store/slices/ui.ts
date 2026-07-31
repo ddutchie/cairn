@@ -146,17 +146,24 @@ export async function migrateLlmKeysToKeychain(
   ai: AIConfig,
   agent: AgentConfig,
 ): Promise<{ ai: AIConfig; agent: AgentConfig; changed: boolean }> {
-  const secrets = typeof window !== "undefined" ? window.electron?.secrets : undefined;
-  if (!secrets) return { ai, agent, changed: false };
-
   let changed = false;
 
-  // 1. Saved providers: convert each provider's raw key to a keychain ref.
-  //    Also de-duplicate by id up front so a corrupted/doubled persisted list
-  //    self-heals on hydration (duplicate ids → duplicate React keys downstream).
+  // De-duplicate the saved-provider list by id up front, BEFORE the secrets
+  // check below. A corrupted/doubled persisted list (→ duplicate React keys)
+  // must self-heal on hydration even when the keychain bridge is unavailable
+  // (web build, or Electron without the secrets API).
   const rawProviders = ai.savedProviders ?? [];
-  const providers = dedupeProviders(rawProviders);
-  if (providers.length !== rawProviders.length) changed = true;
+  const dedupedProviders = dedupeProviders(rawProviders);
+  if (dedupedProviders.length !== rawProviders.length) {
+    changed = true;
+    ai = { ...ai, savedProviders: dedupedProviders };
+  }
+
+  const secrets = typeof window !== "undefined" ? window.electron?.secrets : undefined;
+  if (!secrets) return { ai, agent, changed };
+
+  // 1. Saved providers: convert each provider's raw key to a keychain ref.
+  const providers = dedupedProviders;
   const migratedProviders: SavedProvider[] = [];
   for (const p of providers) {
     if (p.apiKey && !isKeyRef(p.apiKey)) {

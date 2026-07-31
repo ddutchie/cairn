@@ -61,4 +61,23 @@ describe("buildApiUrl", () => {
   it("tolerates a base URL without a scheme", () => {
     expect(buildApiUrl("api.openai.com", "models")).toBe("api.openai.com/v1/models");
   });
+
+  it("preserves a query string, re-appending it after the path", () => {
+    expect(buildApiUrl("https://api.example.com?token=abc", "chat/completions")).toBe(
+      "https://api.example.com/v1/chat/completions?token=abc",
+    );
+    // Query on a base that already has a /v1 segment must not add another /v1.
+    expect(buildApiUrl("https://api.example.com/v1?token=abc", "models")).toBe(
+      "https://api.example.com/v1/models?token=abc",
+    );
+  });
+
+  it("preserves a fragment, re-appending it after the path", () => {
+    expect(buildApiUrl("https://api.example.com/v1/openai#frag", "chat/completions")).toBe(
+      "https://api.example.com/v1/openai/chat/completions#frag",
+    );
+    expect(buildApiUrl("https://api.example.com#frag", "models")).toBe(
+      "https://api.example.com/v1/models#frag",
+    );
+  });
 });
