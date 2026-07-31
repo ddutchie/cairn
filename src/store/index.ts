@@ -515,6 +515,18 @@ export const useCairnStore = create<CairnStore>()(
               return valid ? saved : (snap.projects?.[0]?.id ?? null);
             })(),
       });
+
+      // Chat threads/messages live in SQLite (write path in the chat slice) but
+      // aren't in the snapshot above. On the initial hydrate, read them back so
+      // conversations survive restarts + app updates — Chromium localStorage
+      // (the only other copy) can be cleared or relocated by an update. On a
+      // refresh hydrate we skip this to avoid clobbering in-flight chat state.
+      if (!isRefresh) {
+        const wsId = get().activeWorkspaceId;
+        if (wsId) {
+          void get().loadChatFromDb(wsId);
+        }
+      }
     },
 
     persist() {

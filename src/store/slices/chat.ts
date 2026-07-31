@@ -6,6 +6,8 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ChatThread, ChatMessage, ChatToolCallRecord, PendingAction, ID, TokenBreakdown } from "@/types";
 import { id, now } from "@/lib/utils";
+import { storage } from "@/lib/storage";
+import { ACTIVE_CHAT_THREAD_KEY } from "@/lib/constants";
 import { ipc, ipcAwait, ipcAwaitResult } from "../ipc";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
@@ -17,6 +19,7 @@ export interface ChatSlice {
 
   getOrCreateThread: (workspaceId: ID, projectId?: ID) => ChatThread;
   setActiveChatThreadId: (threadId: string | null) => void;
+  loadChatFromDb: (workspaceId: ID) => Promise<void>;
   addMessage: (
     threadId: ID,
     role: ChatMessage["role"],
@@ -54,6 +57,69 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
 
   setActiveChatThreadId(threadId) {
     set({ activeChatThreadId: threadId });
+    // Persist so the last-active thread is restored across restarts. SQLite is
+    // the durable source of truth for the threads themselves (see loadChatFromDb);
+    // this pointer just remembers which one to re-select.
+    if (threadId) storage.set(ACTIVE_CHAT_THREAD_KEY, threadId);
+    else storage.delete(ACTIVE_CHAT_THREAD_KEY);
+  },
+
+  /**
+   * Load chat threads (and their messages) from SQLite into the store, then
+   * restore the last-active thread pointer. SQLite — not localStorage — is the
+   * durable store: an app update can clear/relocate Chromium localStorage, but
+   * every thread + message is written to SQLite on create/send. This re-reads
+   * them so conversations survive restarts and updates.
+   *
+   * Threads/messages already in memory (e.g. an in-flight message not yet
+   * flushed, or a just-created empty thread) win over the DB copy so we never
+   * clobber optimistic state.
+   */
+  async loadChatFromDb(workspaceId) {
+    const threadsRes = await ipcAwaitResult<ChatThread[]>(
+      (e) => e.chat.threads(workspaceId) as Promise<{ data: ChatThread[] } | { error: string }>
+    );
+    if (!("data" in threadsRes) || !Array.isArray(threadsRes.data)) return;
+    const dbThreads = threadsRes.data;
+
+    // Pull messages for every thread in parallel.
+    const messageLists = await Promise.all(
+      dbThreads.map(async (t) => {
+        const res = await ipcAwaitResult<ChatMessage[]>(
+          (e) => e.chat.messages(t.id) as Promise<{ data: ChatMessage[] } | { error: string }>
+        );
+        return "data" in res && Array.isArray(res.data) ? res.data : [];
+      })
+    );
+    const dbMessages = messageLists.flat();
+
+    set((s) => {
+      // Merge threads: keep any in-memory thread not yet in the DB; otherwise
+      // take the DB row (it's the persisted truth).
+      const dbThreadIds = new Set(dbThreads.map((t) => t.id));
+      const mergedThreads = [
+        ...dbThreads,
+        ...s.chatThreads.filter((t) => !dbThreadIds.has(t.id)),
+      ];
+
+      // Merge messages the same way, keyed by message id — in-memory copies of
+      // messages the DB doesn't have yet (e.g. mid-flush) are preserved.
+      const dbMsgIds = new Set(dbMessages.map((m) => m.id));
+      const mergedMessages = [
+        ...dbMessages,
+        ...s.chatMessages.filter((m) => !dbMsgIds.has(m.id)),
+      ];
+
+      return { chatThreads: mergedThreads, chatMessages: mergedMessages };
+    });
+    get().persist();
+
+    // Restore the last-active thread if it still exists; otherwise leave it for
+    // the UI's getOrCreateThread to pick a scoped thread.
+    const saved = storage.get<string>(ACTIVE_CHAT_THREAD_KEY);
+    if (saved && get().chatThreads.some((t) => t.id === saved)) {
+      set({ activeChatThreadId: saved });
+    }
   },
 
   getOrCreateThread(workspaceId, projectId) {

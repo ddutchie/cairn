@@ -689,6 +689,9 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       activePreviewItem: null,
   lastContentView: "overview",
     });
+    // Pull this workspace's chat threads/messages from SQLite (the durable
+    // store) so switching workspaces surfaces their conversations.
+    get().loadChatFromDb?.(wsId);
   },
 
   setActiveProject(projId) {

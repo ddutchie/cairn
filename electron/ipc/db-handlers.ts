@@ -168,7 +168,11 @@ export function registerDbHandlers(ctx: DbContext): void {
     // Delete from DB first so if it fails, the .md files are still intact for recovery.
     q.deleteProject(ctx.db, id);
     if (project) {
-      deleteProjectNotesDir(ctx.workspacePath, project.name);
+      // The notes folder is keyed by the project NAME slug, not the id, and
+      // names are not unique. Only remove the folder if no surviving project
+      // still shares that slug — otherwise we'd wipe a duplicate's .md files.
+      const survivorNames = q.getProjects(ctx.db).map((p) => p.name);
+      deleteProjectNotesDir(ctx.workspacePath, project.name, survivorNames);
     }
   }));
 
@@ -204,9 +208,11 @@ export function registerDbHandlers(ctx: DbContext): void {
             }
           }
           // Remove the source project's on-disk folder (now that its notes have
-          // been rewritten under the target). Best-effort.
+          // been rewritten under the target). Best-effort, and only when no
+          // surviving project still shares the source name's slug.
           try {
-            deleteProjectNotesDir(ctx.workspacePath, result.sourceName);
+            const survivorNames = q.getProjects(ctx.db).map((p) => p.name);
+            deleteProjectNotesDir(ctx.workspacePath, result.sourceName, survivorNames);
           } catch (e) {
             console.warn("[merge] failed to remove source project folder:", e instanceof Error ? e.message : e);
           }

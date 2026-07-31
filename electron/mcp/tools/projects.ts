@@ -1,13 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import path from "path";
-import fs from "fs";
 import Database from "better-sqlite3";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
 import { DEFAULT_COLUMNS } from "../../db/defaults";
 import { Snapshot, insertNotification } from "../db";
-import { toSlug } from "../../shared/text-utils";
-import { renameProjectNotesDir } from "../../shared/notes-io";
+import { renameProjectNotesDir, deleteProjectNotesDir } from "../../shared/notes-io";
 
 export function upsert_project(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
   if (args.projectId) {
@@ -62,12 +59,13 @@ export function upsert_project(db: Database.Database, snap: Snapshot, workspaceP
 export function delete_project(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
   const project = snap.projects.find((p) => p.id === args.projectId);
   if (!project) return { error: "Project not found" };
-  // Delete notes dir
-  const notesDir = path.join(workspacePath, toSlug(project.name));
-  if (fs.existsSync(notesDir)) {
-    try { fs.rmSync(notesDir, { recursive: true, force: true }); } catch { /* ignore */ }
-  }
+  // Delete the DB rows first, then remove the notes folder — but only if no
+  // surviving project still shares this name's slug. The folder is keyed by
+  // the project NAME slug (not the id) and names are not unique, so blindly
+  // deleting it would destroy a same-named duplicate's .md files (data loss).
   q.deleteProject(db, args.projectId as string);
+  const survivorNames = q.getProjects(db).map((p) => p.name);
+  deleteProjectNotesDir(workspacePath, project.name, survivorNames);
   insertNotification(db, "delete_project", "Project deleted", `"${project.name}" was deleted`);
   return { deleted: true, id: args.projectId, name: project.name };
 }

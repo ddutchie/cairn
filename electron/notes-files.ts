@@ -20,6 +20,7 @@ import {
   renameProjectNotesDir,
   parseNoteFile,
   pruneEmptyDirsUpTo,
+  setPathRemover,
   CAIRN_FRONTMATTER_KEYS
 } from "./shared/notes-io";
 
@@ -38,7 +39,8 @@ export {
   deleteProjectNotesDir,
   renameProjectNotesDir,
   parseNoteFile,
-  pruneEmptyDirsUpTo
+  pruneEmptyDirsUpTo,
+  setPathRemover
 };
 
 

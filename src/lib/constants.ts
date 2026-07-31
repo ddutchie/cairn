@@ -128,6 +128,9 @@ export const AGENT_CONFIG_KEY = "agent-config";
 /** localStorage key for the last active project ID. */
 export const ACTIVE_PROJECT_KEY = "active-project";
 
+/** localStorage key for the last active chat thread ID (restored on restart). */
+export const ACTIVE_CHAT_THREAD_KEY = "active-chat-thread";
+
 /** localStorage key for the persisted chat panel width (px). */
 export const CHAT_PANEL_WIDTH_KEY = "chatPanelWidth";
 

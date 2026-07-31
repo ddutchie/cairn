@@ -85,7 +85,13 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   const [toolCalls, setToolCalls]               = useState<ChatToolCall[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingThought, setStreamingThought] = useState("");
-  const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[] | null>(null);
+  // Pending questions are tagged with the thread they arrived on. The chat
+  // panel + this hook are a single persistent instance that switches threads by
+  // changing `threadId` (no remount), so a bare array would render under
+  // whatever thread is active. Keying by threadId scopes the form to its own
+  // thread (and restores it if the user switches back).
+  const [pendingQuestionsState, setPendingQuestionsState] =
+    useState<{ threadId: string | null; questions: PendingQuestion[] } | null>(null);
   const [subagents, setSubagents] = useState<ChatSubagent[]>([]);
 
   const threadIdRef  = useRef<string | null>(null);
@@ -98,6 +104,12 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   const subagentsRef = useRef<ChatSubagent[]>([]);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
+
+  // Only surface pending questions that belong to the currently-active thread.
+  const pendingQuestions =
+    pendingQuestionsState && pendingQuestionsState.threadId === threadId
+      ? pendingQuestionsState.questions
+      : null;
 
   useEffect(() => {
     const electron = window.electron;
@@ -115,7 +127,9 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       if (!isForThisThread(e)) return;
       if (e.tool === "ask_questions") {
         const qs = (e.args.questions as PendingQuestion[] | undefined) ?? [];
-        setPendingQuestions(qs);
+        // Tag with the thread these questions arrived for, so the form only
+        // renders in that thread (not whichever thread is active later).
+        setPendingQuestionsState({ threadId: threadIdRef.current, questions: qs });
       } else {
         if (e.tool === "suggest_connections") {
           const incoming = (e.args.actions ?? []) as SuggestedAction[];
@@ -322,7 +336,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     pendingActionsRef.current = [];
     setSubagents([]);
     subagentsRef.current = [];
-    setPendingQuestions(null);
+    setPendingQuestionsState(null);
     if (threadId) {
       setThreadUsage(threadId, undefined);
     }
@@ -344,7 +358,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   }
 
   function clearQuestions() {
-    setPendingQuestions(null);
+    setPendingQuestionsState(null);
   }
 
   return { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions };
