@@ -253,7 +253,7 @@ const FEATURES = [
       "Make Your Own: Give a command a name, a description, and the text it inserts, then trigger it by typing `/` in any chat or agent input.",
       "Scoped Where You Want: Choose whether each command shows in the AI chat panel, the coding-agent input, or both.",
       "Built-ins, Documented: Every command that ships with Cairn is now listed in one place — and a custom command with the same name overrides what a built-in inserts.",
-      "Community Coming: Workspace-global commands persist locally today; browsing and installing commands shared by the community lands in a follow-up.",
+      "Browse Community: Install ready-made commands from the cairn-community registry with one click, then tweak them to taste.",
     ],
   },
 ];

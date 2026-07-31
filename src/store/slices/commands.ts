@@ -10,7 +10,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { CustomSlashCommand, ID, SlashCommandScope } from "@/types";
+import type { CustomSlashCommand, ID, RegistryCommandEntry, SlashCommandScope } from "@/types";
 import { id } from "@/lib/utils";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
@@ -34,6 +34,12 @@ export interface CommandsSlice {
     patch: Partial<Pick<CustomSlashCommand, "name" | "description" | "insertText" | "scope">>
   ) => Promise<void>;
   deleteCommand: (id: ID) => Promise<void>;
+  /**
+   * Install (or update) a command from the cairn-community registry. Re-installs
+   * onto the SAME row when the community entry is already present, so an update
+   * preserves the id instead of creating a duplicate. Returns the row id.
+   */
+  installCommunityCommand: (entry: RegistryCommandEntry) => Promise<ID>;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -98,5 +104,46 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
       console.error("[commands] deleteCommand error", err);
       set({ customCommands: prev });
     }
+  },
+
+  async installCommunityCommand(entry) {
+    if (typeof window === "undefined" || !window.electron?.command) {
+      throw new Error("Unavailable");
+    }
+    const workspaceId = get().activeWorkspaceId;
+    if (!workspaceId) throw new Error("No active workspace");
+
+    const def = entry.definition;
+    // Re-install onto the existing row (by communityId) if already present, so an
+    // update keeps the same id instead of duplicating.
+    const existing = get().customCommands.find(
+      (c) => c.workspaceId === workspaceId && c.communityId === entry.id
+    );
+
+    if (existing) {
+      const saved = (await window.electron.command.update(existing.id, {
+        name: def.name,
+        description: def.description ?? "",
+        insertText: def.insertText,
+        scope: def.scope,
+      })) as CustomSlashCommand;
+      set((s) => ({
+        customCommands: s.customCommands.map((c) => (c.id === existing.id ? saved : c)),
+      }));
+      return existing.id;
+    }
+
+    const saved = (await window.electron.command.create({
+      id: id(),
+      workspaceId,
+      name: def.name,
+      description: def.description ?? "",
+      insertText: def.insertText,
+      scope: def.scope,
+      source: "community",
+      communityId: entry.id,
+    })) as CustomSlashCommand;
+    set((s) => ({ customCommands: [...s.customCommands, saved] }));
+    return saved.id;
   },
 });

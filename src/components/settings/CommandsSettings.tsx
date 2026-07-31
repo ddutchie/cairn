@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, X, Pencil, Check, SlashSquare, Users } from "lucide-react";
+import { Plus, X, Pencil, Check, SlashSquare, Users, Download } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup } from "./shared";
 import { cn } from "@/lib/utils";
 import { ALL_BUILTIN_COMMANDS } from "@/lib/slash-commands";
+import { BrowseCommandsModal } from "./tools/BrowseCommandsModal";
 import type { CustomSlashCommand, SlashCommandScope } from "@/types";
 
 const SCOPE_LABEL: Record<SlashCommandScope, string> = {
@@ -59,6 +60,8 @@ export function CommandsSettings() {
     () => new Set(workspaceCommands.map((c) => c.name)),
     [workspaceCommands]
   );
+
+  const [browseOpen, setBrowseOpen] = useState(false);
 
   return (
     <div className="space-y-6 md:space-y-8">
@@ -125,15 +128,30 @@ export function CommandsSettings() {
         title="Community commands"
         description="Browse and install commands shared by the Cairn community."
       >
-        <div className="flex items-center gap-3 px-3 py-3 rounded-lg bg-[var(--surface-2)] border border-dashed border-[var(--border)]">
+        <div className="flex items-center gap-3 px-3 py-3 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
           <Users size={16} className="text-[var(--text-tertiary)] flex-shrink-0" />
-          <div className="text-xs text-[var(--text-tertiary)]">
-            Browsing and one-click installing community commands from the{" "}
-            <span className="font-mono">cairn-community</span> registry is coming soon. You can
-            already create and share your own commands above.
+          <div className="flex-1 text-xs text-[var(--text-tertiary)]">
+            Install ready-made commands from the{" "}
+            <span className="font-mono">cairn-community</span> registry, then tweak them under
+            Your commands.
           </div>
+          <button
+            type="button"
+            disabled={!activeWorkspaceId}
+            onClick={() => setBrowseOpen(true)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex-shrink-0",
+              activeWorkspaceId
+                ? "bg-[var(--accent)] text-white hover:bg-[color-mix(in_srgb,var(--accent)_90%,black)]"
+                : "bg-[var(--surface)] text-[var(--text-tertiary)] cursor-not-allowed"
+            )}
+          >
+            <Download size={13} /> Browse Community
+          </button>
         </div>
       </SettingsGroup>
+
+      {browseOpen && <BrowseCommandsModal onClose={() => setBrowseOpen(false)} />}
     </div>
   );
 }
