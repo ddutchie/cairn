@@ -774,6 +774,31 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE custom_services ADD COLUMN oauth_config TEXT");
     }
   },
+
+  // v31: User-defined & community slash commands. Workspace-global custom
+  // commands that surface in the chat / agent input palettes. Built-in commands
+  // stay as code constants; only custom + community-installed commands persist
+  // here. `scope` picks which pane(s) show the command; `source` records
+  // provenance ('custom' | 'community'); `community_id` links an installed
+  // command back to its cairn-community manifest entry. Device-local (not synced)
+  // — commands are a workspace-authoring convenience, not user data.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS slash_commands (
+        id           TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        name         TEXT NOT NULL,
+        description  TEXT NOT NULL DEFAULT '',
+        insert_text  TEXT NOT NULL DEFAULT '',
+        scope        TEXT NOT NULL DEFAULT 'both',   -- 'chat' | 'agent' | 'both'
+        source       TEXT NOT NULL DEFAULT 'custom', -- 'custom' | 'community'
+        community_id TEXT,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_slash_commands_workspace ON slash_commands(workspace_id);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

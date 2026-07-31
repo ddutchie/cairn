@@ -651,4 +651,10 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:tag:create", (_e, args: Parameters<typeof q.createTag>[1]) => handle(() => q.createTag(ctx.db, args)));
   registerIpcHandle("db:tag:update", (_e, { id, patch }) => handle(() => q.updateTag(ctx.db, id, patch)));
   registerIpcHandle("db:tag:delete", (_e, { id }) => handle(() => q.deleteTag(ctx.db, id)));
+
+  // ── Slash commands ─────────────────────────────────
+  registerIpcHandle("db:command:list", (_e, { workspaceId }) => handle(() => q.getSlashCommands(ctx.db, workspaceId)));
+  registerIpcHandle("db:command:create", (_e, args: Parameters<typeof q.createSlashCommand>[1]) => handle(() => q.createSlashCommand(ctx.db, args)));
+  registerIpcHandle("db:command:update", (_e, { id, patch }) => handle(() => q.updateSlashCommand(ctx.db, id, patch)));
+  registerIpcHandle("db:command:delete", (_e, { id }) => handle(() => q.deleteSlashCommand(ctx.db, id)));
 }

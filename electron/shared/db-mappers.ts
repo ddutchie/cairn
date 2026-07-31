@@ -233,6 +233,21 @@ export function toTag(row: any) {
   };
 }
 
+export function toSlashCommand(row: any) {
+  return {
+    id: row.id as string,
+    workspaceId: row.workspace_id as string,
+    name: row.name as string,
+    description: (row.description ?? "") as string,
+    insertText: (row.insert_text ?? "") as string,
+    scope: (row.scope ?? "both") as "chat" | "agent" | "both",
+    source: (row.source ?? "custom") as "custom" | "community",
+    communityId: (row.community_id ?? undefined) as string | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
 export function toChatThread(row: any) {
   return {
     id: row.id as string,

@@ -63,6 +63,12 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     const internalRef = useRef<HTMLTextAreaElement>(null);
     const resolvedRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
     const fileInputRef = useRef<HTMLInputElement>(null);
+    // After selecting a command/mention we suppress trigger re-scans for a short
+    // window, otherwise a completed slash command (e.g. "/compact") re-detects the
+    // '/' at index 0 and re-opens the palette — swallowing the follow-up Enter meant
+    // to send. A timestamp (not a one-shot bool) covers the multiple events
+    // (onChange RAF, onKeyUp, onSelect) that fire around a single selection.
+    const suppressTriggerUntilRef = useRef(0);
 
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [activeIndex, setActiveIndex] = useState(0);
@@ -96,6 +102,10 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
     const checkTrigger = () => {
       requestAnimationFrame(() => {
+        // Skip scans briefly after a selection so the palette doesn't immediately reopen.
+        if (Date.now() < suppressTriggerUntilRef.current) {
+          return;
+        }
         const active = getActiveTrigger();
         setTrigger(active);
       });
@@ -158,8 +168,19 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       const before = value.slice(0, trigger.index);
       const after = value.slice(resolvedRef.current?.selectionEnd ?? value.length);
       onChange(before + cmd.insertText + after);
+      // Close the palette and stop trigger scans from reopening it, so a
+      // completed command is ready to send on the next Enter press.
+      suppressTriggerUntilRef.current = Date.now() + 250;
+      setShowSuggestions(false);
       setTrigger(null);
+      const newCursorPos = before.length + cmd.insertText.length;
       resolvedRef.current?.focus();
+      setTimeout(() => {
+        if (resolvedRef.current) {
+          resolvedRef.current.selectionStart = newCursorPos;
+          resolvedRef.current.selectionEnd = newCursorPos;
+        }
+      }, 0);
     };
 
     const handleSelectSuggestion = (item: SuggestionItem) => {
@@ -168,6 +189,8 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       const after = value.slice(resolvedRef.current?.selectionEnd ?? value.length);
       const insertedText = item.type === "file" ? `\`${item.title}\`` : `[[${item.title}]]`;
       onChange(before + insertedText + after);
+      suppressTriggerUntilRef.current = Date.now() + 250;
+      setShowSuggestions(false);
       setTrigger(null);
       resolvedRef.current?.focus();
       const newCursorPos = trigger.index + insertedText.length;

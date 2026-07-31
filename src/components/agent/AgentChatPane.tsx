@@ -8,7 +8,7 @@
  * Multi-turn: each new message continues the same session's history.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
@@ -16,6 +16,7 @@ import type { PendingQuestion } from "@/hooks/useChatStream";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
+import { getCommandsForScope } from "@/lib/slash-commands";
 import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanTaskList } from "./PlanTaskList";
 import { ContextRing } from "./ContextRing";
@@ -83,29 +84,6 @@ function persistPiTranscript(sessionId: string): void {
 }
 
 
-const NATIVE_AGENT_SLASH_COMMANDS = [
-  {
-    name: "compact",
-    description: "Summarise and compact conversation history",
-    insertText: "/compact",
-  },
-  {
-    name: "code-review",
-    description: "Review recent git changes for bugs and style",
-    insertText: "Please run a code review of the recent changes. Run git diff and analyze it.",
-  },
-  {
-    name: "spawn-subagent",
-    description: "Spawn a subagent to work on a task",
-    insertText: '/spawn-subagent task: "write tests for..."',
-  },
-  {
-    name: "test",
-    description: "Run project tests and verify correctness",
-    insertText: "Run the project tests and report if they pass.",
-  },
-];
-
 interface AgentChatPaneProps {
   session: TerminalSession;
   isActive: boolean;
@@ -141,6 +119,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     projects:          s.projects,
     activeWorkspaceId: s.activeWorkspaceId,
   })));
+  const customCommands = useCairnStore((s) => s.customCommands);
+  const agentCommands = useMemo(
+    () => getCommandsForScope("agent", customCommands),
+    [customCommands]
+  );
 
   const messages    = session.piMessages ?? [];
   const project     = projects.find((p) => p.id === session.projectId);
@@ -679,7 +662,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           isLoading={isLoading}
           disabled={isLoading}
           placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
-          commands={NATIVE_AGENT_SLASH_COMMANDS}
+          commands={agentCommands}
           onSearchSuggestions={handleSearchFiles}
         />
         <p className="text-[0.643rem] text-[var(--text-tertiary)] mt-1 text-center">

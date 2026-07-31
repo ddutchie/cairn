@@ -20,6 +20,7 @@ import { ToolCallIndicator } from "./ToolCallIndicator";
 import { QuestionForm } from "./QuestionForm";
 import { ChatInput, SuggestionItem } from "../ChatInput";
 import { ContextRing } from "@/components/agent/ContextRing";
+import { getCommandsForScope } from "@/lib/slash-commands";
 import { cn } from "@/lib/utils";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
@@ -53,29 +54,6 @@ You help users build meaningful connections between their notes, tasks, and proj
 
 Remember: Suggest connections actively. Call \`suggest_connections\` whenever there is even a potential relationship to explore!`;
 
-const CHAT_SLASH_COMMANDS = [
-  {
-    name: "archive-chat",
-    description: "Archive conversation as a note & clear chat",
-    insertText: "/archive-chat",
-  },
-  {
-    name: "compact",
-    description: "Summarise and compact conversation history",
-    insertText: "/compact",
-  },
-  {
-    name: "board",
-    description: "Show all task board columns and cards",
-    insertText: "List the current task board columns and cards.",
-  },
-  {
-    name: "review-note",
-    description: "Ask AI to review a note",
-    insertText: 'Please review my note "[note title]" and suggest improvements.',
-  },
-];
-
 interface ChatPanelProps {
   prefill?: { text: string; autoSend?: boolean } | null;
   onPrefillConsumed?: () => void;
@@ -96,6 +74,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     notes, cards,
     activeChatThreadId, setActiveChatThreadId,
     setActiveProject,
+    customCommands,
   } = useCairnStore(useShallow((s) => ({
     chatOpen:              s.chatOpen,
     activeProjectId:       s.activeProjectId,
@@ -117,12 +96,17 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     activeChatThreadId:    s.activeChatThreadId,
     setActiveChatThreadId: s.setActiveChatThreadId,
     setActiveProject:      s.setActiveProject,
+    customCommands:        s.customCommands,
   })));
 
   // threadId is driven by the store so the tab bar can switch threads externally
   const threadId = activeChatThreadId;
 
   const [input, setInput] = useState("");
+  const chatCommands = useMemo(
+    () => getCommandsForScope("chat", customCommands),
+    [customCommands]
+  );
   const [pendingImages, setPendingImages] = useState<Array<{ name: string; dataUrl: string }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
@@ -649,7 +633,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           isLoading={isLoading}
           disabled={isLoading}
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
-          commands={CHAT_SLASH_COMMANDS}
+          commands={chatCommands}
           suggestions={mentionSuggestions}
           pendingImages={pendingImages}
           onRemoveImage={handleRemoveImage}

@@ -44,6 +44,7 @@ import {
   toColumn,
   toCard,
   toTag,
+  toSlashCommand,
   toChatThread,
   toChatMessage,
   toMcpNotification,
@@ -949,6 +950,75 @@ export function updateTag(db: Database.Database, id: string, patch: { name?: str
 
 export function deleteTag(db: Database.Database, id: string) {
   db.prepare("DELETE FROM tags WHERE id = ?").run(id);
+}
+
+// ── Slash commands ────────────────────────────
+
+export function getSlashCommands(db: Database.Database, workspaceId?: string) {
+  const rows = workspaceId
+    ? db.prepare("SELECT * FROM slash_commands WHERE workspace_id = ? ORDER BY name").all(workspaceId)
+    : db.prepare("SELECT * FROM slash_commands ORDER BY name").all();
+  return rows.map(toSlashCommand);
+}
+
+export function createSlashCommand(db: Database.Database, c: {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description?: string;
+  insertText?: string;
+  scope?: string;
+  source?: string;
+  communityId?: string;
+}) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO slash_commands
+      (id, workspace_id, name, description, insert_text, scope, source, community_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    c.id,
+    c.workspaceId,
+    c.name,
+    c.description ?? "",
+    c.insertText ?? "",
+    c.scope ?? "both",
+    c.source ?? "custom",
+    c.communityId ?? null,
+    now,
+    now
+  );
+  return toSlashCommand(db.prepare("SELECT * FROM slash_commands WHERE id = ?").get(c.id));
+}
+
+export function updateSlashCommand(db: Database.Database, id: string, patch: {
+  name?: string;
+  description?: string;
+  insertText?: string;
+  scope?: string;
+}) {
+  const now = ts();
+  db.prepare(`
+    UPDATE slash_commands SET
+      name        = COALESCE(?, name),
+      description = COALESCE(?, description),
+      insert_text = COALESCE(?, insert_text),
+      scope       = COALESCE(?, scope),
+      updated_at  = ?
+    WHERE id = ?
+  `).run(
+    patch.name ?? null,
+    patch.description ?? null,
+    patch.insertText ?? null,
+    patch.scope ?? null,
+    now,
+    id
+  );
+  return toSlashCommand(db.prepare("SELECT * FROM slash_commands WHERE id = ?").get(id));
+}
+
+export function deleteSlashCommand(db: Database.Database, id: string) {
+  db.prepare("DELETE FROM slash_commands WHERE id = ?").run(id);
 }
 
 // ── Chat ──────────────────────────────────────

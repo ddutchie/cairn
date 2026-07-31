@@ -80,11 +80,27 @@ export interface RegistryServiceEntry extends RegistryEntryMeta {
   };
 }
 
+/**
+ * A community slash command — a reusable prompt/text snippet surfaced in Cairn's
+ * chat and/or agent input palettes. Installed workspace-globally; never executes
+ * code, only inserts `insertText` into the input.
+ */
+export interface RegistryCommandEntry extends RegistryEntryMeta {
+  definition: {
+    name: string;
+    description?: string;
+    insertText: string;
+    scope: "chat" | "agent" | "both";
+  };
+}
+
 export interface CommunityManifest {
   version: number;
   updatedAt: string;
   mcpServers: RegistryMcpEntry[];
   services: RegistryServiceEntry[];
+  /** Community slash commands (manifest v2+). Absent on older manifests. */
+  commands: RegistryCommandEntry[];
 }
 
 // ── validation (mirrors cairn-community/schema.json) ────────────────────────
@@ -187,14 +203,25 @@ const entryMeta = {
 const mcpEntry = z.object({ ...entryMeta, definition: mcpDefinition }).passthrough();
 const serviceEntry = z.object({ ...entryMeta, definition: serviceDefinition }).passthrough();
 
+const commandDefinition = z.object({
+  name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  description: z.string().optional(),
+  insertText: z.string().min(1),
+  scope: z.enum(["chat", "agent", "both"]),
+});
+
+const commandEntry = z.object({ ...entryMeta, definition: commandDefinition }).passthrough();
+
 // Manifest-level shape only validates the envelope; entries are validated
 // individually in parseManifest so ONE bad community entry can't blank the
 // whole catalog (the reject-all behaviour of z.array(z.object(...)) would).
+// `commands` is optional so a pre-v2 manifest (no commands key) still parses.
 const manifestSchema = z.object({
   version: z.number(),
   updatedAt: z.string(),
   mcpServers: z.array(z.unknown()),
   services: z.array(z.unknown()),
+  commands: z.array(z.unknown()).optional(),
 });
 
 /** Parse + validate an unknown payload into a CommunityManifest, or throw. */
@@ -210,6 +237,10 @@ export function parseManifest(raw: unknown): CommunityManifest {
     }),
     services: m.services.flatMap((e) => {
       const r = serviceEntry.safeParse(e);
+      return r.success ? [r.data] : [];
+    }),
+    commands: (m.commands ?? []).flatMap((e) => {
+      const r = commandEntry.safeParse(e);
       return r.success ? [r.data] : [];
     }),
   } as CommunityManifest;

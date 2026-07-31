@@ -58,6 +58,22 @@ const VALID = {
       },
     },
   ],
+  commands: [
+    {
+      id: "command-standup",
+      author: "cairn",
+      version: "1.0.0",
+      category: "Automation",
+      tags: ["standup"],
+      blurb: "Standup update.",
+      definition: {
+        name: "standup",
+        description: "Standup",
+        insertText: "Summarise recent activity.",
+        scope: "chat",
+      },
+    },
+  ],
 };
 
 function fetchResponse(opts: {
@@ -89,6 +105,37 @@ describe("parseManifest", () => {
     const m = parseManifest(VALID);
     expect(m.mcpServers).toHaveLength(1);
     expect(m.services[0].definition.name).toBe("Weather");
+  });
+
+  it("parses community slash commands (manifest v2)", () => {
+    const m = parseManifest(VALID);
+    expect(m.commands).toHaveLength(1);
+    expect(m.commands[0].definition.name).toBe("standup");
+    expect(m.commands[0].definition.scope).toBe("chat");
+  });
+
+  it("tolerates a manifest with no commands key (pre-v2)", () => {
+    const { commands, ...noCommands } = VALID;
+    void commands;
+    const m = parseManifest(noCommands);
+    expect(m.commands).toEqual([]);
+  });
+
+  it("drops a command with an invalid name or scope", () => {
+    const bad = {
+      ...VALID,
+      commands: [
+        { id: "x", author: "a", version: "1.0.0", tags: [], blurb: "b",
+          definition: { name: "Bad Name", insertText: "hi", scope: "chat" } },
+        { id: "y", author: "a", version: "1.0.0", tags: [], blurb: "b",
+          definition: { name: "ok", insertText: "hi", scope: "nope" } },
+        { id: "z", author: "a", version: "1.0.0", tags: [], blurb: "b",
+          definition: { name: "good", insertText: "hi", scope: "both" } },
+      ],
+    };
+    const m = parseManifest(bad);
+    expect(m.commands).toHaveLength(1);
+    expect(m.commands[0].definition.name).toBe("good");
   });
 
   it("drops an entry with a non-https baseUrl (never trusts an insecure URL)", () => {

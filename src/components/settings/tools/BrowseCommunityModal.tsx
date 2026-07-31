@@ -97,7 +97,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
       setResult(r);
     } catch (err) {
       setResult({
-        manifest: { version: 1, updatedAt: "", mcpServers: [], services: [] },
+        manifest: { version: 1, updatedAt: "", mcpServers: [], services: [], commands: [] },
         fromCache: false,
         error: err instanceof Error ? err.message : String(err),
       });
