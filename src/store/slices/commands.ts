@@ -114,11 +114,14 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
     if (!workspaceId) throw new Error("No active workspace");
 
     const def = entry.definition;
-    // Re-install onto the existing row (by communityId) if already present, so an
-    // update keeps the same id instead of duplicating.
-    const existing = get().customCommands.find(
-      (c) => c.workspaceId === workspaceId && c.communityId === entry.id
-    );
+    // Re-install onto an existing row instead of duplicating. Match by
+    // communityId (an update to the same community entry) OR by name (a
+    // pre-existing custom/community command with the same trigger) so a second
+    // install never creates a duplicate /name in the workspace.
+    const commands = get().customCommands.filter((c) => c.workspaceId === workspaceId);
+    const existing =
+      commands.find((c) => c.communityId === entry.id) ??
+      commands.find((c) => c.name === def.name);
 
     if (existing) {
       const saved = (await window.electron.command.update(existing.id, {

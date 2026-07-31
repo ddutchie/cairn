@@ -6,7 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup } from "./shared";
 import { cn } from "@/lib/utils";
-import { ALL_BUILTIN_COMMANDS } from "@/lib/slash-commands";
+import { ALL_BUILTIN_COMMANDS, isReservedCommandName } from "@/lib/slash-commands";
 import { BrowseCommandsModal } from "./tools/BrowseCommandsModal";
 import type { CustomSlashCommand, SlashCommandScope } from "@/types";
 
@@ -180,7 +180,8 @@ function CreateCommandForm({
 
   const cleanName = sanitizeName(name);
   const duplicate = cleanName.length > 0 && existingNames.has(cleanName);
-  const canSubmit = cleanName.length > 0 && insertText.trim().length > 0 && !duplicate;
+  const reserved = cleanName.length > 0 && isReservedCommandName(cleanName);
+  const canSubmit = cleanName.length > 0 && insertText.trim().length > 0 && !duplicate && !reserved;
 
   function reset() {
     setName("");
@@ -224,6 +225,7 @@ function CreateCommandForm({
             reset();
             setOpen(false);
           }}
+          title="Close"
           className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
         >
           <X size={13} />
@@ -245,6 +247,11 @@ function CreateCommandForm({
         {duplicate && (
           <span className="text-[0.643rem] text-[var(--danger)] mt-1 inline-block">
             A command named /{cleanName} already exists.
+          </span>
+        )}
+        {reserved && !duplicate && (
+          <span className="text-[0.643rem] text-[var(--danger)] mt-1 inline-block">
+            /{cleanName} is a reserved built-in command and can&apos;t be overridden.
           </span>
         )}
       </label>

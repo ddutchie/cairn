@@ -41,14 +41,40 @@ export const BUILTIN_AGENT_COMMANDS: BuiltinSlashCommand[] = [
   { name: "test", description: "Run project tests and verify correctness", insertText: "Run the project tests and report if they pass.", scope: "agent" },
 ];
 
-/** All built-ins, for the Settings documentation view. */
-export const ALL_BUILTIN_COMMANDS: BuiltinSlashCommand[] = [
-  ...BUILTIN_CHAT_COMMANDS.map((c) => ({ ...c })),
-  ...BUILTIN_AGENT_COMMANDS.filter((a) => !BUILTIN_CHAT_COMMANDS.some((c) => c.name === a.name)).map((c) => ({ ...c })),
-];
+/**
+ * All built-ins, for the Settings documentation view. A command defined in BOTH
+ * the chat and agent lists (e.g. `/compact`) is merged into a single entry with
+ * a combined `both` scope; chat-only and agent-only commands keep their scope
+ * and metadata.
+ */
+export const ALL_BUILTIN_COMMANDS: BuiltinSlashCommand[] = (() => {
+  const byName = new Map<string, BuiltinSlashCommand>();
+  for (const c of [...BUILTIN_CHAT_COMMANDS, ...BUILTIN_AGENT_COMMANDS]) {
+    const existing = byName.get(c.name);
+    if (!existing) {
+      byName.set(c.name, { ...c });
+    } else if (existing.scope !== c.scope) {
+      // Same name across chat + agent → surface as available in both panes.
+      byName.set(c.name, { ...existing, scope: "both" });
+    }
+  }
+  return [...byName.values()];
+})();
 
 function scopeMatches(scope: SlashCommandScope, target: "chat" | "agent"): boolean {
   return scope === "both" || scope === target;
+}
+
+/**
+ * Built-in commands that are intercepted and *executed* by the send path (not
+ * merely inserted as prompt text). A custom command with one of these names
+ * would be shadowed by the interceptor, so creating one is rejected.
+ */
+export const RESERVED_COMMAND_NAMES = ["compact", "archive-chat"] as const;
+
+/** True when `name` collides with a reserved, executable built-in command. */
+export function isReservedCommandName(name: string): boolean {
+  return (RESERVED_COMMAND_NAMES as readonly string[]).includes(name);
 }
 
 /**

@@ -128,6 +128,18 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
 
   const runInstall = useCallback(
     async (entry: RegistryCommandEntry) => {
+      // Updating an already-installed command overwrites its local values with
+      // the registry's. Warn first so a user who tweaked the command locally
+      // isn't surprised — new installs and declined confirmations are unaffected.
+      const installed = installedRow(entry);
+      if (installed && isOutdated(installed, entry)) {
+        const ok =
+          typeof window === "undefined" ||
+          window.confirm(
+            `Updating /${entry.definition.name} will replace your local copy with the community version. Any changes you made to it will be lost. Continue?`
+          );
+        if (!ok) return;
+      }
       setInstalling(entry.id);
       setInstallError(null);
       try {
@@ -138,7 +150,7 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
         setInstalling(null);
       }
     },
-    [installCommunityCommand]
+    [installCommunityCommand, installedRow]
   );
 
   return (
