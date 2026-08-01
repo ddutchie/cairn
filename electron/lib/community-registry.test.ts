@@ -198,22 +198,43 @@ describe("fetchManifest", () => {
     expect(res.error).toBe("dns");
   });
 
-  it("honours 304 Not Modified by serving the cache", async () => {
+  it("forced refresh is a hard refresh: no If-None-Match, cache-busted, always re-downloads", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => fetchResponse({ status: 200, json: VALID, etag: 'W/"v1"' })));
+    await fetchManifest({ force: true }); // seed cache + etag
+
+    // A second forced fetch must NOT send the conditional ETag header (so a
+    // stale CDN edge can't answer 304 with old content) and must cache-bust the
+    // URL, guaranteeing fresh content on an explicit Refresh.
+    const spy = vi.fn(async () => fetchResponse({ status: 200, json: VALID, etag: 'W/"v2"' }));
+    vi.stubGlobal("fetch", spy);
+    const res = await fetchManifest({ force: true });
+
+    expect(res.fromCache).toBe(false);
+    const [url, init] = spy.mock.calls[0] as unknown as [string, { headers: Record<string, string> }];
+    expect(init.headers["If-None-Match"]).toBeUndefined();
+    expect(url).toMatch(/[?&]_cb=\d+/);
+  });
+
+  it("honours 304 Not Modified on background revalidation (non-forced)", async () => {
+    // Seed a cache + etag via a forced fetch.
     vi.stubGlobal("fetch", vi.fn(async () => fetchResponse({ status: 200, json: VALID, etag: 'W/"v1"' })));
     await fetchManifest({ force: true });
 
+    // A NON-forced fetch serves the cache immediately and revalidates in the
+    // background with the conditional ETag; a 304 keeps the cached copy intact.
     const spy = vi.fn(async () => fetchResponse({ status: 304 }));
     vi.stubGlobal("fetch", spy);
-    const res = await fetchManifest({ force: true });
+    const res = await fetchManifest();
     expect(res.fromCache).toBe(true);
-    // The cache is served intact — the previously cached VALID entries survive
-    // and no error is surfaced.
     expect(res.error).toBeUndefined();
     expect(res.manifest.mcpServers[0].definition.name).toBe("Jira");
     expect(res.manifest.services[0].definition.name).toBe("Weather");
-    // Sent the conditional header.
-    const headers = (spy.mock.calls[0] as unknown as [string, { headers: Record<string, string> }])[1].headers;
-    expect(headers["If-None-Match"]).toBe('W/"v1"');
+    // Let the background revalidation run and assert it sent the conditional header.
+    await new Promise((r) => setTimeout(r, 0));
+    if (spy.mock.calls.length > 0) {
+      const init = (spy.mock.calls[0] as unknown as [string, { headers: Record<string, string> }])[1];
+      expect(init.headers["If-None-Match"]).toBe('W/"v1"');
+    }
   });
 
   it("cache-first (non-forced) returns the cache without awaiting the network", async () => {

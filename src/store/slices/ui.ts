@@ -45,6 +45,10 @@ export interface SavedProvider {
    * same provider can run a different model in chat vs. the agent.
    */
   model: string;
+  /** Where this provider came from. Absent = "manual" (legacy rows). */
+  source?: "manual" | "community";
+  /** Community catalog id when `source === "community"` — dedups re-installs. */
+  communityId?: string;
 }
 
 /**
@@ -398,6 +402,17 @@ export interface UISlice extends AppUIState {
   deleteSavedProvider: (id: string) => void;
   selectSavedProvider: (id: string) => void;
   selectAgentProvider: (id: string) => void;
+  /**
+   * Install (or update) a community provider preset into the shared list and
+   * store its API key in the OS keychain. Dedups by communityId (or name) so a
+   * re-install reuses the existing row and its keychain secret. Does NOT auto-
+   * select the provider for any surface — the user picks it in the switcher.
+   * Returns the provider id.
+   */
+  installCommunityProvider: (
+    entry: { id: string; definition: { name: string; baseUrl: string; defaultModel?: string } },
+    apiKey?: string,
+  ) => Promise<string>;
 
   // Agent config
   agentConfig: AgentConfig;
@@ -609,6 +624,60 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       persistAgent(nextAgent);
       return { agentConfig: nextAgent };
     });
+  },
+
+  async installCommunityProvider(entry, apiKey) {
+    const def = entry.definition;
+    const existing = (get().aiConfig.savedProviders ?? []).find(
+      (p) => (p.communityId && p.communityId === entry.id) || p.name === def.name,
+    );
+
+    // Reuse the existing row's id on re-install so its keychain secret survives.
+    const id = existing?.id ?? genId();
+
+    // Store the raw API key in the OS keychain (main process) and keep only the
+    // returned reference token — the raw key must NEVER land in the store.
+    let apiKeyRef = existing?.apiKey ?? "";
+    const raw = apiKey?.trim();
+    if (raw) {
+      const secrets = typeof window !== "undefined" ? window.electron?.secrets : undefined;
+      if (!secrets) {
+        // Refuse to persist a plaintext key when secure storage is unavailable
+        // (e.g. a web build with no keychain bridge). Fail loudly instead.
+        throw new Error("Secure storage unavailable — cannot store the API key.");
+      }
+      apiKeyRef = (await secrets.set("llm", id, "apiKey", raw)) ?? "";
+    }
+
+    set((s) => {
+      const prev = s.aiConfig.savedProviders ?? [];
+      // Re-resolve the target row against the LATEST state inside the commit so
+      // two racing installs of the same entry collapse to a single row (dedup by
+      // communityId / name), preserving the keychain reference resolved above.
+      const matchIdx = prev.findIndex(
+        (p) => p.id === id || (p.communityId && p.communityId === entry.id) || p.name === def.name,
+      );
+      const row: SavedProvider = {
+        id: matchIdx >= 0 ? prev[matchIdx].id : id,
+        name: def.name,
+        baseUrl: def.baseUrl,
+        model: def.defaultModel ?? (matchIdx >= 0 ? prev[matchIdx].model : existing?.model) ?? "",
+        apiKey: apiKeyRef || (matchIdx >= 0 ? prev[matchIdx].apiKey : ""),
+        source: "community",
+        communityId: entry.id,
+      };
+      const merged =
+        matchIdx >= 0 ? prev.map((p, i) => (i === matchIdx ? row : p)) : [...prev, row];
+      const list = dedupeProviders(merged);
+      // Do NOT auto-select — reconcile keeps each surface's active choice.
+      const nextAi: AIConfig = { ...reconcileConfig(s.aiConfig, list), savedProviders: list };
+      const nextAgent: AgentConfig = reconcileConfig(s.agentConfig, list);
+      persistAi(nextAi);
+      if (nextAgent !== s.agentConfig) persistAgent(nextAgent);
+      return { aiConfig: nextAi, agentConfig: nextAgent };
+    });
+
+    return id;
   },
 
   // ── Agent config ───────────────────────────────

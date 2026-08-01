@@ -257,7 +257,7 @@ function ModelRow({
   return (
     <DropdownMenuItem
       onSelect={onSelect}
-      className={cn("group font-mono text-xs", active && "text-[var(--accent)]")}
+      className={cn("group gap-1.5 font-mono text-xs", active && "text-[var(--accent)]")}
     >
       <button
         type="button"
@@ -279,9 +279,7 @@ function ModelRow({
       >
         <Star size={12} className={favorite ? "fill-current" : ""} />
       </button>
-      <span className="w-3.5 flex-shrink-0">
-        {active && <Check size={12} />}
-      </span>
+      {active && <Check size={12} className="flex-shrink-0" />}
       <TruncatedModel text={model} />
     </DropdownMenuItem>
   );

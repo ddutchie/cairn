@@ -3,13 +3,14 @@
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
-import { Cpu, Globe } from "lucide-react";
+import { Cpu, Globe, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
 import { MCPServerSettings } from "./MCPSettings";
 import { LlamaServerConsole } from "./LlamaServerConsole";
 import { ProviderManager } from "./ProviderManager";
+import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
 
 export function AISettings() {
   const { aiConfig, setAIConfig } = useCairnStore(useShallow((s) => ({
@@ -35,6 +36,7 @@ export function AISettings() {
   const contextAuto = aiConfig.contextAuto ?? true;
   const [detectedContext, setDetectedContext] = useState<number | null>(null);
   const [autoState, setAutoState] = useState<"idle" | "loading" | "detected" | "not_found">("idle");
+  const [browsingProviders, setBrowsingProviders] = useState(false);
   useEffect(() => {
     if (provider === "localllm") return;
     let cancelled = false;
@@ -141,6 +143,19 @@ export function AISettings() {
           />
         ) : (
           <>
+            {/* Install a preset provider from the cairn-community catalog. */}
+            <SettingsRow
+              label="Community providers"
+              description="Install a ready-made OpenAI-compatible provider (endpoint + default model) and just enter your API key. Added to your saved providers below."
+            >
+              <button
+                onClick={() => setBrowsingProviders(true)}
+                className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download size={12} /> Browse Community
+              </button>
+            </SettingsRow>
+
             <ProviderManager kind="ai" />
 
             {/* Max Steps — applies to all providers */}
@@ -210,6 +225,8 @@ export function AISettings() {
 
       {/* ── MCP Server ── */}
       <MCPServerSettings />
+
+      {browsingProviders && <BrowseProvidersModal onClose={() => setBrowsingProviders(false)} />}
     </div>
   );
 }

@@ -65,6 +65,22 @@ interface CommunityManifest {
 interface RegistryFetchResult {
   manifest: CommunityManifest; fromCache: boolean; cachedAt?: string; error?: string;
 }
+// Canonical, Zod-validated definitions live in shared/chat/registry-schema.ts.
+// These interfaces are hand-mirrored here (like the MCP/service/command ones
+// above) because preload is a separate esbuild target that can't import the
+// shared module's runtime; keep them in sync with the shared source.
+interface RegistryProviderEntry extends RegistryEntryMeta {
+  definition: {
+    name: string; baseUrl: string; defaultModel?: string; needsApiKey: boolean;
+    apiKeyUrl?: string; models?: string[];
+  };
+}
+interface ProvidersManifest {
+  version: number; updatedAt: string; providers: RegistryProviderEntry[];
+}
+interface ProvidersFetchResult {
+  manifest: ProvidersManifest; fromCache: boolean; cachedAt?: string; error?: string;
+}
 // ── Inline types for the codebase index / Architecture tab ──────────────────
 interface CodebaseSymbol {
   id: string; file_id: string; name: string; kind: string; line: number;
@@ -711,6 +727,10 @@ const api = {
     fetch: () => invoke<RegistryFetchResult>("registry:fetch"),
     /** Force a network refresh (explicit Refresh button). */
     refresh: () => invoke<RegistryFetchResult>("registry:refresh"),
+    /** Community AI providers (separate providers.json manifest). Cache-first. */
+    fetchProviders: () => invoke<ProvidersFetchResult>("registry:fetchProviders"),
+    /** Force a network refresh of the providers manifest. */
+    refreshProviders: () => invoke<ProvidersFetchResult>("registry:refreshProviders"),
   },
 
   // ── Git operations (Agent Git tab) ────────────

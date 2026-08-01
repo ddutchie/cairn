@@ -256,6 +256,19 @@ const FEATURES = [
       "Browse Community: Install ready-made commands from the cairn-community registry with one click, then tweak them to taste.",
     ],
   },
+  {
+    id: "v2.5.19-community-providers",
+    version: "v2.5.19",
+    title: "Community AI Providers",
+    category: "AI & Chat",
+    description: "Install a ready-made AI provider from the cairn-community catalog with one click — no more hunting for the right base URL. Just add your API key and go.",
+    highlights: [
+      "One-Click Presets: Browse Community in Settings → AI & Chat or Coding Agent installs a provider's endpoint and default model for you.",
+      "Just Your Key: Enter your API key once — it's stored in your OS keychain, never in the database or synced.",
+      "Shared Everywhere: Installed providers join your shared list, ready to pick for AI Chat or the coding agent.",
+      "Always Fresh: The catalog is fetched cache-first (instant, offline-friendly) and re-installing never duplicates an entry.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  Plus, Trash2, Star, FolderOpen, Check, BookOpen, ChevronDown, ChevronUp, Copy, FileCode, CheckCircle, RefreshCw
+  Plus, Trash2, Star, FolderOpen, Check, BookOpen, ChevronDown, ChevronUp, Copy, FileCode, CheckCircle, RefreshCw, Download
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -13,6 +13,7 @@ import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
 import { ProviderManager } from "./ProviderManager";
+import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
 
 // ── Agent form ────────────────────────────────────────────────────────────────
 
@@ -404,6 +405,7 @@ export function AgentSettings() {
 
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [browsingProviders, setBrowsingProviders] = useState(false);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
@@ -464,6 +466,20 @@ export function AgentSettings() {
         title="Cairn Coding Agent (Pi)"
         description="Configure endpoint parameters for the native autonomous coding agent. Coding agents require high-capacity cloud/local models supporting function calling."
       >
+        {/* Install a preset provider from the cairn-community catalog. Shares
+            the same saved-providers list as AI Chat. */}
+        <SettingsRow
+          label="Community providers"
+          description="Install a ready-made OpenAI-compatible provider (endpoint + default model) and just enter your API key. Added to your saved providers below."
+        >
+          <button
+            onClick={() => setBrowsingProviders(true)}
+            className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <Download size={12} /> Browse Community
+          </button>
+        </SettingsRow>
+
         {/* Saved providers switcher (base URL, key, model all live in the form) */}
         <ProviderManager kind="agent" />
 
@@ -629,6 +645,8 @@ export function AgentSettings() {
 
       {/* Skills & system prompt preview */}
       <SkillsPreviewSection />
+
+      {browsingProviders && <BrowseProvidersModal onClose={() => setBrowsingProviders(false)} />}
     </div>
   );
 }
