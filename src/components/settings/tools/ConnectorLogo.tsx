@@ -83,8 +83,11 @@ export function ConnectorLogo({
   }
 
   // Fallback glyph — MCP mark for MCP servers, plug for HTTP services.
+  // The generic glyph must stay legible against the card, so it ignores
+  // `brandColor` (which can be near-black/near-white and vanish on one theme)
+  // and uses a theme-safe token instead. brandColor still tints REAL logos above.
   return (
-    <span className={className} style={wrapStyle} aria-hidden>
+    <span className={className} style={{ ...wrapStyle, color: "var(--text-secondary)" }} aria-hidden>
       <svg width="100%" height="100%" viewBox="0 0 24 24" focusable={false}>
         {kind === "service" ? (
           <path
