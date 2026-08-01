@@ -263,3 +263,57 @@ describe("toggleFavoriteModel", () => {
     expect(storageSet).toHaveBeenCalledWith("favoriteModels", ["claude-sonnet"]);
   });
 });
+
+describe("installCommunityProvider", () => {
+  function setup() {
+    let state: any = {};
+    const mockSet = (updater: any) => {
+      const next = typeof updater === "function" ? updater(state) : updater;
+      state = { ...state, ...next };
+    };
+    const mockGet = () => state;
+    const slice = createUISlice(mockSet, mockGet, {} as any);
+    state = { ...state, ...slice };
+    return { get: () => state };
+  }
+
+  const entry = {
+    id: "openrouter",
+    definition: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api", defaultModel: "openai/gpt-4o-mini" },
+  };
+
+  it("adds a community provider to the shared list with source + communityId", async () => {
+    const { get } = setup();
+    // No window/keychain in the node test → the raw key is used as-is.
+    const id = await get().installCommunityProvider(entry, "sk-test");
+    const list = get().aiConfig.savedProviders;
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe(id);
+    expect(list[0].source).toBe("community");
+    expect(list[0].communityId).toBe("openrouter");
+    expect(list[0].baseUrl).toBe("https://openrouter.ai/api");
+    expect(list[0].model).toBe("openai/gpt-4o-mini");
+    expect(list[0].apiKey).toBe("sk-test");
+  });
+
+  it("does not auto-select the provider for any surface", async () => {
+    const { get } = setup();
+    await get().installCommunityProvider(entry, "sk-test");
+    expect(get().aiConfig.activeProviderId).toBeUndefined();
+    expect(get().agentConfig.activeProviderId).toBeUndefined();
+  });
+
+  it("reuses the existing row on re-install (dedup by communityId)", async () => {
+    const { get } = setup();
+    const firstId = await get().installCommunityProvider(entry, "sk-old");
+    const secondId = await get().installCommunityProvider(
+      { ...entry, definition: { ...entry.definition, defaultModel: "openai/gpt-4o" } },
+      "sk-new",
+    );
+    expect(secondId).toBe(firstId);
+    const list = get().aiConfig.savedProviders;
+    expect(list).toHaveLength(1);
+    expect(list[0].model).toBe("openai/gpt-4o");
+    expect(list[0].apiKey).toBe("sk-new");
+  });
+});

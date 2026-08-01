@@ -381,6 +381,41 @@ export interface RegistryFetchResult {
   error?: string;
 }
 
+/** The install-relevant subset of a community AI provider preset. */
+export interface RegistryProviderDefinition {
+  /** Label seeded into the saved provider's name. */
+  name: string;
+  /** OpenAI-compatible chat-completions endpoint root. */
+  baseUrl: string;
+  /** Default model id to seed the provider with. */
+  defaultModel?: string;
+  /** Whether this endpoint requires an API key (false = keyless / local). */
+  needsApiKey: boolean;
+  /** Where the user can obtain an API key (rendered as a "Get a key" link). */
+  apiKeyUrl?: string;
+  /** Optional curated model ids offered before a live /models fetch. */
+  models?: string[];
+}
+
+export interface RegistryProviderEntry extends RegistryEntryMeta {
+  definition: RegistryProviderDefinition;
+}
+
+/** The parsed cairn-community PROVIDERS manifest (providers.json). */
+export interface ProvidersManifest {
+  version: number;
+  updatedAt: string;
+  providers: RegistryProviderEntry[];
+}
+
+/** Result of a providers-manifest fetch — the manifest plus cache provenance. */
+export interface ProvidersFetchResult {
+  manifest: ProvidersManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
 // ── Chat ──────────────────────────────────────
 export type ChatThreadScope = "workspace" | "project";
 

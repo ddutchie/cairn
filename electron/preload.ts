@@ -65,6 +65,18 @@ interface CommunityManifest {
 interface RegistryFetchResult {
   manifest: CommunityManifest; fromCache: boolean; cachedAt?: string; error?: string;
 }
+interface RegistryProviderEntry extends RegistryEntryMeta {
+  definition: {
+    name: string; baseUrl: string; defaultModel?: string; needsApiKey: boolean;
+    apiKeyUrl?: string; models?: string[];
+  };
+}
+interface ProvidersManifest {
+  version: number; updatedAt: string; providers: RegistryProviderEntry[];
+}
+interface ProvidersFetchResult {
+  manifest: ProvidersManifest; fromCache: boolean; cachedAt?: string; error?: string;
+}
 // ── Inline types for the codebase index / Architecture tab ──────────────────
 interface CodebaseSymbol {
   id: string; file_id: string; name: string; kind: string; line: number;
@@ -711,6 +723,10 @@ const api = {
     fetch: () => invoke<RegistryFetchResult>("registry:fetch"),
     /** Force a network refresh (explicit Refresh button). */
     refresh: () => invoke<RegistryFetchResult>("registry:refresh"),
+    /** Community AI providers (separate providers.json manifest). Cache-first. */
+    fetchProviders: () => invoke<ProvidersFetchResult>("registry:fetchProviders"),
+    /** Force a network refresh of the providers manifest. */
+    refreshProviders: () => invoke<ProvidersFetchResult>("registry:refreshProviders"),
   },
 
   // ── Git operations (Agent Git tab) ────────────

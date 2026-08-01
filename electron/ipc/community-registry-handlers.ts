@@ -10,9 +10,18 @@
 
 import { registerIpcHandle } from "./registry";
 import { handle } from "./result-helpers";
-import { fetchManifest, refreshManifest } from "../lib/community-registry";
+import {
+  fetchManifest,
+  refreshManifest,
+  fetchProvidersManifest,
+  refreshProvidersManifest,
+} from "../lib/community-registry";
 
 export function registerCommunityRegistryHandlers(): void {
   registerIpcHandle("registry:fetch", () => handle(() => fetchManifest()));
   registerIpcHandle("registry:refresh", () => handle(() => refreshManifest()));
+  // Providers live in a SEPARATE manifest (providers.json) so the catalogs can
+  // evolve independently.
+  registerIpcHandle("registry:fetchProviders", () => handle(() => fetchProvidersManifest()));
+  registerIpcHandle("registry:refreshProviders", () => handle(() => refreshProvidersManifest()));
 }

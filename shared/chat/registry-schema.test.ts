@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseManifest } from "./registry-schema";
+import { parseManifest, parseProvidersManifest } from "./registry-schema";
 
 /**
  * Minimal envelope for a services-only manifest. parseManifest drops individual
@@ -71,5 +71,73 @@ describe("registry-schema operation path validation", () => {
     );
     // The whole service entry is dropped because its operation failed to parse.
     expect(m.services).toHaveLength(0);
+  });
+});
+
+// ── providers manifest ──────────────────────────────────────────────────────
+
+function providersWith(providerDefinition: Record<string, unknown>) {
+  return {
+    version: 1,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    providers: [
+      {
+        id: "openrouter",
+        author: "cairn",
+        version: "1.0.0",
+        tags: [],
+        blurb: "test",
+        definition: providerDefinition,
+      },
+    ],
+  };
+}
+
+describe("parseProvidersManifest", () => {
+  it("accepts a valid provider entry", () => {
+    const m = parseProvidersManifest(
+      providersWith({
+        name: "OpenRouter",
+        baseUrl: "https://openrouter.ai/api",
+        defaultModel: "openai/gpt-4o-mini",
+        needsApiKey: true,
+        apiKeyUrl: "https://openrouter.ai/keys",
+      })
+    );
+    expect(m.providers).toHaveLength(1);
+    expect(m.providers[0].definition.baseUrl).toBe("https://openrouter.ai/api");
+    expect(m.providers[0].definition.needsApiKey).toBe(true);
+  });
+
+  it("drops a provider with a non-https baseUrl (no plaintext origins)", () => {
+    const m = parseProvidersManifest(
+      providersWith({ name: "Evil", baseUrl: "http://insecure.example.com", needsApiKey: false })
+    );
+    expect(m.providers).toHaveLength(0);
+  });
+
+  it("drops a provider with an unsafe apiKeyUrl", () => {
+    const m = parseProvidersManifest(
+      providersWith({
+        name: "Evil",
+        baseUrl: "https://ok.example.com",
+        needsApiKey: true,
+        apiKeyUrl: "javascript:alert(1)",
+      })
+    );
+    expect(m.providers).toHaveLength(0);
+  });
+
+  it("keeps good entries while dropping malformed ones", () => {
+    const m = parseProvidersManifest({
+      version: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      providers: [
+        { id: "a", author: "x", version: "1", tags: [], blurb: "", definition: { name: "Good", baseUrl: "https://a.example.com", needsApiKey: false } },
+        { id: "b", author: "x", version: "1", tags: [], blurb: "", definition: { name: "Bad", baseUrl: "not-a-url", needsApiKey: false } },
+      ],
+    });
+    expect(m.providers).toHaveLength(1);
+    expect(m.providers[0].id).toBe("a");
   });
 });

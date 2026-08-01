@@ -18,18 +18,25 @@
 import fs from "fs";
 import path from "path";
 import { findUserDataDir } from "../runtime/port-discovery";
-import { parseManifest, type CommunityManifest } from "../../shared/chat/registry-schema";
+import {
+  parseManifest,
+  parseProvidersManifest,
+  type CommunityManifest,
+  type ProvidersManifest,
+} from "../../shared/chat/registry-schema";
 
 // Manifest TYPES + Zod validation now live in shared/chat/registry-schema.ts so
 // desktop and mobile validate the catalog identically. Re-export the types so
 // existing electron importers keep resolving them from here.
 export type {
   CommunityManifest,
+  ProvidersManifest,
   RegistryMcpEntry,
   RegistryServiceEntry,
+  RegistryProviderEntry,
   RegistryEntryMeta,
 } from "../../shared/chat/registry-schema";
-export { parseManifest } from "../../shared/chat/registry-schema";
+export { parseManifest, parseProvidersManifest } from "../../shared/chat/registry-schema";
 
 export interface RegistryFetchResult {
   manifest: CommunityManifest;
@@ -38,40 +45,50 @@ export interface RegistryFetchResult {
   error?: string;
 }
 
+export interface ProvidersFetchResult {
+  manifest: ProvidersManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
 const MANIFEST_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/manifest.json";
+const PROVIDERS_URL =
+  "https://raw.githubusercontent.com/ddutchie/cairn-community/main/providers.json";
 const CACHE_FILE = "community-registry.json";
+const PROVIDERS_CACHE_FILE = "community-providers.json";
 const FETCH_TIMEOUT_MS = 10_000;
 
-// ── cache ───────────────────────────────────────────────────────────────────
+// ── generic cache + fetch core (shared by both manifests) ───────────────────
 
-interface CacheEnvelope {
+interface CacheEnvelope<M> {
   etag?: string;
   cachedAt: string;
-  manifest: CommunityManifest;
+  manifest: M;
 }
 
-function cachePath(): string | null {
+function cacheFilePath(file: string): string | null {
   const dir = findUserDataDir();
-  return dir ? path.join(dir, CACHE_FILE) : null;
+  return dir ? path.join(dir, file) : null;
 }
 
-function readCache(): CacheEnvelope | null {
-  const p = cachePath();
+function readCacheFile<M>(file: string, parse: (raw: unknown) => M): CacheEnvelope<M> | null {
+  const p = cacheFilePath(file);
   if (!p || !fs.existsSync(p)) return null;
   try {
-    const env = JSON.parse(fs.readFileSync(p, "utf8")) as CacheEnvelope;
+    const env = JSON.parse(fs.readFileSync(p, "utf8")) as CacheEnvelope<M>;
     // Re-validate the cached manifest so a corrupted/older-shape file can't feed
     // an invalid manifest downstream.
-    env.manifest = parseManifest(env.manifest);
+    env.manifest = parse(env.manifest);
     return env;
   } catch {
     return null;
   }
 }
 
-function writeCache(env: CacheEnvelope): void {
-  const p = cachePath();
+function writeCacheFile<M>(file: string, env: CacheEnvelope<M>): void {
+  const p = cacheFilePath(file);
   if (!p) return;
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -84,23 +101,32 @@ function writeCache(env: CacheEnvelope): void {
   }
 }
 
-// ── fetch ─────────────────────────────────────────────────────────────────
+interface FetchSpec<M> {
+  url: string;
+  file: string;
+  parse: (raw: unknown) => M;
+  /** Empty manifest returned when the network fails AND there is no cache. */
+  empty: M;
+}
+
+interface CoreResult<M> {
+  manifest: M;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
 
 /**
- * Fetch the registry manifest.
- *
- * @param opts.force  Skip the conditional-GET short-circuit and the "serve cache
- *                    first" path — always hit the network (still falls back to
- *                    cache on failure). Used by an explicit "Refresh".
+ * Generic cache-first fetch used by both the tools/commands manifest and the
+ * providers manifest. Serves the cache immediately (background-revalidating)
+ * unless force:true, uses a conditional GET via the stored ETag, and fails soft
+ * to the cached copy on any network/parse error.
  */
-export async function fetchManifest(opts?: { force?: boolean }): Promise<RegistryFetchResult> {
-  const cache = readCache();
+async function fetchGeneric<M>(spec: FetchSpec<M>, opts?: { force?: boolean }): Promise<CoreResult<M>> {
+  const cache = readCacheFile(spec.file, spec.parse);
 
-  // Cache-first (non-forced): serve the cache immediately when present. Callers
-  // wanting freshness pass force:true. This keeps the browse UI instant/offline.
   if (cache && !opts?.force) {
-    // Kick a background revalidation but don't await it — return cache now.
-    void revalidate(cache);
+    void revalidateGeneric(spec, cache);
     return { manifest: cache.manifest, fromCache: true, cachedAt: cache.cachedAt };
   }
 
@@ -109,7 +135,7 @@ export async function fetchManifest(opts?: { force?: boolean }): Promise<Registr
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     let res: Response;
     try {
-      res = await fetch(MANIFEST_URL, {
+      res = await fetch(spec.url, {
         signal: controller.signal,
         headers: cache?.etag ? { "If-None-Match": cache.etag } : {},
       });
@@ -117,23 +143,20 @@ export async function fetchManifest(opts?: { force?: boolean }): Promise<Registr
       clearTimeout(timer);
     }
 
-    // 304 Not Modified → our cache is current.
     if (res.status === 304 && cache) {
       return { manifest: cache.manifest, fromCache: true, cachedAt: cache.cachedAt };
     }
     if (!res.ok) throw new Error(`registry fetch failed: HTTP ${res.status}`);
 
-    const json = (await res.json()) as unknown;
-    const manifest = parseManifest(json);
-    const env: CacheEnvelope = {
+    const manifest = spec.parse((await res.json()) as unknown);
+    const env: CacheEnvelope<M> = {
       etag: res.headers.get("etag") ?? undefined,
       cachedAt: new Date().toISOString(),
       manifest,
     };
-    writeCache(env);
+    writeCacheFile(spec.file, env);
     return { manifest, fromCache: false, cachedAt: env.cachedAt };
   } catch (err) {
-    // Network/parse failure → serve stale cache if we have one.
     if (cache) {
       return {
         manifest: cache.manifest,
@@ -143,7 +166,7 @@ export async function fetchManifest(opts?: { force?: boolean }): Promise<Registr
       };
     }
     return {
-      manifest: { version: 1, updatedAt: "", mcpServers: [], services: [], commands: [] },
+      manifest: spec.empty,
       fromCache: false,
       error: err instanceof Error ? err.message : String(err),
     };
@@ -151,13 +174,13 @@ export async function fetchManifest(opts?: { force?: boolean }): Promise<Registr
 }
 
 /** Background conditional GET that refreshes the cache without blocking a read. */
-async function revalidate(cache: CacheEnvelope): Promise<void> {
+async function revalidateGeneric<M>(spec: FetchSpec<M>, cache: CacheEnvelope<M>): Promise<void> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     let res: Response;
     try {
-      res = await fetch(MANIFEST_URL, {
+      res = await fetch(spec.url, {
         signal: controller.signal,
         headers: cache.etag ? { "If-None-Match": cache.etag } : {},
       });
@@ -165,8 +188,8 @@ async function revalidate(cache: CacheEnvelope): Promise<void> {
       clearTimeout(timer);
     }
     if (res.status === 304 || !res.ok) return;
-    const manifest = parseManifest((await res.json()) as unknown);
-    writeCache({
+    const manifest = spec.parse((await res.json()) as unknown);
+    writeCacheFile(spec.file, {
       etag: res.headers.get("etag") ?? undefined,
       cachedAt: new Date().toISOString(),
       manifest,
@@ -176,10 +199,57 @@ async function revalidate(cache: CacheEnvelope): Promise<void> {
   }
 }
 
+// ── tools/commands manifest ─────────────────────────────────────────────────
+
+const MANIFEST_SPEC: FetchSpec<CommunityManifest> = {
+  url: MANIFEST_URL,
+  file: CACHE_FILE,
+  parse: parseManifest,
+  empty: { version: 1, updatedAt: "", mcpServers: [], services: [], commands: [] },
+};
+
+/**
+ * Fetch the registry manifest.
+ *
+ * @param opts.force  Skip the conditional-GET short-circuit and the "serve cache
+ *                    first" path — always hit the network (still falls back to
+ *                    cache on failure). Used by an explicit "Refresh".
+ */
+export function fetchManifest(opts?: { force?: boolean }): Promise<RegistryFetchResult> {
+  return fetchGeneric(MANIFEST_SPEC, opts);
+}
+
 /** Force a network refresh (bypasses cache-first). Used by an explicit Refresh. */
 export function refreshManifest(): Promise<RegistryFetchResult> {
   return fetchManifest({ force: true });
 }
 
+// ── providers manifest ──────────────────────────────────────────────────────
+
+const PROVIDERS_SPEC: FetchSpec<ProvidersManifest> = {
+  url: PROVIDERS_URL,
+  file: PROVIDERS_CACHE_FILE,
+  parse: parseProvidersManifest,
+  empty: { version: 1, updatedAt: "", providers: [] },
+};
+
+/** Fetch the community PROVIDERS manifest (cache-first; see fetchManifest). */
+export function fetchProvidersManifest(opts?: { force?: boolean }): Promise<ProvidersFetchResult> {
+  return fetchGeneric(PROVIDERS_SPEC, opts);
+}
+
+/** Force a network refresh of the providers manifest. */
+export function refreshProvidersManifest(): Promise<ProvidersFetchResult> {
+  return fetchProvidersManifest({ force: true });
+}
+
 /** Exposed for tests. */
-export const __test = { MANIFEST_URL, CACHE_FILE, cachePath, readCache, writeCache };
+export const __test = {
+  MANIFEST_URL,
+  PROVIDERS_URL,
+  CACHE_FILE,
+  PROVIDERS_CACHE_FILE,
+  cachePath: () => cacheFilePath(CACHE_FILE),
+  readCache: () => readCacheFile(CACHE_FILE, parseManifest),
+  writeCache: (env: CacheEnvelope<CommunityManifest>) => writeCacheFile(CACHE_FILE, env),
+};

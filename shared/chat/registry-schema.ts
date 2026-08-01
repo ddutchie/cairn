@@ -103,6 +103,37 @@ export interface CommunityManifest {
   commands: RegistryCommandEntry[];
 }
 
+/**
+ * A community AI provider — a one-click preset for an OpenAI-compatible endpoint
+ * (base URL + default model). Installed into the shared `savedProviders` list;
+ * the user just enters their API key (stored in the OS keychain). Kept in a
+ * SEPARATE manifest (providers.json) from the tools/commands catalog so the two
+ * can evolve independently.
+ */
+export interface RegistryProviderEntry extends RegistryEntryMeta {
+  definition: {
+    /** Label seeded into the saved provider's `name`. */
+    name: string;
+    /** OpenAI-compatible chat-completions endpoint root. */
+    baseUrl: string;
+    /** Default model id to seed the provider with. */
+    defaultModel?: string;
+    /** Whether this endpoint requires an API key (false = keyless / local). */
+    needsApiKey: boolean;
+    /** Where the user can obtain an API key (rendered as a "Get a key" link). */
+    apiKeyUrl?: string;
+    /** Optional curated model ids offered by the picker before a live /models fetch. */
+    models?: string[];
+  };
+}
+
+/** The parsed cairn-community PROVIDERS manifest (providers.json). */
+export interface ProvidersManifest {
+  version: number;
+  updatedAt: string;
+  providers: RegistryProviderEntry[];
+}
+
 // ── validation (mirrors cairn-community/schema.json) ────────────────────────
 
 const headers = z.record(z.string(), z.string()).optional();
@@ -226,8 +257,7 @@ const manifestSchema = z.object({
 
 /** Parse + validate an unknown payload into a CommunityManifest, or throw. */
 export function parseManifest(raw: unknown): CommunityManifest {
-  const m = manifestSchema.parse(raw);
-  return {
+  const m = manifestSchema.parse(raw);  return {
     version: m.version,
     updatedAt: m.updatedAt,
     // Drop malformed entries individually rather than failing the whole parse.
@@ -244,4 +274,42 @@ export function parseManifest(raw: unknown): CommunityManifest {
       return r.success ? [r.data] : [];
     }),
   } as CommunityManifest;
+}
+
+// ── providers manifest (providers.json) ─────────────────────────────────────
+
+const providerDefinition = z.object({
+  name: z.string().min(1),
+  // OpenAI-compatible endpoint root. Must be https so a community entry can't
+  // point the app at a plaintext origin.
+  baseUrl: z.string().url().startsWith("https://"),
+  defaultModel: z.string().optional(),
+  needsApiKey: z.boolean(),
+  // Rendered as a "Get a key" anchor href — validate as https for the same
+  // reason homepage is (no javascript:/data: smuggling).
+  apiKeyUrl: z.string().url().startsWith("https://").optional(),
+  models: z.array(z.string()).optional(),
+});
+
+const providerEntry = z.object({ ...entryMeta, definition: providerDefinition }).passthrough();
+
+// Envelope-only validation; entries validated individually in
+// parseProvidersManifest so one bad entry can't blank the catalog.
+const providersManifestSchema = z.object({
+  version: z.number(),
+  updatedAt: z.string(),
+  providers: z.array(z.unknown()),
+});
+
+/** Parse + validate an unknown payload into a ProvidersManifest, or throw. */
+export function parseProvidersManifest(raw: unknown): ProvidersManifest {
+  const m = providersManifestSchema.parse(raw);
+  return {
+    version: m.version,
+    updatedAt: m.updatedAt,
+    providers: m.providers.flatMap((e) => {
+      const r = providerEntry.safeParse(e);
+      return r.success ? [r.data] : [];
+    }),
+  } as ProvidersManifest;
 }
