@@ -135,9 +135,13 @@ async function fetchGeneric<M>(spec: FetchSpec<M>, opts?: { force?: boolean }): 
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     let res: Response;
     try {
-      res = await fetch(spec.url, {
+      // A forced Refresh is a HARD refresh: skip the conditional-GET ETag (so a
+      // stale CDN edge can't answer 304 with old content) and bust any HTTP/CDN
+      // cache with a cache-busting query param, so we always re-download.
+      const url = opts?.force ? `${spec.url}${spec.url.includes("?") ? "&" : "?"}_cb=${Date.now()}` : spec.url;
+      res = await fetch(url, {
         signal: controller.signal,
-        headers: cache?.etag ? { "If-None-Match": cache.etag } : {},
+        headers: !opts?.force && cache?.etag ? { "If-None-Match": cache.etag } : {},
       });
     } finally {
       clearTimeout(timer);
@@ -252,4 +256,8 @@ export const __test = {
   cachePath: () => cacheFilePath(CACHE_FILE),
   readCache: () => readCacheFile(CACHE_FILE, parseManifest),
   writeCache: (env: CacheEnvelope<CommunityManifest>) => writeCacheFile(CACHE_FILE, env),
+  providersCachePath: () => cacheFilePath(PROVIDERS_CACHE_FILE),
+  readProvidersCache: () => readCacheFile(PROVIDERS_CACHE_FILE, parseProvidersManifest),
+  writeProvidersCache: (env: CacheEnvelope<ProvidersManifest>) =>
+    writeCacheFile(PROVIDERS_CACHE_FILE, env),
 };
