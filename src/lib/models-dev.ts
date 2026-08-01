@@ -41,8 +41,20 @@ let inflight: Promise<ContextMap> | null = null;
  * The result is lowercase with those decorations stripped. Not exhaustive — just
  * enough to catch the common real-world proxy id shapes.
  */
-function normalizeId(id: string): string {
+export function normalizeId(id: string): string {
   let s = id.toLowerCase().trim();
+  // Strip a leading gateway "provider:" prefix that some endpoints prepend to the
+  // model id (e.g. "merge:deepseek/deepseek-v4-flash" → "deepseek/deepseek-v4-flash",
+  // "merge:deepseek-v4-flash" → "deepseek-v4-flash"). Only a single leading segment
+  // before the first ":" that is *not* followed by more colons (thinking budgets /
+  // versions use ":" too, but those come after the model name and still carry a "/"
+  // or are handled by the later ":" split). We only strip when what follows still
+  // looks like a model id (contains "/" or "-"), so we don't clobber ids like
+  // "gpt-4:thinking".
+  const providerPrefix = s.match(/^([a-z0-9_-]+):(.+)$/);
+  if (providerPrefix && /[/-]/.test(providerPrefix[2])) {
+    s = providerPrefix[2];
+  }
   // Keep only the last path segment (e.g. "anthropic/claude-opus-4" → "claude-opus-4").
   if (s.includes("/")) s = s.split("/").pop() as string;
   // Strip a leading "~" (some gateways prefix aliases with it).
@@ -58,8 +70,11 @@ function normalizeId(id: string): string {
   );
   // Strip trailing variant suffixes.
   s = s.replace(/-(thinking|think|fast|free|latest|reasoning|distilled)$/, "");
-  // Strip trailing dates ("-20250514") and version tags ("-v1", "-v1:0").
-  s = s.replace(/-\d{6,8}$/, "").replace(/-v\d+.*$/, "");
+  // Strip trailing dates ("-20250514") and pure version tags ("-v1", "-v1:0").
+  // The version tag may only continue with dot/colon-separated numbers — it must
+  // NOT swallow a trailing word like "-flash" or "-luna" (e.g. "deepseek-v4-flash"
+  // must stay intact, not collapse to "deepseek").
+  s = s.replace(/-\d{6,8}$/, "").replace(/-v\d+([.:]\d+)*$/, "");
   return s;
 }
 
