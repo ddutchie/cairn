@@ -77,6 +77,10 @@ export interface SavedProvider {
   model: string;
   /** Optional manual context-window override (tokens). */
   contextLimit?: number;
+  /** Where this provider came from. Absent = "manual" (legacy rows). */
+  source?: "manual" | "community";
+  /** Community catalog id when `source === "community"` — dedups re-installs. */
+  communityId?: string;
 }
 
 /** Generate a short, stable provider id. */
@@ -252,6 +256,66 @@ export async function deleteSavedProvider(id: string): Promise<void> {
 /** Mark a saved provider active. */
 export function selectSavedProvider(id: string): void {
   setSetting(KEY_ACTIVE_PROVIDER, id);
+}
+
+/** Minimal shape of a community provider entry needed to install it. */
+export interface CommunityProviderInput {
+  id: string;
+  definition: { name: string; baseUrl: string; defaultModel?: string };
+}
+
+/**
+ * Install (or update) a community provider preset into the saved-providers list
+ * and store its API key in secure-store. Mirrors desktop's installCommunityProvider:
+ * dedups by `communityId` (or name), reuses the existing row's id on re-install so
+ * the secure-store key survives, tags the row `source: "community"`, and does NOT
+ * auto-select it (unlike addSavedProvider) — the user picks it in the switcher.
+ * `apiKey` may be omitted for keyless endpoints. Returns the provider id.
+ */
+export async function installCommunityProvider(
+  entry: CommunityProviderInput,
+  apiKey?: string,
+): Promise<string> {
+  await migrateToProvidersOnce();
+  const def = entry.definition;
+  const list = readProviders();
+  const existing = list.find(
+    (p) => (p.communityId && p.communityId === entry.id) || p.name === def.name,
+  );
+  const id = existing?.id ?? newProviderId();
+
+  const row: SavedProvider = {
+    id,
+    name: def.name,
+    baseUrl: def.baseUrl.trim() || DEFAULT_OPENAI_BASE_URL,
+    model: def.defaultModel?.trim() || existing?.model || DEFAULT_OPENAI_MODEL,
+    contextLimit: existing?.contextLimit,
+    source: "community",
+    communityId: entry.id,
+  };
+  const next = existing ? list.map((p) => (p.id === id ? row : p)) : [...list, row];
+  writeProviders(next);
+
+  // Store the key in secure-store (per-provider), or leave the existing one if no
+  // new key was supplied. Never persist the key anywhere but secure-store.
+  const trimmed = apiKey?.trim();
+  if (trimmed) await SecureStore.setItemAsync(secureKeyFor(id), trimmed);
+
+  return id;
+}
+
+/**
+ * True when an installed community provider's stored connection no longer matches
+ * the catalog entry (baseUrl or default model changed upstream) — drives an
+ * "Update" affordance in the browse UI.
+ */
+export function isCommunityProviderOutdated(entry: CommunityProviderInput): boolean {
+  const row = readProviders().find((p) => p.communityId === entry.id);
+  if (!row) return false;
+  return (
+    row.baseUrl !== entry.definition.baseUrl ||
+    row.model !== (entry.definition.defaultModel ?? row.model)
+  );
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,8 +7,8 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { Stack, useRouter } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, Wallet } from "lucide-react-native";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, Wallet, Server } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
@@ -183,6 +183,22 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
+  // Refresh the provider LIST when the form regains focus (e.g. after adding a
+  // provider on the Browse Providers screen), so a newly-installed community
+  // provider appears in the switcher. We only sync the list — not the active
+  // provider's editable fields — so any in-progress edits here aren't clobbered.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void (async () => {
+        const list = await listSavedProviders();
+        if (!cancelled) setProviders(list);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
   // Switch the active provider: persist any pending edits to the current one,
   // then load the target provider's values into the fields. Guarded against
   // concurrent invocations so a rapid tap-tap can't persist edits to the wrong
@@ -661,6 +677,23 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 </Text>
               </View>
             )}
+
+            <Pressable
+              style={styles.navRow}
+              onPress={() => {
+                haptics.selection();
+                router.push("/settings/providers");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Browse community AI providers"
+            >
+              <Server size={16} color={t.textSecondary} />
+              <View style={styles.navRowMain}>
+                <Text style={styles.navRowTitle}>Browse Providers</Text>
+                <Text style={styles.navRowSub}>Add a preset OpenAI-compatible provider from the community catalog — just enter your API key.</Text>
+              </View>
+              <ChevronRight size={18} color={t.textTertiary} />
+            </Pressable>
 
             <Pressable
               style={styles.navRow}
