@@ -276,15 +276,8 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
                 key={`${e.kind}:${name}`}
                 className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
               >
-                <div
-                  className="shrink-0 rounded-md p-1.5"
-                  style={{
-                    background: meta.brandColor
-                      ? `color-mix(in srgb, ${meta.brandColor} 14%, transparent)`
-                      : "var(--surface-2, transparent)",
-                  }}
-                >
-                  <ConnectorLogo iconSvg={meta.iconSvg} kind={e.kind} color={meta.brandColor} size={22} />
+                <div className="shrink-0">
+                  <ConnectorLogo iconSvg={meta.iconSvg} kind={e.kind} color={meta.brandColor} size={36} />
                 </div>
 
                 <div className="min-w-0 flex-1">

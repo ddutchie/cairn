@@ -63,13 +63,24 @@ export function ConnectorLogo({
   };
 
   if (iconSvg && looksSafeSvg(iconSvg)) {
-    // Safe: CI-sanitized + guarded above; `currentColor` in the markup inherits
-    // the wrapper `color` (brandColor). Sized via CSS so the intrinsic
-    // width/height in the markup don't matter.
+    // Real brand logo. Monochrome marks use `fill="currentColor"`, so we tint
+    // with `brandColor`. A dark brand mark (e.g. charcoal) would vanish on the
+    // dark theme's near-black card, so real logos sit on a FIXED light chip
+    // (theme-independent) — like app-store icon tiles — guaranteeing contrast on
+    // both themes. Sized via CSS so the SVG's intrinsic dimensions don't matter.
     return (
       <span
         className={className}
-        style={wrapStyle}
+        style={{
+          ...wrapStyle,
+          boxSizing: "border-box",
+          padding: Math.round(size * 0.16),
+          borderRadius: Math.max(4, Math.round(size * 0.22)),
+          background: "#f5f4f2",
+          color: color || "#1a1a1a",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
         aria-hidden
         // Safe: SVG is sanitized by cairn-community CI + guarded by looksSafeSvg above.
         dangerouslySetInnerHTML={{
@@ -85,9 +96,24 @@ export function ConnectorLogo({
   // Fallback glyph — MCP mark for MCP servers, plug for HTTP services.
   // The generic glyph must stay legible against the card, so it ignores
   // `brandColor` (which can be near-black/near-white and vanish on one theme)
-  // and uses a theme-safe token instead. brandColor still tints REAL logos above.
+  // and uses a theme-safe token on a subtle neutral tile. brandColor still tints
+  // the light chip behind REAL logos above.
+  const pad = Math.round(size * 0.16);
   return (
-    <span className={className} style={{ ...wrapStyle, color: "var(--text-secondary)" }} aria-hidden>
+    <span
+      className={className}
+      style={{
+        ...wrapStyle,
+        boxSizing: "border-box",
+        padding: pad,
+        borderRadius: Math.max(4, Math.round(size * 0.22)),
+        background: "var(--surface-2)",
+        color: "var(--text-secondary)",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      aria-hidden
+    >
       <svg width="100%" height="100%" viewBox="0 0 24 24" focusable={false}>
         {kind === "service" ? (
           <path

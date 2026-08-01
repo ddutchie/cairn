@@ -231,15 +231,8 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
                 key={entry.id}
                 className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
               >
-                <div
-                  className="shrink-0 rounded-md p-1.5"
-                  style={{
-                    background: entry.brandColor
-                      ? `color-mix(in srgb, ${entry.brandColor} 14%, transparent)`
-                      : "var(--surface-2, transparent)",
-                  }}
-                >
-                  <ConnectorLogo iconSvg={entry.iconSvg} kind="service" color={entry.brandColor} size={22} />
+                <div className="shrink-0">
+                  <ConnectorLogo iconSvg={entry.iconSvg} kind="service" color={entry.brandColor} size={36} />
                 </div>
 
                 <div className="min-w-0 flex-1">
