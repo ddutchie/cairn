@@ -143,12 +143,10 @@ export function AISettings() {
           />
         ) : (
           <>
-            <ProviderManager kind="ai" />
-
             {/* Install a preset provider from the cairn-community catalog. */}
             <SettingsRow
               label="Community providers"
-              description="Install a ready-made OpenAI-compatible provider (endpoint + default model) and just enter your API key. Added to your shared provider list — select it above to use it."
+              description="Install a ready-made OpenAI-compatible provider (endpoint + default model) and just enter your API key. Added to your saved providers below."
             >
               <button
                 onClick={() => setBrowsingProviders(true)}
@@ -157,6 +155,8 @@ export function AISettings() {
                 <Download size={12} /> Browse Community
               </button>
             </SettingsRow>
+
+            <ProviderManager kind="ai" />
 
             {/* Max Steps — applies to all providers */}
             {maxStepsRow}

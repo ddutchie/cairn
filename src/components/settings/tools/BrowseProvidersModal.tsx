@@ -126,7 +126,7 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
         setKeyPrompt(null);
         setKeyValue("");
       } catch (err) {
-        setInstallError(err instanceof Error ? err.message : "Install failed.");
+        setInstallError(err instanceof Error ? err.message : "Couldn't add the provider.");
       } finally {
         setInstalling(null);
       }
@@ -156,7 +156,7 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
           <Download size={16} /> Browse Community Providers
         </span>
       }
-      description="Install a preset OpenAI-compatible AI provider — just add your API key."
+      description="Add a preset OpenAI-compatible AI provider — just enter your API key."
     >
       {/* Toolbar: search + refresh */}
       <div className="flex flex-col gap-3 pb-3 border-b border-[var(--border)]">
@@ -226,111 +226,119 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
             const installed = isInstalled(entry);
             const updatable = installed && isOutdated(entry);
             const busy = installing === entry.id;
+            const prompting = keyPrompt?.id === entry.id;
             return (
               <div
                 key={entry.id}
-                className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
+                className="rounded-lg border border-[var(--border)] bg-[var(--surface)]"
               >
-                <div className="shrink-0">
-                  <ConnectorLogo iconSvg={entry.iconSvg} kind="service" color={entry.brandColor} size={36} />
-                </div>
+                <div className="flex items-start gap-3 p-3">
+                  <div className="shrink-0">
+                    <ConnectorLogo iconSvg={entry.iconSvg} kind="service" color={entry.brandColor} size={36} />
+                  </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-[var(--text-primary)]">{def.name}</span>
-                    {def.needsApiKey && (
-                      <span className="inline-flex items-center gap-1 text-[0.65rem] text-[var(--text-tertiary)]">
-                        <KeyRound size={11} /> API key
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-[var(--text-primary)]">{def.name}</span>
+                      {def.needsApiKey && (
+                        <span className="inline-flex items-center gap-1 text-[0.65rem] text-[var(--text-tertiary)]">
+                          <KeyRound size={11} /> API key
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{entry.blurb}</p>
+                    <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-1 truncate font-mono">
+                      {def.baseUrl}
+                      {def.defaultModel ? ` · ${def.defaultModel}` : ""}
+                    </p>
+                  </div>
+
+                  <div className="shrink-0">
+                    {prompting ? (
+                      // The inline key prompt below owns the install action — hide
+                      // the redundant top-right button while it's open.
+                      <span className="inline-flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)]">
+                        <KeyRound size={13} /> Enter key
                       </span>
+                    ) : installed && !updatable ? (
+                      <span className="inline-flex items-center gap-1 text-[0.714rem] text-[var(--success,var(--accent))]">
+                        <Check size={13} /> Added
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant={updatable ? "outline" : "default"}
+                        disabled={busy}
+                        onClick={() => onInstallClick(entry)}
+                      >
+                        {busy ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : updatable ? (
+                          <ArrowUpCircle size={12} />
+                        ) : (
+                          <Download size={12} />
+                        )}
+                        {updatable ? "Update" : "Add"}
+                      </Button>
                     )}
                   </div>
-                  <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{entry.blurb}</p>
-                  <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-1 truncate font-mono">
-                    {def.baseUrl}
-                    {def.defaultModel ? ` · ${def.defaultModel}` : ""}
-                  </p>
                 </div>
 
-                <div className="shrink-0">
-                  {installed && !updatable ? (
-                    <span className="inline-flex items-center gap-1 text-[0.714rem] text-[var(--success,var(--accent))]">
-                      <Check size={13} /> Installed
-                    </span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant={updatable ? "outline" : "default"}
-                      disabled={busy}
-                      onClick={() => onInstallClick(entry)}
-                    >
-                      {busy ? (
-                        <Loader2 size={12} className="animate-spin" />
-                      ) : updatable ? (
-                        <ArrowUpCircle size={12} />
-                      ) : (
-                        <Download size={12} />
+                {/* Inline API-key prompt for THIS provider (below its row). */}
+                {prompting && (
+                  <div className="border-t border-[var(--border)] bg-[color-mix(in_srgb,var(--accent)_5%,transparent)] px-3 py-3 rounded-b-lg">
+                    <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-2">
+                      Stored securely in your OS keychain — never written to the app database or sent to the model.
+                      {def.apiKeyUrl && (
+                        <>
+                          {" "}
+                          <a
+                            href={def.apiKeyUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[var(--accent)] underline"
+                          >
+                            Get a key
+                          </a>
+                        </>
                       )}
-                      {updatable ? "Update" : "Install"}
-                    </Button>
-                  )}
-                </div>
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        autoFocus
+                        className="flex-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none"
+                        placeholder="sk-…"
+                        value={keyValue}
+                        onChange={(ev) => setKeyValue(ev.target.value)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter" && keyValue.trim() && installing === null) void runInstall(entry, keyValue);
+                          if (ev.key === "Escape") { setKeyPrompt(null); setKeyValue(""); }
+                        }}
+                        autoComplete="off"
+                      />
+                      <Button variant="ghost" size="sm" onClick={() => { setKeyPrompt(null); setKeyValue(""); }}>
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={installing !== null || !keyValue.trim()}
+                        onClick={() => void runInstall(entry, keyValue)}
+                      >
+                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                        Confirm
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })
         )}
       </div>
 
-      {/* API-key prompt */}
-      {keyPrompt && (
-        <div className="mt-4 rounded-lg border border-[var(--border)] bg-[color-mix(in_srgb,var(--accent)_5%,var(--surface))] p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <KeyRound size={13} className="text-[var(--accent)]" />
-            <span className="text-sm font-semibold text-[var(--text-primary)]">
-              {keyPrompt.definition.name} needs an API key
-            </span>
-          </div>
-          <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-3">
-            Stored securely in your OS keychain — never written to the app database or sent to the model.
-            {keyPrompt.definition.apiKeyUrl && (
-              <>
-                {" "}
-                <a
-                  href={keyPrompt.definition.apiKeyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[var(--accent)] underline"
-                >
-                  Get a key
-                </a>
-              </>
-            )}
-          </p>
-          <input
-            type="password"
-            className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none mb-2"
-            placeholder="sk-…"
-            value={keyValue}
-            onChange={(ev) => setKeyValue(ev.target.value)}
-            autoComplete="off"
-          />
-          <div className="flex justify-end gap-2 mt-2">
-            <Button variant="ghost" size="sm" onClick={() => { setKeyPrompt(null); setKeyValue(""); }}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={installing !== null || !keyValue.trim()}
-              onClick={() => void runInstall(keyPrompt, keyValue)}
-            >
-              {installing ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-              Install
-            </Button>
-          </div>
-        </div>
-      )}
-
       <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
-        Installed providers are added to your shared provider list. Select one in the provider
+        Added providers join your shared provider list. Select one in the provider
         switcher above to use it in AI Chat or the coding agent.
       </p>
     </ModalShell>
