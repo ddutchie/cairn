@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createUISlice, SEEN_FEATURES_KEY, dedupeProviders } from "./ui";
 
 // Mock the persistence layer so we can assert markFeatureAsSeen's storage
@@ -265,6 +265,22 @@ describe("toggleFavoriteModel", () => {
 });
 
 describe("installCommunityProvider", () => {
+  // The install path stores the API key via the keychain bridge and keeps only
+  // a `secret://` reference in the store. Mock the bridge so we exercise the
+  // real (secure) path; the ref echoes the id so we can assert per-row.
+  beforeEach(() => {
+    (globalThis as any).window = {
+      electron: {
+        secrets: {
+          set: vi.fn(async (kind: string, id: string, key: string) => `secret://${kind}:${id}/${key}`),
+        },
+      },
+    };
+  });
+  afterEach(() => {
+    delete (globalThis as any).window;
+  });
+
   function setup() {
     let state: any = {};
     const mockSet = (updater: any) => {
@@ -284,7 +300,6 @@ describe("installCommunityProvider", () => {
 
   it("adds a community provider to the shared list with source + communityId", async () => {
     const { get } = setup();
-    // No window/keychain in the node test → the raw key is used as-is.
     const id = await get().installCommunityProvider(entry, "sk-test");
     const list = get().aiConfig.savedProviders;
     expect(list).toHaveLength(1);
@@ -293,7 +308,8 @@ describe("installCommunityProvider", () => {
     expect(list[0].communityId).toBe("openrouter");
     expect(list[0].baseUrl).toBe("https://openrouter.ai/api");
     expect(list[0].model).toBe("openai/gpt-4o-mini");
-    expect(list[0].apiKey).toBe("sk-test");
+    // Only the keychain reference is stored — never the raw key.
+    expect(list[0].apiKey).toBe(`secret://llm:${id}/apiKey`);
   });
 
   it("does not auto-select the provider for any surface", async () => {
@@ -314,6 +330,24 @@ describe("installCommunityProvider", () => {
     const list = get().aiConfig.savedProviders;
     expect(list).toHaveLength(1);
     expect(list[0].model).toBe("openai/gpt-4o");
-    expect(list[0].apiKey).toBe("sk-new");
+    expect(list[0].apiKey).toBe(`secret://llm:${firstId}/apiKey`);
+  });
+
+  it("rejects a keyed install when secure storage is unavailable", async () => {
+    delete (globalThis as any).window; // no keychain bridge
+    const { get } = setup();
+    await expect(get().installCommunityProvider(entry, "sk-test")).rejects.toThrow(/secure storage/i);
+    expect(get().aiConfig.savedProviders ?? []).toHaveLength(0);
+  });
+
+  it("adds a keyless provider without a secure-storage bridge", async () => {
+    delete (globalThis as any).window;
+    const { get } = setup();
+    const keyless = { ...entry, definition: { ...entry.definition, name: "Local" } };
+    const id = await get().installCommunityProvider(keyless); // no apiKey
+    const list = get().aiConfig.savedProviders;
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe(id);
+    expect(list[0].apiKey).toBe("");
   });
 });

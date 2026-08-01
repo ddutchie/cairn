@@ -636,31 +636,38 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     const id = existing?.id ?? genId();
 
     // Store the raw API key in the OS keychain (main process) and keep only the
-    // returned reference token — the raw key never lands in the store.
+    // returned reference token — the raw key must NEVER land in the store.
     let apiKeyRef = existing?.apiKey ?? "";
     const raw = apiKey?.trim();
     if (raw) {
       const secrets = typeof window !== "undefined" ? window.electron?.secrets : undefined;
-      if (secrets) apiKeyRef = (await secrets.set("llm", id, "apiKey", raw)) ?? "";
-      else apiKeyRef = raw; // web build with no keychain bridge — best effort
+      if (!secrets) {
+        // Refuse to persist a plaintext key when secure storage is unavailable
+        // (e.g. a web build with no keychain bridge). Fail loudly instead.
+        throw new Error("Secure storage unavailable — cannot store the API key.");
+      }
+      apiKeyRef = (await secrets.set("llm", id, "apiKey", raw)) ?? "";
     }
-
-    const row: SavedProvider = {
-      id,
-      name: def.name,
-      baseUrl: def.baseUrl,
-      model: def.defaultModel ?? existing?.model ?? "",
-      apiKey: apiKeyRef,
-      source: "community",
-      communityId: entry.id,
-    };
 
     set((s) => {
       const prev = s.aiConfig.savedProviders ?? [];
-      // Replace an existing row (matched by id) or append; dedup guards keys.
-      const merged = prev.some((p) => p.id === id)
-        ? prev.map((p) => (p.id === id ? row : p))
-        : [...prev, row];
+      // Re-resolve the target row against the LATEST state inside the commit so
+      // two racing installs of the same entry collapse to a single row (dedup by
+      // communityId / name), preserving the keychain reference resolved above.
+      const matchIdx = prev.findIndex(
+        (p) => p.id === id || (p.communityId && p.communityId === entry.id) || p.name === def.name,
+      );
+      const row: SavedProvider = {
+        id: matchIdx >= 0 ? prev[matchIdx].id : id,
+        name: def.name,
+        baseUrl: def.baseUrl,
+        model: def.defaultModel ?? (matchIdx >= 0 ? prev[matchIdx].model : existing?.model) ?? "",
+        apiKey: apiKeyRef || (matchIdx >= 0 ? prev[matchIdx].apiKey : ""),
+        source: "community",
+        communityId: entry.id,
+      };
+      const merged =
+        matchIdx >= 0 ? prev.map((p, i) => (i === matchIdx ? row : p)) : [...prev, row];
       const list = dedupeProviders(merged);
       // Do NOT auto-select — reconcile keeps each surface's active choice.
       const nextAi: AIConfig = { ...reconcileConfig(s.aiConfig, list), savedProviders: list };

@@ -36,6 +36,12 @@
   /* Knowledge-graph "Project" node colour. Fixed (accent-independent) so it
      never collides with Card/success green when the accent is a green preset. */
   --node-project: #a78bfa;
+  /* Community connector logo "chip". FIXED (theme-independent) light backing so
+     a dark monochrome brand mark stays legible on BOTH themes — like an app-store
+     icon tile. Not overridden in the light block on purpose. --connector-chip-fg
+     is the fallback foreground when an entry ships no brandColor. */
+  --connector-chip-bg: #f5f4f2;
+  --connector-chip-fg: #1a1a1a;
 }
 
 /* Light theme — applied via data-theme="light" on <html> */

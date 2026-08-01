@@ -31,6 +31,15 @@ describe("normalizeId", () => {
     expect(normalizeId("claude-opus-4:thinking")).toBe("claude-opus-4");
   });
 
+  it("does not treat a hyphenated `:variant` suffix as a provider prefix", () => {
+    // Regression: `gpt-4:thinking-v2` was mistaken for a provider prefix and
+    // reduced to `thinking-v2` (the `-` in the tail tripped the strip). The
+    // model id must be preserved (`:thinking-v2` handled by the later `:` split).
+    expect(normalizeId("gpt-4:thinking-v2")).toBe("gpt-4");
+    expect(normalizeId("gpt-4:high")).toBe("gpt-4");
+    expect(normalizeId("gpt-4:reasoning-high")).toBe("gpt-4");
+  });
+
   it("handles a provider prefix combined with a thinking suffix", () => {
     expect(normalizeId("merge:deepseek/deepseek-v4-flash:thinking")).toBe("deepseek-v4-flash");
   });

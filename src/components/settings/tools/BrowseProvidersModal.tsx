@@ -94,7 +94,7 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
         p.definition.name.toLowerCase().includes(q) ||
         p.blurb.toLowerCase().includes(q) ||
         (p.category ?? "").toLowerCase().includes(q) ||
-        p.tags.some((t) => t.includes(q))
+        p.tags.some((t) => t.toLowerCase().includes(q))
       );
     });
   }, [providers, query, activeCategory]);

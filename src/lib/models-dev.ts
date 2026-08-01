@@ -45,15 +45,19 @@ export function normalizeId(id: string): string {
   let s = id.toLowerCase().trim();
   // Strip a leading gateway "provider:" prefix that some endpoints prepend to the
   // model id (e.g. "merge:deepseek/deepseek-v4-flash" → "deepseek/deepseek-v4-flash",
-  // "merge:deepseek-v4-flash" → "deepseek-v4-flash"). Only a single leading segment
-  // before the first ":" that is *not* followed by more colons (thinking budgets /
-  // versions use ":" too, but those come after the model name and still carry a "/"
-  // or are handled by the later ":" split). We only strip when what follows still
-  // looks like a model id (contains "/" or "-"), so we don't clobber ids like
-  // "gpt-4:thinking".
+  // "merge:deepseek-v4-flash" → "deepseek-v4-flash"). We must NOT confuse this with
+  // a colon-delimited VARIANT suffix on a plain model id (e.g. "gpt-4:thinking" or
+  // "gpt-4:thinking-v2"), which the later ":" split handles. So only strip when the
+  // tail is a real model id: it either carries a path ("/"), or its first token is
+  // not a known variant keyword.
   const providerPrefix = s.match(/^([a-z0-9_-]+):(.+)$/);
-  if (providerPrefix && /[/-]/.test(providerPrefix[2])) {
-    s = providerPrefix[2];
+  if (providerPrefix) {
+    const tail = providerPrefix[2];
+    const firstToken = tail.split(/[/-]/)[0];
+    const isVariantTail = /^(thinking|think|fast|free|latest|reasoning|distilled|low|medium|high|max)$/.test(firstToken);
+    if (tail.includes("/") || (/-/.test(tail) && !isVariantTail)) {
+      s = tail;
+    }
   }
   // Keep only the last path segment (e.g. "anthropic/claude-opus-4" → "claude-opus-4").
   if (s.includes("/")) s = s.split("/").pop() as string;

@@ -65,6 +65,10 @@ interface CommunityManifest {
 interface RegistryFetchResult {
   manifest: CommunityManifest; fromCache: boolean; cachedAt?: string; error?: string;
 }
+// Canonical, Zod-validated definitions live in shared/chat/registry-schema.ts.
+// These interfaces are hand-mirrored here (like the MCP/service/command ones
+// above) because preload is a separate esbuild target that can't import the
+// shared module's runtime; keep them in sync with the shared source.
 interface RegistryProviderEntry extends RegistryEntryMeta {
   definition: {
     name: string; baseUrl: string; defaultModel?: string; needsApiKey: boolean;

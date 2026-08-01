@@ -46,6 +46,29 @@ function looksSafeSvg(svg: string): boolean {
   return true;
 }
 
+/**
+ * Choose a legible foreground for the fixed LIGHT connector chip. The chip is
+ * always light (`--connector-chip-bg`), so a real logo tinted with the entry's
+ * `brandColor` must be dark enough to read on it. Accept only a valid hex colour
+ * whose relative luminance is below a threshold; otherwise fall back to the fixed
+ * dark chip foreground. This rejects near-white / invalid manifest brand colours
+ * (which would render an invisible glyph) without trusting the value blindly.
+ */
+function chipForeground(brandColor?: string): string {
+  const fallback = "var(--connector-chip-fg)";
+  if (!brandColor) return fallback;
+  const hex = brandColor.trim().replace(/^#/, "");
+  const full =
+    hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return fallback; // invalid → safe dark fg
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  // Perceived luminance (0–255). Above ~0.72 is too light for the light chip.
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.72 ? fallback : `#${full}`;
+}
+
 export function ConnectorLogo({
   iconSvg,
   kind = "mcp",
@@ -76,8 +99,8 @@ export function ConnectorLogo({
           boxSizing: "border-box",
           padding: Math.round(size * 0.16),
           borderRadius: Math.max(4, Math.round(size * 0.22)),
-          background: "#f5f4f2",
-          color: color || "#1a1a1a",
+          background: "var(--connector-chip-bg)",
+          color: chipForeground(color),
           alignItems: "center",
           justifyContent: "center",
         }}

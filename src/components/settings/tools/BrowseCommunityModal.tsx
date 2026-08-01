@@ -140,7 +140,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
         entryName(e).toLowerCase().includes(q) ||
         meta.blurb.toLowerCase().includes(q) ||
         (meta.category ?? "").toLowerCase().includes(q) ||
-        meta.tags.some((t) => t.includes(q))
+        meta.tags.some((t) => t.toLowerCase().includes(q))
       );
     });
   }, [entries, query, activeCategory]);
