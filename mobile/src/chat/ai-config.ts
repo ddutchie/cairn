@@ -412,6 +412,43 @@ export function setOpenAIEndpoint(baseUrl: string, model: string, contextLimit?:
   setSetting(KEY_CONTEXT, contextLimit && contextLimit > 0 ? String(Math.floor(contextLimit)) : "");
 }
 
+// ── Per-endpoint model-list cache ─────────────────────────────────────────────
+
+const MODELS_CACHE_KEY = "ai.modelsCache";
+/** How long a cached model list is considered fresh (7 days, matches desktop). */
+const MODELS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+type ModelsCache = Record<string, { models: string[]; ts: number }>;
+
+/** Normalise a base URL to a stable cache-key root (drop trailing / and /v1). */
+function normCacheBaseUrl(baseUrl: string): string {
+  return (baseUrl || DEFAULT_OPENAI_BASE_URL).trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+}
+
+/** Cached model ids for an endpoint, or null when missing/stale. */
+export function readModelsCache(baseUrl: string): string[] | null {
+  try {
+    const all = JSON.parse(getSetting(MODELS_CACHE_KEY) ?? "{}") as ModelsCache;
+    const entry = all[normCacheBaseUrl(baseUrl)];
+    if (!entry) return null;
+    if (Date.now() - entry.ts > MODELS_CACHE_TTL_MS) return null; // stale
+    return entry.models;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist a fetched model list for an endpoint (fresh for 7 days). */
+export function writeModelsCache(baseUrl: string, models: string[]): void {
+  try {
+    const all = JSON.parse(getSetting(MODELS_CACHE_KEY) ?? "{}") as ModelsCache;
+    all[normCacheBaseUrl(baseUrl)] = { models, ts: Date.now() };
+    setSetting(MODELS_CACHE_KEY, JSON.stringify(all));
+  } catch {
+    // best-effort
+  }
+}
+
 /**
  * The user's preferred provider. If the user explicitly chose one, honour it.
  * Otherwise default to "rork" when a Rork endpoint was built in (first-party

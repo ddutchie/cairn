@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
@@ -34,6 +34,8 @@ import {
   updateSavedProvider,
   deleteSavedProvider,
   selectSavedProvider,
+  readModelsCache,
+  writeModelsCache,
   type ProviderPref,
   type SavedProvider,
 } from "@/chat/ai-config";
@@ -151,6 +153,11 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [models, setModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  // Dropdown-style model selector: collapsed trigger shows the current model;
+  // expanding reveals the searchable list. `customModel` swaps in a free-text
+  // input for ids the endpoint didn't list (gateway/proxy names).
+  const [modelOpen, setModelOpen] = useState(false);
+  const [customModel, setCustomModel] = useState(false);
   // Free-text filter over the fetched model ids (providers can return 50+).
   const [modelQuery, setModelQuery] = useState("");
   // Remaining credits for providers that expose it (e.g. OpenRouter). null =
@@ -322,17 +329,18 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       cancelled = true;
     };
   }, [model]);
-  const fetchModels = async () => {
-    const key = apiKey.trim();
-    if (!key) {
+  const fetchModels = useCallback(async (base?: string, key?: string) => {
+    const b = (base ?? baseUrl).trim() || DEFAULT_OPENAI_BASE_URL;
+    const k = (key ?? apiKey).trim();
+    if (!k) {
       setModelsError("Enter an API key first.");
       return;
     }
     setFetchingModels(true);
     setModelsError(null);
-    const base = baseUrl.trim() || DEFAULT_OPENAI_BASE_URL;
     try {
-      const ids = await listModels(base, key);
+      const ids = await listModels(b, k);
+      writeModelsCache(b, ids); // persist so the next open hydrates instantly
       setModels(ids);
       if (ids.length === 0) setModelsError("The endpoint returned no models.");
     } catch (e) {
@@ -344,10 +352,40 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     // Guarded by a generation so a slow response can't overwrite state after the
     // active provider changed (or its credits were cleared).
     const gen = ++keyInfoGenRef.current;
-    getKeyInfo(base, key)
+    getKeyInfo(b, k)
       .then((info) => { if (gen === keyInfoGenRef.current) setKeyInfo(info); })
       .catch(() => { if (gen === keyInfoGenRef.current) setKeyInfo(null); });
-  };
+  }, [baseUrl, apiKey]);
+
+  // Auto-populate the model list like desktop's `ensureModels`: hydrate the
+  // per-endpoint cache instantly (no network, no tap), then refresh in the
+  // background once an API key exists. Debounced so typing a key (or switching
+  // providers) doesn't fire a request per keystroke; the generation guard drops
+  // superseded ones. Cache hydrate always runs, fetch only with a key.
+  const autoFetchGenRef = useRef(0);
+  useEffect(() => {
+    const base = baseUrl.trim() || DEFAULT_OPENAI_BASE_URL;
+    let alive = true;
+    const cached = readModelsCache(base);
+    if (cached && cached.length > 0) {
+      // Async boundary so the synchronous cache hydrate isn't flagged as a
+      // setState-in-effect; it lands on the next tick, imperceptibly fast.
+      setTimeout(() => {
+        if (!alive) return;
+        setModels(cached);
+        setModelsError(null);
+      }, 0);
+    }
+    if (!apiKey.trim()) return () => { alive = false; };
+    const gen = ++autoFetchGenRef.current;
+    const t = setTimeout(() => {
+      if (gen === autoFetchGenRef.current && alive) void fetchModels(base, apiKey);
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [baseUrl, apiKey, fetchModels]);
 
   const save = async () => {
     setSaving(true);
@@ -383,6 +421,12 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     }
     return matches;
   }, [models, modelQuery, model]);
+
+  // Enrichment for the collapsed trigger (logo/cost/tool marker), same as the
+  // list rows — mirrors the desktop picker's closed-trigger label.
+  const triggerInfo = getModelInfo(model);
+  const triggerCost = formatModelCost(triggerInfo?.input ?? null, triggerInfo?.output ?? null);
+  const triggerNoToolCall = triggerInfo?.toolCall === false;
 
   return (
     <View style={styles.flex}>
@@ -582,7 +626,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                     <Text style={styles.fieldLabel}>Model</Text>
                     <Pressable
                       style={styles.fetchBtn}
-                      onPress={fetchModels}
+                      onPress={() => fetchModels()}
                       disabled={fetchingModels}
                       hitSlop={6}
                     >
@@ -592,41 +636,106 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                         <RefreshCw size={12} color={t.accent} />
                       )}
                       <Text style={styles.fetchBtnText}>
-                        {fetchingModels ? "Fetching…" : "Fetch models"}
+                        {fetchingModels ? "Refreshing…" : "Refresh"}
                       </Text>
                     </Pressable>
                   </View>
-                  <TextInput
-                    style={styles.fieldInput}
-                    value={model}
-                    onChangeText={setModel}
-                    placeholder={DEFAULT_OPENAI_MODEL}
-                    placeholderTextColor={t.textTertiary}
-                    autoCapitalize="none"
-                  />
-                  {modelsError && <Text style={styles.modelsError}>{modelsError}</Text>}
-                  {models.length > 0 && (
+
+                  {customModel ? (
+                    <TextInput
+                      style={styles.fieldInput}
+                      value={model}
+                      onChangeText={setModel}
+                      placeholder={DEFAULT_OPENAI_MODEL}
+                      placeholderTextColor={t.textTertiary}
+                      autoCapitalize="none"
+                      autoFocus
+                      onBlur={() => setCustomModel(false)}
+                    />
+                  ) : (
+                    <Pressable
+                      style={[styles.fieldInput, styles.modelTrigger, modelOpen && styles.modelTriggerOpen]}
+                      onPress={() => {
+                        haptics.selection();
+                        setModelOpen((o) => !o);
+                        setCustomModel(false);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose model"
+                    >
+                      {triggerInfo?.provider ? (
+                        <ProviderLogo provider={triggerInfo.provider} />
+                      ) : (
+                        <View style={{ width: 14 }} />
+                      )}
+                      <Text style={styles.modelTriggerText} numberOfLines={1}>
+                        {model.trim() || DEFAULT_OPENAI_MODEL}
+                      </Text>
+                      <View style={styles.modelRowMeta}>
+                        {modelInputChips(triggerInfo).map((c) => {
+                          const CapIcon =
+                            c.key === "text" ? Type
+                            : c.key === "image" ? ImageIcon
+                            : c.key === "pdf" ? FileText
+                            : c.key === "video" ? Video
+                            : c.key === "audio" ? AudioLines
+                            : null;
+                          return CapIcon ? (
+                            <CapIcon key={c.key} size={10} color={t.textTertiary} />
+                          ) : null;
+                        })}
+                        {triggerNoToolCall && (
+                          <TriangleAlert size={12} color={t.warning} />
+                        )}
+                        {triggerCost && (
+                          <Text style={styles.modelRowCost} numberOfLines={1}>
+                            {triggerCost}
+                          </Text>
+                        )}
+                      </View>
+                      <ChevronDown
+                        size={14}
+                        color={t.textTertiary}
+                        style={modelOpen ? styles.modelChevronOpen : undefined}
+                      />
+                    </Pressable>
+                  )}
+
+                  {modelsError && !modelOpen && !customModel && (
+                    <Text style={styles.modelsError}>{modelsError}</Text>
+                  )}
+
+                  {modelOpen && (
                     <>
-                      {/* Search box appears once the endpoint returns models —
-                          providers like OpenRouter return 50+, so filtering is
-                          essential for browsing. */}
+                      {/* Search box filters the list; "Custom model…" covers ids
+                          the endpoint didn't list (gateway/proxy names). */}
                       <TextInput
                         style={styles.modelSearch}
                         value={modelQuery}
                         onChangeText={setModelQuery}
-                        placeholder={`Search ${models.length} models…`}
+                        placeholder={
+                          models.length > 0
+                            ? `Search ${models.length} models…`
+                            : "No models yet — Refresh, or use Custom model…"
+                        }
                         placeholderTextColor={t.textTertiary}
                         autoCapitalize="none"
                         autoCorrect={false}
                         clearButtonMode="while-editing"
                       />
-                      <Text style={styles.modelListMeta}>
-                        {modelQuery.trim()
-                          ? `${filteredModels.length} of ${models.length} match`
-                          : `${models.length} models`}
-                      </Text>
+                      {models.length > 0 && (
+                        <Text style={styles.modelListMeta}>
+                          {modelQuery.trim()
+                            ? `${filteredModels.length} of ${models.length} match`
+                            : `${models.length} models`}
+                        </Text>
+                      )}
                       <View style={styles.modelList}>
-                        {filteredModels.length === 0 ? (
+                        {models.length === 0 ? (
+                          <Text style={styles.modelRowEmpty}>
+                            No models listed yet — tap Refresh, or enter one under Custom model.
+                          </Text>
+                        ) : filteredModels.length === 0 ? (
                           <Text style={styles.modelRowEmpty}>No models match “{modelQuery.trim()}”.</Text>
                         ) : (
                           <ScrollView
@@ -643,7 +752,11 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                                 <Pressable
                                   key={id}
                                   style={[styles.modelRow, active && styles.modelRowActive]}
-                                  onPress={() => setModel(id)}
+                                  onPress={() => {
+                                    setModel(id);
+                                    setModelOpen(false);
+                                    setModelQuery("");
+                                  }}
                                   accessibilityRole="button"
                                   accessibilityLabel={`Model ${id}`}
                                   accessibilityState={{ selected: active }}
@@ -692,6 +805,19 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                           </ScrollView>
                         )}
                       </View>
+
+                      <Pressable
+                        style={styles.customRow}
+                        onPress={() => {
+                          haptics.selection();
+                          setCustomModel(true);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Enter a custom model"
+                      >
+                        <Pencil size={12} color={t.textSecondary} />
+                        <Text style={styles.customRowText}>Custom model…</Text>
+                      </Pressable>
                     </>
                   )}
                 </View>

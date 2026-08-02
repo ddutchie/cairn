@@ -106,6 +106,25 @@ export function makeAiSettingsStyles(t: Theme) {
     },
     fetchBtnText: { ...typeScale.label, color: t.accent },
     modelsError: { ...typeScale.caption, color: t.danger, lineHeight: 16 },
+    // Dropdown-style model trigger (collapsed row, mirrors desktop picker).
+    modelTrigger: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: t.surface2,
+    },
+    modelTriggerOpen: { borderColor: t.accent },
+    modelTriggerText: { flex: 1, ...typeScale.body, color: t.textPrimary },
+    modelChevronOpen: { transform: [{ rotate: "180deg" }] },
+    customRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingVertical: 9,
+      paddingHorizontal: 4,
+      marginTop: 2,
+    },
+    customRowText: { ...typeScale.label, color: t.accent },
     modelChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
     modelChip: {
       flexDirection: "row",
