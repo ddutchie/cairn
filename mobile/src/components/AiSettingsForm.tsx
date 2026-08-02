@@ -57,6 +57,7 @@ import {
 import { listModels, getKeyInfo, type ProviderKeyInfo } from "@/chat/providers/openai";
 import {
   contextLimitForModel,
+  getLogoProvider,
   getModelInfo,
   getModelCatalogVersion,
   prewarmModelCatalog,
@@ -436,6 +437,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const triggerInfo = getModelInfo(model);
   const triggerCost = formatModelCost(triggerInfo?.input ?? null, triggerInfo?.output ?? null);
   const triggerNoToolCall = triggerInfo?.toolCall === false;
+  // Brand-resolved logo slug: prefers the canonical owner from models.json, then
+  // the model's own brand from its id (shared with desktop).
+  const triggerLogoProvider = getLogoProvider(model.trim() || DEFAULT_OPENAI_MODEL);
 
   // Split the filtered list into starred vs the rest so Favorites stay pinned
   // to the top of the dropdown (mirrors desktop's picker sections).
@@ -455,6 +459,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
     const noToolCall = info?.toolCall === false;
     const isFavorite = favorites.has(id);
+    const rowLogoProvider = getLogoProvider(id);
     return (
       <Pressable
         key={id}
@@ -487,8 +492,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
         ) : (
           <View style={{ width: 14 }} />
         )}
-        {info?.provider ? (
-          <ProviderLogo provider={info.provider} />
+        {rowLogoProvider ? (
+          <ProviderLogo provider={rowLogoProvider} />
         ) : (
           <View style={{ width: 14 }} />
         )}
@@ -759,8 +764,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                       accessibilityRole="button"
                       accessibilityLabel="Choose model"
                     >
-                      {triggerInfo?.provider ? (
-                        <ProviderLogo provider={triggerInfo.provider} />
+                      {triggerLogoProvider ? (
+                        <ProviderLogo provider={triggerLogoProvider} />
                       ) : (
                         <View style={{ width: 14 }} />
                       )}

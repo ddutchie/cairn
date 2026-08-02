@@ -6,12 +6,16 @@
 import { describe, expect, it } from "vitest";
 import {
   formatModelCost,
+  logoProviderFor,
   lookupModelInfo,
   modelInputChips,
   normalizeModelId,
   normalizeModelInfo,
+  canonicalProviderFor,
+  parseCanonicalCatalog,
   parseModelCatalog,
   providerLogoUrl,
+  providerLogoUrlFor,
   supportsImageInput,
 } from "./model-catalog";
 
@@ -232,5 +236,86 @@ describe("formatModelCost", () => {
 describe("providerLogoUrl", () => {
   it("points at the models.dev logo endpoint", () => {
     expect(providerLogoUrl("anthropic")).toBe("https://models.dev/logos/anthropic.svg");
+  });
+});
+
+describe("logoProviderFor", () => {
+  // models.dev lists each model under every host provider; the catalog's
+  // `provider` is whoever got flattened first (e.g. "hpc-ai" for a DeepSeek
+  // model). The logo must follow the model's own brand, not that arbitrary host.
+  it("prefers a leading provider token in the id over the catalog host", () => {
+    expect(logoProviderFor("deepseek/deepseek-v4-flash", "hpc-ai")).toBe("deepseek");
+    expect(logoProviderFor("openai/gpt-5.2", "perplexity-agent")).toBe("openai");
+    expect(logoProviderFor("~anthropic/claude-opus-4", "cloudflare-ai-gateway")).toBe("anthropic");
+  });
+
+  it("resolves bare brand ids even when the catalog has no entry", () => {
+    expect(logoProviderFor("deepseek-v4-flash", "cortecs")).toBe("deepseek");
+    expect(logoProviderFor("gpt-5.2-mini", null)).toBe("openai");
+    expect(logoProviderFor("gemma-3", null)).toBe("google");
+    expect(logoProviderFor("claude-opus-4", null)).toBe("anthropic");
+    expect(logoProviderFor("qwen2.5", null)).toBe("alibaba");
+  });
+
+  it("matches the brand on the last path segment of gateway ids", () => {
+    expect(logoProviderFor("accounts/fireworks/models/deepseek-v4-flash", "fireworks-ai")).toBe("deepseek");
+    expect(logoProviderFor("empiriolabs/deepseek-v4-flash-el", "poe")).toBe("deepseek");
+  });
+
+  it("falls back to the catalog provider for unbranded ids", () => {
+    expect(logoProviderFor("some-host-variant", "hpc-ai")).toBe("hpc-ai");
+    expect(logoProviderFor("unknown-model-xyz", null)).toBeNull();
+  });
+
+  it("providerLogoUrlFor composes the model-resolved URL", () => {
+    expect(providerLogoUrlFor("deepseek/deepseek-v4-flash", "hpc-ai")).toBe(
+      "https://models.dev/logos/deepseek.svg",
+    );
+    expect(providerLogoUrlFor("unknown-model-xyz", null)).toBeNull();
+  });
+});
+
+describe("parseCanonicalCatalog / canonicalProviderFor", () => {
+  // models.json keys models by canonical "<provider>/<model>" id; the leading
+  // path segment names the OWNER (which api.json, with its duplicate entries,
+  // can't tell us).
+  const canonical = parseCanonicalCatalog({
+    "deepseek/deepseek-v4-flash": { name: "DeepSeek V4 Flash" },
+    "openai/gpt-5.2": { name: "GPT-5.2" },
+    "zhipuai/glm-5": { name: "GLM-5" },
+    "anthropic/claude-opus-4-6": { name: "Claude Opus 4.6" },
+  });
+
+  it("extracts the owner from the canonical id's leading path segment", () => {
+    expect(Object.keys(canonical).length).toBe(4);
+    expect(canonical["deepseek/deepseek-v4-flash"]).toBe("deepseek");
+    expect(canonical["zhipuai/glm-5"]).toBe("zhipuai");
+    expect(canonical["anthropic/claude-opus-4-6"]).toBe("anthropic");
+  });
+
+  it("ignores malformed entries without a provider path", () => {
+    expect(parseCanonicalCatalog({ "no-path": {} })).toEqual({});
+    expect(parseCanonicalCatalog(null)).toEqual({});
+  });
+
+  it("resolves exact canonical ids and normalized/fuzzy variants", () => {
+    expect(canonicalProviderFor(canonical, "deepseek/deepseek-v4-flash")).toBe("deepseek");
+    expect(canonicalProviderFor(canonical, "deepseek-v4-flash")).toBe("deepseek");
+    expect(canonicalProviderFor(canonical, "~deepseek/deepseek-v4-flash-latest")).toBe("deepseek");
+    expect(canonicalProviderFor(canonical, "zhipuai/glm-5")).toBe("zhipuai");
+    expect(canonicalProviderFor(canonical, "glm-5")).toBe("zhipuai");
+    expect(canonicalProviderFor(canonical, "gpt-5.2")).toBe("openai");
+    expect(canonicalProviderFor(canonical, "not-a-real-model")).toBeNull();
+  });
+
+  it("prefers the canonical owner over the brand heuristic in logoProviderFor", () => {
+    // GLM-5 has no heuristic entry, so without the canonical map it falls back
+    // to the (arbitrary) catalog provider — with it, the owner wins.
+    expect(logoProviderFor("glm-5", "some-host", canonical)).toBe("zhipuai");
+    expect(logoProviderFor("glm-5", "some-host")).toBe("some-host");
+    // deepseek agrees with the heuristic either way.
+    expect(logoProviderFor("deepseek/deepseek-v4-flash", "hpc-ai", canonical)).toBe("deepseek");
+    // Canonical ids that don't match still fall through to the heuristic.
+    expect(logoProviderFor("claude-opus-4", null, canonical)).toBe("anthropic");
   });
 });

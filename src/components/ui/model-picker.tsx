@@ -13,13 +13,13 @@ import { Tooltip } from "@/components/ui/tooltip";
 import {
   getModelInfo,
   getModelCatalogVersion,
+  modelLogoUrl,
   prewarmModelCatalog,
   subscribeModelCatalog,
 } from "@/lib/models-dev";
 import {
   formatModelCost,
   modelInputChips,
-  providerLogoUrl,
   type ModelInfo,
 } from "../../../shared/models/model-catalog";
 import {
@@ -157,7 +157,7 @@ export function ModelPicker({
 
   // Enrichment for the closed trigger (logo + cost + tool marker), same as rows.
   const triggerInfo = getModelInfo(value);
-  const triggerLogo = triggerInfo?.provider ? providerLogoUrl(triggerInfo.provider) : null;
+  const triggerLogo = modelLogoUrl(value);
   const triggerCost = formatModelCost(triggerInfo?.input ?? null, triggerInfo?.output ?? null);
   const triggerNoToolCall = triggerInfo?.toolCall === false;
 
@@ -348,7 +348,7 @@ function ModelRow({
   onToggleFavorite: () => void;
 }) {
   const info = getModelInfo(model);
-  const logo = info?.provider ? providerLogoUrl(info.provider) : null;
+  const logo = modelLogoUrl(model);
   const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
   const noToolCall = info?.toolCall === false;
 

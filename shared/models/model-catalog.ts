@@ -35,6 +35,148 @@ export function providerLogoUrl(provider: string): string {
 }
 
 /**
+ * models.dev lists every model under EVERY provider that hosts it (a single
+ * model can appear under 30+ provider slugs), and parseModelCatalog flattens
+ * those into one entry — so `info.provider` is whoever models.dev happened to
+ * enumerate first, not the model's own brand. `deepseek/deepseek-v4-flash` can
+ * resolve to provider "hpc-ai" or "cortecs" and render that logo instead of
+ * DeepSeek's.
+ *
+ * logoProviderFor() picks the logo slug deterministically so the glyph matches
+ * the model's brand, not the arbitrary first-listed host:
+ *   1. a leading provider token in the id naming a known brand
+ *      ("deepseek/deepseek-v4-flash" → "deepseek", "~anthropic/…" → "anthropic"),
+ *   2. a brand-name match on the base id ("gpt-5.2" → "openai", "gemma-3" → "google"),
+ *   3. the catalog's own provider slug as a last resort.
+ * It also returns a slug for models NOT in the catalog (steps 1–2), so a brand
+ * icon can render even before/without catalog data.
+ */
+const LOGO_SLUG_BY_TOKEN: Record<string, string> = {
+  deepseek: "deepseek",
+  anthropic: "anthropic",
+  openai: "openai",
+  google: "google",
+  xai: "xai",
+  meta: "meta",
+  mistralai: "mistralai",
+  cohere: "cohere",
+  amazon: "amazon",
+  aws: "amazon",
+  microsoft: "microsoft",
+  alibaba: "alibaba",
+  nvidia: "nvidia",
+  databricks: "databricks",
+};
+
+const LOGO_BRAND_MATCHES: Array<[RegExp, string]> = [
+  [/^claude/, "anthropic"],
+  [/^anthropic/, "anthropic"],
+  [/^gpt/, "openai"],
+  [/^o[1-9]/i, "openai"], // o1/o3/o4/o5…
+  [/^grok/, "xai"],
+  [/^gemini/, "google"],
+  [/^gemma/, "google"],
+  [/^palm/, "google"],
+  [/^llama/, "meta"],
+  [/^mistral|^mixtral|^codestral|^ministral/, "mistralai"],
+  [/^deepseek/, "deepseek"],
+  [/^qwen/, "alibaba"],
+  [/^command(-[a-z]+)?/, "cohere"],
+  [/^phi/, "microsoft"],
+  [/^dbrx/, "databricks"],
+  [/^nous/, "nousresearch"],
+];
+
+/** The provider slug whose logo best identifies `modelId` (see above). */
+export function logoProviderFor(
+  modelId: string,
+  catalogProvider: string | null,
+  canonicalMap?: Record<string, string> | null,
+): string | null {
+  if (!modelId) return null;
+  // 0. The canonical owner from models.json (when loaded) — data-driven and
+  //    covers every lab-owned model, including ones the heuristic table misses.
+  if (canonicalMap) {
+    const canonical = canonicalProviderFor(canonicalMap, modelId);
+    if (canonical) return canonical;
+  }
+  const s = modelId.trim();
+  const head = s.toLowerCase().split(/[/:]/)[0].replace(/^[~.]+/, "");
+  const byToken = LOGO_SLUG_BY_TOKEN[head];
+  if (byToken) return byToken;
+  const base = s.split("/").pop() as string;
+  for (const [re, slug] of LOGO_BRAND_MATCHES) {
+    if (re.test(base)) return slug;
+  }
+  return catalogProvider;
+}
+
+/** models.dev logo URL for a model id, or null when nothing resolves. */
+export function providerLogoUrlFor(
+  modelId: string,
+  catalogProvider: string | null,
+  canonicalMap?: Record<string, string> | null,
+): string | null {
+  const slug = logoProviderFor(modelId, catalogProvider, canonicalMap);
+  return slug ? providerLogoUrl(slug) : null;
+}
+
+/**
+ * models.dev also publishes https://models.dev/models.json — provider-agnostic
+ * model metadata keyed by the CANONICAL `<provider>/<model>` id (e.g.
+ * "deepseek/deepseek-v4-flash", "zhipuai/glm-5"). api.json can't tell us who
+ * owns a model (it's duplicated under every host), but this canonical id names
+ * the owner in its leading path segment. We keep just that: canonical id →
+ * owner provider slug (the label part is irrelevant to icon resolution).
+ */
+export function parseCanonicalCatalog(modelsJson: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!modelsJson || typeof modelsJson !== "object") return out;
+  for (const id of Object.keys(modelsJson)) {
+    const idx = id.indexOf("/");
+    if (idx > 0) out[id] = id.slice(0, idx);
+  }
+  return out;
+}
+
+// Lazily-built normalized index (normalized canonical id → owner provider).
+let canonNormIndex: Record<string, string> | null = null;
+let canonNormFor: Record<string, string> | null = null;
+
+/**
+ * Resolve a model id to its canonical OWNER provider slug (e.g. "deepseek" for
+ * "deepseek/deepseek-v4-flash" or "deepseek-v4-flash"). Matches exact canonical
+ * ids first, then a normalized fuzzy match (same normalization as
+ * lookupModelInfo) so proxy/gateway spellings resolve. Returns null when the
+ * id isn't a known canonical model.
+ */
+export function canonicalProviderFor(
+  canonicalMap: Record<string, string>,
+  modelId: string,
+): string | null {
+  if (!canonicalMap || !modelId) return null;
+  if (canonicalMap[modelId]) return canonicalMap[modelId];
+  if (canonNormFor !== canonicalMap) {
+    const idx: Record<string, string> = {};
+    for (const [id, provider] of Object.entries(canonicalMap)) {
+      const n = normalizeModelId(id);
+      // First writer wins — two canonical ids can normalize the same way.
+      if (!(n in idx)) idx[n] = provider;
+    }
+    canonNormIndex = idx;
+    canonNormFor = canonicalMap;
+  }
+  const n = normalizeModelId(modelId);
+  if (canonNormIndex![n]) return canonNormIndex![n];
+  // Try swapping version separators both ways (e.g. "4-8" ⇄ "4.8").
+  const dashToDot = n.replace(/(\d)-(\d)/g, "$1.$2");
+  if (canonNormIndex![dashToDot]) return canonNormIndex![dashToDot];
+  const dotToDash = n.replace(/(\d)\.(\d)/g, "$1-$2");
+  if (canonNormIndex![dotToDash]) return canonNormIndex![dotToDash];
+  return null;
+}
+
+/**
  * Whether a model can take image input. Unknown models (not in the catalog) are
  * allowed — the gate is conservative and only blocks models models.dev
  * explicitly lists as not accepting images. Defensive against legacy/cached

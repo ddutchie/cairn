@@ -21,8 +21,10 @@
 
 import { fetch as expoFetch } from "expo/fetch";
 import {
+  logoProviderFor,
   lookupModelInfo,
   normalizeModelInfo,
+  parseCanonicalCatalog,
   parseModelCatalog,
   type ModelInfo,
 } from "@cairn/shared/models/model-catalog";
@@ -32,6 +34,12 @@ const API_URL = "https://models.dev/api.json";
 const CACHE_KEY = "ai.modelInfo.cache"; // JSON { [modelId]: ModelInfo }
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // refresh weekly
 const CACHE_AT_KEY = "ai.modelInfo.cachedAt";
+// Canonical owner map (models.json): id → provider slug for logo resolution.
+// Tiny (282 entries) and keyed by canonical "<provider>/<model>" ids, so it's
+// cached separately with its own freshness window.
+const CANONICAL_URL = "https://models.dev/models.json";
+const CANONICAL_CACHE_KEY = "ai.canonical.cache"; // JSON { [canonicalId]: provider }
+const CANONICAL_CACHE_AT_KEY = "ai.canonical.cachedAt";
 
 /** Default when a model isn't found in the catalog. */
 export const DEFAULT_CONTEXT_LIMIT = 65536;
@@ -40,6 +48,11 @@ type InfoMap = Record<string, ModelInfo>;
 
 let memoryCache: InfoMap | null = null;
 let inflight: Promise<InfoMap> | null = null;
+// Canonical <provider>/<model> → owner-provider map, loaded alongside the info
+// map. Best-effort; null until it's loaded once (falls back to the shared
+// brand heuristic in logoProviderFor).
+let canonicalCache: Record<string, string> | null = null;
+let canonicalInflight: Promise<Record<string, string> | null> | null = null;
 
 // Subscribe API: a version counter bumped whenever the in-memory catalog
 // changes, so useSyncExternalStore consumers re-render after a background load.
@@ -110,12 +123,63 @@ function loadCache(): InfoMap | null {
   }
 }
 
+/** Load the cached canonical owner map from SQLite (if fresh), else null. */
+function loadCanonicalCache(): Record<string, string> | null {
+  const at = Number(readSetting(CANONICAL_CACHE_AT_KEY) ?? 0);
+  if (!at || Date.now() - at > CACHE_TTL_MS) return null;
+  const raw = readSetting(CANONICAL_CACHE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ensure the canonical owner map is loaded (memory → SQLite → network).
+ * Never throws; returns null on total failure. De-duped, and bumps the version
+ * so pickers re-render once the authoritative owners arrive.
+ */
+async function ensureCanonical(): Promise<Record<string, string> | null> {
+  if (canonicalCache) return canonicalCache;
+  const cached = loadCanonicalCache();
+  if (cached) {
+    canonicalCache = cached;
+    version += 1;
+    emit();
+    return cached;
+  }
+  if (canonicalInflight) return canonicalInflight;
+  canonicalInflight = (async () => {
+    try {
+      const res = await expoFetch(CANONICAL_URL, { headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error(`models.dev canonical ${res.status}`);
+      const map = parseCanonicalCatalog(await res.json());
+      canonicalCache = map;
+      version += 1;
+      writeSetting(CANONICAL_CACHE_KEY, JSON.stringify(map));
+      writeSetting(CANONICAL_CACHE_AT_KEY, String(Date.now()));
+      emit();
+      return map;
+    } catch {
+      return null;
+    } finally {
+      canonicalInflight = null;
+    }
+  })();
+  return canonicalInflight;
+}
+
 /**
  * Ensure the id→info map is loaded (memory → SQLite → network). Best-effort;
  * returns an empty map on total failure. Safe to call repeatedly; de-duped.
  * Emits on every successful load so subscribers re-render.
  */
 async function ensureMap(): Promise<InfoMap> {
+  // Warm the canonical owner map alongside the info map (de-duped; returns
+  // immediately when already loaded or in-flight).
+  void ensureCanonical();
   if (memoryCache) return memoryCache;
   const cached = loadCache();
   if (cached) {
@@ -184,4 +248,14 @@ export async function contextLimitForModel(
 /** Warm the catalog cache in the background (best-effort, fire-and-forget). */
 export function prewarmModelCatalog(): void {
   void ensureMap();
+}
+
+/**
+ * The provider slug whose logo identifies `modelId`. Prefers the canonical
+ * owner from models.json, then the brand heuristic, then the flattened
+ * catalog's provider. Best-effort — null when nothing resolves.
+ */
+export function getLogoProvider(modelId: string): string | null {
+  if (!modelId) return null;
+  return logoProviderFor(modelId, getModelInfo(modelId)?.provider ?? null, canonicalCache);
 }
