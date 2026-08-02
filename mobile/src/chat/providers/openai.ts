@@ -22,6 +22,7 @@ import {
   resolveCreditSpec,
   type CreditInfo,
 } from "@cairn/shared/chat/provider-credits";
+import { pdfDocumentPart } from "@cairn/shared/models/pdf-attach";
 import type { OpenAIConfig } from "../ai-config";
 import { fetchProvidersManifest, getRegistryProviders } from "../providers-registry";
 import { contextLimitForModel } from "../models-dev";
@@ -39,9 +40,10 @@ import {
 // ── request mapping ─────────────────────────────────────────────────────────
 
 interface OpenAIContentPart {
-  type: "text" | "image_url";
+  type: "text" | "image_url" | "document";
   text?: string;
   image_url?: { url: string };
+  document?: { source: { type: "base64"; media_type: string; data: string } };
 }
 
 interface OpenAIMessage {
@@ -87,11 +89,18 @@ function mapMessage(m: UIMessage): OpenAIMessage[] {
     return out;
   }
 
-  // Plain text/image message. Images become image_url content parts (user only).
+  // Plain text/attachment message. Images become image_url content parts;
+  // PDFs become Anthropic-style `document` base64 parts (user only).
   if (fileParts.length > 0 && m.role === "user") {
     const content: OpenAIContentPart[] = [];
     for (const p of textParts) if (p.text) content.push({ type: "text", text: p.text });
-    for (const f of fileParts) content.push({ type: "image_url", image_url: { url: f.url } });
+    for (const f of fileParts) {
+      if (f.mediaType === "application/pdf") {
+        content.push(pdfDocumentPart(f.url) as OpenAIContentPart);
+      } else {
+        content.push({ type: "image_url", image_url: { url: f.url } });
+      }
+    }
     out.push({ role: "user", content });
     return out;
   }

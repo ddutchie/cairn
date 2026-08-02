@@ -54,10 +54,11 @@ export function imageUrlPart(dataUrl: string): ContentPart {
  * Build the `content` array for a user message from a text and its attachments.
  * PDFs must only arrive here when the model is pdf-capable (the caller gates
  * attachment on supportsPdfInput); image attachments are always forwarded.
+ * `kind` is optional so legacy senders (no kind set) default to `image_url`.
  */
 export function buildAttachmentParts(
   text: string,
-  attachments: ChatAttachment[],
+  attachments: Array<{ kind?: "image" | "pdf"; dataUrl: string; name?: string }>,
 ): ContentPart[] {
   const parts: ContentPart[] = [{ type: "text", text }];
   for (const a of attachments) {

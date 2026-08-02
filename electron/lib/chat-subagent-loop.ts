@@ -24,6 +24,7 @@ import { buildApiUrl, type OpenAIMessage } from "./llm";
 import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
 import { parseToolArgs } from "./parse-tool-args";
+import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 
 /** Loosely-typed OpenAI function tool — the synthetic dispatch tools ("research",
  *  "write") aren't in the schema-derived `typeof TOOLS` union, so we widen. */
@@ -432,10 +433,7 @@ export async function runDispatchLoop(
     req.images?.length
       ? ({
           role: "user",
-          content: [
-            { type: "text", text: req.message },
-            ...req.images.map((img) => ({ type: "image_url", image_url: { url: img.dataUrl } })),
-          ],
+          content: buildAttachmentParts(req.message, req.images),
         } as unknown as OpenAIMessage)
       : { role: "user", content: req.message },
   ];

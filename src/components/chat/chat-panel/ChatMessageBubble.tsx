@@ -92,14 +92,25 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
         )}
         {message.images && message.images.length > 0 && (
           <div className={cn("flex flex-wrap gap-2", isUser && "justify-end")}>
-            {message.images.map((img, i) => (
-              <img
-                key={i}
-                src={img.url}
-                alt={img.name}
-                className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--border)] object-cover"
-              />
-            ))}
+            {message.images.map((img, i) =>
+              img.kind === "pdf" ? (
+                <div
+                  key={i}
+                  className="max-w-[200px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] flex items-center gap-2 px-3 py-2"
+                  title={img.name}
+                >
+                  <FileText size={14} className="text-[var(--danger)] shrink-0" />
+                  <span className="text-[0.714rem] text-[var(--text-secondary)] truncate">{img.name}</span>
+                </div>
+              ) : (
+                <img
+                  key={i}
+                  src={img.url}
+                  alt={img.name}
+                  className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--border)] object-cover"
+                />
+              )
+            )}
           </div>
         )}
         <div className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full",

@@ -29,6 +29,8 @@ import {
   subscribeModelCatalog,
 } from "@/lib/models-dev";
 import { supportsImageInput } from "../../../../shared/models/model-catalog";
+import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
+import { rasterizePdfToImages } from "@/lib/pdf-rasterize";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -114,7 +116,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     () => getCommandsForScope("chat", customCommands),
     [customCommands]
   );
-  const [pendingImages, setPendingImages] = useState<Array<{ name: string; dataUrl: string }>>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<
+    Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>
+  >([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
   const projectRef     = useRef<HTMLDivElement>(null);
@@ -125,6 +129,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   useEffect(() => { prewarmModelCatalog(); }, []);
   useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
   const allowImages = supportsImageInput(getModelInfo(aiConfig.model));
+  const allowPdf = supportsPdfInput(getModelInfo(aiConfig.model));
 
   const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
 
@@ -339,8 +344,12 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
   const handleAttachImages = useCallback(async (files: File[]) => {
-    const imageItems: Array<{ name: string; dataUrl: string }> = [];
+    const items: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = [];
     for (const file of files) {
+      const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+      const isImage = file.type.startsWith("image/");
+      if (!isPdf && !isImage) continue;
+      if (isPdf && !allowPdf && !allowImages) continue;
       try {
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -349,25 +358,38 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           reader.onabort = () => reject(new Error(`Read aborted for ${file.name}`));
           reader.readAsDataURL(file);
         });
-        imageItems.push({ name: file.name, dataUrl });
+        if (isPdf && allowPdf) {
+          items.push({ kind: "pdf", name: file.name, dataUrl });
+        } else if (isImage && allowImages) {
+          items.push({ kind: "image", name: file.name, dataUrl });
+        } else if (isPdf) {
+          // Not pdf-capable, but image-capable → rasterize pages as images.
+          try {
+            const pages = await rasterizePdfToImages(dataUrl);
+            pages.forEach((page, p) =>
+              items.push({ kind: "image", name: `${file.name} — page ${p + 1}`, dataUrl: page }));
+          } catch (err) {
+            console.error(`[chat] PDF rasterization failed for ${file.name}:`, err);
+          }
+        }
       } catch (err) {
-        console.error("[chat] Skipping unreadable image:", err);
+        console.error("[chat] Skipping unreadable attachment:", err);
       }
     }
-    setPendingImages((prev) => [...prev, ...imageItems]);
-  }, []);
+    setPendingAttachments((prev) => [...prev, ...items]);
+  }, [allowImages, allowPdf]);
 
   const handleRemoveImage = useCallback((index: number) => {
-    setPendingImages((prev) => prev.filter((_, i) => i !== index));
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   const handleSend = useCallback(async (text?: string) => {
     const content = text ?? input.trim();
-    if ((!content || !content.trim()) && pendingImages.length === 0) return;
+    if ((!content || !content.trim()) && pendingAttachments.length === 0) return;
     if (!threadId) return;
 
     const trimmed = content.trim();
-    if (!pendingImages.length) {
+    if (!pendingAttachments.length) {
       if (trimmed === "/compact" || trimmed === "/ compact") {
         setInput("");
         useCairnStore.getState().compactChatThread(threadId);
@@ -383,11 +405,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
     setInput("");
 
-    const imagesToSend = pendingImages.length > 0 ? pendingImages : undefined;
-    const imageUrls = pendingImages.map((img) => ({ url: img.dataUrl, name: img.name }));
-    setPendingImages([]);
+    const attachmentsToSend = pendingAttachments.length > 0 ? pendingAttachments : undefined;
+    const attachmentUrls = pendingAttachments.map((a) => ({ url: a.dataUrl, name: a.name, kind: a.kind }));
+    setPendingAttachments([]);
 
-    addMessage(threadId, "user", content, undefined, undefined, undefined, undefined, imageUrls);
+    addMessage(threadId, "user", content, undefined, undefined, undefined, undefined, attachmentUrls);
 
     // Resolve context references and append to prompt payload
     const store = useCairnStore.getState();
@@ -466,12 +488,12 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         temperature: aiConfig.temperature ?? 0.3,
       },
       systemPrompt,
-      images: imagesToSend?.map((img) => ({ name: img.name, dataUrl: img.dataUrl })),
+      images: attachmentsToSend?.map((a) => ({ name: a.name, dataUrl: a.dataUrl, kind: a.kind })),
       // Subagents is now a GLOBAL AI setting (aiConfig.subagentsEnabled), not a
       // per-thread flag. Ignored server-side / here for the localllm provider.
       useSubagents: aiConfig.provider !== "localllm" && (aiConfig.subagentsEnabled ?? false),
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, pendingImages]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, pendingAttachments]);
 
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
@@ -649,10 +671,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
           commands={chatCommands}
           suggestions={mentionSuggestions}
-          pendingImages={pendingImages}
+          pendingImages={pendingAttachments}
           onRemoveImage={handleRemoveImage}
           onAttachImages={handleAttachImages}
           allowImages={allowImages}
+          allowPdf={allowPdf}
           variant={activeView === "chat" ? "overview" : "default"}
           showSparkles={activeView === "chat"}
         />

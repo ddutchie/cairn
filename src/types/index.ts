@@ -561,8 +561,8 @@ export interface ChatMessage {
   pendingAction?: PendingAction;
   /** Suggested connection actions for graph assistant */
   actions?: SuggestedAction[];
-  /** Images attached to this message — inline base64 data URLs, ephemeral (not persisted to disk) */
-  images?: Array<{ url: string; name: string }>;
+  /** Attachments on this message — inline base64 data URLs, ephemeral (not persisted to disk) */
+  images?: Array<{ url: string; name: string; kind?: "image" | "pdf" }>;
   /** Subagent runs during this turn (subagent mode) — expandable inline traces. */
   subagents?: ChatSubagent[];
   createdAt: string;

@@ -17,6 +17,7 @@ import { getExternalToolDefs } from "../lib/external-tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { runToolLoop } from "../lib/chat-loop";
 import { resolveLlmApiKey } from "../lib/secure-store";
+import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -135,19 +136,17 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       return;
     }
 
-    // Images are always passed through to the model. We can't reliably guess
-    // vision support from a model id — cloud APIs, custom OpenAI-compatible
-    // endpoints, and on-device models (some, like Gemma, DO support vision)
-    // all expose arbitrary names. So we forward the images and let the model /
-    // endpoint decide; a non-vision model will simply say it can't see them.
+    // Attachments are forwarded to the model: images as standard image_url
+    // parts, PDFs as Anthropic-style `document` base64 parts (built by the
+    // shared helper). We can't reliably guess vision/pdf support from a model
+    // id — cloud APIs, custom OpenAI-compatible endpoints, and on-device models
+    // all expose arbitrary names. The renderer gates what may attach (it knows
+    // the catalog), so a part that arrives here is meant for this model / endpoint.
 
     const userMessage: OpenAIMessage = req.images?.length
       ? ({
           role: "user",
-          content: [
-            { type: "text", text: req.message },
-            ...req.images.map((img) => ({ type: "image_url", image_url: { url: img.dataUrl } })),
-          ],
+          content: buildAttachmentParts(req.message, req.images),
         } as unknown as OpenAIMessage)
       : { role: "user", content: req.message };
 

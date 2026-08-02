@@ -144,7 +144,9 @@ export interface ChatRequest {
   history?: ChatHistoryEntry[];
   config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number };
   systemPrompt?: string;
-  images?: Array<{ name: string; dataUrl: string }>;
+  /** Attachments on the current user message (base64 data URLs; kind="pdf"
+   *  becomes an Anthropic-style `document` part, images become `image_url`). */
+  images?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;
   /** When true, run the dispatch → research/write subagent loop instead of the single-agent tool loop. */
   useSubagents?: boolean;
 }
