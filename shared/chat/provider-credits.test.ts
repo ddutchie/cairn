@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  sameEndpoint,
-  resolveCreditSpec,
-  parseCredits,
-  parseOpenRouterCredits,
-  parseDeepSeekCredits,
-  parseOpenAiGrantsCredits,
-  parseNeuralwattCredits,
-} from "./provider-credits";
+import { sameEndpoint, resolveCreditSpec, parseCredits, parseNeuralwattCredits } from "./provider-credits";
 import type { ProviderCreditsSpec } from "./registry-schema";
 
 describe("sameEndpoint", () => {

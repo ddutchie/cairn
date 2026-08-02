@@ -25,37 +25,42 @@ function loadEnv(): Record<string, string> {
 }
 
 const manifestPath = path.join(COMMUNITY, "providers.json");
+// Path checks + env parsing are safe at collection time (existsSync-guarded);
+// the manifest read itself is deferred into the test body so an absent sibling
+// repo (CI, fresh clones) skips cleanly instead of crashing the suite.
 const hasManifest = fs.existsSync(manifestPath);
 const hasAnyKey = Object.keys(loadEnv()).some((k) => k.endsWith("_API_KEY"));
 
-describe.skipIf(!hasManifest)("app-side credit display against the real community manifest", () => {
-  const env = loadEnv();
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-
-  it.skipIf(!hasAnyKey)("resolves a spec for every descriptor provider and parses live", async () => {
-    const results: string[] = [];
-    for (const p of manifest.providers) {
-      const spec = p.definition?.credits;
-      if (!spec) continue;
-      const resolved = resolveCreditSpec(p.definition.baseUrl, manifest.providers);
-      if (!resolved) {
-        results.push(`✗ ${p.id}: resolveCreditSpec returned null for its OWN baseUrl`);
-        continue;
+describe("app-side credit display against the real community manifest", () => {
+  it.skipIf(!hasManifest || !hasAnyKey)(
+    "resolves a spec for every descriptor provider and parses live",
+    async () => {
+      const env = loadEnv();
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      const results: string[] = [];
+      for (const p of manifest.providers) {
+        const spec = p.definition?.credits;
+        if (!spec) continue;
+        const resolved = resolveCreditSpec(p.definition.baseUrl, manifest.providers);
+        if (!resolved) {
+          results.push(`✗ ${p.id}: resolveCreditSpec returned null for its OWN baseUrl`);
+          continue;
+        }
+        const envKey = `${p.id.toUpperCase()}_API_KEY`;
+        const key = env[envKey] || env[`PROVIDER_${envKey}`];
+        if (!key) {
+          results.push(`· ${p.id}: no key (set ${envKey}), skipped`);
+          continue;
+        }
+        const probe = await probeCredits(resolved.url, key, resolved.shape);
+        results.push(
+          probe.info
+            ? `✓ ${p.id}: HTTP ${probe.status} → ${JSON.stringify({ remaining: probe.info.remaining, usage: probe.info.usage, limit: probe.info.limit, currency: probe.info.currency })}`
+            : `✗ ${p.id}: HTTP ${probe.status}${probe.error ? ` (${probe.error})` : ""}`,
+        );
       }
-      const envKey = `${p.id.toUpperCase()}_API_KEY`;
-      const key = env[envKey] || env[`PROVIDER_${envKey}`];
-      if (!key) {
-        results.push(`· ${p.id}: no key (set ${envKey}), skipped`);
-        continue;
-      }
-      const probe = await probeCredits(resolved.url, key, resolved.shape);
-      results.push(
-        probe.info
-          ? `✓ ${p.id}: HTTP ${probe.status} → ${JSON.stringify({ remaining: probe.info.remaining, usage: probe.info.usage, limit: probe.info.limit, currency: probe.info.currency })}`
-          : `✗ ${p.id}: HTTP ${probe.status}${probe.error ? ` (${probe.error})` : ""}`,
-      );
-    }
-    for (const r of results) console.log(r);
-    expect(results.some((r) => r.startsWith("✗"))).toBe(false);
-  });
+      for (const r of results) console.log(r);
+      expect(results.some((r) => r.startsWith("✗"))).toBe(false);
+    },
+  );
 });
