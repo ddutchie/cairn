@@ -165,11 +165,16 @@ export function parseNeuralwattCredits(json: unknown): CreditInfo | null {
 
 // ── Display formatting ─────────────────────────────────────────────────────────
 
-/** USD cost: 0.00219 → "$0.0022"; tiny costs (e.g. $0.000001) keep a significant digit instead of collapsing to "$0". */
+/** USD cost: 0.00219 → "$0.0022"; tiny costs (e.g. $0.000001) keep a significant
+ * digit instead of collapsing to "$0". Signed by absolute magnitude so negative
+ * costs (e.g. a credit refund) format with the minus before the symbol and the
+ * amount intact. */
 export function formatUsd(cost: number): string {
   if (cost === 0) return "$0";
-  if (cost >= 0.00001) return `$${cost.toFixed(5).replace(/\.?0+$/, "")}`;
-  return `$${parseFloat(cost.toPrecision(2)).toString()}`;
+  const abs = Math.abs(cost);
+  const sign = cost < 0 ? "-" : "";
+  if (abs >= 0.00001) return `${sign}$${abs.toFixed(5).replace(/\.?0+$/, "")}`;
+  return `${sign}$${parseFloat(abs.toPrecision(2)).toString()}`;
 }
 
 /** "5.42 of 45.5" / "5.42" / "Free tier" / "Used 40.08" for a balance row. */

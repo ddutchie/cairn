@@ -87,6 +87,12 @@ describe("formatUsd", () => {
     expect(formatUsd(0.00219)).toBe("$0.00219");
     expect(formatUsd(0.000001)).toBe("$0.000001");
   });
+
+  it("keeps the minus before the symbol and the amount intact for negative costs", () => {
+    expect(formatUsd(-123.456)).toBe("-$123.456");
+    expect(formatUsd(-0.00219)).toBe("-$0.00219");
+    expect(formatUsd(-0.000001)).toBe("-$0.000001");
+  });
 });
 
 describe("formatBalance", () => {

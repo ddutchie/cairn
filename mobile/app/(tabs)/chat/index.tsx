@@ -86,11 +86,14 @@ export default function ChatScreen() {
   // its model is known not to accept images. Rork / Apple / unknown models stay
   // permissive. Re-resolved on focus (provider may change in settings).
   const [openAiModelActive, setOpenAiModelActive] = useState<string | null>(null);
-  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+  // Re-renders on catalog arrival/refresh; the version feeds the memo so
+  // gating recomputes when a model's capabilities finally resolve.
+  const catalogVersion = useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
   const allowImages = useMemo(
     () =>
       openAiModelActive == null ? true : supportsImageInput(getModelInfo(openAiModelActive)),
-    [openAiModelActive],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [openAiModelActive, catalogVersion],
   );
 
   useFocusEffect(
