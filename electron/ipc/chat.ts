@@ -174,7 +174,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     let promptTokens = 0;
     let completionTokens = 0;
     let reasoningTokens = 0;
-    let costUsd = 0;
+    let costUsd: number | undefined = undefined;
     let lastBreakdown: TokenBreakdown | undefined = undefined;
 
     // Assemble external tool defs (MCP servers + custom services) in scope for
@@ -192,8 +192,12 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       completionTokens += ct;
       if (typeof rt === "number") reasoningTokens += rt;
       // Provider-reported USD cost of this call (e.g. Neuralwatt usage.cost);
-      // accumulated across tool-loop rounds like completion tokens.
-      if (typeof cost === "number" && Number.isFinite(cost)) costUsd += cost;
+      // accumulated across tool-loop rounds like completion tokens. Only
+      // non-negative finite values are accepted; an explicitly reported 0 is
+      // preserved, and nothing is set when the provider reports no cost.
+      if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) {
+        costUsd = (costUsd ?? 0) + cost;
+      }
       try {
         const rawBreakdown = calculatePromptBreakdown(buildSystemPrompt(req), messages, allTools);
         lastBreakdown = scaleBreakdown(rawBreakdown, promptTokens);
@@ -203,15 +207,16 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd });
     };
 
-    // Final usage object attached to chat:done (or undefined when nothing ran).
+    // Final usage object attached to chat:done (or undefined when nothing ran —
+    // a cost-only report is still retained, not dropped for having no tokens).
     const finalUsage = () =>
-      promptTokens > 0
+      promptTokens > 0 || costUsd != null
         ? {
             promptTokens,
             completionTokens,
             reasoningTokens,
             breakdown: lastBreakdown,
-            costUsd: costUsd > 0 ? costUsd : undefined,
+            costUsd: costUsd != null ? costUsd : undefined,
           }
         : undefined;
 

@@ -320,7 +320,7 @@ const api = {
       ipcRenderer.on("chat:subagent-tool-call-done", handler);
       return () => ipcRenderer.off("chat:subagent-tool-call-done", handler);
     },
-    onSubagentUsage: (cb: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; threadId?: string }) => void) => {
+    onSubagentUsage: (cb: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: any) => cb(e);
       ipcRenderer.on("chat:subagent-usage", handler);

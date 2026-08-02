@@ -251,7 +251,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       if (!isForThisThread(e)) return;
       mutateSub(e.childId, (s) => ({
         ...s,
-        lastUsage: { promptTokens: e.promptTokens, completionTokens: e.completionTokens, reasoningTokens: e.reasoningTokens },
+        lastUsage: { promptTokens: e.promptTokens, completionTokens: e.completionTokens, reasoningTokens: e.reasoningTokens, costUsd: e.costUsd },
       }));
     });
 

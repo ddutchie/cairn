@@ -6,6 +6,13 @@ import { X } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TokenBreakdown } from "@/types";
 
+/** USD cost: 0.00219 → "$0.0022"; tiny costs (e.g. $0.000001) keep a significant digit instead of collapsing to "$0". */
+function formatUsd(cost: number): string {
+  if (cost === 0) return "$0";
+  if (cost >= 0.00001) return `$${cost.toFixed(5).replace(/\.?0+$/, "")}`;
+  return `$${parseFloat(cost.toPrecision(2)).toString()}`;
+}
+
 interface ContextRingProps {
   promptTokens: number;
   contextLimit: number;
@@ -204,7 +211,7 @@ export function ContextRing({
             <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-[0.714rem]">
               <span className="text-[var(--text-secondary)]">Cost</span>
               <span className="font-mono text-[var(--text-primary)] font-semibold">
-                ${costUsd.toFixed(5).replace(/\.?0+$/, "")}
+                {formatUsd(costUsd)}
               </span>
             </div>
           )}

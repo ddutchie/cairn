@@ -260,9 +260,11 @@ function formatTokenCount(num: number): string {
   return num.toString();
 }
 
-/** USD cost: 0.00219 → "$0.0022"; strips trailing zeros like desktop. */
+/** USD cost: 0.00219 → "$0.0022"; tiny costs (e.g. $0.000001) keep a significant digit instead of collapsing to "$0". */
 function formatUsd(cost: number): string {
-  return `$${cost.toFixed(5).replace(/\.?0+$/, "")}`;
+  if (cost === 0) return "$0";
+  if (cost >= 0.00001) return `$${cost.toFixed(5).replace(/\.?0+$/, "")}`;
+  return `$${parseFloat(cost.toPrecision(2)).toString()}`;
 }
 
 /** Convenience: build props from a ChatUsage object. */
