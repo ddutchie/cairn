@@ -280,7 +280,12 @@ export async function installCommunityProvider(
   const def = entry.definition;
   const list = readProviders();
   const existing = list.find(
-    (p) => (p.communityId && p.communityId === entry.id) || p.name === def.name,
+    (p) =>
+      // Match by catalog id first; only fall back to a same-name provider when
+      // it's itself community-sourced, so a manually-configured provider with a
+      // colliding name is never hijacked by a re-install.
+      (p.communityId && p.communityId === entry.id) ||
+      (p.source === "community" && p.name === def.name),
   );
   const id = existing?.id ?? newProviderId();
 

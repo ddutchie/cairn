@@ -21,7 +21,6 @@ import { fetchProvidersManifest, getCachedProvidersManifest } from "@/chat/provi
 import {
   listSavedProviders,
   installCommunityProvider,
-  isCommunityProviderOutdated,
   type SavedProvider,
 } from "@/chat/ai-config";
 import type { RegistryProviderEntry } from "@cairn/shared/chat/registry-schema";
@@ -67,8 +66,11 @@ export default function ProvidersSettingsScreen() {
     setSaved(await listSavedProviders());
   }, []);
 
-  const loadRegistry = useCallback(async (force: boolean) => {
+  const loadRegistry = useCallback(async (force: boolean, active: () => boolean = () => true) => {
     const { manifest, error: err } = await fetchProvidersManifest(force);
+    // Drop the result if the owning effect was torn down mid-flight — the
+    // screen is unmounted or the refresh was superseded.
+    if (!active()) return;
     setProviders(manifest?.providers ?? []);
     setError(err ?? null);
   }, []);
@@ -76,7 +78,7 @@ export default function ProvidersSettingsScreen() {
   useEffect(() => {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadRegistry(false).finally(() => {
+    void loadRegistry(false, () => !cancelled).finally(() => {
       if (!cancelled) setLoading(false);
     });
     void reloadSaved();
@@ -211,7 +213,13 @@ export default function ProvidersSettingsScreen() {
                 const def = entry.definition;
                 const installedRow = entry.id ? installedById.get(entry.id) : undefined;
                 const installed = !!installedRow;
-                const outdated = installed && isCommunityProviderOutdated(entry);
+                // Same comparison semantics as isCommunityProviderOutdated, but
+                // derived from the already-fetched installed row instead of a
+                // per-entry list scan.
+                const outdated =
+                  !!installedRow &&
+                  (installedRow.baseUrl !== def.baseUrl ||
+                    installedRow.model !== (def.defaultModel ?? installedRow.model));
                 const busy = busyId === entry.id;
                 return (
                   <View key={entry.id} style={styles.row}>
@@ -222,7 +230,15 @@ export default function ProvidersSettingsScreen() {
                       <Text style={styles.rowUrl} numberOfLines={1}>{def.baseUrl}</Text>
                       {!!def.apiKeyUrl && (
                         <Pressable
-                          onPress={() => def.apiKeyUrl && Linking.openURL(def.apiKeyUrl)}
+                          onPress={() => {
+                            if (!def.apiKeyUrl) return;
+                            void Linking.openURL(def.apiKeyUrl).catch(() => {
+                              Alert.alert(
+                                "Couldn't open link",
+                                `Open ${def.apiKeyUrl} manually to get a key.`,
+                              );
+                            });
+                          }}
                           style={styles.linkRow}
                           hitSlop={6}
                         >

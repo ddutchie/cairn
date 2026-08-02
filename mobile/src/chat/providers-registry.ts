@@ -76,7 +76,10 @@ export async function fetchProvidersManifest(
   force = false,
 ): Promise<{ manifest: ProvidersManifest | null; error?: string }> {
   const cached = getCachedProvidersManifest();
-  const etag = force ? null : getMeta(META_ETAG);
+  // Only revalidate (If-None-Match) when we hold a valid cached manifest to
+  // fall back to — a 304 with nothing usable cached would leave the caller
+  // empty-handed. When the cache is empty/corrupt, do an unconditional fetch.
+  const etag = !force && cached ? getMeta(META_ETAG) : null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
