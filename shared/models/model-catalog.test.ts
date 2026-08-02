@@ -7,9 +7,11 @@ import { describe, expect, it } from "vitest";
 import {
   formatModelCost,
   lookupModelInfo,
+  modelInputChips,
   normalizeModelId,
   parseModelCatalog,
   providerLogoUrl,
+  supportsImageInput,
 } from "./model-catalog";
 
 describe("parseModelCatalog", () => {
@@ -20,7 +22,7 @@ describe("parseModelCatalog", () => {
           "gpt-5": {
             limit: { context: 1000000, output: 128000 },
             cost: { input: 1.25, output: 10 },
-            modalities: { input: ["text", "image"] },
+            modalities: { input: ["text", "image", "pdf"] },
             tool_call: true,
           },
         },
@@ -35,7 +37,7 @@ describe("parseModelCatalog", () => {
       context: 1000000,
       input: 1.25,
       output: 10,
-      image: true,
+      modes: ["text", "image", "pdf"],
       toolCall: true,
       provider: "openai",
     });
@@ -43,7 +45,7 @@ describe("parseModelCatalog", () => {
       context: 1000000,
       input: null,
       output: null,
-      image: false,
+      modes: [],
       toolCall: null,
       provider: "anthropic",
     });
@@ -57,7 +59,7 @@ describe("parseModelCatalog", () => {
       context: null,
       input: null,
       output: null,
-      image: false,
+      modes: [],
       toolCall: null,
       provider: "deepseek",
     });
@@ -66,6 +68,32 @@ describe("parseModelCatalog", () => {
   it("returns an empty map for junk input", () => {
     expect(parseModelCatalog(null)).toEqual({});
     expect(parseModelCatalog("nope")).toEqual({});
+  });
+});
+
+describe("supportsImageInput", () => {
+  it("is permissive when the model is unknown", () => {
+    expect(supportsImageInput(null)).toBe(true);
+  });
+
+  it("follows the catalog modalities", () => {
+    expect(supportsImageInput({ modes: ["text", "image"] } as never)).toBe(true);
+    expect(supportsImageInput({ modes: ["text", "pdf"] } as never)).toBe(false);
+    expect(supportsImageInput({ modes: [] } as never)).toBe(false);
+  });
+});
+
+describe("modelInputChips", () => {
+  const chip = (info: { modes: string[] }) => modelInputChips(info as never).map((c) => c.label);
+
+  it("renders stable-ordered labels for present modes", () => {
+    expect(chip({ modes: ["text", "image", "pdf"] })).toEqual(["T", "I", "PDF"]);
+    expect(chip({ modes: ["audio", "image"] })).toEqual(["I", "A"]);
+  });
+
+  it("returns nothing for unknown models or no modes", () => {
+    expect(modelInputChips(null)).toEqual([]);
+    expect(chip({ modes: [] })).toEqual([]);
   });
 });
 

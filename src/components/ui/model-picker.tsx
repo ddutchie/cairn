@@ -12,7 +12,12 @@ import {
   prewarmModelCatalog,
   subscribeModelCatalog,
 } from "@/lib/models-dev";
-import { formatModelCost, providerLogoUrl } from "../../../shared/models/model-catalog";
+import {
+  formatModelCost,
+  modelInputChips,
+  providerLogoUrl,
+  type ModelInfo,
+} from "../../../shared/models/model-catalog";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown";
@@ -43,6 +48,27 @@ export function TruncatedModel({ text, className }: { text: string; className?: 
     <Tooltip content={text} side="top">
       {span}
     </Tooltip>
+  );
+}
+
+/**
+ * Tiny input-capability chips for a model, e.g. T / I / PDF / V / A — the input
+ * modalities models.dev lists for the model. Renders nothing when the catalog
+ * hasn't loaded or the model is unknown.
+ */
+function CapabilityChips({ info }: { info: ModelInfo | null }) {
+  const chips = modelInputChips(info);
+  if (chips.length === 0) return null;
+  return (
+    <span className="flex items-center gap-0.5 flex-shrink-0">
+      {chips.map((c) => (
+        <Tooltip key={c.key} content={c.title}>
+          <span className="text-[0.5rem] leading-none px-0.5 py-[1.5px] rounded-[3px] border border-[var(--border)] text-[var(--text-tertiary)]">
+            {c.label}
+          </span>
+        </Tooltip>
+      ))}
+    </span>
   );
 }
 
@@ -172,6 +198,7 @@ export function ModelPicker({
                   />
                 )}
                 <TruncatedModel text={value} className="font-mono" />
+                <CapabilityChips info={triggerInfo} />
                 {triggerNoToolCall && (
                   <Tooltip content="This model doesn't support tool calling">
                     <span className="flex-shrink-0 text-[var(--warning)]">
@@ -345,6 +372,7 @@ function ModelRow({
         />
       )}
       <TruncatedModel text={model} />
+      <CapabilityChips info={info} />
       {noToolCall && (
         <Tooltip content="This model doesn't support tool calling">
           <span className="flex-shrink-0 text-[var(--warning)]">

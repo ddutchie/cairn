@@ -13,7 +13,7 @@ import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
 import { ProviderLogo } from "@/components/ProviderLogo";
-import { formatModelCost } from "@cairn/shared/models/model-catalog";
+import { formatModelCost, modelInputChips } from "@cairn/shared/models/model-catalog";
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
@@ -665,6 +665,11 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                                     {id}
                                   </Text>
                                   <View style={styles.modelRowMeta}>
+                                    {modelInputChips(info).map((c) => (
+                                      <Text key={c.key} style={styles.modelRowChip} numberOfLines={1}>
+                                        {c.label}
+                                      </Text>
+                                    ))}
                                     {noToolCall && (
                                       <TriangleAlert size={12} color={t.warning} />
                                     )}

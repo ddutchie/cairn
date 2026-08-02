@@ -160,6 +160,17 @@ export function makeAiSettingsStyles(t: Theme) {
     modelRowTextActive: { color: t.accent, fontWeight: "600" },
     modelRowEmpty: { ...typeScale.caption, color: t.textTertiary, paddingHorizontal: 12, paddingVertical: 14 },
     modelRowCost: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
+    modelRowChip: {
+      ...typeScale.caption,
+      color: t.textTertiary,
+      fontSize: 9,
+      lineHeight: 12,
+      paddingHorizontal: 2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 3,
+      overflow: "hidden",
+    },
     modelRowMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: "auto" },
 
     // Remaining-credits badge (providers that expose a balance, e.g. OpenRouter).

@@ -21,8 +21,8 @@ export interface ModelInfo {
   input: number | null;
   /** USD per 1M output tokens (cost.output). */
   output: number | null;
-  /** Whether the model accepts image input (modalities.input includes "image"). */
-  image: boolean;
+  /** Input modalities (modalities.input): text, image, pdf, video, audio… */
+  modes: string[];
   /** Whether the model supports tool calls, when known. */
   toolCall: boolean | null;
   /** models.dev provider slug that owns the catalog entry (drives the logo). */
@@ -40,7 +40,36 @@ export function providerLogoUrl(provider: string): string {
  * explicitly lists as not accepting images.
  */
 export function supportsImageInput(info: ModelInfo | null): boolean {
-  return info ? info.image : true;
+  return info ? info.modes.includes("image") : true;
+}
+
+/** A single input-capability chip (icon/label + tooltip title). */
+export interface ModelModeChip {
+  key: string;
+  label: string;
+  title: string;
+}
+
+const MODE_CHIP_DEFS: Record<string, ModelModeChip> = {
+  text: { key: "text", label: "T", title: "Text input" },
+  image: { key: "image", label: "I", title: "Image input" },
+  pdf: { key: "pdf", label: "PDF", title: "PDF input" },
+  video: { key: "video", label: "V", title: "Video input" },
+  audio: { key: "audio", label: "A", title: "Audio input" },
+};
+
+/** The model's input-modality chips in a stable order (text → image → pdf → …). */
+export function modelInputChips(info: ModelInfo | null): ModelModeChip[] {
+  if (!info) return [];
+  const order = ["text", "image", "pdf", "video", "audio"];
+  const chips: ModelModeChip[] = [];
+  for (const m of order) {
+    if (info.modes.includes(m)) {
+      const def = MODE_CHIP_DEFS[m];
+      if (def) chips.push(def);
+    }
+  }
+  return chips;
 }
 
 /**
@@ -62,12 +91,14 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
       };
       const readNum = (v: unknown): number | null =>
         typeof v === "number" && Number.isFinite(v) ? v : null;
-      const inModes = Array.isArray(m.modalities?.input) ? (m.modalities!.input as unknown[]) : [];
+      const inModes = Array.isArray(m.modalities?.input)
+        ? (m.modalities!.input as unknown[]).filter((x): x is string => typeof x === "string")
+        : [];
       map[id] = {
         context: readNum(m.limit?.context),
         input: readNum(m.cost?.input),
         output: readNum(m.cost?.output),
-        image: inModes.includes("image"),
+        modes: inModes,
         toolCall: typeof m.tool_call === "boolean" ? m.tool_call : null,
         provider: slug,
       };
