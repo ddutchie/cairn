@@ -180,6 +180,30 @@ export function makeAiSettingsStyles(t: Theme) {
     modelRowEmpty: { ...typeScale.caption, color: t.textTertiary, paddingHorizontal: 12, paddingVertical: 14 },
     modelRowCost: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
     modelRowMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: "auto" },
+    // Favorite star: a nested pressable on the row's leading edge. Toggling it
+    // must not select the model, so it's a sibling (the outer row's onPress
+    // won't fire for touches captured by the inner pressable).
+    modelStar: {
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: -4,
+    },
+    modelSectionLabel: {
+      ...typeScale.overline,
+      color: t.textTertiary,
+      paddingHorizontal: 12,
+      paddingTop: 10,
+      paddingBottom: 4,
+      textTransform: "uppercase",
+    },
+    modelSectionSeparator: {
+      height: 6,
+      borderTopWidth: 1,
+      borderTopColor: t.border,
+    },
 
     // Remaining-credits badge (providers that expose a balance, e.g. OpenRouter).
     creditsCard: {

@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
@@ -36,6 +36,8 @@ import {
   selectSavedProvider,
   readModelsCache,
   writeModelsCache,
+  getFavoriteModels,
+  toggleFavoriteModel,
   type ProviderPref,
   type SavedProvider,
 } from "@/chat/ai-config";
@@ -160,6 +162,13 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [customModel, setCustomModel] = useState(false);
   // Free-text filter over the fetched model ids (providers can return 50+).
   const [modelQuery, setModelQuery] = useState("");
+  // Starred models (global, persisted via the meta DB like desktop's
+  // localStorage list). Only used by the dropdown rows.
+  const [favorites, setFavorites] = useState<Set<string>>(() => getFavoriteModels());
+  const toggleFavorite = useCallback((id: string) => {
+    haptics.selection();
+    setFavorites(toggleFavoriteModel(id));
+  }, []);
   // Remaining credits for providers that expose it (e.g. OpenRouter). null =
   // not supported / unknown, so the display is hidden.
   const [keyInfo, setKeyInfo] = useState<ProviderKeyInfo | null>(null);
@@ -427,6 +436,93 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const triggerInfo = getModelInfo(model);
   const triggerCost = formatModelCost(triggerInfo?.input ?? null, triggerInfo?.output ?? null);
   const triggerNoToolCall = triggerInfo?.toolCall === false;
+
+  // Split the filtered list into starred vs the rest so Favorites stay pinned
+  // to the top of the dropdown (mirrors desktop's picker sections).
+  const { favModels, restModels } = useMemo(() => {
+    const fav: string[] = [];
+    const rest: string[] = [];
+    for (const id of filteredModels) (favorites.has(id) ? fav : rest).push(id);
+    return { favModels: fav, restModels: rest };
+  }, [filteredModels, favorites]);
+
+  // One row definition shared by the Favorites and All-models sections. The
+  // star is a nested pressable so tapping it toggles the favorite without
+  // selecting the model (the outer row's onPress never fires).
+  const renderModelRow = (id: string) => {
+    const active = model === id;
+    const info = getModelInfo(id);
+    const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
+    const noToolCall = info?.toolCall === false;
+    const isFavorite = favorites.has(id);
+    return (
+      <Pressable
+        key={id}
+        style={[styles.modelRow, active && styles.modelRowActive]}
+        onPress={() => {
+          haptics.selection();
+          setModel(id);
+          setModelOpen(false);
+          setModelQuery("");
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`Model ${id}`}
+        accessibilityState={{ selected: active }}
+      >
+        <Pressable
+          style={styles.modelStar}
+          onPress={() => toggleFavorite(id)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={isFavorite ? `Unfavorite ${id}` : `Favorite ${id}`}
+        >
+          <Star
+            size={13}
+            color={isFavorite ? t.accent : t.textTertiary}
+            fill={isFavorite ? t.accent : "transparent"}
+          />
+        </Pressable>
+        {active ? (
+          <Check size={14} color={t.accent} />
+        ) : (
+          <View style={{ width: 14 }} />
+        )}
+        {info?.provider ? (
+          <ProviderLogo provider={info.provider} />
+        ) : (
+          <View style={{ width: 14 }} />
+        )}
+        <Text
+          style={[styles.modelRowText, active && styles.modelRowTextActive]}
+          numberOfLines={1}
+        >
+          {id}
+        </Text>
+        <View style={styles.modelRowMeta}>
+          {modelInputChips(info).map((c) => {
+            const CapIcon =
+              c.key === "text" ? Type
+              : c.key === "image" ? ImageIcon
+              : c.key === "pdf" ? FileText
+              : c.key === "video" ? Video
+              : c.key === "audio" ? AudioLines
+              : null;
+            return CapIcon ? (
+              <CapIcon key={c.key} size={10} color={t.textTertiary} />
+            ) : null;
+          })}
+          {noToolCall && (
+            <TriangleAlert size={12} color={t.warning} />
+          )}
+          {cost && (
+            <Text style={styles.modelRowCost} numberOfLines={1}>
+              {cost}
+            </Text>
+          )}
+        </View>
+      </Pressable>
+    );
+  };
 
   return (
     <View style={styles.flex}>
@@ -743,65 +839,14 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                             nestedScrollEnabled
                             keyboardShouldPersistTaps="handled"
                           >
-                            {filteredModels.map((id) => {
-                              const active = model === id;
-                              const info = getModelInfo(id);
-                              const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
-                              const noToolCall = info?.toolCall === false;
-                              return (
-                                <Pressable
-                                  key={id}
-                                  style={[styles.modelRow, active && styles.modelRowActive]}
-                                  onPress={() => {
-                                    setModel(id);
-                                    setModelOpen(false);
-                                    setModelQuery("");
-                                  }}
-                                  accessibilityRole="button"
-                                  accessibilityLabel={`Model ${id}`}
-                                  accessibilityState={{ selected: active }}
-                                >
-                                  {active ? (
-                                    <Check size={14} color={t.accent} />
-                                  ) : (
-                                    <View style={{ width: 14 }} />
-                                  )}
-                                  {info?.provider ? (
-                                    <ProviderLogo provider={info.provider} />
-                                  ) : (
-                                    <View style={{ width: 14 }} />
-                                  )}
-                                  <Text
-                                    style={[styles.modelRowText, active && styles.modelRowTextActive]}
-                                    numberOfLines={1}
-                                  >
-                                    {id}
-                                  </Text>
-                                  <View style={styles.modelRowMeta}>
-                                    {modelInputChips(info).map((c) => {
-                                      const CapIcon =
-                                        c.key === "text" ? Type
-                                        : c.key === "image" ? ImageIcon
-                                        : c.key === "pdf" ? FileText
-                                        : c.key === "video" ? Video
-                                        : c.key === "audio" ? AudioLines
-                                        : null;
-                                      return CapIcon ? (
-                                        <CapIcon key={c.key} size={10} color={t.textTertiary} />
-                                      ) : null;
-                                    })}
-                                    {noToolCall && (
-                                      <TriangleAlert size={12} color={t.warning} />
-                                    )}
-                                    {cost && (
-                                      <Text style={styles.modelRowCost} numberOfLines={1}>
-                                        {cost}
-                                      </Text>
-                                    )}
-                                  </View>
-                                </Pressable>
-                              );
-                            })}
+                            {favModels.length > 0 && (
+                              <>
+                                <Text style={styles.modelSectionLabel}>Favorites</Text>
+                                {favModels.map(renderModelRow)}
+                                {restModels.length > 0 && <View style={styles.modelSectionSeparator} />}
+                              </>
+                            )}
+                            {restModels.map(renderModelRow)}
                           </ScrollView>
                         )}
                       </View>

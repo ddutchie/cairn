@@ -449,6 +449,32 @@ export function writeModelsCache(baseUrl: string, models: string[]): void {
   }
 }
 
+// ── Favorite models ───────────────────────────────────────────────────────────
+
+const FAVORITE_MODELS_KEY = "ai.favoriteModels"; // JSON array of model ids
+
+/** The user's favorite model ids (global, like desktop's localStorage list). */
+export function getFavoriteModels(): Set<string> {
+  try {
+    const raw = getSetting(FAVORITE_MODELS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter((x): x is string => typeof x === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Toggle a model's favorite state and persist it. Returns the updated set. */
+export function toggleFavoriteModel(model: string): Set<string> {
+  const next = getFavoriteModels();
+  if (next.has(model)) next.delete(model);
+  else next.add(model);
+  setSetting(FAVORITE_MODELS_KEY, JSON.stringify([...next]));
+  return next;
+}
+
 /**
  * The user's preferred provider. If the user explicitly chose one, honour it.
  * Otherwise default to "rork" when a Rork endpoint was built in (first-party
