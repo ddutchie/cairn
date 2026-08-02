@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Host, Popover, RNHostView, Button, VStack, HStack, Spacer, Text, Divider, Rectangle } from "@expo/ui/swift-ui";
 import { font, foregroundStyle, frame, padding, monospacedDigit, clipShape, accessibilityLabel } from "@expo/ui/swift-ui/modifiers";
 import { useTheme } from "@/theme";
 import { haptics } from "@/haptics";
+import { getActiveProvider, getProviderApiKey } from "@/chat/ai-config";
+import { getKeyInfo, type ProviderKeyInfo } from "@/chat/providers/openai";
 import type { ChatUsage } from "@/chat/providers/types";
 import type { TokenBreakdown } from "@/chat/token-breakdown";
 
@@ -13,6 +15,10 @@ import type { TokenBreakdown } from "@/chat/token-breakdown";
 const POPOVER_WIDTH = 260;
 const BAR_INNER_WIDTH = POPOVER_WIDTH - 32;
 const BAR_HEIGHT = 8;
+
+/** Re-probe the account balance at most once per minute. */
+const BALANCE_TTL_MS = 60_000;
+let balanceCache: { baseUrl: string; data: ProviderKeyInfo | null; fetchedAt: number } | null = null;
 
 /**
  * Context-window usage ring — the mobile analogue of the desktop ContextRing
@@ -57,6 +63,31 @@ export function ContextRing({
 }) {
   const t = useTheme();
   const [open, setOpen] = useState(false);
+  const [balance, setBalance] = useState<ProviderKeyInfo | null>(null);
+
+  // Lazily fetch the active provider's remaining balance (TTL-cached, so the
+  // ring re-mounting keeps one probe per minute). null when the provider
+  // exposes no credits or offline → the Balance row is hidden.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const active = getActiveProvider();
+      if (!active?.baseUrl) return;
+      const cached = balanceCache;
+      if (cached && cached.baseUrl === active.baseUrl && Date.now() - cached.fetchedAt < BALANCE_TTL_MS) {
+        if (!cancelled) setBalance(cached.data);
+        return;
+      }
+      const apiKey = await getProviderApiKey(active.id).catch(() => null);
+      if (cancelled) return;
+      const data = apiKey ? await getKeyInfo(active.baseUrl, apiKey) : null;
+      balanceCache = { baseUrl: active.baseUrl, data, fetchedAt: Date.now() };
+      if (!cancelled) setBalance(data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const { pct, colour, r, circ, dash } = useMemo(() => {
     const p = contextLimit > 0 ? Math.min(promptTokens / contextLimit, 1) : 0;
@@ -127,6 +158,9 @@ export function ContextRing({
     }
     if (typeof costUsd === "number" && costUsd > 0) {
       lines.push("", `Cost: ${formatUsd(costUsd)}`);
+    }
+    if (balance && (balance.remaining != null || balance.usage != null || balance.isFreeTier === true)) {
+      lines.push("", `Balance: ${formatBalance(balance)}`);
     }
     Alert.alert("Context usage", lines.join("\n"), [{ text: "OK" }]);
   };
@@ -244,6 +278,13 @@ export function ContextRing({
               </>
             ) : null}
 
+            {balance && (balance.remaining != null || balance.usage != null || balance.isFreeTier === true) ? (
+              <>
+                <Divider />
+                {row("Balance", formatBalance(balance))}
+              </>
+            ) : null}
+
             {estimated ? (
               <Text modifiers={[font({ textStyle: "caption2" }), secondary]}>Estimated for this provider.</Text>
             ) : null}
@@ -265,6 +306,22 @@ function formatUsd(cost: number): string {
   if (cost === 0) return "$0";
   if (cost >= 0.00001) return `$${cost.toFixed(5).replace(/\.?0+$/, "")}`;
   return `$${parseFloat(cost.toPrecision(2)).toString()}`;
+}
+
+/** "5.42 of 45.5" / "5.42" / "Free tier" / "Used 40.08" for the Balance row. */
+function formatBalance(b: ProviderKeyInfo): string {
+  const sym = b.currency === "CNY" ? "¥" : "$";
+  const fmt = (n: number) => {
+    const abs = Math.abs(n);
+    const digits = abs > 0 && abs < 1 ? 4 : 2;
+    return `${sym}${abs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
+  };
+  if (b.remaining != null) {
+    return b.limit != null ? `${fmt(b.remaining)} of ${fmt(b.limit)}` : fmt(b.remaining);
+  }
+  if (b.isFreeTier === true) return "Free tier";
+  if (b.usage != null && b.usage > 0) return `Used ${fmt(b.usage)}`;
+  return "Free tier";
 }
 
 /** Convenience: build props from a ChatUsage object. */

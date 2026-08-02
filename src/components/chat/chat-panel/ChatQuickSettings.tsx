@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import { Settings2, GitBranch, ExternalLink } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -33,7 +34,6 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
   );
 
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const { availableModels, fetchModels, ensureModels, modelsLoading, testState } = useEndpointConfig();
 
   const provider = aiConfig.provider ?? "openai";
@@ -50,25 +50,6 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Close on outside click / Escape. The model picker uses a Radix dropdown
-  // whose content is PORTALED outside rootRef — clicking a model item must not
-  // close the whole popover, so ignore clicks landing inside any Radix popper.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Element | null;
-      if (target?.closest("[data-radix-popper-content-wrapper]")) return;
-      if (rootRef.current && !rootRef.current.contains(target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   const openFullSettings = useCallback(() => {
     setSettingsSection("ai");
     setView("settings");
@@ -79,27 +60,35 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
   const temperature = aiConfig.temperature ?? 0.3;
 
   return (
-    <div ref={rootRef} className="relative">
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Tooltip content="Chat settings — model, steps, temperature, subagents" side="left">
-        <button
-          onClick={() => setOpen((v) => !v)}
-          aria-label="Chat settings"
-          aria-expanded={open}
-          className={cn(
-            "flex items-center justify-center p-1 rounded transition-colors",
-            open
-              ? "text-[var(--accent)] bg-[var(--surface-3)]"
-              : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
-          )}
-        >
-          <Settings2 size={12} />
-        </button>
+        <Popover.Trigger asChild>
+          <button
+            aria-label="Chat settings"
+            className={cn(
+              "flex items-center justify-center p-1 rounded transition-colors",
+              open
+                ? "text-[var(--accent)] bg-[var(--surface-3)]"
+                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
+            )}
+          >
+            <Settings2 size={12} />
+          </button>
+        </Popover.Trigger>
       </Tooltip>
 
-      {open && (
-        <div
-          className="absolute right-0 top-full mt-1 w-64 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl p-3 space-y-3 animate-fade-in"
-          role="dialog"
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          onInteractOutside={(e) => {
+            // The model picker's dropdown is PORTALED outside this content —
+            // clicking an option must not close the whole quick-settings.
+            const target = e.target as Element | null;
+            if (target?.closest("[data-radix-popper-content-wrapper]")) e.preventDefault();
+          }}
+          className="z-50 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl p-3 space-y-3 animate-fade-in focus:outline-none"
         >
           <div className="text-[0.643rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
             Chat settings
@@ -188,8 +177,8 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
             <ExternalLink size={10} />
             More settings…
           </button>
-        </div>
-      )}
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

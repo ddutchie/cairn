@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useSyncExternalStore, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { X } from "lucide-react";
+import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TokenBreakdown } from "@/types";
 
@@ -11,6 +13,116 @@ function formatUsd(cost: number): string {
   if (cost === 0) return "$0";
   if (cost >= 0.00001) return `$${cost.toFixed(5).replace(/\.?0+$/, "")}`;
   return `$${parseFloat(cost.toPrecision(2)).toString()}`;
+}
+
+/** Provider remaining-balance (account-level), the desktop CreditInfo shape. */
+interface ProviderBalance {
+  remaining: number | null;
+  usage: number | null;
+  limit: number | null;
+  isFreeTier: boolean | null;
+  currency: "USD" | "CNY";
+}
+
+/** Re-probe the balance at most once per minute regardless of how many ring instances mount. */
+const BALANCE_TTL_MS = 60_000;
+
+interface BalanceEntry {
+  key: string;
+  data: ProviderBalance | null;
+  fetchedAt: number;
+}
+
+// Shared module-level balance cache, read through useSyncExternalStore so every
+// ring instance (chat header, agent pane) sees the same data without duplicate
+// probes. `balanceCache` is always replaced wholesale (never mutated) so the
+// getSnapshot reference stays stable between store changes.
+let balanceCache: BalanceEntry | null = null;
+const balanceListeners = new Set<() => void>();
+
+function balanceSnapshot(): BalanceEntry | null {
+  return balanceCache;
+}
+
+function balanceSubscribe(onStoreChange: () => void): () => void {
+  balanceListeners.add(onStoreChange);
+  return () => {
+    balanceListeners.delete(onStoreChange);
+  };
+}
+
+function updateBalance(entry: BalanceEntry): void {
+  balanceCache = entry;
+  for (const l of balanceListeners) l();
+}
+
+/**
+ * Lazily fetch the active provider's remaining balance via the same IPC the
+ * settings panel uses. TTL-cached (shared) so the chat header, agent pane and
+ * message rings use one probe per minute. Returns null while loading, when the
+ * provider exposes no credits, or offline — the ring hides the row then.
+ */
+function useProviderBalance(enabled: boolean): ProviderBalance | null {
+  const { baseUrl, apiKey } = useCairnStore(
+    useShallow((s) => ({ baseUrl: s.aiConfig?.baseUrl ?? "", apiKey: s.aiConfig?.apiKey ?? "" })),
+  );
+  const entry = useSyncExternalStore(balanceSubscribe, balanceSnapshot, balanceSnapshot);
+  const key = `${baseUrl}::${apiKey}`;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const cached = balanceCache;
+    if (cached && cached.key === key && Date.now() - cached.fetchedAt < BALANCE_TTL_MS) return;
+    // No key (local/offline) → nothing to query; credit endpoints are all authed.
+    if (!apiKey) {
+      updateBalance({ key, data: null, fetchedAt: Date.now() });
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      let data: ProviderBalance | null = null;
+      if (typeof window !== "undefined" && window.electron?.ai?.fetchKeyInfo) {
+        try {
+          const info = await window.electron.ai.fetchKeyInfo({ baseUrl, apiKey });
+          if (info) {
+            data = {
+              remaining: info.remaining,
+              usage: info.usage,
+              limit: info.limit,
+              isFreeTier: info.isFreeTier,
+              currency: info.currency,
+            };
+          }
+        } catch {
+          data = null;
+        }
+      }
+      if (cancelled) return;
+      updateBalance({ key, data, fetchedAt: Date.now() });
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, key, baseUrl, apiKey]);
+
+  return entry && entry.key === key ? entry.data : null;
+}
+
+/** "5.42 of 45.5" / "5.42" / "Free tier" / "Used 40.08" for the Balance row. */
+function formatBalance(b: ProviderBalance): string {
+  const sym = b.currency === "CNY" ? "¥" : "$";
+  const fmt = (n: number) => {
+    const abs = Math.abs(n);
+    const digits = abs > 0 && abs < 1 ? 4 : 2;
+    return `${sym}${abs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
+  };
+  if (b.remaining != null) {
+    return b.limit != null ? `${fmt(b.remaining)} of ${fmt(b.limit)}` : fmt(b.remaining);
+  }
+  if (b.isFreeTier === true) return "Free tier";
+  if (b.usage != null && b.usage > 0) return `Used ${fmt(b.usage)}`;
+  return "Free tier";
 }
 
 interface ContextRingProps {
@@ -23,6 +135,8 @@ interface ContextRingProps {
   reasoningTokens?: number;
   /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost), when present. */
   costUsd?: number;
+  /** Show the account-level provider balance row (default true; off for subagent rings). */
+  showBalance?: boolean;
   /** Ring diameter in px. Default 16. */
   size?: number;
   /** Stroke width in px. Default 2. */
@@ -36,10 +150,12 @@ export function ContextRing({
   completionTokens,
   reasoningTokens,
   costUsd,
+  showBalance = true,
   size = 16,
   stroke = 2,
 }: ContextRingProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const balance = useProviderBalance(showBalance);
 
   const pct  = Math.min(promptTokens / contextLimit, 1);
   const r    = (size - stroke) / 2;
@@ -212,6 +328,17 @@ export function ContextRing({
               <span className="text-[var(--text-secondary)]">Cost</span>
               <span className="font-mono text-[var(--text-primary)] font-semibold">
                 {formatUsd(costUsd)}
+              </span>
+            </div>
+          )}
+
+          {/* Balance — account-level provider remaining credits. Hidden when the
+              provider exposes none, when offline, or on subagent rings. */}
+          {showBalance && balance && (balance.remaining != null || balance.usage != null || balance.isFreeTier === true) && (
+            <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-[0.714rem]">
+              <span className="text-[var(--text-secondary)]">Balance</span>
+              <span className="font-mono text-[var(--text-primary)] font-semibold">
+                {formatBalance(balance)}
               </span>
             </div>
           )}
