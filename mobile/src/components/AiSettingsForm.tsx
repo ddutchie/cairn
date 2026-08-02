@@ -13,7 +13,7 @@ import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
 import { ProviderLogo } from "@/components/ProviderLogo";
-import { formatModelCost, modelInputChips } from "@cairn/shared/models/model-catalog";
+import { formatModelCost, modelInputChips, endpointLogoSlug } from "@cairn/shared/models/model-catalog";
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
@@ -67,7 +67,7 @@ import { useAiSettingsStyles } from "./ai-settings/styles";
 import { SegmentButton } from "./ai-settings/SegmentButton";
 import { Field } from "./ai-settings/Field";
 import { QuotaBar } from "./ai-settings/QuotaBar";
-import { ProviderList } from "./ai-settings/ProviderList";
+import { ProviderList, type ResolvedProviderLogo } from "./ai-settings/ProviderList";
 import {
   getCachedProvidersManifest,
   fetchProvidersManifest,
@@ -186,6 +186,21 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // listSavedProviders is async. `name` is the active provider's editable label.
   const [providers, setProviders] = useState<SavedProvider[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() => getActiveProviderId());
+  // Brand mark per saved provider, resolved in priority order: community
+  // iconSvg (by communityId, then normalized baseUrl) → models.dev logo slug
+  // (for direct-vendor hostnames like api.openai.com that the community
+  // catalog has no inline icon for) → none. Recomputed when the list or the
+  // community logo map changes.
+  const providerLogosResolved = useMemo<Record<string, ResolvedProviderLogo>>(() => {
+    const out: Record<string, ResolvedProviderLogo> = {};
+    for (const p of providers) {
+      const comm = (p.communityId && providerLogos[p.communityId]) || providerLogos[p.baseUrl.toLowerCase().replace(/\/+$/, "")];
+      if (comm?.iconSvg) { out[p.id] = { kind: "iconSvg", iconSvg: comm.iconSvg, brandColor: comm.brandColor }; continue; }
+      const slug = endpointLogoSlug(p.baseUrl);
+      if (slug) out[p.id] = { kind: "slug", slug };
+    }
+    return out;
+  }, [providers, providerLogos]);
   const [name, setName] = useState("");
   // Context window detected from models.dev for the current model (null = not
   // found / not looked up). Shown as a hint when there's no manual override.
@@ -705,7 +720,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   onSelect={switchProvider}
                   onAdd={addProvider}
                   onDelete={removeProvider}
-                  providerLogos={providerLogos}
+                  providerLogos={providerLogosResolved}
                   t={t}
                   styles={styles}
                 />

@@ -4,6 +4,12 @@ import { type Theme } from "@/theme";
 import type { SavedProvider } from "@/chat/ai-config";
 import type { AiSettingsStyles } from "./styles";
 import { ConnectorLogo } from "@/components/ConnectorLogo";
+import { ProviderLogo } from "@/components/ProviderLogo";
+
+/** A resolved brand mark for a saved provider (see AiSettingsForm). */
+export type ResolvedProviderLogo =
+  | { kind: "iconSvg"; iconSvg: string; brandColor?: string }
+  | { kind: "slug"; slug: string };
 
 /**
  * Saved OpenAI-compatible providers switcher: a row of selectable chips (one per
@@ -26,7 +32,7 @@ export function ProviderList({
   onSelect: (id: string) => void;
   onAdd: () => void;
   onDelete: (id: string) => void;
-  providerLogos?: Record<string, { iconSvg?: string; brandColor?: string }>;
+  providerLogos?: Record<string, ResolvedProviderLogo>;
   t: Theme;
   styles: AiSettingsStyles;
 }) {
@@ -36,11 +42,7 @@ export function ProviderList({
       <View style={styles.providerChips}>
         {providers.map((p) => {
           const selected = p.id === activeId;
-          // Match by communityId first; fall back to a normalized baseUrl so a
-          // manually-added provider sharing an endpoint with a catalog entry
-          // still shows its brand mark.
-          const normUrl = p.baseUrl.toLowerCase().replace(/\/+$/, "");
-          const logo = (p.communityId && providerLogos?.[p.communityId]) || providerLogos?.[normUrl];
+          const logo = providerLogos?.[p.id];
           return (
             <Pressable
               key={p.id}
@@ -48,8 +50,10 @@ export function ProviderList({
               onPress={() => onSelect(p.id)}
             >
               {selected && <Check size={12} color={t.accentFg} />}
-              {logo?.iconSvg ? (
+              {logo?.kind === "iconSvg" ? (
                 <ConnectorLogo iconSvg={logo.iconSvg} kind="service" color={logo.brandColor} size={12} />
+              ) : logo?.kind === "slug" ? (
+                <ProviderLogo provider={logo.slug} size={12} />
               ) : null}
               <Text
                 style={[styles.providerChipText, selected && styles.providerChipTextActive]}

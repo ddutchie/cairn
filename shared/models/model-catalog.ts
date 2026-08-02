@@ -122,13 +122,54 @@ export function providerLogoUrlFor(
 }
 
 /**
- * models.dev also publishes https://models.dev/models.json — provider-agnostic
- * model metadata keyed by the CANONICAL `<provider>/<model>` id (e.g.
- * "deepseek/deepseek-v4-flash", "zhipuai/glm-5"). api.json can't tell us who
- * owns a model (it's duplicated under every host), but this canonical id names
- * the owner in its leading path segment. We keep just that: canonical id →
- * owner provider slug (the label part is irrelevant to icon resolution).
+ * Hostname → models.dev provider slug for well-known direct vendors. Used as a
+ * brand-logo fallback for saved OpenAI-compatible providers that the cairn-
+ * community catalog has no inline `iconSvg` for (e.g. OpenAI, Together, Groq,
+ * Fireworks, Neuralwatt) — models.dev serves their logos at /logos/{slug}.svg.
+ * Keyed by hostname so path/version differences (`/v1`, trailing slash) don't
+ * matter. Not exhaustive; unknown hostnames fall through to the generic glyph.
  */
+const ENDPOINT_LOGO_SLUGS: Record<string, string> = {
+  "api.openai.com": "openai",
+  "api.anthropic.com": "anthropic",
+  "generativelanguage.googleapis.com": "google",
+  "aiplatform.googleapis.com": "google",
+  "api.deepseek.com": "deepseek",
+  "openrouter.ai": "openrouter",
+  "api.together.ai": "together",
+  "api.together.xyz": "together",
+  "api.groq.com": "groq",
+  "api.fireworks.ai": "fireworks-ai",
+  "api.x.ai": "xai",
+  "api.mistral.ai": "mistralai",
+  "api.cohere.ai": "cohere",
+  "api.cohere.com": "cohere",
+  "integrate.api.nvidia.com": "nvidia",
+  "api.neuralwatt.com": "neuralwatt",
+  "api.perplexity.ai": "perplexity",
+};
+
+/**
+ * models.dev logo slug for an OpenAI-compatible endpoint's hostname, or null.
+ * Lets a saved provider that shares a hostname with a known direct vendor
+ * (whether installed from the community catalog or added manually) render that
+ * vendor's brand mark even when no inline iconSvg exists.
+ */
+export function endpointLogoSlug(baseUrl: string): string | null {
+  const u = (baseUrl ?? "").trim();
+  if (!u) return null;
+  let host: string;
+  try {
+    host = new URL(u).hostname.toLowerCase();
+  } catch {
+    // Bare host like "api.openai.com" — new URL needs a scheme.
+    const m = u.match(/^([a-z0-9.-]+)(?:\/|$)/i);
+    host = (m?.[1] ?? "").toLowerCase();
+  }
+  return ENDPOINT_LOGO_SLUGS[host] ?? null;
+}
+
+/** Parse models.json → canonical <provider>/<model> id → owner provider slug. */
 export function parseCanonicalCatalog(modelsJson: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (!modelsJson || typeof modelsJson !== "object") return out;

@@ -12,11 +12,19 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { ModelPicker } from "@/components/ui/model-picker";
 import { useEndpointConfig, CreditsBadge } from "./endpoint-components";
 import { ConnectorLogo } from "./tools/ConnectorLogo";
+import { endpointLogoSlug, providerLogoUrl } from "../../../shared/models/model-catalog";
 
 /** Normalize an endpoint URL for keyed matching (trailing slash + case). */
 function normBaseUrl(url: string): string {
   return (url ?? "").trim().toLowerCase().replace(/\/+$/, "");
 }
+
+/** A resolved brand mark for a saved provider: inline SVG, a models.dev logo
+ *  URL (for direct-vendor hostnames the community catalog has no iconSvg for),
+ *  or null (→ generic Server glyph). */
+type ProviderLogo =
+  | { kind: "iconSvg"; iconSvg: string; brandColor?: string }
+  | { kind: "url"; url: string };
 
 // A stable empty array so the selector never returns a fresh reference (which
 // would break useShallow's snapshot caching and spin an infinite render loop).
@@ -104,8 +112,33 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   }, []);
 
   /** Brand mark for a saved provider, or null for unmatched manual entries. */
-  const logoFor = (p: SavedProvider) =>
-    (p.communityId ? logoMap[p.communityId] : undefined) ?? logoMap[normBaseUrl(p.baseUrl)];
+  const logoFor = (p: SavedProvider): ProviderLogo | null => {
+    const comm = (p.communityId ? logoMap[p.communityId] : undefined) ?? logoMap[normBaseUrl(p.baseUrl)];
+    if (comm?.iconSvg) return { kind: "iconSvg", iconSvg: comm.iconSvg, brandColor: comm.brandColor };
+    // Fall back to the direct vendor's models.dev logo when the community
+    // catalog has no inline iconSvg for this hostname (e.g. openai/together/
+    // groq/fireworks/neuralwatt) — covers manually-added providers too.
+    const slug = endpointLogoSlug(p.baseUrl);
+    if (slug) return { kind: "url", url: providerLogoUrl(slug) };
+    return null;
+  };
+
+  /** Render the resolved brand mark, sharing the size between both kinds. */
+  const renderProviderLogo = (logo: ProviderLogo | null, size: number) => {
+    if (!logo) return <Server size={size} className="text-[var(--text-tertiary)] flex-shrink-0" />;
+    if (logo.kind === "iconSvg") {
+      return <ConnectorLogo iconSvg={logo.iconSvg} kind="service" color={logo.brandColor} size={size} />;
+    }
+    return (
+      <img
+        src={logo.url}
+        alt=""
+        className="provider-logo flex-shrink-0 rounded-[2px] object-contain"
+        style={{ width: size, height: size }}
+        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+      />
+    );
+  };
 
   return (
     <>
@@ -128,14 +161,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                   )}
                 >
                   <span className="flex items-center gap-1.5 min-w-0">
-                    {active && logoFor(active)?.iconSvg ? (
-                      <ConnectorLogo
-                        iconSvg={logoFor(active)!.iconSvg}
-                        kind="service"
-                        color={logoFor(active)!.brandColor}
-                        size={12}
-                      />
-                    ) : (
+                    {active ? renderProviderLogo(logoFor(active), 12) : (
                       <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
                     )}
                     <span className="truncate">
@@ -155,9 +181,12 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                     <span className="w-3.5 flex-shrink-0 flex items-center justify-center">
                       {p.id === activeProviderId ? (
                         <Check size={12} />
-                      ) : logoFor(p)?.iconSvg ? (
-                        <ConnectorLogo iconSvg={logoFor(p)!.iconSvg} kind="service" color={logoFor(p)!.brandColor} size={12} />
-                      ) : null}
+                      ) : (() => {
+                        const l = logoFor(p);
+                        if (l?.kind === "iconSvg") return <ConnectorLogo iconSvg={l.iconSvg} kind="service" color={l.brandColor} size={12} />;
+                        if (l?.kind === "url") return <img src={l.url} alt="" className="provider-logo h-3 w-3 rounded-[2px] object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />;
+                        return null;
+                      })()}
                     </span>
                     <span className="flex flex-col min-w-0">
                       <span className="truncate">{p.name}</span>

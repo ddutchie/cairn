@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatModelCost,
   logoProviderFor,
+  endpointLogoSlug,
   lookupModelInfo,
   modelInputChips,
   normalizeModelId,
@@ -236,6 +237,26 @@ describe("formatModelCost", () => {
 describe("providerLogoUrl", () => {
   it("points at the models.dev logo endpoint", () => {
     expect(providerLogoUrl("anthropic")).toBe("https://models.dev/logos/anthropic.svg");
+  });
+});
+
+describe("endpointLogoSlug", () => {
+  it("resolves a direct-vendor hostname to a models.dev slug", () => {
+    expect(endpointLogoSlug("https://api.openai.com/v1")).toBe("openai");
+    expect(endpointLogoSlug("https://api.together.ai/v1")).toBe("together");
+    expect(endpointLogoSlug("https://api.groq.com/openai/v1")).toBe("groq");
+    expect(endpointLogoSlug("https://api.deepseek.com")).toBe("deepseek");
+    expect(endpointLogoSlug("https://api.neuralwatt.com/v1")).toBe("neuralwatt");
+  });
+
+  it("handles a bare host without a scheme", () => {
+    expect(endpointLogoSlug("api.openai.com/v1")).toBe("openai");
+  });
+
+  it("returns null for unknown hostnames or junk", () => {
+    expect(endpointLogoSlug("https://my-localhost-server:1234/v1")).toBeNull();
+    expect(endpointLogoSlug("")).toBeNull();
+    expect(endpointLogoSlug("   ")).toBeNull();
   });
 });
 
