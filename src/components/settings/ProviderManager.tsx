@@ -11,6 +11,12 @@ import { SettingsRow } from "./shared";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown";
 import { ModelPicker } from "@/components/ui/model-picker";
 import { useEndpointConfig, CreditsBadge } from "./endpoint-components";
+import { ConnectorLogo } from "./tools/ConnectorLogo";
+
+/** Normalize an endpoint URL for keyed matching (trailing slash + case). */
+function normBaseUrl(url: string): string {
+  return (url ?? "").trim().toLowerCase().replace(/\/+$/, "");
+}
 
 // A stable empty array so the selector never returns a fresh reference (which
 // would break useShallow's snapshot caching and spin an infinite render loop).
@@ -69,6 +75,38 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
     ? providers.find((p) => p.id === editing)
     : undefined;
 
+  // Community-provider brand logos keyed by communityId AND normalized
+  // baseUrl, fetched once (cache-first) so saved community providers show
+  // their real brand mark instead of the generic Server icon. The baseUrl key
+  // also covers providers added manually (before they existed in the registry)
+  // that happen to share an endpoint with a catalog entry. Manual providers
+  // with a unique baseUrl fall back to Server.
+  const [logoMap, setLogoMap] = useState<Record<string, { iconSvg?: string; brandColor?: string }>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const reg = window.electron?.registry;
+      if (!reg?.fetchProviders) return;
+      try {
+        const { manifest } = await reg.fetchProviders();
+        if (cancelled || !manifest) return;
+        const map: Record<string, { iconSvg?: string; brandColor?: string }> = {};
+        for (const e of manifest.providers) {
+          map[e.id] = { iconSvg: e.iconSvg, brandColor: e.brandColor };
+          if (e.definition.baseUrl) map[normBaseUrl(e.definition.baseUrl)] = { iconSvg: e.iconSvg, brandColor: e.brandColor };
+        }
+        setLogoMap(map);
+      } catch {
+        // offline / no registry — rows fall back to the generic Server icon
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  /** Brand mark for a saved provider, or null for unmatched manual entries. */
+  const logoFor = (p: SavedProvider) =>
+    (p.communityId ? logoMap[p.communityId] : undefined) ?? logoMap[normBaseUrl(p.baseUrl)];
+
   return (
     <>
       <SettingsRow
@@ -90,7 +128,16 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                   )}
                 >
                   <span className="flex items-center gap-1.5 min-w-0">
-                    <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                    {active && logoFor(active)?.iconSvg ? (
+                      <ConnectorLogo
+                        iconSvg={logoFor(active)!.iconSvg}
+                        kind="service"
+                        color={logoFor(active)!.brandColor}
+                        size={12}
+                      />
+                    ) : (
+                      <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                    )}
                     <span className="truncate">
                       {active ? active.name : "No saved providers"}
                     </span>
@@ -105,8 +152,12 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                     onSelect={() => selectProvider(p.id)}
                     className={cn("text-xs", p.id === activeProviderId && "text-[var(--accent)]")}
                   >
-                    <span className="w-3.5 flex-shrink-0">
-                      {p.id === activeProviderId && <Check size={12} />}
+                    <span className="w-3.5 flex-shrink-0 flex items-center justify-center">
+                      {p.id === activeProviderId ? (
+                        <Check size={12} />
+                      ) : logoFor(p)?.iconSvg ? (
+                        <ConnectorLogo iconSvg={logoFor(p)!.iconSvg} kind="service" color={logoFor(p)!.brandColor} size={12} />
+                      ) : null}
                     </span>
                     <span className="flex flex-col min-w-0">
                       <span className="truncate">{p.name}</span>

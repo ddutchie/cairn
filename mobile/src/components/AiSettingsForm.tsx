@@ -68,6 +68,33 @@ import { SegmentButton } from "./ai-settings/SegmentButton";
 import { Field } from "./ai-settings/Field";
 import { QuotaBar } from "./ai-settings/QuotaBar";
 import { ProviderList } from "./ai-settings/ProviderList";
+import {
+  getCachedProvidersManifest,
+  fetchProvidersManifest,
+} from "@/chat/providers-registry";
+import type { ProvidersManifest } from "@cairn/shared/chat/registry-schema";
+
+/** Normalize an endpoint URL for keyed matching (trailing slash + case). */
+function normBaseUrl(url: string): string {
+  return (url ?? "").trim().toLowerCase().replace(/\/+$/, "");
+}
+
+/**
+ * Community brand marks keyed by communityId AND normalized baseUrl. The
+ * baseUrl key covers providers added manually that happen to share an
+ * endpoint with a catalog entry (e.g. added before it was in the registry).
+ */
+function buildProviderLogoMap(
+  manifest: ProvidersManifest | null,
+): Record<string, { iconSvg?: string; brandColor?: string }> {
+  const map: Record<string, { iconSvg?: string; brandColor?: string }> = {};
+  for (const e of manifest?.providers ?? []) {
+    const logo = { iconSvg: e.iconSvg, brandColor: e.brandColor };
+    map[e.id] = logo;
+    if (e.definition.baseUrl) map[normBaseUrl(e.definition.baseUrl)] = logo;
+  }
+  return map;
+}
 
 /** Format a USD credit amount compactly (e.g. $12.34, $0.0500, $1,234, -$5.00). */
 function formatCredits(n: number): string {
@@ -100,6 +127,21 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // tool markers in the model list).
   useEffect(() => { prewarmModelCatalog(); }, []);
   useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+  // Community-provider brand marks for the saved-provider chips (keyed by
+  // communityId). Seeded from the on-device cache so chips render instantly,
+  // then refreshed from the network (cache-first) — mirrors the Browse list.
+  const [providerLogos, setProviderLogos] = useState<Record<string, { iconSvg?: string; brandColor?: string }>>(() =>
+    buildProviderLogoMap(getCachedProvidersManifest()),
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { manifest } = await fetchProvidersManifest();
+      if (cancelled || !manifest) return;
+      setProviderLogos(buildProviderLogoMap(manifest));
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const router = useRouter();
   const rorkBuiltIn = isRorkAvailable();
   const appleAvailable = isAppleProviderAvailable();
@@ -663,6 +705,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   onSelect={switchProvider}
                   onAdd={addProvider}
                   onDelete={removeProvider}
+                  providerLogos={providerLogos}
                   t={t}
                   styles={styles}
                 />
