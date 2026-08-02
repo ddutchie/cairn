@@ -252,6 +252,44 @@ export function makeAiSettingsStyles(t: Theme) {
     },
     providerAddText: { ...typeScale.control, color: t.accent },
 
+    // Read-only summary card for the selected provider (fields hidden until
+    // the user taps Edit). Mirrors the credits-card look.
+    summaryCard: {
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginTop: 2,
+      gap: 6,
+    },
+    summaryHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+    },
+    summaryName: { ...typeScale.control, color: t.textPrimary, fontWeight: "600", flexShrink: 1 },
+    editBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingVertical: 2,
+      paddingHorizontal: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: t.border,
+    },
+    editBtnText: { ...typeScale.caption, color: t.accent },
+    summaryRow: {
+      flexDirection: "row",
+      gap: 6,
+      alignItems: "flex-start",
+    },
+    summaryLabel: { ...typeScale.caption, color: t.textTertiary, width: 76 },
+    summaryValue: { flex: 1, ...typeScale.caption, color: t.textSecondary, lineHeight: 16 },
+
     navRow: {
       flexDirection: "row",
       alignItems: "center",

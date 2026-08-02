@@ -182,6 +182,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     return v ? String(v) : "";
   });
   const [apiKey, setApiKey] = useState("");
+  // Whether the selected provider's editable fields are revealed. When false,
+  // a read-only summary card is shown instead (tap Edit to reveal inputs).
+  const [editing, setEditing] = useState(false);
   // Saved providers + the active one. Loaded (with migration) in an effect since
   // listSavedProviders is async. `name` is the active provider's editable label.
   const [providers, setProviders] = useState<SavedProvider[]>([]);
@@ -321,6 +324,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       setModelQuery("");
       keyInfoGenRef.current += 1; // invalidate any in-flight credits lookup
       setKeyInfo(null);
+      setEditing(false); // show the newly-selected provider's summary first
       haptics.selection();
     } finally {
       providerOpInFlight.current = false;
@@ -359,6 +363,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       setModelQuery("");
       keyInfoGenRef.current += 1; // invalidate any in-flight credits lookup
       setKeyInfo(null);
+      setEditing(true); // a fresh provider wants its fields filled in right away
       haptics.selection();
     } finally {
       providerOpInFlight.current = false;
@@ -724,6 +729,38 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   t={t}
                   styles={styles}
                 />
+                {/* Read-only summary for the selected provider — tap Edit to
+                    reveal Name / Base URL / API key. Model, Context window,
+                    and credits stay always editable/visible. A brand-new
+                    provider skips the summary (no values to summarise). */}
+                {activeId && !editing ? (
+                  <View style={styles.summaryCard}>
+                    <View style={styles.summaryHead}>
+                      <Text style={styles.summaryName} numberOfLines={1}>{name || "Provider"}</Text>
+                      <Pressable
+                        style={styles.editBtn}
+                        onPress={() => { haptics.selection(); setEditing(true); }}
+                        hitSlop={6}
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit provider"
+                      >
+                        <Pencil size={12} color={t.accent} />
+                        <Text style={styles.editBtnText}>Edit</Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Base URL</Text>
+                      <Text style={styles.summaryValue} numberOfLines={1}>{baseUrl || DEFAULT_OPENAI_BASE_URL}</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>API key</Text>
+                      <Text style={styles.summaryValue}>
+                        {hadKey ? "Stored securely in keychain" : "Not set — tap Edit to add one"}
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                <>
                 <Field
                   label="Name"
                   value={name}
@@ -752,6 +789,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   t={t}
                   styles={styles}
                 />
+                </>
+                )}
                 <View style={styles.keyNote}>
                   <ShieldCheck size={13} color={t.textTertiary} />
                   <Text style={styles.keyNoteText}>
@@ -955,6 +994,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               </View>
             )}
 
+            {usingOpenAI ? (
             <Pressable
               style={styles.navRow}
               onPress={() => {
@@ -971,6 +1011,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               </View>
               <ChevronRight size={18} color={t.textTertiary} />
             </Pressable>
+            ) : null}
 
             <Pressable
               style={styles.navRow}
