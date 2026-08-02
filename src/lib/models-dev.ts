@@ -277,7 +277,7 @@ export function getLogoSvg(slug: string): string | null {
   return logoSvgCache.get(slug) ?? null;
 }
 
-let logoSvgSubscribers = new Set<() => void>();
+const logoSvgSubscribers = new Set<() => void>();
 /** Subscribe to logo-svg availability changes (fires after each new fetch). */
 export function subscribeLogoSvg(listener: () => void): () => void {
   logoSvgSubscribers.add(listener);
