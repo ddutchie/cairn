@@ -5,15 +5,9 @@ import * as Popover from "@radix-ui/react-popover";
 import { X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { formatBalance, formatUsd } from "../../../shared/chat/provider-credits";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TokenBreakdown } from "@/types";
-
-/** USD cost: 0.00219 → "$0.0022"; tiny costs (e.g. $0.000001) keep a significant digit instead of collapsing to "$0". */
-function formatUsd(cost: number): string {
-  if (cost === 0) return "$0";
-  if (cost >= 0.00001) return `$${cost.toFixed(5).replace(/\.?0+$/, "")}`;
-  return `$${parseFloat(cost.toPrecision(2)).toString()}`;
-}
 
 /** Provider remaining-balance (account-level), the desktop CreditInfo shape. */
 interface ProviderBalance {
@@ -56,6 +50,28 @@ function updateBalance(entry: BalanceEntry): void {
   for (const l of balanceListeners) l();
 }
 
+// In-flight probe shared across concurrently-mounted ring instances: when a
+// cold/expired cache is probed by one ring, the others reuse its promise
+// instead of firing duplicate IPC requests. Cleared once the probe settles.
+let inflightBalance: { key: string; promise: Promise<ProviderBalance | null> } | null = null;
+
+async function fetchBalance(baseUrl: string, apiKey: string): Promise<ProviderBalance | null> {
+  if (typeof window === "undefined" || !window.electron?.ai?.fetchKeyInfo) return null;
+  try {
+    const info = await window.electron.ai.fetchKeyInfo({ baseUrl, apiKey });
+    if (!info) return null;
+    return {
+      remaining: info.remaining,
+      usage: info.usage,
+      limit: info.limit,
+      isFreeTier: info.isFreeTier,
+      currency: info.currency,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Lazily fetch the active provider's remaining balance via the same IPC the
  * settings panel uses. TTL-cached (shared) so the chat header, agent pane and
@@ -78,51 +94,17 @@ function useProviderBalance(enabled: boolean): ProviderBalance | null {
       updateBalance({ key, data: null, fetchedAt: Date.now() });
       return;
     }
-    let cancelled = false;
-    const run = async () => {
-      let data: ProviderBalance | null = null;
-      if (typeof window !== "undefined" && window.electron?.ai?.fetchKeyInfo) {
-        try {
-          const info = await window.electron.ai.fetchKeyInfo({ baseUrl, apiKey });
-          if (info) {
-            data = {
-              remaining: info.remaining,
-              usage: info.usage,
-              limit: info.limit,
-              isFreeTier: info.isFreeTier,
-              currency: info.currency,
-            };
-          }
-        } catch {
-          data = null;
-        }
-      }
-      if (cancelled) return;
+    // Another ring is already probing this provider — reuse its request.
+    if (inflightBalance && inflightBalance.key === key) return;
+    const promise = fetchBalance(baseUrl, apiKey);
+    inflightBalance = { key, promise };
+    void promise.then((data) => {
       updateBalance({ key, data, fetchedAt: Date.now() });
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
+      if (inflightBalance && inflightBalance.key === key) inflightBalance = null;
+    });
   }, [enabled, key, baseUrl, apiKey]);
 
   return entry && entry.key === key ? entry.data : null;
-}
-
-/** "5.42 of 45.5" / "5.42" / "Free tier" / "Used 40.08" for the Balance row. */
-function formatBalance(b: ProviderBalance): string {
-  const sym = b.currency === "CNY" ? "¥" : "$";
-  const fmt = (n: number) => {
-    const abs = Math.abs(n);
-    const digits = abs > 0 && abs < 1 ? 4 : 2;
-    return `${sym}${abs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
-  };
-  if (b.remaining != null) {
-    return b.limit != null ? `${fmt(b.remaining)} of ${fmt(b.limit)}` : fmt(b.remaining);
-  }
-  if (b.isFreeTier === true) return "Free tier";
-  if (b.usage != null && b.usage > 0) return `Used ${fmt(b.usage)}`;
-  return "Free tier";
 }
 
 interface ContextRingProps {

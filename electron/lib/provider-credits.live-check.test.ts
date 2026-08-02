@@ -52,12 +52,21 @@ describe("app-side credit display against the real community manifest", () => {
           results.push(`· ${p.id}: no key (set ${envKey}), skipped`);
           continue;
         }
-        const probe = await probeCredits(resolved.url, key, resolved.shape);
-        results.push(
-          probe.info
-            ? `✓ ${p.id}: HTTP ${probe.status} → ${JSON.stringify({ remaining: probe.info.remaining, usage: probe.info.usage, limit: probe.info.limit, currency: probe.info.currency })}`
-            : `✗ ${p.id}: HTTP ${probe.status}${probe.error ? ` (${probe.error})` : ""}`,
-        );
+        // Same 12s hang guard the ai:fetchKeyInfo handler applies — a hanging
+        // provider fails through the probe's diagnostic path instead of blocking
+        // the whole test run.
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 12_000);
+        try {
+          const probe = await probeCredits(resolved.url, key, resolved.shape, ac.signal);
+          results.push(
+            probe.info
+              ? `✓ ${p.id}: HTTP ${probe.status} → ${JSON.stringify({ remaining: probe.info.remaining, usage: probe.info.usage, limit: probe.info.limit, currency: probe.info.currency })}`
+              : `✗ ${p.id}: HTTP ${probe.status}${probe.error ? ` (${probe.error})` : ""}`,
+          );
+        } finally {
+          clearTimeout(timer);
+        }
       }
       for (const r of results) console.log(r);
       expect(results.some((r) => r.startsWith("✗"))).toBe(false);

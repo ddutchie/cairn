@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sameEndpoint, resolveCreditSpec, parseCredits, parseNeuralwattCredits } from "./provider-credits";
+import { sameEndpoint, resolveCreditSpec, parseCredits, parseNeuralwattCredits, formatUsd, formatBalance } from "./provider-credits";
 import type { ProviderCreditsSpec } from "./registry-schema";
 
 describe("sameEndpoint", () => {
@@ -78,5 +78,30 @@ describe("parseNeuralwattCredits", () => {
     const info = parseNeuralwattCredits({ balance: { credits_remaining_usd: "abc", total_credits_usd: 10 } });
     expect(info?.remaining).toBeNull();
     expect(info?.limit).toBe(10);
+  });
+});
+
+describe("formatUsd", () => {
+  it("formats regular and tiny costs", () => {
+    expect(formatUsd(0)).toBe("$0");
+    expect(formatUsd(0.00219)).toBe("$0.00219");
+    expect(formatUsd(0.000001)).toBe("$0.000001");
+  });
+});
+
+describe("formatBalance", () => {
+  it("shows remaining, with the limit when known", () => {
+    expect(formatBalance({ remaining: 5.4243, usage: 40.0757, limit: 45.5, isFreeTier: null, currency: "USD" }))
+      .toBe("$5.42 of $45.5");
+    expect(formatBalance({ remaining: 0, usage: null, limit: null, isFreeTier: null, currency: "USD" })).toBe("$0");
+  });
+
+  it("shows free tier and used amounts", () => {
+    expect(formatBalance({ remaining: null, usage: null, limit: null, isFreeTier: true, currency: "USD" })).toBe("Free tier");
+    expect(formatBalance({ remaining: null, usage: 40.08, limit: null, isFreeTier: null, currency: "USD" })).toBe("Used $40.08");
+  });
+
+  it("uses CNY and keeps the minus before the symbol", () => {
+    expect(formatBalance({ remaining: -5, usage: null, limit: null, isFreeTier: null, currency: "CNY" })).toBe("-¥5");
   });
 });

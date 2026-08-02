@@ -162,3 +162,29 @@ export function parseNeuralwattCredits(json: unknown): CreditInfo | null {
     currency: "USD",
   };
 }
+
+// ── Display formatting ─────────────────────────────────────────────────────────
+
+/** USD cost: 0.00219 → "$0.0022"; tiny costs (e.g. $0.000001) keep a significant digit instead of collapsing to "$0". */
+export function formatUsd(cost: number): string {
+  if (cost === 0) return "$0";
+  if (cost >= 0.00001) return `$${cost.toFixed(5).replace(/\.?0+$/, "")}`;
+  return `$${parseFloat(cost.toPrecision(2)).toString()}`;
+}
+
+/** "5.42 of 45.5" / "5.42" / "Free tier" / "Used 40.08" for a balance row. */
+export function formatBalance(info: CreditInfo): string {
+  const sym = info.currency === "CNY" ? "¥" : "$";
+  const fmt = (n: number) => {
+    const abs = Math.abs(n);
+    const digits = abs > 0 && abs < 1 ? 4 : 2;
+    const body = abs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits });
+    return n < 0 ? `-${sym}${body}` : `${sym}${body}`;
+  };
+  if (info.remaining != null) {
+    return info.limit != null ? `${fmt(info.remaining)} of ${fmt(info.limit)}` : fmt(info.remaining);
+  }
+  if (info.isFreeTier === true) return "Free tier";
+  if (info.usage != null && info.usage > 0) return `Used ${fmt(info.usage)}`;
+  return "Free tier";
+}
