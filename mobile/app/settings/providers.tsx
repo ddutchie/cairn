@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   View,
   Text,
@@ -25,6 +25,8 @@ import {
 } from "@/chat/ai-config";
 import type { RegistryProviderEntry } from "@cairn/shared/chat/registry-schema";
 import { ConnectorLogo } from "@/components/ConnectorLogo";
+import { endpointLogoSlug } from "@cairn/shared/models/model-catalog";
+import { getOrFetchLogoSvg, subscribeModelCatalog, getModelCatalogVersion } from "@/chat/models-dev";
 import { SearchField } from "@/components/SearchField";
 
 /** name + blurb + category + tags; `q` must already be lowercased + trimmed. */
@@ -48,6 +50,9 @@ export default function ProvidersSettingsScreen() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
+  // Re-render when lazily-fetched models.dev provider SVGs land so entries
+  // without an inline community icon pop in their brand mark on the chip.
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
 
   const [providers, setProviders] = useState<RegistryProviderEntry[]>(
     () => getCachedProvidersManifest()?.providers ?? [],
@@ -223,7 +228,22 @@ export default function ProvidersSettingsScreen() {
                 const busy = busyId === entry.id;
                 return (
                   <View key={entry.id} style={styles.row}>
-                    <ConnectorLogo iconSvg={entry.iconSvg} kind="service" color={entry.brandColor} size={22} />
+                    <View>
+                      {entry.iconSvg ? (
+                        <ConnectorLogo iconSvg={entry.iconSvg} kind="service" color={entry.brandColor} size={22} />
+                      ) : (() => {
+                        // Fall back to the models.dev logo for direct-vendor
+                        // hostnames the community catalog has no inline icon
+                        // for (openai/together/groq/fireworks/neuralwatt).
+                        const slug = endpointLogoSlug(def.baseUrl);
+                        const svg = slug ? getOrFetchLogoSvg(slug) : null;
+                        return svg ? (
+                          <ConnectorLogo iconSvg={svg} kind="service" size={22} />
+                        ) : (
+                          <ConnectorLogo kind="service" color={entry.brandColor} size={22} />
+                        );
+                      })()}
+                    </View>
                     <View style={styles.rowMain}>
                       <Text style={styles.rowTitle}>{def.name}</Text>
                       <Text style={styles.rowSub} numberOfLines={2}>{entry.blurb}</Text>

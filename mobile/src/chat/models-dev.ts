@@ -26,6 +26,7 @@ import {
   normalizeModelInfo,
   parseCanonicalCatalog,
   parseModelCatalog,
+  providerLogoUrl,
   type ModelInfo,
 } from "@cairn/shared/models/model-catalog";
 import { getDb } from "../db";
@@ -53,6 +54,12 @@ let inflight: Promise<InfoMap> | null = null;
 // brand heuristic in logoProviderFor).
 let canonicalCache: Record<string, string> | null = null;
 let canonicalInflight: Promise<Record<string, string> | null> | null = null;
+
+// In-memory cache of fetched models.dev provider logo SVG strings (per slug):
+// shared by ConnectorLogo so a direct-vendor endpoint logo renders on the SAME
+// fixed light chip as community icons, instead of a raw theme-tinted glyph.
+const logoSvgCache = new Map<string, string>();
+const logoSvgInflight = new Map<string, Promise<string | null>>();
 
 // Subscribe API: a version counter bumped whenever the in-memory catalog
 // changes, so useSyncExternalStore consumers re-render after a background load.
@@ -258,4 +265,39 @@ export function prewarmModelCatalog(): void {
 export function getLogoProvider(modelId: string): string | null {
   if (!modelId) return null;
   return logoProviderFor(modelId, getModelInfo(modelId)?.provider ?? null, canonicalCache);
+}
+
+function fetchLogoSvg(slug: string): void {
+  if (logoSvgCache.has(slug) || logoSvgInflight.has(slug)) return;
+  const p = (async () => {
+    try {
+      const res = await fetch(providerLogoUrl(slug), { headers: { Accept: "image/svg+xml" } });
+      if (!res.ok) return null;
+      const text = await res.text();
+      // Same shape guard as desktop: must look like an SVG document.
+      if (!/^\s*<svg[\s>]/i.test(text) || !/<\/svg>\s*$/i.test(text)) return null;
+      logoSvgCache.set(slug, text);
+      version += 1;
+      emit();
+      return text;
+    } catch {
+      return null;
+    } finally {
+      logoSvgInflight.delete(slug);
+    }
+  })();
+  logoSvgInflight.set(slug, p);
+}
+
+/**
+ * Resolve a models.dev provider slug to inline SVG markup (cached, lazy-fetched).
+ * Returns null while the SVG isn't cached yet and kicks off a fetch; callers
+ * should render a generic glyph meanwhile and re-render once it arrives (the
+ * version bump via subscribeModelCatalog/getModelCatalogVersion powers that).
+ */
+export function getOrFetchLogoSvg(slug: string): string | null {
+  const cached = logoSvgCache.get(slug);
+  if (cached) return cached;
+  fetchLogoSvg(slug);
+  return null;
 }

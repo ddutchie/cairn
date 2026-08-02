@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import {
   RefreshCw,
   Loader2,
@@ -18,6 +18,8 @@ import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import type { ProvidersFetchResult, RegistryProviderEntry } from "@/types";
 import { ConnectorLogo } from "./ConnectorLogo";
+import { endpointLogoSlug } from "../../../../shared/models/model-catalog";
+import { getOrFetchLogoSvg, subscribeModelCatalog, getModelCatalogVersion } from "@/lib/models-dev";
 
 const inputCls =
   "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm pl-8 pr-3 py-2 focus:outline-none";
@@ -45,6 +47,9 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
 
   const [result, setResult] = useState<ProvidersFetchResult | null>(null);
   const [loading, setLoading] = useState(true);
+  // Re-render when lazily-fetched models.dev provider SVGs land so entries
+  // without an inline community icon pop in their brand mark on the chip.
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -234,7 +239,19 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
               >
                 <div className="flex items-start gap-3 p-3">
                   <div className="shrink-0">
-                    <ConnectorLogo iconSvg={entry.iconSvg} kind="service" color={entry.brandColor} size={36} />
+                    {(() => {
+                      // Community iconSvg when present; else fall back to the
+                      // models.dev logo for a known direct-vendor hostname so
+                      // entries without an inline icon still show their brand
+                      // mark on the SAME fixed light chip as the others.
+                      if (entry.iconSvg) {
+                        return <ConnectorLogo iconSvg={entry.iconSvg} kind="service" color={entry.brandColor} size={36} />;
+                      }
+                      const slug = endpointLogoSlug(def.baseUrl);
+                      const svg = slug ? getOrFetchLogoSvg(slug) : null;
+                      if (svg) return <ConnectorLogo iconSvg={svg} kind="service" size={36} />;
+                      return <ConnectorLogo kind="service" color={entry.brandColor} size={36} />;
+                    })()}
                   </div>
 
                   <div className="min-w-0 flex-1">

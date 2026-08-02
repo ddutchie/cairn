@@ -1,10 +1,11 @@
 import { View, Text, Pressable, Alert } from "react-native";
 import { Check, Plus, Trash2 } from "lucide-react-native";
+import { useSyncExternalStore } from "react";
 import { type Theme } from "@/theme";
 import type { SavedProvider } from "@/chat/ai-config";
 import type { AiSettingsStyles } from "./styles";
 import { ConnectorLogo } from "@/components/ConnectorLogo";
-import { ProviderLogo } from "@/components/ProviderLogo";
+import { getOrFetchLogoSvg, subscribeModelCatalog, getModelCatalogVersion } from "@/chat/models-dev";
 
 /** A resolved brand mark for a saved provider (see AiSettingsForm). */
 export type ResolvedProviderLogo =
@@ -36,6 +37,9 @@ export function ProviderList({
   t: Theme;
   styles: AiSettingsStyles;
 }) {
+  // Re-render when a lazily-fetched models.dev provider SVG lands so slug-kind
+  // logos pop in on the chip (they fall back to the generic glyph meanwhile).
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>Saved providers</Text>
@@ -53,7 +57,14 @@ export function ProviderList({
               {logo?.kind === "iconSvg" ? (
                 <ConnectorLogo iconSvg={logo.iconSvg} kind="service" color={logo.brandColor} size={12} />
               ) : logo?.kind === "slug" ? (
-                <ProviderLogo provider={logo.slug} size={12} />
+                (() => {
+                  // Fetch + cache the models.dev SVG for this slug and render it
+                  // on the SAME fixed light chip as community icons, instead of
+                  // the raw theme-tinted glyph. Re-renders via the catalog
+                  // version subscription once the SVG lands.
+                  const svg = getOrFetchLogoSvg(logo.slug);
+                  return svg ? <ConnectorLogo iconSvg={svg} kind="service" size={12} /> : null;
+                })()
               ) : null}
               <Text
                 style={[styles.providerChipText, selected && styles.providerChipTextActive]}
