@@ -99,6 +99,9 @@ export interface ChatUsage {
   /** Subset of completionTokens spent on reasoning/thinking (0/undefined if the
    *  provider didn't split it out). */
   reasoningTokens?: number;
+  /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost),
+   *  when present. Shown in the context ring breakdown. */
+  costUsd?: number;
 }
 
 /** A provider streams normalised events for a turn. */

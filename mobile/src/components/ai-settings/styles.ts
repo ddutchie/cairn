@@ -106,6 +106,25 @@ export function makeAiSettingsStyles(t: Theme) {
     },
     fetchBtnText: { ...typeScale.label, color: t.accent },
     modelsError: { ...typeScale.caption, color: t.danger, lineHeight: 16 },
+    // Dropdown-style model trigger (collapsed row, mirrors desktop picker).
+    modelTrigger: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: t.surface2,
+    },
+    modelTriggerOpen: { borderColor: t.accent },
+    modelTriggerText: { flex: 1, ...typeScale.body, color: t.textPrimary },
+    modelChevronOpen: { transform: [{ rotate: "180deg" }] },
+    customRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingVertical: 9,
+      paddingHorizontal: 4,
+      marginTop: 2,
+    },
+    customRowText: { ...typeScale.label, color: t.accent },
     modelChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
     modelChip: {
       flexDirection: "row",
@@ -159,6 +178,32 @@ export function makeAiSettingsStyles(t: Theme) {
     modelRowText: { ...typeScale.body, color: t.textPrimary, flexShrink: 1 },
     modelRowTextActive: { color: t.accent, fontWeight: "600" },
     modelRowEmpty: { ...typeScale.caption, color: t.textTertiary, paddingHorizontal: 12, paddingVertical: 14 },
+    modelRowCost: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
+    modelRowMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: "auto" },
+    // Favorite star: a nested pressable on the row's leading edge. Toggling it
+    // must not select the model, so it's a sibling (the outer row's onPress
+    // won't fire for touches captured by the inner pressable).
+    modelStar: {
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: -4,
+    },
+    modelSectionLabel: {
+      ...typeScale.overline,
+      color: t.textTertiary,
+      paddingHorizontal: 12,
+      paddingTop: 10,
+      paddingBottom: 4,
+      textTransform: "uppercase",
+    },
+    modelSectionSeparator: {
+      height: 6,
+      borderTopWidth: 1,
+      borderTopColor: t.border,
+    },
 
     // Remaining-credits badge (providers that expose a balance, e.g. OpenRouter).
     creditsCard: {
@@ -206,6 +251,44 @@ export function makeAiSettingsStyles(t: Theme) {
       backgroundColor: t.accentDim,
     },
     providerAddText: { ...typeScale.control, color: t.accent },
+
+    // Read-only summary card for the selected provider (fields hidden until
+    // the user taps Edit). Mirrors the credits-card look.
+    summaryCard: {
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginTop: 2,
+      gap: 6,
+    },
+    summaryHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+    },
+    summaryName: { ...typeScale.control, color: t.textPrimary, fontWeight: "600", flexShrink: 1 },
+    editBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingVertical: 2,
+      paddingHorizontal: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: t.border,
+    },
+    editBtnText: { ...typeScale.caption, color: t.accent },
+    summaryRow: {
+      flexDirection: "row",
+      gap: 6,
+      alignItems: "flex-start",
+    },
+    summaryLabel: { ...typeScale.caption, color: t.textTertiary, width: 76 },
+    summaryValue: { flex: 1, ...typeScale.caption, color: t.textSecondary, lineHeight: 16 },
 
     navRow: {
       flexDirection: "row",

@@ -75,7 +75,7 @@ export interface KeyInfo {
   usage: number | null;
   limit: number | null;
   isFreeTier: boolean | null;
-  currency: "USD";
+  currency: "USD" | "CNY";
 }
 
 export interface EndpointConfigState {
@@ -214,11 +214,12 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   return { showKey, testState, testError, availableModels, modelsLoading, keyInfo, setShowKey, fetchModels, ensureModels, fetchKeyInfo, resetModels };
 }
 
-/** Format a USD credit amount compactly (e.g. $12.34, $0.05, $1,234, -$5.00). */
-export function formatCredits(n: number): string {
+/** Format a credit amount compactly ($12.34, ¥110, $0.05, $1,234, -$5.00). */
+export function formatCredits(n: number, currency: KeyInfo["currency"] = "USD"): string {
   const abs = Math.abs(n);
   const digits = abs > 0 && abs < 1 ? 4 : 2;
-  const body = `$${abs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
+  const symbol = currency === "CNY" ? "¥" : "$";
+  const body = `${symbol}${abs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
   return n < 0 ? `-${body}` : body;
 }
 
@@ -240,20 +241,20 @@ export function CreditsBadge({ info, className }: { info: KeyInfo | null; classN
       )}
       title={
         limit != null
-          ? `Remaining ${formatCredits(remaining ?? Math.max(0, limit - (usage ?? 0)))} of ${formatCredits(limit)} limit`
+          ? `Remaining ${formatCredits(remaining ?? Math.max(0, limit - (usage ?? 0)), info.currency)} of ${formatCredits(limit, info.currency)} limit`
           : usage != null
-            ? `Used ${formatCredits(usage)} so far`
+            ? `Used ${formatCredits(usage, info.currency)} so far`
             : undefined
       }
     >
       <Wallet size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
       {remaining != null ? (
         <span>
-          <span className="text-[var(--text-secondary)] font-medium">{formatCredits(remaining)}</span> credits left
+          <span className="text-[var(--text-secondary)] font-medium">{formatCredits(remaining, info.currency)}</span> credits left
         </span>
       ) : (
         <span>
-          <span className="text-[var(--text-secondary)] font-medium">{formatCredits(usage ?? 0)}</span> used
+          <span className="text-[var(--text-secondary)] font-medium">{formatCredits(usage ?? 0, info.currency)}</span> used
         </span>
       )}
     </span>
@@ -367,7 +368,7 @@ export function ModelSelectionRow({
   modelsLoading,
   testState,
   testError,
-  placeholder = "gpt-4o",
+  placeholder = "gpt-5.6-luna",
   onModelChange,
   onFetch,
 }: {

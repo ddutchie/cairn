@@ -17,7 +17,14 @@
  */
 
 import { fetch as expoFetch } from "expo/fetch";
+import {
+  parseCredits,
+  resolveCreditSpec,
+  type CreditInfo,
+} from "@cairn/shared/chat/provider-credits";
+import { pdfDocumentPart } from "@cairn/shared/models/pdf-attach";
 import type { OpenAIConfig } from "../ai-config";
+import { fetchProvidersManifest, getRegistryProviders } from "../providers-registry";
 import { contextLimitForModel } from "../models-dev";
 import {
   type AiTool,
@@ -33,9 +40,10 @@ import {
 // ── request mapping ─────────────────────────────────────────────────────────
 
 interface OpenAIContentPart {
-  type: "text" | "image_url";
+  type: "text" | "image_url" | "document";
   text?: string;
   image_url?: { url: string };
+  document?: { source: { type: "base64"; media_type: string; data: string } };
 }
 
 interface OpenAIMessage {
@@ -81,11 +89,18 @@ function mapMessage(m: UIMessage): OpenAIMessage[] {
     return out;
   }
 
-  // Plain text/image message. Images become image_url content parts (user only).
+  // Plain text/attachment message. Images become image_url content parts;
+  // PDFs become Anthropic-style `document` base64 parts (user only).
   if (fileParts.length > 0 && m.role === "user") {
     const content: OpenAIContentPart[] = [];
     for (const p of textParts) if (p.text) content.push({ type: "text", text: p.text });
-    for (const f of fileParts) content.push({ type: "image_url", image_url: { url: f.url } });
+    for (const f of fileParts) {
+      if (f.mediaType === "application/pdf") {
+        content.push(pdfDocumentPart(f.url) as OpenAIContentPart);
+      } else {
+        content.push({ type: "image_url", image_url: { url: f.url } });
+      }
+    }
     out.push({ role: "user", content });
     return out;
   }
@@ -162,6 +177,7 @@ function makeStreamer(config: OpenAIConfig) {
     let promptTokens: number | undefined;
     let completionTokens: number | undefined;
     let reasoningTokens: number | undefined;
+    let costUsd: number | undefined;
 
     // Build the ring usage from the server's prompt_tokens + the model's context
     // window (models.dev, cached). Undefined when the endpoint reported no usage.
@@ -169,7 +185,7 @@ function makeStreamer(config: OpenAIConfig) {
       if (promptTokens == null) return undefined;
       // Manual override wins; else look up the model in models.dev; else default.
       const contextLimit = config.contextLimit ?? (await contextLimitForModel(config.model));
-      return { promptTokens, contextLimit, completionTokens, reasoningTokens };
+      return { promptTokens, contextLimit, completionTokens, reasoningTokens, costUsd };
     };
 
     const flushTools = function* (): Generator<StreamEvent> {
@@ -224,6 +240,9 @@ function makeStreamer(config: OpenAIConfig) {
               prompt_tokens?: number;
               completion_tokens?: number;
               completion_tokens_details?: { reasoning_tokens?: number };
+              // Some OpenAI-compatible providers (e.g. Neuralwatt) report the
+              // USD cost of the call here.
+              cost?: number;
             };
           };
           try {
@@ -240,6 +259,9 @@ function makeStreamer(config: OpenAIConfig) {
           }
           if (typeof chunk.usage?.completion_tokens_details?.reasoning_tokens === "number") {
             reasoningTokens = chunk.usage.completion_tokens_details.reasoning_tokens;
+          }
+          if (typeof chunk.usage?.cost === "number") {
+            costUsd = chunk.usage.cost;
           }
           const choice = chunk.choices?.[0];
           if (!choice) continue;
@@ -316,25 +338,26 @@ export async function listModels(baseUrl: string, apiKey: string): Promise<strin
 
 /**
  * Remaining-credits / balance for a provider key. All figures are USD credits.
- * `null` fields mean unlimited / not reported. Currently backed by OpenRouter's
- * `GET {base}/key` ({ data: { limit, limit_remaining, usage, is_free_tier } }).
+ * `null` fields mean unlimited / not reported.
  */
-export interface ProviderKeyInfo {
-  remaining: number | null;
-  usage: number | null;
-  limit: number | null;
-  isFreeTier: boolean | null;
-}
+export type ProviderKeyInfo = CreditInfo;
 
 /**
- * Best-effort lookup of the key's remaining credits via `GET {base}/key`.
- * Returns null (never throws) when the provider doesn't expose it — a non-2xx
- * response, a parse failure, or a network error all mean "no credits info", so
- * the settings UI can simply hide the display.
+ * Best-effort lookup of the key's remaining credits. Prefers the community
+ * manifest's `credits` descriptor for the configured endpoint — DeepSeek's
+ * /user/balance, Neuralwatt's /v1/quota, OpenRouter's /key — falling back to the
+ * OpenRouter-style `GET {base}/key` probe. Returns null (never throws) when the
+ * provider doesn't expose it — a non-2xx response, a parse failure, or a network
+ * error all mean "no credits info", so the settings UI can simply hide the
+ * display.
  */
 export async function getKeyInfo(baseUrl: string, apiKey: string): Promise<ProviderKeyInfo | null> {
   if (!apiKey) return null;
-  const url = new URL("key", baseUrl.replace(/\/?$/, "/")).toString();
+  // Soft-refresh the manifest so descriptor lookups see the latest catalog; on
+  // failure the cached copy is used (or no match → the default probe below).
+  await fetchProvidersManifest();
+  const spec = resolveCreditSpec(baseUrl, getRegistryProviders());
+  const url = spec?.url ?? new URL("key", baseUrl.replace(/\/?$/, "/")).toString();
   let res: Awaited<ReturnType<typeof expoFetch>>;
   try {
     res = await expoFetch(url, {
@@ -345,22 +368,11 @@ export async function getKeyInfo(baseUrl: string, apiKey: string): Promise<Provi
     return null; // offline / DNS / TLS — treat as "not supported"
   }
   if (!res.ok) return null;
-  let json: { data?: { limit?: number | null; limit_remaining?: number | null; usage?: number | null; is_free_tier?: boolean } };
+  let json: unknown;
   try {
-    json = (await res.json()) as typeof json;
+    json = (await res.json()) as unknown;
   } catch {
     return null;
   }
-  const d = json?.data;
-  if (!d || typeof d !== "object") return null;
-  const usage = typeof d.usage === "number" ? d.usage : null;
-  const limit = typeof d.limit === "number" ? d.limit : null;
-  const remaining =
-    typeof d.limit_remaining === "number"
-      ? d.limit_remaining
-      : limit != null && usage != null
-        ? limit - usage
-        : null;
-  if (remaining == null && usage == null && limit == null) return null;
-  return { remaining, usage, limit, isFreeTier: d.is_free_tier ?? null };
+  return parseCredits(spec?.shape ?? "openrouter", json);
 }

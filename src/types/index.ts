@@ -444,6 +444,8 @@ export interface ChatThread {
     /** Subset of completion_tokens produced by the model's reasoning/thinking step. 0 if the model didn't split. */
     reasoningTokens?: number;
     breakdown?: TokenBreakdown;
+    /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost), when present. */
+    costUsd?: number;
   };
 }
 
@@ -460,6 +462,8 @@ export interface CompletionUsage {
   totalTokens?: number;
   reasoningTokens?: number;
   breakdown?: TokenBreakdown;
+  /** Provider-reported USD cost of the call (e.g. Neuralwatt usage.cost), when present. */
+  costUsd?: number;
 }
 
 export interface LinkedContextReference {
@@ -516,7 +520,7 @@ export interface ChatSubagent {
   /** Final result returned to the dispatcher (usually == content) */
   result?: string;
   /** This subagent's OWN latest context-window usage — drives its dedicated ring. */
-  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number };
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number };
 }
 
 export type SuggestedAction =
@@ -557,8 +561,8 @@ export interface ChatMessage {
   pendingAction?: PendingAction;
   /** Suggested connection actions for graph assistant */
   actions?: SuggestedAction[];
-  /** Images attached to this message — inline base64 data URLs, ephemeral (not persisted to disk) */
-  images?: Array<{ url: string; name: string }>;
+  /** Attachments on this message — inline base64 data URLs, ephemeral (not persisted to disk) */
+  images?: Array<{ url: string; name: string; kind?: "image" | "pdf" }>;
   /** Subagent runs during this turn (subagent mode) — expandable inline traces. */
   subagents?: ChatSubagent[];
   createdAt: string;
@@ -803,7 +807,7 @@ export interface PiSubagentMessage {
   /** Final result returned to the parent */
   result?: string;
   /** Latest token usage from the subagent's LLM steps */
-  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown };
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number };
 }
 
 export interface PiAgentMessage {
@@ -842,7 +846,7 @@ export interface TerminalSession {
   sessionType: "pty" | "pi";
   piMessages?: PiAgentMessage[];
   initialPrompt?: string;
-  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown };
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number };
   mode?: "plan" | "execute";
   planNoteId?: string;
 }

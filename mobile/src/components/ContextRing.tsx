@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Host, Popover, RNHostView, Button, VStack, HStack, Spacer, Text, Divider, Rectangle } from "@expo/ui/swift-ui";
 import { font, foregroundStyle, frame, padding, monospacedDigit, clipShape, accessibilityLabel } from "@expo/ui/swift-ui/modifiers";
 import { useTheme } from "@/theme";
 import { haptics } from "@/haptics";
+import { getActiveProvider, getActiveProviderId, getProviderApiKey } from "@/chat/ai-config";
+import { getKeyInfo, type ProviderKeyInfo } from "@/chat/providers/openai";
+import { formatBalance, formatUsd } from "@cairn/shared/chat/provider-credits";
 import type { ChatUsage } from "@/chat/providers/types";
 import type { TokenBreakdown } from "@/chat/token-breakdown";
 
@@ -13,6 +16,12 @@ import type { TokenBreakdown } from "@/chat/token-breakdown";
 const POPOVER_WIDTH = 260;
 const BAR_INNER_WIDTH = POPOVER_WIDTH - 32;
 const BAR_HEIGHT = 8;
+
+/** Re-probe the account balance at most once per minute. */
+const BALANCE_TTL_MS = 60_000;
+// Keyed by provider id + base URL + API key so two providers sharing a base URL
+// (e.g. two OpenRouter entries with different keys) don't collide.
+let balanceCache: { key: string; data: ProviderKeyInfo | null; fetchedAt: number } | null = null;
 
 /**
  * Context-window usage ring — the mobile analogue of the desktop ContextRing
@@ -39,6 +48,7 @@ export function ContextRing({
   breakdown,
   completionTokens,
   reasoningTokens,
+  costUsd,
   size = 22,
   stroke = 3.5,
 }: {
@@ -49,11 +59,43 @@ export function ContextRing({
   breakdown?: TokenBreakdown;
   completionTokens?: number;
   reasoningTokens?: number;
+  /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost). */
+  costUsd?: number;
   size?: number;
   stroke?: number;
 }) {
   const t = useTheme();
   const [open, setOpen] = useState(false);
+  const [balance, setBalance] = useState<ProviderKeyInfo | null>(null);
+  // Re-run the probe when the active provider changes (the header re-renders on
+  // chat state, so switching providers in settings re-mounts this effect).
+  const activeProviderId = getActiveProviderId();
+
+  // Lazily fetch the active provider's remaining balance (TTL-cached, so the
+  // ring re-mounting keeps one probe per minute). null when the provider
+  // exposes no credits or offline → the Balance row is hidden.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const active = getActiveProvider();
+      if (!active?.baseUrl) return;
+      const apiKey = await getProviderApiKey(active.id).catch(() => null);
+      if (cancelled) return;
+      const key = `${active.id}::${active.baseUrl}::${apiKey ?? ""}`;
+      const cached = balanceCache;
+      if (cached && cached.key === key && Date.now() - cached.fetchedAt < BALANCE_TTL_MS) {
+        if (!cancelled) setBalance(cached.data);
+        return;
+      }
+      const data = apiKey ? await getKeyInfo(active.baseUrl, apiKey) : null;
+      if (cancelled) return;
+      balanceCache = { key, data, fetchedAt: Date.now() };
+      if (!cancelled) setBalance(data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProviderId]);
 
   const { pct, colour, r, circ, dash } = useMemo(() => {
     const p = contextLimit > 0 ? Math.min(promptTokens / contextLimit, 1) : 0;
@@ -121,6 +163,12 @@ export function ContextRing({
       lines.push("", "Output", `• Answer: ${formatTokenCount(answerTokens)}`);
       if (thinkingTokens > 0) lines.push(`• Thinking: ${formatTokenCount(thinkingTokens)}`);
       lines.push(`• Total: ${formatTokenCount(completionTokens as number)}`);
+    }
+    if (typeof costUsd === "number" && costUsd > 0) {
+      lines.push("", `Cost: ${formatUsd(costUsd)}`);
+    }
+    if (balance && (balance.remaining != null || balance.usage != null || balance.isFreeTier === true)) {
+      lines.push("", `Balance: ${formatBalance(balance)}`);
     }
     Alert.alert("Context usage", lines.join("\n"), [{ text: "OK" }]);
   };
@@ -228,6 +276,20 @@ export function ContextRing({
                   {thinkingTokens > 0 ? row("Thinking", formatTokenCount(thinkingTokens)) : null}
                   {row("Total", formatTokenCount(completionTokens as number))}
                 </VStack>
+              </>
+            ) : null}
+
+            {typeof costUsd === "number" && costUsd > 0 ? (
+              <>
+                <Divider />
+                {row("Cost", formatUsd(costUsd))}
+              </>
+            ) : null}
+
+            {balance && (balance.remaining != null || balance.usage != null || balance.isFreeTier === true) ? (
+              <>
+                <Divider />
+                {row("Balance", formatBalance(balance))}
               </>
             ) : null}
 

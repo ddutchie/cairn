@@ -225,7 +225,7 @@ export function registerPiAgentHandler(
 
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
-      model:       reqConfig?.model       || "gpt-4o",
+      model:       reqConfig?.model       || "gpt-5.6-luna",
       apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    reqConfig?.maxSteps    ?? 20,
       temperature: reqConfig?.temperature ?? 0.3,
@@ -317,7 +317,7 @@ export function registerPiAgentHandler(
 
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
-      model:       reqConfig?.model       || "gpt-4o",
+      model:       reqConfig?.model       || "gpt-5.6-luna",
       apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    reqConfig?.maxSteps    ?? 20,
       temperature: reqConfig?.temperature ?? 0.3,
@@ -390,7 +390,7 @@ export function registerPiAgentHandler(
 
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
-      model:       reqConfig?.model  || "gpt-4o",
+      model:       reqConfig?.model  || "gpt-5.6-luna",
       apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    20,
       temperature: 0.1,

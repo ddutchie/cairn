@@ -1,11 +1,27 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import { ChevronDown, RefreshCw, Check, Pencil, Star, Search } from "lucide-react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
+import {
+  ChevronDown, RefreshCw, Check, Pencil, Star, Search, TriangleAlert,
+  Type, Image as ImageIcon, FileText, Video, AudioLines,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  getModelInfo,
+  getModelCatalogVersion,
+  modelLogoUrl,
+  prewarmModelCatalog,
+  subscribeModelCatalog,
+} from "@/lib/models-dev";
+import {
+  formatModelCost,
+  modelInputChips,
+  type ModelInfo,
+} from "../../../shared/models/model-catalog";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown";
@@ -36,6 +52,39 @@ export function TruncatedModel({ text, className }: { text: string; className?: 
     <Tooltip content={text} side="top">
       {span}
     </Tooltip>
+  );
+}
+
+/**
+ * Input-capability icons for a model — the input modalities models.dev lists
+ * for the model (e.g. Type / Image / FileText / Video / AudioLines). Renders
+ * nothing when the catalog hasn't loaded or the model is unknown.
+ */
+const MODE_ICONS: Record<string, LucideIcon> = {
+  text: Type,
+  image: ImageIcon,
+  pdf: FileText,
+  video: Video,
+  audio: AudioLines,
+};
+
+function CapabilityChips({ info }: { info: ModelInfo | null }) {
+  const chips = modelInputChips(info);
+  if (chips.length === 0) return null;
+  return (
+    <span className="flex items-center gap-0.5 flex-shrink-0">
+      {chips.map((c) => {
+        const Icon = MODE_ICONS[c.key];
+        if (!Icon) return null;
+        return (
+          <Tooltip key={c.key} content={c.title}>
+            <span className="text-[var(--text-tertiary)]">
+              <Icon size={9} strokeWidth={1.75} />
+            </span>
+          </Tooltip>
+        );
+      })}
+    </span>
   );
 }
 
@@ -84,6 +133,10 @@ export function ModelPicker({
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Re-render rows once the models.dev catalog finishes loading in the
+  // background so cost / logo / tool markers can appear (see ModelRow).
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+
   const { favoriteModels, toggleFavoriteModel } = useCairnStore(
     useShallow((s) => ({ favoriteModels: s.favoriteModels, toggleFavoriteModel: s.toggleFavoriteModel })),
   );
@@ -101,6 +154,14 @@ export function ModelPicker({
   }, [options, query, favoriteModels]);
 
   const noMatches = query.trim() !== "" && favs.length === 0 && rest.length === 0;
+
+  // Enrichment for the closed trigger (logo + cost + tool marker), same as rows.
+  const triggerInfo = getModelInfo(value);
+  const triggerLogo = modelLogoUrl(value);
+  const triggerCost = formatModelCost(triggerInfo?.input ?? null, triggerInfo?.output ?? null);
+  const triggerNoToolCall = triggerInfo?.toolCall === false;
+
+  useEffect(() => { prewarmModelCatalog(); }, []);
 
   const triggerPad = size === "md" ? "px-2.5 py-1.5 text-xs" : "px-2 py-1 text-[0.714rem]";
 
@@ -143,7 +204,30 @@ export function ModelPicker({
             )}
           >
             {value ? (
-              <TruncatedModel text={value} className="font-mono" />
+              <>
+                {triggerLogo && (
+                  <img
+                    src={triggerLogo}
+                    alt=""
+                    className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                  />
+                )}
+                <TruncatedModel text={value} className="font-mono" />
+                <CapabilityChips info={triggerInfo} />
+                {triggerNoToolCall && (
+                  <Tooltip content="This model doesn't support tool calling">
+                    <span className="flex-shrink-0 text-[var(--warning)]">
+                      <TriangleAlert size={11} />
+                    </span>
+                  </Tooltip>
+                )}
+                {triggerCost && (
+                  <span className="text-[0.607rem] tabular-nums text-[var(--text-tertiary)] flex-shrink-0">
+                    {triggerCost}
+                  </span>
+                )}
+              </>
             ) : (
               <span className="truncate font-sans text-[var(--text-tertiary)]">
                 {placeholder || "Select model"}
@@ -156,7 +240,11 @@ export function ModelPicker({
           align={align}
           className="max-w-[260px] w-[240px] max-h-72 overflow-y-auto"
           onCloseAutoFocus={() => setQuery("")}
-          onOpenAutoFocus={(e: Event) => { e.preventDefault(); requestAnimationFrame(() => searchRef.current?.focus()); }}
+          onOpenAutoFocus={(e: Event) => {
+            e.preventDefault();
+            prewarmModelCatalog();
+            requestAnimationFrame(() => searchRef.current?.focus());
+          }}
         >
           {/* Search box — filters the list below. Kept out of the scrollable rows
               so it stays pinned while scrolling. stopPropagation prevents Radix's
@@ -240,6 +328,11 @@ export function ModelPicker({
  * A single model row inside the picker: a favorite star (toggles without closing
  * the menu), the active-check gutter, and the truncated model id. Selecting the
  * row picks the model; clicking the star only toggles the favorite.
+ *
+ * When the models.dev catalog is loaded, the row is enriched with the provider
+ * logo, a compact per-1M cost (`$in/$out`), and a warning marker when the model
+ * is known not to support tool calls. Catalog data is best-effort — rows render
+ * fine without it.
  */
 function ModelRow({
   model,
@@ -254,6 +347,11 @@ function ModelRow({
   onSelect: () => void;
   onToggleFavorite: () => void;
 }) {
+  const info = getModelInfo(model);
+  const logo = modelLogoUrl(model);
+  const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
+  const noToolCall = info?.toolCall === false;
+
   return (
     <DropdownMenuItem
       onSelect={onSelect}
@@ -280,7 +378,29 @@ function ModelRow({
         <Star size={12} className={favorite ? "fill-current" : ""} />
       </button>
       {active && <Check size={12} className="flex-shrink-0" />}
+      {logo && (
+        <img
+          src={logo}
+          alt=""
+          className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+          // Some provider slugs 404 — drop the broken glyph rather than showing it.
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+        />
+      )}
       <TruncatedModel text={model} />
+      <CapabilityChips info={info} />
+      {noToolCall && (
+        <Tooltip content="This model doesn't support tool calling">
+          <span className="flex-shrink-0 text-[var(--warning)]">
+            <TriangleAlert size={12} />
+          </span>
+        </Tooltip>
+      )}
+      {cost && (
+        <span className="ml-auto pl-2 text-[0.607rem] tabular-nums text-[var(--text-tertiary)] flex-shrink-0">
+          {cost}
+        </span>
+      )}
     </DropdownMenuItem>
   );
 }

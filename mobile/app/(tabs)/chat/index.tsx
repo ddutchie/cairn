@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   View,
   Text,
@@ -19,8 +19,11 @@ import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
 import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, type ToolCall } from "@/db/chat-store";
-import { hasProvider } from "@/chat/providers";
+import { hasProvider, resolveProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
+import { getOpenAIModel } from "@/chat/ai-config";
+import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/chat/models-dev";
+import { supportsImageInput } from "@cairn/shared/models/model-catalog";
 import type { UIMessage, ChatUsage } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
 import { toolRef } from "@cairn/shared/chat/tool-ref";
@@ -78,12 +81,37 @@ export default function ChatScreen() {
   const refreshConfigured = useCallback(() => {
     hasProvider().then(setConfigured).catch(() => setConfigured(false));
   }, []);
+
+  // Image attach is hidden when the ACTIVE provider is OpenAI-compatible and
+  // its model is known not to accept images. Rork / Apple / unknown models stay
+  // permissive. Re-resolved on focus (provider may change in settings).
+  const [openAiModelActive, setOpenAiModelActive] = useState<string | null>(null);
+  // Re-renders on catalog arrival/refresh; the version feeds the memo so
+  // gating recomputes when a model's capabilities finally resolve.
+  const catalogVersion = useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+  const allowImages = useMemo(
+    () =>
+      openAiModelActive == null ? true : supportsImageInput(getModelInfo(openAiModelActive)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [openAiModelActive, catalogVersion],
+  );
+
   useFocusEffect(
     useCallback(() => {
+      let alive = true;
       refreshConfigured();
+      resolveProvider()
+        .then((p) => {
+          if (!alive) return;
+          setOpenAiModelActive(p.name === "OpenAI-compatible" ? getOpenAIModel() : null);
+        })
+        .catch(() => {
+          if (alive) setOpenAiModelActive(null);
+        });
       // On blur (e.g. switching tabs/apps) make sure the keyboard doesn't linger
       // stuck-open — dismiss via the keyboard-controller API on the way out.
       return () => {
+        alive = false;
         KeyboardController.dismiss().catch(() => { });
       };
     }, [refreshConfigured]),
@@ -275,6 +303,7 @@ export default function ChatScreen() {
                   breakdown={usage.breakdown}
                   completionTokens={usage.completionTokens}
                   reasoningTokens={usage.reasoningTokens}
+                  costUsd={usage.costUsd}
                 />
               )
               : undefined,
@@ -384,6 +413,7 @@ export default function ChatScreen() {
           attachCounterStyle={attachCounterStyle}
           closedLift={closedLift}
           onLayoutHeight={setComposerH}
+          allowImages={allowImages}
         />
       </View>
     </TabScreen>

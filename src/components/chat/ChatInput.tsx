@@ -32,10 +32,16 @@ interface ChatInputProps {
   commands?: SlashCommand[];
   suggestions?: SuggestionItem[];
   onSearchSuggestions?: (query: string) => Promise<SuggestionItem[]>;
-  /** Images attached but not yet sent — shown as thumbnail strip */
-  pendingImages?: Array<{ name: string; dataUrl: string }>;
+  /** Attachments staged but not yet sent — shown as a thumbnail strip (kind
+   *  "pdf" renders as a file chip; anything else as an image thumbnail). */
+  pendingImages?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;
   onRemoveImage?: (index: number) => void;
   onAttachImages?: (files: File[]) => void;
+  /** When false, image attach is hidden (selected model has no image input). */
+  allowImages?: boolean;
+  /** When true the file picker also accepts PDFs (model supports pdf input, or
+   *  image input can rasterize them as a fallback). */
+  allowPdf?: boolean;
 }
 
 export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
@@ -57,6 +63,8 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       pendingImages,
       onRemoveImage,
       onAttachImages,
+      allowImages = true,
+      allowPdf = false,
     },
     ref
   ) => {
@@ -228,6 +236,10 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         }
       }
       if (imageFiles.length > 0) {
+        if (!allowImages) {
+          e.preventDefault();
+          return;
+        }
         e.preventDefault();
         onAttachImages?.(imageFiles);
       }
@@ -287,26 +299,38 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
     return (
       <div className="relative w-full">
-        {/* Hidden file input for image attachment */}
+        {/* Hidden file input for image/PDF attachment */}
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept={[allowImages && "image/*", allowPdf && "application/pdf,.pdf"].filter(Boolean).join(",") || undefined}
           multiple
           onChange={handleFileChange}
           className="hidden"
         />
 
-        {/* Image preview strip */}
+        {/* Attachment preview strip */}
         {pendingImages && pendingImages.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
             {pendingImages.map((img, i) => (
               <div key={i} className="relative group">
-                <img
-                  src={img.dataUrl}
-                  alt={img.name}
-                  className="w-16 h-16 object-cover rounded-lg border border-[var(--border)]"
-                />
+                {img.kind === "pdf" ? (
+                  <div
+                    className="w-16 h-16 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] flex flex-col items-center justify-center gap-1 px-1"
+                    title={img.name}
+                  >
+                    <FileText size={18} className="text-[var(--danger)]" />
+                    <span className="text-[0.5rem] leading-none text-[var(--text-tertiary)] truncate w-full text-center">
+                      {img.name}
+                    </span>
+                  </div>
+                ) : (
+                  <img
+                    src={img.dataUrl}
+                    alt={img.name}
+                    className="w-16 h-16 object-cover rounded-lg border border-[var(--border)]"
+                  />
+                )}
                 <button
                   onClick={() => onRemoveImage?.(i)}
                   className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--danger)] text-[var(--surface)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -423,8 +447,8 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
           />
 
           <div className="flex items-center gap-1.5 flex-shrink-0 self-center">
-            {!isLoading && (
-              <Tooltip content="Attach image" side="left">
+            {!isLoading && (allowImages || allowPdf) && (
+              <Tooltip content="Attach image or PDF" side="left">
                 <button
                   onClick={handleAttachClick}
                   type="button"

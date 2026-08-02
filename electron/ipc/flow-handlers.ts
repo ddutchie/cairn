@@ -46,7 +46,7 @@ function resolveAiConfig(input: { baseUrl?: string; model?: string; apiKey?: str
   }
 
   const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
-  const model = reqConfig?.model || "gpt-4o-mini";
+  const model = reqConfig?.model || "gpt-5.6-luna";
   const keyRef = reqConfig?.apiKey || "";
   const isLocal = isLocalEndpoint(baseUrl);
   if (!keyRef && !isLocal) {

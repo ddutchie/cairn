@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,13 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { Stack, useRouter } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, Wallet } from "lucide-react-native";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
+import { ProviderLogo } from "@/components/ProviderLogo";
+import { formatModelCost, modelInputChips, endpointLogoSlug } from "@cairn/shared/models/model-catalog";
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
@@ -32,6 +34,10 @@ import {
   updateSavedProvider,
   deleteSavedProvider,
   selectSavedProvider,
+  readModelsCache,
+  writeModelsCache,
+  getFavoriteModels,
+  toggleFavoriteModel,
   type ProviderPref,
   type SavedProvider,
 } from "@/chat/ai-config";
@@ -49,12 +55,46 @@ import {
   type AppleReasoningLevel,
 } from "@modules/apple-llm";
 import { listModels, getKeyInfo, type ProviderKeyInfo } from "@/chat/providers/openai";
-import { contextLimitForModel } from "@/chat/models-dev";
+import {
+  contextLimitForModel,
+  getLogoProvider,
+  getModelInfo,
+  getModelCatalogVersion,
+  prewarmModelCatalog,
+  subscribeModelCatalog,
+} from "@/chat/models-dev";
 import { useAiSettingsStyles } from "./ai-settings/styles";
 import { SegmentButton } from "./ai-settings/SegmentButton";
 import { Field } from "./ai-settings/Field";
 import { QuotaBar } from "./ai-settings/QuotaBar";
-import { ProviderList } from "./ai-settings/ProviderList";
+import { ProviderList, type ResolvedProviderLogo } from "./ai-settings/ProviderList";
+import {
+  getCachedProvidersManifest,
+  fetchProvidersManifest,
+} from "@/chat/providers-registry";
+import type { ProvidersManifest } from "@cairn/shared/chat/registry-schema";
+
+/** Normalize an endpoint URL for keyed matching (trailing slash + case). */
+function normBaseUrl(url: string): string {
+  return (url ?? "").trim().toLowerCase().replace(/\/+$/, "");
+}
+
+/**
+ * Community brand marks keyed by communityId AND normalized baseUrl. The
+ * baseUrl key covers providers added manually that happen to share an
+ * endpoint with a catalog entry (e.g. added before it was in the registry).
+ */
+function buildProviderLogoMap(
+  manifest: ProvidersManifest | null,
+): Record<string, { iconSvg?: string; brandColor?: string }> {
+  const map: Record<string, { iconSvg?: string; brandColor?: string }> = {};
+  for (const e of manifest?.providers ?? []) {
+    const logo = { iconSvg: e.iconSvg, brandColor: e.brandColor };
+    map[e.id] = logo;
+    if (e.definition.baseUrl) map[normBaseUrl(e.definition.baseUrl)] = logo;
+  }
+  return map;
+}
 
 /** Format a USD credit amount compactly (e.g. $12.34, $0.0500, $1,234, -$5.00). */
 function formatCredits(n: number): string {
@@ -82,6 +122,26 @@ function formatCredits(n: number): string {
 export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const styles = useAiSettingsStyles();
+
+  // Warm the models.dev catalog + re-render rows once it arrives (cost/logo/
+  // tool markers in the model list).
+  useEffect(() => { prewarmModelCatalog(); }, []);
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+  // Community-provider brand marks for the saved-provider chips (keyed by
+  // communityId). Seeded from the on-device cache so chips render instantly,
+  // then refreshed from the network (cache-first) — mirrors the Browse list.
+  const [providerLogos, setProviderLogos] = useState<Record<string, { iconSvg?: string; brandColor?: string }>>(() =>
+    buildProviderLogoMap(getCachedProvidersManifest()),
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { manifest } = await fetchProvidersManifest();
+      if (cancelled || !manifest) return;
+      setProviderLogos(buildProviderLogoMap(manifest));
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const router = useRouter();
   const rorkBuiltIn = isRorkAvailable();
   const appleAvailable = isAppleProviderAvailable();
@@ -122,10 +182,28 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     return v ? String(v) : "";
   });
   const [apiKey, setApiKey] = useState("");
+  // Whether the selected provider's editable fields are revealed. When false,
+  // a read-only summary card is shown instead (tap Edit to reveal inputs).
+  const [editing, setEditing] = useState(false);
   // Saved providers + the active one. Loaded (with migration) in an effect since
   // listSavedProviders is async. `name` is the active provider's editable label.
   const [providers, setProviders] = useState<SavedProvider[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() => getActiveProviderId());
+  // Brand mark per saved provider, resolved in priority order: community
+  // iconSvg (by communityId, then normalized baseUrl) → models.dev logo slug
+  // (for direct-vendor hostnames like api.openai.com that the community
+  // catalog has no inline icon for) → none. Recomputed when the list or the
+  // community logo map changes.
+  const providerLogosResolved = useMemo<Record<string, ResolvedProviderLogo>>(() => {
+    const out: Record<string, ResolvedProviderLogo> = {};
+    for (const p of providers) {
+      const comm = (p.communityId && providerLogos[p.communityId]) || providerLogos[p.baseUrl.toLowerCase().replace(/\/+$/, "")];
+      if (comm?.iconSvg) { out[p.id] = { kind: "iconSvg", iconSvg: comm.iconSvg, brandColor: comm.brandColor }; continue; }
+      const slug = endpointLogoSlug(p.baseUrl);
+      if (slug) out[p.id] = { kind: "slug", slug };
+    }
+    return out;
+  }, [providers, providerLogos]);
   const [name, setName] = useState("");
   // Context window detected from models.dev for the current model (null = not
   // found / not looked up). Shown as a hint when there's no manual override.
@@ -138,8 +216,20 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [models, setModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  // Dropdown-style model selector: collapsed trigger shows the current model;
+  // expanding reveals the searchable list. `customModel` swaps in a free-text
+  // input for ids the endpoint didn't list (gateway/proxy names).
+  const [modelOpen, setModelOpen] = useState(false);
+  const [customModel, setCustomModel] = useState(false);
   // Free-text filter over the fetched model ids (providers can return 50+).
   const [modelQuery, setModelQuery] = useState("");
+  // Starred models (global, persisted via the meta DB like desktop's
+  // localStorage list). Only used by the dropdown rows.
+  const [favorites, setFavorites] = useState<Set<string>>(() => getFavoriteModels());
+  const toggleFavorite = useCallback((id: string) => {
+    haptics.selection();
+    setFavorites(toggleFavoriteModel(id));
+  }, []);
   // Remaining credits for providers that expose it (e.g. OpenRouter). null =
   // not supported / unknown, so the display is hidden.
   const [keyInfo, setKeyInfo] = useState<ProviderKeyInfo | null>(null);
@@ -183,6 +273,22 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
+  // Refresh the provider LIST when the form regains focus (e.g. after adding a
+  // provider on the Browse Providers screen), so a newly-installed community
+  // provider appears in the switcher. We only sync the list — not the active
+  // provider's editable fields — so any in-progress edits here aren't clobbered.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void (async () => {
+        const list = await listSavedProviders();
+        if (!cancelled) setProviders(list);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
   // Switch the active provider: persist any pending edits to the current one,
   // then load the target provider's values into the fields. Guarded against
   // concurrent invocations so a rapid tap-tap can't persist edits to the wrong
@@ -218,6 +324,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       setModelQuery("");
       keyInfoGenRef.current += 1; // invalidate any in-flight credits lookup
       setKeyInfo(null);
+      setEditing(false); // show the newly-selected provider's summary first
       haptics.selection();
     } finally {
       providerOpInFlight.current = false;
@@ -256,6 +363,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       setModelQuery("");
       keyInfoGenRef.current += 1; // invalidate any in-flight credits lookup
       setKeyInfo(null);
+      setEditing(true); // a fresh provider wants its fields filled in right away
       haptics.selection();
     } finally {
       providerOpInFlight.current = false;
@@ -293,17 +401,18 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       cancelled = true;
     };
   }, [model]);
-  const fetchModels = async () => {
-    const key = apiKey.trim();
-    if (!key) {
+  const fetchModels = useCallback(async (base?: string, key?: string) => {
+    const b = (base ?? baseUrl).trim() || DEFAULT_OPENAI_BASE_URL;
+    const k = (key ?? apiKey).trim();
+    if (!k) {
       setModelsError("Enter an API key first.");
       return;
     }
     setFetchingModels(true);
     setModelsError(null);
-    const base = baseUrl.trim() || DEFAULT_OPENAI_BASE_URL;
     try {
-      const ids = await listModels(base, key);
+      const ids = await listModels(b, k);
+      writeModelsCache(b, ids); // persist so the next open hydrates instantly
       setModels(ids);
       if (ids.length === 0) setModelsError("The endpoint returned no models.");
     } catch (e) {
@@ -315,10 +424,40 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     // Guarded by a generation so a slow response can't overwrite state after the
     // active provider changed (or its credits were cleared).
     const gen = ++keyInfoGenRef.current;
-    getKeyInfo(base, key)
+    getKeyInfo(b, k)
       .then((info) => { if (gen === keyInfoGenRef.current) setKeyInfo(info); })
       .catch(() => { if (gen === keyInfoGenRef.current) setKeyInfo(null); });
-  };
+  }, [baseUrl, apiKey]);
+
+  // Auto-populate the model list like desktop's `ensureModels`: hydrate the
+  // per-endpoint cache instantly (no network, no tap), then refresh in the
+  // background once an API key exists. Debounced so typing a key (or switching
+  // providers) doesn't fire a request per keystroke; the generation guard drops
+  // superseded ones. Cache hydrate always runs, fetch only with a key.
+  const autoFetchGenRef = useRef(0);
+  useEffect(() => {
+    const base = baseUrl.trim() || DEFAULT_OPENAI_BASE_URL;
+    let alive = true;
+    const cached = readModelsCache(base);
+    if (cached && cached.length > 0) {
+      // Async boundary so the synchronous cache hydrate isn't flagged as a
+      // setState-in-effect; it lands on the next tick, imperceptibly fast.
+      setTimeout(() => {
+        if (!alive) return;
+        setModels(cached);
+        setModelsError(null);
+      }, 0);
+    }
+    if (!apiKey.trim()) return () => { alive = false; };
+    const gen = ++autoFetchGenRef.current;
+    const t = setTimeout(() => {
+      if (gen === autoFetchGenRef.current && alive) void fetchModels(base, apiKey);
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [baseUrl, apiKey, fetchModels]);
 
   const save = async () => {
     setSaving(true);
@@ -354,6 +493,103 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     }
     return matches;
   }, [models, modelQuery, model]);
+
+  // Enrichment for the collapsed trigger (logo/cost/tool marker), same as the
+  // list rows — mirrors the desktop picker's closed-trigger label.
+  const triggerInfo = getModelInfo(model);
+  const triggerCost = formatModelCost(triggerInfo?.input ?? null, triggerInfo?.output ?? null);
+  const triggerNoToolCall = triggerInfo?.toolCall === false;
+  // Brand-resolved logo slug: prefers the canonical owner from models.json, then
+  // the model's own brand from its id (shared with desktop).
+  const triggerLogoProvider = getLogoProvider(model.trim() || DEFAULT_OPENAI_MODEL);
+
+  // Split the filtered list into starred vs the rest so Favorites stay pinned
+  // to the top of the dropdown (mirrors desktop's picker sections).
+  const { favModels, restModels } = useMemo(() => {
+    const fav: string[] = [];
+    const rest: string[] = [];
+    for (const id of filteredModels) (favorites.has(id) ? fav : rest).push(id);
+    return { favModels: fav, restModels: rest };
+  }, [filteredModels, favorites]);
+
+  // One row definition shared by the Favorites and All-models sections. The
+  // star is a nested pressable so tapping it toggles the favorite without
+  // selecting the model (the outer row's onPress never fires).
+  const renderModelRow = (id: string) => {
+    const active = model === id;
+    const info = getModelInfo(id);
+    const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
+    const noToolCall = info?.toolCall === false;
+    const isFavorite = favorites.has(id);
+    const rowLogoProvider = getLogoProvider(id);
+    return (
+      <Pressable
+        key={id}
+        style={[styles.modelRow, active && styles.modelRowActive]}
+        onPress={() => {
+          haptics.selection();
+          setModel(id);
+          setModelOpen(false);
+          setModelQuery("");
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`Model ${id}`}
+        accessibilityState={{ selected: active }}
+      >
+        <Pressable
+          style={styles.modelStar}
+          onPress={() => toggleFavorite(id)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={isFavorite ? `Unfavorite ${id}` : `Favorite ${id}`}
+        >
+          <Star
+            size={13}
+            color={isFavorite ? t.accent : t.textTertiary}
+            fill={isFavorite ? t.accent : "transparent"}
+          />
+        </Pressable>
+        {active ? (
+          <Check size={14} color={t.accent} />
+        ) : (
+          <View style={{ width: 14 }} />
+        )}
+        {rowLogoProvider ? (
+          <ProviderLogo provider={rowLogoProvider} />
+        ) : (
+          <View style={{ width: 14 }} />
+        )}
+        <Text
+          style={[styles.modelRowText, active && styles.modelRowTextActive]}
+          numberOfLines={1}
+        >
+          {id}
+        </Text>
+        <View style={styles.modelRowMeta}>
+          {modelInputChips(info).map((c) => {
+            const CapIcon =
+              c.key === "text" ? Type
+              : c.key === "image" ? ImageIcon
+              : c.key === "pdf" ? FileText
+              : c.key === "video" ? Video
+              : c.key === "audio" ? AudioLines
+              : null;
+            return CapIcon ? (
+              <CapIcon key={c.key} size={10} color={t.textTertiary} />
+            ) : null;
+          })}
+          {noToolCall && (
+            <TriangleAlert size={12} color={t.warning} />
+          )}
+          {cost && (
+            <Text style={styles.modelRowCost} numberOfLines={1}>
+              {cost}
+            </Text>
+          )}
+        </View>
+      </Pressable>
+    );
+  };
 
   return (
     <View style={styles.flex}>
@@ -489,9 +725,42 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   onSelect={switchProvider}
                   onAdd={addProvider}
                   onDelete={removeProvider}
+                  providerLogos={providerLogosResolved}
                   t={t}
                   styles={styles}
                 />
+                {/* Read-only summary for the selected provider — tap Edit to
+                    reveal Name / Base URL / API key. Model, Context window,
+                    and credits stay always editable/visible. A brand-new
+                    provider skips the summary (no values to summarise). */}
+                {activeId && !editing ? (
+                  <View style={styles.summaryCard}>
+                    <View style={styles.summaryHead}>
+                      <Text style={styles.summaryName} numberOfLines={1}>{name || "Provider"}</Text>
+                      <Pressable
+                        style={styles.editBtn}
+                        onPress={() => { haptics.selection(); setEditing(true); }}
+                        hitSlop={6}
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit provider"
+                      >
+                        <Pencil size={12} color={t.accent} />
+                        <Text style={styles.editBtnText}>Edit</Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Base URL</Text>
+                      <Text style={styles.summaryValue} numberOfLines={1}>{baseUrl || DEFAULT_OPENAI_BASE_URL}</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>API key</Text>
+                      <Text style={styles.summaryValue}>
+                        {hadKey ? "Stored securely in keychain" : "Not set — tap Edit to add one"}
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                <>
                 <Field
                   label="Name"
                   value={name}
@@ -520,6 +789,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   t={t}
                   styles={styles}
                 />
+                </>
+                )}
                 <View style={styles.keyNote}>
                   <ShieldCheck size={13} color={t.textTertiary} />
                   <Text style={styles.keyNoteText}>
@@ -553,7 +824,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                     <Text style={styles.fieldLabel}>Model</Text>
                     <Pressable
                       style={styles.fetchBtn}
-                      onPress={fetchModels}
+                      onPress={() => fetchModels()}
                       disabled={fetchingModels}
                       hitSlop={6}
                     >
@@ -563,41 +834,106 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                         <RefreshCw size={12} color={t.accent} />
                       )}
                       <Text style={styles.fetchBtnText}>
-                        {fetchingModels ? "Fetching…" : "Fetch models"}
+                        {fetchingModels ? "Refreshing…" : "Refresh"}
                       </Text>
                     </Pressable>
                   </View>
-                  <TextInput
-                    style={styles.fieldInput}
-                    value={model}
-                    onChangeText={setModel}
-                    placeholder={DEFAULT_OPENAI_MODEL}
-                    placeholderTextColor={t.textTertiary}
-                    autoCapitalize="none"
-                  />
-                  {modelsError && <Text style={styles.modelsError}>{modelsError}</Text>}
-                  {models.length > 0 && (
+
+                  {customModel ? (
+                    <TextInput
+                      style={styles.fieldInput}
+                      value={model}
+                      onChangeText={setModel}
+                      placeholder={DEFAULT_OPENAI_MODEL}
+                      placeholderTextColor={t.textTertiary}
+                      autoCapitalize="none"
+                      autoFocus
+                      onBlur={() => setCustomModel(false)}
+                    />
+                  ) : (
+                    <Pressable
+                      style={[styles.fieldInput, styles.modelTrigger, modelOpen && styles.modelTriggerOpen]}
+                      onPress={() => {
+                        haptics.selection();
+                        setModelOpen((o) => !o);
+                        setCustomModel(false);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose model"
+                    >
+                      {triggerLogoProvider ? (
+                        <ProviderLogo provider={triggerLogoProvider} />
+                      ) : (
+                        <View style={{ width: 14 }} />
+                      )}
+                      <Text style={styles.modelTriggerText} numberOfLines={1}>
+                        {model.trim() || DEFAULT_OPENAI_MODEL}
+                      </Text>
+                      <View style={styles.modelRowMeta}>
+                        {modelInputChips(triggerInfo).map((c) => {
+                          const CapIcon =
+                            c.key === "text" ? Type
+                            : c.key === "image" ? ImageIcon
+                            : c.key === "pdf" ? FileText
+                            : c.key === "video" ? Video
+                            : c.key === "audio" ? AudioLines
+                            : null;
+                          return CapIcon ? (
+                            <CapIcon key={c.key} size={10} color={t.textTertiary} />
+                          ) : null;
+                        })}
+                        {triggerNoToolCall && (
+                          <TriangleAlert size={12} color={t.warning} />
+                        )}
+                        {triggerCost && (
+                          <Text style={styles.modelRowCost} numberOfLines={1}>
+                            {triggerCost}
+                          </Text>
+                        )}
+                      </View>
+                      <ChevronDown
+                        size={14}
+                        color={t.textTertiary}
+                        style={modelOpen ? styles.modelChevronOpen : undefined}
+                      />
+                    </Pressable>
+                  )}
+
+                  {modelsError && !modelOpen && !customModel && (
+                    <Text style={styles.modelsError}>{modelsError}</Text>
+                  )}
+
+                  {modelOpen && (
                     <>
-                      {/* Search box appears once the endpoint returns models —
-                          providers like OpenRouter return 50+, so filtering is
-                          essential for browsing. */}
+                      {/* Search box filters the list; "Custom model…" covers ids
+                          the endpoint didn't list (gateway/proxy names). */}
                       <TextInput
                         style={styles.modelSearch}
                         value={modelQuery}
                         onChangeText={setModelQuery}
-                        placeholder={`Search ${models.length} models…`}
+                        placeholder={
+                          models.length > 0
+                            ? `Search ${models.length} models…`
+                            : "No models yet — Refresh, or use Custom model…"
+                        }
                         placeholderTextColor={t.textTertiary}
                         autoCapitalize="none"
                         autoCorrect={false}
                         clearButtonMode="while-editing"
                       />
-                      <Text style={styles.modelListMeta}>
-                        {modelQuery.trim()
-                          ? `${filteredModels.length} of ${models.length} match`
-                          : `${models.length} models`}
-                      </Text>
+                      {models.length > 0 && (
+                        <Text style={styles.modelListMeta}>
+                          {modelQuery.trim()
+                            ? `${filteredModels.length} of ${models.length} match`
+                            : `${models.length} models`}
+                        </Text>
+                      )}
                       <View style={styles.modelList}>
-                        {filteredModels.length === 0 ? (
+                        {models.length === 0 ? (
+                          <Text style={styles.modelRowEmpty}>
+                            No models listed yet — tap Refresh, or enter one under Custom model.
+                          </Text>
+                        ) : filteredModels.length === 0 ? (
                           <Text style={styles.modelRowEmpty}>No models match “{modelQuery.trim()}”.</Text>
                         ) : (
                           <ScrollView
@@ -605,34 +941,30 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                             nestedScrollEnabled
                             keyboardShouldPersistTaps="handled"
                           >
-                            {filteredModels.map((id) => {
-                              const active = model === id;
-                              return (
-                                <Pressable
-                                  key={id}
-                                  style={[styles.modelRow, active && styles.modelRowActive]}
-                                  onPress={() => setModel(id)}
-                                  accessibilityRole="button"
-                                  accessibilityLabel={`Model ${id}`}
-                                  accessibilityState={{ selected: active }}
-                                >
-                                  {active ? (
-                                    <Check size={14} color={t.accent} />
-                                  ) : (
-                                    <View style={{ width: 14 }} />
-                                  )}
-                                  <Text
-                                    style={[styles.modelRowText, active && styles.modelRowTextActive]}
-                                    numberOfLines={1}
-                                  >
-                                    {id}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })}
+                            {favModels.length > 0 && (
+                              <>
+                                <Text style={styles.modelSectionLabel}>Favorites</Text>
+                                {favModels.map(renderModelRow)}
+                                {restModels.length > 0 && <View style={styles.modelSectionSeparator} />}
+                              </>
+                            )}
+                            {restModels.map(renderModelRow)}
                           </ScrollView>
                         )}
                       </View>
+
+                      <Pressable
+                        style={styles.customRow}
+                        onPress={() => {
+                          haptics.selection();
+                          setCustomModel(true);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Enter a custom model"
+                      >
+                        <Pencil size={12} color={t.textSecondary} />
+                        <Text style={styles.customRowText}>Custom model…</Text>
+                      </Pressable>
                     </>
                   )}
                 </View>
@@ -661,6 +993,25 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 </Text>
               </View>
             )}
+
+            {usingOpenAI ? (
+            <Pressable
+              style={styles.navRow}
+              onPress={() => {
+                haptics.selection();
+                router.push("/settings/providers");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Browse community AI providers"
+            >
+              <Server size={16} color={t.textSecondary} />
+              <View style={styles.navRowMain}>
+                <Text style={styles.navRowTitle}>Browse Providers</Text>
+                <Text style={styles.navRowSub}>Add a preset OpenAI-compatible provider from the community catalog — just enter your API key.</Text>
+              </View>
+              <ChevronRight size={18} color={t.textTertiary} />
+            </Pressable>
+            ) : null}
 
             <Pressable
               style={styles.navRow}

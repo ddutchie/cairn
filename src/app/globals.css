@@ -70,6 +70,12 @@
   --node-project: #7c5cd6;
 }
 
+/* models.dev provider logos are single-colour dark-ink SVGs — invert them on
+   dark themes so they read as light glyphs against the dark surface. */
+[data-theme="dark"] .provider-logo {
+  filter: invert(1);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

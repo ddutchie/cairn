@@ -26,7 +26,7 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
 
     const config = {
       baseUrl: aiConfig.baseUrl || "https://api.openai.com",
-      model: aiConfig.model || "gpt-4o-mini",
+      model: aiConfig.model || "gpt-5.6-luna",
       apiKey: aiConfig.apiKey || "",
     };
 

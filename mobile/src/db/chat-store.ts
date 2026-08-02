@@ -154,6 +154,7 @@ export function loadLastChatUsage(): ChatUsage | null {
         breakdown: u.breakdown,
         completionTokens: u.completionTokens,
         reasoningTokens: u.reasoningTokens,
+        costUsd: typeof u.costUsd === "number" ? u.costUsd : undefined,
       };
     }
   } catch {

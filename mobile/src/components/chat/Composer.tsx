@@ -38,6 +38,8 @@ export interface ComposerProps {
   closedLift: number;
   /** Report the measured composer height back to the scroll padding logic. */
   onLayoutHeight: (h: number) => void;
+  /** When false the attach menu is hidden (active model has no image input). */
+  allowImages?: boolean;
 }
 
 /**
@@ -61,6 +63,7 @@ export function Composer({
   attachCounterStyle,
   closedLift,
   onLayoutHeight,
+  allowImages = true,
 }: ComposerProps) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -98,9 +101,9 @@ export function Composer({
             <View style={styles.attachSlot}>
               <Animated.View style={attachCounterStyle}>
                 <GlassMenu
-                  trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
+                  trigger={<ImagePlus size={16} color={busy || !allowImages ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
                   accessibilityLabel="Add image"
-                  disabled={busy}
+                  disabled={busy || !allowImages}
                   onFallbackPress={onAttachFallback}
                   containerStyle={styles.attachContainer}
                   triggerStyle={styles.attachBtn}

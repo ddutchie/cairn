@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Check, X, Server, ChevronDown } from "lucide-react";
@@ -11,6 +11,18 @@ import { SettingsRow } from "./shared";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown";
 import { ModelPicker } from "@/components/ui/model-picker";
 import { useEndpointConfig, CreditsBadge } from "./endpoint-components";
+import { ConnectorLogo } from "./tools/ConnectorLogo";
+import { endpointLogoSlug } from "../../../shared/models/model-catalog";
+import {
+  getOrFetchLogoSvg,
+  subscribeModelCatalog,
+  getModelCatalogVersion,
+} from "@/lib/models-dev";
+
+/** Normalize an endpoint URL for keyed matching (trailing slash + case). */
+function normBaseUrl(url: string): string {
+  return (url ?? "").trim().toLowerCase().replace(/\/+$/, "");
+}
 
 // A stable empty array so the selector never returns a fresh reference (which
 // would break useShallow's snapshot caching and spin an infinite render loop).
@@ -61,6 +73,11 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   const providers = dedupeProviders(savedProviders ?? EMPTY_PROVIDERS);
   const active = providers.find((p) => p.id === activeProviderId);
 
+  // Re-render when lazily-fetched models.dev provider SVGs land (the saved-
+  // provider rows fall back to a generic glyph and pop in once the logo SVG is
+  // cached). The version bumps once per arrival; cheap.
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+
   // null = form closed; "new" = adding; otherwise the id being edited.
   const [editing, setEditing] = useState<null | "new" | string>(null);
   const formOpen = editing !== null;
@@ -68,6 +85,54 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   const editingProvider = typeof editing === "string" && editing !== "new"
     ? providers.find((p) => p.id === editing)
     : undefined;
+
+  // Community-provider brand logos keyed by communityId AND normalized
+  // baseUrl, fetched once (cache-first) so saved community providers show
+  // their real brand mark instead of the generic Server icon. The baseUrl key
+  // also covers providers added manually (before they existed in the registry)
+  // that happen to share an endpoint with a catalog entry. Manual providers
+  // with a unique baseUrl fall back to Server.
+  const [logoMap, setLogoMap] = useState<Record<string, { iconSvg?: string; brandColor?: string }>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const reg = window.electron?.registry;
+      if (!reg?.fetchProviders) return;
+      try {
+        const { manifest } = await reg.fetchProviders();
+        if (cancelled || !manifest) return;
+        const map: Record<string, { iconSvg?: string; brandColor?: string }> = {};
+        for (const e of manifest.providers) {
+          map[e.id] = { iconSvg: e.iconSvg, brandColor: e.brandColor };
+          if (e.definition.baseUrl) map[normBaseUrl(e.definition.baseUrl)] = { iconSvg: e.iconSvg, brandColor: e.brandColor };
+        }
+        setLogoMap(map);
+      } catch {
+        // offline / no registry — rows fall back to the generic Server icon
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  /** Brand-mark props for a saved provider — inline iconSvg from the community
+   *  catalog, or inline SVG fetched from models.dev for a direct-vendor
+   *  hostname. When the models.dev SVG hasn't loaded yet the row falls back to
+   *  the generic glyph and re-renders once it arrives (the version subscription
+   *  below powers that re-render). */
+  const logoPropsFor = (p: SavedProvider): { iconSvg: string; brandColor?: string } | null => {
+    const comm = (p.communityId ? logoMap[p.communityId] : undefined) ?? logoMap[normBaseUrl(p.baseUrl)];
+    if (comm?.iconSvg) return { iconSvg: comm.iconSvg, brandColor: comm.brandColor };
+    // Fall back to the direct vendor's models.dev logo when the community
+    // catalog has no inline iconSvg for this hostname (e.g. openai/together/
+    // groq/fireworks/neuralwatt) — renders on the SAME light chip as community
+    // icons. Returns null + kicks off the fetch; re-renders on arrival.
+    const slug = endpointLogoSlug(p.baseUrl);
+    if (slug) {
+      const svg = getOrFetchLogoSvg(slug);
+      if (svg) return { iconSvg: svg };
+    }
+    return null;
+  };
 
   return (
     <>
@@ -90,7 +155,18 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                   )}
                 >
                   <span className="flex items-center gap-1.5 min-w-0">
-                    <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                    {active ? (
+                      (() => {
+                        const lp = logoPropsFor(active);
+                        return lp ? (
+                          <ConnectorLogo iconSvg={lp.iconSvg} kind="service" color={lp.brandColor} size={12} />
+                        ) : (
+                          <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                        );
+                      })()
+                    ) : (
+                      <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                    )}
                     <span className="truncate">
                       {active ? active.name : "No saved providers"}
                     </span>
@@ -105,8 +181,15 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                     onSelect={() => selectProvider(p.id)}
                     className={cn("text-xs", p.id === activeProviderId && "text-[var(--accent)]")}
                   >
-                    <span className="w-3.5 flex-shrink-0">
-                      {p.id === activeProviderId && <Check size={12} />}
+                    <span className="w-3.5 flex-shrink-0 flex items-center justify-center">
+                      {p.id === activeProviderId ? (
+                        <Check size={12} />
+                      ) : (() => {
+                        const lp = logoPropsFor(p);
+                        return lp ? (
+                          <ConnectorLogo iconSvg={lp.iconSvg} kind="service" color={lp.brandColor} size={12} />
+                        ) : null;
+                      })()}
                     </span>
                     <span className="flex flex-col min-w-0">
                       <span className="truncate">{p.name}</span>
@@ -170,7 +253,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
         <ProviderForm
           key={editing}
           initial={editingProvider}
-          defaultModel={kind === "agent" ? "gpt-4o" : "gpt-4o-mini"}
+          defaultModel="gpt-5.6-luna"
           onCancel={() => setEditing(null)}
           onSave={async ({ name, baseUrl, model, rawKey, keyDirty }) => {
             if (editing === "new") {
@@ -369,7 +452,7 @@ function ActiveModelRow({
           options={availableModels}
           loading={modelsLoading}
           errored={testState === "error"}
-          placeholder={provider.model || "gpt-4o-mini"}
+          placeholder={provider.model || "gpt-5.6-luna"}
           size="md"
           align="end"
           className="w-full"

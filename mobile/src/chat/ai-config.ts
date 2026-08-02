@@ -53,7 +53,7 @@ export type ProviderPref = "rork" | "openai" | "apple";
 
 /** Sensible default for an OpenAI-compatible endpoint. */
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-export const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
+export const DEFAULT_OPENAI_MODEL = "gpt-5.6-luna";
 
 export interface OpenAIConfig {
   baseUrl: string;
@@ -77,6 +77,10 @@ export interface SavedProvider {
   model: string;
   /** Optional manual context-window override (tokens). */
   contextLimit?: number;
+  /** Where this provider came from. Absent = "manual" (legacy rows). */
+  source?: "manual" | "community";
+  /** Community catalog id when `source === "community"` — dedups re-installs. */
+  communityId?: string;
 }
 
 /** Generate a short, stable provider id. */
@@ -254,6 +258,71 @@ export function selectSavedProvider(id: string): void {
   setSetting(KEY_ACTIVE_PROVIDER, id);
 }
 
+/** Minimal shape of a community provider entry needed to install it. */
+export interface CommunityProviderInput {
+  id: string;
+  definition: { name: string; baseUrl: string; defaultModel?: string };
+}
+
+/**
+ * Install (or update) a community provider preset into the saved-providers list
+ * and store its API key in secure-store. Mirrors desktop's installCommunityProvider:
+ * dedups by `communityId` (or name), reuses the existing row's id on re-install so
+ * the secure-store key survives, tags the row `source: "community"`, and does NOT
+ * auto-select it (unlike addSavedProvider) — the user picks it in the switcher.
+ * `apiKey` may be omitted for keyless endpoints. Returns the provider id.
+ */
+export async function installCommunityProvider(
+  entry: CommunityProviderInput,
+  apiKey?: string,
+): Promise<string> {
+  await migrateToProvidersOnce();
+  const def = entry.definition;
+  const list = readProviders();
+  const existing = list.find(
+    (p) =>
+      // Match by catalog id first; only fall back to a same-name provider when
+      // it's itself community-sourced, so a manually-configured provider with a
+      // colliding name is never hijacked by a re-install.
+      (p.communityId && p.communityId === entry.id) ||
+      (p.source === "community" && p.name === def.name),
+  );
+  const id = existing?.id ?? newProviderId();
+
+  const row: SavedProvider = {
+    id,
+    name: def.name,
+    baseUrl: def.baseUrl.trim() || DEFAULT_OPENAI_BASE_URL,
+    model: def.defaultModel?.trim() || existing?.model || DEFAULT_OPENAI_MODEL,
+    contextLimit: existing?.contextLimit,
+    source: "community",
+    communityId: entry.id,
+  };
+  const next = existing ? list.map((p) => (p.id === id ? row : p)) : [...list, row];
+  writeProviders(next);
+
+  // Store the key in secure-store (per-provider), or leave the existing one if no
+  // new key was supplied. Never persist the key anywhere but secure-store.
+  const trimmed = apiKey?.trim();
+  if (trimmed) await SecureStore.setItemAsync(secureKeyFor(id), trimmed);
+
+  return id;
+}
+
+/**
+ * True when an installed community provider's stored connection no longer matches
+ * the catalog entry (baseUrl or default model changed upstream) — drives an
+ * "Update" affordance in the browse UI.
+ */
+export function isCommunityProviderOutdated(entry: CommunityProviderInput): boolean {
+  const row = readProviders().find((p) => p.communityId === entry.id);
+  if (!row) return false;
+  return (
+    row.baseUrl !== entry.definition.baseUrl ||
+    row.model !== (entry.definition.defaultModel ?? row.model)
+  );
+}
+
 /**
  * One-time migration: copy any AI config the user previously saved into the
  * active source's `app_settings` table over to the device-global meta DB. Runs
@@ -341,6 +410,86 @@ export function setOpenAIEndpoint(baseUrl: string, model: string, contextLimit?:
   setSetting(KEY_BASE_URL, baseUrl.trim());
   setSetting(KEY_MODEL, model.trim());
   setSetting(KEY_CONTEXT, contextLimit && contextLimit > 0 ? String(Math.floor(contextLimit)) : "");
+}
+
+// ── Per-endpoint model-list cache ─────────────────────────────────────────────
+
+const MODELS_CACHE_KEY = "ai.modelsCache";
+/** How long a cached model list is considered fresh (7 days, matches desktop). */
+const MODELS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+type ModelsCache = Record<string, { models: string[]; ts: number }>;
+
+/** Normalise a base URL to a stable cache-key root (drop trailing slashes only;
+ *  preserve the path so root and /v1 endpoints stay distinct cache entries). */
+function normCacheBaseUrl(baseUrl: string): string {
+  return (baseUrl || DEFAULT_OPENAI_BASE_URL).trim().replace(/\/+$/, "");
+}
+
+/** True when a persisted cache value has the expected shape (string[] models +
+ *  finite timestamp). Guards against malformed/corrupt entries poisoning the
+ *  settings screen. */
+function isModelsCacheEntry(value: unknown): value is ModelsCache[string] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const e = value as { models?: unknown; ts?: unknown };
+  return (
+    typeof e.ts === "number" &&
+    Number.isFinite(e.ts) &&
+    Array.isArray(e.models) &&
+    e.models.every((m) => typeof m === "string")
+  );
+}
+
+/** Cached model ids for an endpoint, or null when missing/stale/malformed. */
+export function readModelsCache(baseUrl: string): string[] | null {
+  try {
+    const all = JSON.parse(getSetting(MODELS_CACHE_KEY) ?? "{}") as Record<string, unknown>;
+    const entry = all[normCacheBaseUrl(baseUrl)];
+    if (!isModelsCacheEntry(entry)) return null;
+    const age = Date.now() - entry.ts;
+    if (age < 0 || age > MODELS_CACHE_TTL_MS) return null; // stale
+    return entry.models;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist a fetched model list for an endpoint (fresh for 7 days). */
+export function writeModelsCache(baseUrl: string, models: string[]): void {
+  try {
+    if (!Array.isArray(models) || !models.every((m) => typeof m === "string")) return;
+    const all = JSON.parse(getSetting(MODELS_CACHE_KEY) ?? "{}") as Record<string, unknown>;
+    all[normCacheBaseUrl(baseUrl)] = { models, ts: Date.now() };
+    setSetting(MODELS_CACHE_KEY, JSON.stringify(all));
+  } catch {
+    // best-effort
+  }
+}
+
+// ── Favorite models ───────────────────────────────────────────────────────────
+
+const FAVORITE_MODELS_KEY = "ai.favoriteModels"; // JSON array of model ids
+
+/** The user's favorite model ids (global, like desktop's localStorage list). */
+export function getFavoriteModels(): Set<string> {
+  try {
+    const raw = getSetting(FAVORITE_MODELS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter((x): x is string => typeof x === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Toggle a model's favorite state and persist it. Returns the updated set. */
+export function toggleFavoriteModel(model: string): Set<string> {
+  const next = getFavoriteModels();
+  if (next.has(model)) next.delete(model);
+  else next.add(model);
+  setSetting(FAVORITE_MODELS_KEY, JSON.stringify([...next]));
+  return next;
 }
 
 /**

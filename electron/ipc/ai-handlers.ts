@@ -13,6 +13,8 @@ import { generatePrd } from "../lib/prd";
 import { callLLM, isLocalEndpoint, normaliseBaseUrl, buildApiUrl, type LLMConfig } from "../lib/llm";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
+import { fetchProvidersManifest } from "../lib/community-registry";
+import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
 
 function resolveConfig(
   config: { baseUrl?: string; model?: string; apiKey?: string } | undefined,
@@ -29,7 +31,7 @@ function resolveConfig(
   };
 
   const baseUrl = normaliseBaseUrl(mergedConfig.baseUrl || "https://api.openai.com");
-  const model = mergedConfig.model || "gpt-4o-mini";
+  const model = mergedConfig.model || "gpt-5.6-luna";
   const keyRef = mergedConfig.apiKey || "";
   const isLocal = isLocalEndpoint(baseUrl);
   if (!keyRef && !isLocal) {
@@ -131,54 +133,33 @@ export function registerAiHandlers(ctx: DbContext): void {
 
   // ── Provider credits / key info ──────────────────
   // Best-effort lookup of remaining credits for providers that expose it.
-  // OpenRouter returns account/key balance at GET {base}/v1/key as
+  // Default probe: OpenRouter-style GET {base}/v1/key returning
   // { data: { limit, limit_remaining, usage, is_free_tier } } (credits are USD).
-  // Returns null when the provider doesn't implement it (any non-2xx / parse
-  // failure) so the caller can simply hide the display — never throws.
+  // Providers that expose balance off the chat base (DeepSeek, OpenAI's legacy
+  // credit_grants endpoint) advertise a `credits` descriptor in the community
+  // providers.json manifest — the handler looks that up by endpoint, then parses
+  // the response per its `shape`. Returns null when the provider doesn't expose
+  // credits (any non-2xx / parse failure) so the caller can hide the display —
+  // never throws.
   registerIpcHandle(
     "ai:fetchKeyInfo",
     async (_e, args: { baseUrl?: string; apiKey?: string }) =>
       handle(async () => {
-        const url = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
+        const baseUrl = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
         const realKey = resolveLlmApiKey(args.apiKey);
         // No key → nothing to query (credit endpoints are all authed).
         if (!realKey) return null;
         const ac = new AbortController();
         const timer = setTimeout(() => ac.abort(), 12_000);
         try {
-          const res = await fetch(buildApiUrl(url, "key"), {
-            headers: { Authorization: `Bearer ${realKey}` },
-            signal: ac.signal,
-          });
-          if (!res.ok) return null;
-          const json = (await res.json()) as {
-            data?: {
-              limit?: number | null;
-              limit_remaining?: number | null;
-              usage?: number | null;
-              is_free_tier?: boolean;
-            };
-          };
-          const d = json?.data;
-          if (!d || typeof d !== "object") return null;
-          const usage = typeof d.usage === "number" ? d.usage : null;
-          const limit = typeof d.limit === "number" ? d.limit : null;
-          // Prefer the explicit remaining figure; else derive from limit - usage.
-          const remaining =
-            typeof d.limit_remaining === "number"
-              ? d.limit_remaining
-              : limit != null && usage != null
-                ? limit - usage
-                : null;
-          // Nothing usable to show.
-          if (remaining == null && usage == null && limit == null) return null;
-          return {
-            remaining,
-            usage,
-            limit,
-            isFreeTier: d.is_free_tier ?? null,
-            currency: "USD" as const,
-          };
+          const { manifest } = await fetchProvidersManifest();
+          const credits = resolveCreditSpec(baseUrl, manifest.providers);
+          // Explicit descriptor wins; otherwise fall back to the OpenRouter-style
+          // /v1/key probe (harmless for providers without one — returns null).
+          const url = credits?.url ?? buildApiUrl(baseUrl, "key");
+          const shape = credits?.shape ?? "openrouter";
+          const probe = await probeCredits(url, realKey, shape, ac.signal);
+          return probe.info;
         } catch {
           // Endpoint absent / offline / aborted — treat as "no credits info".
           return null;

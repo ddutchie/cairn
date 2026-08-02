@@ -67,6 +67,7 @@
     "node-pty": "^1.1.0",
     "onnxruntime-node": "1.21.0",
     "parse-diff": "^0.12.0",
+    "pdfjs-dist": "^6.2.108",
     "qrcode": "^1.5.4",
     "react-day-picker": "^10.0.1",
     "rehype-katex": "^7.0.1",

@@ -24,6 +24,7 @@ import { buildApiUrl, type OpenAIMessage } from "./llm";
 import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
 import { parseToolArgs } from "./parse-tool-args";
+import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 
 /** Loosely-typed OpenAI function tool — the synthetic dispatch tools ("research",
  *  "write") aren't in the schema-derived `typeof TOOLS` union, so we widen. */
@@ -206,7 +207,7 @@ export interface SubagentEvents {
   /** A tool call finished inside a subagent. */
   onSubagentToolCallDone?: (e: { childId: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void;
   /** Latest token usage for a subagent (its OWN context window) — drives its ring. */
-  onSubagentUsage?: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number }) => void;
+  onSubagentUsage?: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number }) => void;
 }
 
 const DISPATCH_SYSTEM_PROMPT = (date: string) =>
@@ -256,6 +257,14 @@ async function runSubagent(
     { role: "user", content: instruction },
   ];
 
+  // Accumulated USD cost for THIS subagent's turns, surfaced on its own ring.
+  const costAcc: { usd: number | undefined } = { usd: undefined };
+  const addCost = (cost: unknown) => {
+    if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) {
+      costAcc.usd = (costAcc.usd ?? 0) + cost;
+    }
+  };
+
   const result = await runToolLoop(
     db,
     req,
@@ -271,13 +280,14 @@ async function runSubagent(
     signal,
     getWin,
     cfg.provider,
-    (pt, ct, rt) => {
+    (pt, ct, rt, cost) => {
       // Accumulate into the total-cost figures…
       metrics.promptTokens += pt; metrics.completionTokens += ct; if (rt) metrics.reasoningTokens += rt;
       // …and report THIS subagent's own context window (its latest prompt size)
       // so the renderer can give it a dedicated ring. prompt_tokens is the size
       // of the context this turn, not a running sum — take the latest value.
-      if (childId) events?.onSubagentUsage?.({ childId, promptTokens: pt, completionTokens: ct, reasoningTokens: rt });
+      addCost(cost);
+      if (childId) events?.onSubagentUsage?.({ childId, promptTokens: pt, completionTokens: ct, reasoningTokens: rt, costUsd: costAcc.usd });
     },
     (e) => {
       // Count tool errors by sniffing the JSON output for an error field.
@@ -302,7 +312,7 @@ async function runSubagent(
   // explicit nudge to write the findings. This is the standard "force final
   // answer" pattern and rescues most empty-output cases on small models.
   if (metrics.toolCalls > 0 || messages.some((m) => m.role === "tool")) {
-    const forced = await forceFinalAnswer(cfg, messages, metrics, signal);
+    const forced = await forceFinalAnswer(cfg, messages, metrics, addCost, signal);
     if (forced.trim()) {
       if (childId) events?.onSubagentToken?.({ childId, delta: forced.trim() });
       return forced.trim();
@@ -321,6 +331,7 @@ async function forceFinalAnswer(
   cfg: DispatchConfig,
   messages: OpenAIMessage[],
   metrics: SubagentMetrics,
+  addCost?: (cost: unknown) => void,
   signal?: AbortSignal,
 ): Promise<string> {
   const nudged: OpenAIMessage[] = [
@@ -358,6 +369,7 @@ async function forceFinalAnswer(
       metrics.promptTokens += data.usage.prompt_tokens ?? 0;
       metrics.completionTokens += data.usage.completion_tokens ?? 0;
       metrics.reasoningTokens += data.usage.completion_tokens_details?.reasoning_tokens ?? 0;
+      addCost?.(data.usage.cost);
     }
     return (data.choices?.[0]?.message?.content as string) ?? "";
   } catch {
@@ -421,10 +433,7 @@ export async function runDispatchLoop(
     req.images?.length
       ? ({
           role: "user",
-          content: [
-            { type: "text", text: req.message },
-            ...req.images.map((img) => ({ type: "image_url", image_url: { url: img.dataUrl } })),
-          ],
+          content: buildAttachmentParts(req.message, req.images),
         } as unknown as OpenAIMessage)
       : { role: "user", content: req.message },
   ];
@@ -508,7 +517,9 @@ export async function runDispatchLoop(
       // subagents did real work. Force a final synthesis from the gathered
       // subagent results rather than returning nothing.
       if (!finalContent && metrics.subagentRuns > 0) {
-        finalContent = (await forceFinalAnswer(cfg, messages, metrics, signal)).trim();
+        // Dispatcher-side forced answer: its cost isn't surfaced (subagent
+        // rings carry their own), so no cost accumulator is passed.
+        finalContent = (await forceFinalAnswer(cfg, messages, metrics, undefined, signal)).trim();
       }
       return { content: finalContent, reasoning: finalReasoning, metrics };
     }

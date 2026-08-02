@@ -56,8 +56,9 @@ export interface ChatStreamRequest {
     temperature?: number;
   };
   systemPrompt?: string;
-  /** Images attached to the current user message (base64 data URLs) */
-  images?: Array<{ name: string; dataUrl: string }>;
+  /** Attachments on the current user message (base64 data URLs; kind tells
+   *  pdf from image so the main process can emit the right content part). */
+  images?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;
   /** Route this turn through the dispatch → research/write subagent loop. */
   useSubagents?: boolean;
 }
@@ -251,11 +252,11 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       if (!isForThisThread(e)) return;
       mutateSub(e.childId, (s) => ({
         ...s,
-        lastUsage: { promptTokens: e.promptTokens, completionTokens: e.completionTokens, reasoningTokens: e.reasoningTokens },
+        lastUsage: { promptTokens: e.promptTokens, completionTokens: e.completionTokens, reasoningTokens: e.reasoningTokens, costUsd: e.costUsd },
       }));
     });
 
-    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown } }) => void) => () => void)((e) => {
+    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number } }) => void) => () => void)((e) => {
       if (!isForThisThread(e)) return;
       const tid = threadIdRef.current;
       // Mark any still-running tool as done before persisting.
@@ -308,7 +309,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }
     });
 
-    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; threadId?: string }) => void) => () => void)((e) => {
+    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; threadId?: string }) => void) => () => void)((e) => {
       if (!isForThisThread(e)) return;
       const tid = threadIdRef.current;
       if (tid) {

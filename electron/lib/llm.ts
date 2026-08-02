@@ -3,6 +3,7 @@
  */
 
 import { encode } from "gpt-tokenizer";
+import { pdfTokenEstimate } from "../../shared/models/pdf-attach";
 
 /**
  * Normalise a user-supplied base URL by stripping trailing slashes.
@@ -249,7 +250,8 @@ const IMAGE_TOKEN_ESTIMATE = 1100;
  * Count tokens for a message's `content`, which may be a plain string or an
  * OpenAI multimodal parts array (`[{type:"text"...}, {type:"image_url"...}]`).
  * Text parts are tokenised; image parts contribute a flat estimate instead of
- * the base64 data URL length.
+ * the base64 data URL length; document (PDF) parts use the shared size-based
+ * estimate so the context ring doesn't over-count raw base64.
  */
 function tokContent(content: unknown): number {
   if (typeof content === "string") return tok(content);
@@ -259,6 +261,9 @@ function tokContent(content: unknown): number {
       const p = part as Record<string, unknown>;
       if (p?.type === "image_url" || p?.image_url) {
         total += IMAGE_TOKEN_ESTIMATE;
+      } else if (p?.type === "document") {
+        const source = (p.source ?? {}) as { data?: string };
+        total += pdfTokenEstimate(source.data ?? "");
       } else if (typeof p?.text === "string") {
         total += tok(p.text);
       }

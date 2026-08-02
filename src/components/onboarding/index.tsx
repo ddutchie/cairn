@@ -80,7 +80,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   const [provider, setProvider]   = useState<string>(aiConfig.provider ?? "openai");
   const [baseUrl, setBaseUrl]     = useState(aiConfig.baseUrl || "https://api.openai.com");
   const [apiKey, setApiKey]       = useState(aiConfig.apiKey || "");
-  const [model, setModel]         = useState(aiConfig.model || "gpt-4o-mini");
+  const [model, setModel]         = useState(aiConfig.model || "gpt-5.6-luna");
 
   // ── Embeddings ───────────────────────────────────────────────────────────────
   const [embEnabled, setEmbEnabled] = useState(false);

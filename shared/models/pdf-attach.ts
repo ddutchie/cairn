@@ -1,0 +1,84 @@
+/**
+ * Cairn — chat attachment helpers (shared desktop + mobile).
+ *
+ * Attachments are carried as data URLs (base64). Images ride the standard
+ * OpenAI-compatible `image_url` content part; PDFs are sent as a `document`
+ * base64 part — the shape Anthropic-style endpoints (and most gateways that
+ * serve models whose models.dev `modalities.input` lists `pdf`) accept. We only
+ * attach a PDF when the active model is known to take PDF input, so the bytes
+ * go straight through instead of being rasterized (smaller, lossless).
+ *
+ * No rasterization here: a caller that wants to send a PDF to a non-pdf model
+ * must render pages to images itself and send those as image attachments.
+ */
+
+import type { ModelInfo } from "./model-catalog";
+
+/** A chat attachment, normalized to a data URL (image or PDF). */
+export interface ChatAttachment {
+  kind: "image" | "pdf";
+  /** base64 data URL, e.g. data:image/png;base64,… or data:application/pdf;base64,… */
+  dataUrl: string;
+  name?: string;
+}
+
+/** A single content part inside an OpenAI-style message `content` array. */
+export type ContentPart = { type: string } & Record<string, unknown>;
+
+/** Whether a model (or the catalog) says it accepts PDF input. Unknown models
+ *  are NOT assumed pdf-capable — PDF attach stays a known capability. */
+export function supportsPdfInput(info: ModelInfo | null): boolean {
+  return info ? (info.modes ?? []).includes("pdf") : false;
+}
+
+/** Strip the data URL prefix to the raw base64 payload. */
+function base64Of(dataUrl: string): string {
+  const comma = dataUrl.indexOf(",");
+  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+}
+
+/** Anthropic-style `document` content part carrying raw PDF bytes. */
+export function pdfDocumentPart(dataUrl: string): ContentPart {
+  return {
+    type: "document",
+    source: { type: "base64", media_type: "application/pdf", data: base64Of(dataUrl) },
+  };
+}
+
+/** Standard OpenAI-compatible `image_url` content part. */
+export function imageUrlPart(dataUrl: string): ContentPart {
+  return { type: "image_url", image_url: { url: dataUrl } };
+}
+
+/**
+ * Build the `content` array for a user message from a text and its attachments.
+ * PDFs must only arrive here when the model is pdf-capable (the caller gates
+ * attachment on supportsPdfInput); image attachments are always forwarded.
+ * `kind` is optional so legacy senders (no kind set) default to `image_url`.
+ */
+export function buildAttachmentParts(
+  text: string,
+  attachments: Array<{ kind?: "image" | "pdf"; dataUrl: string; name?: string }>,
+): ContentPart[] {
+  const parts: ContentPart[] = [{ type: "text", text }];
+  for (const a of attachments) {
+    parts.push(a.kind === "pdf" ? pdfDocumentPart(a.dataUrl) : imageUrlPart(a.dataUrl));
+  }
+  return parts;
+}
+
+/**
+ * Token estimate for a document part. PDF pages bill roughly like images (and
+ * much larger than their text would tokenize), so a flat conservative estimate
+ * beats the raw base64 length (which over-counts by orders of magnitude).
+ */
+export const PDF_TOKEN_ESTIMATE = 2000;
+
+/** Rough token estimate for a PDF data URL (document part), clamped. */
+export function pdfTokenEstimate(dataUrl: string): number {
+  const bytes = base64Of(dataUrl).length / 4 * 3;
+  if (!Number.isFinite(bytes) || bytes <= 0) return PDF_TOKEN_ESTIMATE;
+  // ~1 token per 2 bytes, floor at 0.5 pages, cap at ~8 pages.
+  const tokens = bytes / 2;
+  return Math.max(500, Math.min(8000, Math.round(tokens)));
+}
