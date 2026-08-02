@@ -173,6 +173,8 @@ export interface SubagentMetrics {
   writeInvocations: number;
   /** How many times the dispatcher invoked the RESEARCH subagent. */
   researchInvocations: number;
+  /** Accumulated USD cost across dispatcher + subagent turns (when reported). */
+  costUsd?: number;
 }
 
 export interface SubagentRunResult {
@@ -260,8 +262,13 @@ async function runSubagent(
   // Accumulated USD cost for THIS subagent's turns, surfaced on its own ring.
   const costAcc: { usd: number | undefined } = { usd: undefined };
   const addCost = (cost: unknown) => {
-    if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) {
-      costAcc.usd = (costAcc.usd ?? 0) + cost;
+    const n = typeof cost === "number"
+      ? cost
+      : typeof cost === "object" && cost !== null && typeof (cost as { request_cost_usd?: unknown }).request_cost_usd === "number"
+        ? (cost as { request_cost_usd: number }).request_cost_usd
+        : NaN;
+    if (Number.isFinite(n) && n >= 0) {
+      costAcc.usd = (costAcc.usd ?? 0) + n;
     }
   };
 
@@ -369,7 +376,7 @@ async function forceFinalAnswer(
       metrics.promptTokens += data.usage.prompt_tokens ?? 0;
       metrics.completionTokens += data.usage.completion_tokens ?? 0;
       metrics.reasoningTokens += data.usage.completion_tokens_details?.reasoning_tokens ?? 0;
-      addCost?.(data.usage.cost);
+      addCost?.(data.cost ?? data.usage?.cost);
     }
     return (data.choices?.[0]?.message?.content as string) ?? "";
   } catch {
@@ -496,6 +503,14 @@ export async function runDispatchLoop(
       metrics.dispatcherPromptTokens = pt;
       metrics.dispatcherCompletionTokens += ct;
       metrics.dispatcherReasoningTokens += rt;
+    }
+    const costVal = typeof (data.cost as { request_cost_usd?: unknown } | undefined)?.request_cost_usd === "number"
+      ? (data.cost as { request_cost_usd: number }).request_cost_usd
+      : typeof data.usage?.cost === "number"
+        ? data.usage.cost
+        : undefined;
+    if (typeof costVal === "number" && Number.isFinite(costVal) && costVal >= 0) {
+      metrics.costUsd = (metrics.costUsd ?? 0) + costVal;
     }
 
     const choice = data.choices?.[0];

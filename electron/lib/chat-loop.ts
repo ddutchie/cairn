@@ -82,11 +82,17 @@ export async function runToolLoop(
         if (!choice) return { exhausted: true, content: "No response from local Llama on-device model.", reasoning: "" };
         if (res.usage && onUsage) {
           const usageCost = (res.usage as { cost?: unknown }).cost;
+          const topCost = (res as { cost?: { request_cost_usd?: unknown } }).cost;
+          const costVal = typeof usageCost === "number"
+            ? usageCost
+            : typeof topCost?.request_cost_usd === "number"
+              ? topCost.request_cost_usd
+              : undefined;
           onUsage(
             res.usage.prompt_tokens ?? 0,
             res.usage.completion_tokens ?? 0,
             res.usage.completion_tokens_details?.reasoning_tokens ?? 0,
-            typeof usageCost === "number" ? usageCost : undefined,
+            costVal,
           );
         }
         const rawMsg = choice.message as OpenAIMessage & { reasoning?: string; reasoning_content?: string };
@@ -176,11 +182,16 @@ export async function runToolLoop(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const chunk = JSON.parse(jsonStr) as any;
           if (chunk.usage && onUsage) {
+            const topCost = chunk.cost as { request_cost_usd?: unknown } | undefined;
             onUsage(
               chunk.usage.prompt_tokens ?? 0,
               chunk.usage.completion_tokens ?? 0,
               chunk.usage.completion_tokens_details?.reasoning_tokens ?? 0,
-              typeof chunk.usage.cost === "number" ? chunk.usage.cost : undefined,
+              typeof chunk.usage.cost === "number"
+                ? chunk.usage.cost
+                : typeof topCost?.request_cost_usd === "number"
+                  ? topCost.request_cost_usd
+                  : undefined,
             );
           }
           const delta = chunk.choices?.[0]?.delta;

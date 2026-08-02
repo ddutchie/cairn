@@ -18,6 +18,8 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { runToolLoop } from "../lib/chat-loop";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
+import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
+import { fetchProvidersManifest } from "../lib/community-registry";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -252,7 +254,8 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         promptTokens = m.dispatcherPromptTokens;
         completionTokens = m.dispatcherCompletionTokens;
         reasoningTokens = m.dispatcherReasoningTokens;
-        send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown });
+        if (typeof m.costUsd === "number") costUsd = m.costUsd;
+        send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd });
 
         // Stream the dispatcher's final reply as content tokens so it renders like
         // a normal assistant message.
@@ -280,6 +283,24 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       return;
     }
 
+    // Pre-stream snapshot of provider credits (for providers like NeuralWatt
+    // that don't include cost in streaming responses). We diff after the stream
+    // to recover per-request cost — only used when the stream didn't report it.
+    let creditsBefore: number | null = null;
+    if (apiKey && !isLocalEndpointUrl) {
+      try {
+        const { manifest } = await fetchProvidersManifest();
+        const spec = resolveCreditSpec(baseUrl, manifest.providers);
+        if (spec) {
+          const probe = await probeCredits(spec.url, apiKey, spec.shape);
+          if (probe.info?.usage != null) creditsBefore = probe.info.usage;
+          else if (probe.info?.remaining != null && probe.info?.limit != null) {
+            creditsBefore = probe.info.limit - probe.info.remaining;
+          }
+        }
+      } catch { /* best-effort — no snapshot */ }
+    }
+
     const loopResult = await runToolLoop(
       db, req, workspacePath, baseUrl, model, apiKey, messages,
       emitToolCall, abortCtrl.signal, getWin, provider, addUsage,
@@ -294,6 +315,34 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     );
 
     abortControllers.delete(event.sender.id);
+
+    // If the provider didn't report cost inline (streaming responses from
+    // NeuralWatt etc. lack a cost field), recover it by diffing /quota usage.
+    if (costUsd === undefined && creditsBefore !== null && apiKey && !abortCtrl.signal.aborted) {
+      try {
+        const { manifest } = await fetchProvidersManifest();
+        const spec = resolveCreditSpec(baseUrl, manifest.providers);
+        if (spec) {
+          const probe = await probeCredits(spec.url, apiKey, spec.shape);
+          if (probe.info) {
+            const after = probe.info.usage != null
+              ? probe.info.usage
+              : probe.info.remaining != null && probe.info.limit != null
+                ? probe.info.limit - probe.info.remaining
+                : null;
+            if (after !== null) {
+              const diff = after - creditsBefore;
+              if (Number.isFinite(diff) && diff >= 0) {
+                costUsd = diff;
+                if (promptTokens > 0) {
+                  send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd });
+                }
+              }
+            }
+          }
+        }
+      } catch { /* best-effort — no cost recovered */ }
+    }
 
     // Broadcast db:changed so mobile SSE clients (and other Electron windows)
     // re-hydrate the store after any tool calls that wrote to the DB.
