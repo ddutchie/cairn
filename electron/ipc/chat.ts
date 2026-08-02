@@ -291,14 +291,17 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       try {
         const { manifest } = await fetchProvidersManifest();
         const spec = resolveCreditSpec(baseUrl, manifest.providers);
+        console.log("[chat] cost-diff: spec=", spec?.url, "shape=", spec?.shape);
         if (spec) {
           const probe = await probeCredits(spec.url, apiKey, spec.shape);
+          console.log("[chat] cost-diff: before probe.info=", JSON.stringify(probe.info));
           if (probe.info?.usage != null) creditsBefore = probe.info.usage;
           else if (probe.info?.remaining != null && probe.info?.limit != null) {
             creditsBefore = probe.info.limit - probe.info.remaining;
           }
+          console.log("[chat] cost-diff: creditsBefore=", creditsBefore);
         }
-      } catch { /* best-effort — no snapshot */ }
+      } catch (e) { /* best-effort — no snapshot */ console.log("[chat] cost-diff: snapshot failed", e); }
     }
 
     const loopResult = await runToolLoop(
@@ -324,16 +327,20 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         const spec = resolveCreditSpec(baseUrl, manifest.providers);
         if (spec) {
           const probe = await probeCredits(spec.url, apiKey, spec.shape);
+          console.log("[chat] cost-diff: after probe.info=", JSON.stringify(probe.info));
           if (probe.info) {
             const after = probe.info.usage != null
               ? probe.info.usage
               : probe.info.remaining != null && probe.info.limit != null
                 ? probe.info.limit - probe.info.remaining
                 : null;
+            console.log("[chat] cost-diff: after=", after, "before=", creditsBefore);
             if (after !== null) {
               const diff = after - creditsBefore;
+              console.log("[chat] cost-diff: diff=", diff, "finite=", Number.isFinite(diff), ">=0=", diff >= 0);
               if (Number.isFinite(diff) && diff >= 0) {
                 costUsd = diff;
+                console.log("[chat] cost-diff: costUsd set to", costUsd);
                 if (promptTokens > 0) {
                   send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd });
                 }
@@ -341,7 +348,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
             }
           }
         }
-      } catch { /* best-effort — no cost recovered */ }
+      } catch (e) { /* best-effort — no cost recovered */ console.log("[chat] cost-diff: after failed", e); }
     }
 
     // Broadcast db:changed so mobile SSE clients (and other Electron windows)

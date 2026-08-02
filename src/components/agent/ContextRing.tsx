@@ -304,12 +304,14 @@ export function ContextRing({
             </div>
           )}
 
-          {/* Cost — only shown when the provider reports a USD cost for the turn */}
-          {typeof costUsd === "number" && costUsd > 0 && (
+          {/* Cost — shown whenever the provider reported a USD cost for the turn
+              (including $0 from a quota diff, which means "cost was checked but
+              is below the provider's reported precision"). */}
+          {typeof costUsd === "number" && costUsd >= 0 && (
             <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-[0.714rem]">
               <span className="text-[var(--text-secondary)]">Cost</span>
               <span className="font-mono text-[var(--text-primary)] font-semibold">
-                {formatUsd(costUsd)}
+                {costUsd === 0 ? "<$0.01" : formatUsd(costUsd)}
               </span>
             </div>
           )}
