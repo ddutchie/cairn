@@ -52,7 +52,7 @@ export function StepAISetup({
 
   const suggestedModels = isLocal
     ? ["llama3.2", "llama3.1", "qwen2.5:14b", "mistral", "phi4", "gemma3:12b"]
-    : ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "o1-mini", "o3-mini"];
+    : ["gpt-5.6-luna", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3-mini"];
 
   return (
     <Shell step="ai-setup">

@@ -368,7 +368,7 @@ export function ModelSelectionRow({
   modelsLoading,
   testState,
   testError,
-  placeholder = "gpt-4o",
+  placeholder = "gpt-5.6-luna",
   onModelChange,
   onFetch,
 }: {

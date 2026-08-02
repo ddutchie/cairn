@@ -95,7 +95,7 @@ export const STATUS_COLORS: Record<string, string> = {
 export const DEFAULT_AI_CONFIG: AIConfig = {
   provider:     "localllm",
   baseUrl:      "https://api.openai.com",
-  model:        "gpt-4o-mini",
+  model:        "gpt-5.6-luna",
   apiKey:       "",
   maxSteps:     30,
   temperature:  0.3,
@@ -108,7 +108,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
 /** Default Coding Agent config values. */
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   baseUrl:      "https://api.openai.com",
-  model:        "gpt-4o",
+  model:        "gpt-5.6-luna",
   apiKey:       "",
   maxSteps:     30,
   temperature:  0.3,

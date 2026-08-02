@@ -53,7 +53,7 @@ export type ProviderPref = "rork" | "openai" | "apple";
 
 /** Sensible default for an OpenAI-compatible endpoint. */
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-export const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
+export const DEFAULT_OPENAI_MODEL = "gpt-5.6-luna";
 
 export interface OpenAIConfig {
   baseUrl: string;

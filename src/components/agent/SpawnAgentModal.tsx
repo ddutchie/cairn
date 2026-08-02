@@ -198,7 +198,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             />
             {sessionType === "pi" && (
               <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
-                Uses {agentConfig.model || "gpt-4o"} · reads/writes code + Cairn board
+                Uses {agentConfig.model || "gpt-5.6-luna"} · reads/writes code + Cairn board
               </p>
             )}
           </div>

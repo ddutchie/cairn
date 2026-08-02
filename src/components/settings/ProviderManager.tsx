@@ -170,7 +170,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
         <ProviderForm
           key={editing}
           initial={editingProvider}
-          defaultModel={kind === "agent" ? "gpt-4o" : "gpt-4o-mini"}
+          defaultModel="gpt-5.6-luna"
           onCancel={() => setEditing(null)}
           onSave={async ({ name, baseUrl, model, rawKey, keyDirty }) => {
             if (editing === "new") {
@@ -369,7 +369,7 @@ function ActiveModelRow({
           options={availableModels}
           loading={modelsLoading}
           errored={testState === "error"}
-          placeholder={provider.model || "gpt-4o-mini"}
+          placeholder={provider.model || "gpt-5.6-luna"}
           size="md"
           align="end"
           className="w-full"

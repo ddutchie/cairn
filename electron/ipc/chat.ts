@@ -54,7 +54,7 @@ function resolveAIConfig(config?: {
   return {
     provider: reqConfig?.provider ?? "openai",
     baseUrl: normaliseBaseUrl(reqConfig?.baseUrl ?? "https://api.openai.com"),
-    model: reqConfig?.model ?? "gpt-4o-mini",
+    model: reqConfig?.model ?? "gpt-5.6-luna",
     // Resolve the keychain ref (or pass a literal through) to the real key used
     // for this request only. Never stored anywhere from here on.
     apiKey: resolveLlmApiKey(reqConfig?.apiKey),

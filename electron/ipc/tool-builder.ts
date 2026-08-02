@@ -62,7 +62,7 @@ function resolveConfig(): AIConfig {
   return {
     provider: cached?.provider ?? "openai",
     baseUrl: normaliseBaseUrl(cached?.baseUrl ?? "https://api.openai.com"),
-    model: cached?.model ?? "gpt-4o-mini",
+    model: cached?.model ?? "gpt-5.6-luna",
     // The cached apiKey is a `secret://llm:<providerId>/apiKey` reference since the
     // v2.5.9 keychain migration — resolve it to the real key here (same as chat.ts /
     // pi-agent.ts). Sending the raw ref as a bearer token 401s the provider.

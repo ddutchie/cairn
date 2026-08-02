@@ -103,7 +103,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
               loading={modelsLoading}
               errored={testState === "error"}
               disabled={disabled}
-              placeholder={isLocal ? "local model" : "gpt-4o-mini"}
+              placeholder={isLocal ? "local model" : "gpt-5.6-luna"}
               onChange={(m) => setAIConfig({ model: m })}
               onRefresh={() => fetchModels(aiConfig.baseUrl, aiConfig.apiKey)}
             />

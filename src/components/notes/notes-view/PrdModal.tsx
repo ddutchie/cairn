@@ -94,7 +94,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
       history,
       config: {
         baseUrl:     aiConfig.baseUrl     || "https://api.openai.com",
-        model:       aiConfig.model       || "gpt-4o-mini",
+        model:       aiConfig.model       || "gpt-5.6-luna",
         apiKey:      aiConfig.apiKey      || "",
         maxSteps:    aiConfig.maxSteps    ?? 30,
         temperature: aiConfig.temperature ?? 0.3,

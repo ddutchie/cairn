@@ -31,7 +31,7 @@ function resolveConfig(
   };
 
   const baseUrl = normaliseBaseUrl(mergedConfig.baseUrl || "https://api.openai.com");
-  const model = mergedConfig.model || "gpt-4o-mini";
+  const model = mergedConfig.model || "gpt-5.6-luna";
   const keyRef = mergedConfig.apiKey || "";
   const isLocal = isLocalEndpoint(baseUrl);
   if (!keyRef && !isLocal) {
