@@ -128,6 +128,34 @@ describe("parseProvidersManifest", () => {
     expect(m.providers).toHaveLength(0);
   });
 
+  it("keeps a provider's credits descriptor and its declared shape", () => {
+    const m = parseProvidersManifest(
+      providersWith({
+        name: "DeepSeek",
+        baseUrl: "https://api.deepseek.com/v1",
+        needsApiKey: true,
+        credits: { url: "https://api.deepseek.com/user/balance", shape: "deepseek" },
+      })
+    );
+    expect(m.providers).toHaveLength(1);
+    expect(m.providers[0].definition.credits).toEqual({
+      url: "https://api.deepseek.com/user/balance",
+      shape: "deepseek",
+    });
+  });
+
+  it("drops a provider whose credits url is not https", () => {
+    const m = parseProvidersManifest(
+      providersWith({
+        name: "Evil",
+        baseUrl: "https://ok.example.com",
+        needsApiKey: true,
+        credits: { url: "http://insecure.example.com/balance", shape: "openrouter" },
+      })
+    );
+    expect(m.providers).toHaveLength(0);
+  });
+
   it("keeps good entries while dropping malformed ones", () => {
     const m = parseProvidersManifest({
       version: 1,

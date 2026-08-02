@@ -265,7 +265,7 @@ const api = {
       ipcRenderer.on("chat:thought", handler);
       return () => ipcRenderer.off("chat:thought", handler);
     },
-    onDone: (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown } }) => void) => {
+    onDone: (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number } }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:done", handler);
@@ -283,9 +283,9 @@ const api = {
       ipcRenderer.on("chat:tool-call-done", handler);
       return () => ipcRenderer.off("chat:tool-call-done", handler);
     },
-    onUsage: (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; threadId?: string }) => void) => {
+    onUsage: (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; threadId?: string }) => cb(e);
+      const handler = (_: any, e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:usage", handler);
       return () => ipcRenderer.off("chat:usage", handler);
     },
@@ -402,7 +402,7 @@ const api = {
         usage: number | null;
         limit: number | null;
         isFreeTier: boolean | null;
-        currency: "USD";
+        currency: "USD" | "CNY";
       } | null>("ai:fetchKeyInfo", args),
   },
 

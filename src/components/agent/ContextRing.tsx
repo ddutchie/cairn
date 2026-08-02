@@ -14,6 +14,8 @@ interface ContextRingProps {
   completionTokens?: number;
   /** Subset of completionTokens spent on reasoning/thinking. 0/undefined if the model didn't split. */
   reasoningTokens?: number;
+  /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost), when present. */
+  costUsd?: number;
   /** Ring diameter in px. Default 16. */
   size?: number;
   /** Stroke width in px. Default 2. */
@@ -26,6 +28,7 @@ export function ContextRing({
   breakdown,
   completionTokens,
   reasoningTokens,
+  costUsd,
   size = 16,
   stroke = 2,
 }: ContextRingProps) {
@@ -193,6 +196,16 @@ export function ContextRing({
                 <span className="text-[var(--text-tertiary)]">Total</span>
                 <span className="font-mono text-[var(--text-tertiary)]">{formatTokenCount(completionTokens)}</span>
               </div>
+            </div>
+          )}
+
+          {/* Cost — only shown when the provider reports a USD cost for the turn */}
+          {typeof costUsd === "number" && costUsd > 0 && (
+            <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-[0.714rem]">
+              <span className="text-[var(--text-secondary)]">Cost</span>
+              <span className="font-mono text-[var(--text-primary)] font-semibold">
+                ${costUsd.toFixed(5).replace(/\.?0+$/, "")}
+              </span>
             </div>
           )}
         </Popover.Content>

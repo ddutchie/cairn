@@ -255,7 +255,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }));
     });
 
-    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown } }) => void) => () => void)((e) => {
+    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number } }) => void) => () => void)((e) => {
       if (!isForThisThread(e)) return;
       const tid = threadIdRef.current;
       // Mark any still-running tool as done before persisting.
@@ -308,7 +308,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }
     });
 
-    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; threadId?: string }) => void) => () => void)((e) => {
+    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; threadId?: string }) => void) => () => void)((e) => {
       if (!isForThisThread(e)) return;
       const tid = threadIdRef.current;
       if (tid) {

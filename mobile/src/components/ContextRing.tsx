@@ -39,6 +39,7 @@ export function ContextRing({
   breakdown,
   completionTokens,
   reasoningTokens,
+  costUsd,
   size = 22,
   stroke = 3.5,
 }: {
@@ -49,6 +50,8 @@ export function ContextRing({
   breakdown?: TokenBreakdown;
   completionTokens?: number;
   reasoningTokens?: number;
+  /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost). */
+  costUsd?: number;
   size?: number;
   stroke?: number;
 }) {
@@ -121,6 +124,9 @@ export function ContextRing({
       lines.push("", "Output", `• Answer: ${formatTokenCount(answerTokens)}`);
       if (thinkingTokens > 0) lines.push(`• Thinking: ${formatTokenCount(thinkingTokens)}`);
       lines.push(`• Total: ${formatTokenCount(completionTokens as number)}`);
+    }
+    if (typeof costUsd === "number" && costUsd > 0) {
+      lines.push("", `Cost: ${formatUsd(costUsd)}`);
     }
     Alert.alert("Context usage", lines.join("\n"), [{ text: "OK" }]);
   };
@@ -231,6 +237,13 @@ export function ContextRing({
               </>
             ) : null}
 
+            {typeof costUsd === "number" && costUsd > 0 ? (
+              <>
+                <Divider />
+                {row("Cost", formatUsd(costUsd))}
+              </>
+            ) : null}
+
             {estimated ? (
               <Text modifiers={[font({ textStyle: "caption2" }), secondary]}>Estimated for this provider.</Text>
             ) : null}
@@ -245,6 +258,11 @@ export function ContextRing({
 function formatTokenCount(num: number): string {
   if (num >= 1000) return `${(num / 1000).toFixed(1).replace(/\.0$/, "")}K`;
   return num.toString();
+}
+
+/** USD cost: 0.00219 → "$0.0022"; strips trailing zeros like desktop. */
+function formatUsd(cost: number): string {
+  return `$${cost.toFixed(5).replace(/\.?0+$/, "")}`;
 }
 
 /** Convenience: build props from a ChatUsage object. */

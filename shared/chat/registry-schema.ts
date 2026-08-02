@@ -124,7 +124,32 @@ export interface RegistryProviderEntry extends RegistryEntryMeta {
     apiKeyUrl?: string;
     /** Optional curated model ids offered by the picker before a live /models fetch. */
     models?: string[];
+    /**
+     * Optional credit/balance lookup for this provider. When present, the app
+     * queries this endpoint (instead of the default `{base}/v1/key` probe) to
+     * show remaining credits, and parses the response per `shape`. Absent =
+     * provider exposes no balance API (UI hides the display).
+     */
+    credits?: ProviderCreditsSpec;
   };
+}
+
+/**
+ * How to locate + interpret a provider's credit/balance endpoint. `url` is an
+ * absolute HTTPS endpoint (some providers expose balance off the chat
+ * base, e.g. DeepSeek at the host root); `shape` selects the response parser.
+ */
+export interface ProviderCreditsSpec {
+  /** Absolute HTTPS endpoint returning the provider's credit/balance info. */
+  url: string;
+  /**
+   * Response-shape parser:
+   *  - "openrouter"    — { data: { limit, limit_remaining, usage, is_free_tier } } (USD)
+   *  - "deepseek"      — { is_available, balance_infos: [{ currency, total_balance, ... }] }
+   *  - "openai-grants" — { total_granted, total_used, total_available } (USD, legacy/undocumented)
+   *  - "neuralwatt"    — { balance: { credits_remaining_usd, total_credits_usd, credits_used_usd } } (USD)
+   */
+  shape: "openrouter" | "deepseek" | "openai-grants" | "neuralwatt";
 }
 
 /** The parsed cairn-community PROVIDERS manifest (providers.json). */
@@ -289,6 +314,14 @@ const providerDefinition = z.object({
   // reason homepage is (no javascript:/data: smuggling).
   apiKeyUrl: z.string().url().startsWith("https://").optional(),
   models: z.array(z.string()).optional(),
+  // Credit/balance lookup descriptor. `url` must be https (same rationale as
+  // baseUrl/apiKeyUrl — a community entry can't point the app at plaintext).
+  credits: z
+    .object({
+      url: z.string().url().startsWith("https://"),
+      shape: z.enum(["openrouter", "deepseek", "openai-grants", "neuralwatt"]),
+    })
+    .optional(),
 });
 
 const providerEntry = z.object({ ...entryMeta, definition: providerDefinition }).passthrough();

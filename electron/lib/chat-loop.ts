@@ -48,7 +48,7 @@ export async function runToolLoop(
   signal?: AbortSignal,
   getWin?: () => BrowserWindow | null,
   provider?: string,
-  onUsage?: (pt: number, ct: number, rt?: number) => void,
+  onUsage?: (pt: number, ct: number, rt?: number, costUsd?: number) => void,
   emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void,
   onToken?: (delta: string) => void,
   onThought?: (delta: string) => void,
@@ -81,10 +81,12 @@ export async function runToolLoop(
         const choice = res.choices?.[0];
         if (!choice) return { exhausted: true, content: "No response from local Llama on-device model.", reasoning: "" };
         if (res.usage && onUsage) {
+          const usageCost = (res.usage as { cost?: unknown }).cost;
           onUsage(
             res.usage.prompt_tokens ?? 0,
             res.usage.completion_tokens ?? 0,
             res.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+            typeof usageCost === "number" ? usageCost : undefined,
           );
         }
         const rawMsg = choice.message as OpenAIMessage & { reasoning?: string; reasoning_content?: string };
@@ -178,6 +180,7 @@ export async function runToolLoop(
               chunk.usage.prompt_tokens ?? 0,
               chunk.usage.completion_tokens ?? 0,
               chunk.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+              typeof chunk.usage.cost === "number" ? chunk.usage.cost : undefined,
             );
           }
           const delta = chunk.choices?.[0]?.delta;

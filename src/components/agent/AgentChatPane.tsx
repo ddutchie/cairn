@@ -608,6 +608,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             breakdown={session.lastUsage.breakdown}
             completionTokens={session.lastUsage.completionTokens}
             reasoningTokens={session.lastUsage.reasoningTokens}
+            costUsd={session.lastUsage.costUsd}
           />
         )}
         <Tooltip content="Clear conversation" side="left">

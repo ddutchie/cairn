@@ -42,6 +42,7 @@ export interface ChatSlice {
     completionTokens: number;
     reasoningTokens?: number;
     breakdown?: TokenBreakdown;
+    costUsd?: number;
   } | undefined) => void;
 }
 

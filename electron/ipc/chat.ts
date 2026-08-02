@@ -174,6 +174,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     let promptTokens = 0;
     let completionTokens = 0;
     let reasoningTokens = 0;
+    let costUsd = 0;
     let lastBreakdown: TokenBreakdown | undefined = undefined;
 
     // Assemble external tool defs (MCP servers + custom services) in scope for
@@ -186,18 +187,33 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     }
     const allTools = externalDefs.length > 0 ? [...TOOLS, ...externalDefs] : TOOLS;
 
-    const addUsage = (pt: number, ct: number, rt?: number) => {
+    const addUsage = (pt: number, ct: number, rt?: number, cost?: number) => {
       promptTokens = pt;
       completionTokens += ct;
       if (typeof rt === "number") reasoningTokens += rt;
+      // Provider-reported USD cost of this call (e.g. Neuralwatt usage.cost);
+      // accumulated across tool-loop rounds like completion tokens.
+      if (typeof cost === "number" && Number.isFinite(cost)) costUsd += cost;
       try {
         const rawBreakdown = calculatePromptBreakdown(buildSystemPrompt(req), messages, allTools);
         lastBreakdown = scaleBreakdown(rawBreakdown, promptTokens);
       } catch (err) {
         console.error("[chat] failed to calculate breakdown:", err);
       }
-      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown });
+      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd });
     };
+
+    // Final usage object attached to chat:done (or undefined when nothing ran).
+    const finalUsage = () =>
+      promptTokens > 0
+        ? {
+            promptTokens,
+            completionTokens,
+            reasoningTokens,
+            breakdown: lastBreakdown,
+            costUsd: costUsd > 0 ? costUsd : undefined,
+          }
+        : undefined;
 
     // ── Subagent mode ─────────────────────────────────────────────────────────
     // Per-thread toggle routes the turn through the dispatch → research/write
@@ -243,7 +259,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
           content: abortCtrl.signal.aborted ? "" : dispatchResult.content,
           reasoning: dispatchResult.reasoning,
           contextRefs: [],
-          usage: promptTokens > 0 ? { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown } : undefined,
+          usage: finalUsage(),
         });
       } catch (err) {
         // Cancellation or an unexpected failure must never leave the input
@@ -284,10 +300,10 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     }
 
     if (abortCtrl.signal.aborted) {
-      send("chat:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown } : undefined });
+      send("chat:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
       return;
     }
 
-    send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown } : undefined });
+    send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
   });
 }

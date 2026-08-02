@@ -275,6 +275,7 @@ export default function ChatScreen() {
                   breakdown={usage.breakdown}
                   completionTokens={usage.completionTokens}
                   reasoningTokens={usage.reasoningTokens}
+                  costUsd={usage.costUsd}
                 />
               )
               : undefined,
