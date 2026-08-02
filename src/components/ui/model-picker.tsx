@@ -1,11 +1,18 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import { ChevronDown, RefreshCw, Check, Pencil, Star, Search } from "lucide-react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
+import { ChevronDown, RefreshCw, Check, Pencil, Star, Search, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  getModelInfo,
+  getModelCatalogVersion,
+  prewarmModelCatalog,
+  subscribeModelCatalog,
+} from "@/lib/models-dev";
+import { formatModelCost, providerLogoUrl } from "../../../shared/models/model-catalog";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown";
@@ -84,6 +91,10 @@ export function ModelPicker({
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Re-render rows once the models.dev catalog finishes loading in the
+  // background so cost / logo / tool markers can appear (see ModelRow).
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+
   const { favoriteModels, toggleFavoriteModel } = useCairnStore(
     useShallow((s) => ({ favoriteModels: s.favoriteModels, toggleFavoriteModel: s.toggleFavoriteModel })),
   );
@@ -101,6 +112,14 @@ export function ModelPicker({
   }, [options, query, favoriteModels]);
 
   const noMatches = query.trim() !== "" && favs.length === 0 && rest.length === 0;
+
+  // Enrichment for the closed trigger (logo + cost + tool marker), same as rows.
+  const triggerInfo = getModelInfo(value);
+  const triggerLogo = triggerInfo?.provider ? providerLogoUrl(triggerInfo.provider) : null;
+  const triggerCost = formatModelCost(triggerInfo?.input ?? null, triggerInfo?.output ?? null);
+  const triggerNoToolCall = triggerInfo?.toolCall === false;
+
+  useEffect(() => { prewarmModelCatalog(); }, []);
 
   const triggerPad = size === "md" ? "px-2.5 py-1.5 text-xs" : "px-2 py-1 text-[0.714rem]";
 
@@ -143,7 +162,29 @@ export function ModelPicker({
             )}
           >
             {value ? (
-              <TruncatedModel text={value} className="font-mono" />
+              <>
+                {triggerLogo && (
+                  <img
+                    src={triggerLogo}
+                    alt=""
+                    className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                  />
+                )}
+                <TruncatedModel text={value} className="font-mono" />
+                {triggerNoToolCall && (
+                  <Tooltip content="This model doesn't support tool calling">
+                    <span className="flex-shrink-0 text-[var(--warning)]">
+                      <TriangleAlert size={11} />
+                    </span>
+                  </Tooltip>
+                )}
+                {triggerCost && (
+                  <span className="text-[0.607rem] tabular-nums text-[var(--text-tertiary)] flex-shrink-0">
+                    {triggerCost}
+                  </span>
+                )}
+              </>
             ) : (
               <span className="truncate font-sans text-[var(--text-tertiary)]">
                 {placeholder || "Select model"}
@@ -156,7 +197,11 @@ export function ModelPicker({
           align={align}
           className="max-w-[260px] w-[240px] max-h-72 overflow-y-auto"
           onCloseAutoFocus={() => setQuery("")}
-          onOpenAutoFocus={(e: Event) => { e.preventDefault(); requestAnimationFrame(() => searchRef.current?.focus()); }}
+          onOpenAutoFocus={(e: Event) => {
+            e.preventDefault();
+            prewarmModelCatalog();
+            requestAnimationFrame(() => searchRef.current?.focus());
+          }}
         >
           {/* Search box — filters the list below. Kept out of the scrollable rows
               so it stays pinned while scrolling. stopPropagation prevents Radix's
@@ -240,6 +285,11 @@ export function ModelPicker({
  * A single model row inside the picker: a favorite star (toggles without closing
  * the menu), the active-check gutter, and the truncated model id. Selecting the
  * row picks the model; clicking the star only toggles the favorite.
+ *
+ * When the models.dev catalog is loaded, the row is enriched with the provider
+ * logo, a compact per-1M cost (`$in/$out`), and a warning marker when the model
+ * is known not to support tool calls. Catalog data is best-effort — rows render
+ * fine without it.
  */
 function ModelRow({
   model,
@@ -254,6 +304,11 @@ function ModelRow({
   onSelect: () => void;
   onToggleFavorite: () => void;
 }) {
+  const info = getModelInfo(model);
+  const logo = info?.provider ? providerLogoUrl(info.provider) : null;
+  const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
+  const noToolCall = info?.toolCall === false;
+
   return (
     <DropdownMenuItem
       onSelect={onSelect}
@@ -280,7 +335,28 @@ function ModelRow({
         <Star size={12} className={favorite ? "fill-current" : ""} />
       </button>
       {active && <Check size={12} className="flex-shrink-0" />}
+      {logo && (
+        <img
+          src={logo}
+          alt=""
+          className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+          // Some provider slugs 404 — drop the broken glyph rather than showing it.
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+        />
+      )}
       <TruncatedModel text={model} />
+      {noToolCall && (
+        <Tooltip content="This model doesn't support tool calling">
+          <span className="flex-shrink-0 text-[var(--warning)]">
+            <TriangleAlert size={12} />
+          </span>
+        </Tooltip>
+      )}
+      {cost && (
+        <span className="ml-auto pl-2 text-[0.607rem] tabular-nums text-[var(--text-tertiary)] flex-shrink-0">
+          {cost}
+        </span>
+      )}
     </DropdownMenuItem>
   );
 }

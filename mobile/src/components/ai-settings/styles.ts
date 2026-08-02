@@ -159,6 +159,8 @@ export function makeAiSettingsStyles(t: Theme) {
     modelRowText: { ...typeScale.body, color: t.textPrimary, flexShrink: 1 },
     modelRowTextActive: { color: t.accent, fontWeight: "600" },
     modelRowEmpty: { ...typeScale.caption, color: t.textTertiary, paddingHorizontal: 12, paddingVertical: 14 },
+    modelRowCost: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
+    modelRowMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: "auto" },
 
     // Remaining-credits badge (providers that expose a balance, e.g. OpenRouter).
     creditsCard: {

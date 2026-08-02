@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { Trash2, ChevronDown, ArrowLeftFromLine } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -22,6 +22,13 @@ import { ChatInput, SuggestionItem } from "../ChatInput";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { cn } from "@/lib/utils";
+import {
+  getModelInfo,
+  getModelCatalogVersion,
+  prewarmModelCatalog,
+  subscribeModelCatalog,
+} from "@/lib/models-dev";
+import { supportsImageInput } from "../../../../shared/models/model-catalog";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -112,6 +119,12 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const inputRef       = useRef<HTMLTextAreaElement>(null);
   const projectRef     = useRef<HTMLDivElement>(null);
   const [projectOpen, setProjectOpen] = useState(false);
+
+  // Warm the models.dev catalog on mount (also feeds image-input gating and the
+  // model picker's cost/logo rows). Re-render when the catalog arrives.
+  useEffect(() => { prewarmModelCatalog(); }, []);
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+  const allowImages = supportsImageInput(getModelInfo(aiConfig.model));
 
   const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
 
@@ -639,6 +652,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           pendingImages={pendingImages}
           onRemoveImage={handleRemoveImage}
           onAttachImages={handleAttachImages}
+          allowImages={allowImages}
           variant={activeView === "chat" ? "overview" : "default"}
           showSparkles={activeView === "chat"}
         />

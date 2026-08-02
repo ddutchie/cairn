@@ -1,32 +1,68 @@
 /**
- * models.dev context-window lookup for the chat context ring.
+ * models.dev model-catalog lookup (mobile).
  *
  * Fetches the public models.dev catalog (https://models.dev/api.json) and maps a
- * model id → its context window (limit.context). Used to size the ring for the
- * OpenAI-compatible provider, where the model id is known. Rork's underlying
- * model is uncertain, so it uses a fixed conservative cap instead (not this).
+ * model id → model metadata (context window, per-1M-token input/output cost,
+ * image-input support, tool-calling, owning provider logo). Consumers:
+ *  - the chat context ring auto-sizes from `contextLimitForModel` (Rork's
+ *    underlying model is uncertain, so it uses a fixed conservative cap instead)
+ *  - the AI settings model list shows per-model cost, provider logo, and
+ *    image/tool markers
  *
  * The catalog is ~3MB, so we fetch it at most once per app run (in-memory) and
- * persist the small id→context map to the app_settings table so subsequent runs
+ * persist the compact id→info map to the app_settings table so subsequent runs
  * resolve instantly and offline. Everything is best-effort: on any failure the
  * caller falls back to a default limit.
+ *
+ * Parsing / normalization / formatting live in shared/models/model-catalog.ts
+ * (shared with desktop). This file is the mobile fetch + SQLite persistence + a
+ * tiny subscribe API so React components re-render once the catalog arrives.
  */
 
 import { fetch as expoFetch } from "expo/fetch";
+import {
+  lookupModelInfo,
+  parseModelCatalog,
+  type ModelInfo,
+} from "@cairn/shared/models/model-catalog";
 import { getDb } from "../db";
 
 const API_URL = "https://models.dev/api.json";
-const CACHE_KEY = "ai.modelContext.cache"; // JSON { [modelId]: contextTokens }
+const CACHE_KEY = "ai.modelInfo.cache"; // JSON { [modelId]: ModelInfo }
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // refresh weekly
-const CACHE_AT_KEY = "ai.modelContext.cachedAt";
+const CACHE_AT_KEY = "ai.modelInfo.cachedAt";
 
 /** Default when a model isn't found in the catalog. */
 export const DEFAULT_CONTEXT_LIMIT = 65536;
 
-type ContextMap = Record<string, number>;
+type InfoMap = Record<string, ModelInfo>;
 
-let memoryCache: ContextMap | null = null;
-let inflight: Promise<ContextMap> | null = null;
+let memoryCache: InfoMap | null = null;
+let inflight: Promise<InfoMap> | null = null;
+
+// Subscribe API: a version counter bumped whenever the in-memory catalog
+// changes, so useSyncExternalStore consumers re-render after a background load.
+let version = 0;
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const listener of listeners) listener();
+}
+
+/** Subscribe to catalog changes; returns an unsubscribe fn. */
+export function subscribeModelCatalog(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Snapshot for useSyncExternalStore — stable until the catalog (re)loads. */
+export function getModelCatalogVersion(): number {
+  return version;
+}
+
+export { normalizeModelId as normalizeId } from "@cairn/shared/models/model-catalog";
 
 function readSetting(key: string): string | null {
   try {
@@ -52,43 +88,31 @@ function writeSetting(key: string, value: string): void {
   }
 }
 
-/** Flatten the models.dev catalog into a single id → context-window map. */
-function buildMap(catalog: unknown): ContextMap {
-  const map: ContextMap = {};
-  if (!catalog || typeof catalog !== "object") return map;
-  for (const provider of Object.values(catalog as Record<string, unknown>)) {
-    const models = (provider as { models?: unknown })?.models;
-    if (!models || typeof models !== "object") continue;
-    for (const [id, model] of Object.entries(models as Record<string, unknown>)) {
-      const ctx = (model as { limit?: { context?: unknown } })?.limit?.context;
-      if (typeof ctx === "number" && ctx > 0) map[id] = ctx;
-    }
-  }
-  return map;
-}
-
-/** Load the cached map from SQLite (if fresh), else null. */
-function loadCache(): ContextMap | null {
+/** Load the cached info map from SQLite (if fresh), else null. */
+function loadCache(): InfoMap | null {
   const at = Number(readSetting(CACHE_AT_KEY) ?? 0);
   if (!at || Date.now() - at > CACHE_TTL_MS) return null;
   const raw = readSetting(CACHE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as ContextMap;
+    return JSON.parse(raw) as InfoMap;
   } catch {
     return null;
   }
 }
 
 /**
- * Ensure the id→context map is loaded (memory → SQLite → network). Best-effort;
+ * Ensure the id→info map is loaded (memory → SQLite → network). Best-effort;
  * returns an empty map on total failure. Safe to call repeatedly; de-duped.
+ * Emits on every successful load so subscribers re-render.
  */
-async function ensureMap(): Promise<ContextMap> {
+async function ensureMap(): Promise<InfoMap> {
   if (memoryCache) return memoryCache;
   const cached = loadCache();
   if (cached) {
     memoryCache = cached;
+    version += 1;
+    emit();
     return cached;
   }
   if (inflight) return inflight;
@@ -96,10 +120,12 @@ async function ensureMap(): Promise<ContextMap> {
     try {
       const res = await expoFetch(API_URL, { headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error(`models.dev ${res.status}`);
-      const map = buildMap(await res.json());
+      const map = parseModelCatalog(await res.json());
       memoryCache = map;
+      version += 1;
       writeSetting(CACHE_KEY, JSON.stringify(map));
       writeSetting(CACHE_AT_KEY, String(Date.now()));
+      emit();
       return map;
     } catch {
       // Don't cache the empty result — leaving memoryCache unset lets the next
@@ -113,17 +139,37 @@ async function ensureMap(): Promise<ContextMap> {
 }
 
 /**
- * Context window (tokens) for a model id, or `fallback` when unknown. Async so it
- * can fetch/refresh the catalog; results are cached in memory + SQLite. Never
- * throws.
+ * Synchronous catalog lookup from the in-memory cache. Returns null until the
+ * catalog has been loaded at least once (call prewarmModelCatalog()/modelInfoForModel()
+ * and subscribe via subscribeModelCatalog to know when data arrives).
+ */
+export function getModelInfo(modelId: string): ModelInfo | null {
+  if (!modelId || !memoryCache) return null;
+  return lookupModelInfo(memoryCache, modelId);
+}
+
+/**
+ * Async lookup that loads/refreshes the catalog first. Results are cached in
+ * memory + SQLite. Never throws.
+ */
+export async function modelInfoForModel(modelId: string): Promise<ModelInfo | null> {
+  if (!modelId) return null;
+  const map = await ensureMap();
+  return lookupModelInfo(map, modelId);
+}
+
+/**
+ * Context window (tokens) for a model id, or `fallback` when unknown. Tries an
+ * exact catalog match first, then a normalized/fuzzy match so proxy or gateway
+ * ids resolve to the underlying model. Async so it can fetch/refresh the
+ * catalog; results are cached in memory + SQLite. Never throws.
  */
 export async function contextLimitForModel(
   modelId: string,
   fallback = DEFAULT_CONTEXT_LIMIT,
 ): Promise<number> {
   if (!modelId) return fallback;
-  const map = await ensureMap();
-  return map[modelId] ?? fallback;
+  return (await modelInfoForModel(modelId))?.context ?? fallback;
 }
 
 /** Warm the catalog cache in the background (best-effort, fire-and-forget). */

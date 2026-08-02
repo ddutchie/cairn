@@ -1,115 +1,67 @@
 /**
- * models.dev context-window lookup for the chat context ring (desktop).
+ * models.dev model-catalog lookup (desktop).
  *
  * Fetches the public models.dev catalog (https://models.dev/api.json) and maps a
- * model id → its context window (limit.context). Used to auto-size the context
- * ring for the OpenAI-compatible (Cloud / Local API) provider, where the model
- * id is known.
+ * model id → model metadata (context window, per-1M-token input/output cost,
+ * image-input support, tool-calling, owning provider logo). Consumers:
+ *  - the chat context ring auto-sizes from `contextLimitForModel`
+ *  - model pickers show per-model cost, provider logo and image/tool markers
  *
  * The catalog is ~3MB, so we fetch it at most once per app run (in-memory) and
- * persist the small id→context map to localStorage so subsequent runs resolve
+ * persist the compact id→info map to localStorage so subsequent runs resolve
  * instantly and offline. Everything is best-effort: on any failure the caller
  * falls back to a default limit.
+ *
+ * Parsing / normalization / formatting live in shared/models/model-catalog.ts
+ * (shared with mobile). This file is the desktop fetch + persistence + a tiny
+ * subscribe API so React pickers re-render once the catalog arrives.
  *
  * Ported from the mobile implementation (mobile/src/chat/models-dev.ts), swapping
  * expo/fetch + SQLite app_settings for the browser fetch + localStorage.
  */
 
+import {
+  lookupModelInfo,
+  parseModelCatalog,
+  type ModelInfo,
+} from "../../shared/models/model-catalog";
+
 const API_URL = "https://models.dev/api.json";
-const CACHE_KEY = "ai.modelContext.cache"; // JSON { [modelId]: contextTokens }
-const CACHE_AT_KEY = "ai.modelContext.cachedAt";
+const CACHE_KEY = "ai.modelInfo.cache"; // JSON { [modelId]: ModelInfo }
+const CACHE_AT_KEY = "ai.modelInfo.cachedAt";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // refresh weekly
 
 /** Default when a model isn't found in the catalog. */
 export const DEFAULT_CONTEXT_LIMIT = 128000;
 
-type ContextMap = Record<string, number>;
+type InfoMap = Record<string, ModelInfo>;
 
-let memoryCache: ContextMap | null = null;
-// Lazily-built normalized index (normalized id → context) for fuzzy matching.
-// Rebuilt whenever memoryCache changes (tracked by identity).
-let normIndex: ContextMap | null = null;
-let normIndexFor: ContextMap | null = null;
-let inflight: Promise<ContextMap> | null = null;
+let memoryCache: InfoMap | null = null;
+let inflight: Promise<InfoMap> | null = null;
 
-/**
- * Normalize a model id to a canonical form so proxy/gateway variants resolve to
- * the underlying catalog entry. Handles:
- *  - provider path/dotted prefixes: `anthropic/…`, `us.anthropic.…`, `~anthropic/…`
- *  - gateway/vendor prefixes: `playground-`, `databricks-`, `duo-chat-`, `anthropic--`, `stealth/`
- *  - variant suffixes: `:thinking`, `@default`, `-thinking`, `-fast`, `-latest`, dates, `-v1:0`
- * The result is lowercase with those decorations stripped. Not exhaustive — just
- * enough to catch the common real-world proxy id shapes.
- */
-export function normalizeId(id: string): string {
-  let s = id.toLowerCase().trim();
-  // Strip a leading gateway "provider:" prefix that some endpoints prepend to the
-  // model id (e.g. "merge:deepseek/deepseek-v4-flash" → "deepseek/deepseek-v4-flash",
-  // "merge:deepseek-v4-flash" → "deepseek-v4-flash"). We must NOT confuse this with
-  // a colon-delimited VARIANT suffix on a plain model id (e.g. "gpt-4:thinking" or
-  // "gpt-4:thinking-v2"), which the later ":" split handles. So only strip when the
-  // tail is a real model id: it either carries a path ("/"), or its first token is
-  // not a known variant keyword.
-  const providerPrefix = s.match(/^([a-z0-9_-]+):(.+)$/);
-  if (providerPrefix) {
-    const tail = providerPrefix[2];
-    const firstToken = tail.split(/[/-]/)[0];
-    const isVariantTail = /^(thinking|think|fast|free|latest|reasoning|distilled|low|medium|high|max)$/.test(firstToken);
-    if (tail.includes("/") || (/-/.test(tail) && !isVariantTail)) {
-      s = tail;
-    }
-  }
-  // Keep only the last path segment (e.g. "anthropic/claude-opus-4" → "claude-opus-4").
-  if (s.includes("/")) s = s.split("/").pop() as string;
-  // Strip a leading "~" (some gateways prefix aliases with it).
-  s = s.replace(/^~/, "");
-  // Strip region + vendor dotted prefixes: "us.anthropic.", "anthropic.", "eu.".
-  s = s.replace(/^[a-z]{2}\.anthropic\./, "").replace(/^anthropic\./, "").replace(/^[a-z]{2}\./, "");
-  // Drop everything after ":" or "@" (thinking budgets, versions, dates).
-  s = s.split(":")[0].split("@")[0];
-  // Strip common gateway/vendor prefixes.
-  s = s.replace(
-    /^(playground-|databricks-|duo-chat-|anthropic--|anthropic-|stealth-|global\.|us\.|eu\.|au\.|jp\.)/,
-    "",
-  );
-  // Strip trailing variant suffixes.
-  s = s.replace(/-(thinking|think|fast|free|latest|reasoning|distilled)$/, "");
-  // Strip trailing dates ("-20250514") and pure version tags ("-v1", "-v1:0").
-  // The version tag may only continue with dot/colon-separated numbers — it must
-  // NOT swallow a trailing word like "-flash" or "-luna" (e.g. "deepseek-v4-flash"
-  // must stay intact, not collapse to "deepseek").
-  s = s.replace(/-\d{6,8}$/, "").replace(/-v\d+([.:]\d+)*$/, "");
-  return s;
+// Subscribe API: a version counter bumped whenever the in-memory catalog
+// changes, so useSyncExternalStore consumers re-render after a background load.
+let version = 0;
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const listener of listeners) listener();
 }
 
-/** Build (and memoize) the normalized-id index for the current map. */
-function getNormIndex(map: ContextMap): ContextMap {
-  if (normIndex && normIndexFor === map) return normIndex;
-  const idx: ContextMap = {};
-  for (const [id, ctx] of Object.entries(map)) {
-    const n = normalizeId(id);
-    // First writer wins — exact-looking short ids tend to be enumerated first,
-    // but any catalog value for a normalized key is acceptable for our purpose.
-    if (!(n in idx)) idx[n] = ctx;
-  }
-  normIndex = idx;
-  normIndexFor = map;
-  return idx;
+/** Subscribe to catalog changes; returns an unsubscribe fn. */
+export function subscribeModelCatalog(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
-/** Resolve a model id to a context window via exact → normalized → separator-variant. */
-function lookup(map: ContextMap, modelId: string): number | null {
-  if (map[modelId] != null) return map[modelId];
-  const idx = getNormIndex(map);
-  const n = normalizeId(modelId);
-  if (idx[n] != null) return idx[n];
-  // Try swapping version separators both ways (e.g. "4-8" ⇄ "4.8").
-  const dashToDot = n.replace(/(\d)-(\d)/g, "$1.$2");
-  if (idx[dashToDot] != null) return idx[dashToDot];
-  const dotToDash = n.replace(/(\d)\.(\d)/g, "$1-$2");
-  if (idx[dotToDash] != null) return idx[dotToDash];
-  return null;
+/** Snapshot for useSyncExternalStore — stable until the catalog (re)loads. */
+export function getModelCatalogVersion(): number {
+  return version;
 }
+
+export { normalizeModelId as normalizeId } from "../../shared/models/model-catalog";
 
 function readSetting(key: string): string | null {
   if (typeof localStorage === "undefined") return null;
@@ -129,44 +81,31 @@ function writeSetting(key: string, value: string): void {
   }
 }
 
-/** Flatten the models.dev catalog into a single id → context-window map. */
-function buildMap(catalog: unknown): ContextMap {
-  const map: ContextMap = {};
-  if (!catalog || typeof catalog !== "object") return map;
-  for (const provider of Object.values(catalog as Record<string, unknown>)) {
-    const models = (provider as { models?: unknown })?.models;
-    if (!models || typeof models !== "object") continue;
-    for (const [id, model] of Object.entries(models as Record<string, unknown>)) {
-      const ctx = (model as { limit?: { context?: unknown } })?.limit?.context;
-      if (typeof ctx === "number" && ctx > 0) map[id] = ctx;
-    }
-  }
-  return map;
-}
-
-/** Load the cached map from localStorage (if fresh), else null. */
-function loadCache(): ContextMap | null {
+/** Load the cached info map from localStorage (if fresh), else null. */
+function loadCache(): InfoMap | null {
   const at = Number(readSetting(CACHE_AT_KEY) ?? 0);
   if (!at || Date.now() - at > CACHE_TTL_MS) return null;
   const raw = readSetting(CACHE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as ContextMap;
+    return JSON.parse(raw) as InfoMap;
   } catch {
     return null;
   }
 }
 
 /**
- * Ensure the id→context map is loaded (memory → localStorage → network).
+ * Ensure the id→info map is loaded (memory → localStorage → network).
  * Best-effort; returns an empty map on total failure. Safe to call repeatedly;
- * de-duped.
+ * de-duped. Emits on every successful load so subscribers re-render.
  */
-async function ensureMap(): Promise<ContextMap> {
+async function ensureMap(): Promise<InfoMap> {
   if (memoryCache) return memoryCache;
   const cached = loadCache();
   if (cached) {
     memoryCache = cached;
+    version += 1;
+    emit();
     return cached;
   }
   if (inflight) return inflight;
@@ -174,10 +113,12 @@ async function ensureMap(): Promise<ContextMap> {
     try {
       const res = await fetch(API_URL, { headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error(`models.dev ${res.status}`);
-      const map = buildMap(await res.json());
+      const map = parseModelCatalog(await res.json());
       memoryCache = map;
+      version += 1;
       writeSetting(CACHE_KEY, JSON.stringify(map));
       writeSetting(CACHE_AT_KEY, String(Date.now()));
+      emit();
       return map;
     } catch {
       // Don't cache the empty result — leaving memoryCache unset lets the next
@@ -191,19 +132,37 @@ async function ensureMap(): Promise<ContextMap> {
 }
 
 /**
+ * Synchronous catalog lookup from the in-memory cache. Returns null until the
+ * catalog has been loaded at least once (call prewarmModelCatalog()/modelInfoForModel()
+ * and subscribe via subscribeModelCatalog to know when data arrives).
+ */
+export function getModelInfo(modelId: string): ModelInfo | null {
+  if (!modelId || !memoryCache) return null;
+  return lookupModelInfo(memoryCache, modelId);
+}
+
+/**
+ * Async lookup that loads/refreshes the catalog first. Results are cached in
+ * memory + localStorage. Never throws.
+ */
+export async function modelInfoForModel(modelId: string): Promise<ModelInfo | null> {
+  if (!modelId) return null;
+  const map = await ensureMap();
+  return lookupModelInfo(map, modelId);
+}
+
+/**
  * Context window (tokens) for a model id, or `fallback` when unknown. Tries an
  * exact catalog match first, then a normalized/fuzzy match so proxy or gateway
  * ids (e.g. "playground-claude-opus-4-8") resolve to the underlying model.
- * Async so it can fetch/refresh the catalog; results are cached in memory +
- * localStorage. Never throws.
+ * Async so it can fetch/refresh the catalog; never throws.
  */
 export async function contextLimitForModel(
   modelId: string,
   fallback = DEFAULT_CONTEXT_LIMIT,
 ): Promise<number> {
   if (!modelId) return fallback;
-  const map = await ensureMap();
-  return lookup(map, modelId) ?? fallback;
+  return (await modelInfoForModel(modelId))?.context ?? fallback;
 }
 
 /** Warm the catalog cache in the background (best-effort, fire-and-forget). */

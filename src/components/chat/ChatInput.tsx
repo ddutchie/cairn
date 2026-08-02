@@ -36,6 +36,8 @@ interface ChatInputProps {
   pendingImages?: Array<{ name: string; dataUrl: string }>;
   onRemoveImage?: (index: number) => void;
   onAttachImages?: (files: File[]) => void;
+  /** When false, image attach is hidden (selected model has no image input). */
+  allowImages?: boolean;
 }
 
 export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
@@ -57,6 +59,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       pendingImages,
       onRemoveImage,
       onAttachImages,
+      allowImages = true,
     },
     ref
   ) => {
@@ -228,6 +231,10 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         }
       }
       if (imageFiles.length > 0) {
+        if (!allowImages) {
+          e.preventDefault();
+          return;
+        }
         e.preventDefault();
         onAttachImages?.(imageFiles);
       }
@@ -423,7 +430,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
           />
 
           <div className="flex items-center gap-1.5 flex-shrink-0 self-center">
-            {!isLoading && (
+            {!isLoading && allowImages && (
               <Tooltip content="Attach image" side="left">
                 <button
                   onClick={handleAttachClick}

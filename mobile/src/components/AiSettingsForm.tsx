@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
 import {
   View,
   Text,
@@ -8,10 +8,12 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, Wallet, Server } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, Wallet, Server, TriangleAlert } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
+import { ProviderLogo } from "@/components/ProviderLogo";
+import { formatModelCost } from "@cairn/shared/models/model-catalog";
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
@@ -49,7 +51,13 @@ import {
   type AppleReasoningLevel,
 } from "@modules/apple-llm";
 import { listModels, getKeyInfo, type ProviderKeyInfo } from "@/chat/providers/openai";
-import { contextLimitForModel } from "@/chat/models-dev";
+import {
+  contextLimitForModel,
+  getModelInfo,
+  getModelCatalogVersion,
+  prewarmModelCatalog,
+  subscribeModelCatalog,
+} from "@/chat/models-dev";
 import { useAiSettingsStyles } from "./ai-settings/styles";
 import { SegmentButton } from "./ai-settings/SegmentButton";
 import { Field } from "./ai-settings/Field";
@@ -82,6 +90,11 @@ function formatCredits(n: number): string {
 export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const styles = useAiSettingsStyles();
+
+  // Warm the models.dev catalog + re-render rows once it arrives (cost/logo/
+  // tool markers in the model list).
+  useEffect(() => { prewarmModelCatalog(); }, []);
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
   const router = useRouter();
   const rorkBuiltIn = isRorkAvailable();
   const appleAvailable = isAppleProviderAvailable();
@@ -623,6 +636,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                           >
                             {filteredModels.map((id) => {
                               const active = model === id;
+                              const info = getModelInfo(id);
+                              const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
+                              const noToolCall = info?.toolCall === false;
                               return (
                                 <Pressable
                                   key={id}
@@ -637,12 +653,27 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                                   ) : (
                                     <View style={{ width: 14 }} />
                                   )}
+                                  {info?.provider ? (
+                                    <ProviderLogo provider={info.provider} />
+                                  ) : (
+                                    <View style={{ width: 14 }} />
+                                  )}
                                   <Text
                                     style={[styles.modelRowText, active && styles.modelRowTextActive]}
                                     numberOfLines={1}
                                   >
                                     {id}
                                   </Text>
+                                  <View style={styles.modelRowMeta}>
+                                    {noToolCall && (
+                                      <TriangleAlert size={12} color={t.warning} />
+                                    )}
+                                    {cost && (
+                                      <Text style={styles.modelRowCost} numberOfLines={1}>
+                                        {cost}
+                                      </Text>
+                                    )}
+                                  </View>
                                 </Pressable>
                               );
                             })}
