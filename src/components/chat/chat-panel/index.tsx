@@ -350,6 +350,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       const isImage = file.type.startsWith("image/");
       if (!isPdf && !isImage) continue;
       if (isPdf && !allowPdf && !allowImages) continue;
+      if (isImage && !allowImages) continue;
       try {
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();

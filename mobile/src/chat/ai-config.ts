@@ -420,18 +420,34 @@ const MODELS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type ModelsCache = Record<string, { models: string[]; ts: number }>;
 
-/** Normalise a base URL to a stable cache-key root (drop trailing / and /v1). */
+/** Normalise a base URL to a stable cache-key root (drop trailing slashes only;
+ *  preserve the path so root and /v1 endpoints stay distinct cache entries). */
 function normCacheBaseUrl(baseUrl: string): string {
-  return (baseUrl || DEFAULT_OPENAI_BASE_URL).trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+  return (baseUrl || DEFAULT_OPENAI_BASE_URL).trim().replace(/\/+$/, "");
 }
 
-/** Cached model ids for an endpoint, or null when missing/stale. */
+/** True when a persisted cache value has the expected shape (string[] models +
+ *  finite timestamp). Guards against malformed/corrupt entries poisoning the
+ *  settings screen. */
+function isModelsCacheEntry(value: unknown): value is ModelsCache[string] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const e = value as { models?: unknown; ts?: unknown };
+  return (
+    typeof e.ts === "number" &&
+    Number.isFinite(e.ts) &&
+    Array.isArray(e.models) &&
+    e.models.every((m) => typeof m === "string")
+  );
+}
+
+/** Cached model ids for an endpoint, or null when missing/stale/malformed. */
 export function readModelsCache(baseUrl: string): string[] | null {
   try {
-    const all = JSON.parse(getSetting(MODELS_CACHE_KEY) ?? "{}") as ModelsCache;
+    const all = JSON.parse(getSetting(MODELS_CACHE_KEY) ?? "{}") as Record<string, unknown>;
     const entry = all[normCacheBaseUrl(baseUrl)];
-    if (!entry) return null;
-    if (Date.now() - entry.ts > MODELS_CACHE_TTL_MS) return null; // stale
+    if (!isModelsCacheEntry(entry)) return null;
+    const age = Date.now() - entry.ts;
+    if (age < 0 || age > MODELS_CACHE_TTL_MS) return null; // stale
     return entry.models;
   } catch {
     return null;
@@ -441,7 +457,8 @@ export function readModelsCache(baseUrl: string): string[] | null {
 /** Persist a fetched model list for an endpoint (fresh for 7 days). */
 export function writeModelsCache(baseUrl: string, models: string[]): void {
   try {
-    const all = JSON.parse(getSetting(MODELS_CACHE_KEY) ?? "{}") as ModelsCache;
+    if (!Array.isArray(models) || !models.every((m) => typeof m === "string")) return;
+    const all = JSON.parse(getSetting(MODELS_CACHE_KEY) ?? "{}") as Record<string, unknown>;
     all[normCacheBaseUrl(baseUrl)] = { models, ts: Date.now() };
     setSetting(MODELS_CACHE_KEY, JSON.stringify(all));
   } catch {

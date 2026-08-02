@@ -104,7 +104,7 @@ export function logoProviderFor(
   const head = s.toLowerCase().split(/[/:]/)[0].replace(/^[~.]+/, "");
   const byToken = LOGO_SLUG_BY_TOKEN[head];
   if (byToken) return byToken;
-  const base = s.split("/").pop() as string;
+  const base = s.toLowerCase().split("/").pop() as string;
   for (const [re, slug] of LOGO_BRAND_MATCHES) {
     if (re.test(base)) return slug;
   }

@@ -288,6 +288,13 @@ describe("logoProviderFor", () => {
     expect(logoProviderFor("unknown-model-xyz", null)).toBeNull();
   });
 
+  it("matches brand prefixes regardless of casing", () => {
+    expect(logoProviderFor("Anthropic/Claude-Opus-4", "cloudflare-ai-gateway")).toBe("anthropic");
+    expect(logoProviderFor("OpenAI/GPT-5.2", "perplexity-agent")).toBe("openai");
+    expect(logoProviderFor("DeepSeek-V4-Flash", "cortecs")).toBe("deepseek");
+    expect(logoProviderFor("accounts/Fireworks/Models/DeepSeek-v4-flash", "fireworks-ai")).toBe("deepseek");
+  });
+
   it("providerLogoUrlFor composes the model-resolved URL", () => {
     expect(providerLogoUrlFor("deepseek/deepseek-v4-flash", "hpc-ai")).toBe(
       "https://models.dev/logos/deepseek.svg",

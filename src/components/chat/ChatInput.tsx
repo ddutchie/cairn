@@ -303,7 +303,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         <input
           ref={fileInputRef}
           type="file"
-          accept={allowImages || allowPdf ? "image/*,application/pdf,.pdf" : "image/*"}
+          accept={[allowImages && "image/*", allowPdf && "application/pdf,.pdf"].filter(Boolean).join(",") || undefined}
           multiple
           onChange={handleFileChange}
           className="hidden"
