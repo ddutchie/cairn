@@ -37,15 +37,17 @@ export function providerLogoUrl(provider: string): string {
 /**
  * Whether a model can take image input. Unknown models (not in the catalog) are
  * allowed — the gate is conservative and only blocks models models.dev
- * explicitly lists as not accepting images.
+ * explicitly lists as not accepting images. Defensive against legacy/cached
+ * entries that predate the `modes` field (treated as no known modes).
  */
 export function supportsImageInput(info: ModelInfo | null): boolean {
-  return info ? info.modes.includes("image") : true;
+  return info ? (info.modes ?? []).includes("image") : true;
 }
 
-/** A single input-capability chip (icon/label + tooltip title). */
+/** A single input-capability chip (icon key + tooltip title). */
 export interface ModelModeChip {
   key: string;
+  /** Fallback label (e.g. accessibility / non-icon renderers). */
   label: string;
   title: string;
 }
@@ -62,14 +64,38 @@ const MODE_CHIP_DEFS: Record<string, ModelModeChip> = {
 export function modelInputChips(info: ModelInfo | null): ModelModeChip[] {
   if (!info) return [];
   const order = ["text", "image", "pdf", "video", "audio"];
+  const modes = info.modes ?? [];
   const chips: ModelModeChip[] = [];
   for (const m of order) {
-    if (info.modes.includes(m)) {
+    if (modes.includes(m)) {
       const def = MODE_CHIP_DEFS[m];
       if (def) chips.push(def);
     }
   }
   return chips;
+}
+
+/**
+ * Normalize a ModelInfo entry so it can't crash consumers: guarantees `modes`
+ * is an array, and migrates the pre-`modes` legacy `image` boolean. Used when
+ * reading cached catalog maps that may predate the current shape.
+ */
+export function normalizeModelInfo(info: ModelInfo | null | undefined): ModelInfo | null {
+  if (!info || typeof info !== "object") return null;
+  const legacy = info as ModelInfo & { image?: boolean };
+  const modes = Array.isArray(info.modes)
+    ? info.modes
+    : typeof legacy.image === "boolean"
+      ? (legacy.image ? ["text", "image"] : ["text"])
+      : [];
+  return {
+    context: typeof info.context === "number" ? info.context : null,
+    input: typeof info.input === "number" ? info.input : null,
+    output: typeof info.output === "number" ? info.output : null,
+    modes,
+    toolCall: typeof info.toolCall === "boolean" ? info.toolCall : null,
+    provider: typeof info.provider === "string" ? info.provider : null,
+  };
 }
 
 /**

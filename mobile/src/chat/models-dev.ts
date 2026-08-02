@@ -22,6 +22,7 @@
 import { fetch as expoFetch } from "expo/fetch";
 import {
   lookupModelInfo,
+  normalizeModelInfo,
   parseModelCatalog,
   type ModelInfo,
 } from "@cairn/shared/models/model-catalog";
@@ -88,14 +89,22 @@ function writeSetting(key: string, value: string): void {
   }
 }
 
-/** Load the cached info map from SQLite (if fresh), else null. */
+/** Load the cached info map from SQLite (if fresh), else null. Entries are
+ * normalized so a cache written by an older build (pre-`modes` shape) can't
+ * crash consumers. */
 function loadCache(): InfoMap | null {
   const at = Number(readSetting(CACHE_AT_KEY) ?? 0);
   if (!at || Date.now() - at > CACHE_TTL_MS) return null;
   const raw = readSetting(CACHE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as InfoMap;
+    const parsed = JSON.parse(raw) as Record<string, ModelInfo>;
+    const map: InfoMap = {};
+    for (const [id, info] of Object.entries(parsed)) {
+      const norm = normalizeModelInfo(info);
+      if (norm) map[id] = norm;
+    }
+    return map;
   } catch {
     return null;
   }

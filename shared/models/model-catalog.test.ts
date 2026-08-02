@@ -9,6 +9,7 @@ import {
   lookupModelInfo,
   modelInputChips,
   normalizeModelId,
+  normalizeModelInfo,
   parseModelCatalog,
   providerLogoUrl,
   supportsImageInput,
@@ -80,6 +81,31 @@ describe("supportsImageInput", () => {
     expect(supportsImageInput({ modes: ["text", "image"] } as never)).toBe(true);
     expect(supportsImageInput({ modes: ["text", "pdf"] } as never)).toBe(false);
     expect(supportsImageInput({ modes: [] } as never)).toBe(false);
+  });
+
+  it("never crashes on legacy entries missing `modes`", () => {
+    expect(supportsImageInput({ image: true } as never)).toBe(false);
+    expect(supportsImageInput({} as never)).toBe(false);
+  });
+});
+
+describe("normalizeModelInfo", () => {
+  it("passes well-formed entries through unchanged", () => {
+    const info = { context: 1000, input: 1, output: 2, modes: ["text"], toolCall: true, provider: "x" };
+    expect(normalizeModelInfo(info as never)).toEqual(info);
+  });
+
+  it("migrates the legacy pre-`modes` image boolean", () => {
+    const withImage = normalizeModelInfo({ context: 10, image: true } as never);
+    expect(withImage?.modes).toEqual(["text", "image"]);
+    const noImage = normalizeModelInfo({ context: 10, image: false } as never);
+    expect(noImage?.modes).toEqual(["text"]);
+  });
+
+  it("fills missing modes and returns null for junk", () => {
+    expect(normalizeModelInfo({ context: 10 } as never)?.modes).toEqual([]);
+    expect(normalizeModelInfo(null)).toBeNull();
+    expect(normalizeModelInfo("nope" as never)).toBeNull();
   });
 });
 

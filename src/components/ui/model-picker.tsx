@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
-import { ChevronDown, RefreshCw, Check, Pencil, Star, Search, TriangleAlert } from "lucide-react";
+import {
+  ChevronDown, RefreshCw, Check, Pencil, Star, Search, TriangleAlert,
+  Type, Image as ImageIcon, FileText, Video, AudioLines,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -52,22 +56,34 @@ export function TruncatedModel({ text, className }: { text: string; className?: 
 }
 
 /**
- * Tiny input-capability chips for a model, e.g. T / I / PDF / V / A — the input
- * modalities models.dev lists for the model. Renders nothing when the catalog
- * hasn't loaded or the model is unknown.
+ * Input-capability icons for a model — the input modalities models.dev lists
+ * for the model (e.g. Type / Image / FileText / Video / AudioLines). Renders
+ * nothing when the catalog hasn't loaded or the model is unknown.
  */
+const MODE_ICONS: Record<string, LucideIcon> = {
+  text: Type,
+  image: ImageIcon,
+  pdf: FileText,
+  video: Video,
+  audio: AudioLines,
+};
+
 function CapabilityChips({ info }: { info: ModelInfo | null }) {
   const chips = modelInputChips(info);
   if (chips.length === 0) return null;
   return (
     <span className="flex items-center gap-0.5 flex-shrink-0">
-      {chips.map((c) => (
-        <Tooltip key={c.key} content={c.title}>
-          <span className="text-[0.5rem] leading-none px-0.5 py-[1.5px] rounded-[3px] border border-[var(--border)] text-[var(--text-tertiary)]">
-            {c.label}
-          </span>
-        </Tooltip>
-      ))}
+      {chips.map((c) => {
+        const Icon = MODE_ICONS[c.key];
+        if (!Icon) return null;
+        return (
+          <Tooltip key={c.key} content={c.title}>
+            <span className="text-[var(--text-tertiary)]">
+              <Icon size={9} strokeWidth={1.75} />
+            </span>
+          </Tooltip>
+        );
+      })}
     </span>
   );
 }

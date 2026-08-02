@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, Wallet, Server, TriangleAlert } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
@@ -665,11 +665,18 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                                     {id}
                                   </Text>
                                   <View style={styles.modelRowMeta}>
-                                    {modelInputChips(info).map((c) => (
-                                      <Text key={c.key} style={styles.modelRowChip} numberOfLines={1}>
-                                        {c.label}
-                                      </Text>
-                                    ))}
+                                    {modelInputChips(info).map((c) => {
+                                      const CapIcon =
+                                        c.key === "text" ? Type
+                                        : c.key === "image" ? ImageIcon
+                                        : c.key === "pdf" ? FileText
+                                        : c.key === "video" ? Video
+                                        : c.key === "audio" ? AudioLines
+                                        : null;
+                                      return CapIcon ? (
+                                        <CapIcon key={c.key} size={10} color={t.textTertiary} />
+                                      ) : null;
+                                    })}
                                     {noToolCall && (
                                       <TriangleAlert size={12} color={t.warning} />
                                     )}
