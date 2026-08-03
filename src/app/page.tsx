@@ -416,7 +416,7 @@ export default function Home() {
       {runningAutomationCount > 0 && (
         <button
           onClick={() => setView("automations")}
-          className="flex items-center gap-2 px-4 py-1 text-xs text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] border-b border-[var(--accent)]/20 hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] transition-colors text-left"
+          className="flex items-center gap-2 px-4 py-1 text-xs text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] border-b border-[color-mix(in_srgb,var(--accent)_20%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] transition-colors text-left"
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
           {runningAutomationCount} automation{runningAutomationCount === 1 ? "" : "s"} running

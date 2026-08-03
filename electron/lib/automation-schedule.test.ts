@@ -109,6 +109,26 @@ describe("computeNextRun — cron", () => {
     expect(computeNextRun(s, T0, "UTC")).toBeNull();
   });
 
+  it("matches the correct local calendar day across a UTC-day boundary", () => {
+    // America/New_York: a UTC day spans two local dates (local Sun 19:00 →
+    // local Mon 19:00). Without re-checking the candidate's local weekday,
+    // "0 21 * * 1" could return Sunday 21:00 local while scanning a UTC day
+    // that also contains part of Monday.
+    const s = parseSchedule("0 21 * * 1");
+    // Sun 2026-11-08 20:00 EST (UTC-5) == Mon 01:00Z — Sunday 21:00 EST (Mon
+    // 02:00Z) is in the future and inside the same scanned UTC day, so the bug
+    // would have returned it. Correct answer is Mon 2026-11-09 21:00 EST.
+    const from = new Date("2026-11-08T20:00:00-05:00");
+    const next = computeNextRun(s, from, "America/New_York");
+    expect(next!.toISOString()).toBe("2026-11-10T02:00:00.000Z");
+  });
+
+  it("aligns results to whole minutes when from has seconds and milliseconds", () => {
+    const s = parseSchedule("0 9 * * *");
+    const from = new Date("2026-11-09T08:59:37.250Z");
+    expect(computeNextRun(s, from, "UTC")!.toISOString()).toBe("2026-11-09T09:00:00.000Z");
+  });
+
   it("is bounded by the search horizon (does not loop forever)", () => {
     const s = parseSchedule("0 0 30 2 *");
     const start = Date.now();

@@ -148,19 +148,29 @@ function match(field: string, value: number): boolean {
 }
 
 /**
+ * True if the tz-local calendar date at `p` matches the month / day-of-month /
+ * day-of-week cron fields. When both dom and dow are specified, fires when
+ * EITHER matches (standard cron semantics).
+ */
+function matchesCalendar(p: { day: number; month: number; weekday: number }, dom: string, month: string, dow: string): boolean {
+  if (!match(month, p.month)) return false;
+  const domOk = match(dom, p.day);
+  const dowOk = match(dow, p.weekday);
+  return dom === "*" || dow === "*" ? domOk && dowOk : domOk || dowOk;
+}
+
+/**
  * True if any tz-calendar day that overlaps the UTC day starting at `dayStartMs`
- * matches the month / day-of-month / day-of-week cron fields. When both dom and
- * dow are specified, fires when EITHER matches (standard cron semantics).
+ * could match the month / day-of-month / day-of-week cron fields — a cheap
+ * prefilter only. The per-minute scan re-verifies the exact local calendar date
+ * via matchesCalendar(), because a single UTC day can span two local dates
+ * (e.g. America/New_York at 19:00 UTC spans local Sunday evening and Monday).
  */
 function dayCouldMatch(dayStartMs: number, tz: string, dom: string, month: string, dow: string): boolean {
   const DAY_MS = 86_400_000;
   const samples = [dayStartMs, dayStartMs + DAY_MS / 2, dayStartMs + DAY_MS - 60_000];
   for (const s of samples) {
-    const p = tzParts(new Date(s), tz);
-    if (!match(month, p.month)) continue;
-    const domOk = match(dom, p.day);
-    const dowOk = match(dow, p.weekday);
-    if (dom === "*" || dow === "*" ? domOk && dowOk : domOk || dowOk) return true;
+    if (matchesCalendar(tzParts(new Date(s), tz), dom, month, dow)) return true;
   }
   return false;
 }
@@ -227,11 +237,17 @@ export function computeNextRun(schedule: ParsedSchedule, from: Date, timezone?: 
         if (!dayCouldMatch(dayStart, tz, domField, monthField, dowField)) continue;
 
         const dayEnd = dayStart + DAY_MS;
-        let t = Math.max(dayStart, fromMs + 60_000);
-        for (; t < dayEnd; t += 60_000) {
+        // Round the scan start up to the next whole minute so a `from` with
+        // seconds/milliseconds can't leak sub-minute offsets into the result.
+        const scanStart = Math.max(dayStart, Math.ceil((fromMs + 1) / 60_000) * 60_000);
+        for (let t = scanStart; t < dayEnd; t += 60_000) {
           if (t > horizon) return null;
           const p = tzParts(new Date(t), tz);
-          if (match(minuteField, p.minute) && match(hourField, p.hour)) {
+          if (
+            match(minuteField, p.minute) &&
+            match(hourField, p.hour) &&
+            matchesCalendar(p, domField, monthField, dowField)
+          ) {
             return new Date(t);
           }
         }
