@@ -1,13 +1,7 @@
-const SENSITIVE_KEY = /(?:api[_-]?key|access[_-]?token|auth(?:orization)?|cookie|credential|password|private[_-]?key|secret|token)/i;
-const SENSITIVE_ASSIGNMENT = /((?:api[_-]?key|access[_-]?token|password|secret|token)\s*[:=]\s*)(["']?)[^\s,;&"']+\2/gi;
-const AUTHORIZATION_ASSIGNMENT = /(authorization\s*[:=]\s*)(["']?)(?:[A-Za-z][A-Za-z0-9_-]*\s+)?[^\s,;&"']+\2/gi;
-const MAX_TOOL_OUTPUT_LENGTH = 8_000;
+import { redactSensitiveText, redactValue } from "../../shared/chat/redaction";
 
-export function redactSensitiveText(value: string): string {
-  return value
-    .replace(SENSITIVE_ASSIGNMENT, "$1$2[redacted]$2")
-    .replace(AUTHORIZATION_ASSIGNMENT, "$1$2[redacted]$2");
-}
+export { redactSensitiveText } from "../../shared/chat/redaction";
+const MAX_TOOL_OUTPUT_LENGTH = 8_000;
 
 export function redactToolOutput(value: string | undefined): string | undefined {
   if (!value) return value;
@@ -33,15 +27,7 @@ export function prettyToolOutput(value: string | undefined): string | undefined 
 }
 
 export function redactTranscriptValue(value: unknown, key?: string): unknown {
-  if (key && SENSITIVE_KEY.test(key)) return "[redacted]";
-  if (typeof value === "string") return redactSensitiveText(value);
-  if (Array.isArray(value)) return value.map((item) => redactTranscriptValue(item));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([entryKey, entryValue]) => [entryKey, redactTranscriptValue(entryValue, entryKey)])
-    );
-  }
-  return value;
+  return redactValue(value, key);
 }
 
 export function redactAgentToolCall<T extends { args?: Record<string, unknown>; output?: string }>(toolCall: T): T {

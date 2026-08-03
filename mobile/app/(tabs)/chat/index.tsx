@@ -19,6 +19,7 @@ import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
 import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, type ToolCall } from "@/db/chat-store";
+import { redactValue } from "@cairn/shared/chat/redaction";
 import { hasProvider, resolveProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
 import { getOpenAIModel } from "@/chat/ai-config";
@@ -189,7 +190,7 @@ export default function ChatScreen() {
           const idx = e.toolCallId ? toolTrail.findIndex((c) => c.id === e.toolCallId && c.running) : -1;
            const finalized = {
              tool: e.tool,
-             args: e.args && typeof e.args === "object" ? e.args as Record<string, unknown> : undefined,
+             args: e.args && typeof e.args === "object" ? redactValue(e.args) as Record<string, unknown> : undefined,
              output: safeToolOutput(e.result),
              ok,
              id: e.toolCallId,

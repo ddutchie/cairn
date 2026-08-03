@@ -19,7 +19,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
 import type { SuggestedAction, TokenBreakdown, ChatHistoryEntry, ChatSubagent } from "@/types";
-import { redactToolOutput } from "@/lib/redact-agent-transcript";
+import { redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
 
 export interface ChatToolCall {
   tool: string;
@@ -152,7 +152,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
             label: e.label,
             status: "running" as const,
             callId: e.callId,
-            args: e.args ? JSON.stringify(e.args) : undefined
+             args: e.args ? JSON.stringify(redactTranscriptValue(e.args)) : undefined
           }];
           toolCallsRef.current = next;
           return next;
@@ -231,7 +231,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       if (!isForThisThread(e)) return;
       mutateSub(e.childId, (s) => ({
         ...s,
-        toolCalls: [...(s.toolCalls ?? []), { tool: e.tool, label: e.label, callId: e.callId, args: e.args ? JSON.stringify(e.args) : undefined }],
+         toolCalls: [...(s.toolCalls ?? []), { tool: e.tool, label: e.label, callId: e.callId, args: e.args ? JSON.stringify(redactTranscriptValue(e.args)) : undefined }],
       }));
     });
 
