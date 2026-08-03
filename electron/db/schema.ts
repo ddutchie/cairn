@@ -911,6 +911,8 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "approval_mode", "approval_mode TEXT NOT NULL DEFAULT 'auto'");
   ensure("automations", "active_hours_start", "active_hours_start TEXT");
   ensure("automations", "active_hours_end", "active_hours_end TEXT");
+  ensure("mcp_notifications", "target_type", "target_type TEXT");
+  ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");
   ensure("custom_services", "oauth_config", "oauth_config TEXT");
   // Multi-operation services: baseUrl + operations[] (JSON). Nullable — legacy

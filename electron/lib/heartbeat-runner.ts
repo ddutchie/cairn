@@ -143,6 +143,9 @@ export async function runAutomation(
     if (!artifacts.some((a) => a.id === ref.id)) artifacts.push(ref);
   };
   const finalScratch = () => (artifacts.length > 0 ? JSON.stringify({ artifacts }) : null);
+  // Navigation target for the completion notification — the first note/card the
+  // run created, so clicking the notification jumps to the result.
+  const completionTarget = artifacts[0] ? { type: artifacts[0].type, id: artifacts[0].id } : null;
 
   const result = await runToolLoop(
     db,
@@ -173,7 +176,7 @@ export async function runAutomation(
       error: "Reached the step limit; run may be incomplete.",
       scratch: finalScratch(),
     });
-    insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"));
+    insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"), completionTarget);
     return;
   }
 
@@ -183,7 +186,7 @@ export async function runAutomation(
     error: null,
     scratch: finalScratch(),
   });
-  insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content));
+  insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content), completionTarget);
 }
 
 function isLocal(baseUrl: string): boolean {

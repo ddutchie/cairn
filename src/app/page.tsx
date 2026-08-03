@@ -20,6 +20,7 @@ import { InsightsView } from "@/components/insights/InsightsView";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AutomationsView } from "@/components/automations/automations-view";
+import { NotificationCenter } from "@/components/automations/notification-center";
 import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 import { UnifiedChatPanel } from "@/components/chat/UnifiedChatPanel";
@@ -63,6 +64,8 @@ export default function Home() {
     fetchApprovalCount,
     startNotificationPolling,
     stopNotificationPolling,
+    notificationOpen,
+    setNotificationOpen,
   } = useCairnStore(useShallow((s) => ({
     hydrate:             s.hydrate,
     hydrateFromElectron: s.hydrateFromElectron,
@@ -84,6 +87,8 @@ export default function Home() {
     fetchApprovalCount:   s.fetchApprovalCount,
     startNotificationPolling: s.startNotificationPolling,
     stopNotificationPolling:  s.stopNotificationPolling,
+    notificationOpen:    s.notificationOpen,
+    setNotificationOpen: s.setNotificationOpen,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
   const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations"] as const).filter(
@@ -459,6 +464,11 @@ export default function Home() {
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}
       </div>
+
+      {/* Notification center popover (top-right, thin; navigable rows) */}
+      {notificationOpen && (
+        <NotificationCenter onClose={() => setNotificationOpen(false)} />
+      )}
 
       {/* IPC error toasts — bottom-right, auto-dismiss after 5s */}
       <ErrorToasts toasts={toasts} onDismiss={dismiss} />

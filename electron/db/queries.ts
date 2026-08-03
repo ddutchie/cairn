@@ -1126,8 +1126,9 @@ export function getActiveMcpWrites(db: Database.Database): Set<string> {
   }
 }
 
-export function insertMcpNotification(db: Database.Database, n: { id: string; tool: string; title: string; body: string }): void {
-  db.prepare("INSERT INTO mcp_notifications (id, tool, title, body, read, created_at) VALUES (?, ?, ?, ?, 0, ?)").run(n.id, n.tool, n.title, n.body, ts());
+export function insertMcpNotification(db: Database.Database, n: { id: string; tool: string; title: string; body: string; targetType?: "note" | "task"; targetId?: string }): void {
+  db.prepare("INSERT INTO mcp_notifications (id, tool, title, body, read, created_at, target_type, target_id) VALUES (?, ?, ?, ?, 0, ?, ?, ?)")
+    .run(n.id, n.tool, n.title, n.body, ts(), n.targetType ?? null, n.targetId ?? null);
 }
 
 // ── Idea Flow ─────────────────────────────────

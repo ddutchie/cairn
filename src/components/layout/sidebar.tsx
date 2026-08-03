@@ -17,7 +17,6 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
-import { NotificationCenter } from "@/components/automations/notification-center";
 import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
 import { buildShortcutMap, modKey, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
@@ -58,7 +57,7 @@ export function Sidebar() {
      hiddenViews,
      pendingApprovalCount,
      notificationUnreadCount,
-     notificationOpen, setNotificationOpen,
+     setNotificationOpen,
      moveFolderToProject, moveCardToProject, moveNoteToProject,
    } = useCairnStore(useShallow((s) => ({    sidebarCollapsed:    s.sidebarCollapsed,
      toggleSidebar:       s.toggleSidebar,
@@ -82,7 +81,6 @@ export function Sidebar() {
      hiddenViews:         s.hiddenViews,
      pendingApprovalCount: s.pendingApprovalCount,
      notificationUnreadCount: s.notificationUnreadCount,
-     notificationOpen:    s.notificationOpen,
      setNotificationOpen: s.setNotificationOpen,
      moveFolderToProject: s.moveFolderToProject,
      moveCardToProject:   s.moveCardToProject,
@@ -365,10 +363,6 @@ export function Sidebar() {
           </div>
         </div>
       </aside>
-
-      {notificationOpen && (
-        <NotificationCenter onClose={() => setNotificationOpen(false)} />
-      )}
     </>
   );
 }
