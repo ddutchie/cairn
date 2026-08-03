@@ -13,7 +13,8 @@ describe("humanizeTool", () => {
   });
 
   it("handles unknown and external tools without exposing an argument dump", () => {
-    expect(humanizeTool("svc__slack__post_message", { channel: "alerts", text: "hello" }).pre).toBe("Used");
+    expect(humanizeTool("svc__slack__post_message", { channel: "alerts", text: "hello" }))
+      .toEqual({ pre: "Used", obj: "post_message" });
     expect(humanizedText("mystery_tool")).toBe("Used mystery_tool");
   });
 

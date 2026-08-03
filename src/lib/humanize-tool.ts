@@ -14,11 +14,6 @@ function short(value: unknown, fallback = "this item"): string {
   return text.length > MAX_OBJECT_LENGTH ? `${text.slice(0, MAX_OBJECT_LENGTH - 1)}…` : text;
 }
 
-function externalTarget(name: string): string {
-  const match = /^(?:mcp|svc)__([^_]+)__(.+)$/.exec(name);
-  return match ? match[1] : "connected service";
-}
-
 /** Convert a tool event into a short, human-readable transcript sentence. */
 export function humanizeTool(name: string, args: ToolArgs = {}): HumanizedTool {
   switch (name) {
@@ -42,7 +37,7 @@ export function humanizeTool(name: string, args: ToolArgs = {}): HumanizedTool {
     case "search_tasks": return { pre: "Searched tasks for", obj: `“${short(args.query, "a phrase")}”` };
     default: {
       if (/^(?:mcp|svc)__/.test(name)) {
-        return { pre: "Used", obj: `${externalTarget(name)} · ${short(name.split("__").pop(), "a tool")}` };
+        return { pre: "Used", obj: short(name.split("__").pop(), "a tool") };
       }
       return { pre: "Used", obj: short(name, "a tool") };
     }

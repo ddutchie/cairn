@@ -24,3 +24,12 @@ export function safeToolOutput(value: unknown): string | undefined {
     : (JSON.stringify(redactValue(value)) ?? "");
   return text.slice(0, MAX_TOOL_OUTPUT_LENGTH);
 }
+
+export function prettyToolOutput(value: string | undefined): string | undefined {
+  if (!value) return value;
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2).slice(0, MAX_TOOL_OUTPUT_LENGTH);
+  } catch {
+    return value.slice(0, MAX_TOOL_OUTPUT_LENGTH);
+  }
+}
