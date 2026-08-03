@@ -847,6 +847,35 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_automation_runs_status     ON automation_runs(status);
     `);
   },
+
+  // v33: Durable approval inbox (OpenWorker inbox.py + hermes/openclaw approval
+  // gate). A persisted, cross-session human-attention queue. Background runs park
+  // a consequential action here and WAIT; the user approves/denies from the
+  // renderer (survives renderer reload + tray-time). Semantics: resolve-once,
+  // idempotent per (run_id, tool, args-hash), fail-closed timeout handled by the
+  // runner. `state` pending → resolved/expired; `resolution` records the choice
+  // (approved_once / approved_session / approved_always / denied).
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS approval_items (
+        id         TEXT PRIMARY KEY,
+        run_id     TEXT,                          -- automation_run id (nullable for interactive sessions)
+        session_id TEXT,                          -- pi-agent session id (nullable)
+        tool       TEXT NOT NULL,
+        args       TEXT NOT NULL DEFAULT '{}',    -- JSON tool arguments (redacted where sensitive)
+        args_hash  TEXT NOT NULL DEFAULT '',      -- idempotency key: sha1(tool + args)
+        kind       TEXT NOT NULL DEFAULT 'approval', -- 'approval' | 'question' | 'notification' | 'plan'
+        title      TEXT NOT NULL DEFAULT '',
+        body       TEXT NOT NULL DEFAULT '',
+        state      TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'resolved' | 'expired'
+        resolution TEXT,                          -- 'approved_once' | 'approved_session' | 'approved_always' | 'denied'
+        created_at TEXT NOT NULL,
+        resolved_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_approval_items_state ON approval_items(state);
+      CREATE INDEX IF NOT EXISTS idx_approval_items_run   ON approval_items(run_id);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
