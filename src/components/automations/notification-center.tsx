@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Bell, Check, CheckCheck, Zap, ExternalLink } from "lucide-react";
+import { Bell, Check, CheckCheck, Zap, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -33,14 +33,20 @@ function toolIcon(tool: string): React.ReactNode {
  * dismissing. Closes on outside click / Escape.
  */
 export function NotificationCenter({ onClose }: { onClose: () => void }) {
-  const { notifications, notificationUnreadCount, fetchNotifications, markNotificationRead, markAllNotificationsRead } =
+  const { notifications, notificationUnreadCount, fetchNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications } =
     useCairnStore(useShallow((s) => ({
       notifications: s.notifications,
       notificationUnreadCount: s.notificationUnreadCount,
       fetchNotifications: s.fetchNotifications,
       markNotificationRead: s.markNotificationRead,
       markAllNotificationsRead: s.markAllNotificationsRead,
+      clearNotifications: s.clearNotifications,
     })));
+
+  const { pendingApprovals, resolveApprovalItem } = useCairnStore(useShallow((s) => ({
+    pendingApprovals: s.pendingApprovals,
+    resolveApprovalItem: s.resolveApprovalItem,
+  })));
 
   const { setView } = useCairnStore(useShallow((s) => ({ setView: s.setView })));
 
@@ -91,8 +97,10 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           sorted.map((n) => {
-            const targetable = n.targetType === "note" || n.targetType === "task" || n.targetType === "automation";
-            const onClick = targetable
+            const targetable = n.targetType === "note" || n.targetType === "task" || n.targetType === "automation" || n.targetType === "approval";
+            const isApproval = n.targetType === "approval";
+            const approvalPending = isApproval ? pendingApprovals.some((p) => p.id === n.targetId) : false;
+            const onClick = targetable && !isApproval
               ? () => {
                   if (n.targetType === "note") revealNote(setView, n.targetId!);
                   else if (n.targetType === "task") revealCard(setView, n.targetId!);
@@ -103,12 +111,12 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
               <div
                 key={n.id}
                 onClick={onClick}
-                role={targetable ? "button" : undefined}
-                tabIndex={targetable ? 0 : undefined}
-                onKeyDown={targetable ? (e) => { if (e.key === "Enter") onClick?.(); } : undefined}
+                role={targetable && !isApproval ? "button" : undefined}
+                tabIndex={targetable && !isApproval ? 0 : undefined}
+                onKeyDown={targetable && !isApproval ? (e) => { if (e.key === "Enter") onClick?.(); } : undefined}
                 className={cn(
                   "flex items-start gap-2.5 px-3 py-2 text-left",
-                  targetable ? "cursor-pointer hover:bg-[var(--surface-2)]" : "",
+                  targetable && !isApproval ? "cursor-pointer hover:bg-[var(--surface-2)]" : "",
                   n.read ? "opacity-60" : "bg-[color-mix(in_srgb,var(--accent)_6%,transparent)]"
                 )}
               >
@@ -116,10 +124,23 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-[var(--text-primary)] truncate">{n.title}</span>
-                {targetable && <ExternalLink size={10} className="shrink-0 text-[var(--text-tertiary)]" />}
+                    {targetable && !isApproval && <ExternalLink size={10} className="shrink-0 text-[var(--text-tertiary)]" />}
                     <span className="text-[0.625rem] text-[var(--text-tertiary)] ml-auto shrink-0">{formatWhen(n.createdAt)}</span>
                   </div>
                   <p className="text-[0.714rem] text-[var(--text-secondary)] mt-0.5 break-words line-clamp-2">{n.body}</p>
+                  {isApproval && approvalPending && (
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <Button variant="accent" size="xs" onClick={(e) => { e.stopPropagation(); void resolveApprovalItem(n.targetId!, "approved_once").then(() => void markNotificationRead(n.id)); }}>
+                        Approve
+                      </Button>
+                      <Button variant="outline" size="xs" onClick={(e) => { e.stopPropagation(); void resolveApprovalItem(n.targetId!, "approved_always").then(() => void markNotificationRead(n.id)); }}>
+                        Always allow
+                      </Button>
+                      <Button variant="danger" size="xs" onClick={(e) => { e.stopPropagation(); void resolveApprovalItem(n.targetId!, "denied").then(() => void markNotificationRead(n.id)); }}>
+                        Deny
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 {!n.read && (
                   <Button variant="ghost" size="icon" title="Dismiss" className="shrink-0" onClick={(e) => { e.stopPropagation(); void markNotificationRead(n.id); }}>
@@ -133,9 +154,11 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-t border-[var(--border-subtle)] text-[0.625rem] text-[var(--text-tertiary)]">
-        <span>Click a result to jump to it.</span>
-        <button type="button" onClick={onClose} className="hover:text-[var(--text-primary)]">Close</button>
+      <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-[var(--border-subtle)]">
+        <Button variant="ghost" size="xs" onClick={() => void clearNotifications()} disabled={notifications.length === 0} title="Remove all notifications">
+          <Trash2 size={11} className="mr-1 text-[var(--text-tertiary)]" /> Clear all
+        </Button>
+        <button type="button" onClick={onClose} className="text-[0.625rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">Close</button>
       </div>
     </div>
   );

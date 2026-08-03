@@ -21,7 +21,7 @@ export interface McpNotification {
   read: boolean;
   createdAt: string;
   /** Optional navigation target (note/task/automation) the notification links to. */
-  targetType: "note" | "task" | "automation" | null;
+  targetType: "note" | "task" | "automation" | "approval" | null;
   targetId: ID | null;
 }
 
@@ -37,6 +37,7 @@ export interface NotificationsSlice {
   fetchNotificationUnread: () => Promise<void>;
   markNotificationRead: (id: ID) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
+  clearNotifications: () => Promise<void>;
   startNotificationPolling: () => void;
   stopNotificationPolling: () => void;
 }
@@ -97,6 +98,16 @@ export const createNotificationsSlice: StateCreator<CairnStore, [], [], Notifica
       }));
     } catch (err) {
       console.error("[notifications] markAllNotificationsRead error", err);
+    }
+  },
+
+  async clearNotifications() {
+    if (typeof window === "undefined" || !window.electron?.notification) return;
+    try {
+      await window.electron.notification.clear();
+      set({ notifications: [], notificationUnreadCount: 0 });
+    } catch (err) {
+      console.error("[notifications] clearNotifications error", err);
     }
   },
 

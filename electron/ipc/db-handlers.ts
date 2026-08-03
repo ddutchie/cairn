@@ -732,4 +732,9 @@ export function registerDbHandlers(ctx: DbContext): void {
     broadcastEvent("mcp:unread-count", q.countUnreadMcpNotifications(ctx.db));
     return true;
   }));
+  registerIpcHandle("db:notification:clear", () => handle(() => {
+    const n = q.clearMcpNotifications(ctx.db);
+    broadcastEvent("mcp:unread-count", 0);
+    return n;
+  }));
 }

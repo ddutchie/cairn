@@ -1086,6 +1086,12 @@ export function markMcpNotificationsRead(db: Database.Database): void {
   db.prepare("UPDATE mcp_notifications SET read = 1 WHERE read = 0").run();
 }
 
+/** Remove every notification (manual "Clear all"). Returns rows deleted. */
+export function clearMcpNotifications(db: Database.Database): number {
+  const info = db.prepare("DELETE FROM mcp_notifications").run();
+  return info.changes;
+}
+
 /**
  * Retention/pruning for mcp_notifications: delete notifications older than
  * `maxAgeDays`, then cap the table to the newest `maxRows`. Returns the number

@@ -623,6 +623,7 @@ const api = {
     count: () => invoke("db:notification:count"),
     markRead: (id: string) => invoke("db:notification:markRead", { id }),
     markAllRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
+    clear: () => invoke("db:notification:clear"),
   },
 
   // ── Agent / coding sessions ───────────────────

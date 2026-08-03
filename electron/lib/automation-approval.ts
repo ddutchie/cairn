@@ -87,8 +87,8 @@ export function makeApprovalGate(db: Database.Database, run: AutomationRun, auto
       db,
       "automation_approval",
       `Approval needed: "${automation.name}"`,
-      `Run wants to ${name}. Open the approval inbox to approve or deny.`,
-      { type: "automation", id: automation.id },
+      `Run wants to ${name}. Approve or deny below.`,
+      { type: "approval", id: item.id },
     );
     const resolution = await waitForApproval(db, item.id);
     if (resolution === null) {

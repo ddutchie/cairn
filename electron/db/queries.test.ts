@@ -62,6 +62,7 @@ import {
   countUnreadMcpNotifications,
   insertMcpNotification,
   pruneMcpNotifications,
+  clearMcpNotifications,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -1255,5 +1256,21 @@ describe("pruneMcpNotifications", () => {
     const rows = listMcpNotifications(db);
     expect(rows.length).toBe(3);
     expect(rows.map((n) => n.id)).toEqual(["n4", "n3", "n2"]); // newest kept
+  });
+});
+
+describe("clearMcpNotifications", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("removes every notification", () => {
+    insertMcpNotification(db, { id: "n1", tool: "t", title: "a", body: "1" });
+    insertMcpNotification(db, { id: "n2", tool: "t", title: "b", body: "2" });
+    expect(clearMcpNotifications(db)).toBe(2);
+    expect(listMcpNotifications(db)).toHaveLength(0);
+    expect(countUnreadMcpNotifications(db)).toBe(0);
   });
 });
