@@ -36,12 +36,12 @@ export function PendingApprovals() {
         <ShieldAlert size={12} /> Pending approvals ({pendingApprovals.length})
       </h2>
       {pendingApprovals.map((item: ApprovalItem) => (
-        <div key={item.id} className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-dim)]/40 p-3">
+        <div key={item.id} className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-dim)]/40 p-3.5">
           <div className="text-sm text-[var(--text-primary)] font-medium">{item.title}</div>
           <div className="text-xs text-[var(--text-secondary)] mt-1">
             {item.body} <code className="font-mono text-[0.714rem]">{item.tool}</code>
           </div>
-          <div className="flex items-center gap-2 mt-2.5">
+          <div className="flex items-center gap-2 mt-3">
             <Button variant="accent" size="xs" onClick={() => void resolveApprovalItem(item.id, "approved_once")}>
               Approve once
             </Button>

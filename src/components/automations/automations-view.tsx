@@ -152,7 +152,7 @@ export function AutomationsView() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center justify-between px-6 pt-5 pb-3">
+      <div className="flex items-center justify-between gap-3 px-4 md:px-8 pt-4 md:pt-8 pb-4 md:pb-6 border-b border-[var(--border-subtle)]">
         <div>
           <h1 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <Zap size={16} className="text-[var(--accent)]" /> Automations
@@ -166,7 +166,7 @@ export function AutomationsView() {
         </Button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8 space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-8 pb-8 space-y-3">
         <PendingApprovals />
         {automations.length === 0 && pendingApprovals.length === 0 && (
           <div className="rounded-lg border border-[var(--border)] p-10 text-center text-sm text-[var(--text-tertiary)]">
@@ -265,15 +265,15 @@ function AutomationDialog({
         <DialogHeader>
           <DialogTitle>{editing ? "Edit automation" : "New automation"}</DialogTitle>
         </DialogHeader>
-        <p className="text-xs text-[var(--text-tertiary)] -mt-2">
-          The agent runs these instructions on schedule using your AI connection. It can only touch notes, tasks, tags and boards — no shell.
-        </p>
-        <div className="space-y-3 py-2">
-          <label className="block">
+        <div className="px-5 py-4 space-y-4">
+          <p className="text-xs text-[var(--text-tertiary)]">
+            The agent runs these instructions on schedule using your AI connection. It can only touch notes, tasks, tags and boards — no shell.
+          </p>
+          <label className="block space-y-1">
             <span className="text-xs text-[var(--text-secondary)]">Name</span>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Weekly review" />
           </label>
-          <label className="block">
+          <label className="block space-y-1">
             <span className="text-xs text-[var(--text-secondary)]">Instructions</span>
             <textarea
               value={instructions}
@@ -284,7 +284,7 @@ function AutomationDialog({
             />
           </label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="block">
+            <label className="block space-y-1">
               <span className="text-xs text-[var(--text-secondary)]">Schedule</span>
               <select
                 value={kind}
@@ -300,12 +300,12 @@ function AutomationDialog({
                 <option value="once">Once</option>
               </select>
             </label>
-            <label className="block">
+            <label className="block space-y-1">
               <span className="text-xs text-[var(--text-secondary)]">Expression</span>
               <Input value={expr} onChange={(e) => setExpr(e.target.value)} placeholder={KIND_PLACEHOLDER[kind]} />
             </label>
           </div>
-          <label className="block">
+          <label className="block space-y-1">
             <span className="text-xs text-[var(--text-secondary)]">Project scope</span>
             <select
               value={projectId}
@@ -319,16 +319,16 @@ function AutomationDialog({
             </select>
           </label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="block">
+            <label className="block space-y-1">
               <span className="text-xs text-[var(--text-secondary)]">Timezone (optional)</span>
               <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Europe/London" />
             </label>
-            <label className="block">
+            <label className="block space-y-1">
               <span className="text-xs text-[var(--text-secondary)]">Max runs (optional)</span>
               <Input value={maxRuns} onChange={(e) => setMaxRuns(e.target.value)} placeholder="Unlimited" />
             </label>
           </div>
-          <label className="block">
+          <label className="block space-y-1">
             <span className="text-xs text-[var(--text-secondary)]">Approval mode</span>
             <select
               value={approvalMode}
@@ -345,7 +345,7 @@ function AutomationDialog({
             </span>
           </label>
         </div>
-        <div className="flex justify-end gap-2">
+        <div className="px-5 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-2">
           <DialogClose asChild>
             <Button variant="ghost" size="sm">Cancel</Button>
           </DialogClose>
