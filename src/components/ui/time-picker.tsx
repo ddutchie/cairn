@@ -140,7 +140,6 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
             <span className="text-lg font-semibold text-[var(--text-primary)] font-mono">
               {hour12}:{pad2(minute)} {isPm ? "PM" : "AM"}
             </span>
-            <span className="text-[0.714rem] text-[var(--text-tertiary)]">24h: {pad2((hour12 % 12) + (isPm ? 12 : 0))}:{pad2(minute)}</span>
           </div>
 
           <div className="flex items-stretch justify-center gap-2">
