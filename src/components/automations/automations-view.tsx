@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity } from "lucide-react";
+import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity, FileText, Kanban } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
+import { revealNote, revealCard } from "@/lib/events";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { Input } from "@/components/ui/input";
@@ -65,15 +66,29 @@ function runScratchTool(run: AutomationRun | undefined): string | null {
   }
 }
 
+export interface ArtifactRef { type: "note" | "task"; id: string; title: string }
+
+/** Notes/cards a run created, from its scratch JSON (set by the runner). */
+function runScratchArtifacts(run: AutomationRun | undefined): ArtifactRef[] {
+  if (!run?.scratch) return [];
+  try {
+    const scratch = JSON.parse(run.scratch) as { artifacts?: ArtifactRef[] };
+    return Array.isArray(scratch.artifacts) ? scratch.artifacts : [];
+  } catch {
+    return [];
+  }
+}
+
 export function AutomationsView() {
   const {
-    activeWorkspaceId, activeProjectId, projects,
+    activeWorkspaceId, activeProjectId, projects, setView,
     automations, lastRuns, pendingApprovals, runsById,
     fetchAutomations, createAutomation, updateAutomation, deleteAutomation, runNow, fetchRun, fetchRuns,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId: s.activeProjectId,
     projects: s.projects,
+    setView: s.setView,
     automations: s.automations,
     lastRuns: s.lastRuns,
     pendingApprovals: s.pendingApprovals,
@@ -208,6 +223,7 @@ export function AutomationsView() {
           const lastRun = lastRuns[a.id];
           const isRunning = lastRun?.status === "running";
           const currentTool = runScratchTool(lastRun);
+          const artifacts = runScratchArtifacts(lastRun);
           return (
             <div key={a.id} className={cn("rounded-lg border bg-[var(--surface)] p-4", isRunning ? "border-[var(--accent)]/40" : "border-[var(--border)]")}>
               <div className="flex items-start justify-between gap-3">
@@ -261,6 +277,22 @@ export function AutomationsView() {
                   <Toggle checked={a.enabled} onCheckedChange={(checked) => void updateAutomation(a.id, { enabled: checked })} />
                 </div>
               </div>
+              {artifacts.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[0.714rem] text-[var(--text-tertiary)]">Artifacts:</span>
+                  {artifacts.map((art) => (
+                    <button
+                      key={art.id}
+                      onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
+                      title={`Open ${art.type === "note" ? "note" : "task"}`}
+                      className="inline-flex items-center gap-1 text-[0.714rem] px-2 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-56"
+                    >
+                      {art.type === "note" ? <FileText size={10} className="shrink-0" /> : <Kanban size={10} className="shrink-0" />}
+                      <span className="truncate">{art.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               {isRunning && (
                 <div className="mt-3 h-0.5 w-full overflow-hidden rounded-full bg-[var(--accent-dim)]/60">
                   <div className="h-full w-1/3 rounded-full bg-[var(--accent)] animate-cairn-indeterminate" />
@@ -432,7 +464,7 @@ interface AutomationDetailDialogProps {
 
 function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, projectName }: AutomationDetailDialogProps) {
   const [refreshing, setRefreshing] = useState(false);
-  const { fetchRuns } = useCairnStore(useShallow((s) => ({ fetchRuns: s.fetchRuns })));
+  const { fetchRuns, setView } = useCairnStore(useShallow((s) => ({ fetchRuns: s.fetchRuns, setView: s.setView })));
 
   useEffect(() => {
     if (automation) void fetchRuns(automation.id);
@@ -443,6 +475,20 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
     setRefreshing(true);
     try { await fetchRuns(automation.id); } finally { setRefreshing(false); }
   }
+
+  // Aggregate notes/cards created across all fetched runs, newest run first, dedup by id.
+  const artifacts = useMemo<ArtifactRef[]>(() => {
+    const seen = new Set<string>();
+    const out: ArtifactRef[] = [];
+    for (const r of runs) {
+      for (const art of runScratchArtifacts(r)) {
+        if (seen.has(art.id)) continue;
+        seen.add(art.id);
+        out.push(art);
+      }
+    }
+    return out;
+  }, [runs]);
 
   return (
     <Dialog open={automation !== null} onOpenChange={onOpenChange}>
@@ -466,6 +512,27 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
               <InfoRow label="Approval" value={automation.approvalMode === "ask" ? "Ask" : "Auto"} />
               <InfoRow label="Status" value={automation.enabled ? "Enabled" : "Disabled"} />
               {automation.timezone && <InfoRow label="Timezone" value={automation.timezone} />}
+            </div>
+
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] block mb-2">Artifacts</span>
+              {artifacts.length === 0 ? (
+                <p className="text-xs text-[var(--text-tertiary)]">No notes or cards created yet.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {artifacts.map((art) => (
+                    <button
+                      key={art.id}
+                      onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
+                      title={`Open ${art.type === "note" ? "note" : "task"}`}
+                      className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-64"
+                    >
+                      {art.type === "note" ? <FileText size={11} className="shrink-0" /> : <Kanban size={11} className="shrink-0" />}
+                      <span className="truncate">{art.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>

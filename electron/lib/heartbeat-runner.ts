@@ -128,6 +128,16 @@ export async function runAutomation(
     } catch { /* best-effort */ }
   };
 
+  // Collect notes/cards the run created so they can be surfaced as navigable
+  // artifacts (the loop's emitToolCallDone carries a cairnRef for note/task
+  // tools). Persisted on the run row at completion.
+  const artifacts: Array<{ type: "note" | "task"; id: string; title: string }> = [];
+  const recordArtifact = (ref: { type: "note" | "task"; id: string; title: string } | undefined) => {
+    if (!ref?.id) return;
+    if (!artifacts.some((a) => a.id === ref.id)) artifacts.push(ref);
+  };
+  const finalScratch = () => (artifacts.length > 0 ? JSON.stringify({ artifacts }) : null);
+
   const result = await runToolLoop(
     db,
     req,
@@ -141,7 +151,7 @@ export async function runAutomation(
     undefined,                       // getWin
     provider,
     undefined,                       // onUsage
-    undefined,                       // emitToolCallDone
+    (e) => recordArtifact(e.cairnRef), // emitToolCallDone — collect created notes/cards
     undefined,                       // onToken
     undefined,                       // onThought
     undefined,                       // extraTools
@@ -155,7 +165,7 @@ export async function runAutomation(
       status: "done",
       resultNoteId: null,
       error: "Reached the step limit; run may be incomplete.",
-      scratch: null,
+      scratch: finalScratch(),
     });
     insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"));
     return;
@@ -165,7 +175,7 @@ export async function runAutomation(
     status: "done",
     resultNoteId: null,
     error: null,
-    scratch: null,
+    scratch: finalScratch(),
   });
   insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content));
 }
