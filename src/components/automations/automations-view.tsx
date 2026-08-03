@@ -54,6 +54,17 @@ const KIND_PLACEHOLDER: Record<ScheduleKind, string> = {
   once: "once 2026-09-01T09:00:00",
 };
 
+/** Read the currently-executing tool from a run's scratch JSON (set by the runner). */
+function runScratchTool(run: AutomationRun | undefined): string | null {
+  if (!run?.scratch) return null;
+  try {
+    const scratch = JSON.parse(run.scratch) as { currentTool?: string };
+    return typeof scratch.currentTool === "string" && scratch.currentTool ? scratch.currentTool : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AutomationsView() {
   const {
     activeWorkspaceId, activeProjectId, projects,
@@ -195,8 +206,10 @@ export function AutomationsView() {
         )}
         {automations.map((a) => {
           const lastRun = lastRuns[a.id];
+          const isRunning = lastRun?.status === "running";
+          const currentTool = runScratchTool(lastRun);
           return (
-            <div key={a.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+            <div key={a.id} className={cn("rounded-lg border bg-[var(--surface)] p-4", isRunning ? "border-[var(--accent)]/40" : "border-[var(--border)]")}>
               <div className="flex items-start justify-between gap-3">
                 <button
                   onClick={() => openDetail(a)}
@@ -223,7 +236,12 @@ export function AutomationsView() {
                     <span className="inline-flex items-center gap-1"><Clock size={11} /> {scheduleLabel(a)}</span>
                     <span>Next: {formatRelative(a.nextRunAt)}</span>
                     <span>{a.runCount} run{a.runCount === 1 ? "" : "s"}</span>
-                    {lastRun && (
+                    {isRunning ? (
+                      <span className="inline-flex items-center gap-1.5 text-[var(--accent)] animate-pulse">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                        Running{currentTool ? `: ${currentTool}` : "…"}
+                      </span>
+                    ) : lastRun && (
                       <span className={cn("inline-flex items-center gap-1 capitalize", STATUS_COLOR[lastRun.status])}>
                         Last: {lastRun.status} {lastRun.finishedAt ? `· ${formatRelative(lastRun.finishedAt)}` : ""}
                       </span>
@@ -243,6 +261,11 @@ export function AutomationsView() {
                   <Toggle checked={a.enabled} onCheckedChange={(checked) => void updateAutomation(a.id, { enabled: checked })} />
                 </div>
               </div>
+              {isRunning && (
+                <div className="mt-3 h-0.5 w-full overflow-hidden rounded-full bg-[var(--accent-dim)]/60">
+                  <div className="h-full w-1/3 rounded-full bg-[var(--accent)] animate-cairn-indeterminate" />
+                </div>
+              )}
             </div>
           );
         })}

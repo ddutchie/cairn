@@ -376,6 +376,18 @@ select:focus {
   animation: slideInLeft 0.2s ease-out;
 }
 
+/* Indeterminate "scrolling" bar for in-flight background runs — an accent
+   segment that sweeps across a thin track. Used on automation cards while a
+   run is active. */
+@keyframes cairn-indeterminate {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(340%); }
+}
+
+.animate-cairn-indeterminate {
+  animation: cairn-indeterminate 1.4s ease-in-out infinite;
+}
+
 .chat-panel-responsive {
   width: 100vw;
   height: 100dvh;

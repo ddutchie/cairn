@@ -28,6 +28,7 @@ import {
   bumpAutomationRunCount,
   createAutomationRun,
   getAutomationById,
+  getAutomationRunById,
   hasInFlightRun,
   updateAutomationRun,
   type Automation,
@@ -112,6 +113,21 @@ export async function runAutomation(
     { role: "user", content: automation.instructions },
   ];
 
+  // Report the tool currently executing into the run's scratch JSON so the
+  // Automations view can show a live "running: <tool>" chip while the run is
+  // in flight.
+  const currentTool = (tool: string) => {
+    try {
+      const row = getAutomationRunById(db, run.id);
+      let scratch: Record<string, unknown> = {};
+      if (row?.scratch) {
+        try { scratch = JSON.parse(row.scratch) as Record<string, unknown>; } catch { /* ignore */ }
+      }
+      scratch.currentTool = tool;
+      updateAutomationRun(db, run.id, { scratch: JSON.stringify(scratch) });
+    } catch { /* best-effort */ }
+  };
+
   const result = await runToolLoop(
     db,
     req,
@@ -120,7 +136,7 @@ export async function runAutomation(
     cached.model,
     apiKey,
     messages,
-    () => {},                        // emitToolCall — headless, no renderer
+    (e) => currentTool(e.tool),     // emitToolCall — record the active tool
     abortCtrl.signal,
     undefined,                       // getWin
     provider,
@@ -139,6 +155,7 @@ export async function runAutomation(
       status: "done",
       resultNoteId: null,
       error: "Reached the step limit; run may be incomplete.",
+      scratch: null,
     });
     insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"));
     return;
@@ -148,6 +165,7 @@ export async function runAutomation(
     status: "done",
     resultNoteId: null,
     error: null,
+    scratch: null,
   });
   insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content));
 }
