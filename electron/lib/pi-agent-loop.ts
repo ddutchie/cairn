@@ -134,15 +134,15 @@ export interface AgentLoopCallbacks {
    *  The chip should appear in "pending" state immediately — before execution. */
   onToolPending:   (name: string, callId: string) => void;
   /** callId links back to the pending chip created by onToolPending (if any). */
-  onToolStart:     (name: string, label: string, callId?: string) => void;
+  onToolStart:     (name: string, label: string, callId?: string, args?: ToolArgs) => void;
   /** callId links back to the same chip created by onToolPending / updated by onToolStart. */
-  onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string) => void;
+  onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string, args?: ToolArgs) => void;
   onStepStart:     () => void;
   onUsage:         (promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown) => void;
   onDone:          () => void;
   onError:         (message: string) => void;
   /** Fired when a tool call needs user confirmation before execution. */
-  onToolConfirmRequired?: (name: string, label: string, callId: string) => void;
+  onToolConfirmRequired?: (name: string, label: string, callId: string, args?: ToolArgs) => void;
   /** Fired when the agent writes a note in plan mode — carries the note ID */
   onPlanNoteFound?: (noteId: string) => void;
   /**
@@ -181,9 +181,19 @@ export interface PiAgentSession {
    * Built once on first use and reused; the signal is updated via abortCtrl each turn.
    */
   compactionTransformer?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
+  /** Grants made during the current session, never persisted. */
+  approvedTools?: Set<string>;
 }
 
-export const pendingApprovals = new Map<string, { resolve: (approved: boolean) => void }>();
+export type ApprovalDecision = { approved: boolean; grant?: "session" | "command" };
+export const pendingApprovals = new Map<string, { resolve: (decision: ApprovalDecision) => void }>();
+
+function approvalGrantKey(toolName: string, args: ToolArgs): string {
+  if (toolName === "bash") return `${toolName}:${typeof args.command === "string" ? args.command : ""}`;
+  const target = [args.path, args.noteId, args.cardId, args.title]
+    .find((value): value is string => typeof value === "string" && value.length > 0);
+  return target ? `${toolName}:${target}` : toolName;
+}
 
 // ── All tool definitions ──────────────────────────────────────────────────────
 
@@ -789,7 +799,7 @@ export async function runAgentLoop(
         ? externalToolLabel(tc.function.name, toolCtx.db)
         : (CODING_LABELS[tc.function.name]?.(args) ?? tc.function.name);
       const pendingCallId = streamCallIds.get(tcIdx);
-      callbacks.onToolStart(tc.function.name, label, pendingCallId);
+       callbacks.onToolStart(tc.function.name, label, pendingCallId, args);
 
       // Yield to the event loop so the IPC layer dispatches the onToolStart event
       // to the renderer before execution begins — this makes the chip appear in
@@ -804,34 +814,40 @@ export async function runAgentLoop(
       if (parseError) {
         ok = false;
         resultContent = `Error: ${parseError}`;
-        callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
+         callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId, args);
         return { tcIdx, tc, ok, resultContent, pendingCallId };
       }
 
       if (llmConfig.autoApprove === false) {
         const callKey = pendingCallId || tc.id;
-        callbacks.onToolConfirmRequired?.(tc.function.name, label, callKey);
-        const approved = await new Promise<boolean>((resolve) => {
+        const grantKey = approvalGrantKey(tc.function.name, args);
+        session.approvedTools ??= new Set<string>();
+        let decision: ApprovalDecision = { approved: session.approvedTools.has(grantKey) };
+        if (!decision.approved) {
+          callbacks.onToolConfirmRequired?.(tc.function.name, label, callKey, args);
+          decision = await new Promise<ApprovalDecision>((resolve) => {
           const onAbort = () => {
             pendingApprovals.delete(callKey);
-            resolve(false);
+            resolve({ approved: false });
           };
           if (signal.aborted) {
-            resolve(false);
+            resolve({ approved: false });
             return;
           }
           signal.addEventListener("abort", onAbort);
           pendingApprovals.set(callKey, {
-            resolve: (val) => {
+            resolve: (value) => {
               signal.removeEventListener("abort", onAbort);
-              resolve(val);
+              resolve(value);
             }
           });
-        });
-        if (!approved) {
+          });
+        }
+        if (decision.grant) session.approvedTools.add(grantKey);
+        if (!decision.approved) {
           ok = false;
           resultContent = "Blocked: tool call rejected by user";
-          callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
+           callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId, args);
           return { tcIdx, tc, ok, resultContent, pendingCallId };
         }
       }
@@ -841,7 +857,7 @@ export async function runAgentLoop(
           tc.function.name,
           args,
           signal,
-          (output) => callbacks.onToolStart(tc.function.name, `${label}: ${output.slice(-80)}`),
+           (output) => callbacks.onToolStart(tc.function.name, `${label}: ${output.slice(-80)}`, pendingCallId, args),
           toolCtx,
           llmConfig,
           mode,
@@ -857,7 +873,7 @@ export async function runAgentLoop(
         resultContent = `Error: ${(e as Error).message}`;
       }
 
-      callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
+       callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId, args);
 
       // In plan mode, notify renderer when agent writes the PRD note
       if (mode === "plan" && ok && tc.function.name === "ensure_note") {

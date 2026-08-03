@@ -199,6 +199,17 @@ describe("update_task", () => {
     expect(result.title).toBe("Updated Task");
   });
 
+  it("updates an active task when clients send archived=false as a default", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "update_task", {
+      cardId: "card1",
+      title: "Updated with default archive flag",
+      archived: false,
+    }) as Record<string, unknown>;
+    expect(result.title).toBe("Updated with default archive flag");
+  });
+
   it("returns { error } for missing task", async () => {
     const db = makeDb();
     seed(db);

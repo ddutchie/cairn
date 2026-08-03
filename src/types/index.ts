@@ -821,6 +821,7 @@ export interface PiAgentMessage {
     callId: string;
     name: string;
     label: string;
+    args?: Record<string, unknown>;
     running: boolean;
     ok: boolean;
     output?: string;
@@ -849,6 +850,8 @@ export interface TerminalSession {
   lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number };
   mode?: "plan" | "execute";
   planNoteId?: string;
+  /** Explicit plan approval choice for this session, if one was made. */
+  autoApprove?: boolean;
 }
 
 export interface PiSessionSummary {

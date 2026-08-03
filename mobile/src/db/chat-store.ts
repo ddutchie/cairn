@@ -21,6 +21,7 @@ export interface StoredMessage {
 /** A tool the agent ran, plus an optional navigable note/card it produced. */
 export interface ToolCall {
   tool: string;
+  args?: Record<string, unknown>;
   ok: boolean;
   /** Correlates the streaming "running" chip with its completed result. */
   id?: string;
@@ -34,6 +35,7 @@ export interface ToolCall {
    * https-guarded at extraction (shared/chat/external-ref).
    */
   externalRef?: { url: string; title?: string; snippet?: string };
+  output?: string;
 }
 
 interface ChatLocalRow {

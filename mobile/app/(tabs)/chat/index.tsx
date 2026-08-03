@@ -19,6 +19,7 @@ import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
 import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, type ToolCall } from "@/db/chat-store";
+import { redactValue } from "@cairn/shared/chat/redaction";
 import { hasProvider, resolveProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
 import { getOpenAIModel } from "@/chat/ai-config";
@@ -32,6 +33,8 @@ import { loadInitialChat, type UiMessage } from "@/chat/history";
 import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { Composer } from "@/components/chat/Composer";
+import { safeToolOutput } from "@/chat/tool-output";
+import { fetchManifest } from "@/chat/registry";
 
 export default function ChatScreen() {
   const t = useTheme();
@@ -59,6 +62,7 @@ export default function ChatScreen() {
   // Seeded from the last persisted value so the ring survives closing/reopening
   // the Chat tab (it's session state otherwise, lost on unmount).
   const [usage, setUsage] = useState<ChatUsage | null>(() => loadLastChatUsage());
+  const [, setRegistryRevision] = useState(0);
 
   // All keyboard/scroll choreography (resume repaint, follow-end, composer
   // height → transcript padding, attach-menu counter-transform).
@@ -100,6 +104,7 @@ export default function ChatScreen() {
     useCallback(() => {
       let alive = true;
       refreshConfigured();
+      void fetchManifest(false).then(() => setRegistryRevision((revision) => revision + 1));
       resolveProvider()
         .then((p) => {
           if (!alive) return;
@@ -183,7 +188,16 @@ export default function ChatScreen() {
           // Finalize the matching "running" chip in place (by tool-call id);
           // fall back to appending if no start was seen (provider-ran tools).
           const idx = e.toolCallId ? toolTrail.findIndex((c) => c.id === e.toolCallId && c.running) : -1;
-          const finalized = { tool: e.tool, ok, id: e.toolCallId, running: false, ref, externalRef };
+           const finalized = {
+             tool: e.tool,
+             args: e.args && typeof e.args === "object" ? redactValue(e.args) as Record<string, unknown> : undefined,
+             output: safeToolOutput(e.result),
+             ok,
+             id: e.toolCallId,
+             running: false,
+             ref,
+             externalRef,
+           };
           if (idx >= 0) toolTrail[idx] = finalized;
           else toolTrail.push(finalized);
           patchAssistant({ tools: [...toolTrail] });

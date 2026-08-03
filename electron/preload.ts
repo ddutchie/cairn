@@ -777,9 +777,9 @@ const api = {
       ipcRenderer.on("pi-agent:thought", handler);
       return () => ipcRenderer.off("pi-agent:thought", handler);
     },
-    onTool: (cb: (e: { sessionId: string; name: string; label: string; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => void) => {
+    onTool: (cb: (e: { sessionId: string; name: string; label: string; args?: Record<string, unknown>; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; name: string; label: string; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => cb(e);
+      const handler = (_: any, e: { sessionId: string; name: string; label: string; args?: Record<string, unknown>; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => cb(e);
       ipcRenderer.on("pi-agent:tool", handler);
       return () => ipcRenderer.off("pi-agent:tool", handler);
     },
@@ -894,12 +894,12 @@ const api = {
     setMode: (sessionId: string, mode: "plan" | "execute") =>
       ipcRenderer.send("pi-agent:set-mode", { sessionId, mode }),
     /** Approve or deny a pending tool call */
-    respondTool: (sessionId: string, callId: string, approved: boolean) =>
-      ipcRenderer.send("pi-agent:respond-tool", { sessionId, callId, approved }),
+    respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command") =>
+      ipcRenderer.send("pi-agent:respond-tool", { sessionId, callId, approved, grant }),
     /** Listen for tool call confirmation requests */
-    onToolConfirmRequired: (cb: (e: { sessionId: string; callId: string; name: string; label: string }) => void) => {
+    onToolConfirmRequired: (cb: (e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown> }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; callId: string; name: string; label: string }) => cb(e);
+      const handler = (_: any, e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown> }) => cb(e);
       ipcRenderer.on("pi-agent:tool-confirm-required", handler);
       return () => ipcRenderer.off("pi-agent:tool-confirm-required", handler);
     },

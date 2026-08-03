@@ -3,22 +3,25 @@
 import React from "react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle, XCircle } from "lucide-react";
-import { cn, formatRelative, prettifyToolLabel } from "@/lib/utils";
+import { cn, formatRelative } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import { ActionsList } from "./ActionsList";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { MessageAvatar } from "./message-ui";
 import { CairnRefChip, ExternalRefChip } from "@/components/shared/cairn-ref-chip";
+import { ConnectorToolCard } from "@/components/shared/ConnectorToolCard";
 import type { ChatMessage, LinkedContextReference, ChatToolCallRecord } from "@/types";
+import { humanizeTool } from "@/lib/humanize-tool";
+import { connectorForTool, parseToolArgs, type ChatConnectorMeta } from "./connector-context";
 
-function ChatToolCallChip({ tc }: { tc: ChatToolCallRecord }) {
+function ChatToolCallChip({ tc, connectors }: { tc: ChatToolCallRecord; connectors?: Record<string, ChatConnectorMeta> }) {
   // A failed tool never produced a usable ref — show the failure reason.
   if (tc.ok === false) {
     return (
       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
         <XCircle size={10} className="text-[var(--danger)] shrink-0" />
-        <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)} failed</span>
+        <span className="text-[0.786rem] text-[var(--text-secondary)]">{humanizeTool(tc.tool, parseToolArgs(tc.args)).pre} failed</span>
         {tc.error && <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[220px]">— {tc.error}</span>}
       </div>
     );
@@ -26,13 +29,15 @@ function ChatToolCallChip({ tc }: { tc: ChatToolCallRecord }) {
   if (tc.cairnRef) {
     return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
   }
+  const connector = connectors ? connectorForTool(tc.tool, connectors) : undefined;
+  if (connector) return <ConnectorToolCard toolCall={{ tool: tc.tool, args: parseToolArgs(tc.args), output: tc.output, externalRef: tc.externalRef }} connector={connector} testId="chat-connector-card" />;
   if (tc.externalRef) {
     return <ExternalRefChip toolName={tc.tool} externalRef={tc.externalRef} />;
   }
   return (
     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
       <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
-      <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
+       {(() => { const summary = humanizeTool(tc.tool, parseToolArgs(tc.args)); return <span className="text-[0.786rem] text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}</span>; })()}
     </div>
   );
 }
@@ -40,9 +45,10 @@ function ChatToolCallChip({ tc }: { tc: ChatToolCallRecord }) {
 interface ChatMessageBubbleProps {
   message: ChatMessage;
   onRetry?: (content: string) => void;
+  connectors?: Record<string, ChatConnectorMeta>;
 }
 
-export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) {
+export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message, onRetry, connectors }: ChatMessageBubbleProps) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
   const { copied, copy } = useCopyToClipboard();
@@ -83,7 +89,7 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
           <div className="flex flex-col gap-1 mb-1">
             {message.toolCalls.map((tc, i) => (
-              <ChatToolCallChip key={i} tc={tc} />
+              <ChatToolCallChip key={i} tc={tc} connectors={connectors} />
             ))}
           </div>
         )}

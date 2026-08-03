@@ -11,7 +11,8 @@
 
 import React, { useState } from "react";
 import { Loader2, GitBranch, Search, PencilLine, ChevronDown, ChevronRight, CheckCircle, XCircle } from "lucide-react";
-import { prettifyToolLabel } from "@/lib/utils";
+import { humanizeTool } from "@/lib/humanize-tool";
+import { parseToolArgs } from "./connector-context";
 import { useCairnStore } from "@/store";
 import { MarkdownContent } from "./MarkdownContent";
 import { ContextRing } from "@/components/agent/ContextRing";
@@ -23,7 +24,7 @@ function SubToolChip({ tc }: { tc: ChatToolCallRecord }) {
     return (
       <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
         <XCircle size={9} className="text-[var(--danger)] shrink-0" />
-        <span className="text-[0.714rem] text-[var(--text-tertiary)]">{prettifyToolLabel(tc.label)} failed</span>
+        {(() => { const summary = humanizeTool(tc.tool, parseToolArgs(tc.args)); return <span className="text-[0.714rem] text-[var(--text-tertiary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-secondary)]">{summary.obj}</strong></> : null} failed</span>; })()}
       </div>
     );
   }
@@ -35,7 +36,7 @@ function SubToolChip({ tc }: { tc: ChatToolCallRecord }) {
       {running
         ? <Loader2 size={9} className="text-[var(--accent)] animate-spin shrink-0" />
         : <CheckCircle size={9} className="text-[var(--accent)] shrink-0" />}
-      <span className="text-[0.714rem] text-[var(--text-tertiary)]">{prettifyToolLabel(tc.label)}</span>
+      {(() => { const summary = humanizeTool(tc.tool, parseToolArgs(tc.args)); return <span className="text-[0.714rem] text-[var(--text-tertiary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-secondary)]">{summary.obj}</strong></> : null}</span>; })()}
     </div>
   );
 }

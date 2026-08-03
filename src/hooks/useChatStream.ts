@@ -19,6 +19,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
 import type { SuggestedAction, TokenBreakdown, ChatHistoryEntry, ChatSubagent } from "@/types";
+import { redactSensitiveText, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
 
 export interface ChatToolCall {
   tool: string;
@@ -151,7 +152,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
             label: e.label,
             status: "running" as const,
             callId: e.callId,
-            args: e.args ? JSON.stringify(e.args) : undefined
+             args: e.args ? JSON.stringify(redactTranscriptValue(e.args)) : undefined
           }];
           toolCallsRef.current = next;
           return next;
@@ -174,7 +175,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         }
         if (idx === -1) return prev;
         const updated = [...prev];
-        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: e.output, ok: e.ok, error: e.error };
+        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error };
         toolCallsRef.current = updated;
         return updated;
       });
@@ -230,7 +231,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       if (!isForThisThread(e)) return;
       mutateSub(e.childId, (s) => ({
         ...s,
-        toolCalls: [...(s.toolCalls ?? []), { tool: e.tool, label: e.label, callId: e.callId, args: e.args ? JSON.stringify(e.args) : undefined }],
+         toolCalls: [...(s.toolCalls ?? []), { tool: e.tool, label: e.label, callId: e.callId, args: e.args ? JSON.stringify(redactTranscriptValue(e.args)) : undefined }],
       }));
     });
 
@@ -243,7 +244,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
           const rev = [...tcs].reverse().findIndex((t) => t.tool === e.tool);
           if (rev !== -1) idx = tcs.length - 1 - rev;
         }
-        if (idx !== -1) tcs[idx] = { ...tcs[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: e.output, ok: e.ok, error: e.error };
+        if (idx !== -1) tcs[idx] = { ...tcs[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error };
         return { ...s, toolCalls: tcs };
       });
     });

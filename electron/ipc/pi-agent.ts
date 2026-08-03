@@ -113,10 +113,10 @@ async function runSession(
       onThought:      (delta) => send("pi-agent:thought",    { sessionId, delta }),
       onToolsReady:   ()      => send("pi-agent:tools-ready", { sessionId }),
       onToolPending:  (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
-      onToolStart:    (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
-      onToolConfirmRequired: (name, label, callId) => send("pi-agent:tool-confirm-required", { sessionId, name, label, callId }),
-      onToolEnd:      (name, label, ok, output, callId) => {
-        send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output });
+       onToolStart:    (name, label, callId, args) => send("pi-agent:tool", { sessionId, name, label, args, callId, status: "start" }),
+       onToolConfirmRequired: (name, label, callId, args) => send("pi-agent:tool-confirm-required", { sessionId, name, label, args, callId }),
+       onToolEnd:      (name, label, ok, output, callId, args) => {
+         send("pi-agent:tool", { sessionId, name, label, args, callId, status: "end", ok, output });
         // After any note-write tool, push fresh note content to the renderer
         // so the plan task list can update live without a full re-hydration.
         if (ok && NOTE_WRITE_TOOLS.has(name)) {
@@ -426,10 +426,11 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:respond-tool ──────────────────────────────────────────────────
-  registerIpcOn("pi-agent:respond-tool", (_event, { _sessionId, callId, approved }: { _sessionId: string; callId: string; approved: boolean }) => {
+  registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command" }) => {
+    void sessionId;
     const pending = pendingApprovals.get(callId);
     if (pending) {
-      pending.resolve(approved);
+      pending.resolve({ approved, grant: approved ? grant : undefined });
       pendingApprovals.delete(callId);
     }
   });
@@ -444,6 +445,7 @@ export function registerPiAgentHandler(
       session.messages = [];
       session.compactionTransformer = undefined;
       session.lastPromptTokens = undefined;
+      session.approvedTools = new Set();
     }
   });
 

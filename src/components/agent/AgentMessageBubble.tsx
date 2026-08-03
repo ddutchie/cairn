@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle, XCircle, Loader2, ChevronDown, ChevronRight, GitBranch } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, ChevronDown, ChevronRight, GitBranch, ShieldAlert, Globe2 } from "lucide-react";
 import { cn, prettifyToolLabel } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
@@ -10,6 +10,11 @@ import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
 import { useCairnStore } from "@/store";
 import { ContextRing } from "./ContextRing";
 import type { PiAgentMessage, PiSubagentMessage } from "@/types";
+import { humanizeTool } from "@/lib/humanize-tool";
+import { approvalPreview, riskForTool } from "@/lib/tool-risk";
+import { ConnectorToolCard, type ConnectorMeta } from "@/components/shared/ConnectorToolCard";
+
+export type AgentConnectorMeta = ConnectorMeta;
 
 // ── Tool output expansion ─────────────────────────────────────────────────────
 
@@ -55,37 +60,51 @@ function ToolOutputPanel({ name, output }: { name: string; output: string }) {
   );
 }
 
-function ToolChip({ tc, sessionId }: {
-  tc: { callId?: string; name: string; label: string; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; confirmRequired?: boolean };
+function ApprovalCard({ tc, sessionId }: { tc: ToolChipProps["tc"]; sessionId: string }) {
+  const risk = riskForTool(tc.name);
+  const humanized = humanizeTool(tc.name, tc.args);
+  const preview = approvalPreview(tc.name, tc.args);
+  const scope = risk === "EXTERNAL" ? "leaves this Mac via a connected service" : risk === "EXEC" ? "runs on this Mac" : "stays on this Mac";
+
+  return (
+    <div data-testid="approval-card" className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning,#f59e0b)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning,#f59e0b)_6%,var(--surface))] px-3 py-2.5">
+      <div className="flex items-start gap-2">
+        {risk === "EXTERNAL" ? <Globe2 size={14} className="mt-0.5 text-[var(--warning,#f59e0b)] shrink-0" /> : <ShieldAlert size={14} className="mt-0.5 text-[var(--warning,#f59e0b)] shrink-0" />}
+        <div className="min-w-0 flex-1">
+          <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">
+            {humanized.pre}{humanized.obj ? <> <strong className="font-semibold">{humanized.obj}</strong></> : null}{humanized.post ? ` ${humanized.post}` : ""}
+          </p>
+          <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">This {scope}.</p>
+        </div>
+        <span className="text-[0.607rem] font-semibold tracking-wide text-[var(--warning,#f59e0b)]">{risk}</span>
+      </div>
+      {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
+      <div className="mt-2 flex items-center justify-end gap-1.5">
+        <button data-testid="approval-deny" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors">Deny</button>
+        {risk === "EXEC" && tc.name === "bash" && <button data-testid="approval-allow-command" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this command</button>}
+        {risk !== "READ" && risk !== "EXEC" && <button data-testid="approval-allow-session" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "session")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this tool</button>}
+        <button data-testid="approval-allow-once" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded transition-opacity">Allow once</button>
+      </div>
+    </div>
+  );
+}
+
+interface ToolChipProps {
+  tc: { callId: string; name: string; label: string; args?: Record<string, unknown>; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; confirmRequired?: boolean };
   sessionId?: string;
-}) {
+  connectors?: Record<string, AgentConnectorMeta>;
+}
+
+function connectorForTool(toolName: string, connectors?: Record<string, AgentConnectorMeta>): AgentConnectorMeta | undefined {
+  if (!connectors || !/^(?:mcp|svc)__.+__/.test(toolName)) return undefined;
+  return Object.entries(connectors).find(([key]) => toolName.startsWith(key))?.[1];
+}
+
+function ToolChip({ tc, sessionId, connectors }: ToolChipProps) {
   const [expanded, setExpanded] = useState(false);
 
   // While paused waiting for user confirmation
-  if (tc.confirmRequired && sessionId && tc.callId) {
-    return (
-      <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-[color-mix(in_srgb,var(--warning,#f59e0b)_8%,transparent)] border border-[color-mix(in_srgb,var(--warning,#f59e0b)_30%,transparent)] w-fit flex-wrap mt-0.5 mb-0.5">
-        <span className="text-[0.714rem] font-medium text-[var(--warning,#f59e0b)] flex items-center gap-1.5 shrink-0">
-          <Loader2 size={9} className="animate-spin shrink-0" />
-          Confirm: {prettifyToolLabel(tc.label)}
-        </span>
-        <div className="flex items-center gap-1.5 ml-2">
-          <button
-            onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId!, true)}
-            className="px-2 py-0.5 text-[0.643rem] font-semibold bg-[var(--success,#22c55e)] hover:opacity-90 text-white rounded transition-opacity cursor-pointer flex items-center gap-1"
-          >
-            Confirm
-          </button>
-          <button
-            onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId!, false)}
-            className="px-2 py-0.5 text-[0.643rem] font-semibold bg-[var(--danger,#ef4444)] hover:opacity-90 text-white rounded transition-opacity cursor-pointer flex items-center gap-1"
-          >
-            Deny
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (tc.confirmRequired && sessionId && tc.callId) return <ApprovalCard tc={tc} sessionId={sessionId} />;
 
   // While running — show a spinner chip, not expandable
   if (tc.running) {
@@ -101,6 +120,9 @@ function ToolChip({ tc, sessionId }: {
   if (tc.cairnRef && tc.ok) {
     return <CairnRefChip toolName={tc.name} cairnRef={tc.cairnRef} ok={tc.ok} />;
   }
+
+  const connector = connectorForTool(tc.name, connectors);
+  if (connector && tc.ok) return <ConnectorToolCard toolCall={{ tool: tc.name, args: tc.args, output: tc.output }} connector={connector} />;
 
   const hasOutput = !!tc.output;
 
@@ -119,7 +141,7 @@ function ToolChip({ tc, sessionId }: {
         ) : (
           <XCircle size={9} className="shrink-0 text-[var(--danger)]" />
         )}
-        <span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}{tc.ok === false && " failed"}</span>
+        {(() => { const summary = humanizeTool(tc.name, tc.args); return <span className="text-[0.714rem] text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}{tc.ok === false && " failed"}</span>; })()}
         {hasOutput && (
           expanded
             ? <ChevronDown size={9} className="text-[var(--text-tertiary)] shrink-0 ml-0.5" />
@@ -238,9 +260,10 @@ function SubagentMessageRow({ msg, sessionId }: { msg: PiAgentMessage; sessionId
 interface AgentMessageBubbleProps {
   message: PiAgentMessage;
   sessionId?: string;
+  connectors?: Record<string, AgentConnectorMeta>;
 }
 
-export const AgentMessageBubble = React.memo(function AgentMessageBubble({ message, sessionId }: AgentMessageBubbleProps) {
+export const AgentMessageBubble = React.memo(function AgentMessageBubble({ message, sessionId, connectors }: AgentMessageBubbleProps) {
   const isUser   = message.role === "user";
   const isError  = message.role === "error";
   const isSystem = message.role === "system";
@@ -318,7 +341,7 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
         {hasTools && (
           <div className="flex flex-col gap-0.5">
             {message.toolCalls!.map((tc, i) => (
-              <ToolChip key={i} tc={tc} sessionId={sessionId} />
+              <ToolChip key={i} tc={tc} sessionId={sessionId} connectors={connectors} />
             ))}
           </div>
         )}
@@ -343,5 +366,5 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
   // Only re-render when the message object or sessionId actually changes.
   // This prevents cascading re-renders of all previous bubbles when a new
   // token appends to the last streaming message.
-  return prev.message === next.message && prev.sessionId === next.sessionId;
+  return prev.message === next.message && prev.sessionId === next.sessionId && prev.connectors === next.connectors;
 });

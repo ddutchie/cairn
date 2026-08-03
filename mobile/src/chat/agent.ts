@@ -195,7 +195,7 @@ export async function runAgent(
             input: e.input,
             output: { type: "text", value: JSON.stringify(e.output ?? {}) },
           } as UIPart);
-          onEvent?.({ type: "tool", tool: e.toolName, args: e.input, result: e.output });
+       onEvent?.({ type: "tool", tool: e.toolName, args: e.input, result: e.output });
         } else if (ev.type === "finish") {
           finishReason = (ev as { finishReason?: string }).finishReason;
           const u = (ev as { usage?: ChatUsage }).usage;
@@ -257,7 +257,7 @@ export async function runAgent(
           result = { error: err instanceof Error ? err.message : String(err) };
         }
       }
-      onEvent?.({ type: "tool", tool: call.name, toolCallId: call.id, args: call.input, result });
+       onEvent?.({ type: "tool", tool: call.name, toolCallId: call.id, args: call.input, result });
 
       toolPart.state = "output-available";
       toolPart.output = { type: "text", value: JSON.stringify(result) };

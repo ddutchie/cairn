@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { Server, Globe, Wrench } from "lucide-react";
+import { Wrench } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import type { ToolType } from "@/types";
 import { SectionHeader } from "./primitives";
+import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
+import { useCommunityConnectorMap, type ChatConnectorMeta } from "@/components/chat/chat-panel/connector-context";
 
 /**
  * Per-project tool attach panel (Project Overview).
@@ -54,6 +56,7 @@ export function ToolsAttachPanel({
 
   const enabledMcp = useMemo(() => mcpServers.filter((s) => s.enabled), [mcpServers]);
   const enabledSvc = useMemo(() => customServices.filter((s) => s.enabled), [customServices]);
+  const connectorMap = useCommunityConnectorMap();
 
   const isAttached = (toolType: ToolType, toolId: string) =>
     toolAttachments.some((a) => a.projectId === projectId && a.toolType === toolType && a.toolId === toolId && a.enabled);
@@ -78,7 +81,8 @@ export function ToolsAttachPanel({
             {enabledMcp.map((s) => (
               <AttachRow
                 key={s.id}
-                icon={<Server size={14} />}
+                kind="mcp"
+                connector={connectorMap[`mcp__${s.id}__`]}
                 name={s.name}
                 subtitle={s.baseUrl}
                 attached={isAttached("mcp", s.id)}
@@ -88,7 +92,8 @@ export function ToolsAttachPanel({
             {enabledSvc.map((s) => (
               <AttachRow
                 key={s.id}
-                icon={<Globe size={14} />}
+                kind="service"
+                connector={connectorMap[`svc__${s.id}__`]}
                 name={s.name}
                 subtitle={`${s.method} ${s.apiUrl}`}
                 attached={isAttached("service", s.id)}
@@ -103,13 +108,15 @@ export function ToolsAttachPanel({
 }
 
 function AttachRow({
-  icon,
+  kind,
+  connector,
   name,
   subtitle,
   attached,
   onToggle,
 }: {
-  icon: React.ReactNode;
+  kind: "mcp" | "service";
+  connector?: ChatConnectorMeta;
   name: string;
   subtitle: string;
   attached: boolean;
@@ -117,7 +124,13 @@ function AttachRow({
 }) {
   return (
     <div className="flex items-center gap-3 px-2 py-2.5">
-      <span className="text-[var(--text-tertiary)] flex-shrink-0">{icon}</span>
+      <ConnectorLogo
+        iconSvg={connector?.iconSvg}
+        kind={kind}
+        color={connector?.brandColor}
+        size={24}
+        className="flex-shrink-0"
+      />
       <div className="flex-1 min-w-0">
         <div className="text-[0.786rem] text-[var(--text-primary)] truncate">{name}</div>
         <div className="text-[0.714rem] text-[var(--text-tertiary)] truncate font-mono">{subtitle}</div>

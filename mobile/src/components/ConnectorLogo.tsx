@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { View, StyleSheet } from "react-native";
-import { SvgXml } from "react-native-svg";
-import { Server, Plug } from "lucide-react-native";
+import { Path, Svg, SvgXml } from "react-native-svg";
 import { useTheme } from "@/theme";
+import { MCP_LOGO_PATHS } from "@cairn/shared/branding/mcp-logo";
 
 /**
  * ConnectorLogo (mobile) — renders a community-registry connector's brand logo,
@@ -39,7 +39,7 @@ function looksSafeSvg(svg: string): boolean {
 
 export function ConnectorLogo({ iconSvg, kind = "mcp", size = 22, color }: ConnectorLogoProps) {
   const t = useTheme();
-  const styles = useMemo(() => makeStyles(size), [size]);
+  const styles = useMemo(() => makeStyles(size, t), [size, t]);
   const tint = color || t.textSecondary;
 
   if (iconSvg && looksSafeSvg(iconSvg)) {
@@ -49,16 +49,29 @@ export function ConnectorLogo({ iconSvg, kind = "mcp", size = 22, color }: Conne
       </View>
     );
   }
-  const Glyph = kind === "service" ? Plug : Server;
   return (
-    <View style={styles.wrap}>
-      <Glyph size={size} color={tint} />
+    <View style={[styles.wrap, styles.fallback]}>
+      <Svg width="100%" height="100%" viewBox="0 0 24 24">
+        {kind === "service" ? (
+          <Path
+            fill="none"
+            stroke={t.textSecondary}
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M9 7V4m6 3V4M7.5 7h9v4a4.5 4.5 0 0 1-9 0V7Zm4.5 9v4"
+          />
+        ) : (
+          MCP_LOGO_PATHS.map((d) => <Path key={d} fill={t.textSecondary} d={d} />)
+        )}
+      </Svg>
     </View>
   );
 }
 
-function makeStyles(size: number) {
+function makeStyles(size: number, t: ReturnType<typeof useTheme>) {
   return StyleSheet.create({
     wrap: { width: size, height: size, alignItems: "center", justifyContent: "center" },
+    fallback: { padding: Math.round(size * 0.16), borderRadius: Math.max(4, Math.round(size * 0.22)), backgroundColor: t.surface2 },
   });
 }

@@ -247,10 +247,13 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     // Must query DB directly — archived cards are filtered from snap
     const dbCard = q.getCardById(db, cardId as string);
     if (!dbCard) return { error: "Task not found" };
-    if (!dbCard.archivedAt) return { error: "Task is not archived" };
-    const updated = q.restoreCard(db, cardId as string);
-    insertNotification(db, "update_task", "Task restored", `"${dbCard.title}" was restored`);
-    return updated;
+    // Some clients send archived=false as the default for an ordinary update.
+    // Only treat it as a restore request when the card is actually archived.
+    if (dbCard.archivedAt) {
+      const updated = q.restoreCard(db, cardId as string);
+      insertNotification(db, "update_task", "Task restored", `"${dbCard.title}" was restored`);
+      return updated;
+    }
   }
 
   // ── block / unblock ────────────────────────────────────────────────────

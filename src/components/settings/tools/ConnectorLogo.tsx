@@ -15,6 +15,7 @@
  */
 
 import type { CSSProperties } from "react";
+import { MCP_LOGO_PATHS } from "../../../../shared/branding/mcp-logo";
 
 export interface ConnectorLogoProps {
   /** Inline SVG markup from the registry entry (already CI-sanitized). */
@@ -148,11 +149,7 @@ export function ConnectorLogo({
             d="M9 7V4m6 3V4M7.5 7h9v4a4.5 4.5 0 0 1-9 0V7Zm4.5 9v4"
           />
         ) : (
-          // Model Context Protocol mark (generic "an MCP connector" glyph).
-          <path
-            fill="currentColor"
-            d="M13.85 2a4.16 4.16 0 0 0-2.95 1.22L2.46 11.66a.84.84 0 0 0 1.18 1.18l8.44-8.44a2.49 2.49 0 0 1 3.54 3.54l-6.02 6.02-.1.1a.84.84 0 0 0 1.18 1.19l6.12-6.12a2.49 2.49 0 0 1 3.54 0 2.49 2.49 0 0 1 0 3.54l-8.53 8.53a.84.84 0 0 0 0 1.18l.53.53a.84.84 0 0 0 1.18 0l8.53-8.53a4.17 4.17 0 0 0-5.9-5.9l-.06.06a4.16 4.16 0 0 0-6.9-4.5A4.16 4.16 0 0 0 13.85 2Z"
-          />
+          MCP_LOGO_PATHS.map((d) => <path key={d} fill="currentColor" d={d} />)
         )}
       </svg>
     </span>
