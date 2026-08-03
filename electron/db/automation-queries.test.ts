@@ -15,6 +15,7 @@ import {
   updateAutomationRun,
   listAutomationRuns,
   hasInFlightRun,
+  countRunningAutomationRuns,
   bumpAutomationRunCount,
   type AutomationInput,
 } from "./automation-queries";
@@ -122,6 +123,15 @@ describe("due lookup + run history", () => {
     expect(hasInFlightRun(db, a.id)).toBe(true);
     updateAutomationRun(db, r.id, { status: "done" });
     expect(hasInFlightRun(db, a.id)).toBe(false);
+  });
+
+  it("countRunningAutomationRuns counts in-flight runs", () => {
+    const a = createAutomation(db, makeInput());
+    const b = createAutomation(db, makeInput({ name: "Second" }));
+    createAutomationRun(db, a.id, "running");
+    createAutomationRun(db, b.id, "pending");
+    createAutomationRun(db, a.id, "done");
+    expect(countRunningAutomationRuns(db)).toBe(2);
   });
 
   it("bumps the automation run_count", () => {

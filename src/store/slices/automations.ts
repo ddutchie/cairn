@@ -105,6 +105,8 @@ export interface AutomationsSlice {
   pendingApprovals: ApprovalItem[];
   /** Live pending-approval count for the sidebar badge. */
   pendingApprovalCount: number;
+  /** Number of automation runs currently in flight (title-bar running bar). */
+  runningAutomationCount: number;
 
   fetchAutomations: (workspaceId: ID) => Promise<void>;
   createAutomation: (input: AutomationInput) => Promise<Automation | null>;
@@ -115,6 +117,7 @@ export interface AutomationsSlice {
   fetchRuns: (automationId: ID, limit?: number) => Promise<void>;
   fetchPendingApprovals: () => Promise<void>;
   fetchApprovalCount: () => Promise<void>;
+  fetchRunningCount: () => Promise<void>;
   resolveApprovalItem: (id: ID, resolution: ApprovalResolution) => Promise<void>;
   startApprovalPolling: () => void;
   stopApprovalPolling: () => void;
@@ -136,6 +139,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   runsById: {},
   pendingApprovals: [],
   pendingApprovalCount: 0,
+  runningAutomationCount: 0,
 
   async fetchAutomations(workspaceId) {
     if (typeof window === "undefined" || !window.electron?.automation) return;
@@ -252,6 +256,16 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
     }
   },
 
+  async fetchRunningCount() {
+    if (typeof window === "undefined" || !window.electron?.automation) return;
+    try {
+      const n = (await window.electron.automation.runningCount()) as number;
+      set({ runningAutomationCount: n });
+    } catch (err) {
+      console.error("[automations] fetchRunningCount error", err);
+    }
+  },
+
   async resolveApprovalItem(id, resolution) {
     if (typeof window === "undefined" || !window.electron?.approval) return;
     try {
@@ -269,6 +283,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
     if (approvalPollTimer) return;
     approvalPollTimer = setInterval(() => {
       void get().fetchApprovalCount();
+      void get().fetchRunningCount();
     }, APPROVAL_POLL_MS);
   },
 

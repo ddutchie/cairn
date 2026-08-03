@@ -54,6 +54,10 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void fetchNotifications();
+    // Keep the list live while the popover is open (new runs/completions land
+    // without reopening).
+    const t = setInterval(() => void fetchNotifications(), 3_000);
+    return () => clearInterval(t);
   }, [fetchNotifications]);
 
   // Close on outside click / Escape (the popover only exists while open).

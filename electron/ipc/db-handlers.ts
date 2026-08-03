@@ -30,6 +30,7 @@ import {
   updateAutomation,
   deleteAutomation,
   listAutomationRuns,
+  countRunningAutomationRuns,
   type AutomationInput,
 } from "../db/automation-queries";
 import { runAutomationNow } from "../lib/heartbeat-runner";
@@ -700,6 +701,7 @@ export function registerDbHandlers(ctx: DbContext): void {
   }));
   registerIpcHandle("db:automation:delete", (_e, { id }) => handle(() => deleteAutomation(ctx.db, id)));
   registerIpcHandle("db:automation:runs", (_e, { automationId, limit }: { automationId: string; limit?: number }) => handle(() => listAutomationRuns(ctx.db, automationId, limit)));
+  registerIpcHandle("db:automation:runningCount", () => handle(() => countRunningAutomationRuns(ctx.db)));
   registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
     const runId = runAutomationNow({ db: ctx.db, workspacePath: ctx.workspacePath }, id);
     return runId === null ? { skipped: true } : { runId };

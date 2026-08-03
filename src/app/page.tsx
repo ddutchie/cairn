@@ -66,6 +66,7 @@ export default function Home() {
     stopNotificationPolling,
     notificationOpen,
     setNotificationOpen,
+    runningAutomationCount,
   } = useCairnStore(useShallow((s) => ({
     hydrate:             s.hydrate,
     hydrateFromElectron: s.hydrateFromElectron,
@@ -89,6 +90,7 @@ export default function Home() {
     stopNotificationPolling:  s.stopNotificationPolling,
     notificationOpen:    s.notificationOpen,
     setNotificationOpen: s.setNotificationOpen,
+    runningAutomationCount: s.runningAutomationCount,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
   const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations"] as const).filter(
@@ -409,6 +411,18 @@ export default function Home() {
     >
       {/* Electron title bar — draggable, clears macOS traffic lights */}
       <TitleBar />
+
+      {/* Running automations bar — thin accent strip shown while any automation run is in flight */}
+      {runningAutomationCount > 0 && (
+        <button
+          onClick={() => setView("automations")}
+          className="flex items-center gap-2 px-4 py-1 text-xs text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] border-b border-[var(--accent)]/20 hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] transition-colors text-left"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+          {runningAutomationCount} automation{runningAutomationCount === 1 ? "" : "s"} running
+          <span className="ml-auto text-[0.714rem] opacity-80">View →</span>
+        </button>
+      )}
 
       {/* Auto-update banner — shown as soon as we know a version is available or downloaded */}
       <UpdateBanner

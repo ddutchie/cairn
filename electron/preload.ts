@@ -262,6 +262,7 @@ const api = {
     delete: (id: string) => invoke("db:automation:delete", { id }),
     runs:   (automationId: string, limit?: number) => invoke("db:automation:runs", { automationId, limit }),
     runNow: (id: string) => invoke("db:automation:runNow", { id }),
+    runningCount: () => invoke("db:automation:runningCount"),
     preview: (scheduleKind: string, scheduleExpr: string, timezone?: string | null) => invoke("db:automation:preview", { scheduleKind, scheduleExpr, timezone }),
   },
 

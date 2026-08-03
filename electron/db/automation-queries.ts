@@ -275,6 +275,14 @@ export function hasInFlightRun(db: Database.Database, automationId: string): boo
   return Boolean(r);
 }
 
+/** Count of runs currently in flight (for the title-bar "automations running" bar). */
+export function countRunningAutomationRuns(db: Database.Database): number {
+  const r = db
+    .prepare("SELECT COUNT(*) AS n FROM automation_runs WHERE status IN ('pending','running')")
+    .get() as { n: number };
+  return r.n;
+}
+
 /** Increment the automation's run_count. */
 export function bumpAutomationRunCount(db: Database.Database, id: string): void {
   db.prepare("UPDATE automations SET run_count = run_count + 1, updated_at = ? WHERE id = ?").run(ts(), id);
