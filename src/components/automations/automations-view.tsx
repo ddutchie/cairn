@@ -387,6 +387,7 @@ function AutomationDialog({
     <ModalShell
       open={open}
       onClose={() => onOpenChange(false)}
+      size="lg"
       title={editing ? "Edit automation" : browse ? "Browse community" : "New automation"}
       scrollable
       footer={
