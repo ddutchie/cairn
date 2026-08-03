@@ -325,6 +325,19 @@ export async function runToolLoop(
             });
             continue;
           }
+          // The gate can block for a long time (human decision) — if the run was
+          // aborted while waiting, don't execute this or any remaining tool call.
+          if (signal?.aborted) {
+            const reason = "Aborted while waiting for approval";
+            emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args, callId: call.id });
+            emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: reason });
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              content: JSON.stringify({ error: reason }),
+            });
+            break;
+          }
         }
         if (isExternalToolName(call.function.name)) {
           // MCP server / custom service tool — route to the external executor.

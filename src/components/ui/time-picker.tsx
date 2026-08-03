@@ -119,16 +119,17 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
       >
         <Clock size={11} className="flex-shrink-0 text-[var(--text-tertiary)]" />
         <span className="flex-1 truncate">{value ? friendly(...parse24(value)) : placeholder}</span>
-        {value && (
-          <span
-            role="button"
-            onClick={handleClear}
-            className="flex-shrink-0 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-          >
-            <X size={10} />
-          </span>
-        )}
       </button>
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear time"
+          onClick={handleClear}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <X size={10} />
+        </button>
+      )}
 
       {open && createPortal(
         <div

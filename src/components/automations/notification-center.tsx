@@ -43,9 +43,10 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
       clearNotifications: s.clearNotifications,
     })));
 
-  const { pendingApprovals, resolveApprovalItem } = useCairnStore(useShallow((s) => ({
+  const { pendingApprovals, resolveApprovalItem, fetchPendingApprovals } = useCairnStore(useShallow((s) => ({
     pendingApprovals: s.pendingApprovals,
     resolveApprovalItem: s.resolveApprovalItem,
+    fetchPendingApprovals: s.fetchPendingApprovals,
   })));
 
   const { setView } = useCairnStore(useShallow((s) => ({ setView: s.setView })));
@@ -54,11 +55,16 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void fetchNotifications();
-    // Keep the list live while the popover is open (new runs/completions land
-    // without reopening).
-    const t = setInterval(() => void fetchNotifications(), 3_000);
+    void fetchPendingApprovals();
+    // Keep the list live while the popover is open (new runs/completions/approvals
+    // land without reopening) and keep approval items fresh so the inline
+    // Approve/Always allow/Deny controls render for newly arrived approvals.
+    const t = setInterval(() => {
+      void fetchNotifications();
+      void fetchPendingApprovals();
+    }, 3_000);
     return () => clearInterval(t);
-  }, [fetchNotifications]);
+  }, [fetchNotifications, fetchPendingApprovals]);
 
   // Close on outside click / Escape (the popover only exists while open).
   useEffect(() => {
@@ -84,7 +90,7 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
         <Bell size={13} className="text-[var(--accent)]" />
         <span className="text-xs font-semibold text-[var(--text-primary)]">Notifications</span>
         {notificationUnreadCount > 0 && (
-          <span className="text-[0.65rem] px-1.5 py-0.5 rounded-full bg-[var(--accent)] text-[var(--accent-fg,#fff)] font-semibold">
+          <span className="text-[0.65rem] px-1.5 py-0.5 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] font-semibold">
             {notificationUnreadCount}
           </span>
         )}
@@ -101,7 +107,9 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           sorted.map((n) => {
-            const targetable = n.targetType === "note" || n.targetType === "task" || n.targetType === "automation" || n.targetType === "approval";
+            const targetable =
+              n.targetId !== null &&
+              (n.targetType === "note" || n.targetType === "task" || n.targetType === "automation" || n.targetType === "approval");
             const isApproval = n.targetType === "approval";
             const approvalPending = isApproval ? pendingApprovals.some((p) => p.id === n.targetId) : false;
             const onClick = targetable && !isApproval
@@ -118,7 +126,7 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
                 onClick={onClick}
                 role={targetable && !isApproval ? "button" : undefined}
                 tabIndex={targetable && !isApproval ? 0 : undefined}
-                onKeyDown={targetable && !isApproval ? (e) => { if (e.key === "Enter") onClick?.(); } : undefined}
+                onKeyDown={targetable && !isApproval ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } } : undefined}
                 className={cn(
                   "flex items-start gap-2.5 px-3 py-2 text-left",
                   targetable && !isApproval ? "cursor-pointer hover:bg-[var(--surface-2)]" : "",

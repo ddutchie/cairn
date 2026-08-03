@@ -25,7 +25,10 @@ export function PendingApprovals() {
   })));
 
   useEffect(() => {
-    if (pendingApprovalCount > 0) void fetchPendingApprovals();
+    // Always refresh when the live count changes — including when it reaches 0
+    // (e.g. another window or the expiry sweep resolved the items) so stale
+    // cards and their action buttons are cleared.
+    void fetchPendingApprovals();
   }, [fetchPendingApprovals, pendingApprovalCount]);
 
   if (pendingApprovals.length === 0) return null;

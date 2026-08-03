@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject } from "../db/queries";
 import { createAutomation, createAutomationRun, type Automation, type AutomationRun } from "../db/automation-queries";
-import { listPendingApprovals, resolveApproval } from "../db/approval-queries";
+import { listPendingApprovals, parkApproval, resolveApproval } from "../db/approval-queries";
 import { makeApprovalGate, waitForApproval, isReadTool } from "./automation-approval";
 
 let db: Database.Database;
@@ -34,6 +34,20 @@ beforeEach(() => {
   run = createAutomationRun(db, automation.id, "running");
 });
 
+afterEach(() => {
+  db.close();
+});
+
+/** Poll until the gate has parked an approval (or a short deadline is hit). */
+async function waitForPending(): Promise<ReturnType<typeof listPendingApprovals>> {
+  for (let i = 0; i < 100; i++) {
+    const items = listPendingApprovals(db);
+    if (items.length > 0) return items;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("approval was never parked");
+}
+
 describe("automation approval gate", () => {
   it("auto mode yields no gate", () => {
     const a = makeAutomation("auto");
@@ -58,9 +72,7 @@ describe("automation approval gate", () => {
     const gate = makeApprovalGate(db, run, automation)!;
     const promise = gate("create_task", { title: "Ship it" });
 
-    // Give the gate a beat to park the item, then approve it.
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    const pending = listPendingApprovals(db);
+    const pending = await waitForPending();
     expect(pending.length).toBe(1);
     expect(pending[0].tool).toBe("create_task");
     expect(pending[0].runId).toBe(run.id);
@@ -74,8 +86,7 @@ describe("automation approval gate", () => {
     const gate = makeApprovalGate(db, run, automation)!;
     const promise = gate("create_task", { title: "Nope" });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    const pending = listPendingApprovals(db);
+    const pending = await waitForPending();
     resolveApproval(db, pending[0].id, "denied");
     const res = await promise;
     expect(res.allow).toBe(false);
@@ -84,7 +95,7 @@ describe("automation approval gate", () => {
 
   it("fails closed on timeout", async () => {
     // APPROVAL_POLL_MS is 1s; use waitForApproval directly with a tiny timeout.
-    const item = (await import("../db/approval-queries")).parkApproval(db, {
+    const item = parkApproval(db, {
       runId: run.id,
       tool: "create_task",
       args: {},

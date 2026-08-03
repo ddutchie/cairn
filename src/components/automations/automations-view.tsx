@@ -38,7 +38,7 @@ function formatRelative(iso: string | null | undefined): string {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  done: "text-[var(--ok,#22c55e)]",
+  done: "text-[var(--ok)]",
   running: "text-[var(--accent)]",
   pending: "text-[var(--text-secondary)]",
   skipped: "text-[var(--text-tertiary)]",
@@ -118,6 +118,7 @@ export function AutomationsView() {
   const [approvalMode, setApprovalMode] = useState<"auto" | "ask">("auto");
   const [activeHoursStart, setActiveHoursStart] = useState("");
   const [activeHoursEnd, setActiveHoursEnd] = useState("");
+  const [scheduleValid, setScheduleValid] = useState(true);
 
   const wsProjects = useMemo(
     () => (activeWorkspaceId ? projects.filter((p) => p.workspaceId === activeWorkspaceId && !p.archivedAt) : []),
@@ -200,7 +201,9 @@ export function AutomationsView() {
   }
 
   async function save() {
-    if (!activeWorkspaceId || !name.trim() || !instructions.trim()) return;
+    if (!activeWorkspaceId || !name.trim() || !instructions.trim() || !scheduleValid) return;
+    // Parse maxRuns strictly: empty → null, else a positive integer (never NaN).
+    const maxRunsParsed = maxRuns.trim() ? parseInt(maxRuns.trim(), 10) : null;
     const base = {
       workspaceId: activeWorkspaceId,
       name: name.trim(),
@@ -209,7 +212,7 @@ export function AutomationsView() {
       scheduleExpr: expr.trim(),
       projectId: projectId || null,
       timezone: timezone.trim() || null,
-      maxRuns: maxRuns.trim() ? Number(maxRuns.trim()) : null,
+      maxRuns: maxRunsParsed !== null && Number.isInteger(maxRunsParsed) && maxRunsParsed > 0 ? maxRunsParsed : null,
       approvalMode,
       activeHoursStart: activeHoursStart.trim() || null,
       activeHoursEnd: activeHoursEnd.trim() || null,
@@ -348,6 +351,8 @@ export function AutomationsView() {
           approvalMode={approvalMode} setApprovalMode={setApprovalMode}
           activeHoursStart={activeHoursStart} setActiveHoursStart={setActiveHoursStart}
           activeHoursEnd={activeHoursEnd} setActiveHoursEnd={setActiveHoursEnd}
+          scheduleValid={scheduleValid}
+          onScheduleValidityChange={setScheduleValid}
           projects={wsProjects}
           onPick={prefillFromCommunity}
           scheduleKey={`${editing?.id ?? "new"}-${prefillNonce}`}
@@ -381,6 +386,8 @@ interface AutomationDialogProps {
   approvalMode: "auto" | "ask"; setApprovalMode: (v: "auto" | "ask") => void;
   activeHoursStart: string; setActiveHoursStart: (v: string) => void;
   activeHoursEnd: string; setActiveHoursEnd: (v: string) => void;
+  scheduleValid: boolean;
+  onScheduleValidityChange: (valid: boolean) => void;
   projects: Array<{ id: string; name: string }>;
   onSave: () => void;
   /** Called when a community recipe is chosen (pre-fills the form). */
@@ -394,8 +401,9 @@ function AutomationDialog({
   name, setName, instructions, setInstructions,
   kind, setKind, expr, setExpr,
   projectId, setProjectId, timezone, setTimezone,
-  maxRuns, setMaxRuns, approvalMode, setApprovalMode,
+  maxRuns, setMaxRuns,   approvalMode, setApprovalMode,
   activeHoursStart, setActiveHoursStart, activeHoursEnd, setActiveHoursEnd,
+  scheduleValid, onScheduleValidityChange,
   projects,
   onSave, onPick, scheduleKey,
 }: AutomationDialogProps) {
@@ -413,7 +421,7 @@ function AutomationDialog({
             <DialogClose asChild>
               <Button variant="ghost" size="sm">Cancel</Button>
             </DialogClose>
-            <Button variant="accent" size="sm" onClick={onSave} disabled={!name.trim() || !instructions.trim()}>
+            <Button variant="accent" size="sm" onClick={onSave} disabled={!name.trim() || !instructions.trim() || !scheduleValid}>
               <RefreshCw size={13} className="mr-1" /> {editing ? "Save" : "Create"}
             </Button>
           </>
@@ -455,6 +463,7 @@ function AutomationDialog({
           initialExpr={expr}
           timezone={timezone || null}
           onChange={(k, e) => { setKind(k); setExpr(e); }}
+          onValidityChange={onScheduleValidityChange}
         />
         <div className="flex items-center gap-2">
           <span className="text-xs text-[var(--text-secondary)]">Only run between</span>
@@ -483,7 +492,7 @@ function AutomationDialog({
           </label>
           <label className="block space-y-1">
             <span className="text-xs text-[var(--text-secondary)]">Max runs (optional)</span>
-            <Input value={maxRuns} onChange={(e) => setMaxRuns(e.target.value)} placeholder="Unlimited" />
+            <Input type="number" min={1} value={maxRuns} onChange={(e) => setMaxRuns(e.target.value)} placeholder="Unlimited" />
           </label>
         </div>
         <label className="block space-y-1">

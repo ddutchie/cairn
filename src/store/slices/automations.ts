@@ -266,12 +266,12 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
     }
   },
 
-  async resolveApprovalItem(id, resolution) {
+  async resolveApprovalItem(approvalId, resolution) {
     if (typeof window === "undefined" || !window.electron?.approval) return;
     try {
-      await window.electron.approval.resolve(id, resolution);
+      await window.electron.approval.resolve(approvalId, resolution);
       set((s) => ({
-        pendingApprovals: s.pendingApprovals.filter((i) => i.id !== id),
+        pendingApprovals: s.pendingApprovals.filter((i) => i.id !== approvalId),
         pendingApprovalCount: Math.max(0, s.pendingApprovalCount - 1),
       }));
     } catch (err) {

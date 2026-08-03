@@ -321,7 +321,7 @@ export function Sidebar() {
                 activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Zap size={13} /><span>Automations</span>
               {pendingApprovalCount > 0 && (
-                <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg,#fff)] text-[0.625rem] leading-4 text-center font-semibold">
+                <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">
                   {pendingApprovalCount}
                 </span>
               )}
@@ -346,7 +346,7 @@ export function Sidebar() {
                 "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Bell size={13} /><span>Notifications</span>
               {notificationUnreadCount > 0 && (
-                <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg,#fff)] text-[0.625rem] leading-4 text-center font-semibold">
+                <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">
                   {notificationUnreadCount}
                 </span>
               )}

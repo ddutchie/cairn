@@ -98,6 +98,10 @@ export function startMcpNotificationPoller({
           // While focused, remember the ids so they don't toast later on focus loss.
           for (const n of unread) toastedIds.add(n.id);
         }
+        // Forget ids that are no longer unread (read or pruned) so the dedupe
+        // set can't grow for the whole session.
+        const unreadIds = new Set(unread.map((n) => n.id));
+        for (const id of toastedIds) if (!unreadIds.has(id)) toastedIds.delete(id);
         pushUnread(unread.length);
       }
 

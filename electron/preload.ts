@@ -623,7 +623,7 @@ const api = {
     list: (limit?: number) => invoke("db:notification:list", { limit }),
     count: () => invoke("db:notification:count"),
     markRead: (id: string) => invoke("db:notification:markRead", { id }),
-    markAllRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
+    markAllRead: () => invoke("mcp:markNotificationsRead"),
     clear: () => invoke("db:notification:clear"),
   },
 

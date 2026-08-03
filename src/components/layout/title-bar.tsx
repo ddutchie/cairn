@@ -97,7 +97,7 @@ export function TitleBar() {
         >
           <Bell size={14} />
           {notificationUnreadCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-0.5 rounded-full bg-[var(--accent)] text-[var(--accent-fg,#fff)] text-[0.625rem] leading-3.5 text-center font-semibold">
+            <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-0.5 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-3.5 text-center font-semibold">
               {notificationUnreadCount > 9 ? "9+" : notificationUnreadCount}
             </span>
           )}

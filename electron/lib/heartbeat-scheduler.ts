@@ -82,9 +82,6 @@ export class HeartbeatScheduler {
 
   private scheduleTick(delayMs?: number): void {
     void (async () => {
-      if (!this.running && delayMs === 0) {
-        // first call from start() happens before any await; keep running guard
-      }
       if (delayMs) {
         await sleep(delayMs);
       }
@@ -120,7 +117,15 @@ export class HeartbeatScheduler {
       this.opts.log?.(`[heartbeat] "${automation.name}" deferred (outside active hours)`);
       return;
     }
-    const next = computeNextRun(parseSchedule(automation.scheduleExpr), new Date(nowIso), automation.timezone ?? undefined);
+    // A malformed scheduleExpr must not leave the automation due on every tick.
+    let next: Date | null;
+    try {
+      next = computeNextRun(parseSchedule(automation.scheduleExpr), new Date(nowIso), automation.timezone ?? undefined);
+    } catch {
+      this.opts.log?.(`[heartbeat] "${automation.name}" disabled (invalid schedule)`);
+      updateAutomation(db, automation.id, { enabled: false, nextRunAt: automation.nextRunAt });
+      return;
+    }
     const nextIso = next ? next.toISOString() : null;
 
     // Advance next_run_at first. If there's no future occurrence (e.g. a 'once'
@@ -168,7 +173,12 @@ export class HeartbeatScheduler {
     } catch {
       minutes = now.getHours() * 60 + now.getMinutes(); // bad tz → local
     }
-    return minutes >= start && minutes < end;
+    // Same-day window: inclusive start, exclusive end. Wrapping window
+    // (start > end, e.g. 22:00–06:00) spans midnight: active at/after start OR
+    // before end.
+    return start <= end
+      ? minutes >= start && minutes < end
+      : minutes >= start || minutes < end;
   }
 
   /**

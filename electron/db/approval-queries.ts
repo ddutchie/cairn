@@ -10,6 +10,7 @@
  */
 
 import type Database from "better-sqlite3";
+import { createHash } from "crypto";
 import { newId, ts } from "./utils";
 
 export type ApprovalKind = "approval" | "question" | "notification" | "plan";
@@ -61,18 +62,28 @@ function parseJson<T>(raw: unknown, fallback: T): T {
   }
 }
 
+/** Sort object keys (recursively) so two structurally-equal arg objects hash alike regardless of key order. */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(value as Record<string, unknown>).sort()) {
+      out[k] = canonicalize((value as Record<string, unknown>)[k]);
+    }
+    return out;
+  }
+  return value;
+}
+
 /**
  * Deterministic idempotency key — same tool + args → same key, so a durable
- * resume never creates a duplicate parked item for the same request.
+ * resume never creates a duplicate parked item for the same request. SHA-256
+ * over the tool + canonically-sorted args avoids the 32-bit collision space of
+ * the previous rolling hash.
  */
 export function approvalArgsHash(tool: string, args: unknown): string {
-  const canonical = JSON.stringify(args ?? {});
-  let h = 0;
-  const s = `${tool}:${canonical}`;
-  for (let i = 0; i < s.length; i++) {
-    h = (h * 31 + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h).toString(36) + "-" + s.length.toString(36);
+  const canonical = JSON.stringify(canonicalize(args ?? {}));
+  return createHash("sha256").update(`${tool}:${canonical}`).digest("hex").slice(0, 32);
 }
 
 export interface ApprovalItemInput {
@@ -87,14 +98,14 @@ export interface ApprovalItemInput {
 
 /**
  * Insert a pending approval item unless an identical pending/resolved item
- * already exists (idempotent by args-hash). Returns the existing item when a
- * duplicate is found.
+ * already exists (idempotent by run + tool + args-hash). Returns the existing
+ * item when a duplicate is found.
  */
 export function parkApproval(db: Database.Database, input: ApprovalItemInput): ApprovalItem {
   const argsHash = approvalArgsHash(input.tool, input.args ?? {});
   const existing = db
-    .prepare("SELECT * FROM approval_items WHERE run_id IS ? AND args_hash = ? ORDER BY created_at DESC LIMIT 1")
-    .get(input.runId ?? null, argsHash) as Row | undefined;
+    .prepare("SELECT * FROM approval_items WHERE run_id IS ? AND tool = ? AND args_hash = ? ORDER BY created_at DESC LIMIT 1")
+    .get(input.runId ?? null, input.tool, argsHash) as Row | undefined;
   if (existing) return toItem(existing);
 
   const id = newId();
@@ -136,21 +147,19 @@ export function listApprovalItemsForRun(db: Database.Database, runId: string): A
 }
 
 /**
- * Resolve a pending item. resolve-once + first-responder-wins: if already
- * resolved, returns the existing item unchanged (the first resolution wins).
+ * Resolve a pending item. resolve-once + first-responder-wins: a single guarded
+ * UPDATE on the pending row means the first resolution wins atomically — a
+ * second call finds no pending row and returns the existing item unchanged.
  */
 export function resolveApproval(
   db: Database.Database,
   id: string,
   resolution: ApprovalResolution,
 ): ApprovalItem | null {
-  const item = getApprovalItemById(db, id);
-  if (!item) return null;
-  if (item.state !== "pending") return item;
-
-  const now = ts();
-  db.prepare("UPDATE approval_items SET state = 'resolved', resolution = ?, resolved_at = ? WHERE id = ?")
-    .run(resolution, now, id);
+  const info = db
+    .prepare("UPDATE approval_items SET state = 'resolved', resolution = ?, resolved_at = ? WHERE id = ? AND state = 'pending'")
+    .run(resolution, ts(), id);
+  if (info.changes === 0) return getApprovalItemById(db, id);
   return getApprovalItemById(db, id);
 }
 

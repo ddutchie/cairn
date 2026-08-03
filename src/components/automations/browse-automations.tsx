@@ -85,7 +85,7 @@ export function BrowseAutomationsContent({ onPick, onBack }: {
         a.blurb.toLowerCase().includes(q) ||
         (a.definition.description ?? "").toLowerCase().includes(q) ||
         (a.category ?? "").toLowerCase().includes(q) ||
-        a.tags.some((t) => t.includes(q))
+        a.tags.some((t) => t.toLowerCase().includes(q))
       );
     });
   }, [automations, query, activeCategory]);

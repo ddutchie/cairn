@@ -46,6 +46,7 @@ beforeEach(() => {
 afterEach(() => {
   scheduler?.stop();
   scheduler = null;
+  db.close();
 });
 
 function makeScheduler(runnerOverride?: (run: AutomationRun, automation: Automation) => Promise<void>): HeartbeatScheduler {

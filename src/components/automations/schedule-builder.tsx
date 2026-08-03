@@ -39,6 +39,8 @@ interface ScheduleBuilderProps {
   initialExpr: string;
   timezone?: string | null;
   onChange: (kind: ScheduleKind, expr: string) => void;
+  /** Reports whether the current builder state is a valid schedule (e.g. weekly with no day). */
+  onValidityChange?: (valid: boolean) => void;
 }
 
 function pad2(n: number): string {
@@ -68,7 +70,10 @@ function exprFor(mode: ScheduleMode, s: {
     case "daily":
       return { kind: "cron", expr: `${pad2(m)} ${pad2(h)} * * *` };
     case "weekly": {
-      const dow = [...s.days].sort((a, b) => a - b).join(",");
+      // Fall back to "*" (every day) when no weekday is selected so the
+      // expression stays parseable; save() is disabled for that state via
+      // onValidityChange.
+      const dow = s.days.size > 0 ? [...s.days].sort((a, b) => a - b).join(",") : "*";
       return { kind: "cron", expr: `${pad2(m)} ${pad2(h)} * * ${dow}` };
     }
     case "monthly":
@@ -146,7 +151,7 @@ function builderFromSchedule(kind: ScheduleKind, expr: string): {
   return { ...base, mode: "cron", cronExpr: expr };
 }
 
-export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange }: ScheduleBuilderProps) {
+export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, onValidityChange }: ScheduleBuilderProps) {
   const init = useMemo(() => builderFromSchedule(initialKind, initialExpr), [initialKind, initialExpr]);
   const [mode, setMode] = useState<ScheduleMode>(init.mode);
   const [intervalN, setIntervalN] = useState(init.intervalN);
@@ -172,6 +177,13 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange }
   useEffect(() => {
     onChange(derived.kind, derived.expr);
   }, [derived.kind, derived.expr, onChange]);
+
+  // Report validity so the parent can disable Save for a weekly schedule with
+  // no weekday selected.
+  const scheduleValid = mode !== "weekly" || days.size > 0;
+  useEffect(() => {
+    onValidityChange?.(scheduleValid);
+  }, [scheduleValid, onValidityChange]);
 
   // Live "next run" preview via the main-process schedule parser.
   const [preview, setPreview] = useState<{ ok: boolean; text: string }>({ ok: true, text: "" });
@@ -316,7 +328,7 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange }
         <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
         <code className="font-mono text-[0.714rem] text-[var(--text-tertiary)]">{derived.expr}</code>
         {preview.text && (
-          <span className={cn("ml-auto", preview.ok ? "text-[var(--ok,#22c55e)]" : "text-[var(--danger)]")}>
+          <span className={cn("ml-auto", preview.ok ? "text-[var(--ok)]" : "text-[var(--danger)]")}>
             {preview.text}
           </span>
         )}

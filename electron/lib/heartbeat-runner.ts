@@ -60,8 +60,17 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
   void (async () => {
     try {
       await runAutomation(ctx, run, automation);
-    } catch {
-      // runAutomation never throws, but stay defensive.
+    } catch (err) {
+      // runAutomation normally sets its own terminal status, but if it throws
+      // (e.g. a provider/network failure inside runToolLoop) transition the run
+      // out of running so it doesn't block later runs / report a phantom run.
+      try {
+        updateAutomationRun(db, run.id, {
+          status: "error",
+          error: err instanceof Error ? err.message : String(err),
+          finishedAt: new Date().toISOString(),
+        });
+      } catch { /* ignore */ }
     }
   })().catch(() => {});
   return runId;
@@ -145,10 +154,12 @@ export async function runAutomation(
   const finalScratch = () => (artifacts.length > 0 ? JSON.stringify({ artifacts }) : null);
   // Navigation target for the completion notification: the first note/card the
   // run created when there is one, else the automation itself (opens the
-  // Automations view) so the notification is always navigable.
-  const completionTarget: { type: "note" | "task" | "automation"; id: string } = artifacts[0]
-    ? { type: artifacts[0].type, id: artifacts[0].id }
-    : { type: "automation", id: automation.id };
+  // Automations view) so the notification is always navigable. Computed AFTER
+  // the loop so `artifacts` is fully populated.
+  const completionTarget = (): { type: "note" | "task" | "automation"; id: string } =>
+    artifacts[0]
+      ? { type: artifacts[0].type, id: artifacts[0].id }
+      : { type: "automation", id: automation.id };
 
   const result = await runToolLoop(
     db,
@@ -179,7 +190,7 @@ export async function runAutomation(
       error: "Reached the step limit; run may be incomplete.",
       scratch: finalScratch(),
     });
-    insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"), completionTarget);
+    insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"), completionTarget());
     return;
   }
 
@@ -189,11 +200,26 @@ export async function runAutomation(
     error: null,
     scratch: finalScratch(),
   });
-  insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content), completionTarget);
+  insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content), completionTarget());
 }
 
+/**
+ * True for loopback and private-network hosts (localhost, 127.x, 10.x,
+ * 172.16–31.x, 192.168.x, 0.0.0.0) — the only endpoints treated as a local
+ * model runtime. A remote http(s) endpoint resolves as non-local.
+ */
 function isLocal(baseUrl: string): boolean {
-  return /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$|^http:\/\//i.test(baseUrl.trim());
+  const url = baseUrl.trim();
+  const m = url.match(/^(https?:\/\/)?([^/:]+)(?::\d+)?(\/.*)?$/i);
+  if (!m) return false;
+  const host = m[2].toLowerCase();
+  if (host === "localhost") return true;
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(host)) return false;
+  const [a, b, c] = host.split(".").map(Number);
+  if (a === 127 || a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return a === 0 && b === 0 && c === 0;
 }
 
 function summarize(automation: Automation, content: string, suffix = "completed"): string {

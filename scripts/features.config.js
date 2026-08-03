@@ -279,7 +279,7 @@ const FEATURES = [
       "Schedule Without Cron: Build schedules visually — interval, daily, weekly day toggles, monthly, or a one-off — with a live 'next run' preview.",
       "Approve or Deny: Automations can run in 'ask' mode so each write action parks in an attention queue on the Overview for you to approve or deny.",
       "Live Run State: Cards show the current tool, an animated progress bar, and the notes/cards each run produced — click them to jump straight to the result.",
-      "Community Recipes: Start from a community recipe (automations.json) that pre-fills the form, or a notification center with a title-bar bell keeps you in the loop.",
+      "Community Recipes & Notifications: Start from a community recipe (automations.json) that pre-fills the form, and track every update in the notification center opened from the title-bar bell.",
     ],
   },
 ];

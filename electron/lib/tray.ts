@@ -38,12 +38,12 @@ export function createTray(win: BrowserWindow): TrayHandle {
   const tray = new Tray(trayImage);
   tray.setToolTip("Cairn");
 
-  function buildMenu(unreadCount: number) {
+  function buildMenu(count: number) {
     return Menu.buildFromTemplate([
       {
-        label: unreadCount > 0
-          ? `${unreadCount} unread MCP update${unreadCount > 1 ? "s" : ""}`
-          : "No new MCP updates",
+        label: count > 0
+          ? `${count} item${count > 1 ? "s" : ""} awaiting attention (notifications + approvals)`
+          : "Nothing awaiting attention",
         enabled: false,
       },
       { type: "separator" },

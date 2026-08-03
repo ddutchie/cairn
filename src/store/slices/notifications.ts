@@ -81,7 +81,10 @@ export const createNotificationsSlice: StateCreator<CairnStore, [], [], Notifica
       await window.electron.notification.markRead(id);
       set((s) => ({
         notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
-        notificationUnreadCount: Math.max(0, s.notificationUnreadCount - 1),
+        // Decrement only when this notification was previously unread.
+        notificationUnreadCount: s.notifications.some((n) => n.id === id && !n.read)
+          ? Math.max(0, s.notificationUnreadCount - 1)
+          : s.notificationUnreadCount,
       }));
     } catch (err) {
       console.error("[notifications] markNotificationRead error", err);

@@ -252,8 +252,14 @@ export function updateAutomationRun(
     params.push(val);
   }
   if (set.length === 0) return getAutomationRunById(db, id);
-  db.prepare(`UPDATE automation_runs SET ${set.join(", ")}, finished_at = COALESCE(finished_at, ?) WHERE id = ?`)
-    .run(...params, now, id);
+
+  // Auto-set finished_at only when this update transitions the run to a
+  // terminal status and the caller didn't supply its own timestamp. Scratch /
+  // currentTool updates during a running run must NOT stamp finished_at.
+  const TERMINAL = new Set<AutomationRunStatus>(["done", "denied", "error", "skipped"]);
+  const autoFinish = patch.finishedAt === undefined && patch.status !== undefined && TERMINAL.has(patch.status);
+  const sql = `UPDATE automation_runs SET ${set.join(", ")}${autoFinish ? ", finished_at = COALESCE(finished_at, ?)" : ""} WHERE id = ?`;
+  db.prepare(sql).run(...(autoFinish ? [...params, now, id] : [...params, id]));
   return getAutomationRunById(db, id);
 }
 

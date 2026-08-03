@@ -35,7 +35,7 @@ import {
 } from "../db/automation-queries";
 import { runAutomationNow } from "../lib/heartbeat-runner";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
-import { listPendingApprovals, resolveApproval, type ApprovalResolution } from "../db/approval-queries";
+import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
 
@@ -677,8 +677,16 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:automation:create", (_e, args: AutomationInput) => handle(() => {
     const input = { ...args };
     if (!input.nextRunAt) {
-      const next = computeNextRun(parseSchedule(input.scheduleExpr), new Date(), input.timezone ?? undefined);
-      input.nextRunAt = next ? next.toISOString() : new Date().toISOString();
+      try {
+        const next = computeNextRun(parseSchedule(input.scheduleExpr), new Date(), input.timezone ?? undefined);
+        // A schedule with no future occurrence (e.g. a 'once' in the past) is
+        // created disabled rather than "due now" (which would fire once then
+        // disable itself).
+        if (!next) return { error: "Schedule has no future run time." };
+        input.nextRunAt = next.toISOString();
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : "Invalid schedule expression." };
+      }
     }
     return createAutomation(ctx.db, input);
   }));
@@ -691,9 +699,12 @@ export function registerDbHandlers(ctx: DbContext): void {
         const tz = patch.timezone === undefined ? existing.timezone : patch.timezone;
         try {
           const next = computeNextRun(parseSchedule(expr), new Date(), tz ?? undefined);
-          patch.nextRunAt = next ? next.toISOString() : new Date().toISOString();
+          // No future occurrence → leave next_run_at untouched (matches the
+          // invalid-expression catch below); the automation disables on its
+          // next tick rather than being stamped "due now".
+          if (next) patch.nextRunAt = next.toISOString();
         } catch {
-          // Invalid schedule — leave next_run_at unchanged; the create/update still proceeds.
+          // Invalid schedule — leave next_run_at unchanged; the update still proceeds.
         }
       }
     }
@@ -721,10 +732,7 @@ export function registerDbHandlers(ctx: DbContext): void {
   // ── Approval inbox ──────────────────────────────
   registerIpcHandle("db:approval:listPending", (_e, { limit }: { limit?: number }) => handle(() => listPendingApprovals(ctx.db, limit)));
   registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => resolveApproval(ctx.db, id, resolution)));
-  registerIpcHandle("db:approval:count", () => handle(() => {
-    const r = ctx.db.prepare("SELECT COUNT(*) AS n FROM approval_items WHERE state = 'pending'").get() as { n: number };
-    return r.n;
-  }));
+  registerIpcHandle("db:approval:count", () => handle(() => countPendingApprovals(ctx.db)));
 
   // ── In-app notification center ─────────────────
   registerIpcHandle("db:notification:list", (_e, { limit }: { limit?: number }) => handle(() => q.listMcpNotifications(ctx.db, limit)));

@@ -1101,21 +1101,18 @@ export function clearMcpNotifications(db: Database.Database): number {
 export function pruneMcpNotifications(db: Database.Database, opts: { maxAgeDays?: number; maxRows?: number } = {}): number {
   const maxAgeDays = opts.maxAgeDays ?? 30;
   const maxRows = opts.maxRows ?? 1000;
-  let deleted = 0;
-
   const cutoffIso = new Date(Date.now() - maxAgeDays * 86_400_000).toISOString();
-  const ageInfo = db.prepare("DELETE FROM mcp_notifications WHERE created_at < ?").run(cutoffIso);
-  deleted += ageInfo.changes;
-
-  const capInfo = db.prepare(`
-    DELETE FROM mcp_notifications
-    WHERE id NOT IN (
-      SELECT id FROM mcp_notifications ORDER BY created_at DESC, rowid DESC LIMIT ?
-    )
-  `).run(maxRows);
-  deleted += capInfo.changes;
-
-  return deleted;
+  const prune = db.transaction((cutoff: string, cap: number) => {
+    const ageInfo = db.prepare("DELETE FROM mcp_notifications WHERE created_at < ?").run(cutoff);
+    const capInfo = db.prepare(`
+      DELETE FROM mcp_notifications
+      WHERE id NOT IN (
+        SELECT id FROM mcp_notifications ORDER BY created_at DESC, rowid DESC LIMIT ?
+      )
+    `).run(cap);
+    return ageInfo.changes + capInfo.changes;
+  });
+  return prune(cutoffIso, maxRows);
 }
 
 /**
