@@ -23,6 +23,17 @@ import { invalidateRelationshipCache, computeAutoRelationships, computeSemanticR
 import { reindexNotes, reindexTasks } from "../embeddings/service";
 import { getDefaultModelId as getEmbeddingModelId } from "../embeddings/client";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
+import {
+  createAutomation,
+  getAutomationById,
+  listAutomations,
+  updateAutomation,
+  deleteAutomation,
+  listAutomationRuns,
+  type AutomationInput,
+} from "../db/automation-queries";
+import { runAutomationNow } from "../lib/heartbeat-runner";
+import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
 
@@ -657,4 +668,40 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:command:create", (_e, args: Parameters<typeof q.createSlashCommand>[1]) => handle(() => q.createSlashCommand(ctx.db, args)));
   registerIpcHandle("db:command:update", (_e, { id, patch }) => handle(() => q.updateSlashCommand(ctx.db, id, patch)));
   registerIpcHandle("db:command:delete", (_e, { id }) => handle(() => q.deleteSlashCommand(ctx.db, id)));
+
+  // ── Heartbeat automations ─────────────────────────
+  registerIpcHandle("db:automation:list", (_e, { workspaceId }) => handle(() => listAutomations(ctx.db, workspaceId)));
+  registerIpcHandle("db:automation:get", (_e, { id }) => handle(() => getAutomationById(ctx.db, id)));
+  registerIpcHandle("db:automation:create", (_e, args: AutomationInput) => handle(() => {
+    const input = { ...args };
+    if (!input.nextRunAt) {
+      const next = computeNextRun(parseSchedule(input.scheduleExpr), new Date(), input.timezone ?? undefined);
+      input.nextRunAt = next ? next.toISOString() : new Date().toISOString();
+    }
+    return createAutomation(ctx.db, input);
+  }));
+  registerIpcHandle("db:automation:update", (_e, { id, patch }: { id: string; patch: Partial<Omit<AutomationInput, "workspaceId">> }) => handle(() => {
+    // Recompute next_run_at when the schedule/timezone changes.
+    if (patch.scheduleKind !== undefined || patch.scheduleExpr !== undefined || patch.timezone !== undefined) {
+      const existing = getAutomationById(ctx.db, id);
+      if (existing) {
+        const kind = patch.scheduleKind ?? existing.scheduleKind;
+        const expr = patch.scheduleExpr ?? existing.scheduleExpr;
+        const tz = patch.timezone === undefined ? existing.timezone : patch.timezone;
+        try {
+          const next = computeNextRun(parseSchedule(expr), new Date(), tz ?? undefined);
+          patch.nextRunAt = next ? next.toISOString() : new Date().toISOString();
+        } catch {
+          // Invalid schedule — leave next_run_at unchanged; the create/update still proceeds.
+        }
+      }
+    }
+    return updateAutomation(ctx.db, id, patch);
+  }));
+  registerIpcHandle("db:automation:delete", (_e, { id }) => handle(() => deleteAutomation(ctx.db, id)));
+  registerIpcHandle("db:automation:runs", (_e, { automationId, limit }: { automationId: string; limit?: number }) => handle(() => listAutomationRuns(ctx.db, automationId, limit)));
+  registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
+    const runId = runAutomationNow({ db: ctx.db, workspacePath: ctx.workspacePath }, id);
+    return runId === null ? { skipped: true } : { runId };
+  }));
 }

@@ -38,6 +38,8 @@ import { createTagsSlice } from "./slices/tags";
 import type { TagsSlice } from "./slices/tags";
 import { createCommandsSlice } from "./slices/commands";
 import type { CommandsSlice } from "./slices/commands";
+import { createAutomationsSlice } from "./slices/automations";
+import type { AutomationsSlice } from "./slices/automations";
 import { createChatSlice } from "./slices/chat";
 import type { ChatSlice } from "./slices/chat";
 import { createSelectorsSlice } from "./slices/selectors";
@@ -105,6 +107,7 @@ export interface CairnStore
     TagsSlice,
     ChatSlice,
     CommandsSlice,
+    AutomationsSlice,
     SelectorsSlice,
     GraphSlice,
     CodingAgentsSlice,
@@ -269,6 +272,7 @@ export const useCairnStore = create<CairnStore>()(
     ...createTagsSlice(...a),
     ...createChatSlice(...a),
     ...createCommandsSlice(...a),
+    ...createAutomationsSlice(...a),
     ...createSelectorsSlice(...a),
     ...createGraphSlice(...a),
     ...createCodingAgentsSlice(...a),

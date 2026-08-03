@@ -240,6 +240,17 @@ const api = {
     delete: (id: string) => invoke("db:command:delete", { id }),
   },
 
+  // ── Heartbeat automations ─────────────────────
+  automation: {
+    list:   (workspaceId: string) => invoke("db:automation:list", { workspaceId }),
+    get:    (id: string) => invoke("db:automation:get", { id }),
+    create: (args: unknown) => invoke("db:automation:create", args),
+    update: (id: string, patch: unknown) => invoke("db:automation:update", { id, patch }),
+    delete: (id: string) => invoke("db:automation:delete", { id }),
+    runs:   (automationId: string, limit?: number) => invoke("db:automation:runs", { automationId, limit }),
+    runNow: (id: string) => invoke("db:automation:runNow", { id }),
+  },
+
   // ── Chat ─────────────────────────────────────
   chat: {
     threads:       (workspaceId: string) => invoke("db:chat:threads", { workspaceId }),

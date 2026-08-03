@@ -25,6 +25,10 @@ import { resolveLlmApiKey } from "./secure-store";
 import { buildSystemPrompt, type ChatRequest } from "./tools";
 import { insertNotification } from "../mcp/db";
 import {
+  bumpAutomationRunCount,
+  createAutomationRun,
+  getAutomationById,
+  hasInFlightRun,
   updateAutomationRun,
   type Automation,
   type AutomationRun,
@@ -36,6 +40,30 @@ export interface AutomationRunContext {
 }
 
 const DEFAULT_MAX_STEPS = 10;
+
+/**
+ * Run an automation immediately ("Run now"), bypassing the scheduler's clock.
+ * Applies the same skip-on-overlap guard, creates a run row, and delegates to
+ * runAutomation. Returns the created run id (or null when skipped).
+ */
+export function runAutomationNow(ctx: AutomationRunContext, automationId: string): string | null {
+  const { db } = ctx;
+  const automation = getAutomationById(db, automationId);
+  if (!automation || !automation.enabled) return null;
+  if (hasInFlightRun(db, automationId)) return null;
+
+  bumpAutomationRunCount(db, automationId);
+  const run = createAutomationRun(db, automationId, "running");
+  const runId = run.id;
+  void (async () => {
+    try {
+      await runAutomation(ctx, run, automation);
+    } catch {
+      // runAutomation never throws, but stay defensive.
+    }
+  })().catch(() => {});
+  return runId;
+}
 
 /**
  * Run one automation. Sets the run's final status (done / error / skipped) and

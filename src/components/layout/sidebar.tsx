@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays, Download, GitMerge, Check,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays, Download, GitMerge, Check, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -319,6 +319,11 @@ export function Sidebar() {
                 )}
               </button>
             ))}
+            <button onClick={() => { setView("automations"); closeSidebarOnMobile(); }}
+              className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+                activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              <Zap size={13} /><span>Automations</span>
+            </button>
             <button onClick={() => { setView("settings"); closeSidebarOnMobile(); }}
               className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
                 activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
