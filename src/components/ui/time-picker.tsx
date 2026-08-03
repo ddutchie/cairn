@@ -31,9 +31,15 @@ function parse24(value?: string): [number, number] {
   return [Number.isFinite(h) ? h : 9, Number.isFinite(m) ? m : 0];
 }
 
-/** 12h wheel state from a 24h value. */
+/** 12h from a 24h value. */
 function to12(h24: number, m: number): { hour12: number; minute: number; isPm: boolean } {
   return { hour12: ((h24 + 11) % 12) + 1, minute: m, isPm: h24 >= 12 };
+}
+
+/** Friendly display ("9:00 PM"). The stored value stays 24h "HH:MM" for the schedule. */
+function friendly(h24: number, m: number): string {
+  const { hour12, isPm } = to12(h24, m);
+  return `${hour12}:${pad2(m)} ${isPm ? "PM" : "AM"}`;
 }
 
 /** 24h from 12h wheel state. */
@@ -112,7 +118,7 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
         )}
       >
         <Clock size={11} className="flex-shrink-0 text-[var(--text-tertiary)]" />
-        <span className="flex-1 truncate">{value ? value : placeholder}</span>
+        <span className="flex-1 truncate">{value ? friendly(...parse24(value)) : placeholder}</span>
         {value && (
           <span
             role="button"
@@ -132,9 +138,9 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
         >
           <div className="flex items-baseline justify-center gap-1.5 mb-2">
             <span className="text-lg font-semibold text-[var(--text-primary)] font-mono">
-              {pad2((hour12 % 12) + (isPm ? 12 : 0))}:{pad2(minute)}
+              {hour12}:{pad2(minute)} {isPm ? "PM" : "AM"}
             </span>
-            <span className="text-[0.714rem] text-[var(--text-tertiary)]">{isPm ? "PM" : "AM"}</span>
+            <span className="text-[0.714rem] text-[var(--text-tertiary)]">24h: {pad2((hour12 % 12) + (isPm ? 12 : 0))}:{pad2(minute)}</span>
           </div>
 
           <div className="flex items-stretch justify-center gap-2">
