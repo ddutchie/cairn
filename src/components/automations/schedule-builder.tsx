@@ -158,10 +158,11 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange }
   const [onceTime, setOnceTime] = useState(init.onceTime);
   const [cronExpr, setCronExpr] = useState(init.cronExpr);
 
-  // Once mode needs a day — preselect today when it's opened without one.
-  useEffect(() => {
-    if (mode === "once" && !onceDate) setOnceDate(todayIso());
-  }, [mode, onceDate]);
+  function handleModeChange(v: ScheduleMode) {
+    setMode(v);
+    // Once mode needs a day — preselect today when it's opened without one.
+    if (v === "once" && !onceDate) setOnceDate(todayIso());
+  }
 
   const derived = useMemo(() => exprFor(mode, {
     intervalN, intervalUnit, timeStr, days, dayOfMonth, onceDate, onceTime, cronExpr,
@@ -211,7 +212,7 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange }
           <SegmentedControl
             options={MODES.map((m) => ({ value: m.value, label: m.label }))}
             value={mode}
-            onChange={(v) => setMode(v as ScheduleMode)}
+            onChange={(v) => handleModeChange(v as ScheduleMode)}
           />
         </div>
       </div>
