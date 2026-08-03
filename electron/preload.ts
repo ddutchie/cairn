@@ -894,8 +894,8 @@ const api = {
     setMode: (sessionId: string, mode: "plan" | "execute") =>
       ipcRenderer.send("pi-agent:set-mode", { sessionId, mode }),
     /** Approve or deny a pending tool call */
-    respondTool: (sessionId: string, callId: string, approved: boolean) =>
-      ipcRenderer.send("pi-agent:respond-tool", { sessionId, callId, approved }),
+    respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command") =>
+      ipcRenderer.send("pi-agent:respond-tool", { sessionId, callId, approved, grant }),
     /** Listen for tool call confirmation requests */
     onToolConfirmRequired: (cb: (e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown> }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

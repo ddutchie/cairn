@@ -4,14 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { RegistryFetchResult } from "@/types";
+import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 
-export interface ChatConnectorMeta {
-  name: string;
-  kind: "mcp" | "service";
-  iconSvg?: string;
-  brandColor?: string;
-  label?: string;
-}
+export type ChatConnectorMeta = ConnectorMeta;
+
 
 export function parseToolArgs(args?: string): Record<string, unknown> {
   if (!args) return {};

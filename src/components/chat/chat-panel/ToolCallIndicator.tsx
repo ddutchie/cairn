@@ -6,9 +6,9 @@ import { MarkdownContent } from "./MarkdownContent";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { MessageAvatar, StreamingCursor } from "./message-ui";
 import { ExternalRefChip } from "@/components/shared/cairn-ref-chip";
+import { ConnectorToolCard } from "@/components/shared/ConnectorToolCard";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 import { humanizeTool } from "@/lib/humanize-tool";
-import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
 import { connectorForTool, parseToolArgs, type ChatConnectorMeta } from "./connector-context";
 
 interface ToolCallIndicatorProps {
@@ -16,27 +16,6 @@ interface ToolCallIndicatorProps {
   streamingContent: string;
   streamingThought?: string;
   connectors?: Record<string, ChatConnectorMeta>;
-}
-
-function ConnectorToolCard({ tc, connector }: { tc: ChatToolCall; connector: ChatConnectorMeta }) {
-  const summary = humanizeTool(tc.tool, parseToolArgs(tc.args));
-  return (
-    <div data-testid="chat-connector-card" className="flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden w-full max-w-xl">
-      <div className="w-1 self-stretch shrink-0" style={{ background: connector.brandColor || "var(--accent)" }} />
-      <div className="flex items-start gap-2 min-w-0 flex-1 px-2.5 py-2">
-        <ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={24} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[0.714rem] font-semibold text-[var(--text-primary)] truncate">{connector.label || connector.name}</span>
-            <span className="text-[0.607rem] text-[var(--text-tertiary)]">via {connector.kind === "mcp" ? "MCP" : "HTTP service"}</span>
-          </div>
-          <p className="mt-0.5 text-[0.714rem] text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}</p>
-          {tc.output && <p className="mt-1 text-[0.643rem] text-[var(--text-tertiary)] line-clamp-2">{tc.output}</p>}
-          {tc.externalRef && <div className="mt-1"><ExternalRefChip toolName={tc.tool} externalRef={tc.externalRef} /></div>}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCalls, streamingContent, streamingThought, connectors }: ToolCallIndicatorProps) {
@@ -54,7 +33,7 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
               {tc.error && <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[220px]">— {tc.error}</span>}
             </div>
           ) : tc.status === "done" && connectors && connectorForTool(tc.tool, connectors) ? (
-            <ConnectorToolCard key={i} tc={tc} connector={connectorForTool(tc.tool, connectors)!} />
+            <ConnectorToolCard key={i} toolCall={{ tool: tc.tool, args: parseToolArgs(tc.args), output: tc.output, externalRef: tc.externalRef }} connector={connectorForTool(tc.tool, connectors)!} testId="chat-connector-card" />
           ) : tc.status === "done" && tc.externalRef ? (
             <ExternalRefChip key={i} toolName={tc.tool} externalRef={tc.externalRef} />
           ) : (

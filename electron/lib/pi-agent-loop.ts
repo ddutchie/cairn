@@ -181,9 +181,18 @@ export interface PiAgentSession {
    * Built once on first use and reused; the signal is updated via abortCtrl each turn.
    */
   compactionTransformer?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
+  /** Grants made during the current session, never persisted. */
+  approvedTools?: Set<string>;
 }
 
-export const pendingApprovals = new Map<string, { resolve: (approved: boolean) => void }>();
+export type ApprovalDecision = { approved: boolean; grant?: "session" | "command" };
+export const pendingApprovals = new Map<string, { resolve: (decision: ApprovalDecision) => void }>();
+
+function approvalGrantKey(toolName: string, args: ToolArgs): string {
+  return toolName === "bash"
+    ? `${toolName}:${typeof args.command === "string" ? args.command : ""}`
+    : toolName;
+}
 
 // ── All tool definitions ──────────────────────────────────────────────────────
 
@@ -810,25 +819,31 @@ export async function runAgentLoop(
 
       if (llmConfig.autoApprove === false) {
         const callKey = pendingCallId || tc.id;
-         callbacks.onToolConfirmRequired?.(tc.function.name, label, callKey, args);
-        const approved = await new Promise<boolean>((resolve) => {
+        const grantKey = approvalGrantKey(tc.function.name, args);
+        session.approvedTools ??= new Set<string>();
+        let decision: ApprovalDecision = { approved: session.approvedTools.has(grantKey) };
+        if (!decision.approved) {
+          callbacks.onToolConfirmRequired?.(tc.function.name, label, callKey, args);
+          decision = await new Promise<ApprovalDecision>((resolve) => {
           const onAbort = () => {
             pendingApprovals.delete(callKey);
-            resolve(false);
+            resolve({ approved: false });
           };
           if (signal.aborted) {
-            resolve(false);
+            resolve({ approved: false });
             return;
           }
           signal.addEventListener("abort", onAbort);
           pendingApprovals.set(callKey, {
-            resolve: (val) => {
+            resolve: (value) => {
               signal.removeEventListener("abort", onAbort);
-              resolve(val);
+              resolve(value);
             }
           });
-        });
-        if (!approved) {
+          });
+        }
+        if (decision.grant) session.approvedTools.add(grantKey);
+        if (!decision.approved) {
           ok = false;
           resultContent = "Blocked: tool call rejected by user";
            callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId, args);

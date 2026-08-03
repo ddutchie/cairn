@@ -26,6 +26,7 @@ import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
+import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ function persistPiTranscript(sessionId: string): void {
     role: m.role,
     content: m.content,
     reasoning: m.reasoning ?? null,
-    toolCalls: m.toolCalls ?? null,
+    toolCalls: m.toolCalls?.map(redactAgentToolCall) ?? null,
     subagents: m.subagents ?? null,
     timestamp: m.timestamp,
   }));

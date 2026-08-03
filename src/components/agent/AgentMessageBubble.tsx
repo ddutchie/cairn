@@ -11,15 +11,10 @@ import { useCairnStore } from "@/store";
 import { ContextRing } from "./ContextRing";
 import type { PiAgentMessage, PiSubagentMessage } from "@/types";
 import { humanizeTool } from "@/lib/humanize-tool";
-import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
+import { approvalPreview, riskForTool } from "@/lib/tool-risk";
+import { ConnectorToolCard, type ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 
-export interface AgentConnectorMeta {
-  name: string;
-  kind: "mcp" | "service";
-  iconSvg?: string;
-  brandColor?: string;
-  label?: string;
-}
+export type AgentConnectorMeta = ConnectorMeta;
 
 // ── Tool output expansion ─────────────────────────────────────────────────────
 
@@ -65,33 +60,10 @@ function ToolOutputPanel({ name, output }: { name: string; output: string }) {
   );
 }
 
-type RiskClass = "READ" | "WRITE_LOCAL" | "EXEC" | "EXTERNAL";
-
-function riskForTool(name: string): RiskClass {
-  if (/^(?:mcp|svc)__/.test(name)) return "EXTERNAL";
-  if (["write", "edit", "create_note", "ensure_note", "patch_note", "append_to_note", "create_task", "update_task"].includes(name)) return "WRITE_LOCAL";
-  if (name === "bash" || name === "spawn_subagent") return "EXEC";
-  return "READ";
-}
-
-function previewForTool(name: string, args: Record<string, unknown> = {}): string {
-  const value = name === "bash"
-    ? args.command
-    : name === "write"
-      ? args.content
-      : name.startsWith("mcp__") || name.startsWith("svc__")
-        ? JSON.stringify(args, null, 2)
-        : args.path ?? args.title ?? args.query ?? "";
-  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  const lines = text.split("\n").slice(0, 5);
-  const clamped = lines.join("\n").slice(0, 420);
-  return clamped + (clamped.length < text.length ? "…" : "");
-}
-
 function ApprovalCard({ tc, sessionId }: { tc: ToolChipProps["tc"]; sessionId: string }) {
   const risk = riskForTool(tc.name);
   const humanized = humanizeTool(tc.name, tc.args);
-  const preview = previewForTool(tc.name, tc.args);
+  const preview = approvalPreview(tc.name, tc.args);
   const scope = risk === "EXTERNAL" ? "leaves this Mac via a connected service" : risk === "EXEC" ? "runs on this Mac" : "stays on this Mac";
 
   return (
@@ -109,27 +81,9 @@ function ApprovalCard({ tc, sessionId }: { tc: ToolChipProps["tc"]; sessionId: s
       {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
       <div className="mt-2 flex items-center justify-end gap-1.5">
         <button data-testid="approval-deny" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors">Deny</button>
+        {risk === "EXEC" && tc.name === "bash" && <button data-testid="approval-allow-command" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this command</button>}
+        {risk !== "READ" && risk !== "EXEC" && <button data-testid="approval-allow-session" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "session")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this tool</button>}
         <button data-testid="approval-allow-once" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded transition-opacity">Allow once</button>
-      </div>
-    </div>
-  );
-}
-
-function ConnectorMessageCard({ tc, connector }: { tc: ToolChipProps["tc"]; connector: AgentConnectorMeta }) {
-  const summary = humanizeTool(tc.name, tc.args);
-  return (
-    <div data-testid="connector-message-card" className="flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
-      <div className="w-1 self-stretch shrink-0" style={{ background: connector.brandColor || "var(--accent)" }} />
-      <div className="flex items-start gap-2 min-w-0 flex-1 px-2.5 py-2">
-        <ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={24} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[0.714rem] font-semibold text-[var(--text-primary)] truncate">{connector.label || connector.name}</span>
-            <span className="text-[0.607rem] text-[var(--text-tertiary)]">via {connector.kind === "mcp" ? "MCP" : "HTTP service"}</span>
-          </div>
-          <p className="mt-0.5 text-[0.714rem] text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}</p>
-          {tc.output && <p className="mt-1 text-[0.643rem] text-[var(--text-tertiary)] line-clamp-2">{tc.output}</p>}
-        </div>
       </div>
     </div>
   );
@@ -162,7 +116,7 @@ function ToolChip({ tc, sessionId, connector }: ToolChipProps) {
     return <CairnRefChip toolName={tc.name} cairnRef={tc.cairnRef} ok={tc.ok} />;
   }
 
-  if (connector && tc.ok) return <ConnectorMessageCard tc={tc} connector={connector} />;
+  if (connector && tc.ok) return <ConnectorToolCard toolCall={{ tool: tc.name, args: tc.args, output: tc.output }} connector={connector} />;
 
   const hasOutput = !!tc.output;
 

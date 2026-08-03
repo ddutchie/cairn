@@ -426,10 +426,10 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:respond-tool ──────────────────────────────────────────────────
-  registerIpcOn("pi-agent:respond-tool", (_event, { _sessionId, callId, approved }: { _sessionId: string; callId: string; approved: boolean }) => {
+  registerIpcOn("pi-agent:respond-tool", (_event, { _sessionId, callId, approved, grant }: { _sessionId: string; callId: string; approved: boolean; grant?: "session" | "command" }) => {
     const pending = pendingApprovals.get(callId);
     if (pending) {
-      pending.resolve(approved);
+      pending.resolve({ approved, grant: approved ? grant : undefined });
       pendingApprovals.delete(callId);
     }
   });
@@ -444,6 +444,7 @@ export function registerPiAgentHandler(
       session.messages = [];
       session.compactionTransformer = undefined;
       session.lastPromptTokens = undefined;
+      session.approvedTools = new Set();
     }
   });
 
