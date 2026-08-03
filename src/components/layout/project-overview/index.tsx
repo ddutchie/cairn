@@ -13,6 +13,7 @@ import { PRIORITY_CSS_COLORS, PRIORITY_OPTIONS, PROJECT_STATUS_OPTIONS, STATUS_C
 import { CairnEvents, revealNote, revealCard, revealColumn } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PendingApprovals } from "@/components/automations/pending-approvals";
 import type { ProjectStatus, Priority } from "@/types";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
@@ -297,6 +298,9 @@ export function ProjectOverview() {
             </span>
           </div>
         </div>
+
+        {/* ── Attention queue: pending approvals from background automations ── */}
+        <PendingApprovals />
 
         {/* ── Code directory ────────────────────────────────── */}
         <div className="flex items-center gap-2 group w-full min-w-0">
