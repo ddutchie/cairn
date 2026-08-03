@@ -45,6 +45,11 @@ function pad2(n: number): string {
   return n.toString().padStart(2, "0");
 }
 
+function todayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+}
+
 /** "HH:MM" → [hours, minutes]. */
 function timeParts(timeStr: string): [number, number] {
   const [h, m] = timeStr.split(":").map((x) => parseInt(x, 10));
@@ -69,7 +74,7 @@ function exprFor(mode: ScheduleMode, s: {
     case "monthly":
       return { kind: "cron", expr: `${pad2(m)} ${pad2(h)} ${s.dayOfMonth} * *` };
     case "once":
-      return { kind: "once", expr: `once ${s.onceDate}T${s.onceTime}` };
+      return { kind: "once", expr: `once ${s.onceDate || todayIso()}T${s.onceTime}` };
     case "cron":
       return { kind: "cron", expr: s.cronExpr.trim() };
   }
@@ -152,6 +157,11 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange }
   const [onceDate, setOnceDate] = useState(init.onceDate);
   const [onceTime, setOnceTime] = useState(init.onceTime);
   const [cronExpr, setCronExpr] = useState(init.cronExpr);
+
+  // Once mode needs a day — preselect today when it's opened without one.
+  useEffect(() => {
+    if (mode === "once" && !onceDate) setOnceDate(todayIso());
+  }, [mode, onceDate]);
 
   const derived = useMemo(() => exprFor(mode, {
     intervalN, intervalUnit, timeStr, days, dayOfMonth, onceDate, onceTime, cronExpr,
