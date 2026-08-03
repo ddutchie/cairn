@@ -149,7 +149,7 @@ export function ConnectorLogo({
             d="M9 7V4m6 3V4M7.5 7h9v4a4.5 4.5 0 0 1-9 0V7Zm4.5 9v4"
           />
         ) : (
-          {MCP_LOGO_PATHS.map((d) => <path key={d} fill="currentColor" d={d} />)}
+          MCP_LOGO_PATHS.map((d) => <path key={d} fill="currentColor" d={d} />)
         )}
       </svg>
     </span>
