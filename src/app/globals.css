@@ -141,6 +141,14 @@ body {
   background: var(--muted);
 }
 
+/* Hide the scrollbar entirely (wheel pickers, overflow nav). */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Selection ───────────────────────────────────────── */
 ::selection {
   background: var(--accent-dim);

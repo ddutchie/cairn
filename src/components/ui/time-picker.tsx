@@ -14,26 +14,37 @@ interface TimePickerProps {
   className?: string;
 }
 
-const MINUTES_STEP = 5;
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
-const MINUTES = Array.from({ length: 60 / MINUTES_STEP }, (_, i) => i * MINUTES_STEP);
+const HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1); // 1..12
+const MINUTES = Array.from({ length: 60 }, (_, i) => i);      // 0..59
+const MERIDIEMS = ["AM", "PM"] as const;
 
 function pad2(n: number): string {
   return n.toString().padStart(2, "0");
 }
 
-function parseTime(value?: string): [number, number] {
+function parse24(value?: string): [number, number] {
   if (!value) {
     const now = new Date();
-    return [now.getHours(), Math.round(now.getMinutes() / MINUTES_STEP) * MINUTES_STEP % 60];
+    return [now.getHours(), now.getMinutes()];
   }
   const [h, m] = value.split(":").map((x) => parseInt(x, 10));
   return [Number.isFinite(h) ? h : 9, Number.isFinite(m) ? m : 0];
 }
 
+/** 12h wheel state from a 24h value. */
+function to12(h24: number, m: number): { hour12: number; minute: number; isPm: boolean } {
+  return { hour12: ((h24 + 11) % 12) + 1, minute: m, isPm: h24 >= 12 };
+}
+
+/** 24h from 12h wheel state. */
+function to24(hour12: number, minute: number, isPm: boolean): string {
+  const h24 = (hour12 % 12) + (isPm ? 12 : 0);
+  return `${pad2(h24)}:${pad2(minute)}`;
+}
+
 /**
- * Time picker styled to match DatePicker: a trigger button + a popover portaled
- * to document.body with hour and minute grids. Used by the schedule builder.
+ * Time picker styled to match DatePicker: a trigger button + a portaled popover
+ * with three scrollable wheel columns (hour 1–12, minute 00–59, AM/PM).
  */
 export function TimePicker({ value, onChange, placeholder = "Pick a time", className }: TimePickerProps) {
   const [open, setOpen] = useState(false);
@@ -41,7 +52,10 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const [hour, minute] = useMemo(() => parseTime(value), [value]);
+  const { hour12, minute, isPm } = useMemo(() => {
+    const [h, m] = parse24(value);
+    return to12(h, m);
+  }, [value]);
 
   // Close on outside click.
   useEffect(() => {
@@ -58,14 +72,14 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
 
   useEscapeKey(() => setOpen(false), open);
 
-  function select(h: number, m: number) {
-    onChange(`${pad2(h)}:${pad2(m)}`);
+  function select(hour12v: number, minuteV: number, isPmV: boolean) {
+    onChange(to24(hour12v, minuteV, isPmV));
   }
 
   function positionAndOpen() {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (rect) {
-      const popoverW = 220;
+      const popoverW = 240;
       const popoverH = 300;
       const gap = 4;
       let left = rect.left;
@@ -113,59 +127,41 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
       {open && createPortal(
         <div
           data-dialog-portal
-          className="cairn-timepicker-popover fixed z-[100] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-3 w-52"
+          className="cairn-timepicker-popover fixed z-[100] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-3"
           style={{ top: `${popoverPos.top}px`, left: `${popoverPos.left}px` }}
         >
-          <div className="flex items-baseline justify-center gap-1 mb-2">
+          <div className="flex items-baseline justify-center gap-1.5 mb-2">
             <span className="text-lg font-semibold text-[var(--text-primary)] font-mono">
-              {pad2(hour)}:{pad2(minute)}
+              {pad2((hour12 % 12) + (isPm ? 12 : 0))}:{pad2(minute)}
             </span>
-            <span className="text-[0.714rem] text-[var(--text-tertiary)]">24h</span>
+            <span className="text-[0.714rem] text-[var(--text-tertiary)]">{isPm ? "PM" : "AM"}</span>
           </div>
 
-          <div className="space-y-2">
-            <div>
-              <div className="text-[0.714rem] font-medium text-[var(--text-tertiary)] mb-1">Hour</div>
-              <div className="grid grid-cols-6 gap-1 max-h-24 overflow-y-auto pr-0.5">
-                {HOURS.map((h) => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => select(h, minute)}
-                    className={cn(
-                      "h-6 rounded-md text-xs transition-colors font-mono",
-                      h === hour
-                        ? "bg-[var(--accent)] text-[var(--background)]"
-                        : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                    )}
-                  >
-                    {pad2(h)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="text-[0.714rem] font-medium text-[var(--text-tertiary)] mb-1">
-                Minute ({MINUTES_STEP}-min steps)
-              </div>
-              <div className="grid grid-cols-6 gap-1">
-                {MINUTES.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => select(hour, m)}
-                    className={cn(
-                      "h-6 rounded-md text-xs transition-colors font-mono",
-                      m === minute
-                        ? "bg-[var(--accent)] text-[var(--background)]"
-                        : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                    )}
-                  >
-                    {pad2(m)}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="flex items-stretch justify-center gap-2">
+            <WheelColumn
+              label="Hour"
+              options={HOURS_12}
+              selected={hour12}
+              width="w-16"
+              format={(v) => String(v)}
+              onSelect={(v) => select(v, minute, isPm)}
+            />
+            <WheelColumn
+              label="Min"
+              options={MINUTES}
+              selected={minute}
+              width="w-16"
+              format={(v) => pad2(v)}
+              onSelect={(v) => select(hour12, v, isPm)}
+            />
+            <WheelColumn
+              label=""
+              options={MERIDIEMS}
+              selected={isPm ? "PM" : "AM"}
+              width="w-16"
+              format={(v) => String(v)}
+              onSelect={(v) => select(hour12, minute, v === "PM")}
+            />
           </div>
 
           <div className="mt-2 pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between">
@@ -173,7 +169,7 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
               type="button"
               onClick={() => {
                 const now = new Date();
-                select(now.getHours(), now.getMinutes());
+                onChange(`${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
               }}
               className="text-xs text-[var(--accent)] hover:underline"
             >
@@ -190,6 +186,84 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
         </div>,
         document.body
       )}
+    </div>
+  );
+}
+
+interface WheelColumnProps<T extends string | number> {
+  label: string;
+  options: readonly T[];
+  selected: T;
+  width: string;
+  format?: (v: T) => string;
+  onSelect: (v: T) => void;
+}
+
+function WheelColumn<T extends string | number>({ label, options, selected, width, format, onSelect }: WheelColumnProps<T>) {
+  const ref = useRef<HTMLDivElement>(null);
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const ITEM_H = 28;   // h-7
+  const PAD_H = 56;    // h-14 spacers
+
+  // Centre the selected item (computed directly — never scrollIntoView, which
+  // would scroll ancestor containers outside the fixed popover).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const idx = options.indexOf(selected);
+    if (idx < 0) return;
+    const target = PAD_H + idx * ITEM_H + ITEM_H / 2 - el.clientHeight / 2;
+    const max = el.scrollHeight - el.clientHeight;
+    el.scrollTop = Math.max(0, Math.min(max, target));
+  }, [selected, options]);
+
+  // When scrolling settles (mouse wheel / trackpad), select the item centred
+  // in the selection band.
+  function handleScroll() {
+    if (scrollTimer.current) clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => {
+      const el = ref.current;
+      if (!el) return;
+      const idx = Math.round((el.scrollTop - PAD_H) / ITEM_H);
+      const clamped = Math.max(0, Math.min(options.length - 1, idx));
+      const picked = options[clamped];
+      if (picked !== undefined && picked !== selected) onSelect(picked);
+    }, 120);
+  }
+
+  return (
+    <div className="flex flex-col items-center">
+      {label && <div className="text-[0.714rem] text-[var(--text-tertiary)] mb-1">{label}</div>}
+      <div className="relative">
+        {/* Center selection band */}
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-7 rounded-md bg-[var(--accent-dim)]/40" />
+        <div
+          ref={ref}
+          onScroll={handleScroll}
+          className={cn(width, "h-36 overflow-y-auto snap-y snap-mandatory scrollbar-none relative")}
+        >
+          <div className="h-14" /> {/* top spacer so first item can centre */}
+          {options.map((opt, idx) => {
+            const active = opt === selected;
+            return (
+              <button
+                key={idx}
+                type="button"
+                data-selected={active || undefined}
+                onClick={() => onSelect(opt)}
+                className={cn(
+                  "h-7 w-full snap-center flex items-center justify-center text-sm font-mono transition-colors",
+                  active ? "text-[var(--accent)] font-semibold" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                {format ? format(opt) : String(opt)}
+              </button>
+            );
+          })}
+          <div className="h-14" /> {/* bottom spacer */}
+        </div>
+      </div>
     </div>
   );
 }
