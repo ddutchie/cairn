@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
+import { TimePicker } from "@/components/ui/time-picker";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Clock } from "lucide-react";
 import type { ScheduleKind } from "@/store/slices/automations";
@@ -315,12 +316,9 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange }
 
 function TimeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <input
-      type="time"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-    />
+    <div className="w-32">
+      <TimePicker value={value} onChange={onChange} />
+    </div>
   );
 }
 
