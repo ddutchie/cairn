@@ -1087,6 +1087,32 @@ export function markMcpNotificationsRead(db: Database.Database): void {
 }
 
 /**
+ * Retention/pruning for mcp_notifications: delete notifications older than
+ * `maxAgeDays`, then cap the table to the newest `maxRows`. Returns the number
+ * of rows deleted. Notifications are transient activity (toasts/inbox), so they
+ * don't need indefinite retention.
+ */
+export function pruneMcpNotifications(db: Database.Database, opts: { maxAgeDays?: number; maxRows?: number } = {}): number {
+  const maxAgeDays = opts.maxAgeDays ?? 30;
+  const maxRows = opts.maxRows ?? 1000;
+  let deleted = 0;
+
+  const cutoffIso = new Date(Date.now() - maxAgeDays * 86_400_000).toISOString();
+  const ageInfo = db.prepare("DELETE FROM mcp_notifications WHERE created_at < ?").run(cutoffIso);
+  deleted += ageInfo.changes;
+
+  const capInfo = db.prepare(`
+    DELETE FROM mcp_notifications
+    WHERE id NOT IN (
+      SELECT id FROM mcp_notifications ORDER BY created_at DESC, rowid DESC LIMIT ?
+    )
+  `).run(maxRows);
+  deleted += capInfo.changes;
+
+  return deleted;
+}
+
+/**
  * Returns the set of note IDs currently being written by the MCP server process.
  * Used by mcp-poller to diff against the previous poll and fire aiWriteStarted/Ended events.
  * Returns an empty set if the table doesn't exist yet (e.g. pre-v11 DB).

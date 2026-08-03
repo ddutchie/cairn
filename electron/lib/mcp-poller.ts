@@ -15,7 +15,7 @@
 import { BrowserWindow, Notification } from "electron";
 import fs from "fs";
 import type Database from "better-sqlite3";
-import { getUnreadMcpNotifications, getActiveMcpWrites } from "../db/queries";
+import { getUnreadMcpNotifications, getActiveMcpWrites, pruneMcpNotifications } from "../db/queries";
 
 export interface McpPollerOptions {
   db: Database.Database;
@@ -45,6 +45,9 @@ export function startMcpNotificationPoller({
   let lastUnread = -1;
   // Previous snapshot of MCP-locked note IDs — diff each poll to fire started/ended events
   let prevLocked = new Set<string>();
+  // Retention guard — prune old notifications at most once a day.
+  let lastPruneTs = 0;
+  const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
   try {
     lastMtime = fs.statSync(fs.existsSync(walPath) ? walPath : dbPath).mtimeMs;
@@ -62,6 +65,11 @@ export function startMcpNotificationPoller({
   }
 
   function check() {
+    // Retention: prune old notifications once a day (30d / 1000 rows cap).
+    if (Date.now() - lastPruneTs >= PRUNE_INTERVAL_MS) {
+      lastPruneTs = Date.now();
+      try { pruneMcpNotifications(db); } catch { /* best-effort */ }
+    }
     try {
       const target = fs.existsSync(walPath) ? walPath : dbPath;
       const mtime = fs.statSync(target).mtimeMs;

@@ -61,6 +61,7 @@ import {
   listMcpNotifications,
   countUnreadMcpNotifications,
   insertMcpNotification,
+  pruneMcpNotifications,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -1223,5 +1224,36 @@ describe("mcp notifications", () => {
     insertMcpNotification(db, { id: "n2", tool: "t", title: "b", body: "2" });
     markMcpNotificationRead(db, "n2");
     expect(getUnreadMcpNotifications(db).map((n) => n.id)).toEqual(["n1"]);
+  });
+});
+
+describe("pruneMcpNotifications", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("deletes rows older than maxAgeDays but keeps recent ones", () => {
+    const now = new Date();
+    insertMcpNotification(db, { id: "old", tool: "t", title: "a", body: "1" });
+    // Backdate the old row by 60 days.
+    db.prepare("UPDATE mcp_notifications SET created_at = ? WHERE id = 'old'")
+      .run(new Date(now.getTime() - 60 * 86_400_000).toISOString());
+    insertMcpNotification(db, { id: "new", tool: "t", title: "b", body: "2" });
+
+    const deleted = pruneMcpNotifications(db, { maxAgeDays: 30, maxRows: 1000 });
+    expect(deleted).toBe(1);
+    expect(listMcpNotifications(db).map((n) => n.id)).toEqual(["new"]);
+  });
+
+  it("caps the table to the newest maxRows", () => {
+    for (let i = 0; i < 5; i++) {
+      insertMcpNotification(db, { id: `n${i}`, tool: "t", title: `t${i}`, body: `${i}` });
+    }
+    pruneMcpNotifications(db, { maxAgeDays: 9999, maxRows: 3 });
+    const rows = listMcpNotifications(db);
+    expect(rows.length).toBe(3);
+    expect(rows.map((n) => n.id)).toEqual(["n4", "n3", "n2"]); // newest kept
   });
 });
