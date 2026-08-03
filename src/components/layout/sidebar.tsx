@@ -58,6 +58,7 @@ export function Sidebar() {
      hiddenViews,
      pendingApprovalCount,
      notificationUnreadCount,
+     notificationOpen, setNotificationOpen,
      moveFolderToProject, moveCardToProject, moveNoteToProject,
    } = useCairnStore(useShallow((s) => ({    sidebarCollapsed:    s.sidebarCollapsed,
      toggleSidebar:       s.toggleSidebar,
@@ -81,12 +82,12 @@ export function Sidebar() {
      hiddenViews:         s.hiddenViews,
      pendingApprovalCount: s.pendingApprovalCount,
      notificationUnreadCount: s.notificationUnreadCount,
+     notificationOpen:    s.notificationOpen,
+     setNotificationOpen: s.setNotificationOpen,
      moveFolderToProject: s.moveFolderToProject,
      moveCardToProject:   s.moveCardToProject,
      moveNoteToProject:   s.moveNoteToProject,
    })));
-
-  const [notificationOpen, setNotificationOpen] = useState(false);
 
   // All navigable views in order (overview + notes always first)
   const visibleNavItems = React.useMemo(
@@ -341,12 +342,7 @@ export function Sidebar() {
                 )}
               </button>
             ))}
-            <button onClick={() => { setView("settings"); closeSidebarOnMobile(); }}
-              className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
-                activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-              <Settings size={13} /><span>Settings</span>
-            </button>
-            {/* Notifications — last */}
+            {/* Notifications */}
             <button onClick={() => { setNotificationOpen(true); closeSidebarOnMobile(); }}
               className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
                 "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
@@ -356,6 +352,15 @@ export function Sidebar() {
                   {notificationUnreadCount}
                 </span>
               )}
+            </button>
+
+            {/* Divider — Settings is always pinned to the very bottom */}
+            <div className="my-1.5 border-t border-[var(--border-subtle)]" />
+
+            <button onClick={() => { setView("settings"); closeSidebarOnMobile(); }}
+              className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+                activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              <Settings size={13} /><span>Settings</span>
             </button>
           </div>
         </div>

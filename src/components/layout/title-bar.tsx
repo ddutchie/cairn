@@ -18,6 +18,10 @@
  */
 
 import { useState, useEffect } from "react";
+import { Bell } from "lucide-react";
+import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
+import { cn } from "@/lib/utils";
 import { SyncStatusIndicator } from "./sync-status-indicator";
 
 export function TitleBar() {
@@ -25,6 +29,11 @@ export function TitleBar() {
   // client render (no hydration mismatch). The real platform is set after
   // mount — imperceptible in Electron since it renders before the first frame.
   const [platform, setPlatform] = useState<"darwin" | "win32" | "linux" | null>(null);
+
+  const { notificationUnreadCount, setNotificationOpen } = useCairnStore(useShallow((s) => ({
+    notificationUnreadCount: s.notificationUnreadCount,
+    setNotificationOpen: s.setNotificationOpen,
+  })));
 
   useEffect(() => {
     const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
@@ -64,8 +73,23 @@ export function TitleBar() {
       {/* Windows: spacer pushes nothing, but we need the right zone clear for the overlay buttons */}
       <div style={{ flex: 1 }} />
 
-      {/* Live sync status (icon + popover). Sets its own no-drag region. */}
-      <div className="flex items-center pr-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      {/* Right zone: notification bell + live sync status (no-drag so they're clickable) */}
+      <div className="flex items-center gap-1 pr-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        <button
+          onClick={() => setNotificationOpen(true)}
+          className={cn(
+            "relative flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+          )}
+          title="Notifications"
+          aria-label="Notifications"
+        >
+          <Bell size={14} />
+          {notificationUnreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-0.5 rounded-full bg-[var(--accent)] text-[var(--accent-fg,#fff)] text-[0.625rem] leading-3.5 text-center font-semibold">
+              {notificationUnreadCount > 9 ? "9+" : notificationUnreadCount}
+            </span>
+          )}
+        </button>
         <SyncStatusIndicator />
       </div>
 
