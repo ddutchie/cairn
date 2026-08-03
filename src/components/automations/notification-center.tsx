@@ -109,6 +109,7 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
                   if (n.targetType === "note") revealNote(setView, n.targetId!);
                   else if (n.targetType === "task") revealCard(setView, n.targetId!);
                   else if (n.targetType === "automation") setView("automations");
+                  void markNotificationRead(n.id);
                 }
               : undefined;
             return (

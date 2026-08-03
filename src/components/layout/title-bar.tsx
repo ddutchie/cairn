@@ -18,7 +18,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Bell } from "lucide-react";
+import { Bell, Loader2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -30,9 +30,11 @@ export function TitleBar() {
   // mount — imperceptible in Electron since it renders before the first frame.
   const [platform, setPlatform] = useState<"darwin" | "win32" | "linux" | null>(null);
 
-  const { notificationUnreadCount, setNotificationOpen } = useCairnStore(useShallow((s) => ({
+  const { notificationUnreadCount, setNotificationOpen, runningAutomationCount, setView } = useCairnStore(useShallow((s) => ({
     notificationUnreadCount: s.notificationUnreadCount,
     setNotificationOpen: s.setNotificationOpen,
+    runningAutomationCount: s.runningAutomationCount,
+    setView: s.setView,
   })));
 
   useEffect(() => {
@@ -73,8 +75,18 @@ export function TitleBar() {
       {/* Windows: spacer pushes nothing, but we need the right zone clear for the overlay buttons */}
       <div style={{ flex: 1 }} />
 
-      {/* Right zone: notification bell + live sync status (no-drag so they're clickable) */}
+      {/* Right zone: running-automations icon + notification bell + live sync status (no-drag so they're clickable) */}
       <div className="flex items-center gap-1 pr-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        {runningAutomationCount > 0 && (
+          <button
+            onClick={() => setView("automations")}
+            className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
+            title={`${runningAutomationCount} automation${runningAutomationCount === 1 ? "" : "s"} running`}
+            aria-label="Automations running"
+          >
+            <Loader2 size={14} className="animate-spin" />
+          </button>
+        )}
         <button
           onClick={() => setNotificationOpen(true)}
           className={cn(
