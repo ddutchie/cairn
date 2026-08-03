@@ -150,4 +150,33 @@ describe("HeartbeatScheduler", () => {
     s.stop();
     expect(fired.length).toBe(1);
   });
+
+  it("defers a due run until it's inside the active-hours window", async () => {
+    const { id } = makeAutomation({ timezone: "UTC", activeHoursStart: "13:00", activeHoursEnd: "14:00" }); // T0 = 12:00Z
+    const s = makeScheduler();
+    await s.tick();
+    await flush();
+    expect(fired.length).toBe(0);
+    // Still due — next_run_at unchanged so it fires once the window opens.
+    const a = getAutomationById(db, id)!;
+    expect(new Date(a.nextRunAt).getTime()).toBeLessThanOrEqual(T0.getTime());
+  });
+
+  it("fires when within the active-hours window", async () => {
+    const { id } = makeAutomation({ timezone: "UTC", activeHoursStart: "09:00", activeHoursEnd: "18:00" }); // T0 = 12:00Z
+    const s = makeScheduler();
+    await s.tick();
+    await flush();
+    expect(fired.length).toBe(1);
+    expect(listAutomationRuns(db, id).length).toBe(1);
+  });
+
+  it("ignores malformed active hours (treated as no gate)", async () => {
+    const { id } = makeAutomation({ activeHoursStart: "nope", activeHoursEnd: "18:00" });
+    const s = makeScheduler();
+    await s.tick();
+    await flush();
+    expect(fired.length).toBe(1);
+    expect(listAutomationRuns(db, id).length).toBe(1);
+  });
 });

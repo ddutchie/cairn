@@ -909,6 +909,8 @@ function ensureColumns(db: Database.Database): void {
   ensure("chat_threads", "use_subagents", "use_subagents INTEGER NOT NULL DEFAULT 0");
   ensure("chat_messages", "subagents", "subagents TEXT");
   ensure("automations", "approval_mode", "approval_mode TEXT NOT NULL DEFAULT 'auto'");
+  ensure("automations", "active_hours_start", "active_hours_start TEXT");
+  ensure("automations", "active_hours_end", "active_hours_end TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");
   ensure("custom_services", "oauth_config", "oauth_config TEXT");
   // Multi-operation services: baseUrl + operations[] (JSON). Nullable — legacy

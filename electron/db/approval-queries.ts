@@ -122,6 +122,12 @@ export function listPendingApprovals(db: Database.Database, limit = 100): Approv
   return rows.map(toItem);
 }
 
+/** Cheap count for the dock/tray attention badge. */
+export function countPendingApprovals(db: Database.Database): number {
+  const r = db.prepare("SELECT COUNT(*) AS n FROM approval_items WHERE state = 'pending'").get() as { n: number };
+  return r.n;
+}
+
 export function listApprovalItemsForRun(db: Database.Database, runId: string): ApprovalItem[] {
   const rows = db
     .prepare("SELECT * FROM approval_items WHERE run_id = ? ORDER BY created_at ASC")

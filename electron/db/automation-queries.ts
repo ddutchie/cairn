@@ -25,6 +25,9 @@ export interface Automation {
   maxRuns: number | null;
   runCount: number;
   approvalMode: "auto" | "ask";
+  /** Optional "HH:MM" window — the scheduler only fires runs inside it. */
+  activeHoursStart: string | null;
+  activeHoursEnd: string | null;
   standingRules: Array<{ tool: string; target?: string }>;
   source: "custom" | "community";
   communityId: string | null;
@@ -64,6 +67,8 @@ function toAutomation(r: Row): Automation {
     maxRuns: r.max_runs === null || r.max_runs === undefined ? null : Number(r.max_runs),
     runCount: Number(r.run_count),
     approvalMode: r.approval_mode === "ask" ? "ask" : "auto",
+    activeHoursStart: r.active_hours_start ? String(r.active_hours_start) : null,
+    activeHoursEnd: r.active_hours_end ? String(r.active_hours_end) : null,
     standingRules: parseJson<Array<{ tool: string; target?: string }>>(r.standing_rules, []),
     source: r.source as Automation["source"],
     communityId: r.community_id ? String(r.community_id) : null,
@@ -109,6 +114,8 @@ export interface AutomationInput {
   maxRuns?: number | null;
   runCount?: number;
   approvalMode?: "auto" | "ask";
+  activeHoursStart?: string | null;
+  activeHoursEnd?: string | null;
   standingRules?: Array<{ tool: string; target?: string }>;
   source?: "custom" | "community";
   communityId?: string | null;
@@ -121,13 +128,14 @@ export function createAutomation(db: Database.Database, input: AutomationInput):
     INSERT INTO automations (
       id, workspace_id, project_id, name, description, instructions,
       schedule_kind, schedule_expr, timezone, next_run_at, enabled, max_runs,
-      run_count, approval_mode, standing_rules, source, community_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      run_count, approval_mode, active_hours_start, active_hours_end, standing_rules, source, community_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, input.workspaceId, input.projectId ?? null, input.name, input.description ?? "",
     input.instructions, input.scheduleKind, input.scheduleExpr, input.timezone ?? null,
     input.nextRunAt, input.enabled === false ? 0 : 1, input.maxRuns ?? null,
-    input.runCount ?? 0, input.approvalMode ?? "auto", JSON.stringify(input.standingRules ?? []),
+    input.runCount ?? 0, input.approvalMode ?? "auto", input.activeHoursStart ?? null,
+    input.activeHoursEnd ?? null, JSON.stringify(input.standingRules ?? []),
     input.source ?? "custom", input.communityId ?? null, now, now,
   );
   return getAutomationById(db, id)!;
@@ -167,6 +175,8 @@ export function updateAutomation(
     enabled: patch.enabled === undefined ? undefined : patch.enabled ? 1 : 0,
     max_runs: patch.maxRuns === undefined ? undefined : patch.maxRuns,
     approval_mode: patch.approvalMode === undefined ? undefined : patch.approvalMode,
+    active_hours_start: patch.activeHoursStart === undefined ? undefined : patch.activeHoursStart,
+    active_hours_end: patch.activeHoursEnd === undefined ? undefined : patch.activeHoursEnd,
     standing_rules: patch.standingRules === undefined ? undefined : JSON.stringify(patch.standingRules),
     source: patch.source,
     community_id: patch.communityId === undefined ? undefined : patch.communityId,

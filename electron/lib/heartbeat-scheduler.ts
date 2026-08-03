@@ -112,8 +112,14 @@ export class HeartbeatScheduler {
   /**
    * Advance next_run_at, then spawn the runner (skip-on-overlap). Advances
    * happen synchronously so a crash mid-run doesn't re-fire immediately.
+   * The active-hours window (if set) is checked BEFORE advancing — a due run
+   * outside the window stays due and fires once the window opens.
    */
   private fire(db: Database.Database, automation: Automation, nowIso: string): void {
+    if (!this.withinActiveHours(automation, nowIso)) {
+      this.opts.log?.(`[heartbeat] "${automation.name}" deferred (outside active hours)`);
+      return;
+    }
     const next = computeNextRun(parseSchedule(automation.scheduleExpr), new Date(nowIso), automation.timezone ?? undefined);
     const nextIso = next ? next.toISOString() : null;
 
@@ -135,6 +141,34 @@ export class HeartbeatScheduler {
     bumpAutomationRunCount(db, automation.id);
     const run = createAutomationRun(db, automation.id, "running");
     this.spawn(run, automation);
+  }
+
+  /**
+   * Active-hours gate: when the automation has a "HH:MM" start/end window, the
+   * current wall-clock time (in the automation's timezone, else local) must fall
+   * inside [start, end). end is exclusive; no midnight wrap in v1.
+   */
+  private withinActiveHours(automation: Automation, nowIso: string): boolean {
+    if (!automation.activeHoursStart || !automation.activeHoursEnd) return true;
+    const start = parseHm(automation.activeHoursStart);
+    const end = parseHm(automation.activeHoursEnd);
+    if (start === null || end === null) return true; // malformed → don't block
+    const now = new Date(nowIso);
+    let minutes: number;
+    try {
+      const tz = automation.timezone ?? undefined;
+      const dtf = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz, hour: "numeric", minute: "numeric", hour12: false,
+      });
+      const parts = dtf.formatToParts(now);
+      let h = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+      if (h === 24) h = 0;
+      const m = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+      minutes = h * 60 + m;
+    } catch {
+      minutes = now.getHours() * 60 + now.getMinutes(); // bad tz → local
+    }
+    return minutes >= start && minutes < end;
   }
 
   /**
@@ -164,4 +198,14 @@ export class HeartbeatScheduler {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Parse "HH:MM" to minutes-since-midnight, or null when malformed. */
+function parseHm(value: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
 }

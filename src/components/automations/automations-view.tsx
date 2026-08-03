@@ -16,6 +16,7 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { PendingApprovals } from "./pending-approvals";
 import { ScheduleBuilder } from "./schedule-builder";
 import { BrowseAutomationsContent } from "./browse-automations";
+import { TimePicker } from "@/components/ui/time-picker";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
 import type { RegistryAutomationEntry } from "@/types";
 
@@ -115,6 +116,8 @@ export function AutomationsView() {
   const [timezone, setTimezone] = useState("");
   const [maxRuns, setMaxRuns] = useState("");
   const [approvalMode, setApprovalMode] = useState<"auto" | "ask">("auto");
+  const [activeHoursStart, setActiveHoursStart] = useState("");
+  const [activeHoursEnd, setActiveHoursEnd] = useState("");
 
   const wsProjects = useMemo(
     () => (activeWorkspaceId ? projects.filter((p) => p.workspaceId === activeWorkspaceId && !p.archivedAt) : []),
@@ -155,6 +158,8 @@ export function AutomationsView() {
     setTimezone("");
     setMaxRuns("");
     setApprovalMode("auto");
+    setActiveHoursStart("");
+    setActiveHoursEnd("");
     setDialogOpen(true);
   }
 
@@ -169,6 +174,8 @@ export function AutomationsView() {
     setTimezone(def.schedule.timezone ?? "");
     setMaxRuns(def.maxRuns !== undefined ? String(def.maxRuns) : "");
     setApprovalMode(def.approvalMode ?? "auto");
+    setActiveHoursStart("");
+    setActiveHoursEnd("");
     setPrefillNonce((n) => n + 1);
   }
 
@@ -182,6 +189,8 @@ export function AutomationsView() {
     setTimezone(a.timezone ?? "");
     setMaxRuns(a.maxRuns === null ? "" : String(a.maxRuns));
     setApprovalMode(a.approvalMode);
+    setActiveHoursStart(a.activeHoursStart ?? "");
+    setActiveHoursEnd(a.activeHoursEnd ?? "");
     setDialogOpen(true);
   }
 
@@ -202,6 +211,8 @@ export function AutomationsView() {
       timezone: timezone.trim() || null,
       maxRuns: maxRuns.trim() ? Number(maxRuns.trim()) : null,
       approvalMode,
+      activeHoursStart: activeHoursStart.trim() || null,
+      activeHoursEnd: activeHoursEnd.trim() || null,
       ...(communityEntry ? { source: "community" as const, communityId: communityEntry.id } : {}),
     };
     if (editing) {
@@ -335,6 +346,8 @@ export function AutomationsView() {
           timezone={timezone} setTimezone={setTimezone}
           maxRuns={maxRuns} setMaxRuns={setMaxRuns}
           approvalMode={approvalMode} setApprovalMode={setApprovalMode}
+          activeHoursStart={activeHoursStart} setActiveHoursStart={setActiveHoursStart}
+          activeHoursEnd={activeHoursEnd} setActiveHoursEnd={setActiveHoursEnd}
           projects={wsProjects}
           onPick={prefillFromCommunity}
           scheduleKey={`${editing?.id ?? "new"}-${prefillNonce}`}
@@ -366,6 +379,8 @@ interface AutomationDialogProps {
   timezone: string; setTimezone: (v: string) => void;
   maxRuns: string; setMaxRuns: (v: string) => void;
   approvalMode: "auto" | "ask"; setApprovalMode: (v: "auto" | "ask") => void;
+  activeHoursStart: string; setActiveHoursStart: (v: string) => void;
+  activeHoursEnd: string; setActiveHoursEnd: (v: string) => void;
   projects: Array<{ id: string; name: string }>;
   onSave: () => void;
   /** Called when a community recipe is chosen (pre-fills the form). */
@@ -379,7 +394,9 @@ function AutomationDialog({
   name, setName, instructions, setInstructions,
   kind, setKind, expr, setExpr,
   projectId, setProjectId, timezone, setTimezone,
-  maxRuns, setMaxRuns, approvalMode, setApprovalMode, projects,
+  maxRuns, setMaxRuns, approvalMode, setApprovalMode,
+  activeHoursStart, setActiveHoursStart, activeHoursEnd, setActiveHoursEnd,
+  projects,
   onSave, onPick, scheduleKey,
 }: AutomationDialogProps) {
   const [browse, setBrowse] = useState(false);
@@ -439,6 +456,13 @@ function AutomationDialog({
           timezone={timezone || null}
           onChange={(k, e) => { setKind(k); setExpr(e); }}
         />
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[var(--text-secondary)]">Only run between</span>
+          <div className="w-28"><TimePicker value={activeHoursStart || undefined} onChange={setActiveHoursStart} placeholder="Start" /></div>
+          <span className="text-xs text-[var(--text-secondary)]">–</span>
+          <div className="w-28"><TimePicker value={activeHoursEnd || undefined} onChange={setActiveHoursEnd} placeholder="End" /></div>
+          <span className="text-[0.714rem] text-[var(--text-tertiary)]">(optional)</span>
+        </div>
         <label className="block space-y-1">
           <span className="text-xs text-[var(--text-secondary)]">Project scope</span>
           <select

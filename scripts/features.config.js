@@ -269,6 +269,19 @@ const FEATURES = [
       "Always Fresh: The catalog is fetched cache-first (instant, offline-friendly) and re-installing never duplicates an entry.",
     ],
   },
+  {
+    id: "v2.6.0-heartbeat-automations",
+    version: "v2.6.0",
+    title: "Heartbeat Automations",
+    category: "Automation",
+    description: "Schedule background agent tasks that run while Cairn is open — morning briefs, weekly reviews, inbox tidy-ups. Review and approve what they do, and browse ready-made recipes from the community.",
+    highlights: [
+      "Schedule Without Cron: Build schedules visually — interval, daily, weekly day toggles, monthly, or a one-off — with a live 'next run' preview.",
+      "Approve or Deny: Automations can run in 'ask' mode so each write action parks in an attention queue on the Overview for you to approve or deny.",
+      "Live Run State: Cards show the current tool, an animated progress bar, and the notes/cards each run produced — click them to jump straight to the result.",
+      "Community Recipes: Start from a community recipe (automations.json) that pre-fills the form, or a notification center with a title-bar bell keeps you in the loop.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

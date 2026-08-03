@@ -16,6 +16,7 @@ import { BrowserWindow, Notification } from "electron";
 import fs from "fs";
 import type Database from "better-sqlite3";
 import { getUnreadMcpNotifications, getActiveMcpWrites, pruneMcpNotifications } from "../db/queries";
+import { countPendingApprovals } from "../db/approval-queries";
 
 export interface McpPollerOptions {
   db: Database.Database;
@@ -58,10 +59,16 @@ export function startMcpNotificationPoller({
   }
 
   function pushUnread(count: number): void {
-    if (count === lastUnread) return;
-    lastUnread = count;
-    updateBadge(count);
-    sendToWin("mcp:unread-count", count);
+    // Dock/tray badge = combined attention (notifications + pending approvals),
+    // so a parked approval never silently disappears even if notifications were
+    // marked read. The renderer bell gets the notifications-only count.
+    let approvalCount = 0;
+    try { approvalCount = countPendingApprovals(db); } catch { /* db transient */ }
+    updateBadge(count + approvalCount);
+    if (count !== lastUnread) {
+      lastUnread = count;
+      sendToWin("mcp:unread-count", count);
+    }
   }
 
   function check() {

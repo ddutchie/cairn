@@ -60,13 +60,16 @@ export function createTray(win: BrowserWindow): TrayHandle {
 
   tray.on("click", () => { win.show(); win.focus(); });
 
+  /**
+   * Set the dock/tray attention badge. This is the COMBINED attention count
+   * (unread notifications + pending approvals) pushed by the notification
+   * poller; it does NOT broadcast `mcp:unread-count` — the poller sends the
+   * notifications-only count separately so the in-app bell badge stays accurate.
+   */
   function updateBadge(count: number) {
     tray.setContextMenu(buildMenu(count));
     if (process.platform === "darwin") {
       app.setBadgeCount(count);
-    }
-    if (!win.isDestroyed()) {
-      win.webContents.send("mcp:unread-count", count);
     }
   }
 

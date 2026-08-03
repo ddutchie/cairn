@@ -29,6 +29,8 @@ export interface Automation {
   maxRuns: number | null;
   runCount: number;
   approvalMode: "auto" | "ask";
+  activeHoursStart: string | null;
+  activeHoursEnd: string | null;
   standingRules: Array<{ tool: string; target?: string }>;
   source: "custom" | "community";
   communityId: ID | null;
@@ -64,6 +66,8 @@ export interface AutomationInput {
   enabled?: boolean;
   maxRuns?: number | null;
   approvalMode?: "auto" | "ask";
+  activeHoursStart?: string | null;
+  activeHoursEnd?: string | null;
   standingRules?: Array<{ tool: string; target?: string }>;
   /** Provenance when prefilled from the cairn-community catalog. */
   source?: "custom" | "community";
