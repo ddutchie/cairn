@@ -128,12 +128,18 @@ export async function runAutomation(
     } catch { /* best-effort */ }
   };
 
-  // Collect notes/cards the run created so they can be surfaced as navigable
-  // artifacts (the loop's emitToolCallDone carries a cairnRef for note/task
-  // tools). Persisted on the run row at completion.
+  // Collect notes/cards the run CREATED or CHANGED so they can be surfaced as
+  // navigable artifacts (the loop's emitToolCallDone carries a cairnRef for
+  // note/task tools). Only WRITE tools count — get_note/get_task are reads and
+  // must not be listed as artifacts. Persisted on the run row at completion.
+  const ARTIFACT_TOOLS = new Set([
+    "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template",
+    "create_task", "update_task", "bulk_update_task_status",
+  ]);
   const artifacts: Array<{ type: "note" | "task"; id: string; title: string }> = [];
-  const recordArtifact = (ref: { type: "note" | "task"; id: string; title: string } | undefined) => {
+  const recordArtifact = (tool: string, ref: { type: "note" | "task"; id: string; title: string } | undefined) => {
     if (!ref?.id) return;
+    if (!ARTIFACT_TOOLS.has(tool)) return;
     if (!artifacts.some((a) => a.id === ref.id)) artifacts.push(ref);
   };
   const finalScratch = () => (artifacts.length > 0 ? JSON.stringify({ artifacts }) : null);
@@ -151,7 +157,7 @@ export async function runAutomation(
     undefined,                       // getWin
     provider,
     undefined,                       // onUsage
-    (e) => recordArtifact(e.cairnRef), // emitToolCallDone — collect created notes/cards
+    (e) => recordArtifact(e.tool, e.cairnRef), // emitToolCallDone — collect created/changed notes/cards
     undefined,                       // onToken
     undefined,                       // onThought
     undefined,                       // extraTools
