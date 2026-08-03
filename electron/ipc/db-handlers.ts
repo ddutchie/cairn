@@ -708,4 +708,8 @@ export function registerDbHandlers(ctx: DbContext): void {
   // ── Approval inbox ──────────────────────────────
   registerIpcHandle("db:approval:listPending", (_e, { limit }: { limit?: number }) => handle(() => listPendingApprovals(ctx.db, limit)));
   registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => resolveApproval(ctx.db, id, resolution)));
+  registerIpcHandle("db:approval:count", () => handle(() => {
+    const r = ctx.db.prepare("SELECT COUNT(*) AS n FROM approval_items WHERE state = 'pending'").get() as { n: number };
+    return r.n;
+  }));
 }

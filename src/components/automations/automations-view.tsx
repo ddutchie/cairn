@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw } from "lucide-react";
+import { Play, Pencil, Plus, Trash2, Zap, Clock, ShieldAlert, RefreshCw } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -56,20 +56,25 @@ const KIND_PLACEHOLDER: Record<ScheduleKind, string> = {
 export function AutomationsView() {
   const {
     activeWorkspaceId, activeProjectId, projects,
-    automations, lastRuns,
+    automations, lastRuns, pendingApprovals, pendingApprovalCount,
     fetchAutomations, createAutomation, updateAutomation, deleteAutomation, runNow, fetchRun,
+    fetchPendingApprovals, resolveApprovalItem,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId: s.activeProjectId,
     projects: s.projects,
     automations: s.automations,
     lastRuns: s.lastRuns,
+    pendingApprovals: s.pendingApprovals,
+    pendingApprovalCount: s.pendingApprovalCount,
     fetchAutomations: s.fetchAutomations,
     createAutomation: s.createAutomation,
     updateAutomation: s.updateAutomation,
     deleteAutomation: s.deleteAutomation,
     runNow: s.runNow,
     fetchRun: s.fetchRun,
+    fetchPendingApprovals: s.fetchPendingApprovals,
+    resolveApprovalItem: s.resolveApprovalItem,
   })));
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -100,6 +105,12 @@ export function AutomationsView() {
       void fetchRun(a.id);
     }
   }, [automations, fetchRun]);
+
+  // Refresh the pending-approval list whenever the live count changes (the global
+  // poller updates the badge every few seconds; this keeps the list in sync).
+  useEffect(() => {
+    void fetchPendingApprovals();
+  }, [fetchPendingApprovals, pendingApprovalCount]);
 
   function openCreate() {
     setEditing(null);
@@ -165,7 +176,33 @@ export function AutomationsView() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8 space-y-3">
-        {automations.length === 0 && (
+        {pendingApprovals.length > 0 && (
+          <div className="space-y-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] flex items-center gap-1.5">
+              <ShieldAlert size={12} /> Pending approvals ({pendingApprovals.length})
+            </h2>
+            {pendingApprovals.map((item) => (
+              <div key={item.id} className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-dim)]/40 p-3">
+                <div className="text-sm text-[var(--text-primary)] font-medium">{item.title}</div>
+                <div className="text-xs text-[var(--text-secondary)] mt-1">
+                  {item.body} <code className="font-mono text-[0.714rem]">{item.tool}</code>
+                </div>
+                <div className="flex items-center gap-2 mt-2.5">
+                  <Button variant="accent" size="xs" onClick={() => void resolveApprovalItem(item.id, "approved_once")}>
+                    Approve once
+                  </Button>
+                  <Button variant="outline" size="xs" onClick={() => void resolveApprovalItem(item.id, "approved_always")}>
+                    Always allow
+                  </Button>
+                  <Button variant="danger" size="xs" onClick={() => void resolveApprovalItem(item.id, "denied")}>
+                    Deny
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {automations.length === 0 && pendingApprovals.length === 0 && (
           <div className="rounded-lg border border-[var(--border)] p-10 text-center text-sm text-[var(--text-tertiary)]">
             No automations yet. Create one to run scheduled tasks in the background.
           </div>

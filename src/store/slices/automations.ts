@@ -67,12 +67,35 @@ export interface AutomationInput {
   standingRules?: Array<{ tool: string; target?: string }>;
 }
 
+// ── Approval inbox (parked from 'ask'-mode automation runs) ──────────────────
+
+export interface ApprovalItem {
+  id: ID;
+  runId: ID | null;
+  sessionId: ID | null;
+  tool: string;
+  args: Record<string, unknown>;
+  kind: "approval" | "question" | "notification" | "plan";
+  title: string;
+  body: string;
+  state: "pending" | "resolved" | "expired";
+  resolution: "approved_once" | "approved_session" | "approved_always" | "denied" | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export type ApprovalResolution = "approved_once" | "approved_session" | "approved_always" | "denied";
+
 // ── Slice interface ───────────────────────────────────────────────────────────
 
 export interface AutomationsSlice {
   automations: Automation[];
   /** Last run per automation (for "last run" column); refetched on demand. */
   lastRuns: Record<ID, AutomationRun | undefined>;
+  /** Pending approval items (parked by 'ask'-mode runs), newest first. */
+  pendingApprovals: ApprovalItem[];
+  /** Live pending-approval count for the sidebar badge. */
+  pendingApprovalCount: number;
 
   fetchAutomations: (workspaceId: ID) => Promise<void>;
   createAutomation: (input: AutomationInput) => Promise<Automation | null>;
@@ -80,9 +103,19 @@ export interface AutomationsSlice {
   deleteAutomation: (id: ID) => Promise<void>;
   runNow: (id: ID) => Promise<boolean>;
   fetchRun: (automationId: ID) => Promise<AutomationRun | undefined>;
+  fetchPendingApprovals: () => Promise<void>;
+  fetchApprovalCount: () => Promise<void>;
+  resolveApprovalItem: (id: ID, resolution: ApprovalResolution) => Promise<void>;
+  startApprovalPolling: () => void;
+  stopApprovalPolling: () => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
+
+// Module-level poller so only one interval runs regardless of how many times the
+// slice is instantiated / mounted.
+let approvalPollTimer: ReturnType<typeof setInterval> | null = null;
+const APPROVAL_POLL_MS = 3_000;
 
 export const createAutomationsSlice: StateCreator<CairnStore, [], [], AutomationsSlice> = (
   set,
@@ -90,6 +123,8 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
 ) => ({
   automations: [],
   lastRuns: {},
+  pendingApprovals: [],
+  pendingApprovalCount: 0,
 
   async fetchAutomations(workspaceId) {
     if (typeof window === "undefined" || !window.electron?.automation) return;
@@ -173,6 +208,53 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
     } catch (err) {
       console.error("[automations] fetchRun error", err);
       return undefined;
+    }
+  },
+
+  async fetchPendingApprovals() {
+    if (typeof window === "undefined" || !window.electron?.approval) return;
+    try {
+      const items = (await window.electron.approval.listPending()) as ApprovalItem[];
+      set({ pendingApprovals: items, pendingApprovalCount: items.length });
+    } catch (err) {
+      console.error("[automations] fetchPendingApprovals error", err);
+    }
+  },
+
+  async fetchApprovalCount() {
+    if (typeof window === "undefined" || !window.electron?.approval) return;
+    try {
+      const n = (await window.electron.approval.count()) as number;
+      set({ pendingApprovalCount: n });
+    } catch (err) {
+      console.error("[automations] fetchApprovalCount error", err);
+    }
+  },
+
+  async resolveApprovalItem(id, resolution) {
+    if (typeof window === "undefined" || !window.electron?.approval) return;
+    try {
+      await window.electron.approval.resolve(id, resolution);
+      set((s) => ({
+        pendingApprovals: s.pendingApprovals.filter((i) => i.id !== id),
+        pendingApprovalCount: Math.max(0, s.pendingApprovalCount - 1),
+      }));
+    } catch (err) {
+      console.error("[automations] resolveApprovalItem error", err);
+    }
+  },
+
+  startApprovalPolling() {
+    if (approvalPollTimer) return;
+    approvalPollTimer = setInterval(() => {
+      void get().fetchApprovalCount();
+    }, APPROVAL_POLL_MS);
+  },
+
+  stopApprovalPolling() {
+    if (approvalPollTimer) {
+      clearInterval(approvalPollTimer);
+      approvalPollTimer = null;
     }
   },
 });

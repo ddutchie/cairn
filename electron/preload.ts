@@ -255,6 +255,7 @@ const api = {
   approval: {
     listPending: (limit?: number) => invoke("db:approval:listPending", { limit }),
     resolve: (id: string, resolution: "approved_once" | "approved_session" | "approved_always" | "denied") => invoke("db:approval:resolve", { id, resolution }),
+    count: () => invoke("db:approval:count"),
   },
 
   // ── Chat ─────────────────────────────────────
