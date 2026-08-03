@@ -525,6 +525,7 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
     <ModalShell
       open={automation !== null}
       onClose={() => onOpenChange(false)}
+      size="lg"
       title={
         automation ? (
           <span className="flex items-center gap-2">
