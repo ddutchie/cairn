@@ -84,9 +84,9 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto max-h-80 py-1">
+      <div className="flex-1 overflow-y-auto max-h-80 pb-1">
         {notifications.length === 0 ? (
-          <p className="px-3 py-8 text-center text-[0.714rem] text-[var(--text-tertiary)]">
+          <p className="px-3 py-6 text-center text-[0.714rem] text-[var(--text-tertiary)]">
             No notifications yet — automation completions and app activity will appear here.
           </p>
         ) : (
