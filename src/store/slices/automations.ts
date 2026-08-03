@@ -92,6 +92,8 @@ export interface AutomationsSlice {
   automations: Automation[];
   /** Last run per automation (for "last run" column); refetched on demand. */
   lastRuns: Record<ID, AutomationRun | undefined>;
+  /** Full run history per automation (loaded for the detail view). */
+  runsById: Record<ID, AutomationRun[]>;
   /** Pending approval items (parked by 'ask'-mode runs), newest first. */
   pendingApprovals: ApprovalItem[];
   /** Live pending-approval count for the sidebar badge. */
@@ -103,6 +105,7 @@ export interface AutomationsSlice {
   deleteAutomation: (id: ID) => Promise<void>;
   runNow: (id: ID) => Promise<boolean>;
   fetchRun: (automationId: ID) => Promise<AutomationRun | undefined>;
+  fetchRuns: (automationId: ID, limit?: number) => Promise<void>;
   fetchPendingApprovals: () => Promise<void>;
   fetchApprovalCount: () => Promise<void>;
   resolveApprovalItem: (id: ID, resolution: ApprovalResolution) => Promise<void>;
@@ -123,6 +126,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
 ) => ({
   automations: [],
   lastRuns: {},
+  runsById: {},
   pendingApprovals: [],
   pendingApprovalCount: 0,
 
@@ -208,6 +212,16 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
     } catch (err) {
       console.error("[automations] fetchRun error", err);
       return undefined;
+    }
+  },
+
+  async fetchRuns(automationId, limit = 20) {
+    if (typeof window === "undefined" || !window.electron?.automation) return;
+    try {
+      const runs = (await window.electron.automation.runs(automationId, limit)) as AutomationRun[];
+      set((s) => ({ runsById: { ...s.runsById, [automationId]: runs } }));
+    } catch (err) {
+      console.error("[automations] fetchRuns error", err);
     }
   },
 

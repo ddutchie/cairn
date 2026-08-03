@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw } from "lucide-react";
+import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose,
 } from "@/components/ui/dialog";
 import { PendingApprovals } from "./pending-approvals";
-import type { Automation, ScheduleKind } from "@/store/slices/automations";
+import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
 
 function formatRelative(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -57,8 +57,8 @@ const KIND_PLACEHOLDER: Record<ScheduleKind, string> = {
 export function AutomationsView() {
   const {
     activeWorkspaceId, activeProjectId, projects,
-    automations, lastRuns, pendingApprovals,
-    fetchAutomations, createAutomation, updateAutomation, deleteAutomation, runNow, fetchRun,
+    automations, lastRuns, pendingApprovals, runsById,
+    fetchAutomations, createAutomation, updateAutomation, deleteAutomation, runNow, fetchRun, fetchRuns,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId: s.activeProjectId,
@@ -66,16 +66,19 @@ export function AutomationsView() {
     automations: s.automations,
     lastRuns: s.lastRuns,
     pendingApprovals: s.pendingApprovals,
+    runsById: s.runsById,
     fetchAutomations: s.fetchAutomations,
     createAutomation: s.createAutomation,
     updateAutomation: s.updateAutomation,
     deleteAutomation: s.deleteAutomation,
     runNow: s.runNow,
     fetchRun: s.fetchRun,
+    fetchRuns: s.fetchRuns,
   })));
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Automation | null>(null);
+  const [detail, setDetail] = useState<Automation | null>(null);
   const [name, setName] = useState("");
   const [instructions, setInstructions] = useState("");
   const [kind, setKind] = useState<ScheduleKind>("every");
@@ -90,10 +93,20 @@ export function AutomationsView() {
     [projects, activeWorkspaceId]
   );
 
-  // Load automations when the workspace changes.
+  const projectName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of projects) map.set(p.id, p.name);
+    return map;
+  }, [projects]);
+
+  // Load automations on mount/workspace change, then poll every 5s so run
+  // status / next-run / run-count stay live without a reload.
   useEffect(() => {
     if (!activeWorkspaceId) return;
-    void fetchAutomations(activeWorkspaceId);
+    const refresh = () => void fetchAutomations(activeWorkspaceId);
+    refresh();
+    const t = setInterval(refresh, 5_000);
+    return () => clearInterval(t);
   }, [activeWorkspaceId, fetchAutomations]);
 
   // Load the latest run for each automation (bounded — automations are few).
@@ -129,6 +142,11 @@ export function AutomationsView() {
     setDialogOpen(true);
   }
 
+  function openDetail(a: Automation) {
+    setDetail(a);
+    void fetchRuns(a.id);
+  }
+
   async function save() {
     if (!activeWorkspaceId || !name.trim() || !instructions.trim()) return;
     const base = {
@@ -151,22 +169,24 @@ export function AutomationsView() {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-4 md:px-8 pt-4 md:pt-8 pb-4 md:pb-6 border-b border-[var(--border-subtle)]">
-        <div>
-          <h1 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
-            <Zap size={16} className="text-[var(--accent)]" /> Automations
-          </h1>
-          <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
-            Scheduled background tasks that run while Cairn is open — data-only, no shell access.
-          </p>
+    <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+        <h1 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+          <Zap size={14} className="text-[var(--accent)]" /> Automations
+        </h1>
+        <span className="text-xs text-[var(--text-tertiary)] hidden sm:inline">
+          — background tasks that run while Cairn is open
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="accent" size="sm" onClick={openCreate}>
+            <Plus size={13} /> New Automation
+          </Button>
         </div>
-        <Button variant="accent" size="sm" onClick={openCreate}>
-          <Plus size={13} /> New Automation
-        </Button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-8 pb-8 space-y-3">
+      {/* Body */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
         <PendingApprovals />
         {automations.length === 0 && pendingApprovals.length === 0 && (
           <div className="rounded-lg border border-[var(--border)] p-10 text-center text-sm text-[var(--text-tertiary)]">
@@ -178,11 +198,22 @@ export function AutomationsView() {
           return (
             <div key={a.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <button
+                  onClick={() => openDetail(a)}
+                  className="min-w-0 flex-1 text-left group"
+                  title="View automation state"
+                >
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-medium text-[var(--text-primary)] truncate">{a.name}</h3>
+                    <h3 className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">
+                      {a.name}
+                    </h3>
                     {!a.enabled && (
                       <span className="text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-tertiary)]">disabled</span>
+                    )}
+                    {a.projectId && projectName.has(a.projectId) && (
+                      <span className="text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--accent-dim)] text-[var(--accent)] max-w-40 truncate">
+                        {projectName.get(a.projectId)}
+                      </span>
                     )}
                   </div>
                   {a.description && (
@@ -198,7 +229,7 @@ export function AutomationsView() {
                       </span>
                     )}
                   </div>
-                </div>
+                </button>
                 <div className="flex items-center gap-1 shrink-0">
                   <Button variant="ghost" size="icon" title="Run now" onClick={() => void runNow(a.id)}>
                     <Play size={13} />
@@ -231,6 +262,15 @@ export function AutomationsView() {
         approvalMode={approvalMode} setApprovalMode={setApprovalMode}
         projects={wsProjects}
         onSave={() => void save()}
+      />
+
+      <AutomationDetailDialog
+        automation={detail}
+        onOpenChange={(open) => { if (!open) setDetail(null); }}
+        runs={detail ? runsById[detail.id] ?? [] : []}
+        onEdit={detail ? () => { setDetail(null); openEdit(detail); } : undefined}
+        onRunNow={detail ? () => void runNow(detail.id) : undefined}
+        projectName={detail && detail.projectId ? projectName.get(detail.projectId) ?? null : null}
       />
     </div>
   );
@@ -355,5 +395,110 @@ function AutomationDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface AutomationDetailDialogProps {
+  automation: Automation | null;
+  onOpenChange: (open: boolean) => void;
+  runs: AutomationRun[];
+  onEdit?: () => void;
+  onRunNow?: () => void;
+  projectName: string | null;
+}
+
+function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, projectName }: AutomationDetailDialogProps) {
+  const [refreshing, setRefreshing] = useState(false);
+  const { fetchRuns } = useCairnStore(useShallow((s) => ({ fetchRuns: s.fetchRuns })));
+
+  useEffect(() => {
+    if (automation) void fetchRuns(automation.id);
+  }, [automation, fetchRuns]);
+
+  async function refresh() {
+    if (!automation) return;
+    setRefreshing(true);
+    try { await fetchRuns(automation.id); } finally { setRefreshing(false); }
+  }
+
+  return (
+    <Dialog open={automation !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Activity size={13} className="text-[var(--accent)]" />
+            <span className="truncate">{automation?.name ?? ""}</span>
+          </DialogTitle>
+        </DialogHeader>
+        {automation && (
+          <div className="px-5 py-4 space-y-4">
+            {automation.description && (
+              <p className="text-xs text-[var(--text-secondary)]">{automation.description}</p>
+            )}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              <InfoRow label="Schedule" value={scheduleLabel(automation)} />
+              <InfoRow label="Project" value={automation.projectId ? projectName ?? "—" : "Workspace (all projects)"} />
+              <InfoRow label="Next run" value={formatRelative(automation.nextRunAt)} />
+              <InfoRow label="Total runs" value={`${automation.runCount}${automation.maxRuns ? ` / max ${automation.maxRuns}` : ""}`} />
+              <InfoRow label="Approval" value={automation.approvalMode === "ask" ? "Ask" : "Auto"} />
+              <InfoRow label="Status" value={automation.enabled ? "Enabled" : "Disabled"} />
+              {automation.timezone && <InfoRow label="Timezone" value={automation.timezone} />}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">Run history</span>
+                <Button variant="ghost" size="xs" onClick={() => void refresh()} disabled={refreshing}>
+                  <RefreshCw size={11} className={cn("mr-1", refreshing && "animate-spin")} /> Refresh
+                </Button>
+              </div>
+              <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                {runs.length === 0 && (
+                  <p className="text-xs text-[var(--text-tertiary)]">No runs yet — it will fire on its schedule or you can run it now.</p>
+                )}
+                {runs.map((r) => (
+                  <div key={r.id} className="rounded-md border border-[var(--border)] px-3 py-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className={cn("capitalize font-medium", STATUS_COLOR[r.status])}>{r.status}</span>
+                      <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt)}</span>
+                    </div>
+                    {r.finishedAt && r.status === "done" && (
+                      <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt)}</div>
+                    )}
+                    {r.error && (
+                      <div className="text-[var(--danger)] mt-0.5 break-words">{r.error}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="px-5 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-2">
+          {onEdit && (
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              <Pencil size={12} className="mr-1" /> Edit
+            </Button>
+          )}
+          {onRunNow && (
+            <Button variant="accent" size="sm" onClick={onRunNow}>
+              <Play size={12} className="mr-1" /> Run now
+            </Button>
+          )}
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm">Close</Button>
+          </DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[0.714rem] text-[var(--text-tertiary)]">{label}</div>
+      <div className="text-[var(--text-primary)] truncate">{value}</div>
+    </div>
   );
 }
