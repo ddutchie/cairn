@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { Input } from "@/components/ui/input";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose,
+  DialogClose,
 } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { PendingApprovals } from "./pending-approvals";
 import { ScheduleBuilder } from "./schedule-builder";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
@@ -350,86 +351,88 @@ function AutomationDialog({
   maxRuns, setMaxRuns, approvalMode, setApprovalMode, projects, onSave,
 }: AutomationDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{editing ? "Edit automation" : "New automation"}</DialogTitle>
-        </DialogHeader>
-        <div className="px-5 py-4 space-y-4">
-          <p className="text-xs text-[var(--text-tertiary)]">
-            The agent runs these instructions on schedule using your AI connection. It can only touch notes, tasks, tags and boards — no shell.
-          </p>
-          <label className="block space-y-1">
-            <span className="text-xs text-[var(--text-secondary)]">Name</span>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Weekly review" />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs text-[var(--text-secondary)]">Instructions</span>
-            <textarea
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              placeholder="Summarise this week's Done cards and draft a review note…"
-              rows={4}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-            />
-          </label>
-          <ScheduleBuilder
-            key={editing?.id ?? "new"}
-            initialKind={kind}
-            initialExpr={expr}
-            timezone={timezone || null}
-            onChange={(k, e) => { setKind(k); setExpr(e); }}
-          />
-          <label className="block space-y-1">
-            <span className="text-xs text-[var(--text-secondary)]">Project scope</span>
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-            >
-              <option value="">Workspace (all projects)</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block space-y-1">
-              <span className="text-xs text-[var(--text-secondary)]">Timezone (optional)</span>
-              <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Europe/London" />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs text-[var(--text-secondary)]">Max runs (optional)</span>
-              <Input value={maxRuns} onChange={(e) => setMaxRuns(e.target.value)} placeholder="Unlimited" />
-            </label>
-          </div>
-          <label className="block space-y-1">
-            <span className="text-xs text-[var(--text-secondary)]">Approval mode</span>
-            <select
-              value={approvalMode}
-              onChange={(e) => setApprovalMode(e.target.value as "auto" | "ask")}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-            >
-              <option value="auto">Auto — run freely (writes happen automatically)</option>
-              <option value="ask">Ask — approve or deny each write</option>
-            </select>
-            <span className="text-[0.714rem] text-[var(--text-tertiary)]">
-              {approvalMode === "ask"
-                ? "Write actions park in the approval inbox and the run waits for your decision."
-                : "Only data tools run — no shell or file edits either way."}
-            </span>
-          </label>
-        </div>
-        <div className="px-5 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-2">
+    <ModalShell
+      open={open}
+      onClose={() => onOpenChange(false)}
+      title={editing ? "Edit automation" : "New automation"}
+      scrollable
+      footer={
+        <>
           <DialogClose asChild>
             <Button variant="ghost" size="sm">Cancel</Button>
           </DialogClose>
           <Button variant="accent" size="sm" onClick={onSave} disabled={!name.trim() || !instructions.trim()}>
             <RefreshCw size={13} className="mr-1" /> {editing ? "Save" : "Create"}
           </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-[var(--text-tertiary)]">
+          The agent runs these instructions on schedule using your AI connection. It can only touch notes, tasks, tags and boards — no shell.
+        </p>
+        <label className="block space-y-1">
+          <span className="text-xs text-[var(--text-secondary)]">Name</span>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Weekly review" />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs text-[var(--text-secondary)]">Instructions</span>
+          <textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            placeholder="Summarise this week's Done cards and draft a review note…"
+            rows={4}
+            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+          />
+        </label>
+        <ScheduleBuilder
+          key={editing?.id ?? "new"}
+          initialKind={kind}
+          initialExpr={expr}
+          timezone={timezone || null}
+          onChange={(k, e) => { setKind(k); setExpr(e); }}
+        />
+        <label className="block space-y-1">
+          <span className="text-xs text-[var(--text-secondary)]">Project scope</span>
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">Workspace (all projects)</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block space-y-1">
+            <span className="text-xs text-[var(--text-secondary)]">Timezone (optional)</span>
+            <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Europe/London" />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs text-[var(--text-secondary)]">Max runs (optional)</span>
+            <Input value={maxRuns} onChange={(e) => setMaxRuns(e.target.value)} placeholder="Unlimited" />
+          </label>
         </div>
-      </DialogContent>
-    </Dialog>
+        <label className="block space-y-1">
+          <span className="text-xs text-[var(--text-secondary)]">Approval mode</span>
+          <select
+            value={approvalMode}
+            onChange={(e) => setApprovalMode(e.target.value as "auto" | "ask")}
+            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+          >
+            <option value="auto">Auto — run freely (writes happen automatically)</option>
+            <option value="ask">Ask — approve or deny each write</option>
+          </select>
+          <span className="text-[0.714rem] text-[var(--text-tertiary)]">
+            {approvalMode === "ask"
+              ? "Write actions park in the approval inbox and the run waits for your decision."
+              : "Only data tools run — no shell or file edits either way."}
+          </span>
+        </label>
+      </div>
+    </ModalShell>
   );
 }
 
@@ -471,80 +474,20 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
   }, [runs]);
 
   return (
-    <Dialog open={automation !== null} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+    <ModalShell
+      open={automation !== null}
+      onClose={() => onOpenChange(false)}
+      title={
+        automation ? (
+          <span className="flex items-center gap-2">
             <Activity size={13} className="text-[var(--accent)]" />
-            <span className="truncate">{automation?.name ?? ""}</span>
-          </DialogTitle>
-        </DialogHeader>
-        {automation && (
-          <div className="px-5 py-4 space-y-4">
-            {automation.description && (
-              <p className="text-xs text-[var(--text-secondary)]">{automation.description}</p>
-            )}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-              <InfoRow label="Schedule" value={scheduleLabel(automation)} />
-              <InfoRow label="Project" value={automation.projectId ? projectName ?? "—" : "Workspace (all projects)"} />
-              <InfoRow label="Next run" value={formatRelative(automation.nextRunAt)} />
-              <InfoRow label="Total runs" value={`${automation.runCount}${automation.maxRuns ? ` / max ${automation.maxRuns}` : ""}`} />
-              <InfoRow label="Approval" value={automation.approvalMode === "ask" ? "Ask" : "Auto"} />
-              <InfoRow label="Status" value={automation.enabled ? "Enabled" : "Disabled"} />
-              {automation.timezone && <InfoRow label="Timezone" value={automation.timezone} />}
-            </div>
-
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] block mb-2">Artifacts</span>
-              {artifacts.length === 0 ? (
-                <p className="text-xs text-[var(--text-tertiary)]">No notes or cards created yet.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {artifacts.map((art) => (
-                    <button
-                      key={art.id}
-                      onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
-                      title={`Open ${art.type === "note" ? "note" : "task"}`}
-                      className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-64"
-                    >
-                      {art.type === "note" ? <FileText size={11} className="shrink-0" /> : <Kanban size={11} className="shrink-0" />}
-                      <span className="truncate">{art.title}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">Run history</span>
-                <Button variant="ghost" size="xs" onClick={() => void refresh()} disabled={refreshing}>
-                  <RefreshCw size={11} className={cn("mr-1", refreshing && "animate-spin")} /> Refresh
-                </Button>
-              </div>
-              <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                {runs.length === 0 && (
-                  <p className="text-xs text-[var(--text-tertiary)]">No runs yet — it will fire on its schedule or you can run it now.</p>
-                )}
-                {runs.map((r) => (
-                  <div key={r.id} className="rounded-md border border-[var(--border)] px-3 py-2 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className={cn("capitalize font-medium", STATUS_COLOR[r.status])}>{r.status}</span>
-                      <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt)}</span>
-                    </div>
-                    {r.finishedAt && r.status === "done" && (
-                      <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt)}</div>
-                    )}
-                    {r.error && (
-                      <div className="text-[var(--danger)] mt-0.5 break-words">{r.error}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="px-5 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-2">
+            <span className="truncate">{automation.name}</span>
+          </span>
+        ) : ""
+      }
+      scrollable
+      footer={
+        <>
           {onEdit && (
             <Button variant="outline" size="sm" onClick={onEdit}>
               <Pencil size={12} className="mr-1" /> Edit
@@ -558,9 +501,75 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
           <DialogClose asChild>
             <Button variant="ghost" size="sm">Close</Button>
           </DialogClose>
+        </>
+      }
+    >
+      {automation && (
+        <div className="space-y-4">
+          {automation.description && (
+            <p className="text-xs text-[var(--text-secondary)]">{automation.description}</p>
+          )}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <InfoRow label="Schedule" value={scheduleLabel(automation)} />
+            <InfoRow label="Project" value={automation.projectId ? projectName ?? "—" : "Workspace (all projects)"} />
+            <InfoRow label="Next run" value={formatRelative(automation.nextRunAt)} />
+            <InfoRow label="Total runs" value={`${automation.runCount}${automation.maxRuns ? ` / max ${automation.maxRuns}` : ""}`} />
+            <InfoRow label="Approval" value={automation.approvalMode === "ask" ? "Ask" : "Auto"} />
+            <InfoRow label="Status" value={automation.enabled ? "Enabled" : "Disabled"} />
+            {automation.timezone && <InfoRow label="Timezone" value={automation.timezone} />}
+          </div>
+
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] block mb-2">Artifacts</span>
+            {artifacts.length === 0 ? (
+              <p className="text-xs text-[var(--text-tertiary)]">No notes or cards created yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {artifacts.map((art) => (
+                  <button
+                    key={art.id}
+                    onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
+                    title={`Open ${art.type === "note" ? "note" : "task"}`}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-64"
+                  >
+                    {art.type === "note" ? <FileText size={11} className="shrink-0" /> : <Kanban size={11} className="shrink-0" />}
+                    <span className="truncate">{art.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">Run history</span>
+              <Button variant="ghost" size="xs" onClick={() => void refresh()} disabled={refreshing}>
+                <RefreshCw size={11} className={cn("mr-1", refreshing && "animate-spin")} /> Refresh
+              </Button>
+            </div>
+            <div className="space-y-1.5 max-h-56 overflow-y-auto">
+              {runs.length === 0 && (
+                <p className="text-xs text-[var(--text-tertiary)]">No runs yet — it will fire on its schedule or you can run it now.</p>
+              )}
+              {runs.map((r) => (
+                <div key={r.id} className="rounded-md border border-[var(--border)] px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className={cn("capitalize font-medium", STATUS_COLOR[r.status])}>{r.status}</span>
+                    <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt)}</span>
+                  </div>
+                  {r.finishedAt && r.status === "done" && (
+                    <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt)}</div>
+                  )}
+                  {r.error && (
+                    <div className="text-[var(--danger)] mt-0.5 break-words">{r.error}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      )}
+    </ModalShell>
   );
 }
 
