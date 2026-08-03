@@ -24,7 +24,7 @@ function SubToolChip({ tc }: { tc: ChatToolCallRecord }) {
     return (
       <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
         <XCircle size={9} className="text-[var(--danger)] shrink-0" />
-        <span className="text-[0.714rem] text-[var(--text-tertiary)]">{humanizeTool(tc.tool, parseToolArgs(tc.args)).pre} failed</span>
+        {(() => { const summary = humanizeTool(tc.tool, parseToolArgs(tc.args)); return <span className="text-[0.714rem] text-[var(--text-tertiary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-secondary)]">{summary.obj}</strong></> : null} failed</span>; })()}
       </div>
     );
   }

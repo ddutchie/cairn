@@ -426,7 +426,8 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:respond-tool ──────────────────────────────────────────────────
-  registerIpcOn("pi-agent:respond-tool", (_event, { _sessionId, callId, approved, grant }: { _sessionId: string; callId: string; approved: boolean; grant?: "session" | "command" }) => {
+  registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command" }) => {
+    void sessionId;
     const pending = pendingApprovals.get(callId);
     if (pending) {
       pending.resolve({ approved, grant: approved ? grant : undefined });

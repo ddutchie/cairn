@@ -15,4 +15,9 @@ describe("tool approval presentation rules", () => {
     expect(preview.length).toBeLessThanOrEqual(421);
     expect(preview.endsWith("…")).toBe(true);
   });
+
+  it("handles missing bash and write preview values", () => {
+    expect(approvalPreview("bash", {})).toBe("");
+    expect(approvalPreview("write", {})).toBe("");
+  });
 });

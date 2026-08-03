@@ -32,7 +32,7 @@ export function useCommunityConnectorMap(): Record<string, ChatConnectorMeta> {
 
   useEffect(() => {
     let cancelled = false;
-    const fetchRegistry = window.electron?.registry.fetch;
+    const fetchRegistry = window.electron?.registry?.fetch;
     if (!fetchRegistry) return () => { cancelled = true; };
     fetchRegistry().then((result) => {
       if (!cancelled) setManifest(result.manifest);

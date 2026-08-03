@@ -3,6 +3,7 @@
 import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
 import { ExternalRefChip } from "@/components/shared/cairn-ref-chip";
 import { humanizeTool } from "@/lib/humanize-tool";
+import { redactToolOutput } from "@/lib/redact-agent-transcript";
 
 export interface ConnectorMeta {
   name: string;
@@ -25,6 +26,7 @@ export function ConnectorToolCard({ toolCall, connector, testId = "connector-mes
   testId?: string;
 }) {
   const summary = humanizeTool(toolCall.tool, toolCall.args);
+  const output = redactToolOutput(toolCall.output);
   return (
     <div data-testid={testId} className="flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden w-full max-w-xl">
       <div className="w-1 self-stretch shrink-0" style={{ background: connector.brandColor || "var(--accent)" }} />
@@ -36,7 +38,7 @@ export function ConnectorToolCard({ toolCall, connector, testId = "connector-mes
             <span className="text-[0.607rem] text-[var(--text-tertiary)]">via {connector.kind === "mcp" ? "MCP" : "HTTP service"}</span>
           </div>
           <p className="mt-0.5 text-[0.714rem] text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}</p>
-          {toolCall.output && <p className="mt-1 text-[0.643rem] text-[var(--text-tertiary)] line-clamp-2">{toolCall.output}</p>}
+           {output && <p className="mt-1 text-[0.643rem] text-[var(--text-tertiary)] line-clamp-2">{output}</p>}
           {toolCall.externalRef && <div className="mt-1"><ExternalRefChip toolName={toolCall.tool} externalRef={toolCall.externalRef} /></div>}
         </div>
       </div>

@@ -75,6 +75,8 @@ export interface TerminalSessionsSlice {
   stepPiSubagent: (sessionId: string, childSessionId: string) => void;
   /** Set the mode for a pi session and optionally record the plan note ID */
   setPiMode: (sessionId: string, mode: "plan" | "execute", planNoteId?: string) => void;
+  /** Record the explicit auto-approval choice for the session lifetime. */
+  setPiAutoApprove: (sessionId: string, autoApprove: boolean) => void;
   /** ID of the session currently shown in the persistent Cairn Agent pinned tab */
   persistentPiSessionId: string | null;
   /** Project-scoped history of persisted pi sessions (from SQLite) */
@@ -610,6 +612,14 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         t.sessionId === sessionId
           ? { ...t, mode, ...(planNoteId !== undefined ? { planNoteId } : {}) }
           : t
+      ),
+    }));
+  },
+
+  setPiAutoApprove(sessionId, autoApprove) {
+    set((s) => ({
+      terminalSessions: s.terminalSessions.map((t) =>
+        t.sessionId === sessionId ? { ...t, autoApprove } : t
       ),
     }));
   },

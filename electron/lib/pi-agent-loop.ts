@@ -189,9 +189,10 @@ export type ApprovalDecision = { approved: boolean; grant?: "session" | "command
 export const pendingApprovals = new Map<string, { resolve: (decision: ApprovalDecision) => void }>();
 
 function approvalGrantKey(toolName: string, args: ToolArgs): string {
-  return toolName === "bash"
-    ? `${toolName}:${typeof args.command === "string" ? args.command : ""}`
-    : toolName;
+  if (toolName === "bash") return `${toolName}:${typeof args.command === "string" ? args.command : ""}`;
+  const target = [args.path, args.noteId, args.cardId, args.title]
+    .find((value): value is string => typeof value === "string" && value.length > 0);
+  return target ? `${toolName}:${target}` : toolName;
 }
 
 // ── All tool definitions ──────────────────────────────────────────────────────

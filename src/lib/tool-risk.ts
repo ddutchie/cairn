@@ -15,7 +15,7 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
       : name.startsWith("mcp__") || name.startsWith("svc__")
         ? JSON.stringify(args, null, 2)
         : args.path ?? args.title ?? args.query ?? "";
-  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  const text = typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "");
   const lines = text.split("\n").slice(0, 5);
   const clamped = lines.join("\n").slice(0, 420);
   return clamped + (clamped.length < text.length ? "…" : "");

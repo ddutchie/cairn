@@ -1,8 +1,26 @@
 const SENSITIVE_KEY = /(?:api[_-]?key|access[_-]?token|auth(?:orization)?|cookie|credential|password|private[_-]?key|secret|token)/i;
-const SENSITIVE_ASSIGNMENT = /((?:api[_-]?key|access[_-]?token|authorization|password|secret|token)\s*[:=]\s*)([^\s,;&]+)/gi;
+const SENSITIVE_ASSIGNMENT = /((?:api[_-]?key|access[_-]?token|password|secret|token)\s*[:=]\s*)(["']?)[^\s,;&"']+\2/gi;
+const AUTHORIZATION_ASSIGNMENT = /(authorization\s*[:=]\s*)(["']?)(?:[A-Za-z][A-Za-z0-9_-]*\s+)?[^\s,;&"']+\2/gi;
+const MAX_TOOL_OUTPUT_LENGTH = 8_000;
 
 export function redactSensitiveText(value: string): string {
-  return value.replace(SENSITIVE_ASSIGNMENT, "$1[redacted]");
+  return value
+    .replace(SENSITIVE_ASSIGNMENT, "$1$2[redacted]$2")
+    .replace(AUTHORIZATION_ASSIGNMENT, "$1$2[redacted]$2");
+}
+
+export function redactToolOutput(value: string | undefined): string | undefined {
+  if (!value) return value;
+  let redacted: string;
+  try {
+    const parsed = JSON.parse(value);
+    redacted = parsed && typeof parsed === "object"
+      ? JSON.stringify(redactTranscriptValue(parsed))
+      : redactSensitiveText(value);
+  } catch {
+    redacted = redactSensitiveText(value);
+  }
+  return redacted.slice(0, MAX_TOOL_OUTPUT_LENGTH);
 }
 
 export function redactTranscriptValue(value: unknown, key?: string): unknown {
@@ -21,6 +39,6 @@ export function redactAgentToolCall<T extends { args?: Record<string, unknown>; 
   return {
     ...toolCall,
     args: toolCall.args ? redactTranscriptValue(toolCall.args) as Record<string, unknown> : toolCall.args,
-    output: toolCall.output ? redactSensitiveText(toolCall.output) : toolCall.output,
+    output: redactToolOutput(toolCall.output),
   };
 }

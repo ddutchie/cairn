@@ -24,7 +24,7 @@ import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
-import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
+import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
 
@@ -70,6 +70,17 @@ function extractCairnRef(
  * drops still-streaming messages, and fire-and-forgets the save. Shared by the
  * `onDone` and `onError` handlers, which previously inlined identical blocks.
  */
+function redactPiMessage(message: PiAgentMessage): PiAgentMessage {
+  return {
+    ...message,
+    toolCalls: message.toolCalls?.map(redactAgentToolCall),
+    subagents: message.subagents?.map((sub) => ({
+      ...sub,
+      messages: sub.messages.map(redactPiMessage),
+    })),
+  };
+}
+
 function persistPiTranscript(sessionId: string): void {
   const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
   const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
@@ -78,7 +89,10 @@ function persistPiTranscript(sessionId: string): void {
     content: m.content,
     reasoning: m.reasoning ?? null,
     toolCalls: m.toolCalls?.map(redactAgentToolCall) ?? null,
-    subagents: m.subagents ?? null,
+    subagents: m.subagents?.map((sub) => ({
+      ...sub,
+      messages: sub.messages.map(redactPiMessage),
+    })) ?? null,
     timestamp: m.timestamp,
   }));
   window.electron?.piAgent.saveMessages(sessionId, saveable).catch((err) =>
@@ -113,6 +127,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const completePiSubagent       = useCairnStore((s) => s.completePiSubagent);
   const stepPiSubagent           = useCairnStore((s) => s.stepPiSubagent);
   const setPiMode                = useCairnStore((s) => s.setPiMode);
+  const setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
   const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
   const setView                  = useCairnStore((s) => s.setView);
 
@@ -149,7 +164,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   useEffect(() => {
     let cancelled = false;
-    const fetchRegistry = window.electron?.registry.fetch;
+    const fetchRegistry = window.electron?.registry?.fetch;
     if (!fetchRegistry) return () => { cancelled = true; };
     fetchRegistry().then((result) => {
       if (!cancelled) setConnectorEntries(result.manifest);
@@ -170,13 +185,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     }
     return map;
   }, [connectorEntries, mcpServers, customServices]);
-
-  const connectorForTool = useCallback((toolName: string): AgentConnectorMeta | undefined => {
-    const prefix = toolName.match(/^(mcp|svc)__[^_]+__/);
-    if (!prefix) return undefined;
-    const candidate = Object.entries(connectorMap).find(([key]) => toolName.startsWith(key));
-    return candidate?.[1];
-  }, [connectorMap]);
 
   // Always-current reference to sendPrompt — lets the initialPrompt effect
   // call it after mount without capturing a stale closure.
@@ -269,7 +277,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
            args:     e.args,
           running:  false,
           ok:       e.ok ?? true,
-          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
+          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : redactAgentToolCall({ output: e.output }).output,
           cairnRef: extractCairnRef(e.name, e.output),
         });
       } else {
@@ -347,7 +355,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
            args:     e.args,
           running:  false,
           ok:       e.ok ?? true,
-          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
+          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : redactAgentToolCall({ output: e.output }).output,
           cairnRef: extractCairnRef(e.name, e.output),
         });
       } else {
@@ -512,7 +520,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
          maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
-         autoApprove: agentConfig.autoApprove ?? true,
+          autoApprove: session.autoApprove ?? agentConfig.autoApprove ?? true,
        },
     };
     window.electron?.piAgent.prompt(promptPayload);
@@ -553,6 +561,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   function handleApprovePlan(autoApprove: boolean) {
     if (!session.planNoteId || isLoading || !session.cwd) return;
+    setPiAutoApprove(session.sessionId, autoApprove);
     setIsLoading(true);
     // Add a system-style user message to mark the transition in the chat
     addPiMessage(session.sessionId, {
@@ -669,7 +678,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             key={msg.id}
             message={msg}
             sessionId={session.sessionId}
-            connectors={Object.fromEntries((msg.toolCalls ?? []).map((tc) => [tc.name, connectorForTool(tc.name)]).filter(([, value]) => value)) as Record<string, AgentConnectorMeta>}
+            connectors={connectorMap}
           />
         ))}
         {pendingQuestions && (

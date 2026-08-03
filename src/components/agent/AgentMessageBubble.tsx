@@ -92,10 +92,15 @@ function ApprovalCard({ tc, sessionId }: { tc: ToolChipProps["tc"]; sessionId: s
 interface ToolChipProps {
   tc: { callId: string; name: string; label: string; args?: Record<string, unknown>; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; confirmRequired?: boolean };
   sessionId?: string;
-  connector?: AgentConnectorMeta;
+  connectors?: Record<string, AgentConnectorMeta>;
 }
 
-function ToolChip({ tc, sessionId, connector }: ToolChipProps) {
+function connectorForTool(toolName: string, connectors?: Record<string, AgentConnectorMeta>): AgentConnectorMeta | undefined {
+  if (!connectors || !/^(?:mcp|svc)__.+__/.test(toolName)) return undefined;
+  return Object.entries(connectors).find(([key]) => toolName.startsWith(key))?.[1];
+}
+
+function ToolChip({ tc, sessionId, connectors }: ToolChipProps) {
   const [expanded, setExpanded] = useState(false);
 
   // While paused waiting for user confirmation
@@ -116,6 +121,7 @@ function ToolChip({ tc, sessionId, connector }: ToolChipProps) {
     return <CairnRefChip toolName={tc.name} cairnRef={tc.cairnRef} ok={tc.ok} />;
   }
 
+  const connector = connectorForTool(tc.name, connectors);
   if (connector && tc.ok) return <ConnectorToolCard toolCall={{ tool: tc.name, args: tc.args, output: tc.output }} connector={connector} />;
 
   const hasOutput = !!tc.output;
@@ -335,7 +341,7 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
         {hasTools && (
           <div className="flex flex-col gap-0.5">
             {message.toolCalls!.map((tc, i) => (
-              <ToolChip key={i} tc={tc} sessionId={sessionId} connector={connectors?.[tc.name]} />
+              <ToolChip key={i} tc={tc} sessionId={sessionId} connectors={connectors} />
             ))}
           </div>
         )}
