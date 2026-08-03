@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseManifest, parseProvidersManifest } from "./registry-schema";
+import { parseManifest, parseProvidersManifest, parseAutomationsManifest } from "./registry-schema";
 
 /**
  * Minimal envelope for a services-only manifest. parseManifest drops individual
@@ -167,5 +167,45 @@ describe("parseProvidersManifest", () => {
     });
     expect(m.providers).toHaveLength(1);
     expect(m.providers[0].id).toBe("a");
+  });
+});
+
+describe("parseAutomationsManifest", () => {
+  it("parses a valid automation recipe", () => {
+    const m = parseAutomationsManifest({
+      version: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      automations: [
+        {
+          id: "weekly-review",
+          author: "cairn",
+          version: "1.0.0",
+          category: "Automation",
+          tags: ["review"],
+          blurb: "Weekly review",
+          definition: {
+            name: "Weekly review",
+            instructions: "Summarise the week and draft a review note.",
+            schedule: { kind: "cron", expr: "0 9 * * 1" },
+          },
+        },
+      ],
+    });
+    expect(m.automations).toHaveLength(1);
+    expect(m.automations[0].id).toBe("weekly-review");
+    expect(m.automations[0].definition.schedule.kind).toBe("cron");
+  });
+
+  it("drops entries with an invalid schedule or missing instructions", () => {
+    const m = parseAutomationsManifest({
+      version: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      automations: [
+        { id: "good", author: "x", version: "1", tags: [], blurb: "", definition: { name: "Good", instructions: "Do a useful thing here.", schedule: { kind: "every", expr: "every 24 hours" } } },
+        { id: "bad-sched", author: "x", version: "1", tags: [], blurb: "", definition: { name: "Bad", instructions: "Do a useful thing here.", schedule: { kind: "hourly" } } },
+        { id: "no-inst", author: "x", version: "1", tags: [], blurb: "", definition: { name: "Bad2", schedule: { kind: "once", expr: "2026-09-01T09:00" } } },
+      ],
+    });
+    expect(m.automations.map((a) => a.id)).toEqual(["good"]);
   });
 });

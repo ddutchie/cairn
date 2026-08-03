@@ -65,6 +65,9 @@ export interface AutomationInput {
   maxRuns?: number | null;
   approvalMode?: "auto" | "ask";
   standingRules?: Array<{ tool: string; target?: string }>;
+  /** Provenance when prefilled from the cairn-community catalog. */
+  source?: "custom" | "community";
+  communityId?: ID | null;
 }
 
 // ── Approval inbox (parked from 'ask'-mode automation runs) ──────────────────

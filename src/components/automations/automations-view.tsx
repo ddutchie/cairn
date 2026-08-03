@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity, FileText, Kanban } from "lucide-react";
+import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity, FileText, Kanban, Sparkles } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,9 @@ import {
 import { ModalShell } from "@/components/ui/modal-shell";
 import { PendingApprovals } from "./pending-approvals";
 import { ScheduleBuilder } from "./schedule-builder";
+import { BrowseAutomationsContent } from "./browse-automations";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
+import type { RegistryAutomationEntry } from "@/types";
 
 function formatRelative(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -101,6 +103,10 @@ export function AutomationsView() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Automation | null>(null);
   const [detail, setDetail] = useState<Automation | null>(null);
+  /** Community recipe that pre-filled the form (attached as provenance on save). */
+  const [communityEntry, setCommunityEntry] = useState<RegistryAutomationEntry | null>(null);
+  /** Bumped on each pre-fill so the ScheduleBuilder remounts with the new schedule. */
+  const [prefillNonce, setPrefillNonce] = useState(0);
   const [name, setName] = useState("");
   const [instructions, setInstructions] = useState("");
   const [kind, setKind] = useState<ScheduleKind>("every");
@@ -140,6 +146,7 @@ export function AutomationsView() {
 
   function openCreate() {
     setEditing(null);
+    setCommunityEntry(null);
     setName("");
     setInstructions("");
     setKind("every");
@@ -149,6 +156,20 @@ export function AutomationsView() {
     setMaxRuns("");
     setApprovalMode("auto");
     setDialogOpen(true);
+  }
+
+  /** Pre-fill the New Automation form from a community recipe (user can tweak). */
+  function prefillFromCommunity(entry: RegistryAutomationEntry) {
+    const def = entry.definition;
+    setCommunityEntry(entry);
+    setName(def.name);
+    setInstructions(def.instructions);
+    setKind(def.schedule.kind);
+    setExpr(def.schedule.expr);
+    setTimezone(def.schedule.timezone ?? "");
+    setMaxRuns(def.maxRuns !== undefined ? String(def.maxRuns) : "");
+    setApprovalMode(def.approvalMode ?? "auto");
+    setPrefillNonce((n) => n + 1);
   }
 
   function openEdit(a: Automation) {
@@ -181,12 +202,14 @@ export function AutomationsView() {
       timezone: timezone.trim() || null,
       maxRuns: maxRuns.trim() ? Number(maxRuns.trim()) : null,
       approvalMode,
+      ...(communityEntry ? { source: "community" as const, communityId: communityEntry.id } : {}),
     };
     if (editing) {
       await updateAutomation(editing.id, base);
     } else {
       await createAutomation(base);
     }
+    setCommunityEntry(null);
     setDialogOpen(false);
   }
 
@@ -299,21 +322,25 @@ export function AutomationsView() {
         })}
       </div>
 
-      <AutomationDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        editing={editing}
-        name={name} setName={setName}
-        instructions={instructions} setInstructions={setInstructions}
-        kind={kind} setKind={setKind}
-        expr={expr} setExpr={setExpr}
-        projectId={projectId} setProjectId={setProjectId}
-        timezone={timezone} setTimezone={setTimezone}
-        maxRuns={maxRuns} setMaxRuns={setMaxRuns}
-        approvalMode={approvalMode} setApprovalMode={setApprovalMode}
-        projects={wsProjects}
-        onSave={() => void save()}
-      />
+      {dialogOpen && (
+        <AutomationDialog
+          open
+          onOpenChange={setDialogOpen}
+          editing={editing}
+          name={name} setName={setName}
+          instructions={instructions} setInstructions={setInstructions}
+          kind={kind} setKind={setKind}
+          expr={expr} setExpr={setExpr}
+          projectId={projectId} setProjectId={setProjectId}
+          timezone={timezone} setTimezone={setTimezone}
+          maxRuns={maxRuns} setMaxRuns={setMaxRuns}
+          approvalMode={approvalMode} setApprovalMode={setApprovalMode}
+          projects={wsProjects}
+          onPick={prefillFromCommunity}
+          scheduleKey={`${editing?.id ?? "new"}-${prefillNonce}`}
+          onSave={() => void save()}
+        />
+      )}
 
       <AutomationDetailDialog
         automation={detail}
@@ -341,6 +368,10 @@ interface AutomationDialogProps {
   approvalMode: "auto" | "ask"; setApprovalMode: (v: "auto" | "ask") => void;
   projects: Array<{ id: string; name: string }>;
   onSave: () => void;
+  /** Called when a community recipe is chosen (pre-fills the form). */
+  onPick: (entry: RegistryAutomationEntry) => void;
+  /** Key for the ScheduleBuilder so it remounts when a recipe pre-fills it. */
+  scheduleKey: string;
 }
 
 function AutomationDialog({
@@ -348,29 +379,44 @@ function AutomationDialog({
   name, setName, instructions, setInstructions,
   kind, setKind, expr, setExpr,
   projectId, setProjectId, timezone, setTimezone,
-  maxRuns, setMaxRuns, approvalMode, setApprovalMode, projects, onSave,
+  maxRuns, setMaxRuns, approvalMode, setApprovalMode, projects,
+  onSave, onPick, scheduleKey,
 }: AutomationDialogProps) {
+  const [browse, setBrowse] = useState(false);
   return (
     <ModalShell
       open={open}
       onClose={() => onOpenChange(false)}
-      title={editing ? "Edit automation" : "New automation"}
+      title={editing ? "Edit automation" : browse ? "Browse community" : "New automation"}
       scrollable
       footer={
-        <>
-          <DialogClose asChild>
-            <Button variant="ghost" size="sm">Cancel</Button>
-          </DialogClose>
-          <Button variant="accent" size="sm" onClick={onSave} disabled={!name.trim() || !instructions.trim()}>
-            <RefreshCw size={13} className="mr-1" /> {editing ? "Save" : "Create"}
-          </Button>
-        </>
+        !browse && (
+          <>
+            <DialogClose asChild>
+              <Button variant="ghost" size="sm">Cancel</Button>
+            </DialogClose>
+            <Button variant="accent" size="sm" onClick={onSave} disabled={!name.trim() || !instructions.trim()}>
+              <RefreshCw size={13} className="mr-1" /> {editing ? "Save" : "Create"}
+            </Button>
+          </>
+        )
       }
     >
-      <div className="space-y-4">
-        <p className="text-xs text-[var(--text-tertiary)]">
-          The agent runs these instructions on schedule using your AI connection. It can only touch notes, tasks, tags and boards — no shell.
-        </p>
+      {browse ? (
+        <BrowseAutomationsContent
+          onPick={(entry) => { onPick(entry); setBrowse(false); }}
+          onBack={() => setBrowse(false)}
+        />
+      ) : (
+        <div className="space-y-4">
+          <p className="text-xs text-[var(--text-tertiary)]">
+            The agent runs these instructions on schedule using your AI connection. It can only touch notes, tasks, tags and boards — no shell.
+          </p>
+          {!editing && (
+            <Button variant="outline" size="sm" className="w-full justify-center" onClick={() => setBrowse(true)}>
+              <Sparkles size={13} className="text-[var(--accent)]" /> Start from a community recipe
+            </Button>
+          )}
         <label className="block space-y-1">
           <span className="text-xs text-[var(--text-secondary)]">Name</span>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Weekly review" />
@@ -386,7 +432,7 @@ function AutomationDialog({
           />
         </label>
         <ScheduleBuilder
-          key={editing?.id ?? "new"}
+          key={scheduleKey}
           initialKind={kind}
           initialExpr={expr}
           timezone={timezone || null}
@@ -431,7 +477,8 @@ function AutomationDialog({
               : "Only data tools run — no shell or file edits either way."}
           </span>
         </label>
-      </div>
+        </div>
+      )}
     </ModalShell>
   );
 }

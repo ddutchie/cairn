@@ -81,6 +81,19 @@ interface ProvidersManifest {
 interface ProvidersFetchResult {
   manifest: ProvidersManifest; fromCache: boolean; cachedAt?: string; error?: string;
 }
+interface RegistryAutomationEntry extends RegistryEntryMeta {
+  definition: {
+    name: string; description?: string; instructions: string;
+    schedule: { kind: "cron" | "every" | "once"; expr: string; timezone?: string };
+    approvalMode?: "auto" | "ask"; maxRuns?: number;
+  };
+}
+interface AutomationsManifest {
+  version: number; updatedAt: string; automations: RegistryAutomationEntry[];
+}
+interface AutomationsFetchResult {
+  manifest: AutomationsManifest; fromCache: boolean; cachedAt?: string; error?: string;
+}
 // ── Inline types for the codebase index / Architecture tab ──────────────────
 interface CodebaseSymbol {
   id: string; file_id: string; name: string; kind: string; line: number;
@@ -750,6 +763,10 @@ const api = {
     fetchProviders: () => invoke<ProvidersFetchResult>("registry:fetchProviders"),
     /** Force a network refresh of the providers manifest. */
     refreshProviders: () => invoke<ProvidersFetchResult>("registry:refreshProviders"),
+    /** Community automation recipes (separate automations.json manifest). Cache-first. */
+    fetchAutomations: () => invoke<AutomationsFetchResult>("registry:fetchAutomations"),
+    /** Force a network refresh of the automations manifest. */
+    refreshAutomations: () => invoke<AutomationsFetchResult>("registry:refreshAutomations"),
   },
 
   // ── Git operations (Agent Git tab) ────────────

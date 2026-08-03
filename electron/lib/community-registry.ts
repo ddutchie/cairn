@@ -21,8 +21,10 @@ import { findUserDataDir } from "../runtime/port-discovery";
 import {
   parseManifest,
   parseProvidersManifest,
+  parseAutomationsManifest,
   type CommunityManifest,
   type ProvidersManifest,
+  type AutomationsManifest,
 } from "../../shared/chat/registry-schema";
 
 // Manifest TYPES + Zod validation now live in shared/chat/registry-schema.ts so
@@ -31,12 +33,14 @@ import {
 export type {
   CommunityManifest,
   ProvidersManifest,
+  AutomationsManifest,
   RegistryMcpEntry,
   RegistryServiceEntry,
   RegistryProviderEntry,
+  RegistryAutomationEntry,
   RegistryEntryMeta,
 } from "../../shared/chat/registry-schema";
-export { parseManifest, parseProvidersManifest } from "../../shared/chat/registry-schema";
+export { parseManifest, parseProvidersManifest, parseAutomationsManifest } from "../../shared/chat/registry-schema";
 
 export interface RegistryFetchResult {
   manifest: CommunityManifest;
@@ -52,12 +56,22 @@ export interface ProvidersFetchResult {
   error?: string;
 }
 
+export interface AutomationsFetchResult {
+  manifest: AutomationsManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
 const MANIFEST_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/manifest.json";
 const PROVIDERS_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/providers.json";
+const AUTOMATIONS_URL =
+  "https://raw.githubusercontent.com/ddutchie/cairn-community/main/automations.json";
 const CACHE_FILE = "community-registry.json";
 const PROVIDERS_CACHE_FILE = "community-providers.json";
+const AUTOMATIONS_CACHE_FILE = "community-automations.json";
 const FETCH_TIMEOUT_MS = 10_000;
 
 // ── generic cache + fetch core (shared by both manifests) ───────────────────
@@ -247,12 +261,33 @@ export function refreshProvidersManifest(): Promise<ProvidersFetchResult> {
   return fetchProvidersManifest({ force: true });
 }
 
+// ── automations manifest ────────────────────────────────────────────────────
+
+const AUTOMATIONS_SPEC: FetchSpec<AutomationsManifest> = {
+  url: AUTOMATIONS_URL,
+  file: AUTOMATIONS_CACHE_FILE,
+  parse: parseAutomationsManifest,
+  empty: { version: 1, updatedAt: "", automations: [] },
+};
+
+/** Fetch the community AUTOMATIONS manifest (cache-first; see fetchManifest). */
+export function fetchAutomationsManifest(opts?: { force?: boolean }): Promise<AutomationsFetchResult> {
+  return fetchGeneric(AUTOMATIONS_SPEC, opts);
+}
+
+/** Force a network refresh of the automations manifest. */
+export function refreshAutomationsManifest(): Promise<AutomationsFetchResult> {
+  return fetchAutomationsManifest({ force: true });
+}
+
 /** Exposed for tests. */
 export const __test = {
   MANIFEST_URL,
   PROVIDERS_URL,
+  AUTOMATIONS_URL,
   CACHE_FILE,
   PROVIDERS_CACHE_FILE,
+  AUTOMATIONS_CACHE_FILE,
   cachePath: () => cacheFilePath(CACHE_FILE),
   readCache: () => readCacheFile(CACHE_FILE, parseManifest),
   writeCache: (env: CacheEnvelope<CommunityManifest>) => writeCacheFile(CACHE_FILE, env),
@@ -260,4 +295,8 @@ export const __test = {
   readProvidersCache: () => readCacheFile(PROVIDERS_CACHE_FILE, parseProvidersManifest),
   writeProvidersCache: (env: CacheEnvelope<ProvidersManifest>) =>
     writeCacheFile(PROVIDERS_CACHE_FILE, env),
+  automationsCachePath: () => cacheFilePath(AUTOMATIONS_CACHE_FILE),
+  readAutomationsCache: () => readCacheFile(AUTOMATIONS_CACHE_FILE, parseAutomationsManifest),
+  writeAutomationsCache: (env: CacheEnvelope<AutomationsManifest>) =>
+    writeCacheFile(AUTOMATIONS_CACHE_FILE, env),
 };
