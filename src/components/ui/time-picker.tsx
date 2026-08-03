@@ -199,69 +199,74 @@ interface WheelColumnProps<T extends string | number> {
   onSelect: (v: T) => void;
 }
 
+const ROW_H = 28; // h-7
+const VISIBLE_ROWS = 5; // odd → selected sits in the middle
+const STEP_PX = 60; // wheel delta needed to move one row
+
+/**
+ * A virtual wheel: no DOM scrolling at all. Mouse wheel / trackpad delta is
+ * accumulated and converted into selection steps, so it always works (nothing
+ * to fight over with snap or programmatic scroll). The selected option is kept
+ * centred with neighbours above/below; clicking a row selects it directly.
+ */
 function WheelColumn<T extends string | number>({ label, options, selected, width, format, onSelect }: WheelColumnProps<T>) {
-  const ref = useRef<HTMLDivElement>(null);
-  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const acc = useRef(0);
+  const idx = Math.max(0, Math.min(options.length - 1, options.indexOf(selected)));
+  const half = Math.floor(VISIBLE_ROWS / 2);
 
-  const ITEM_H = 28;   // h-7
-  const PAD_H = 56;    // h-14 spacers
-
-  // Centre the selected item (computed directly — never scrollIntoView, which
-  // would scroll ancestor containers outside the fixed popover).
+  // Native (non-passive) wheel listener so we can preventDefault reliably.
+  const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const el = ref.current;
+    const el = boxRef.current;
     if (!el) return;
-    const idx = options.indexOf(selected);
-    if (idx < 0) return;
-    const target = PAD_H + idx * ITEM_H + ITEM_H / 2 - el.clientHeight / 2;
-    const max = el.scrollHeight - el.clientHeight;
-    el.scrollTop = Math.max(0, Math.min(max, target));
-  }, [selected, options]);
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      acc.current += e.deltaY;
+      let steps = 0;
+      while (acc.current >= STEP_PX) { acc.current -= STEP_PX; steps++; }
+      while (acc.current <= -STEP_PX) { acc.current += STEP_PX; steps--; }
+      if (steps === 0) return;
+      const base = idx;
+      const next = Math.max(0, Math.min(options.length - 1, base + steps));
+      if (next !== base) onSelect(options[next]);
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [idx, options, onSelect]);
 
-  // When scrolling settles (mouse wheel / trackpad), select the item centred
-  // in the selection band.
-  function handleScroll() {
-    if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    scrollTimer.current = setTimeout(() => {
-      const el = ref.current;
-      if (!el) return;
-      const idx = Math.round((el.scrollTop - PAD_H) / ITEM_H);
-      const clamped = Math.max(0, Math.min(options.length - 1, idx));
-      const picked = options[clamped];
-      if (picked !== undefined && picked !== selected) onSelect(picked);
-    }, 120);
-  }
+  const rows: Array<{ key: number; opt: T; active: boolean } | null> = Array.from({ length: VISIBLE_ROWS }, (_, r) => {
+    const i = idx - half + r;
+    if (i < 0 || i >= options.length) return null;
+    return { key: i, opt: options[i], active: r === half };
+  });
 
   return (
     <div className="flex flex-col items-center">
       {label && <div className="text-[0.714rem] text-[var(--text-tertiary)] mb-1">{label}</div>}
-      <div className="relative">
+      <div ref={boxRef} className={cn(width, "relative select-none")} style={{ height: ROW_H * VISIBLE_ROWS }}>
         {/* Center selection band */}
         <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-7 rounded-md bg-[var(--accent-dim)]/40" />
-        <div
-          ref={ref}
-          onScroll={handleScroll}
-          className={cn(width, "h-36 overflow-y-auto snap-y snap-mandatory scrollbar-none relative")}
-        >
-          <div className="h-14" /> {/* top spacer so first item can centre */}
-          {options.map((opt, idx) => {
-            const active = opt === selected;
-            return (
+        <div className="flex flex-col overflow-hidden">
+          {rows.map((row, k) =>
+            row === null ? (
+              <div key={`pad-${k}`} className={cn("w-full flex items-center justify-center text-sm font-mono text-[var(--text-tertiary)]/40")} style={{ height: ROW_H }}>
+                ·
+              </div>
+            ) : (
               <button
-                key={idx}
+                key={row.key}
                 type="button"
-                data-selected={active || undefined}
-                onClick={() => onSelect(opt)}
+                onClick={() => onSelect(row.opt)}
                 className={cn(
-                  "h-7 w-full snap-center flex items-center justify-center text-sm font-mono transition-colors",
-                  active ? "text-[var(--accent)] font-semibold" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                  "w-full flex items-center justify-center text-sm font-mono transition-colors",
+                  row.active ? "text-[var(--accent)] font-semibold" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
                 )}
+                style={{ height: ROW_H }}
               >
-                {format ? format(opt) : String(opt)}
+                {format ? format(row.opt) : String(row.opt)}
               </button>
-            );
-          })}
-          <div className="h-14" /> {/* bottom spacer */}
+            )
+          )}
         </div>
       </div>
     </div>
