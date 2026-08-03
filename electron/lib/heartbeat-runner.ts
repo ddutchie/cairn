@@ -33,6 +33,7 @@ import {
   type Automation,
   type AutomationRun,
 } from "../db/automation-queries";
+import { makeApprovalGate } from "./automation-approval";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -127,6 +128,10 @@ export async function runAutomation(
     undefined,                       // emitToolCallDone
     undefined,                       // onToken
     undefined,                       // onThought
+    undefined,                       // extraTools
+    undefined,                       // toolsOverride
+    undefined,                       // argMutator
+    makeApprovalGate(db, run, automation),
   );
 
   if (result.exhausted) {

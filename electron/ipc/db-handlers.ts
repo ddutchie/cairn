@@ -34,6 +34,7 @@ import {
 } from "../db/automation-queries";
 import { runAutomationNow } from "../lib/heartbeat-runner";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
+import { listPendingApprovals, resolveApproval, type ApprovalResolution } from "../db/approval-queries";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
 
@@ -685,7 +686,6 @@ export function registerDbHandlers(ctx: DbContext): void {
     if (patch.scheduleKind !== undefined || patch.scheduleExpr !== undefined || patch.timezone !== undefined) {
       const existing = getAutomationById(ctx.db, id);
       if (existing) {
-        const kind = patch.scheduleKind ?? existing.scheduleKind;
         const expr = patch.scheduleExpr ?? existing.scheduleExpr;
         const tz = patch.timezone === undefined ? existing.timezone : patch.timezone;
         try {
@@ -704,4 +704,8 @@ export function registerDbHandlers(ctx: DbContext): void {
     const runId = runAutomationNow({ db: ctx.db, workspacePath: ctx.workspacePath }, id);
     return runId === null ? { skipped: true } : { runId };
   }));
+
+  // ── Approval inbox ──────────────────────────────
+  registerIpcHandle("db:approval:listPending", (_e, { limit }: { limit?: number }) => handle(() => listPendingApprovals(ctx.db, limit)));
+  registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => resolveApproval(ctx.db, id, resolution)));
 }

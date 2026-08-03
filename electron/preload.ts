@@ -251,6 +251,12 @@ const api = {
     runNow: (id: string) => invoke("db:automation:runNow", { id }),
   },
 
+  // ── Approval inbox ────────────────────────────
+  approval: {
+    listPending: (limit?: number) => invoke("db:approval:listPending", { limit }),
+    resolve: (id: string, resolution: "approved_once" | "approved_session" | "approved_always" | "denied") => invoke("db:approval:resolve", { id, resolution }),
+  },
+
   // ── Chat ─────────────────────────────────────
   chat: {
     threads:       (workspaceId: string) => invoke("db:chat:threads", { workspaceId }),

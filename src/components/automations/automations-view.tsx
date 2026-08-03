@@ -81,6 +81,7 @@ export function AutomationsView() {
   const [projectId, setProjectId] = useState<string>("");
   const [timezone, setTimezone] = useState("");
   const [maxRuns, setMaxRuns] = useState("");
+  const [approvalMode, setApprovalMode] = useState<"auto" | "ask">("auto");
 
   const wsProjects = useMemo(
     () => (activeWorkspaceId ? projects.filter((p) => p.workspaceId === activeWorkspaceId && !p.archivedAt) : []),
@@ -109,6 +110,7 @@ export function AutomationsView() {
     setProjectId(activeProjectId ?? "");
     setTimezone("");
     setMaxRuns("");
+    setApprovalMode("auto");
     setDialogOpen(true);
   }
 
@@ -121,6 +123,7 @@ export function AutomationsView() {
     setProjectId(a.projectId ?? "");
     setTimezone(a.timezone ?? "");
     setMaxRuns(a.maxRuns === null ? "" : String(a.maxRuns));
+    setApprovalMode(a.approvalMode);
     setDialogOpen(true);
   }
 
@@ -135,6 +138,7 @@ export function AutomationsView() {
       projectId: projectId || null,
       timezone: timezone.trim() || null,
       maxRuns: maxRuns.trim() ? Number(maxRuns.trim()) : null,
+      approvalMode,
     };
     if (editing) {
       await updateAutomation(editing.id, base);
@@ -221,6 +225,7 @@ export function AutomationsView() {
         projectId={projectId} setProjectId={setProjectId}
         timezone={timezone} setTimezone={setTimezone}
         maxRuns={maxRuns} setMaxRuns={setMaxRuns}
+        approvalMode={approvalMode} setApprovalMode={setApprovalMode}
         projects={wsProjects}
         onSave={() => void save()}
       />
@@ -239,6 +244,7 @@ interface AutomationDialogProps {
   projectId: string; setProjectId: (v: string) => void;
   timezone: string; setTimezone: (v: string) => void;
   maxRuns: string; setMaxRuns: (v: string) => void;
+  approvalMode: "auto" | "ask"; setApprovalMode: (v: "auto" | "ask") => void;
   projects: Array<{ id: string; name: string }>;
   onSave: () => void;
 }
@@ -248,7 +254,7 @@ function AutomationDialog({
   name, setName, instructions, setInstructions,
   kind, setKind, expr, setExpr,
   projectId, setProjectId, timezone, setTimezone,
-  maxRuns, setMaxRuns, projects, onSave,
+  maxRuns, setMaxRuns, approvalMode, setApprovalMode, projects, onSave,
 }: AutomationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -319,6 +325,22 @@ function AutomationDialog({
               <Input value={maxRuns} onChange={(e) => setMaxRuns(e.target.value)} placeholder="Unlimited" />
             </label>
           </div>
+          <label className="block">
+            <span className="text-xs text-[var(--text-secondary)]">Approval mode</span>
+            <select
+              value={approvalMode}
+              onChange={(e) => setApprovalMode(e.target.value as "auto" | "ask")}
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+            >
+              <option value="auto">Auto — run freely (writes happen automatically)</option>
+              <option value="ask">Ask — approve or deny each write</option>
+            </select>
+            <span className="text-[0.714rem] text-[var(--text-tertiary)]">
+              {approvalMode === "ask"
+                ? "Write actions park in the approval inbox and the run waits for your decision."
+                : "Only data tools run — no shell or file edits either way."}
+            </span>
+          </label>
         </div>
         <div className="flex justify-end gap-2">
           <DialogClose asChild>

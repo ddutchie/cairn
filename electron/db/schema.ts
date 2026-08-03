@@ -823,6 +823,7 @@ const MIGRATIONS: Migration[] = [
         enabled         INTEGER NOT NULL DEFAULT 1,
         max_runs        INTEGER,                       -- optional cap; NULL = unlimited
         run_count       INTEGER NOT NULL DEFAULT 0,
+        approval_mode   TEXT NOT NULL DEFAULT 'auto',  -- 'auto' (run writes freely) | 'ask' (gate writes behind the approval inbox)
         standing_rules  TEXT NOT NULL DEFAULT '[]',    -- JSON [{tool, target}]
         source          TEXT NOT NULL DEFAULT 'custom',-- 'custom' | 'community'
         community_id    TEXT,
@@ -907,6 +908,7 @@ function ensureColumns(db: Database.Database): void {
   };
   ensure("chat_threads", "use_subagents", "use_subagents INTEGER NOT NULL DEFAULT 0");
   ensure("chat_messages", "subagents", "subagents TEXT");
+  ensure("automations", "approval_mode", "approval_mode TEXT NOT NULL DEFAULT 'auto'");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");
   ensure("custom_services", "oauth_config", "oauth_config TEXT");
   // Multi-operation services: baseUrl + operations[] (JSON). Nullable — legacy

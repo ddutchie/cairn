@@ -28,6 +28,7 @@ export interface Automation {
   enabled: boolean;
   maxRuns: number | null;
   runCount: number;
+  approvalMode: "auto" | "ask";
   standingRules: Array<{ tool: string; target?: string }>;
   source: "custom" | "community";
   communityId: ID | null;
@@ -62,6 +63,7 @@ export interface AutomationInput {
   timezone?: string | null;
   enabled?: boolean;
   maxRuns?: number | null;
+  approvalMode?: "auto" | "ask";
   standingRules?: Array<{ tool: string; target?: string }>;
 }
 

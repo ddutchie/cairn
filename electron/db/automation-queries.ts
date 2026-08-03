@@ -24,6 +24,7 @@ export interface Automation {
   enabled: boolean;
   maxRuns: number | null;
   runCount: number;
+  approvalMode: "auto" | "ask";
   standingRules: Array<{ tool: string; target?: string }>;
   source: "custom" | "community";
   communityId: string | null;
@@ -62,6 +63,7 @@ function toAutomation(r: Row): Automation {
     enabled: Boolean(r.enabled),
     maxRuns: r.max_runs === null || r.max_runs === undefined ? null : Number(r.max_runs),
     runCount: Number(r.run_count),
+    approvalMode: r.approval_mode === "ask" ? "ask" : "auto",
     standingRules: parseJson<Array<{ tool: string; target?: string }>>(r.standing_rules, []),
     source: r.source as Automation["source"],
     communityId: r.community_id ? String(r.community_id) : null,
@@ -106,6 +108,7 @@ export interface AutomationInput {
   enabled?: boolean;
   maxRuns?: number | null;
   runCount?: number;
+  approvalMode?: "auto" | "ask";
   standingRules?: Array<{ tool: string; target?: string }>;
   source?: "custom" | "community";
   communityId?: string | null;
@@ -118,14 +121,14 @@ export function createAutomation(db: Database.Database, input: AutomationInput):
     INSERT INTO automations (
       id, workspace_id, project_id, name, description, instructions,
       schedule_kind, schedule_expr, timezone, next_run_at, enabled, max_runs,
-      run_count, standing_rules, source, community_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      run_count, approval_mode, standing_rules, source, community_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, input.workspaceId, input.projectId ?? null, input.name, input.description ?? "",
     input.instructions, input.scheduleKind, input.scheduleExpr, input.timezone ?? null,
     input.nextRunAt, input.enabled === false ? 0 : 1, input.maxRuns ?? null,
-    input.runCount ?? 0, JSON.stringify(input.standingRules ?? []), input.source ?? "custom",
-    input.communityId ?? null, now, now,
+    input.runCount ?? 0, input.approvalMode ?? "auto", JSON.stringify(input.standingRules ?? []),
+    input.source ?? "custom", input.communityId ?? null, now, now,
   );
   return getAutomationById(db, id)!;
 }
@@ -163,6 +166,7 @@ export function updateAutomation(
     next_run_at: patch.nextRunAt,
     enabled: patch.enabled === undefined ? undefined : patch.enabled ? 1 : 0,
     max_runs: patch.maxRuns === undefined ? undefined : patch.maxRuns,
+    approval_mode: patch.approvalMode === undefined ? undefined : patch.approvalMode,
     standing_rules: patch.standingRules === undefined ? undefined : JSON.stringify(patch.standingRules),
     source: patch.source,
     community_id: patch.communityId === undefined ? undefined : patch.communityId,

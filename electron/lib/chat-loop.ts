@@ -60,6 +60,13 @@ export async function runToolLoop(
    * identity transform. Runs after JSON parse, before executeTool.
    */
   argMutator?: (name: string, args: Record<string, unknown>) => Record<string, unknown>,
+  /**
+   * Optional human-in-the-loop gate (used by the heartbeat runner). Called after
+   * parse + argMutator, before any tool executes. May block while waiting for a
+   * user decision. When it returns `{ allow: false }` the tool is NOT executed —
+   * a "Blocked: …" result is fed back to the model so it can adjust/stop.
+   */
+  approvalGate?: (name: string, args: Record<string, unknown>) => Promise<{ allow: boolean; reason?: string }>,
 ): Promise<RunToolLoopResult> {
   const maxSteps    = req.config?.maxSteps    ?? 30;
   const temperature = req.config?.temperature ?? 0.3;
@@ -305,6 +312,20 @@ export async function runToolLoop(
       let result: unknown;
       try {
         if (argMutator) args = argMutator(call.function.name, args);
+        if (approvalGate) {
+          const gate = await approvalGate(call.function.name, args);
+          if (!gate.allow) {
+            const reason = gate.reason ?? "Blocked by user";
+            emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args, callId: call.id });
+            emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: reason });
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              content: JSON.stringify({ error: reason }),
+            });
+            continue;
+          }
+        }
         if (isExternalToolName(call.function.name)) {
           // MCP server / custom service tool — route to the external executor.
           emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args, callId: call.id });
