@@ -1204,8 +1204,8 @@ describe("mcp notifications", () => {
   });
 
   it("inserts, lists newest-first, counts unread, and marks read", () => {
-    const a = insertMcpNotification(db, { id: "n1", tool: "create_task", title: "Task", body: "x" });
-    const b = insertMcpNotification(db, { id: "n2", tool: "automation_run", title: "Done", body: "y" });
+    insertMcpNotification(db, { id: "n1", tool: "create_task", title: "Task", body: "x" });
+    insertMcpNotification(db, { id: "n2", tool: "automation_run", title: "Done", body: "y" });
 
     expect(countUnreadMcpNotifications(db)).toBe(2);
     const list = listMcpNotifications(db);
