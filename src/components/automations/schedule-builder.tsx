@@ -279,7 +279,7 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange }
 
         {mode === "once" && (
           <div className="flex items-center gap-2">
-            <DatePicker value={onceDate || undefined} onChange={(v) => setOnceDate(v ?? "")} />
+            <DatePicker disablePast value={onceDate || undefined} onChange={(v) => setOnceDate(v ?? "")} />
             <span className="text-[var(--text-secondary)]">at</span>
             <TimeInput value={onceTime} onChange={setOnceTime} />
           </div>

@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { DayPicker, type DayPickerProps } from "react-day-picker";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { format, parse, isValid } from "date-fns";
+import { format, parse, isValid, startOfToday } from "date-fns";
 import { Calendar, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
@@ -14,9 +14,11 @@ interface DatePickerProps {
   onChange: (value: string | undefined) => void;
   placeholder?: string;
   className?: string;
+  /** Disable dates before today (today remains selectable). */
+  disablePast?: boolean;
 }
 
-export function DatePicker({ value, onChange, placeholder = "Pick a date", className }: DatePickerProps) {
+export function DatePicker({ value, onChange, placeholder = "Pick a date", className, disablePast }: DatePickerProps) {
   const [open, setOpen] = useState(false);
   const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -128,6 +130,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
             selected={isValidDate ? selected : undefined}
             onSelect={handleSelect}
             showOutsideDays
+            disabled={disablePast ? { before: startOfToday() } : undefined}
             components={{
               Chevron: ({ orientation }: { orientation?: string }) =>
                 orientation === "left"
