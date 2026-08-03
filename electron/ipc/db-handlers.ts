@@ -705,6 +705,17 @@ export function registerDbHandlers(ctx: DbContext): void {
     return runId === null ? { skipped: true } : { runId };
   }));
 
+  // Friendly schedule preview — compute the next fire time for a proposed
+  // schedule expression (used by the Automations schedule builder).
+  registerIpcHandle("db:automation:preview", (_e, { scheduleKind, scheduleExpr, timezone }: { scheduleKind?: string; scheduleExpr: string; timezone?: string | null }) => handle(() => {
+    try {
+      const next = computeNextRun(parseSchedule(scheduleExpr), new Date(), timezone ?? undefined);
+      return { nextRunAt: next ? next.toISOString() : null };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }));
+
   // ── Approval inbox ──────────────────────────────
   registerIpcHandle("db:approval:listPending", (_e, { limit }: { limit?: number }) => handle(() => listPendingApprovals(ctx.db, limit)));
   registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => resolveApproval(ctx.db, id, resolution)));

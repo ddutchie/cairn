@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose,
 } from "@/components/ui/dialog";
 import { PendingApprovals } from "./pending-approvals";
+import { ScheduleBuilder } from "./schedule-builder";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
 
 function formatRelative(iso: string | null | undefined): string {
@@ -48,12 +49,6 @@ function scheduleLabel(a: Automation): string {
     case "once": return `Once at ${new Date(a.scheduleExpr.replace(/^once\s+/i, "")).toLocaleString()}`;
   }
 }
-
-const KIND_PLACEHOLDER: Record<ScheduleKind, string> = {
-  every: "every 24 hours",
-  cron: "0 9 * * 1-5",
-  once: "once 2026-09-01T09:00:00",
-};
 
 /** Read the currently-executing tool from a run's scratch JSON (set by the runner). */
 function runScratchTool(run: AutomationRun | undefined): string | null {
@@ -378,28 +373,13 @@ function AutomationDialog({
               className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
             />
           </label>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block space-y-1">
-              <span className="text-xs text-[var(--text-secondary)]">Schedule</span>
-              <select
-                value={kind}
-                onChange={(e) => {
-                  const k = e.target.value as ScheduleKind;
-                  setKind(k);
-                  setExpr(KIND_PLACEHOLDER[k]);
-                }}
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-              >
-                <option value="every">Every N minutes/hours/days</option>
-                <option value="cron">Cron (5-field)</option>
-                <option value="once">Once</option>
-              </select>
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs text-[var(--text-secondary)]">Expression</span>
-              <Input value={expr} onChange={(e) => setExpr(e.target.value)} placeholder={KIND_PLACEHOLDER[kind]} />
-            </label>
-          </div>
+          <ScheduleBuilder
+            key={editing?.id ?? "new"}
+            initialKind={kind}
+            initialExpr={expr}
+            timezone={timezone || null}
+            onChange={(k, e) => { setKind(k); setExpr(e); }}
+          />
           <label className="block space-y-1">
             <span className="text-xs text-[var(--text-secondary)]">Project scope</span>
             <select

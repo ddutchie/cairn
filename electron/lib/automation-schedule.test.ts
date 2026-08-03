@@ -39,6 +39,27 @@ describe("parseSchedule", () => {
   it("rejects garbage", () => {
     expect(() => parseSchedule("someday soon")).toThrow();
   });
+
+  it("parses friendly builder expressions", () => {
+    // daily
+    const daily = parseSchedule("00 09 * * *");
+    expect(daily.kind).toBe("cron");
+    expect(computeNextRun(daily, new Date("2026-08-03T08:00:00Z"), "UTC")!.toISOString()).toBe("2026-08-03T09:00:00.000Z");
+    // weekly Mon–Fri
+    const weekly = parseSchedule("00 09 * * 1,2,3,4,5");
+    expect(weekly.kind).toBe("cron");
+    const next = computeNextRun(weekly, new Date("2026-08-03T10:00:00Z"), "UTC")!; // Mon
+    expect(next.getUTCDay()).toBe(2); // next Tue
+    // monthly day 15
+    const monthly = parseSchedule("00 09 15 * *");
+    expect(monthly.kind).toBe("cron");
+    // once without seconds
+    const once = parseSchedule("once 2026-09-01T09:00");
+    expect(once.kind).toBe("once");
+    // every
+    const every = parseSchedule("every 24 hours");
+    expect(every.kind).toBe("every");
+  });
 });
 
 describe("computeNextRun — every", () => {
