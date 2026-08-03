@@ -62,7 +62,7 @@ export function create_task(db: Database.Database, snap: Snapshot, args: Record<
     order,
   });
   const taskProject = snap.projects.find((pr) => pr.id === projectId);
-  insertNotification(db, "create_task", "Task created", `"${title}" added to ${taskProject?.name ?? projectId}`);
+  insertNotification(db, "create_task", "Task created", `"${title}" added to ${taskProject?.name ?? projectId}`, { type: "task", id: card.id });
   return card;
 }
 
@@ -152,6 +152,7 @@ function applyNoteLinkChange(
     transform.notificationType,
     transform.notificationType === "link_note_to_task" ? "Note linked to task" : "Note unlinked from task",
     transform.notificationMsg(note.title as string, card.title as string),
+    { type: "task", id: cardId },
   );
   return { noteId, cardId, [transform.resultKey]: true };
 }
@@ -240,7 +241,7 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     const updated = q.updateCard(db, cardId as string, {
       archivedAt: new Date().toISOString(),
     });
-    insertNotification(db, "update_task", "Task archived", `"${card.title}" was archived`);
+    insertNotification(db, "update_task", "Task archived", `"${card.title}" was archived`, { type: "task", id: card.id });
     return updated;
   }
   if (archived === false) {
@@ -251,7 +252,7 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     // Only treat it as a restore request when the card is actually archived.
     if (dbCard.archivedAt) {
       const updated = q.restoreCard(db, cardId as string);
-      insertNotification(db, "update_task", "Task restored", `"${dbCard.title}" was restored`);
+      insertNotification(db, "update_task", "Task restored", `"${dbCard.title}" was restored`, { type: "task", id: dbCard.id });
       return updated;
     }
   }
@@ -277,7 +278,7 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
       return { error: "Circular dependency detected" };
     }
     const updated = q.addCardBlocker(db, cardId as string, blockedBy as string);
-    insertNotification(db, "update_task", "Task blocked", `"${card.title}" is now blocked by "${blocker.title}"`);
+    insertNotification(db, "update_task", "Task blocked", `"${card.title}" is now blocked by "${blocker.title}"`, { type: "task", id: card.id });
     return {
       ...updated,
       cardId,
@@ -306,7 +307,7 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
         ...(columnId !== undefined ? { columnId } : {}),
         ...(assignee !== undefined ? { assignee: assignee as string | null } : {}),
       });
-      insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
+      insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`, { type: "task", id: card.id });
     })();
     const result = q.getCardById(db, cardId as string);
     // When moving to a done column, clear this card from other tasks' blocked_by_ids
@@ -339,7 +340,7 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
 
   const updated = db.transaction(() => {
     const card = q.updateCard(db, cardId as string, patch);
-    insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
+    insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`, { type: "task", id: card.id });
     return card;
   })();
 

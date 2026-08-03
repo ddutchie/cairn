@@ -248,7 +248,7 @@ export function insertNotification(
   tool: string,
   title: string,
   body: string,
-  target?: { type: "note" | "task"; id: string } | null,
+  target?: { type: "note" | "task" | "automation"; id: string } | null,
 ): void {
   try {
     const id = newId();

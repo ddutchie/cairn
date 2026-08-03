@@ -282,8 +282,8 @@ export interface McpNotification {
   body: string;
   read: boolean;
   createdAt: string;
-  /** Optional navigation target (note/task) the notification links to. */
-  targetType: "note" | "task" | null;
+  /** Optional navigation target (note/task/automation) the notification links to. */
+  targetType: "note" | "task" | "automation" | null;
   targetId: string | null;
 }
 
@@ -295,7 +295,7 @@ export function toMcpNotification(row: any): McpNotification {
     body: row.body as string,
     read: b(row.read),
     createdAt: row.created_at as string,
-    targetType: row.target_type === "note" || row.target_type === "task" ? row.target_type : null,
+    targetType: row.target_type === "note" || row.target_type === "task" || row.target_type === "automation" ? row.target_type : null,
     targetId: row.target_id ? (row.target_id as string) : null,
   };
 }

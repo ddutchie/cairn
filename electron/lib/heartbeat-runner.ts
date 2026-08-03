@@ -143,9 +143,12 @@ export async function runAutomation(
     if (!artifacts.some((a) => a.id === ref.id)) artifacts.push(ref);
   };
   const finalScratch = () => (artifacts.length > 0 ? JSON.stringify({ artifacts }) : null);
-  // Navigation target for the completion notification — the first note/card the
-  // run created, so clicking the notification jumps to the result.
-  const completionTarget = artifacts[0] ? { type: artifacts[0].type, id: artifacts[0].id } : null;
+  // Navigation target for the completion notification: the first note/card the
+  // run created when there is one, else the automation itself (opens the
+  // Automations view) so the notification is always navigable.
+  const completionTarget: { type: "note" | "task" | "automation"; id: string } = artifacts[0]
+    ? { type: artifacts[0].type, id: artifacts[0].id }
+    : { type: "automation", id: automation.id };
 
   const result = await runToolLoop(
     db,

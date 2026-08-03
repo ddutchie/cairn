@@ -91,9 +91,13 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           sorted.map((n) => {
-            const targetable = n.targetType === "note" || n.targetType === "task";
+            const targetable = n.targetType === "note" || n.targetType === "task" || n.targetType === "automation";
             const onClick = targetable
-              ? () => (n.targetType === "note" ? revealNote(setView, n.targetId!) : revealCard(setView, n.targetId!))
+              ? () => {
+                  if (n.targetType === "note") revealNote(setView, n.targetId!);
+                  else if (n.targetType === "task") revealCard(setView, n.targetId!);
+                  else if (n.targetType === "automation") setView("automations");
+                }
               : undefined;
             return (
               <div
@@ -112,7 +116,7 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-[var(--text-primary)] truncate">{n.title}</span>
-                    {targetable && <ExternalLink size={10} className="shrink-0 text-[var(--text-tertiary)]" />}
+                {targetable && <ExternalLink size={10} className="shrink-0 text-[var(--text-tertiary)]" />}
                     <span className="text-[0.625rem] text-[var(--text-tertiary)] ml-auto shrink-0">{formatWhen(n.createdAt)}</span>
                   </div>
                   <p className="text-[0.714rem] text-[var(--text-secondary)] mt-0.5 break-words line-clamp-2">{n.body}</p>
