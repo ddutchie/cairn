@@ -17,6 +17,7 @@ import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SuggestedPrompts } from "./SuggestedPrompts";
 import { ToolCallIndicator } from "./ToolCallIndicator";
+import { useCommunityConnectorMap } from "./connector-context";
 import { QuestionForm } from "./QuestionForm";
 import { ChatInput, SuggestionItem } from "../ChatInput";
 import { ContextRing } from "@/components/agent/ContextRing";
@@ -110,6 +111,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   // threadId is driven by the store so the tab bar can switch threads externally
   const threadId = activeChatThreadId;
+  const connectorMap = useCommunityConnectorMap();
 
   const [input, setInput] = useState("");
   const chatCommands = useMemo(
@@ -637,6 +639,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
                   key={message.id}
                   message={message}
                   onRetry={!isLoading ? handleRetry : undefined}
+                  connectors={connectorMap}
                 />
               ))
           }
@@ -654,7 +657,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
               ))}
             </div>
           )}
-          {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} />}
+          {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} connectors={connectorMap} />}
           <div ref={messagesEndRef} />
         </div>
       </div>

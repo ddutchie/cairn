@@ -46,9 +46,9 @@ export interface TerminalSessionsSlice {
   /** Ensure a streaming assistant message exists — creates one if the last message is not streaming */
   ensurePiStreamingMessage: (sessionId: string) => void;
   /** Append a tool call record to the last assistant message */
-  addPiToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  addPiToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update an existing tool call chip in-place (start → done) */
-  updatePiToolCall: (sessionId: string, callId: string, patch: { label?: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  updatePiToolCall: (sessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Set confirmation requirement state for a tool chip */
   setPiToolConfirmRequired: (sessionId: string, callId: string, confirmRequired: boolean) => void;
   /** Clear message history for a pi session */
@@ -64,9 +64,9 @@ export interface TerminalSessionsSlice {
   /** Finalise the last streaming message in a subagent */
   finalisePiSubagentMessage: (sessionId: string, childSessionId: string) => void;
   /** Add a tool call to a subagent's last streaming message */
-  addPiSubagentToolCall: (sessionId: string, childSessionId: string, toolCall: { callId: string; name: string; label: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  addPiSubagentToolCall: (sessionId: string, childSessionId: string, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update an existing tool call chip on a subagent message in-place */
-  updatePiSubagentToolCall: (sessionId: string, childSessionId: string, callId: string, patch: { label?: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  updatePiSubagentToolCall: (sessionId: string, childSessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Mark a subagent as done and store its result */
   completePiSubagent: (sessionId: string, childSessionId: string, result: string) => void;
   /** Update token usage on an inline subagent block */
@@ -267,7 +267,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  addPiToolCall(sessionId, toolCall: { callId: string; name: string; label: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
+  addPiToolCall(sessionId, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;

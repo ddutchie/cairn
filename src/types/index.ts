@@ -821,6 +821,7 @@ export interface PiAgentMessage {
     callId: string;
     name: string;
     label: string;
+    args?: Record<string, unknown>;
     running: boolean;
     ok: boolean;
     output?: string;

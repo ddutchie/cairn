@@ -134,15 +134,15 @@ export interface AgentLoopCallbacks {
    *  The chip should appear in "pending" state immediately — before execution. */
   onToolPending:   (name: string, callId: string) => void;
   /** callId links back to the pending chip created by onToolPending (if any). */
-  onToolStart:     (name: string, label: string, callId?: string) => void;
+  onToolStart:     (name: string, label: string, callId?: string, args?: ToolArgs) => void;
   /** callId links back to the same chip created by onToolPending / updated by onToolStart. */
-  onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string) => void;
+  onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string, args?: ToolArgs) => void;
   onStepStart:     () => void;
   onUsage:         (promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown) => void;
   onDone:          () => void;
   onError:         (message: string) => void;
   /** Fired when a tool call needs user confirmation before execution. */
-  onToolConfirmRequired?: (name: string, label: string, callId: string) => void;
+  onToolConfirmRequired?: (name: string, label: string, callId: string, args?: ToolArgs) => void;
   /** Fired when the agent writes a note in plan mode — carries the note ID */
   onPlanNoteFound?: (noteId: string) => void;
   /**
@@ -789,7 +789,7 @@ export async function runAgentLoop(
         ? externalToolLabel(tc.function.name, toolCtx.db)
         : (CODING_LABELS[tc.function.name]?.(args) ?? tc.function.name);
       const pendingCallId = streamCallIds.get(tcIdx);
-      callbacks.onToolStart(tc.function.name, label, pendingCallId);
+       callbacks.onToolStart(tc.function.name, label, pendingCallId, args);
 
       // Yield to the event loop so the IPC layer dispatches the onToolStart event
       // to the renderer before execution begins — this makes the chip appear in
@@ -804,13 +804,13 @@ export async function runAgentLoop(
       if (parseError) {
         ok = false;
         resultContent = `Error: ${parseError}`;
-        callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
+         callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId, args);
         return { tcIdx, tc, ok, resultContent, pendingCallId };
       }
 
       if (llmConfig.autoApprove === false) {
         const callKey = pendingCallId || tc.id;
-        callbacks.onToolConfirmRequired?.(tc.function.name, label, callKey);
+         callbacks.onToolConfirmRequired?.(tc.function.name, label, callKey, args);
         const approved = await new Promise<boolean>((resolve) => {
           const onAbort = () => {
             pendingApprovals.delete(callKey);
@@ -831,7 +831,7 @@ export async function runAgentLoop(
         if (!approved) {
           ok = false;
           resultContent = "Blocked: tool call rejected by user";
-          callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
+           callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId, args);
           return { tcIdx, tc, ok, resultContent, pendingCallId };
         }
       }
@@ -841,7 +841,7 @@ export async function runAgentLoop(
           tc.function.name,
           args,
           signal,
-          (output) => callbacks.onToolStart(tc.function.name, `${label}: ${output.slice(-80)}`),
+           (output) => callbacks.onToolStart(tc.function.name, `${label}: ${output.slice(-80)}`, pendingCallId, args),
           toolCtx,
           llmConfig,
           mode,
@@ -857,7 +857,7 @@ export async function runAgentLoop(
         resultContent = `Error: ${(e as Error).message}`;
       }
 
-      callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
+       callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId, args);
 
       // In plan mode, notify renderer when agent writes the PRD note
       if (mode === "plan" && ok && tc.function.name === "ensure_note") {

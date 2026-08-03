@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
+import { Trash2, FileText, Zap, Map as MapIcon } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
 import type { PendingQuestion } from "@/hooks/useChatStream";
@@ -18,12 +18,14 @@ import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { AgentMessageBubble } from "./AgentMessageBubble";
+import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanTaskList } from "./PlanTaskList";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
-import type { TerminalSession, TokenBreakdown } from "@/types";
+import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
+import type { AgentConnectorMeta } from "./AgentMessageBubble";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -114,10 +116,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const setView                  = useCairnStore((s) => s.setView);
 
   // Reactive state — only values that actually drive re-renders
-  const { agentConfig, projects, activeWorkspaceId } = useCairnStore(useShallow((s) => ({
+  const { agentConfig, projects, activeWorkspaceId, mcpServers, customServices } = useCairnStore(useShallow((s) => ({
     agentConfig:       s.agentConfig,
     projects:          s.projects,
     activeWorkspaceId: s.activeWorkspaceId,
+    mcpServers:        s.mcpServers,
+    customServices:    s.customServices,
   })));
   const customCommands = useCairnStore((s) => s.customCommands);
   const agentCommands = useMemo(
@@ -137,9 +141,41 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const [retryInfo, setRetryInfo]                 = useState<{ attempt: number; maxRetries: number; delayMs: number } | null>(null);
   // Compaction state — shown in status bar while an LLM summary call is in flight
   const [isCompacting, setIsCompacting]           = useState(false);
+  const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
 
   const messagesEndRef  = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchRegistry = window.electron?.registry.fetch;
+    if (!fetchRegistry) return () => { cancelled = true; };
+    fetchRegistry().then((result) => {
+      if (!cancelled) setConnectorEntries(result.manifest);
+    }).catch(() => { /* connector cards fall back to generic metadata */ });
+    return () => { cancelled = true; };
+  }, [activeWorkspaceId]);
+
+  const connectorMap = useMemo(() => {
+    const map: Record<string, AgentConnectorMeta> = {};
+    if (!connectorEntries) return map;
+    for (const server of mcpServers) {
+      const entry = connectorEntries.mcpServers.find((candidate) => candidate.id === server.communityId || candidate.definition.name === server.name);
+      if (entry) map[`mcp__${server.id}__`] = { name: server.name, label: entry.definition.name, kind: "mcp", iconSvg: entry.iconSvg, brandColor: entry.brandColor };
+    }
+    for (const service of customServices) {
+      const entry = connectorEntries.services.find((candidate) => candidate.id === service.communityId || candidate.definition.name === service.name);
+      if (entry) map[`svc__${service.id}__`] = { name: service.name, label: entry.definition.name, kind: "service", iconSvg: entry.iconSvg, brandColor: entry.brandColor };
+    }
+    return map;
+  }, [connectorEntries, mcpServers, customServices]);
+
+  const connectorForTool = useCallback((toolName: string): AgentConnectorMeta | undefined => {
+    const prefix = toolName.match(/^(mcp|svc)__[^_]+__/);
+    if (!prefix) return undefined;
+    const candidate = Object.entries(connectorMap).find(([key]) => toolName.startsWith(key));
+    return candidate?.[1];
+  }, [connectorMap]);
 
   // Always-current reference to sendPrompt — lets the initialPrompt effect
   // call it after mount without capturing a stale closure.
@@ -218,17 +254,18 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         // flushSync ensures React commits this before the stream continues.
         const callId = e.callId ?? `${e.name}:${Date.now()}`;
         activeCallIds.add(callId);
-        addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+         addPiToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
       } else if (e.status === "start") {
         // Execution starting — update the existing pending chip with the resolved label.
         const callId = e.callId ?? `${e.name}:${Date.now()}`;
         activeCallIds.add(callId);
-        addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+         addPiToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
       } else if (e.status === "end") {
         const callId = e.callId ?? `${e.name}:unknown`;
         activeCallIds.delete(callId);
         updatePiToolCall(sessionId, callId, {
-          label:    e.label,
+           label:    e.label,
+           args:     e.args,
           running:  false,
           ok:       e.ok ?? true,
           output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
@@ -300,12 +337,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       if (e.status === "pending" || e.status === "start") {
         const callId = e.callId ?? `${e.name}:${Date.now()}`;
         activeSubCallIds.add(callId);
-        addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+         addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
       } else if (e.status === "end") {
         const callId = e.callId ?? `${e.name}:unknown`;
         activeSubCallIds.delete(callId);
         updatePiSubagentToolCall(sessionId, e.sessionId, callId, {
-          label:    e.label,
+           label:    e.label,
+           args:     e.args,
           running:  false,
           ok:       e.ok ?? true,
           output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
@@ -471,9 +509,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         baseUrl:     agentConfig.baseUrl     || undefined,
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,
-        maxSteps:    agentConfig.maxSteps    ?? 30,
-        temperature: agentConfig.temperature ?? 0.3,
-      },
+         maxSteps:    agentConfig.maxSteps    ?? 30,
+         temperature: agentConfig.temperature ?? 0.3,
+         autoApprove: agentConfig.autoApprove ?? true,
+       },
     };
     window.electron?.piAgent.prompt(promptPayload);
   }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage]);
@@ -511,7 +550,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     window.electron?.piAgent.clear(session.sessionId);
   }
 
-  function handleApprovePlan() {
+  function handleApprovePlan(autoApprove: boolean) {
     if (!session.planNoteId || isLoading || !session.cwd) return;
     setIsLoading(true);
     // Add a system-style user message to mark the transition in the chat
@@ -540,7 +579,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,
         maxSteps:    agentConfig.maxSteps    ?? 30,
-        temperature: agentConfig.temperature ?? 0.3,
+         temperature: agentConfig.temperature ?? 0.3,
+         autoApprove,
       },
     });
   }
@@ -588,18 +628,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           </Tooltip>
         )}
 
-        {/* Approve Plan button — plan mode only, once PRD note exists */}
-        {session.mode === "plan" && session.planNoteId && !isLoading && (
-          <Tooltip content="Approve plan and begin implementation" side="left">
-            <button
-              onClick={handleApprovePlan}
-              className="flex items-center gap-1 text-[0.714rem] font-medium px-2 py-0.5 rounded-full bg-[var(--success,#22c55e)] text-white hover:opacity-90 transition-opacity"
-            >
-              <CheckCircle size={11} />
-              Approve Plan
-            </button>
-          </Tooltip>
-        )}
 
         {session.lastUsage && (
           <ContextRing
@@ -636,7 +664,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           </div>
         )}
         {messages.map((msg) => (
-          <AgentMessageBubble key={msg.id} message={msg} sessionId={session.sessionId} />
+          <AgentMessageBubble
+            key={msg.id}
+            message={msg}
+            sessionId={session.sessionId}
+            connectors={Object.fromEntries((msg.toolCalls ?? []).map((tc) => [tc.name, connectorForTool(tc.name)]).filter(([, value]) => value)) as Record<string, AgentConnectorMeta>}
+          />
         ))}
         {pendingQuestions && (
           <QuestionForm
@@ -650,6 +683,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
       {/* Input — with upward-expanding plan task list docked above it */}
       <div className="border-t border-[var(--border)] flex-shrink-0">
+        {session.mode === "plan" && planNoteContent && session.planNoteId && (
+          <PlanApprovalCard
+            content={planNoteContent}
+            busy={isLoading}
+            onApprove={handleApprovePlan}
+            onRequestChanges={(feedback) => void sendPrompt(`Please revise the plan based on this feedback:\n\n${feedback}`)}
+          />
+        )}
         {session.mode === "execute" && planNoteContent && (
           <PlanTaskList content={planNoteContent} />
         )}
