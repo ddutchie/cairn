@@ -61,6 +61,8 @@ export default function Home() {
     startApprovalPolling,
     stopApprovalPolling,
     fetchApprovalCount,
+    startNotificationPolling,
+    stopNotificationPolling,
   } = useCairnStore(useShallow((s) => ({
     hydrate:             s.hydrate,
     hydrateFromElectron: s.hydrateFromElectron,
@@ -80,6 +82,8 @@ export default function Home() {
     startApprovalPolling: s.startApprovalPolling,
     stopApprovalPolling:  s.stopApprovalPolling,
     fetchApprovalCount:   s.fetchApprovalCount,
+    startNotificationPolling: s.startNotificationPolling,
+    stopNotificationPolling:  s.stopNotificationPolling,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
   const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations"] as const).filter(
@@ -129,6 +133,14 @@ export default function Home() {
     startApprovalPolling();
     return () => stopApprovalPolling();
   }, [startApprovalPolling, stopApprovalPolling, fetchApprovalCount]);
+
+  // Live unread-notification polling for the bell badge + center (same pattern;
+  // also subscribes to the main-process mcp:unread-count pushes).
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.electron?.notification) return;
+    startNotificationPolling();
+    return () => stopNotificationPolling();
+  }, [startNotificationPolling, stopNotificationPolling]);
 
   useEffect(() => {
     const electron = window.electron;

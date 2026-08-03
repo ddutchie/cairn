@@ -1065,6 +1065,23 @@ export function getUnreadMcpNotifications(db: Database.Database): McpNotificatio
   return db.prepare("SELECT * FROM mcp_notifications WHERE read = 0 ORDER BY created_at ASC").all().map(toMcpNotification);
 }
 
+/** Recent notifications (read + unread), newest first. */
+export function listMcpNotifications(db: Database.Database, limit = 100): McpNotification[] {
+  return db
+    .prepare("SELECT * FROM mcp_notifications ORDER BY created_at DESC, rowid DESC LIMIT ?")
+    .all(limit)
+    .map(toMcpNotification);
+}
+
+export function countUnreadMcpNotifications(db: Database.Database): number {
+  const r = db.prepare("SELECT COUNT(*) AS n FROM mcp_notifications WHERE read = 0").get() as { n: number };
+  return r.n;
+}
+
+export function markMcpNotificationRead(db: Database.Database, id: string): void {
+  db.prepare("UPDATE mcp_notifications SET read = 1 WHERE id = ?").run(id);
+}
+
 export function markMcpNotificationsRead(db: Database.Database): void {
   db.prepare("UPDATE mcp_notifications SET read = 1 WHERE read = 0").run();
 }

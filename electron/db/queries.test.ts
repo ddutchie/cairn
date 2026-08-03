@@ -55,6 +55,12 @@ import {
   getCodebaseOverview,
   getCodebaseGraph,
   getCodebaseModuleGraph,
+  getUnreadMcpNotifications,
+  markMcpNotificationsRead,
+  markMcpNotificationRead,
+  listMcpNotifications,
+  countUnreadMcpNotifications,
+  insertMcpNotification,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -1185,5 +1191,37 @@ describe("rewriteInboundWikilinks", () => {
 
     expect(updated.map((n) => n.id)).toEqual(["same-ws"]);
     expect(getNoteById(db, "other-ws")!.content).toBe("[[Shared]]"); // cross-workspace link untouched
+  });
+});
+
+describe("mcp notifications", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("inserts, lists newest-first, counts unread, and marks read", () => {
+    const a = insertMcpNotification(db, { id: "n1", tool: "create_task", title: "Task", body: "x" });
+    const b = insertMcpNotification(db, { id: "n2", tool: "automation_run", title: "Done", body: "y" });
+
+    expect(countUnreadMcpNotifications(db)).toBe(2);
+    const list = listMcpNotifications(db);
+    expect(list.map((n) => n.id)).toEqual(["n2", "n1"]); // newest first
+    expect(list[0].read).toBe(false);
+
+    markMcpNotificationRead(db, "n2");
+    expect(countUnreadMcpNotifications(db)).toBe(1);
+    expect(getUnreadMcpNotifications(db).map((n) => n.id)).toEqual(["n1"]);
+
+    markMcpNotificationsRead(db);
+    expect(countUnreadMcpNotifications(db)).toBe(0);
+  });
+
+  it("getUnreadMcpNotifications excludes read rows", () => {
+    insertMcpNotification(db, { id: "n1", tool: "t", title: "a", body: "1" });
+    insertMcpNotification(db, { id: "n2", tool: "t", title: "b", body: "2" });
+    markMcpNotificationRead(db, "n2");
+    expect(getUnreadMcpNotifications(db).map((n) => n.id)).toEqual(["n1"]);
   });
 });

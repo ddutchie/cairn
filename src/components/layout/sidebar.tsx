@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays, Download, GitMerge, Check, Zap,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays, Download, GitMerge, Check, Zap, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -17,6 +17,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { NotificationCenter } from "@/components/automations/notification-center";
 import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
 import { buildShortcutMap, modKey, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
@@ -56,6 +57,7 @@ export function Sidebar() {
      cards, chatOpen, searchOpen,
      hiddenViews,
      pendingApprovalCount,
+     notificationUnreadCount,
      moveFolderToProject, moveCardToProject, moveNoteToProject,
    } = useCairnStore(useShallow((s) => ({    sidebarCollapsed:    s.sidebarCollapsed,
      toggleSidebar:       s.toggleSidebar,
@@ -78,10 +80,13 @@ export function Sidebar() {
      searchOpen:          s.searchOpen,
      hiddenViews:         s.hiddenViews,
      pendingApprovalCount: s.pendingApprovalCount,
+     notificationUnreadCount: s.notificationUnreadCount,
      moveFolderToProject: s.moveFolderToProject,
      moveCardToProject:   s.moveCardToProject,
      moveNoteToProject:   s.moveNoteToProject,
    })));
+
+  const [notificationOpen, setNotificationOpen] = useState(false);
 
   // All navigable views in order (overview + notes always first)
   const visibleNavItems = React.useMemo(
@@ -321,6 +326,16 @@ export function Sidebar() {
                 )}
               </button>
             ))}
+            <button onClick={() => { setNotificationOpen(true); closeSidebarOnMobile(); }}
+              className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+                "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              <Bell size={13} /><span>Notifications</span>
+              {notificationUnreadCount > 0 && (
+                <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg,#fff)] text-[0.625rem] leading-4 text-center font-semibold">
+                  {notificationUnreadCount}
+                </span>
+              )}
+            </button>
             <button onClick={() => { setView("automations"); closeSidebarOnMobile(); }}
               className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
                 activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
@@ -339,6 +354,10 @@ export function Sidebar() {
           </div>
         </div>
       </aside>
+
+      {notificationOpen && (
+        <NotificationCenter onClose={() => setNotificationOpen(false)} />
+      )}
     </>
   );
 }

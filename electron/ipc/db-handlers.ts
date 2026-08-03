@@ -11,7 +11,7 @@
 import { shell } from "electron";
 import fs from "fs";
 import path from "path";
-import { registerIpcHandle, registerIpcOn } from "./registry";
+import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, hardDeleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders, stripMarkdown, findNoteFilePath } from "../notes-files";
@@ -707,7 +707,7 @@ export function registerDbHandlers(ctx: DbContext): void {
 
   // Friendly schedule preview — compute the next fire time for a proposed
   // schedule expression (used by the Automations schedule builder).
-  registerIpcHandle("db:automation:preview", (_e, { scheduleKind, scheduleExpr, timezone }: { scheduleKind?: string; scheduleExpr: string; timezone?: string | null }) => handle(() => {
+  registerIpcHandle("db:automation:preview", (_e, { scheduleExpr, timezone }: { scheduleKind?: string; scheduleExpr: string; timezone?: string | null }) => handle(() => {
     try {
       const next = computeNextRun(parseSchedule(scheduleExpr), new Date(), timezone ?? undefined);
       return { nextRunAt: next ? next.toISOString() : null };
@@ -722,5 +722,14 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:approval:count", () => handle(() => {
     const r = ctx.db.prepare("SELECT COUNT(*) AS n FROM approval_items WHERE state = 'pending'").get() as { n: number };
     return r.n;
+  }));
+
+  // ── In-app notification center ─────────────────
+  registerIpcHandle("db:notification:list", (_e, { limit }: { limit?: number }) => handle(() => q.listMcpNotifications(ctx.db, limit)));
+  registerIpcHandle("db:notification:count", () => handle(() => q.countUnreadMcpNotifications(ctx.db)));
+  registerIpcHandle("db:notification:markRead", (_e, { id }: { id: string }) => handle(() => {
+    q.markMcpNotificationRead(ctx.db, id);
+    broadcastEvent("mcp:unread-count", q.countUnreadMcpNotifications(ctx.db));
+    return true;
   }));
 }

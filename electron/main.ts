@@ -433,17 +433,16 @@ app.whenReady().then(async () => {
   });
   heartbeatScheduler.start();
 
-  // Shared reset — clears DB rows, badge, and the poller's accumulated count.
-  // Called from both the window focus event and the renderer IPC handler so
-  // the next batch of notifications always starts from 0.
+  // Shared reset — marks all notifications read + zeroes the badge. Called from
+  // the renderer's "mark all read" (via the IPC handler's onBadgeClear). Unlike
+  // before, window focus does NOT auto-clear — unread persists until the user
+  // dismisses it in the notification center, so the sidebar bell stays accurate.
   function clearBadge() {
     markMcpNotificationsRead(ctx.db);
     updateBadge(0);
     poller.resetCount();
+    if (!win.isDestroyed()) win.webContents.send("mcp:unread-count", 0);
   }
-
-  // Clear badge when window gains focus
-  win.on("focus", clearBadge);
 
   // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
   registerAppHandlers(ctx, userDataPath, updateBadge, reinitialise, clearBadge);

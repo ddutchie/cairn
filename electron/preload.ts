@@ -617,6 +617,14 @@ const api = {
   },
   markMcpNotificationsRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
 
+  // ── In-app notification center ─────────────────
+  notification: {
+    list: (limit?: number) => invoke("db:notification:list", { limit }),
+    count: () => invoke("db:notification:count"),
+    markRead: (id: string) => invoke("db:notification:markRead", { id }),
+    markAllRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
+  },
+
   // ── Agent / coding sessions ───────────────────
   // All methods go through invoke() so callers receive T directly and errors
   // are thrown (matching every other namespace in this file).
