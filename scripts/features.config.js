@@ -10,14 +10,30 @@
  * ── When to add an entry ──────────────────────────────────────────────────────
  * Add an entry ONLY for a major, headline feature a user would want announced on
  * launch — not every changelog line (fixes, small tweaks, and internal work stay
- * in changelogs/ only). Append new entries at the END, in release order; the
- * modal auto-shows unseen entries belonging to the newest `version` present.
+ * in changelogs/ only). Append new entries at the END, in release order. The
+ * modal auto-shows unseen entries belonging to the newest MINOR version present
+ * (so a headline feature dropped in 2.6.1 still surfaces to users who saw 2.6.0;
+ * the per-user "seen" ids make sure already-dismissed entries never re-show).
+ *
+ * ── Condensing older minors (housekeeping) ─────────────────────────────────────
+ * One card per MINOR version. When a new minor ships (e.g. v2.6.0), condense the
+ * previous minor's cards into a single "vX.Y.x" entry so the registry stays
+ * readable:
+ *   id          "v2.5.x" — stable per minor, never reused.
+ *   version     "v2.5.x" — the ".x" suffix marks a condensed minor line; the
+ *               generator accepts it and it still groups under the minor in the
+ *               boot gate.
+ *   title/desc  A short "Cairn 2.5 — Highlights" summary.
+ *   highlights  One "Prefix:" line per feature that shipped in that minor.
+ * Condensed cards are NEVER auto-shown (they aren't the newest minor); they only
+ * appear when the user browses What's New from Settings (forceOpen).
  *
  * ── Entry shape ───────────────────────────────────────────────────────────────
  *   id          Stable unique key, e.g. "v2.5.9-saved-providers". NEVER reuse or
  *               renumber — it's how "already seen" is tracked per user.
- *   version     Release tag string, e.g. "v2.5.9". Group multiple features of the
- *               same release under the same version.
+ *   version     Release tag string, e.g. "v2.5.9" (or "v2.5.x" for a condensed
+ *               minor card). Group multiple features of the same release under
+ *               the same version.
  *   title       Short headline (a few words).
  *   category    One-word-ish label shown as the eyebrow (e.g. "AI Chat", "Agent").
  *   description  One or two sentences of context.
@@ -29,62 +45,42 @@
  */
 const FEATURES = [
   {
-    id: "v1.5.0-obsidian",
-    version: "v1.5.0",
-    title: "Obsidian Vault Compatibility",
-    category: "Integrations",
-    description: "Cairn is now fully compatible with Obsidian vaults, operating seamlessly side-by-side.",
+    id: "v0.x",
+    version: "v0.x",
+    title: "Cairn 0.x — The Beginning",
+    category: "Release Highlights",
+    description: "Where Cairn started: notes, boards, tags, and folders, the knowledge graph, task blockers, rich markdown, and the interactive PRD generator.",
     highlights: [
-      "Obsidian Vault Interoperability: Point any Cairn workspace directly to an Obsidian folder without breaking configuration files.",
-      "Double-Bracket Image Embeds: Render Obsidian-style `![[image.png]]` media links natively inside the Markdown previewer and editor.",
-      "Vault-Aware Assets: Pasted and uploaded assets are saved directly to your vault's `attachments/` folder.",
-      "Preservation YAML Sync: Modifying note metadata in Cairn preserves external Obsidian aliases, dates, or custom YAML tags.",
+      "Knowledge Graph: Force-directed and radial tree layouts over projects, notes, cards, and tags, with auto-discovered relationships (co-mention, keyword similarity, shared assignee).",
+      "Task Blockers: Mark one card as blocking another and see the dependency chain on the board and in the graph.",
+      "Rich Markdown: Callouts, KaTeX math, highlights, and footnotes in notes and chat, with content-addressed image serving.",
+      "Undo & Redo: ⌘Z / ⌘⇧Z across notes, the board, and Idea Flow — rapid typing coalesces into single undo steps.",
+      "PRD Generation & Question Forms: Generate product-requirement notes interactively, with inline question forms the AI fills in chat.",
+      "Onboarding Wizard: A guided first-run setup with an AI enable/disable toggle and instant workspace setup.",
     ],
   },
   {
-    id: "v1.6.0-decoupled-ai",
-    version: "v1.6.0",
-    title: "Decoupled AI Configurations",
-    category: "AI Chat",
-    description: "Configure different models for daily AI chat versus complex coding agent loops.",
+    id: "v1.x",
+    version: "v1.x",
+    title: "Cairn 1.x — Highlights",
+    category: "Release Highlights",
+    description: "The foundations: wikilinks and backlinks, a plan-then-execute coding agent with skills, Obsidian vault compatibility, on-device local LLMs, and the mobile companion.",
     highlights: [
-      "Independent Parameters: Run lightweight, on-device models for inline editor actions while using large cloud endpoints for coding loops.",
-      "Domain Partitioned Settings: Separated AI settings panels divide General Chat/MCP from Coding Agent (Pi) context parameters.",
-      "Sync & Migration: Credential configurations are synchronized across General Chat and Agent loops upon first setup.",
+      "Wikilinks & Backlinks: Link notes with `[[Title]]` and see every note that references the current one in a dedicated backlinks panel.",
+      "Plan Mode: Launch the coding agent in read-only planning mode — it writes a grounded PRD note you approve before it executes.",
+      "Skill System: The agent discovers and loads SKILL.md files from your project and home directories, compatible with OpenCode, Cline, and Claude Code.",
+      "Obsidian Vault Compatibility: Point any Cairn workspace directly to an Obsidian folder, with native `![[image]]` embeds and vault-aware assets.",
+      "Decoupled AI Configurations: Run lightweight on-device models for inline editor actions while using large cloud endpoints for coding loops.",
+      "Local LLM Integration: Full cross-platform local engine routing — a 1-click llama-server binary downloader with CDN mirrors and self-healing output parsing.",
+      "Mobile Companion Service: Secure, local-network mobile access to Cairn notes, boards, and agents via QR pairing, with touch DnD and PDF export.",
     ],
   },
   {
-    id: "v1.7.0-local-llm",
-    version: "v1.7.0",
-    title: "Local LLM Integration",
-    category: "Local AI",
-    description: "Full cross-platform local engine routing inference offline to local llama-server binaries.",
-    highlights: [
-      "1-Click Binary Downloader: Automatically downloads, unpacks, and executes ggml llama-server setups customized for your platform.",
-      "CDN Toggle Mirroring: Alternate model weight downloads between Hugging Face and high-speed regional CDN mirrors.",
-      "Self-Healing XML Parser: Stream repairs to malformed JSON output blocks generated by smaller quantized local models.",
-      "Star Toggle: Select downloaded weights to launch automatically on app startup without manual model load.",
-    ],
-  },
-  {
-    id: "v1.8.0-mobile-companion",
-    version: "v1.8.0",
-    title: "Mobile Companion Service",
-    category: "Mobile",
-    description: "Secure, local-network mobile access to Cairn notes, boards, and agents.",
-    highlights: [
-      "Mobile QR Code Pairing: Scan pairing QR codes or enter single-use PINs to launch secure mobile client sessions.",
-      "Mobile Responsive Layouts: Sidebar collapsible drawers, swipeable settings categories, and dynamic content scaling.",
-      "Touch DnD Support: Holds and scrolls on touchscreens cede canvas pointer control instantly to board DnD sensors.",
-      "Web Share PDF Export: Generate standard print-layout PDFs and export them directly to native mobile share sheets.",
-    ],
-  },
-  {
-    id: "v2.0.0-codebase-agent",
-    version: "v2.0.0",
-    title: "Codebase Indexing & Agent Guardrails",
-    category: "Agent",
-    description: "AST-free regex symbol indexers and live execution confirmations.",
+    id: "v2.0.x",
+    version: "v2.0.x",
+    title: "Cairn 2.0 — Highlights",
+    category: "Release Highlights",
+    description: "Codebase indexing and agent guardrails.",
     highlights: [
       "Semantic Codebase Indexing: Incremental parser mapping functions, classes, and call graph relations for Rust, Go, Python, and JS.",
       "Plan & Execute Toggles: Lower temperature Outline settings for safe, deterministic planning drafts.",
@@ -92,181 +88,69 @@ const FEATURES = [
     ],
   },
   {
-    id: "v2.1.1-semantic-search",
-    version: "v2.1.1",
-    title: "Local Semantic Search",
-    category: "Knowledge Graph",
-    description: "Find related notes by meaning — powered by a local embedding model that runs fully offline.",
+    id: "v2.1.x",
+    version: "v2.1.x",
+    title: "Cairn 2.1 — Highlights",
+    category: "Release Highlights",
+    description: "Local semantic search.",
     highlights: [
-      "Semantic Neighbours: A packaged on-device embedding model links notes by meaning; the Knowledge Graph gains a \"semantic\" edge type and the editor's Backlinks panel shows the most similar notes with score bars.",
-      "Section-Based Embeddings: Notes are split by headings so each section gets its own vector — multi-topic notes connect to the right clusters instead of averaging their signal away.",
+      "Semantic Neighbours: A packaged on-device embedding model links notes by meaning; the Knowledge Graph gains a \"semantic\" edge type.",
+      "Section-Based Embeddings: Notes are split by headings so each section gets its own vector — multi-topic notes connect to the right clusters.",
       "Fully Offline: Inference runs in a local background worker (ONNX Runtime); nothing is sent to a cloud service.",
-      "Edge Hover Tooltips: Hovering a semantic link shows the two note/section titles and the similarity percentage.",
     ],
   },
   {
-    id: "v2.2.0-thinking-stream",
-    version: "v2.2.0",
-    title: "Reasoning & Thinking Streams",
-    category: "AI Chat",
-    description: "Peek behind the curtain to observe the model's logic as it streams in real-time.",
+    id: "v2.2.x",
+    version: "v2.2.x",
+    title: "Cairn 2.2 — Highlights",
+    category: "Release Highlights",
+    description: "Reasoning and thinking streams.",
     highlights: [
       "Collapsible Thinking Blocks: Follow the model's reasoning stream. Blocks auto-collapse once generation starts.",
       "Context & Usage Metrics: View exact breakdown of answer tokens vs reasoning tokens in the ContextRing popover.",
     ],
   },
   {
-    id: "v2.3.0-git-workflow",
-    version: "v2.3.0",
-    title: "Polished Git Integrations",
-    category: "Git",
-    description: "Streamlined branch management and file discarding controls.",
+    id: "v2.3.x",
+    version: "v2.3.x",
+    title: "Cairn 2.3 — Highlights",
+    category: "Release Highlights",
+    description: "Everything that shipped across the Cairn 2.3 line: polished Git workflows, dynamic chat layouts, guided tours, a calendar view, and external AI tools.",
     highlights: [
-      "Radix Branch Switcher: Search, filter, and switch branches quickly, or create new branches from a dedicated dialog.",
-      "File-Level & Bulk Discarding: Clean your workspace by discarding specific changes or sections with verification prompts.",
-      "Action Tooltips: Custom theme-aware tooltips details for all stage, unstage, commit, and discard actions.",
+      "Polished Git Integrations: A Radix branch switcher, file-level and bulk discarding, and theme-aware action tooltips.",
+      "Dynamic Chat Layout & Previews: Toggle the chat between right-docked and full-workspace modes, with side-by-side context previews and direct workspace navigation.",
+      "Interactive Workspace Tour: Step through guided visual tours with a highlight portal that adapts to resizing — plus a paginated What's New carousel on launch.",
+      "Calendar View: Schedule tasks by due date with month/week layouts, drag-to-reschedule, and overdue trays.",
+      "External Tools: Connect the AI chat and agent to remote MCP servers and any HTTP API, per-project, with an AI tool builder and keychain-backed credentials.",
+      "OAuth Sign-in for Remote MCP Servers: One-click sign-in to OAuth-gated servers — Figma, Linear, Notion, GitHub — with PKCE and automatic refresh.",
     ],
   },
   {
-    id: "v2.3.0-chat-layout",
-    version: "v2.3.0",
-    title: "Dynamic Chat Layout & Previews",
-    category: "AI Chat",
-    description: "Work with notes and tasks side-by-side during AI chats.",
+    id: "v2.4.x",
+    version: "v2.4.x",
+    title: "Cairn 2.4 — Highlights",
+    category: "Release Highlights",
+    description: "The mobile companion, device sync, and codebase architecture: Cairn 2.4 brought your workspace to your phone and made multi-device, shared-folder sync safe.",
     highlights: [
-      "Dynamic Layout Morphing: Toggle the chat between right-docked sidebar and full workspace modes smoothly.",
-      "Side-by-Side Context Previews: Click references, tasks, or notes in assistant responses to view them instantly next to your chat.",
-      "Direct Workspace Navigation: Jump straight to the board or notes workspace directly from the preview header.",
+      "Mobile Companion App: An offline-first mobile client for notes, tasks, boards, folders, and AI chat — markdown parity with the desktop, reconciling when connected.",
+      "Device Sync: Connect a shared cloud folder (iCloud, Dropbox, Syncthing) that your phone also points at — offline-first, append-only oplog files, never your database.",
+      "Conflict-Safe Reconciliation: Concurrent edits resolve with last-writer-wins plus a preserved conflicted copy, with a side-by-side resolution dialog and automatic merge.",
+      "Codebase Architecture: The Agent view visualises the indexed codebase — a zoomable module map, dependency matrix and graph, with explain-with-AI and a contextual editor panel.",
     ],
   },
   {
-    id: "v2.3.2-onboarding-tour",
-    version: "v2.3.2",
-    title: "Interactive Workspace Tour & Highlights",
-    category: "Workspace Help",
-    description: "Learn your way around the workspaces with visual guided tours and feature slides.",
+    id: "v2.5.x",
+    version: "v2.5.x",
+    title: "Cairn 2.5 — Highlights",
+    category: "Release Highlights",
+    description: "Everything that shipped across the Cairn 2.5 line: saved AI providers, project merging, accent colors, Obsidian vault import, custom slash commands, and community providers.",
     highlights: [
-      "Guided Workspace Tour: Step through an interactive, visual tour explaining Overview, Notes, Board, and Flow views.",
-      "Real-Time Transition Cutout: Highlight portal adapts instantly to window resizing and CSS sliding panel drawers.",
-      "What's New Modal: Paginated carousel modal highlights new updates automatically on launch.",
-      "Skip All Controls: Skip remaining slide cards instantly and mark everything as seen to prevent boot prompts.",
-    ],
-  },
-  {
-    id: "v2.3.4-calendar",
-    version: "v2.3.4",
-    title: "Calendar View",
-    category: "Planning",
-    description: "Schedule tasks by due date and see what's overdue at a glance.",
-    highlights: [
-      "Month & Week Layouts: A project-scoped calendar (⌘4) lays out task cards by due date with prev / next / today navigation.",
-      "Drag to Reschedule: Drag any task onto a different day to change its due date — an optimistic, fully undoable update.",
-      "Overdue & Unscheduled Trays: A past-due banner and a collapsible no-due-date tray let you drag tasks straight onto a day to schedule them.",
-      "Day Detail Modal: Packed days show a \"+N more\" affordance opening a list of everything due that day.",
-    ],
-  },
-  {
-    id: "v2.3.4-external-tools",
-    version: "v2.3.4",
-    title: "External Tools — MCP Servers & HTTP APIs",
-    category: "AI Tools",
-    description: "Connect the AI chat and agent to remote MCP servers and any HTTP API.",
-    highlights: [
-      "Settings → Tools: Add remote MCP servers (SSE or streamable-HTTP) and expose any HTTP API as a single tool, each with an enable toggle and Test connection button.",
-      "Per-Project Attach: Attach tools per-project from the Overview → Tools panel so each project only sees the tools it needs.",
-      "AI Tool Builder: Describe an endpoint in plain English; the builder probes it live, figures out the auth and response shape, and trims it to just the useful fields to save tokens.",
-      "Secure Credentials: API keys and tokens live in your OS keychain (Keychain / DPAPI / libsecret) — never in the database, plain text, or sent to the AI model.",
-    ],
-  },
-  {
-    id: "v2.3.4-mcp-oauth",
-    version: "v2.3.4",
-    title: "OAuth Sign-in for Remote MCP Servers",
-    category: "AI Tools",
-    description: "Connect to MCP servers that gate access behind a sign-in page — Figma, Linear, Notion, GitHub, and more.",
-    highlights: [
-      "One-Click Sign In: Choose OAuth as the auth mode, click Sign in, approve in your browser, and you're redirected back via a cairn:// deep link.",
-      "Full OAuth 2.1 Flow: Server discovery, dynamic client registration, PKCE, token exchange, and automatic refresh are handled for you by the MCP SDK.",
-      "Keychain-Backed Tokens: Access and refresh tokens are encrypted in your OS keychain and never exposed to the AI model or the app's UI layer.",
-      "Connection Status: A Connected / Sign out control shows each server's auth state at a glance.",
-    ],
-  },
-  {
-    id: "v2.5.9-saved-providers",
-    version: "v2.5.9",
-    title: "Saved AI Providers",
-    category: "AI Chat",
-    description: "Save several AI connections and switch between them in a click — no more retyping endpoints and keys.",
-    highlights: [
-      "Named Connections: Save multiple OpenAI-compatible providers (OpenAI, OpenRouter, a local Ollama / LM Studio server…) each with its own base URL, key, and model, and switch the active one from a dropdown.",
-      "Shared With The Coding Agent: Chat and the coding agent draw from the same provider list but keep independent selections — run the agent on a bigger model while chat stays on a cheaper one.",
-      "Per-Surface Model Picker: A searchable model dropdown (with Refresh and a custom-model option) sits under the switcher, so each surface can use a different model on the same provider.",
-      "Keys In Your OS Keychain: Provider API keys are stored encrypted in your operating system's keychain — never in plain text — and moved there automatically from any existing setup.",
-    ],
-  },
-  {
-    id: "v2.5.9-merge-projects",
-    version: "v2.5.9",
-    title: "Merge Projects",
-    category: "Projects",
-    description: "Consolidate two projects into one — move all notes, tasks, columns, and Idea Flow nodes across, then drop the empty project.",
-    highlights: [
-      "One Action: Open a project's ⋯ menu, choose Merge into…, and pick the destination project.",
-      "Everything Moves: Notes, task cards, board columns, and Idea Flow nodes are all repointed to the destination in a single transactional move.",
-      "Smart Board Merge: Cards land in the destination's matching column by type (Todo → Todo, Done → Done), and custom columns are recreated so nothing is lost.",
-      "Great For Cleanup: The tidy way to consolidate duplicate or overlapping projects — including two projects that accidentally share a name.",
-    ],
-  },
-  {
-    id: "v2.5.15-accent-colors",
-    version: "v2.5.15",
-    title: "Pick Your Accent Color",
-    category: "Appearance",
-    description: "Make Cairn yours — choose from ten curated accent colors, each tuned for both light and dark themes.",
-    highlights: [
-      "Ten Curated Presets: Sage Moss (the new default), Cairn Teal, Terracotta, Amber Gold, Obsidian Indigo, Slate Blue, Rust Coral, Deep Plum, Pine Green, and Copper Bronze — set it in Settings → General or the topbar Quick Settings.",
-      "Tuned Per Theme: Every preset ships a separate light and dark variant designed for Cairn's warm-neutral surfaces, and all foreground pairings meet WCAG AA contrast.",
-      "Everywhere, Instantly: Your accent applies live across the whole app — buttons, links, tags, nav, the note editor — follows theme switches, and even tints the launch splash.",
-      "Mobile Too: The mobile app gets the same ten presets from a new Appearance screen — your choice is saved on-device and applies across the app.",
-    ],
-  },
-  {
-    id: "v2.5.16-vault-import",
-    version: "v2.5.16",
-    title: "Open an Obsidian Vault",
-    category: "Integrations",
-    description: "Point Cairn at an existing Obsidian vault — or drop a folder of notes into your workspace — and your projects and notes appear automatically.",
-    highlights: [
-      "Folders Become Projects: Every top-level folder that holds notes is turned into a project and its `.md` files are imported, recursively, keeping their subfolder paths. Loose notes in the vault root land in a project named after the vault.",
-      "Live Import: Copy a folder of notes into your workspace while Cairn is running and it's picked up on the spot — no restart, no manual project setup.",
-      "Wikilink-Safe Editing: Editing a note's content, tags, or links never renames its file, so your `[[wikilinks]]` keep resolving. Renaming a note rewrites the inbound links in your other notes to match — just like Obsidian.",
-      "Stays Compatible: Your Obsidian properties (tags, aliases, cssclasses, custom fields) are preserved on every save, and `.obsidian`, `.git`, and attachment folders are skipped.",
-    ],
-  },
-  {
-    id: "v2.5.18-custom-commands",
-    version: "v2.5.18",
-    title: "Custom Slash Commands",
-    category: "AI & Chat",
-    description: "Create your own slash commands for the chat and coding-agent inputs — and see every built-in documented in one place — from the new Settings → Commands page.",
-    highlights: [
-      "Make Your Own: Give a command a name, a description, and the text it inserts, then trigger it by typing `/` in any chat or agent input.",
-      "Scoped Where You Want: Choose whether each command shows in the AI chat panel, the coding-agent input, or both.",
-      "Built-ins, Documented: Every command that ships with Cairn is now listed in one place — and a custom command with the same name overrides what a built-in inserts.",
-      "Browse Community: Install ready-made commands from the cairn-community registry with one click, then tweak them to taste.",
-    ],
-  },
-  {
-    id: "v2.5.19-community-providers",
-    version: "v2.5.19",
-    title: "Community AI Providers",
-    category: "AI & Chat",
-    description: "Install a ready-made AI provider from the cairn-community catalog with one click — no more hunting for the right base URL. Just add your API key and go.",
-    highlights: [
-      "One-Click Presets: Browse Community in Settings → AI & Chat or Coding Agent installs a provider's endpoint and default model for you.",
-      "Just Your Key: Enter your API key once — it's stored in your OS keychain, never in the database or synced.",
-      "Shared Everywhere: Installed providers join your shared list, ready to pick for AI Chat or the coding agent.",
-      "Always Fresh: The catalog is fetched cache-first (instant, offline-friendly) and re-installing never duplicates an entry.",
+      "Saved AI Providers: Save several OpenAI-compatible connections and switch between them in a click — keys live in your OS keychain.",
+      "Merge Projects: Consolidate two projects into one — all notes, tasks, columns, and Idea Flow nodes move across in a single action.",
+      "Pick Your Accent Color: Ten curated accent presets, each tuned for light and dark themes, applied live across the whole app.",
+      "Open an Obsidian Vault: Point Cairn at an existing vault — or drop a folder of notes in — and projects and notes appear automatically.",
+      "Custom Slash Commands: Create your own slash commands for chat and the coding agent, with every built-in documented.",
+      "Community AI Providers: Install ready-made AI providers from the cairn-community catalog with one click — just add your API key.",
     ],
   },
   {

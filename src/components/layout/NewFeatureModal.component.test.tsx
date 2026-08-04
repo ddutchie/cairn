@@ -26,8 +26,8 @@ vi.mock("@/store", () => ({
 // ── Mock the registry ─────────────────────────────────────────────────────────
 // Decouple the modal-behavior assertions from the live registry: a stable local
 // fixture means these tests don't break when real release notes are added/changed.
-// Two versions, with the latest (v9.1) holding a single feature so the boot gate
-// surfaces exactly one item — mirroring the real single-latest-feature contract.
+// Two minors, with the latest (v9.1) holding a single feature so the boot gate
+// surfaces exactly one item — mirroring the real per-minor gate contract.
 // Built via vi.hoisted so it's available to the hoisted vi.mock factory below.
 const { FIXTURE_REGISTRY } = vi.hoisted(() => {
   const FEATURE = (id: string, version: string, title: string): NewFeature => ({

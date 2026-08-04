@@ -35,9 +35,9 @@ export interface CompleteOnboardingDeps {
  * snapshot hydrate; dismissing onboarding first left the user with no projects
  * until they reopened the app (the bug this flow fixes).
  *
- * Tour gating mirrors NewFeatureModal: only unseen features from the LATEST
- * registry version defer the tour behind the "What's New" modal; otherwise the
- * tour starts immediately.
+ * Tour gating mirrors NewFeatureModal: only unseen features from the newest
+ * registry MINOR version defer the tour behind the "What's New" modal;
+ * otherwise the tour starts immediately.
  */
 export async function completeOnboarding(
   startTour: boolean,
