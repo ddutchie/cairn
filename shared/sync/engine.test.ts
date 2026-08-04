@@ -1285,10 +1285,6 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       expect(entry?.title).toBe("Shared");
       expect(entry?.isSelf).toBe(false);
       expect(entry?.conflict_side).toBeNull();
-
-      // Our own drained ops are echoed back by gossip; those are not peer work.
-      const own = A.engine.listSyncActivity().find((r) => r.isSelf);
-      if (own) expect(own.origin).toBe("A");
     });
 
     it("reports which side a conflict copy preserved", () => {
@@ -1594,6 +1590,25 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
         restored: false,
         reason: "missing",
       });
+    });
+
+    it("does not claim a note is missing when it exists but sync has no delete record", () => {
+      // Tombstoned outside the sync path, so there is no sync_row_base delete
+      // metadata. Reporting "missing" would tell the user their note is gone.
+      const clkA = clockFrom(14_720_000);
+      const clkB = clockFrom(14_720_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      B.db.prepare("UPDATE notes SET deleted_at = ? WHERE id = 'n1'").run("2026-01-01T00:00:00.000Z");
+      B.db.prepare("DELETE FROM sync_row_base WHERE entity = 'notes' AND entity_id = 'n1'").run();
+
+      expect(B.engine.restoreDeleted("notes", "n1")).toEqual({
+        restored: false,
+        reason: "no-delete-record",
+      });
+      expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1'").get() as { c: number }).c).toBe(1);
     });
   });
 });

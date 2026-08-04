@@ -622,6 +622,9 @@ const api = {
       }>("sync:listRestorable", { limit }),
     restoreNote: (id: string) =>
       invoke<{ restored: boolean; reason?: string; fileError?: string }>("sync:restoreNote", { id }),
+    // Retry the .md write for a restore whose DB half already succeeded.
+    repairNoteFile: (id: string) =>
+      invoke<{ repaired: boolean; reason?: string; fileError?: string }>("sync:repairNoteFile", { id }),
   },
 
   // ── AI write lock events ──────────────────────

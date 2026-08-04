@@ -39,7 +39,8 @@ export default function SyncScreen() {
     // the count on focus rather than once at mount.
     try {
       setRestorable(restorableCount());
-    } catch {
+    } catch (err) {
+      console.warn("[cairn] restorableCount failed", err);
       setRestorable(0);
     }
   }, []);

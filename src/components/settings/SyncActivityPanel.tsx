@@ -21,12 +21,16 @@ import {
   fetchSyncActivity,
   fetchRestorableNotes,
   restoreDeletedNote,
+  repairNoteFile,
   useSyncStatus,
   type SyncActivityEntry,
   type RestorableNote,
   type SyncOutcome,
   type RestoreRefusal,
 } from "@/lib/sync-client";
+
+/** How many recoverable notes to show per page. */
+const RESTORABLE_PAGE = 20;
 
 /** Plain-English label + tone per reconcile outcome. */
 const OUTCOME_META: Record<SyncOutcome, { label: string; token: string; hint: string }> = {
@@ -60,7 +64,43 @@ const REFUSAL_TEXT: Record<RestoreRefusal, string> = {
   "conflict-copy": "This is a conflict copy — resolve it from the conflicts view instead.",
   orphaned: "Its project was deleted too. Restore the project first.",
   "self-deleted": "This device deleted that note, so it isn't offered for recovery.",
+  "no-delete-record": "Sync has no record of that deletion, so it can't be undone from here.",
 };
+
+/**
+ * Notes whose row was restored but whose `.md` file could not be written.
+ *
+ * Persisted, because this is a real on-disk inconsistency the user has to fix:
+ * the note exists in the app with no file behind it. Losing the warning on the
+ * next refresh (or a remount) would leave that silently broken.
+ */
+const FILE_ERROR_KEY = "syncRestoreFileErrors";
+
+type FileFailure = { id: string; title: string; error: string };
+
+function loadFileFailures(): FileFailure[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(FILE_ERROR_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (f): f is FileFailure =>
+        !!f && typeof (f as FileFailure).id === "string" && typeof (f as FileFailure).error === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveFileFailures(failures: FileFailure[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FILE_ERROR_KEY, JSON.stringify(failures));
+  } catch {
+    /* storage full / disabled — the in-memory list still renders this session */
+  }
+}
 
 function refusalText(reason?: string): string {
   if (!reason) return "Couldn't restore that note.";
@@ -93,7 +133,7 @@ function deviceLabel(origin: string, isSelf: boolean): string {
   if (isSelf) return "this device";
   const trimmed = origin.replace(/^(desktop|mobile|ios|android)[_-]/i, "");
   const short = trimmed.length > 8 ? `${trimmed.slice(0, 8)}…` : trimmed;
-  if (/^mobile|^ios/i.test(origin)) return `your phone (${short})`;
+  if (/^(mobile|ios|android)/i.test(origin)) return `your phone (${short})`;
   if (/^desktop/i.test(origin)) return `another desktop (${short})`;
   return `another device (${short})`;
 }
@@ -119,9 +159,11 @@ export function SyncActivityPanel() {
   const [activity, setActivity] = useState<SyncActivityEntry[]>([]);
   const [restorable, setRestorable] = useState<RestorableNote[]>([]);
   const [restorableTotal, setRestorableTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(RESTORABLE_PAGE);
   const [showLog, setShowLog] = useState(false);
   const [restoring, setRestoring] = useState<ReadonlySet<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [fileFailures, setFileFailures] = useState<FileFailure[]>(() => loadFileFailures());
   const [loaded, setLoaded] = useState(false);
   const alive = useRef(true);
   const setView = useCairnStore((s) => s.setView);
@@ -134,9 +176,25 @@ export function SyncActivityPanel() {
   const status = useSyncStatus();
 
   const load = useCallback(
-    async () => Promise.all([fetchSyncActivity(50), fetchRestorableNotes(20)]),
-    [],
+    async () => Promise.all([fetchSyncActivity(50), fetchRestorableNotes(pageSize)]),
+    [pageSize],
   );
+
+  const recordFileFailure = useCallback((failure: FileFailure) => {
+    setFileFailures((prev) => {
+      const next = [...prev.filter((f) => f.id !== failure.id), failure];
+      saveFileFailures(next);
+      return next;
+    });
+  }, []);
+
+  const clearFileFailure = useCallback((id: string) => {
+    setFileFailures((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      saveFileFailures(next);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     alive.current = true;
@@ -162,7 +220,7 @@ export function SyncActivityPanel() {
     };
   }, [load, status.lastSyncAt, status.pending]);
 
-  const onRestore = async (id: string) => {
+  const onRestore = async (id: string, title: string) => {
     setRestoring((prev) => new Set(prev).add(id));
     setErrors((prev) => {
       const next = { ...prev };
@@ -175,12 +233,10 @@ export function SyncActivityPanel() {
       if (!res.restored) {
         setErrors((prev) => ({ ...prev, [id]: refusalText(res.reason) }));
       } else if (res.fileError) {
-        // The row came back but its file didn't — say so rather than implying
-        // a clean success.
-        setErrors((prev) => ({
-          ...prev,
-          [id]: `Restored, but the note file couldn't be written: ${res.fileError}`,
-        }));
+        // The row came back but its file didn't. Record it durably: the note now
+        // exists with no file behind it, and the row leaves the restorable list,
+        // so this is the only remaining trace of the problem.
+        recordFileFailure({ id, title, error: res.fileError });
       }
       const [acts, restores] = await load();
       if (!alive.current) return;
@@ -198,9 +254,33 @@ export function SyncActivityPanel() {
     }
   };
 
+  const onRepair = async (failure: FileFailure) => {
+    setRestoring((prev) => new Set(prev).add(failure.id));
+    try {
+      const res = await repairNoteFile(failure.id);
+      if (!alive.current) return;
+      if (res.repaired) {
+        clearFileFailure(failure.id);
+      } else {
+        recordFileFailure({
+          ...failure,
+          error: res.fileError ?? refusalText(res.reason),
+        });
+      }
+    } finally {
+      if (alive.current) {
+        setRestoring((prev) => {
+          const next = new Set(prev);
+          next.delete(failure.id);
+          return next;
+        });
+      }
+    }
+  };
+
   // Nothing recorded yet (fresh install, or sync never ran) — say so rather
   // than rendering an empty shell.
-  if (loaded && activity.length === 0 && restorable.length === 0) {
+  if (loaded && activity.length === 0 && restorable.length === 0 && fileFailures.length === 0) {
     return (
       <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-4">
         No sync activity recorded yet. Once this device exchanges changes with your phone, decisions
@@ -211,6 +291,50 @@ export function SyncActivityPanel() {
 
   return (
     <div className="mt-4 space-y-3">
+      {/* Rendered independently of the restorable list: once the row is live it
+          leaves that list, but the missing file still needs fixing. */}
+      {fileFailures.length > 0 && (
+        <div className="p-3 rounded-xl border border-[color-mix(in_srgb,var(--warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] space-y-2">
+          <div className="text-xs font-semibold text-[var(--text-primary)]">
+            {fileFailures.length === 1
+              ? "1 restored note has no file on disk"
+              : `${fileFailures.length} restored notes have no file on disk`}
+          </div>
+          <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+            The note was restored in Cairn, but writing its Markdown file failed. Retry to write it
+            again.
+          </p>
+          <ul className="space-y-1.5">
+            {fileFailures.map((failure) => (
+              <li key={failure.id} className="p-2 rounded-lg bg-[var(--surface-3)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[0.786rem] text-[var(--text-primary)] truncate">
+                      {failure.title || "Untitled"}
+                    </div>
+                    <div className="text-[0.643rem] text-[var(--danger)] break-words">
+                      {failure.error}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={restoring.has(failure.id)}
+                    onClick={() => onRepair(failure)}
+                  >
+                    <RotateCcw
+                      size={12}
+                      className={cn("mr-1.5", restoring.has(failure.id) && "animate-spin")}
+                    />
+                    Retry
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {restorable.length > 0 && (
         <div className="p-3 rounded-xl border border-[color-mix(in_srgb,var(--danger)_35%,transparent)] bg-[color-mix(in_srgb,var(--danger)_6%,transparent)] space-y-2">
           <div className="text-xs font-semibold text-[var(--text-primary)]">
@@ -242,7 +366,7 @@ export function SyncActivityPanel() {
                     variant="outline"
                     size="sm"
                     disabled={restoring.has(note.entity_id)}
-                    onClick={() => onRestore(note.entity_id)}
+                    onClick={() => onRestore(note.entity_id, note.title ?? "Untitled")}
                   >
                     <RotateCcw
                       size={12}
@@ -261,9 +385,20 @@ export function SyncActivityPanel() {
             ))}
           </ul>
           {restorableTotal > restorable.length && (
-            <p className="text-[0.643rem] text-[var(--text-tertiary)]">
-              Showing {restorable.length} of {restorableTotal}.
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+                Showing {restorable.length} of {restorableTotal}.
+              </span>
+              {/* Without this the remaining notes are unreachable — restore is
+                  per-row, so a count alone is a dead end. */}
+              <button
+                type="button"
+                onClick={() => setPageSize((n) => n + RESTORABLE_PAGE)}
+                className="text-[0.643rem] font-medium text-[var(--accent)] hover:underline"
+              >
+                Show more
+              </button>
+            </div>
           )}
         </div>
       )}

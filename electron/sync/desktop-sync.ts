@@ -452,6 +452,34 @@ export function restoreDeletedNote(
   return { restored: true };
 }
 
+/**
+ * Re-project a live note's row back onto its `.md` file.
+ *
+ * The recovery path for a restore whose DB half succeeded but whose file write
+ * failed (see `restoreDeletedNote`'s `fileError`). At that point the row is
+ * already live, so `restoreDeleted` would correctly refuse it as `live` — the
+ * user would be stuck with a note that exists in the app but has no file. This
+ * deliberately requires no tombstone eligibility, only that the row exists and
+ * is not deleted, so the failed write is retryable.
+ */
+export function repairNoteFile(
+  db: Database.Database,
+  id: string,
+  deps: ConflictResolveDeps,
+): { repaired: boolean; reason?: string; fileError?: string } {
+  const row = db.prepare("SELECT id, title, content, deleted_at FROM notes WHERE id = ?").get(id) as
+    | { id: string; title: string | null; content: string | null; deleted_at: string | null }
+    | undefined;
+  if (!row) return { repaired: false, reason: "missing" };
+  if (row.deleted_at) return { repaired: false, reason: "deleted" };
+  try {
+    deps.updateNoteBody(id, row.title ?? "", row.content ?? "");
+  } catch (err) {
+    return { repaired: false, fileError: err instanceof Error ? err.message : String(err) };
+  }
+  return { repaired: true };
+}
+
 // ── drain (fast, no folder I/O) ─────────────────────────────────────────────
 /**
  * Turn staged local writes into HLC-stamped oplog entries. Cheap and safe to

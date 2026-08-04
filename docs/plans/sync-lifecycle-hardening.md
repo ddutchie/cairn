@@ -1,6 +1,6 @@
 # Sync Lifecycle Hardening — Delete/Resurrection & Stale-Peer Safety
 
-Status: Phases 1–4 implemented (Phase 4 desktop UI; mobile UI is a follow-up)
+Status: Phases 1–4 implemented (Phase 4 recovery UI on desktop and mobile)
 Owner: —
 Date: 2026-07-24
 Related: `shared/sync/engine.ts`, `shared/sync/hlc.ts`, `mobile/src/db/queries.ts`, `electron/db/queries.ts`, `electron/sync/desktop-sync.ts`, `docs/plans/mobile-app-viability.md` (§4–§5)
@@ -208,8 +208,11 @@ is silently lost.
 - The recovery prompt is bounded to a 30-day window so it can't become a permanent
   banner, and reports a true `total` separately from the returned page.
 
-**Scoped to desktop:** the engine half is shared, so mobile records the log and could
-restore, but no mobile UI is wired yet. That is a follow-up, not a gap in Phase 4.
+**Both platforms.** Desktop surfaces the restorable list plus the decision log in
+Settings → Sync. Mobile ships the recovery half too: `/sync` links to `/restore`, a
+"Deleted Notes" screen with one-tap restore, backed by thin wrappers over the same
+shared engine (so the exclusion rules cannot drift between platforms). The raw decision
+log stays a desktop diagnostic — on mobile the recovery path is what carries the value.
 
 ---
 

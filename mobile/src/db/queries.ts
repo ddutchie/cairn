@@ -7,7 +7,7 @@ import { getDb, getEngine } from "./index";
 import { LIVE, NOT_CONFLICT } from "./sql";
 import { parseIds } from "./row-helpers";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
-import type { RestoreResult, SyncActivityRow } from "@cairn/shared/sync/engine";
+import type { RestoreResult, SyncActivityRow, RestorableRow } from "@cairn/shared/sync/engine";
 import { stripMarkdown, queryTerms } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "@cairn/shared/notes/folder-tree";
@@ -1273,20 +1273,16 @@ export function conflictCount(): number {
  * the engine excludes tombstone shells, conflict copies, orphans, and deletes
  * this device authored itself.
  */
-export function listRestorableNotes(limit = 50): {
-  rows: {
-    entity: string;
-    entity_id: string;
-    title: string | null;
-    deleted_at: string | null;
-    delete_origin: string | null;
-  }[];
-  total: number;
-} {
+export function listRestorableNotes(limit = 50): { rows: RestorableRow[]; total: number } {
   return getEngine().listRestorable("notes", limit);
 }
 
-/** How many peer-deleted notes are recoverable — for the sync screen row. */
+/**
+ * How many peer-deleted notes are recoverable — for the sync screen row.
+ *
+ * `listRestorable`'s `total` counts every eligible row (the limit only bounds
+ * the returned page), so asking for a single row is enough for the count.
+ */
 export function restorableCount(): number {
   return getEngine().listRestorable("notes", 1).total;
 }

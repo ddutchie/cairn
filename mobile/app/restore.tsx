@@ -5,6 +5,7 @@ import { RotateCcw, Trash2 } from "lucide-react-native";
 import { listRestorableNotes, restoreDeletedNote } from "@/db/queries";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale, type Theme, withAlpha } from "@/theme";
+import type { RestorableRow } from "@cairn/shared/sync/engine";
 
 /**
  * Recovery screen for notes another device deleted (plan §4 Phase 4b).
@@ -17,13 +18,6 @@ import { useTheme, type as typeScale, type Theme, withAlpha } from "@/theme";
  * next sync.
  */
 
-type RestorableRow = {
-  entity_id: string;
-  title: string | null;
-  deleted_at: string | null;
-  delete_origin: string | null;
-};
-
 /** Why a restore was refused, in words a user can act on. */
 const REFUSAL_TEXT: Record<string, string> = {
   missing: "That note is no longer in the database.",
@@ -32,6 +26,7 @@ const REFUSAL_TEXT: Record<string, string> = {
   "conflict-copy": "This is a conflict copy — resolve it from the Conflicts screen instead.",
   orphaned: "Its project was deleted too. Restore the project first.",
   "self-deleted": "This device deleted that note, so it isn't offered for recovery.",
+  "no-delete-record": "Sync has no record of that deletion, so it can't be undone from here.",
 };
 
 function relativeTime(iso: string | null): string {
@@ -60,31 +55,31 @@ export default function RestoreScreen() {
   const router = useRouter();
   const [rows, setRows] = useState<RestorableRow[]>([]);
   const [total, setTotal] = useState(0);
-  const [busy, setBusy] = useState<string | null>(null);
   const styles = useMemo(() => makeStyles(t), [t]);
 
   const load = useCallback(() => {
-    const res = listRestorableNotes(50);
-    setRows(res.rows);
-    setTotal(res.total);
+    // A failed DB read must not blank the screen into a misleading "nothing to
+    // restore" — keep the empty state honest and match sync.tsx's guard.
+    try {
+      const res = listRestorableNotes(50);
+      setRows(res.rows);
+      setTotal(res.total);
+    } catch (err) {
+      console.warn("[cairn] listRestorableNotes failed", err);
+    }
   }, []);
   useRefreshOnFocus(load);
 
   const onRestore = (row: RestorableRow) => {
-    setBusy(row.entity_id);
-    try {
-      const res = restoreDeletedNote(row.entity_id);
-      if (res.restored) {
-        load();
-      } else {
-        // Never fail silently — a recovery action that does nothing is
-        // indistinguishable from a bug.
-        Alert.alert("Couldn't restore", REFUSAL_TEXT[res.reason] ?? "That note can't be restored.");
-        load();
-      }
-    } finally {
-      setBusy(null);
+    // restoreDeletedNote is synchronous (expo-sqlite), so there is no pending
+    // state to render between here and the result.
+    const res = restoreDeletedNote(row.entity_id);
+    if (!res.restored) {
+      // Never fail silently — a recovery action that does nothing is
+      // indistinguishable from a bug.
+      Alert.alert("Couldn't restore", REFUSAL_TEXT[res.reason] ?? "That note can't be restored.");
     }
+    load();
   };
 
   return (
@@ -116,11 +111,7 @@ export default function RestoreScreen() {
                 deleted {relativeTime(row.deleted_at)} on {deviceLabel(row.delete_origin)}
               </Text>
               <View style={styles.actions}>
-                <Pressable
-                  style={[styles.btn, styles.btnPrimary, busy === row.entity_id && styles.btnDisabled]}
-                  disabled={busy === row.entity_id}
-                  onPress={() => onRestore(row)}
-                >
+                <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => onRestore(row)}>
                   <RotateCcw size={14} color={t.accentFg} />
                   <Text style={styles.btnPrimaryText}>Restore</Text>
                 </Pressable>
@@ -164,7 +155,6 @@ function makeStyles(t: Theme) {
     },
     btnPrimary: { backgroundColor: t.accent },
     btnPrimaryText: { ...typeScale.control, color: t.accentFg },
-    btnDisabled: { opacity: 0.6 },
     more: { ...typeScale.caption, color: t.textTertiary, textAlign: "center" },
     empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },
     emptyTitle: { ...typeScale.title, color: t.textPrimary },

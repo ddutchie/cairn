@@ -22,6 +22,7 @@ import {
   listSyncActivity,
   listRestorableNotes,
   restoreDeletedNote,
+  repairNoteFile,
   type ConflictResolveDeps,
 } from "./desktop-sync";
 
@@ -142,6 +143,19 @@ export function registerSyncHandlers(
         if (!args?.id) throw new Error("sync:restoreNote requires an id");
         const res = restoreDeletedNote(ctx.db, args.id, ctx.conflictDeps);
         refreshSyncStatus(ctx.db);
+        ctx.broadcastDbChanged();
+        return res;
+      })) as never),
+  );
+
+  // Retry the file write for a restore whose DB half already landed. The row is
+  // live by then, so `sync:restoreNote` would refuse it — this is the repair.
+  register(
+    "sync:repairNoteFile",
+    (((_e: never, args: { id: string }) =>
+      wrap(() => {
+        if (!args?.id) throw new Error("sync:repairNoteFile requires an id");
+        const res = repairNoteFile(ctx.db, args.id, ctx.conflictDeps);
         ctx.broadcastDbChanged();
         return res;
       })) as never),

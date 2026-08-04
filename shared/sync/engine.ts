@@ -80,7 +80,8 @@ export type RestoreRefusal =
   | "shell" // tombstone placeholder — we never received the content
   | "conflict-copy" // resolve via the conflict UI, not restore
   | "orphaned" // its project/workspace is gone, so reviving would diverge
-  | "self-deleted"; // this device authored the delete
+  | "self-deleted" // this device authored the delete
+  | "no-delete-record"; // tombstoned, but sync holds no delete metadata for it
 
 export type RestoreResult =
   | { restored: true; hlc: string }
@@ -186,6 +187,8 @@ export class SyncEngine {
    * than silently reading the real `Date.now()`.
    */
   private now: () => number;
+  /** Per-instance FK metadata cache (see `foreignKeys`). */
+  private fkCache = new Map<string, Array<{ table: string; from: string; to: string | null }>>();
 
   constructor(db: SyncDb, deviceId: string, opts?: { now?: () => number }) {
     this.db = db;
@@ -1250,7 +1253,10 @@ export class SyncEngine {
     if (inspectConflict(String(id)).isConflict) return { ok: false, reason: "conflict-copy" };
 
     const base = this.getRowBase(entity, id);
-    if (!base?.delete_hlc) return { ok: false, reason: "missing" };
+    // The row exists but sync has no delete metadata for it (e.g. tombstoned
+    // outside the sync path). Not "missing" — that must mean the row is gone,
+    // or the UI tells the user their note no longer exists when it does.
+    if (!base?.delete_hlc) return { ok: false, reason: "no-delete-record" };
     if (base.local_delete_hlc) return { ok: false, reason: "self-deleted" };
 
     // A tombstone shell is a placeholder for a row whose content we never
@@ -1268,25 +1274,41 @@ export class SyncEngine {
 
   /** True when every FK parent of `row` still exists and is not tombstoned. */
   private parentsLive(entity: SyncableTable, row: Record<string, unknown>): boolean {
+    for (const fk of this.foreignKeys(entity)) {
+      const value = row[fk.from];
+      if (value == null || value === "") continue; // nullable FK, nothing to check
+      const parentKey = fk.to ?? "id";
+      const parentCols = tableColumns(this.db, fk.table);
+      if (parentCols.length === 0) return false; // parent table is gone entirely
+      // Only the key and the tombstone flag matter here — no need to haul the
+      // whole parent row back for an existence check.
+      const hasDeletedAt = parentCols.includes("deleted_at");
+      const parent = this.db
+        .prepare(
+          `SELECT ${hasDeletedAt ? "deleted_at" : "1 AS present"} FROM ${fk.table} WHERE "${parentKey}" = ?`,
+        )
+        .get(value) as Record<string, unknown> | undefined;
+      if (!parent) return false;
+      if (hasDeletedAt && parent.deleted_at) return false;
+    }
+    return true;
+  }
+
+  /**
+   * FK metadata for a table, cached per engine instance. `listRestorable` calls
+   * `parentsLive` once per candidate row, and the schema cannot change under a
+   * live engine, so re-reading the PRAGMA every time is pure overhead.
+   */
+  private foreignKeys(entity: SyncableTable): Array<{ table: string; from: string; to: string | null }> {
+    const cached = this.fkCache.get(entity);
+    if (cached) return cached;
     const fks = this.db.prepare(`PRAGMA foreign_key_list(${entity})`).all() as Array<{
       table: string;
       from: string;
       to: string | null;
     }>;
-    for (const fk of fks) {
-      const value = row[fk.from];
-      if (value == null || value === "") continue; // nullable FK, nothing to check
-      const parentTable = fk.table;
-      const parentKey = fk.to ?? "id";
-      const parentCols = tableColumns(this.db, parentTable);
-      if (parentCols.length === 0) return false; // parent table is gone entirely
-      const parent = this.db
-        .prepare(`SELECT * FROM ${parentTable} WHERE "${parentKey}" = ?`)
-        .get(value) as Record<string, unknown> | undefined;
-      if (!parent) return false;
-      if (parentCols.includes("deleted_at") && parent.deleted_at) return false;
-    }
-    return true;
+    this.fkCache.set(entity, fks);
+    return fks;
   }
 
   /**

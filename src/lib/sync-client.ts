@@ -77,11 +77,19 @@ export type RestoreRefusal =
   | "shell"
   | "conflict-copy"
   | "orphaned"
-  | "self-deleted";
+  | "self-deleted"
+  | "no-delete-record";
 
 export interface RestoreOutcome {
   restored: boolean;
   reason?: RestoreRefusal | string;
+  fileError?: string;
+}
+
+/** Result of retrying the `.md` write for an already-restored note. */
+export interface RepairOutcome {
+  repaired: boolean;
+  reason?: string;
   fileError?: string;
 }
 
@@ -98,6 +106,7 @@ type SyncApi = {
   activity: (limit?: number) => Promise<SyncActivityEntry[]>;
   listRestorable: (limit?: number) => Promise<{ rows: RestorableNote[]; total: number }>;
   restoreNote: (id: string) => Promise<RestoreOutcome>;
+  repairNoteFile: (id: string) => Promise<RepairOutcome>;
 };
 
 export function syncApi(): SyncApi | null {
@@ -221,6 +230,23 @@ export async function restoreDeletedNote(id: string): Promise<RestoreOutcome> {
     return await api.restoreNote(id);
   } catch (err) {
     return { restored: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Retry writing a restored note's `.md` file.
+ *
+ * Needed because the DB half of a restore can succeed while the file write
+ * fails; the row is live by then, so a plain retry of the restore would be
+ * refused as `live` and the user could never repair it.
+ */
+export async function repairNoteFile(id: string): Promise<RepairOutcome> {
+  const api = syncApi();
+  if (!api?.repairNoteFile) return { repaired: false, reason: "missing" };
+  try {
+    return await api.repairNoteFile(id);
+  } catch (err) {
+    return { repaired: false, reason: err instanceof Error ? err.message : String(err) };
   }
 }
 
