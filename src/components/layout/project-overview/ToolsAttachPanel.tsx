@@ -6,7 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import type { ToolType } from "@/types";
-import { SectionHeader } from "./primitives";
+import { SectionHeader, CollapsibleSection } from "./primitives";
 import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
 import { useCommunityConnectorMap, type ChatConnectorMeta } from "@/components/chat/chat-panel/connector-context";
 
@@ -21,10 +21,15 @@ export function ToolsAttachPanel({
   projectId,
   workspaceId,
   onManage,
+  collapsed,
+  onToggle,
 }: {
   projectId: string;
   workspaceId: string;
   onManage: () => void;
+  /** Collapsed state for the section (per-project, persisted by the parent). */
+  collapsed?: boolean;
+  onToggle?: () => void;
 }) {
   const {
     mcpServers,
@@ -67,44 +72,67 @@ export function ToolsAttachPanel({
   };
 
   const total = enabledMcp.length + enabledSvc.length;
+  const attachedCount =
+    enabledMcp.filter((s) => isAttached("mcp", s.id)).length +
+    enabledSvc.filter((s) => isAttached("service", s.id)).length;
 
-  return (
-    <section>
-      <SectionHeader title="Tools" icon={<Wrench size={12} />} action={{ label: "Manage", onClick: onManage }} />
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2">
-        {total === 0 ? (
-          <p className="text-xs text-[var(--text-tertiary)] py-4 text-center">
-            No enabled tools. Add and enable MCP servers or services in Settings → Tools, then attach them here.
-          </p>
-        ) : (
-          <div className="divide-y divide-[var(--border-subtle)]">
-            {enabledMcp.map((s) => (
-              <AttachRow
-                key={s.id}
-                kind="mcp"
-                connector={connectorMap[`mcp__${s.id}__`]}
-                name={s.name}
-                subtitle={s.baseUrl}
-                attached={isAttached("mcp", s.id)}
-                onToggle={(on) => toggle("mcp", s.id, on)}
-              />
-            ))}
-            {enabledSvc.map((s) => (
-              <AttachRow
-                key={s.id}
-                kind="service"
-                connector={connectorMap[`svc__${s.id}__`]}
-                name={s.name}
-                subtitle={`${s.method} ${s.apiUrl}`}
-                attached={isAttached("service", s.id)}
-                onToggle={(on) => toggle("service", s.id, on)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
+  const header = (
+    <SectionHeader title="Tools" icon={<Wrench size={12} />} action={{ label: "Manage", onClick: onManage }} />
   );
+  const body = (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2">
+      {total === 0 ? (
+        <p className="text-xs text-[var(--text-tertiary)] py-4 text-center">
+          No enabled tools. Add and enable MCP servers or services in Settings → Tools, then attach them here.
+        </p>
+      ) : (
+        <div className="divide-y divide-[var(--border-subtle)]">
+          {enabledMcp.map((s) => (
+            <AttachRow
+              key={s.id}
+              kind="mcp"
+              connector={connectorMap[`mcp__${s.id}__`]}
+              name={s.name}
+              subtitle={s.baseUrl}
+              attached={isAttached("mcp", s.id)}
+              onToggle={(on) => toggle("mcp", s.id, on)}
+            />
+          ))}
+          {enabledSvc.map((s) => (
+            <AttachRow
+              key={s.id}
+              kind="service"
+              connector={connectorMap[`svc__${s.id}__`]}
+              name={s.name}
+              subtitle={`${s.method} ${s.apiUrl}`}
+              attached={isAttached("service", s.id)}
+              onToggle={(on) => toggle("service", s.id, on)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  if (collapsed !== undefined && onToggle) {
+    return (
+      <CollapsibleSection
+        title="Tools"
+        icon={<Wrench size={12} />}
+        action={{ label: "Manage", onClick: onManage }}
+        collapsed={collapsed}
+        onToggle={onToggle}
+        collapsedView={
+          <span className="text-[0.786rem] text-[var(--text-secondary)]">
+            {attachedCount} of {total} attached
+          </span>
+        }
+      >
+        {body}
+      </CollapsibleSection>
+    );
+  }
+  return <section>{header}{body}</section>;
 }
 
 function AttachRow({

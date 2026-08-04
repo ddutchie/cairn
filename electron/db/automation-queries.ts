@@ -286,6 +286,56 @@ export function listAutomationRuns(db: Database.Database, automationId: string, 
 }
 
 /**
+ * A run row joined with its parent automation's name + project, for the
+ * Overview "Recent run results" feed. The feed lives on the project
+ * Overview and needs the automation name to render each row without an
+ * N+1 lookup by the renderer.
+ */
+export interface AutomationRunWithAutomation extends AutomationRun {
+  automationName: string;
+  automationProjectId: string | null;
+}
+
+/**
+ * Recent runs across all automations scoped to `workspaceId` (and an optional
+ * `projectId` for the project Overview's run-results feed). Joins
+ * `automation_runs` to `automations` to surface the automation name in the
+ * same query, ordered newest-finished (or started, for in-flight runs) first.
+ *
+ * Scope is project-scoped automations only when `projectId` is supplied —
+ * workspace-scoped automations (project_id IS NULL) are intentionally NOT
+ * surfaced on a project's Overview, since they don't belong to any one
+ * project. The dedicated Automations view shows those.
+ */
+export function listRecentAutomationRuns(
+  db: Database.Database,
+  workspaceId: string,
+  projectId?: string | null,
+  limit = 10,
+): AutomationRunWithAutomation[] {
+  const sql = projectId
+    ? `SELECT r.*, a.name AS automation_name, a.project_id AS automation_project_id
+       FROM automation_runs r
+       JOIN automations a ON r.automation_id = a.id
+       WHERE a.workspace_id = ? AND a.project_id = ?
+       ORDER BY r.started_at DESC, r.created_at DESC, r.rowid DESC
+       LIMIT ?`
+    : `SELECT r.*, a.name AS automation_name, a.project_id AS automation_project_id
+       FROM automation_runs r
+       JOIN automations a ON r.automation_id = a.id
+       WHERE a.workspace_id = ?
+       ORDER BY r.started_at DESC, r.created_at DESC, r.rowid DESC
+       LIMIT ?`;
+  const params = projectId ? [workspaceId, projectId, limit] : [workspaceId, limit];
+  const rows = db.prepare(sql).all(...params) as Row[];
+  return rows.map((r) => ({
+    ...toRun(r),
+    automationName: String(r.automation_name),
+    automationProjectId: r.automation_project_id ? String(r.automation_project_id) : null,
+  }));
+}
+
+/**
  * True when the automation already has an in-flight run (status running/pending).
  * Used by the scheduler's skip-on-overlap policy so a slow run never stacks.
  */

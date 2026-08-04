@@ -140,5 +140,8 @@ export const NOTES_SIDEBAR_WIDTH_KEY = "notesSidebarWidth";
 /** localStorage key for per-project collapsed notes folders (Record<`${projectId}:${lowercasedPath}`, true>). */
 export const NOTES_COLLAPSED_FOLDERS_KEY = "notesCollapsedFolders";
 
+/** localStorage key for per-project collapsed Project Overview sections (Record<`${projectId}:${sectionId}`, true>). */
+export const OVERVIEW_COLLAPSED_KEY = "overviewCollapsedSections";
+
 /** localStorage key for the last-used note editor mode ("write" | "read"). */
 export const NOTE_EDITOR_MODE_KEY = "noteEditorMode";

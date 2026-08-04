@@ -19,7 +19,7 @@ import type {
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite, isAiNoteWrite } from "./ipc";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
@@ -261,6 +261,11 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   const savedCollapsedFolders = storage.get<Record<string, boolean>>(NOTES_COLLAPSED_FOLDERS_KEY);
   if (savedCollapsedFolders && typeof savedCollapsedFolders === "object") {
     set({ notesCollapsedFolders: savedCollapsedFolders });
+  }
+
+  const savedOverviewSections = storage.get<Record<string, boolean>>(OVERVIEW_COLLAPSED_KEY);
+  if (savedOverviewSections && typeof savedOverviewSections === "object") {
+    set({ overviewCollapsedSections: savedOverviewSections });
   }
 }
 

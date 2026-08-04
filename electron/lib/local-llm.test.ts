@@ -182,7 +182,6 @@ describe("Local LLM Router (Offline Local Llama/On-Device Router)", () => {
 
   describe("streamLocalLLMChat", () => {
     it("sets the on-device max_tokens floor on the streaming body", async () => {
-      const encoder = new TextEncoder();
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         body: { getReader: () => ({ read: async () => ({ done: true, value: undefined }) }) }
@@ -191,8 +190,7 @@ describe("Local LLM Router (Offline Local Llama/On-Device Router)", () => {
 
       const gen = streamLocalLLMChat([{ role: "user", content: "hi" }]);
       // drain the generator
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      for await (const _ of gen) { /* just drain */ }
+      for await (const _ of gen) { void _; }
 
       const [, init] = mockFetch.mock.calls[0];
       const body = JSON.parse(init.body);

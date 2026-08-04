@@ -261,6 +261,7 @@ const api = {
     update: (id: string, patch: unknown) => invoke("db:automation:update", { id, patch }),
     delete: (id: string) => invoke("db:automation:delete", { id }),
     runs:   (automationId: string, limit?: number) => invoke("db:automation:runs", { automationId, limit }),
+    recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) => invoke("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
     runNow: (id: string) => invoke("db:automation:runNow", { id }),
     runningCount: () => invoke("db:automation:runningCount"),
     /** Installed/attached status per required connector (New Automation browse guard). */

@@ -25,13 +25,14 @@ import { Plus, Kanban, Archive, Trash2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { PRIORITY_OPTIONS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { ArchiveView } from "./archive-view";
 import { KanbanColumn } from "./column";
 import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
-import type { TaskCard, BoardColumn } from "@/types";
+import type { TaskCard, BoardColumn, Priority } from "@/types";
 import { getZoneHit, resolveCardDrop } from "./board-dnd";
 import { setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
 
@@ -229,9 +230,9 @@ export function KanbanBoard() {
   const [overId, setOverId]                 = useState<string | null>(null);
   const [deleteFlashing, setDeleteFlashing] = useState(false);
 
-  // Board filter — ⌘F / Ctrl+F toggles and focuses
+  // Board filters — priority toggles + free-text search (⌘F focuses search)
   const [boardFilter, setBoardFilter]       = useState("");
-  const [filterVisible, setFilterVisible]   = useState(false);
+  const [priorityFilter, setPriorityFilter] = useState<Priority[]>([]);
   const filterInputRef                      = useRef<HTMLInputElement>(null);
 
   // Archive view
@@ -242,14 +243,10 @@ export function KanbanBoard() {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "f") {
         e.preventDefault();
-        setFilterVisible(true);
         setTimeout(() => { filterInputRef.current?.focus(); filterInputRef.current?.select(); }, 0);
       }
       if (e.key === "Escape") {
-        setFilterVisible((visible) => {
-          if (visible) setBoardFilter("");
-          return false;
-        });
+        setBoardFilter("");
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -257,6 +254,20 @@ export function KanbanBoard() {
   }, []);
 
   const columns = activeProjectId ? getProjectColumns(activeProjectId) : [];
+
+  function togglePriority(p: Priority) {
+    setPriorityFilter((cur) => cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]);
+  }
+
+  /** True when a card passes the active priority toggles AND the search query. */
+  const matchesFilters = useCallback((c: TaskCard) => {
+    if (priorityFilter.length > 0 && !priorityFilter.includes(c.priority)) return false;
+    if (boardFilter) {
+      const q = boardFilter.toLowerCase();
+      return c.title.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q);
+    }
+    return true;
+  }, [priorityFilter, boardFilter]);
 
   const sensors = useSensors(
     // Slight distance increase prevents accidental drags on trackpads
@@ -583,9 +594,15 @@ export function KanbanBoard() {
             )}
           </div>
 
-          {/* Filter bar — shown when ⌘F is pressed */}
-          {filterVisible && !archiveViewOpen && (
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface-1)] flex-shrink-0">
+          {/* Filter toolbar — priority toggles + search (always visible, KG-style) */}
+          {!archiveViewOpen && (
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
+              <div className="flex items-center gap-1">
+                {PRIORITY_OPTIONS.map((p) => (
+                  <PriorityChip key={p} p={p} active={priorityFilter.includes(p)} onClick={() => togglePriority(p)} />
+                ))}
+              </div>
+              <div className="w-px h-5 bg-[var(--border)]" />
               <div className="relative flex items-center flex-1 max-w-xs">
                 <Search size={12} className="absolute left-2.5 text-[var(--text-tertiary)] pointer-events-none" />
                 <input
@@ -593,28 +610,28 @@ export function KanbanBoard() {
                   type="text"
                   value={boardFilter}
                   onChange={(e) => setBoardFilter(e.target.value)}
-                  placeholder="Filter cards…"
+                  placeholder="Search cards…"
                   className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
-              {boardFilter && (() => {
-                const q = boardFilter.toLowerCase();
+              {(boardFilter || priorityFilter.length > 0) && (() => {
                 const matchCount = columns.reduce((n, col) =>
-                  n + getColumnCards(col.id).filter((c) =>
-                    c.title.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q)
-                  ).length, 0);
+                  n + getColumnCards(col.id).filter(matchesFilters).length, 0);
                 return (
-                  <span className="text-xs text-[var(--text-tertiary)]">
-                    {matchCount} match{matchCount === 1 ? "" : "es"}
-                  </span>
+                  <>
+                    <span className="text-xs text-[var(--text-tertiary)]">
+                      {matchCount} match{matchCount === 1 ? "" : "es"}
+                    </span>
+                    <button
+                      onClick={() => { setBoardFilter(""); setPriorityFilter([]); }}
+                      className="p-1 rounded hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                      aria-label="Clear filters"
+                    >
+                      <X size={13} />
+                    </button>
+                  </>
                 );
               })()}
-              <button
-                onClick={() => { setBoardFilter(""); setFilterVisible(false); }}
-                className="p-1 rounded hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <X size={13} />
-              </button>
             </div>
           )}
           {/* ── Archive view ── */}
@@ -636,12 +653,7 @@ export function KanbanBoard() {
             >
               {columns.map((column) => {
                 const allCards = getColumnCards(column.id);
-                const filteredCards = boardFilter
-                  ? allCards.filter((c) => {
-                      const q = boardFilter.toLowerCase();
-                      return c.title.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q);
-                    })
-                  : allCards;
+                const filteredCards = allCards.filter(matchesFilters);
                 return (
                   <div key={column.id} ref={(el) => { columnRefs.current[column.id] = el; }} className="flex-shrink-0 self-stretch">
                     <BoardColumnItem
@@ -750,5 +762,28 @@ export function KanbanBoard() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/** Priority filter toggle chip — mirrors the Knowledge Graph's node-type chips. */
+function PriorityChip({ p, active, onClick }: { p: Priority; active: boolean; onClick: () => void }) {
+  const color = PRIORITY_CSS_COLORS[p];
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex items-center gap-1 px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
+        active ? "border-transparent" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50"
+      )}
+      style={active ? {
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        color,
+        borderColor: `color-mix(in srgb, ${color} 30%, transparent)`,
+      } : undefined}
+    >
+      <span className="rounded-full flex-shrink-0" style={{ width: 8, height: 8, background: active ? color : "currentColor" }} />
+      {p}
+    </button>
   );
 }

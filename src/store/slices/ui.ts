@@ -7,7 +7,7 @@ import type { CairnStore } from "../index";
 import type { ID, AppUIState, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
 import { id as genId } from "@/lib/utils";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
 
 // ── View visibility ───────────────────────────────────────────────────────────
@@ -456,6 +456,12 @@ export interface UISlice extends AppUIState {
   toggleNotesFolder: (projectId: ID, folderPath: string) => void;
   setNotesFolderCollapsed: (projectId: ID, folderPath: string, collapsed: boolean) => void;
 
+  // Project Overview section collapse state. Keyed by `${projectId}:${sectionId}`.
+  // Presence = collapsed; absence = expanded (sections default open). Persisted
+  // to localStorage.
+  overviewCollapsedSections: Record<string, boolean>;
+  toggleOverviewSection: (projectId: ID, sectionId: string) => void;
+
   // Distraction-free note editing: hides the notes-list sidebar (and app rail)
   // so the editor fills the window. Session-scoped (not persisted).
   notesFullscreen: boolean;
@@ -541,6 +547,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
   notesSidebarWidth: DEFAULT_NOTES_SIDEBAR_WIDTH,
   notesCollapsedFolders: {},
+  overviewCollapsedSections: {},
   chatPoppedOut: false,
   notesFullscreen: false,
   // ── AI config ──────────────────────────────────
@@ -789,6 +796,18 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       else delete next[key];
       storage.set(NOTES_COLLAPSED_FOLDERS_KEY, next);
       return { notesCollapsedFolders: next };
+    });
+  },
+
+  // ── Project Overview section collapse state ─────
+  toggleOverviewSection(projectId, sectionId) {
+    const key = `${projectId}:${sectionId}`;
+    set((s) => {
+      const next = { ...s.overviewCollapsedSections };
+      if (next[key]) delete next[key]; // collapsed → expanded (drop entry)
+      else next[key] = true;           // expanded → collapsed
+      storage.set(OVERVIEW_COLLAPSED_KEY, next);
+      return { overviewCollapsedSections: next };
     });
   },
 

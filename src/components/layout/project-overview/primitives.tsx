@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Shared UI primitives used across the Project Overview sections.
@@ -25,6 +25,52 @@ export function SectionHeader({
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * A section with a click-to-toggle header. Collapsing keeps the title row
+ * (with its action) and swaps the body for a compact one-line {@link collapsedView}
+ * so the section stays glanceable instead of vanishing. Presentational — the
+ * parent owns the collapsed state.
+ */
+export function CollapsibleSection({
+  title, icon, action, collapsed, onToggle, collapsedView, children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  action?: { label: string; onClick: () => void };
+  collapsed: boolean;
+  onToggle: () => void;
+  /** Slim representation shown while collapsed (e.g. a segmented health bar). */
+  collapsedView?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          title={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+          className="flex items-center gap-1 text-[0.786rem] font-semibold text-[var(--text-secondary)] uppercase tracking-wider hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+        >
+          <ChevronDown size={11} className={cn("text-[var(--text-tertiary)] transition-transform", collapsed && "-rotate-90")} />
+          <span className="group-hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5">
+            {icon}{title}
+          </span>
+        </button>
+        {action && (
+          <button onClick={action.onClick}
+            className="text-[0.786rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">
+            {action.label}<ArrowRight size={10} />
+          </button>
+        )}
+      </div>
+      {collapsed
+        ? (collapsedView ?? null)
+        : <div>{children}</div>}
+    </section>
   );
 }
 

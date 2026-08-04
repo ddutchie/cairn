@@ -14,6 +14,7 @@ import {
   getAutomationRunById,
   updateAutomationRun,
   listAutomationRuns,
+  listRecentAutomationRuns,
   hasInFlightRun,
   countRunningAutomationRuns,
   bumpAutomationRunCount,
@@ -139,6 +140,55 @@ describe("due lookup + run history", () => {
     bumpAutomationRunCount(db, a.id);
     bumpAutomationRunCount(db, a.id);
     expect(getAutomationById(db, a.id)!.runCount).toBe(2);
+  });
+});
+
+describe("listRecentAutomationRuns (Overview feed)", () => {
+  it("returns project-scoped runs joined with the automation name, newest-first", () => {
+    const a = createAutomation(db, makeInput({ name: "Weekly review" }));
+    const r1 = createAutomationRun(db, a.id, "running");
+    const r2 = createAutomationRun(db, a.id, "done");
+    const rows = listRecentAutomationRuns(db, wsId, projectId);
+    expect(rows.map((r) => r.id)).toEqual([r2.id, r1.id]);
+    expect(rows[0].automationName).toBe("Weekly review");
+    expect(rows[0].automationProjectId).toBe(projectId);
+  });
+
+  it("excludes runs from workspace-scoped automations when projectId is supplied", () => {
+    const projectAuto = createAutomation(db, makeInput({ name: "Project auto" }));
+    const wsAuto = createAutomation(db, makeInput({ name: "Workspace auto", projectId: null }));
+    createAutomationRun(db, projectAuto.id, "done");
+    createAutomationRun(db, wsAuto.id, "done");
+    const rows = listRecentAutomationRuns(db, wsId, projectId);
+    expect(rows.every((r) => r.automationProjectId === projectId)).toBe(true);
+    expect(rows.map((r) => r.automationName)).toEqual(["Project auto"]);
+  });
+
+  it("returns runs from all automations when projectId is omitted (workspace-wide)", () => {
+    const projectAuto = createAutomation(db, makeInput({ name: "Project auto" }));
+    const wsAuto = createAutomation(db, makeInput({ name: "Workspace auto", projectId: null }));
+    createAutomationRun(db, projectAuto.id, "done");
+    createAutomationRun(db, wsAuto.id, "done");
+    const rows = listRecentAutomationRuns(db, wsId);
+    expect(rows.map((r) => r.automationName).sort()).toEqual(["Project auto", "Workspace auto"]);
+  });
+
+  it("respects the limit", () => {
+    const a = createAutomation(db, makeInput());
+    for (let i = 0; i < 5; i++) createAutomationRun(db, a.id, "done");
+    expect(listRecentAutomationRuns(db, wsId, projectId, 2)).toHaveLength(2);
+  });
+
+  it("scopes by workspace (other workspaces excluded)", () => {
+    createWorkspace(db, { id: "ws-2", name: "Other" });
+    createProject(db, { id: "proj-2", workspaceId: "ws-2", name: "Other Project" });
+    const a1 = createAutomation(db, makeInput());
+    const a2 = createAutomation(db, { ...makeInput(), workspaceId: "ws-2", projectId: "proj-2" });
+    createAutomationRun(db, a1.id, "done");
+    createAutomationRun(db, a2.id, "done");
+    const rows = listRecentAutomationRuns(db, wsId, projectId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].automationId).toBe(a1.id);
   });
 });
 

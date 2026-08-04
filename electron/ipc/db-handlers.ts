@@ -30,6 +30,7 @@ import {
   updateAutomation,
   deleteAutomation,
   listAutomationRuns,
+  listRecentAutomationRuns,
   countRunningAutomationRuns,
   type AutomationInput,
 } from "../db/automation-queries";
@@ -713,6 +714,7 @@ export function registerDbHandlers(ctx: DbContext): void {
   }));
   registerIpcHandle("db:automation:delete", (_e, { id }) => handle(() => deleteAutomation(ctx.db, id)));
   registerIpcHandle("db:automation:runs", (_e, { automationId, limit }: { automationId: string; limit?: number }) => handle(() => listAutomationRuns(ctx.db, automationId, limit)));
+  registerIpcHandle("db:automation:recentRuns", (_e, { workspaceId, projectId, limit }: { workspaceId: string; projectId?: string | null; limit?: number }) => handle(() => listRecentAutomationRuns(ctx.db, workspaceId, projectId ?? null, limit ?? 10)));
   registerIpcHandle("db:automation:runningCount", () => handle(() => countRunningAutomationRuns(ctx.db)));
   registerIpcHandle("db:automation:checkRequirements", (_e, { workspaceId, projectId, requires }: { workspaceId: string; projectId?: string | null; requires: Array<{ kind: "mcp" | "service"; name: string }> }) =>
     handle(() => checkRequirements(ctx.db, workspaceId, projectId ?? "", requires)),
