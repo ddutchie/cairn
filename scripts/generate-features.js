@@ -45,7 +45,7 @@ FEATURES.forEach((f, i) => {
     if (seenIds.has(f.id)) errors.push(`${where}: duplicate id "${f.id}"`);
     seenIds.add(f.id);
   }
-  if (typeof f.version === "string" && !/^v\d+\.(\d+|x)(\.\d+|\.x)?$/.test(f.version)) {
+  if (typeof f.version === "string" && !/^v\d+\.\d+\.\d+$|^v\d+\.x$|^v\d+\.\d+\.x$/.test(f.version)) {
     errors.push(`${where}: version "${f.version}" should look like "v2.5.9" (or "v2.5.x" / "v1.x" for a condensed release card)`);
   }
   if (!Array.isArray(f.highlights) || f.highlights.length === 0) {

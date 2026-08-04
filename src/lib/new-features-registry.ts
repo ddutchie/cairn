@@ -20,12 +20,21 @@ export const NEW_FEATURES_REGISTRY: NewFeature[] = (newFeaturesData.registry ?? 
 
 /**
  * Reduce a full version tag to its minor line, e.g. "v2.6.1" → "v2.6".
+ * Condensed whole-major tags ("v0.x", "v1.x") reduce to the major alone ("v0"),
+ * and condensed minor tags ("v2.5.x") reduce to the minor ("v2.5").
  * Feature gating is per minor so every unseen patch release in the current
  * line surfaces at boot (2.6.0 + 2.6.1 both show), while older minors stay
  * hidden until the user browses from Settings.
  */
 export function minorOf(version: string): string {
-  return version.split(".").slice(0, 2).join(".");
+  const parts = version.split(".");
+  if (parts[1] === "x") return parts[0];
+  return parts.slice(0, 2).join(".");
+}
+
+/** True for a condensed release card ("v0.x", "v2.5.x") — never auto-shown. */
+function isCondensed(version: string): boolean {
+  return version.endsWith(".x");
 }
 
 /**
@@ -52,8 +61,15 @@ export function getUnseenLatestFeatures(
 ): NewFeature[] {
   if (forceOpen) return registry;
   if (registry.length === 0) return [];
-  const latestMinor = minorOf(registry[registry.length - 1].version);
+  // The active minor comes from the newest FULL release — condensed cards can
+  // never define it, no matter where they sit in the registry order.
+  const active = registry.filter((f) => !isCondensed(f.version));
+  if (active.length === 0) return [];
+  const latestMinor = minorOf(active[active.length - 1].version);
   return registry.filter(
-    (f) => minorOf(f.version) === latestMinor && !seenFeatures.includes(f.id),
+    (f) =>
+      !isCondensed(f.version) &&
+      minorOf(f.version) === latestMinor &&
+      !seenFeatures.includes(f.id),
   );
 }

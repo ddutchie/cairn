@@ -28,6 +28,11 @@ describe("minorOf", () => {
     expect(minorOf("v2.5.x")).toBe("v2.5");
     expect(minorOf("v9.0")).toBe("v9.0");
   });
+
+  it("reduces a condensed whole-major tag to its major line", () => {
+    expect(minorOf("v0.x")).toBe("v0");
+    expect(minorOf("v1.x")).toBe("v1");
+  });
 });
 
 describe("getUnseenLatestFeatures", () => {
@@ -82,6 +87,17 @@ describe("getUnseenLatestFeatures", () => {
     // The condensed card is unseen but belongs to an older minor — hidden at boot.
     const result = getUnseenLatestFeatures(registry, []);
     expect(result.map((f) => f.id)).toEqual(["latest"]);
+  });
+
+  it("excludes a condensed card even when it is the last (newest) registry entry", () => {
+    // A condensed v0.x card sitting at the end must never auto-show, regardless
+    // of registry order — its minor ("v0") must not match a gated minor.
+    const registry = [
+      feat("active", "v0.1.0"),
+      feat("condensed", "v0.x"),
+    ];
+    const result = getUnseenLatestFeatures(registry, []);
+    expect(result.map((f) => f.id)).toEqual(["active"]);
   });
 
   it("filters out already-seen features within the latest minor", () => {

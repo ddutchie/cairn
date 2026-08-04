@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { RefreshCw, Loader2, WifiOff, Search, Sparkles, ArrowLeft } from "lucide-react";
+import { RefreshCw, Loader2, WifiOff, Search, Sparkles, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { AutomationsFetchResult, RegistryAutomationEntry } from "@/types";
@@ -39,6 +39,7 @@ export function BrowseAutomationsContent({ onPick, onBack }: {
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(async (force: boolean) => {
     const reg = window.electron?.registry;
@@ -174,7 +175,24 @@ export function BrowseAutomationsContent({ onPick, onBack }: {
                   </div>
                   <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{entry.blurb}</p>
                   <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-1">{scheduleSummary(entry)}</p>
-                  <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-1 font-mono line-clamp-2">{def.instructions}</p>
+                  <div className="mt-1">
+                    <p
+                      className={cn(
+                        "text-[0.65rem] text-[var(--text-tertiary)] font-mono whitespace-pre-wrap",
+                        expandedId !== entry.id && "line-clamp-2",
+                      )}
+                    >
+                      {def.instructions}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+                      className="mt-1 inline-flex items-center gap-1 text-[0.65rem] text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors cursor-pointer"
+                    >
+                      {expandedId === entry.id ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                      {expandedId === entry.id ? "Collapse prompt" : "Show full prompt"}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="shrink-0">
@@ -190,6 +208,15 @@ export function BrowseAutomationsContent({ onPick, onBack }: {
 
       <p className="text-[0.65rem] text-[var(--text-tertiary)]">
         Picking a recipe pre-fills the form — you can change the schedule, approval mode, and instructions before saving. Recipes only use data tools (notes, tasks, tags, boards) — no shell.
+      </p>
+
+      <p className="flex items-center gap-1.5 text-[0.65rem] text-[var(--text-tertiary)]">
+        <RefreshCw size={10} />
+        {result
+          ? result.fromCache
+            ? `Showing the cached catalog${result.cachedAt ? ` from ${new Date(result.cachedAt).toLocaleString()}` : ""} — refreshed in the background on open, or tap Refresh for the latest.`
+            : "Catalog refreshed from the community registry."
+          : "Fetched from the community registry (cache-first; stale content is refreshed in the background on open)."}
       </p>
     </div>
   );
