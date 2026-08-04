@@ -3,10 +3,11 @@
  * All queries exclude tombstoned (deleted_at) and archived rows.
  */
 
-import { getDb } from "./index";
+import { getDb, getEngine } from "./index";
 import { LIVE, NOT_CONFLICT } from "./sql";
 import { parseIds } from "./row-helpers";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
+import type { RestoreResult, SyncActivityRow, RestorableRow } from "@cairn/shared/sync/engine";
 import { stripMarkdown, queryTerms } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "@cairn/shared/notes/folder-tree";
@@ -1260,6 +1261,49 @@ export function conflictCount(): number {
      WHERE ${LIVE} AND type = 'note' AND id LIKE '%\\_conflict\\_%' ESCAPE '\\'`,
   );
   return row?.c ?? 0;
+}
+
+// ── sync visibility & recovery (plan §4 Phase 4) ─────────────────────────────
+
+/**
+ * Notes another device deleted that can genuinely be brought back.
+ *
+ * Delegates to the shared engine so mobile applies exactly the same rules as
+ * desktop — a listed note is always actually restorable (no dead buttons), and
+ * the engine excludes tombstone shells, conflict copies, orphans, and deletes
+ * this device authored itself.
+ */
+export function listRestorableNotes(limit = 50): { rows: RestorableRow[]; total: number } {
+  return getEngine().listRestorable("notes", limit);
+}
+
+/**
+ * How many peer-deleted notes are recoverable — for the sync screen row.
+ *
+ * `listRestorable`'s `total` counts every eligible row (the limit only bounds
+ * the returned page), so asking for a single row is enough for the count.
+ */
+export function restorableCount(): number {
+  return getEngine().listRestorable("notes", 1).total;
+}
+
+/**
+ * Undo a peer's delete for one note.
+ *
+ * The engine republishes it with proof it observed the delete, so the revival
+ * converges instead of being re-deleted on the next exchange. Returns the typed
+ * refusal reason when it can't be restored, so the UI can explain rather than
+ * silently doing nothing. Mobile has no `.md` file half — this is DB-only.
+ */
+export function restoreDeletedNote(id: string): RestoreResult {
+  const result = getEngine().restoreDeleted("notes", id);
+  if (result.restored) notifyLocalWrite();
+  return result;
+}
+
+/** Recent reconcile decisions (what sync did and why), newest first. */
+export function listSyncActivity(limit = 50): SyncActivityRow[] {
+  return getEngine().listSyncActivity(limit);
 }
 
 /**

@@ -21,6 +21,92 @@ import { inspectConflict } from "./conflict";
 export type Op = "put" | "delete";
 export type ObservationFrontier = Record<string, string>;
 
+/**
+ * How reconcile resolved a single incoming op (plan §4 Phase 4a). Recorded so a
+ * surprise vanish/resurrect is explainable after the fact:
+ *
+ * - `applied`       — the op changed local state cleanly.
+ * - `conflict-copy` — the op applied, and divergent local content was preserved
+ *                     as a `_conflict_…` row rather than being overwritten.
+ * - `delete-won`    — a delete prevailed: either an incoming put was refused
+ *                     because it could not prove it observed the delete, or an
+ *                     incoming delete tombstoned a live local row.
+ * - `skipped-stale` — the op was ignored as older than, or already superseded
+ *                     by, local state (includes plain idempotent re-delivery).
+ */
+export type SyncOutcome = "applied" | "conflict-copy" | "delete-won" | "skipped-stale";
+
+/** One reconcile decision, as surfaced to the UI. */
+export interface SyncActivityRow {
+  seq: number;
+  at: string;
+  entity: SyncableTable;
+  entity_id: string;
+  op: Op;
+  hlc: string;
+  origin: string;
+  outcome: SyncOutcome;
+  conflict_copy_id: string | null;
+  /**
+   * The row's current title/name, when it still exists. Resolved on read rather
+   * than snapshotted so it tracks renames; null for a row that is gone or has
+   * no title column — the UI should fall back to a generic label, not an id.
+   */
+  title: string | null;
+  /** True when this device authored the op (an echo of our own change). */
+  isSelf: boolean;
+  /**
+   * Which side of a conflict the copy holds. `local` = our version was set
+   * aside so the peer's could land; `remote` = the peer's refused edit was set
+   * aside. For a recovery UI, which side was preserved is the whole question.
+   */
+  conflict_side: "local" | "remote" | null;
+}
+
+/** A peer-deleted row that still holds content, so it can be restored. */
+export interface RestorableRow {
+  entity: SyncableTable;
+  entity_id: string;
+  title: string | null;
+  /** When the winning delete was authored (from its HLC), not when we applied it. */
+  deleted_at: string | null;
+  delete_origin: string | null;
+}
+
+/** Why a restore was refused. Surfaced so the UI never shows a silent no-op. */
+export type RestoreRefusal =
+  | "missing" // no such row
+  | "live" // already not deleted
+  | "shell" // tombstone placeholder — we never received the content
+  | "conflict-copy" // resolve via the conflict UI, not restore
+  | "orphaned" // its project/workspace is gone, so reviving would diverge
+  | "self-deleted" // this device authored the delete
+  | "no-delete-record"; // tombstoned, but sync holds no delete metadata for it
+
+export type RestoreResult =
+  | { restored: true; hlc: string }
+  | { restored: false; reason: RestoreRefusal };
+
+/**
+ * Ring-buffer bound for `sync_activity`. The log is a debugging/recovery aid,
+ * not an audit trail, so it is capped rather than retained forever.
+ */
+export const SYNC_ACTIVITY_LIMIT = 500;
+
+/**
+ * Only decisive outcomes are logged. Idle syncs re-read a peer's whole compacted
+ * oplog every cycle, so recording `skipped-stale` would flood the ring buffer
+ * with no-ops and evict the destructive events the log exists to explain.
+ */
+const LOGGED_OUTCOMES: ReadonlySet<SyncOutcome> = new Set<SyncOutcome>([
+  "applied",
+  "conflict-copy",
+  "delete-won",
+]);
+
+/** How far back a peer delete is still offered for recovery. */
+const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
 export interface OplogEntry {
   hlc: string;
   origin: string;
@@ -40,6 +126,14 @@ interface RowBase {
   delete_origin: string | null;
   put_hlc: string | null;
   put_observed: string | null;
+  /**
+   * The HLC of a delete THIS device authored. `delete_origin` is the origin of
+   * the *winning* delete and is overwritten when a higher-HLC peer delete
+   * arrives, so it cannot answer "did I delete this?" — when two devices delete
+   * the same row independently, the first one's own delete gets attributed to
+   * the peer. This column records local authorship durably instead.
+   */
+  local_delete_hlc: string | null;
 }
 
 /** JSON-array columns merged by set-union instead of last-writer-wins. */
@@ -87,13 +181,23 @@ export class SyncEngine {
   readonly db: SyncDb;
   readonly deviceId: string;
   private hlc: Hlc;
+  /**
+   * Injectable clock, shared with the HLC. Used for wall-clock comparisons such
+   * as the restore window so they stay deterministic under a test clock rather
+   * than silently reading the real `Date.now()`.
+   */
+  private now: () => number;
+  /** Per-instance FK metadata cache (see `foreignKeys`). */
+  private fkCache = new Map<string, Array<{ table: string; from: string; to: string | null }>>();
 
   constructor(db: SyncDb, deviceId: string, opts?: { now?: () => number }) {
     this.db = db;
     this.deviceId = deviceId;
+    this.now = opts?.now ?? (() => Date.now());
 
     this.ensureBaseTable();
     this.ensureOplogObservedColumn();
+    this.ensureActivityTable();
     const stored = this.getState("hlc");
     this.hlc = new Hlc(deviceId, { last: stored ?? undefined, now: opts?.now });
     this.setState("device_id", deviceId);
@@ -140,6 +244,7 @@ export class SyncEngine {
            delete_origin TEXT,
            put_hlc TEXT,
            put_observed TEXT,
+           local_delete_hlc TEXT,
            PRIMARY KEY (entity, entity_id)
          )`,
       )
@@ -152,6 +257,7 @@ export class SyncEngine {
       ["delete_origin", "delete_origin TEXT"],
       ["put_hlc", "put_hlc TEXT"],
       ["put_observed", "put_observed TEXT"],
+      ["local_delete_hlc", "local_delete_hlc TEXT"],
     ] as const) {
       if (!cols.includes(name)) this.db.prepare(`ALTER TABLE sync_row_base ADD COLUMN ${ddl}`).run();
     }
@@ -160,6 +266,32 @@ export class SyncEngine {
   private ensureOplogObservedColumn(): void {
     const cols = (this.db.prepare("PRAGMA table_info(sync_oplog)").all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes("observed")) this.db.prepare("ALTER TABLE sync_oplog ADD COLUMN observed TEXT").run();
+  }
+
+  /**
+   * Reconcile decision log (plan §4 Phase 4a). Engine-owned and created lazily
+   * so both platforms get it without a migration — the table is pure derived
+   * telemetry, so losing it is never a data-integrity problem.
+   */
+  private ensureActivityTable(): void {
+    this.db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS sync_activity (
+           seq              INTEGER PRIMARY KEY,
+           at               TEXT NOT NULL,
+           entity           TEXT NOT NULL,
+           entity_id        TEXT NOT NULL,
+           op               TEXT NOT NULL,
+           hlc              TEXT NOT NULL,
+           origin           TEXT NOT NULL,
+           outcome          TEXT NOT NULL,
+           conflict_copy_id TEXT
+         )`,
+      )
+      .run();
+    // No secondary index on `seq`: it is the INTEGER PRIMARY KEY (the rowid), so
+    // SQLite already scans it in either direction. A second b-tree would just
+    // double the write cost on the reconcile path.
   }
 
   /** The common-ancestor body value for a row, or undefined if none recorded. */
@@ -183,10 +315,26 @@ export class SyncEngine {
   private getRowBase(entity: string, id: string): RowBase | undefined {
     return this.db
       .prepare(
-        `SELECT base_body, delete_hlc, delete_origin, put_hlc, put_observed
+        `SELECT base_body, delete_hlc, delete_origin, put_hlc, put_observed, local_delete_hlc
          FROM sync_row_base WHERE entity = ? AND entity_id = ?`,
       )
       .get(entity, id) as RowBase | undefined;
+  }
+
+  /**
+   * Record that THIS device authored a delete for a row. Kept separate from
+   * `delete_origin` (which tracks the winning delete and gets overwritten by a
+   * higher-HLC peer delete) so the recovery list never nags the user about a
+   * deletion they performed themselves.
+   */
+  private markLocalDelete(entity: string, id: string, hlc: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO sync_row_base (entity, entity_id, local_delete_hlc)
+         VALUES (?, ?, ?)
+         ON CONFLICT(entity, entity_id) DO UPDATE SET local_delete_hlc = excluded.local_delete_hlc`,
+      )
+      .run(entity, id, hlc);
   }
 
   private setDeleteVersion(entity: string, id: string, deleteHlc: string, deleteOrigin: string): RowBase {
@@ -337,6 +485,7 @@ export class SyncEngine {
           // the row is a tombstone and never read as live data.
           if ((upd.changes ?? 0) === 0) this.insertTombstoneShell(entity, entity_id, stamp);
           this.setDeleteVersion(entity, entity_id, stamp, this.deviceId);
+          this.markLocalDelete(entity, entity_id, stamp);
           this.markObservedDelete(entity, entity_id, stamp);
           this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "delete", payload: null, observed });
         } else {
@@ -482,6 +631,7 @@ export class SyncEngine {
     this.setSuppress(true);
     this.db.prepare(`UPDATE ${entity} SET deleted_at = ?, hlc = ? WHERE id = ?`).run(nowIso(), stamp, id);
     this.setDeleteVersion(entity, id, stamp, this.deviceId);
+    this.markLocalDelete(entity, id, stamp);
     this.markObservedDelete(entity, id, stamp);
     this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: id, op: "delete", payload: null, observed });
     this.setSuppress(false);
@@ -611,6 +761,7 @@ export class SyncEngine {
   } {
     const conflictCopies: string[] = [];
     const applied: Array<{ entity: SyncableTable; entity_id: string; op: Op }> = [];
+    let recorded = false;
     const sorted = [...entries].sort((a, b) => compareHlc(a.hlc, b.hlc));
 
     // Sync applies rows in oplog (HLC) order, not FK-dependency order, and may
@@ -636,6 +787,22 @@ export class SyncEngine {
         const res = this.reconcileOne(entry);
         if (res.applied) applied.push({ entity: entry.entity, entity_id: entry.entity_id, op: entry.op });
         if (res.conflictCopyId) conflictCopies.push(res.conflictCopyId);
+        // Telemetry must never be able to roll back real data ops.
+        if (LOGGED_OUTCOMES.has(res.outcome)) {
+          try {
+            this.recordActivity(entry, res.outcome, res.conflictCopyId);
+            recorded = true;
+          } catch {
+            /* activity log is derived; a failure here is not a data problem */
+          }
+        }
+      }
+      if (recorded) {
+        try {
+          this.pruneActivity();
+        } catch {
+          /* ditto */
+        }
       }
       this.setSuppress(false);
       this.persistHlc();
@@ -648,7 +815,7 @@ export class SyncEngine {
     return { conflictCopies, applied };
   }
 
-  private reconcileOne(entry: OplogEntry): { applied: boolean; conflictCopyId: string | null } {
+  private reconcileOne(entry: OplogEntry): { applied: boolean; conflictCopyId: string | null; outcome: SyncOutcome } {
     const { entity, entity_id, op, hlc, origin, observed } = entry;
     const local = readRow(this.db, entity, entity_id);
     const localHlc = (local?.hlc as string | undefined) ?? null;
@@ -668,7 +835,7 @@ export class SyncEngine {
       if (!isAfterDelete) {
         this.recordForwardedOp(entry);
         const conflictCopyId = this.preserveRejectedNotePut(entity, entity_id, entry.payload, origin, hlc);
-        return { applied: false, conflictCopyId };
+        return { applied: false, conflictCopyId, outcome: "delete-won" };
       }
 
       // A compacted legitimate revival can arrive after this peer already
@@ -689,7 +856,11 @@ export class SyncEngine {
           this.setPutVersion(entity, entity_id, hlc, observed ?? {});
           const bodyCol = BODY_COLUMN[entity];
           if (bodyCol) this.setBaseBody(entity, entity_id, entry.payload?.[bodyCol]);
-          return { applied: true, conflictCopyId };
+          // The local row was newer by raw HLC but its lineage never observed the
+          // delete, so the delete gate discarded it. `preserveRejectedNotePut`
+          // only rescues entities with a body column (notes), so for everything
+          // else the local edit is genuinely gone — never label that "applied".
+          return { applied: true, conflictCopyId, outcome: conflictCopyId ? "conflict-copy" : "delete-won" };
         }
       }
     }
@@ -697,13 +868,13 @@ export class SyncEngine {
     if (op === "delete" && local && !local.deleted_at) {
       if (rowBase?.delete_hlc && compareHlc(hlc, rowBase.delete_hlc) < 0) {
         this.recordForwardedOp(entry);
-        return { applied: false, conflictCopyId: null };
+        return { applied: false, conflictCopyId: null, outcome: "skipped-stale" };
       }
       const localObserved = rowBase?.put_hlc === localHlc ? parseFrontier(rowBase.put_observed) : undefined;
       if (localObserved && this.observesDelete(localObserved, entity, entity_id, hlc)) {
         this.setDeleteVersion(entity, entity_id, hlc, origin);
         this.recordForwardedOp(entry);
-        return { applied: false, conflictCopyId: null };
+        return { applied: false, conflictCopyId: null, outcome: "skipped-stale" };
       }
 
       // The delete wins even when a stale peer's unobserved put has the higher
@@ -719,7 +890,7 @@ export class SyncEngine {
       this.setDeleteVersion(entity, entity_id, hlc, origin);
       this.markObservedDelete(entity, entity_id, hlc);
       this.db.prepare(`UPDATE ${entity} SET deleted_at = ?, hlc = ? WHERE id = ?`).run(nowIso(), hlc, entity_id);
-      return { applied: true, conflictCopyId };
+      return { applied: true, conflictCopyId, outcome: "delete-won" };
     }
 
     // Idempotency / staleness guard: never let an older op overwrite a newer row.
@@ -736,7 +907,7 @@ export class SyncEngine {
           this.setBaseBody(entity, entity_id, remoteBody);
         }
       }
-      return { applied: false, conflictCopyId: null };
+      return { applied: false, conflictCopyId: null, outcome: "skipped-stale" };
     }
 
     // Record the remote op in our own oplog too, so a third party syncing from
@@ -753,7 +924,7 @@ export class SyncEngine {
         // a later 'put' with an older HLC can't resurrect it.
         this.insertTombstoneShell(entity, entity_id, hlc);
       }
-      return { applied: true, conflictCopyId: null };
+      return { applied: true, conflictCopyId: null, outcome: "applied" };
     }
 
     // op === 'put'
@@ -819,7 +990,7 @@ export class SyncEngine {
     }
     // The merged body is now the value both sides agree on → new ancestor.
     if (bodyCol) this.setBaseBody(entity, entity_id, merged[bodyCol]);
-    return { applied: true, conflictCopyId };
+    return { applied: true, conflictCopyId, outcome: conflictCopyId ? "conflict-copy" : "applied" };
   }
 
   /** True if any array-merge column in `merged` has elements absent from `remote`. */
@@ -946,6 +1117,221 @@ export class SyncEngine {
       .prepare("SELECT 1 FROM sync_oplog WHERE hlc = ? AND entity = ? AND entity_id = ?")
       .get(entry.hlc, entry.entity, entry.entity_id);
     if (!exists) this.appendOplog(entry);
+  }
+
+  // ── Phase 4: visibility & recovery ────────────────────────────────────
+
+  private recordActivity(entry: OplogEntry, outcome: SyncOutcome, conflictCopyId: string | null): void {
+    this.db
+      .prepare(
+        `INSERT INTO sync_activity (at, entity, entity_id, op, hlc, origin, outcome, conflict_copy_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(nowIso(), entry.entity, entry.entity_id, entry.op, entry.hlc, entry.origin, outcome, conflictCopyId);
+  }
+
+  /**
+   * Trim the log to the newest SYNC_ACTIVITY_LIMIT rows. Called once per batch
+   * rather than per row so a large first sync costs one delete, not thousands.
+   */
+  private pruneActivity(): void {
+    this.db
+      .prepare(
+        `DELETE FROM sync_activity WHERE seq <= (
+           SELECT MIN(seq) FROM (
+             SELECT seq FROM sync_activity ORDER BY seq DESC LIMIT ?
+           )
+         ) - 1`,
+      )
+      .run(SYNC_ACTIVITY_LIMIT);
+  }
+
+  /** Most recent reconcile decisions, newest first. */
+  listSyncActivity(limit = 100): SyncActivityRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT seq, at, entity, entity_id, op, hlc, origin, outcome, conflict_copy_id
+         FROM sync_activity ORDER BY seq DESC LIMIT ?`,
+      )
+      .all(Math.max(1, Math.min(limit, SYNC_ACTIVITY_LIMIT))) as Array<
+      Omit<SyncActivityRow, "title" | "isSelf" | "conflict_side">
+    >;
+    return rows.map((row) => ({
+      ...row,
+      title: this.rowLabel(row.entity, row.entity_id),
+      isSelf: row.origin === this.deviceId,
+      // A rejected put is the peer's edit being preserved; every other copy is
+      // the local version being moved aside so the remote could win in place.
+      conflict_side: row.conflict_copy_id ? (row.op === "put" && row.outcome === "delete-won" ? "remote" : "local") : null,
+    }));
+  }
+
+  /** Current title/name of a row, or null if it's gone or has no such column. */
+  private rowLabel(entity: SyncableTable, id: string): string | null {
+    if (!(SYNCABLE_TABLES as readonly string[]).includes(entity)) return null;
+    const cols = tableColumns(this.db, entity);
+    const titleCol = cols.includes("title") ? "title" : cols.includes("name") ? "name" : null;
+    if (!titleCol) return null;
+    const row = this.db
+      .prepare(`SELECT "${titleCol}" AS label FROM ${entity} WHERE id = ?`)
+      .get(id) as { label?: unknown } | undefined;
+    const label = row?.label;
+    return typeof label === "string" && label.trim() ? label : null;
+  }
+
+  /**
+   * Rows tombstoned by a *peer* that can genuinely be brought back, newest
+   * delete first. This is the "why did my note vanish?" list.
+   *
+   * `total` is the number of qualifying rows, which may exceed the returned
+   * page — the caller must not present `rows.length` as the count.
+   *
+   * Every exclusion here is also enforced by `restoreDeleted` via the shared
+   * `restorability()` predicate, so a listed row is always actually restorable.
+   * A Restore button that does nothing would be worse than no button.
+   */
+  listRestorable(entity: SyncableTable, limit = 50): { rows: RestorableRow[]; total: number } {
+    const cols = tableColumns(this.db, entity);
+    if (!cols.includes("deleted_at")) return { rows: [], total: 0 };
+    const titleCol = cols.includes("title") ? "title" : cols.includes("name") ? "name" : null;
+
+    // Cheap SQL prefilter (tombstoned + a delete we know about), then apply the
+    // single source of truth in JS so the list and the action cannot disagree.
+    const candidates = this.db
+      .prepare(
+        `SELECT t.id AS id
+         FROM ${entity} t
+         JOIN sync_row_base b ON b.entity = ? AND b.entity_id = t.id
+         WHERE t.deleted_at IS NOT NULL AND b.delete_hlc IS NOT NULL
+         ORDER BY b.delete_hlc DESC`,
+      )
+      .all(entity) as Array<{ id: string }>;
+
+    const rows: RestorableRow[] = [];
+    for (const candidate of candidates) {
+      const verdict = this.restorability(entity, candidate.id);
+      if (!verdict.ok) continue;
+      const { row, base } = verdict;
+      // Stop advertising very old deletes so the banner isn't permanent. A
+      // direct restoreDeleted(id) still works — this only bounds the prompt.
+      const authored = base.delete_hlc ? decodeHlc(base.delete_hlc).physical : NaN;
+      if (Number.isFinite(authored) && this.now() - authored > RESTORABLE_WINDOW_MS) continue;
+      rows.push({
+        entity,
+        entity_id: candidate.id,
+        title: titleCol ? ((row[titleCol] as string | null) ?? null) : null,
+        // When the delete was authored, not when this device applied it — the
+        // apply time can be days later and reads as a fresh deletion.
+        deleted_at: base.delete_hlc
+          ? new Date(decodeHlc(base.delete_hlc).physical).toISOString()
+          : ((row.deleted_at as string | null) ?? null),
+        delete_origin: base.delete_origin,
+      });
+    }
+    return { rows: rows.slice(0, Math.max(1, limit)), total: rows.length };
+  }
+
+  /**
+   * Single source of truth for "can this tombstoned row be restored?".
+   *
+   * Shared by `listRestorable` and `restoreDeleted` so the list can never offer
+   * something the action refuses (and vice versa).
+   */
+  private restorability(
+    entity: SyncableTable,
+    id: string,
+  ):
+    | { ok: true; row: Record<string, unknown>; base: RowBase }
+    | { ok: false; reason: RestoreRefusal } {
+    const row = readRow(this.db, entity, id);
+    if (!row) return { ok: false, reason: "missing" };
+    if (!row.deleted_at) return { ok: false, reason: "live" };
+
+    // Conflict clones have their own resolution UI, and the app's startup
+    // cleanup deliberately tombstones nested ones — restoring them here would
+    // just be undone at the next launch.
+    if (inspectConflict(String(id)).isConflict) return { ok: false, reason: "conflict-copy" };
+
+    const base = this.getRowBase(entity, id);
+    // The row exists but sync has no delete metadata for it (e.g. tombstoned
+    // outside the sync path). Not "missing" — that must mean the row is gone,
+    // or the UI tells the user their note no longer exists when it does.
+    if (!base?.delete_hlc) return { ok: false, reason: "no-delete-record" };
+    if (base.local_delete_hlc) return { ok: false, reason: "self-deleted" };
+
+    // A tombstone shell is a placeholder for a row whose content we never
+    // received (`insertTombstoneShell`). `put_hlc` is the structural signal —
+    // it is only set when a real put was applied — so this does not depend on
+    // whether a title column happens to be NOT NULL without a default.
+    if (!base.put_hlc) return { ok: false, reason: "shell" };
+
+    // Reviving a row whose parent is gone creates a permanently divergent
+    // orphan (the parent may have been hard-deleted on the peer).
+    if (!this.parentsLive(entity, row)) return { ok: false, reason: "orphaned" };
+
+    return { ok: true, row, base };
+  }
+
+  /** True when every FK parent of `row` still exists and is not tombstoned. */
+  private parentsLive(entity: SyncableTable, row: Record<string, unknown>): boolean {
+    for (const fk of this.foreignKeys(entity)) {
+      const value = row[fk.from];
+      if (value == null || value === "") continue; // nullable FK, nothing to check
+      const parentKey = fk.to ?? "id";
+      const parentCols = tableColumns(this.db, fk.table);
+      if (parentCols.length === 0) return false; // parent table is gone entirely
+      // Only the key and the tombstone flag matter here — no need to haul the
+      // whole parent row back for an existence check.
+      const hasDeletedAt = parentCols.includes("deleted_at");
+      const parent = this.db
+        .prepare(
+          `SELECT ${hasDeletedAt ? "deleted_at" : "1 AS present"} FROM ${fk.table} WHERE "${parentKey}" = ?`,
+        )
+        .get(value) as Record<string, unknown> | undefined;
+      if (!parent) return false;
+      if (hasDeletedAt && parent.deleted_at) return false;
+    }
+    return true;
+  }
+
+  /**
+   * FK metadata for a table, cached per engine instance. `listRestorable` calls
+   * `parentsLive` once per candidate row, and the schema cannot change under a
+   * live engine, so re-reading the PRAGMA every time is pure overhead.
+   */
+  private foreignKeys(entity: SyncableTable): Array<{ table: string; from: string; to: string | null }> {
+    const cached = this.fkCache.get(entity);
+    if (cached) return cached;
+    const fks = this.db.prepare(`PRAGMA foreign_key_list(${entity})`).all() as Array<{
+      table: string;
+      from: string;
+      to: string | null;
+    }>;
+    this.fkCache.set(entity, fks);
+    return fks;
+  }
+
+  /**
+   * Undo a peer's delete for one row (plan §4 Phase 4b).
+   *
+   * Deliberately reuses `put()` rather than clearing `deleted_at` directly:
+   * put() snapshots this device's delete observations, so the resulting op
+   * carries exact proof that the author had seen the tombstone. That is the only
+   * thing the Phase 1 revival gate accepts, so the restore converges on every
+   * peer instead of being re-deleted on the next exchange.
+   *
+   * Returns the new HLC stamp, or a machine-readable refusal reason so the
+   * caller can explain the no-op instead of silently doing nothing.
+   */
+  restoreDeleted(entity: SyncableTable, id: string): RestoreResult {
+    const verdict = this.restorability(entity, id);
+    if (!verdict.ok) return { restored: false, reason: verdict.reason };
+    const hlc = this.put(entity, {
+      ...verdict.row,
+      id,
+      deleted_at: null,
+    } as Record<string, unknown> & { id: string });
+    return { restored: true, hlc };
   }
 }
 

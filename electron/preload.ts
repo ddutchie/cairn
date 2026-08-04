@@ -591,6 +591,40 @@ const api = {
       action: "keepCopy" | "keepOriginal" | "keepMerged",
       mergedContent?: string,
     ) => invoke<{ resolvedOriginalId: string | null }>("sync:resolveConflict", { copyId, action, mergedContent }),
+    // Recent reconcile decisions — why a row was applied, skipped or deleted.
+    activity: (limit?: number) =>
+      invoke<Array<{
+        seq: number;
+        at: string;
+        entity: string;
+        entity_id: string;
+        op: "put" | "delete";
+        hlc: string;
+        origin: string;
+        outcome: "applied" | "conflict-copy" | "delete-won" | "skipped-stale";
+        conflict_copy_id: string | null;
+        title: string | null;
+        isSelf: boolean;
+        conflict_side: "local" | "remote" | null;
+      }>>("sync:activity", { limit }),
+    // Notes deleted by another device that can still be restored. `total` may
+    // exceed `rows.length` — never present the page size as the count.
+    listRestorable: (limit?: number) =>
+      invoke<{
+        rows: Array<{
+          entity: string;
+          entity_id: string;
+          title: string | null;
+          deleted_at: string | null;
+          delete_origin: string | null;
+        }>;
+        total: number;
+      }>("sync:listRestorable", { limit }),
+    restoreNote: (id: string) =>
+      invoke<{ restored: boolean; reason?: string; fileError?: string }>("sync:restoreNote", { id }),
+    // Retry the .md write for a restore whose DB half already succeeded.
+    repairNoteFile: (id: string) =>
+      invoke<{ repaired: boolean; reason?: string; fileError?: string }>("sync:repairNoteFile", { id }),
   },
 
   // ── AI write lock events ──────────────────────

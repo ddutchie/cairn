@@ -39,6 +39,60 @@ export interface ConflictCopy {
   baseBody: string | null;
 }
 
+export type SyncOutcome = "applied" | "conflict-copy" | "delete-won" | "skipped-stale";
+
+/** One reconcile decision, as recorded by the engine's activity log. */
+export interface SyncActivityEntry {
+  seq: number;
+  at: string;
+  entity: string;
+  entity_id: string;
+  op: "put" | "delete";
+  hlc: string;
+  origin: string;
+  outcome: SyncOutcome;
+  conflict_copy_id: string | null;
+  /** Current title of the affected row, or null if it no longer exists. */
+  title: string | null;
+  /** True when this device authored the change. */
+  isSelf: boolean;
+  /** Whose version the conflict copy holds. */
+  conflict_side: "local" | "remote" | null;
+}
+
+/** A note another device deleted that can still be brought back. */
+export interface RestorableNote {
+  entity: string;
+  entity_id: string;
+  title: string | null;
+  /** When the delete was authored on the originating device. */
+  deleted_at: string | null;
+  delete_origin: string | null;
+}
+
+/** Why a restore was refused, straight from the engine. */
+export type RestoreRefusal =
+  | "missing"
+  | "live"
+  | "shell"
+  | "conflict-copy"
+  | "orphaned"
+  | "self-deleted"
+  | "no-delete-record";
+
+export interface RestoreOutcome {
+  restored: boolean;
+  reason?: RestoreRefusal | string;
+  fileError?: string;
+}
+
+/** Result of retrying the `.md` write for an already-restored note. */
+export interface RepairOutcome {
+  repaired: boolean;
+  reason?: string;
+  fileError?: string;
+}
+
 type SyncApi = {
   status: () => Promise<SyncStatus>;
   onStatus: (cb: (s: SyncStatus) => void) => () => void;
@@ -49,6 +103,10 @@ type SyncApi = {
     mergedContent?: string,
   ) => Promise<{ resolvedOriginalId: string | null }>;
   now: () => Promise<{ connected: boolean }>;
+  activity: (limit?: number) => Promise<SyncActivityEntry[]>;
+  listRestorable: (limit?: number) => Promise<{ rows: RestorableNote[]; total: number }>;
+  restoreNote: (id: string) => Promise<RestoreOutcome>;
+  repairNoteFile: (id: string) => Promise<RepairOutcome>;
 };
 
 export function syncApi(): SyncApi | null {
@@ -133,6 +191,63 @@ export async function resolveConflict(
   const api = syncApi();
   if (!api) return;
   await api.resolveConflict(copyId, action, mergedContent);
+}
+
+/** Recent reconcile decisions, newest first. Empty outside Electron. */
+export async function fetchSyncActivity(limit = 100): Promise<SyncActivityEntry[]> {
+  const api = syncApi();
+  if (!api?.activity) return [];
+  try {
+    return await api.activity(limit);
+  } catch {
+    return [];
+  }
+}
+
+/** Notes a peer deleted that can still be restored. Empty outside Electron. */
+export async function fetchRestorableNotes(limit = 50): Promise<{ rows: RestorableNote[]; total: number }> {
+  const api = syncApi();
+  if (!api?.listRestorable) return { rows: [], total: 0 };
+  try {
+    const res = await api.listRestorable(limit);
+    return { rows: res?.rows ?? [], total: res?.total ?? 0 };
+  } catch {
+    return { rows: [], total: 0 };
+  }
+}
+
+/**
+ * Bring back a note a peer deleted.
+ *
+ * Errors are returned rather than swallowed: a recovery action that silently
+ * does nothing is indistinguishable from a bug, so the caller must be able to
+ * tell the user why it didn't work.
+ */
+export async function restoreDeletedNote(id: string): Promise<RestoreOutcome> {
+  const api = syncApi();
+  if (!api?.restoreNote) return { restored: false, reason: "missing" };
+  try {
+    return await api.restoreNote(id);
+  } catch (err) {
+    return { restored: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Retry writing a restored note's `.md` file.
+ *
+ * Needed because the DB half of a restore can succeed while the file write
+ * fails; the row is live by then, so a plain retry of the restore would be
+ * refused as `live` and the user could never repair it.
+ */
+export async function repairNoteFile(id: string): Promise<RepairOutcome> {
+  const api = syncApi();
+  if (!api?.repairNoteFile) return { repaired: false, reason: "missing" };
+  try {
+    return await api.repairNoteFile(id);
+  } catch (err) {
+    return { repaired: false, reason: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Trigger a manual sync now (from the popover). */

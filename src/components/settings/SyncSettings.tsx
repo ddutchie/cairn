@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { cn } from "@/lib/utils";
 import { openConflictModal } from "@/lib/sync-client";
+import { SyncActivityPanel } from "./SyncActivityPanel";
 
 interface SyncNowResult {
   drained: number;
@@ -134,6 +135,10 @@ export function SyncSettings() {
               Review {last.conflictCopies} {last.conflictCopies === 1 ? "conflict" : "conflicts"}…
             </button>
           )}
+
+          <hr className="border-[var(--border)] opacity-30" />
+
+          <SyncActivityPanel />
         </div>
       )}
 

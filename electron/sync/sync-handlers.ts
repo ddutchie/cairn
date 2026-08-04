@@ -19,6 +19,10 @@ import {
   pendingBreakdown,
   listConflictCopies,
   resolveConflict,
+  listSyncActivity,
+  listRestorableNotes,
+  restoreDeletedNote,
+  repairNoteFile,
   type ConflictResolveDeps,
 } from "./desktop-sync";
 
@@ -114,6 +118,44 @@ export function registerSyncHandlers(
         }
         const res = resolveConflict(ctx.db, args.copyId, resolveArg, ctx.conflictDeps);
         refreshSyncStatus(ctx.db);
+        ctx.broadcastDbChanged();
+        return res;
+      })) as never),
+  );
+
+  // What sync decided on recent incoming ops (applied / skipped-stale /
+  // conflict-copy / delete-won) — explains a surprise vanish or resurrect.
+  register(
+    "sync:activity",
+    (((_e: never, args?: { limit?: number }) => wrap(() => listSyncActivity(ctx.db, args?.limit ?? 100))) as never),
+  );
+
+  // Notes a peer deleted that can still be brought back.
+  register(
+    "sync:listRestorable",
+    (((_e: never, args?: { limit?: number }) => wrap(() => listRestorableNotes(ctx.db, args?.limit ?? 50))) as never),
+  );
+
+  register(
+    "sync:restoreNote",
+    (((_e: never, args: { id: string }) =>
+      wrap(() => {
+        if (!args?.id) throw new Error("sync:restoreNote requires an id");
+        const res = restoreDeletedNote(ctx.db, args.id, ctx.conflictDeps);
+        refreshSyncStatus(ctx.db);
+        ctx.broadcastDbChanged();
+        return res;
+      })) as never),
+  );
+
+  // Retry the file write for a restore whose DB half already landed. The row is
+  // live by then, so `sync:restoreNote` would refuse it — this is the repair.
+  register(
+    "sync:repairNoteFile",
+    (((_e: never, args: { id: string }) =>
+      wrap(() => {
+        if (!args?.id) throw new Error("sync:repairNoteFile requires an id");
+        const res = repairNoteFile(ctx.db, args.id, ctx.conflictDeps);
         ctx.broadcastDbChanged();
         return res;
       })) as never),

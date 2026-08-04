@@ -399,8 +399,88 @@ export function resolveConflict(
   return { resolvedOriginalId: copy.id };
 }
 
-// ── drain (fast, no folder I/O) ─────────────────────────────────────────────
+// ── Phase 4: sync visibility & recovery ─────────────────────────────────────
 
+/**
+ * Recent reconcile decisions (what sync actually did and why).
+ *
+ * Note this lazily constructs the engine if it doesn't exist yet, so it is not
+ * strictly side-effect-free — in practice the panel only renders once a sync
+ * folder is connected, by which point the engine is already live.
+ */
+export function listSyncActivity(db: Database.Database, limit = 100) {
+  return getDesktopEngine(db).listSyncActivity(limit);
+}
+
+/**
+ * Notes tombstoned by another device that can genuinely be brought back, newest
+ * first, plus the true total (which may exceed the returned page).
+ */
+export function listRestorableNotes(db: Database.Database, limit = 50) {
+  return getDesktopEngine(db).listRestorable("notes", limit);
+}
+
+/**
+ * Undo a peer's delete for one note.
+ *
+ * Two halves must both happen: the engine revives the row with causal proof it
+ * observed the delete (so peers accept the revival instead of re-deleting it),
+ * and the note's `.md` file has to be written back to disk — the desktop delete
+ * removed it. `updateNoteBody` is the same dep the conflict resolver uses, so
+ * the file write goes through the watcher's echo-suppression.
+ *
+ * The row is revived (and published) before the file write, so a file failure
+ * is reported as `fileError` rather than silently leaving the caller to think
+ * nothing happened — the DB half has already succeeded at that point.
+ */
+export function restoreDeletedNote(
+  db: Database.Database,
+  id: string,
+  deps: ConflictResolveDeps,
+): { restored: boolean; reason?: string; fileError?: string } {
+  const engine = getDesktopEngine(db);
+  const row = db.prepare("SELECT id, title, content FROM notes WHERE id = ?").get(id) as
+    | { id: string; title: string | null; content: string | null }
+    | undefined;
+  const result = engine.restoreDeleted("notes", id);
+  if (!result.restored) return { restored: false, reason: result.reason };
+  try {
+    deps.updateNoteBody(id, row?.title ?? "", row?.content ?? "");
+  } catch (err) {
+    return { restored: true, fileError: err instanceof Error ? err.message : String(err) };
+  }
+  return { restored: true };
+}
+
+/**
+ * Re-project a live note's row back onto its `.md` file.
+ *
+ * The recovery path for a restore whose DB half succeeded but whose file write
+ * failed (see `restoreDeletedNote`'s `fileError`). At that point the row is
+ * already live, so `restoreDeleted` would correctly refuse it as `live` — the
+ * user would be stuck with a note that exists in the app but has no file. This
+ * deliberately requires no tombstone eligibility, only that the row exists and
+ * is not deleted, so the failed write is retryable.
+ */
+export function repairNoteFile(
+  db: Database.Database,
+  id: string,
+  deps: ConflictResolveDeps,
+): { repaired: boolean; reason?: string; fileError?: string } {
+  const row = db.prepare("SELECT id, title, content, deleted_at FROM notes WHERE id = ?").get(id) as
+    | { id: string; title: string | null; content: string | null; deleted_at: string | null }
+    | undefined;
+  if (!row) return { repaired: false, reason: "missing" };
+  if (row.deleted_at) return { repaired: false, reason: "deleted" };
+  try {
+    deps.updateNoteBody(id, row.title ?? "", row.content ?? "");
+  } catch (err) {
+    return { repaired: false, fileError: err instanceof Error ? err.message : String(err) };
+  }
+  return { repaired: true };
+}
+
+// ── drain (fast, no folder I/O) ─────────────────────────────────────────────
 /**
  * Turn staged local writes into HLC-stamped oplog entries. Cheap and safe to
  * call often (post-write, periodic, on resume). Returns rows drained.
