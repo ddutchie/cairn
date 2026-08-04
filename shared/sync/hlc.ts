@@ -37,7 +37,10 @@ export function decodeHlc(stamp: string): HlcParts {
   const [p, c, ...rest] = stamp.split(":");
   // Validate before parsing: a malformed stamp must fail loudly rather than
   // silently yielding NaN, which would corrupt compareHlc ordering.
-  if (!/^[0-9a-f]+$/i.test(p ?? "") || !/^[0-9a-f]+$/i.test(c ?? "") || rest.length === 0) {
+  const deviceId = rest.join(":");
+  if (!new RegExp(`^[0-9a-f]{${PHYSICAL_HEX_WIDTH}}$`).test(p ?? "")
+    || !new RegExp(`^[0-9a-f]{${COUNTER_HEX_WIDTH}}$`).test(c ?? "")
+    || deviceId.length === 0) {
     throw new Error(`Malformed HLC stamp: ${JSON.stringify(stamp)}`);
   }
   const physical = parseInt(p, 16);
@@ -48,7 +51,7 @@ export function decodeHlc(stamp: string): HlcParts {
   return {
     physical,
     counter,
-    deviceId: rest.join(":"),
+    deviceId,
   };
 }
 

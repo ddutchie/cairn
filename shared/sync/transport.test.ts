@@ -114,6 +114,27 @@ describe("transport oplog shape validation", () => {
     const got = readPeerOplogs(dir, "dev_a");
     expect(got.map((e) => e.entity_id).sort()).toEqual(["n1", "n2"]);
   });
+
+  it("accepts optional observation frontiers and rejects malformed ones", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    const file = path.join(dir, "oplog-dev_b.ndjson");
+    fs.writeFileSync(
+      file,
+      [
+        JSON.stringify({ ...entry, entity_id: "causal", observed: { dev_b: "0000000003e8:0000:dev_b" } }),
+        JSON.stringify({ ...entry, entity_id: "bad-array", observed: [] }),
+        JSON.stringify({ ...entry, entity_id: "bad-value", observed: { dev_b: 42 } }),
+        JSON.stringify({ ...entry, entity_id: "bad-hlc", observed: { dev_b: "not-an-hlc" } }),
+        JSON.stringify({ ...entry, entity_id: "wrong-origin", origin: "someone-else" }),
+        JSON.stringify({ ...entry, entity_id: "legacy" }),
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    const got = readPeerOplogs(dir, "dev_a");
+    expect(got.map((e) => e.entity_id).sort()).toEqual(["causal", "legacy"]);
+  });
 });
 
 describe("transport write behaviour", () => {

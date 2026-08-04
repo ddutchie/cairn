@@ -1,6 +1,6 @@
 # Sync Lifecycle Hardening — Delete/Resurrection & Stale-Peer Safety
 
-Status: Draft / plan
+Status: Phase 1 and Phase 2 implemented
 Owner: —
 Date: 2026-07-24
 Related: `shared/sync/engine.ts`, `shared/sync/hlc.ts`, `mobile/src/db/queries.ts`, `electron/db/queries.ts`, `electron/sync/desktop-sync.ts`, `docs/plans/mobile-app-viability.md` (§4–§5)
@@ -113,7 +113,7 @@ is silently lost.
 ## 4. Work plan (phased)
 
 ### Phase 1 — Delete-wins reconciliation (fixes Symptom 2)
-- **1a.** Add a durable tombstone record keyed by (entity, entity_id) storing `delete_hlc`
+- **1a.** ✅ Add a durable tombstone record keyed by (entity, entity_id) storing `delete_hlc`
   (persisted independently of the row, so a compacted/absent row still carries the delete
   fact). Engine-owned table: **`sync_row_base`**.
   - **Ownership.** The table is owned by the sync engine, not the domain schema. It is
@@ -133,11 +133,11 @@ is silently lost.
     record are treated as "no recorded delete" (adapter returns `null`), so pre-migration
     data degrades gracefully rather than erroring. The adapter must **create** the row base
     on delete, **access** it in `reconcileOne`, and **preserve** it across compaction.
-- **1b.** In `reconcileOne`, gate `put`-over-tombstone on causal-after semantics (§3). Add
+- **1b.** ✅ In `reconcileOne`, gate `put`-over-tombstone on causal-after semantics (§3). Add
   the mirror gate for `delete`-over-live.
-- **1c.** Preserve losing content as a conflict copy when delete wins over a divergent put
+- **1c.** ✅ Preserve losing content as a conflict copy when delete wins over a divergent put
   (no silent loss).
-- **Tests:** stale-peer put with higher wall-clock HLC must NOT resurrect a deleted note;
+- **Tests:** ✅ stale-peer put with higher wall-clock HLC must NOT resurrect a deleted note;
   legitimate edit-after-observed-delete MUST revive.
 
 ### Phase 2 — Unify delete representation (fixes Symptom 1 root) ✅ DONE

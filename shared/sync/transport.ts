@@ -22,6 +22,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import type { OplogEntry } from "./engine";
+import { decodeHlc } from "./hlc";
 import { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName } from "./oplog-name";
 
 // Re-export the pure filename helpers so existing importers of "./transport"
@@ -31,18 +32,44 @@ export { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName };
 
 const OPS = new Set(["put", "delete"]);
 
+function validHlc(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    decodeHlc(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Structural guard so only well-formed entries reach applyRemote. */
 function isOplogEntry(v: unknown): v is OplogEntry {
   if (typeof v !== "object" || v === null) return false;
   const e = v as Record<string, unknown>;
+  const observedValid = e.observed === undefined || (
+    typeof e.observed === "object" &&
+    e.observed !== null &&
+    !Array.isArray(e.observed) &&
+    Object.values(e.observed).every(validHlc)
+  );
+  const tombstoneValid = e.tombstone === undefined || (
+    typeof e.tombstone === "object" &&
+    e.tombstone !== null &&
+    validHlc((e.tombstone as Record<string, unknown>).hlc) &&
+    typeof (e.tombstone as Record<string, unknown>).origin === "string" &&
+    decodeHlc((e.tombstone as Record<string, unknown>).hlc as string).deviceId === (e.tombstone as Record<string, unknown>).origin
+  );
   return (
-    typeof e.hlc === "string" &&
+    validHlc(e.hlc) &&
     typeof e.origin === "string" &&
+    decodeHlc(e.hlc).deviceId === e.origin &&
     typeof e.entity === "string" &&
     typeof e.entity_id === "string" &&
     typeof e.op === "string" &&
     OPS.has(e.op) &&
-    (e.payload === null || (typeof e.payload === "object" && e.payload !== null))
+    (e.payload === null || (typeof e.payload === "object" && e.payload !== null)) &&
+    observedValid &&
+    tombstoneValid
   );
 }
 

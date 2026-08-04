@@ -17,6 +17,10 @@ describe("hlc decode validation", () => {
     expect(() => decodeHlc("zzzz:0001:dev")).toThrow(/Malformed HLC/);
     expect(() => decodeHlc("0001::dev")).toThrow(/Malformed HLC/);
     expect(() => decodeHlc("0001:0001")).toThrow(/Malformed HLC/); // no deviceId
+    expect(() => decodeHlc("1:0001:dev")).toThrow(/Malformed HLC/); // non-canonical physical width
+    expect(() => decodeHlc("000000000001:10000:dev")).toThrow(/Malformed HLC/); // counter overflow
+    expect(() => decodeHlc("000000000001:0001:")).toThrow(/Malformed HLC/); // empty deviceId
+    expect(() => decodeHlc("00000000000A:0001:dev")).toThrow(/Malformed HLC/); // non-canonical uppercase
   });
 
   it("compareHlc orders by physical then counter then deviceId", () => {

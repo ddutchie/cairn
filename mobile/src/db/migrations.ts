@@ -73,6 +73,34 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
       `);
     }
   },
+  // v5: Sync Phase 1 delete-wins metadata. Existing installs gain the durable
+  // row metadata table and exact target-delete observations on oplog entries.
+  (db) => {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS sync_row_base (
+        entity        TEXT NOT NULL,
+        entity_id     TEXT NOT NULL,
+        base_body     TEXT,
+        delete_hlc    TEXT,
+        delete_origin TEXT,
+        put_hlc       TEXT,
+        put_observed  TEXT,
+        PRIMARY KEY (entity, entity_id)
+      );
+    `);
+    const baseCols = db.getAllSync<{ name: string }>("PRAGMA table_info(sync_row_base)").map((c) => c.name);
+    for (const [name, ddl] of [
+      ["base_body", "base_body TEXT"],
+      ["delete_hlc", "delete_hlc TEXT"],
+      ["delete_origin", "delete_origin TEXT"],
+      ["put_hlc", "put_hlc TEXT"],
+      ["put_observed", "put_observed TEXT"],
+    ] as const) {
+      if (!baseCols.includes(name)) db.execSync(`ALTER TABLE sync_row_base ADD COLUMN ${ddl}`);
+    }
+    const oplogCols = db.getAllSync<{ name: string }>("PRAGMA table_info(sync_oplog)").map((c) => c.name);
+    if (!oplogCols.includes("observed")) db.execSync("ALTER TABLE sync_oplog ADD COLUMN observed TEXT");
+  },
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

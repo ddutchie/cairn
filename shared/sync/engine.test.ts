@@ -664,6 +664,7 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     const db = new BetterSqlite3(":memory:");
     applySchema(db);
     // Simulate the earlier engine build that created a NOT NULL base_hlc table.
+    db.prepare("DROP TABLE sync_row_base").run();
     db.prepare(
       `CREATE TABLE sync_row_base (
          entity TEXT NOT NULL, entity_id TEXT NOT NULL, base_hlc TEXT NOT NULL,
@@ -676,6 +677,7 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     const engine = new SyncEngine(db, "A", { now: clockFrom(11_000_000).now });
     const cols = (db.prepare("PRAGMA table_info(sync_row_base)").all() as { name: string }[]).map((c) => c.name);
     expect(cols).toContain("base_body");
+    expect(cols).toEqual(expect.arrayContaining(["delete_hlc", "delete_origin", "put_hlc", "put_observed"]));
     expect(cols).not.toContain("base_hlc");
 
     // A normal create + drain (which writes base_body) must now succeed.
@@ -780,10 +782,9 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       expect((A.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
     });
 
-    it("a concurrent higher-HLC peer edit wins over an earlier hard-delete (row comes back on both)", () => {
-      // Desktop hard-deletes n1, but the phone had a LATER edit it hadn't synced
-      // yet. LWW: the higher-HLC edit wins, so the note is restored — and both
-      // devices must agree (no split-brain where the desktop stays empty).
+    it("an unobserved higher-HLC stale peer edit cannot resurrect a deleted note", () => {
+      // The phone's wall clock is ahead, but it has not observed the desktop's
+      // delete. Raw HLC order is not causal evidence, so delete wins safely.
       const clkA = clockFrom(12_200_000);
       const clkB = clockFrom(12_200_000);
       const A = makeDevice("A", clkA.now);
@@ -800,10 +801,142 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
 
       syncFolder(dir, A.engine, B.engine);
 
-      // Both converge to the surviving edit — and identically.
-      const liveA = A.db.prepare("SELECT content FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { content: string } | undefined;
-      expect(liveA?.content).toBe("phone kept editing");
+      for (const dev of [A, B]) {
+        expect((dev.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+        const copies = dev.db
+          .prepare("SELECT content FROM notes WHERE id LIKE 'n1_conflict_%' AND deleted_at IS NULL")
+          .all() as Array<{ content: string }>;
+        expect(copies.map((copy) => copy.content)).toContain("phone kept editing");
+      }
       expect(liveState(A.db)).toEqual(liveState(B.db));
+
+      // Compaction must publish the policy winner, not the rejected put whose
+      // raw HLC was higher, so a late peer also sees the note as deleted.
+      const compacted = A.engine.exportOplog().filter((entry) => entry.entity === "notes" && entry.entity_id === "n1");
+      expect(compacted).toHaveLength(1);
+      expect(compacted[0].op).toBe("delete");
+      const C = makeDevice("C", clockFrom(12_300_000).now);
+      C.engine.applyRemote(A.engine.exportOplog());
+      expect((C.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+    });
+
+    it("allows a legitimate edit after the editing peer observed the delete", () => {
+      const clkA = clockFrom(12_250_000);
+      const clkB = clockFrom(12_250_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+      const clkD = clockFrom(12_260_000);
+      const D = makeDevice("D", clkD.now);
+      D.engine.applyRemote(A.engine.exportOplog());
+
+      clkA.advance(1);
+      A.engine.remove("notes", "n1");
+      B.engine.applyRemote(A.engine.exportOplog());
+      expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+
+      // B authors the revival only after receiving A's delete, so its attached
+      // observation frontier proves the intended causal ordering.
+      clkB.advance(50);
+      B.engine.put("notes", { id: "n1", content: "restored after seeing delete" });
+      A.engine.applyRemote(B.engine.exportOplog());
+
+      for (const dev of [A, B]) {
+        const note = dev.db.prepare("SELECT content FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { content: string } | undefined;
+        expect(note?.content).toBe("restored after seeing delete");
+      }
+
+      // A late peer only sees B's compacted revival put. It must still learn the
+      // prior durable delete carried on that put, then reject an offline stale
+      // peer's higher-clock edit that did not observe the delete.
+      const C = makeDevice("C", clockFrom(12_250_000).now);
+      C.engine.applyRemote(B.engine.exportOplog());
+      clkD.advance(10_000);
+      D.engine.put("notes", { id: "n1", content: "unobserved stale edit" });
+      C.engine.applyRemote(D.engine.exportOplog());
+      expect((C.db.prepare("SELECT content FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { content: string }).content).toBe("restored after seeing delete");
+      expect((C.db.prepare("SELECT delete_hlc FROM sync_row_base WHERE entity='notes' AND entity_id='n1'").get() as { delete_hlc: string }).delete_hlc).toBeTruthy();
+    });
+
+    it("keeps the durable delete fact after the domain tombstone row is removed", () => {
+      const clkA = clockFrom(12_275_000);
+      const clkB = clockFrom(12_275_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      A.engine.remove("notes", "n1");
+      const deleteHlc = (A.db.prepare("SELECT delete_hlc FROM sync_row_base WHERE entity='notes' AND entity_id='n1'").get() as { delete_hlc: string }).delete_hlc;
+      A.db.prepare("DELETE FROM notes WHERE id='n1'").run();
+
+      clkB.advance(500);
+      B.engine.put("notes", { id: "n1", content: "stale after compaction" });
+      A.engine.applyRemote(B.engine.exportOplog());
+
+      expect((A.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+      expect((A.db.prepare("SELECT delete_hlc FROM sync_row_base WHERE entity='notes' AND entity_id='n1'").get() as { delete_hlc: string }).delete_hlc).toBe(deleteHlc);
+    });
+
+    it("reports a rejected stale put's conflict copy only once", () => {
+      const A = makeDevice("A", clockFrom(12_290_000).now);
+      const clkB = clockFrom(12_290_000);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+      A.engine.remove("notes", "n1");
+      clkB.advance(100);
+      B.engine.put("notes", { id: "n1", content: "offline edit" });
+      const stalePut = B.engine.exportOplog().filter((entry) => entry.entity === "notes" && entry.entity_id === "n1");
+
+      expect(A.engine.applyRemote(stalePut).conflictCopies).toHaveLength(1);
+      expect(A.engine.applyRemote(stalePut).conflictCopies).toHaveLength(0);
+    });
+
+    it("replaces a pre-existing higher-HLC stale row when a compacted legitimate revival arrives", () => {
+      const A = makeDevice("A", clockFrom(12_295_000).now);
+      const clkB = clockFrom(12_295_000);
+      const B = makeDevice("B", clkB.now);
+      const clkC = clockFrom(12_400_000);
+      const C = makeDevice("C", clkC.now);
+      seedNoteOnBoth(A, B);
+      C.engine.applyRemote(A.engine.exportOplog());
+
+      A.engine.remove("notes", "n1");
+      B.engine.applyRemote(A.engine.exportOplog());
+      clkB.advance(10);
+      B.engine.put("notes", { id: "n1", content: "observed revival" });
+
+      clkC.advance(10);
+      C.engine.put("notes", { id: "n1", content: "stale high clock" });
+      C.engine.applyRemote(B.engine.exportOplog());
+
+      expect((C.db.prepare("SELECT content FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { content: string }).content).toBe("observed revival");
+      const copies = C.db.prepare("SELECT content FROM notes WHERE id LIKE 'n1_conflict_%' AND deleted_at IS NULL").all() as Array<{ content: string }>;
+      expect(copies.map((copy) => copy.content)).toContain("stale high clock");
+    });
+
+    it("does not regress exact delete observation when an older delete is replayed", () => {
+      const clkA = clockFrom(12_297_000);
+      const B = makeDevice("B", clockFrom(12_297_000).now);
+      const A = makeDevice("A", clkA.now);
+      seedNoteOnBoth(A, B);
+
+      const delete1 = A.engine.remove("notes", "n1");
+      B.engine.applyRemote(A.engine.exportOplog());
+      A.engine.put("notes", { id: "n1", content: "between deletes" });
+      clkA.advance(1);
+      const delete2 = A.engine.remove("notes", "n1");
+      B.engine.applyRemote(A.engine.exportOplog());
+
+      B.engine.applyRemote([{ hlc: delete1, origin: "A", entity: "notes", entity_id: "n1", op: "delete", payload: null }]);
+      B.engine.put("notes", { id: "n1", content: "revived after latest delete" });
+      const revival = B.engine.exportOplog().find((entry) => entry.entity === "notes" && entry.entity_id === "n1" && entry.op === "put")!;
+      expect(revival.observed?.["delete:notes\u0000n1"]).toBe(delete2);
+      A.engine.applyRemote([revival]);
+      expect((A.db.prepare("SELECT content FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { content: string }).content).toBe("revived after latest delete");
+
+      // Replaying D1 after the revival is live must also be harmless.
+      A.engine.applyRemote([{ hlc: delete1, origin: "A", entity: "notes", entity_id: "n1", op: "delete", payload: null }]);
+      expect((A.db.prepare("SELECT content FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { content: string }).content).toBe("revived after latest delete");
     });
 
     it("a hard-delete with the higher HLC wins over an earlier peer edit (stays deleted)", () => {
