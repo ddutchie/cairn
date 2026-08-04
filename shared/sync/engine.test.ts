@@ -643,6 +643,84 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     expect((B.db.prepare("SELECT COUNT(*) c FROM projects WHERE id='p1'").get() as { c: number }).c).toBe(1);
   });
 
+  it("preserves stored row HLCs during backfill instead of re-stamping them", () => {
+    const A = makeDevice("A", clockFrom(99_000_000).now);
+    A.db.prepare("INSERT INTO sync_state (key, value) VALUES ('suppress','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+    q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+    q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+    q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "Old", content: "old" });
+    const storedHlc = "000000001000:0002:legacy";
+    A.db.prepare("UPDATE notes SET hlc = ? WHERE id = 'n1'").run(storedHlc);
+    A.db.prepare("UPDATE sync_state SET value='0' WHERE key='suppress'").run();
+
+    A.engine.backfill();
+
+    const op = A.engine.exportOplog().find((entry) => entry.entity === "notes" && entry.entity_id === "n1")!;
+    expect(op.hlc).toBe(storedHlc);
+    expect(op.origin).toBe("legacy");
+    expect(op.payload?.hlc).toBe(storedHlc);
+    expect(op.observed).toEqual({});
+    expect((A.db.prepare("SELECT hlc FROM notes WHERE id='n1'").get() as { hlc: string }).hlc).toBe(storedHlc);
+  });
+
+  it("derives a deterministic placeholder from updated_at when a legacy row has no HLC", () => {
+    const A = makeDevice("A", clockFrom(99_000_000).now);
+    A.db.prepare("INSERT INTO sync_state (key, value) VALUES ('suppress','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+    q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+    q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+    q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "Old", content: "old" });
+    A.db.prepare("UPDATE notes SET hlc = NULL, updated_at = '2020-01-02T03:04:05.000Z' WHERE id = 'n1'").run();
+    A.db.prepare("UPDATE sync_state SET value='0' WHERE key='suppress'").run();
+
+    A.engine.backfill();
+
+    const expected = "016f6435cc88:0000:A";
+    const op = A.engine.exportOplog().find((entry) => entry.entity === "notes" && entry.entity_id === "n1")!;
+    expect(op.hlc).toBe(expected);
+    expect(op.observed).toEqual({});
+  });
+
+  it("falls back to created_at when updated_at is malformed", () => {
+    const A = makeDevice("A", clockFrom(99_000_000).now);
+    A.db.prepare("INSERT INTO sync_state (key, value) VALUES ('suppress','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+    q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+    q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+    q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "Old", content: "old" });
+    A.db.prepare("UPDATE notes SET hlc = NULL, updated_at = 'invalid', created_at = '2020-01-02T03:04:05.000Z' WHERE id = 'n1'").run();
+    A.db.prepare("UPDATE sync_state SET value='0' WHERE key='suppress'").run();
+
+    A.engine.backfill();
+
+    const op = A.engine.exportOplog().find((entry) => entry.entity === "notes" && entry.entity_id === "n1")!;
+    expect(op.hlc).toBe("016f6435cc88:0000:A");
+  });
+
+  it("a stale device backfill cannot resurrect a peer-deleted note", () => {
+    const clkA = clockFrom(9_825_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clockFrom(99_000_000).now);
+    seedBase(A.engine);
+    A.engine.put("notes", { id: "n1", project_id: "p1", workspace_id: "ws1", title: "Shared", content: "before", created_at: "2020-01-01T00:00:00.000Z", updated_at: "2020-01-01T00:00:00.000Z", content_text: "" });
+    B.engine.applyRemote(A.engine.exportOplog());
+
+    // Simulate a stale pre-sync install: retain B's old live row but clear its
+    // local sync history so first connect runs backfill after A has deleted it.
+    B.db.prepare("DELETE FROM sync_oplog").run();
+    B.db.prepare("DELETE FROM sync_row_base").run();
+    B.db.prepare("DELETE FROM sync_state WHERE key = 'backfilled'").run();
+    B.db.prepare("UPDATE notes SET hlc = NULL, updated_at = '2020-01-01T00:00:00.000Z' WHERE id = 'n1'").run();
+    clkA.advance(10);
+    A.engine.remove("notes", "n1");
+
+    B.engine.backfill();
+    const backfilled = B.engine.exportOplog().find((entry) => entry.entity === "notes" && entry.entity_id === "n1")!;
+    expect(backfilled.hlc).toBe("016f5e66e800:0000:B");
+    expect(backfilled.observed).toEqual({});
+    A.engine.applyRemote(B.engine.exportOplog());
+
+    expect((A.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+  });
+
   it("clears staged sync_pending on first backfill (accumulated while sync was disabled)", () => {
     const A = makeDevice("A", clockFrom(9_850_000).now);
 

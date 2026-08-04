@@ -159,16 +159,16 @@ is silently lost.
   Phase 1 concern — the durable tombstone this phase provides is the prerequisite.)
 
 ### Phase 3 — Backfill causality safety
-- **3a.** `backfill()` must **not** mint fresh HLCs that could leapfrog a peer's delete.
+- **3a.** ✅ `backfill()` must **not** mint fresh HLCs that could leapfrog a peer's delete.
   Preserve each row's **existing `hlc`** in the seeded op wherever one exists — the stored
   HLC is the only authoritative causal stamp. Only where a pre-existing row has *no* HLC at
   all may backfill derive a placeholder from the row's `updated_at` (never `Date.now()`).
-- **3b.** An `updated_at`-derived backfill stamp is a **best-effort ordering hint only** and
+- **3b.** ✅ An `updated_at`-derived backfill stamp is a **best-effort ordering hint only** and
   must be explicitly prohibited from counting as authoritative causal evidence in the §3
   delete-wins test: a backfilled op carrying such a derived stamp must **not** be treated as
   having observed a peer's delete (its observation token is empty/unknown), so it can never
   resurrect a tombstoned row. Only a genuine, HLC-carrying, observation-tokened op can.
-- **Tests:** a device backfilling old rows cannot resurrect a note another device already
+- **Tests:** ✅ a device backfilling old rows cannot resurrect a note another device already
   deleted.
 
 ### Phase 4 — Visibility & recovery (defensive, ships alongside)

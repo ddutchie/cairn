@@ -14,7 +14,7 @@
  */
 
 import type { SyncDb } from "./db-adapter";
-import { Hlc, compareHlc, decodeHlc } from "./hlc";
+import { Hlc, compareHlc, decodeHlc, encodeHlc } from "./hlc";
 import { SYNCABLE_TABLES, type SyncableTable } from "./schema";
 import { inspectConflict } from "./conflict";
 
@@ -403,15 +403,19 @@ export class SyncEngine {
         for (const row of rows) {
           const id = row.id as string;
           if (id == null) continue;
-          const stamp = this.hlc.send();
-          this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, id);
-          // Reuse the row we already SELECTed (with the new hlc) — no re-read.
+          // Preserve an authoritative row HLC. Legacy rows without one get a
+          // deterministic ordering hint from updated_at/created_at, never from
+          // the current wall clock, and carry no causal delete observation.
+          const stamp = validStoredHlc(row.hlc)
+            ?? backfillStamp(row.updated_at, row.created_at, this.deviceId);
+          const origin = decodeHlc(stamp).deviceId;
+          this.hlc.receive(stamp);
+          if (row.hlc !== stamp) this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, id);
           const observed: ObservationFrontier = {};
-          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: id, op: "put", payload: { ...row, hlc: stamp }, observed });
+          this.appendOplog({ hlc: stamp, origin, entity, entity_id: id, op: "put", payload: { ...row, hlc: stamp }, observed });
           const bodyCol = BODY_COLUMN[entity];
           if (bodyCol && this.getBaseBody(entity, id) === undefined) this.setBaseBody(entity, id, row[bodyCol]);
           this.setPutVersion(entity, id, stamp, observed);
-          this.markObserved(this.deviceId, stamp);
           seeded++;
         }
       }
@@ -945,6 +949,25 @@ export class SyncEngine {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function validStoredHlc(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    decodeHlc(value);
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function backfillStamp(updatedAt: unknown, createdAt: unknown, deviceId: string): string {
+  const updated = typeof updatedAt === "string" ? Date.parse(updatedAt) : NaN;
+  const created = typeof createdAt === "string" ? Date.parse(createdAt) : NaN;
+  const physical = Number.isFinite(updated) && updated >= 0
+    ? updated
+    : Number.isFinite(created) && created >= 0 ? created : 0;
+  return encodeHlc({ physical, counter: 0, deviceId });
 }
 
 function parseFrontier(value: string | null | undefined): ObservationFrontier | undefined {
