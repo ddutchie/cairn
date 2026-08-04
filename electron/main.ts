@@ -35,6 +35,8 @@ import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./l
 import { createTray } from "./lib/tray";
 import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
+import { HeartbeatScheduler } from "./lib/heartbeat-scheduler";
+import { runAutomation } from "./lib/heartbeat-runner";
 import { stopServerSync } from "./lib/llama-server";
 import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
 import * as runtime from "./runtime/client";
@@ -414,17 +416,33 @@ app.whenReady().then(async () => {
     onDbChanged: notifyDbChanged,
   });
 
-  // Shared reset — clears DB rows, badge, and the poller's accumulated count.
-  // Called from both the window focus event and the renderer IPC handler so
-  // the next batch of notifications always starts from 0.
+  // ── Heartbeat scheduler (scheduled / recurring background automations) ──
+  // Drives the `automations` table while the app is open. The runner is the
+  // headless data-only knowledge agent (no bash / file-edit), so a background
+  // run's blast radius stays bounded to Cairn entities. ctx.db is re-read on
+  // every tick so a workspace reinitialise is transparent. Stopped on quit so
+  // no background turns fire during teardown.
+  const heartbeatScheduler = new HeartbeatScheduler({
+    dbGetter: () => ctx.db,
+    runner: (run, automation) => runAutomation(
+      { db: ctx.db, workspacePath: ctx.workspacePath },
+      run,
+      automation,
+    ),
+    log: (msg) => console.log(msg),
+  });
+  heartbeatScheduler.start();
+
+  // Shared reset — marks all notifications read + zeroes the badge. Called from
+  // the renderer's "mark all read" (via the IPC handler's onBadgeClear). Unlike
+  // before, window focus does NOT auto-clear — unread persists until the user
+  // dismisses it in the notification center, so the sidebar bell stays accurate.
   function clearBadge() {
     markMcpNotificationsRead(ctx.db);
     updateBadge(0);
     poller.resetCount();
+    if (!win.isDestroyed()) win.webContents.send("mcp:unread-count", 0);
   }
-
-  // Clear badge when window gains focus
-  win.on("focus", clearBadge);
 
   // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
   registerAppHandlers(ctx, userDataPath, updateBadge, reinitialise, clearBadge);
@@ -581,6 +599,8 @@ app.whenReady().then(async () => {
       try {
         if (getSyncFolder(ctx.db)) { drainDesktop(ctx.db); runFullSync("before-quit"); }
       } catch { /* ignore */ }
+      // Stop the heartbeat scheduler so no background automation fires during teardown.
+      try { heartbeatScheduler.stop(); } catch { /* ignore */ }
       clearInterval(drainInterval);
       clearInterval(syncInterval);
     });

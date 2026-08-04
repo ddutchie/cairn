@@ -30,6 +30,7 @@
   --text-secondary: #9e9a94;
   --text-tertiary: #66635f;
   --success: #3ecf8e;
+  --ok: #3ecf8e;
   --warning: #f59e0b;
   --danger: #ef4444;
   --info: #60a5fa;
@@ -64,6 +65,7 @@
   --text-secondary: #4a4744;
   --text-tertiary: #9e9a94;
   --success: #1a9e68;
+  --ok: #1a9e68;
   --warning: #d97706;
   --danger: #dc2626;
   --info: #2563eb;
@@ -139,6 +141,14 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
+}
+
+/* Hide the scrollbar entirely (wheel pickers, overflow nav). */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 /* ── Selection ───────────────────────────────────────── */
@@ -374,6 +384,18 @@ select:focus {
 
 .animate-slide-in-left {
   animation: slideInLeft 0.2s ease-out;
+}
+
+/* Indeterminate "scrolling" bar for in-flight background runs — an accent
+   segment that sweeps across a thin track. Used on automation cards while a
+   run is active. */
+@keyframes cairn-indeterminate {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(340%); }
+}
+
+.animate-cairn-indeterminate {
+  animation: cairn-indeterminate 1.4s ease-in-out infinite;
 }
 
 .chat-panel-responsive {

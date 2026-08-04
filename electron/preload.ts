@@ -81,6 +81,19 @@ interface ProvidersManifest {
 interface ProvidersFetchResult {
   manifest: ProvidersManifest; fromCache: boolean; cachedAt?: string; error?: string;
 }
+interface RegistryAutomationEntry extends RegistryEntryMeta {
+  definition: {
+    name: string; description?: string; instructions: string;
+    schedule: { kind: "cron" | "every" | "once"; expr: string; timezone?: string };
+    approvalMode?: "auto" | "ask"; maxRuns?: number;
+  };
+}
+interface AutomationsManifest {
+  version: number; updatedAt: string; automations: RegistryAutomationEntry[];
+}
+interface AutomationsFetchResult {
+  manifest: AutomationsManifest; fromCache: boolean; cachedAt?: string; error?: string;
+}
 // ── Inline types for the codebase index / Architecture tab ──────────────────
 interface CodebaseSymbol {
   id: string; file_id: string; name: string; kind: string; line: number;
@@ -238,6 +251,26 @@ const api = {
     create: (args: unknown) => invoke("db:command:create", args),
     update: (id: string, patch: unknown) => invoke("db:command:update", { id, patch }),
     delete: (id: string) => invoke("db:command:delete", { id }),
+  },
+
+  // ── Heartbeat automations ─────────────────────
+  automation: {
+    list:   (workspaceId: string) => invoke("db:automation:list", { workspaceId }),
+    get:    (id: string) => invoke("db:automation:get", { id }),
+    create: (args: unknown) => invoke("db:automation:create", args),
+    update: (id: string, patch: unknown) => invoke("db:automation:update", { id, patch }),
+    delete: (id: string) => invoke("db:automation:delete", { id }),
+    runs:   (automationId: string, limit?: number) => invoke("db:automation:runs", { automationId, limit }),
+    runNow: (id: string) => invoke("db:automation:runNow", { id }),
+    runningCount: () => invoke("db:automation:runningCount"),
+    preview: (scheduleKind: string, scheduleExpr: string, timezone?: string | null) => invoke("db:automation:preview", { scheduleKind, scheduleExpr, timezone }),
+  },
+
+  // ── Approval inbox ────────────────────────────
+  approval: {
+    listPending: (limit?: number) => invoke("db:approval:listPending", { limit }),
+    resolve: (id: string, resolution: "approved_once" | "approved_session" | "approved_always" | "denied") => invoke("db:approval:resolve", { id, resolution }),
+    count: () => invoke("db:approval:count"),
   },
 
   // ── Chat ─────────────────────────────────────
@@ -585,6 +618,15 @@ const api = {
   },
   markMcpNotificationsRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
 
+  // ── In-app notification center ─────────────────
+  notification: {
+    list: (limit?: number) => invoke("db:notification:list", { limit }),
+    count: () => invoke("db:notification:count"),
+    markRead: (id: string) => invoke("db:notification:markRead", { id }),
+    markAllRead: () => invoke("mcp:markNotificationsRead"),
+    clear: () => invoke("db:notification:clear"),
+  },
+
   // ── Agent / coding sessions ───────────────────
   // All methods go through invoke() so callers receive T directly and errors
   // are thrown (matching every other namespace in this file).
@@ -731,6 +773,10 @@ const api = {
     fetchProviders: () => invoke<ProvidersFetchResult>("registry:fetchProviders"),
     /** Force a network refresh of the providers manifest. */
     refreshProviders: () => invoke<ProvidersFetchResult>("registry:refreshProviders"),
+    /** Community automation recipes (separate automations.json manifest). Cache-first. */
+    fetchAutomations: () => invoke<AutomationsFetchResult>("registry:fetchAutomations"),
+    /** Force a network refresh of the automations manifest. */
+    refreshAutomations: () => invoke<AutomationsFetchResult>("registry:refreshAutomations"),
   },
 
   // ── Git operations (Agent Git tab) ────────────

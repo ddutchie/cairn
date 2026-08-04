@@ -416,6 +416,42 @@ export interface ProvidersFetchResult {
   error?: string;
 }
 
+/** A community automation recipe that pre-fills the New Automation form. */
+export interface RegistryAutomationDefinition {
+  /** Display name prefilled into the automation. */
+  name: string;
+  description?: string;
+  /** Prompt replayed on every run (data-only toolset, no shell). */
+  instructions: string;
+  schedule: {
+    kind: "cron" | "every" | "once";
+    /** cron (5-field) | "every N minutes/hours/days/weeks" | ISO datetime. */
+    expr: string;
+    timezone?: string;
+  };
+  approvalMode?: "auto" | "ask";
+  maxRuns?: number;
+}
+
+export interface RegistryAutomationEntry extends RegistryEntryMeta {
+  definition: RegistryAutomationDefinition;
+}
+
+/** The parsed cairn-community AUTOMATIONS manifest (automations.json). */
+export interface AutomationsManifest {
+  version: number;
+  updatedAt: string;
+  automations: RegistryAutomationEntry[];
+}
+
+/** Result of an automations-manifest fetch — manifest plus cache provenance. */
+export interface AutomationsFetchResult {
+  manifest: AutomationsManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
 // ── Chat ──────────────────────────────────────
 export type ChatThreadScope = "workspace" | "project";
 
@@ -731,13 +767,13 @@ export type SettingsSection =
 export interface AppUIState {
   activeWorkspaceId: ID | null;
   activeProjectId: ID | null;
-  activeView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "chat" | "search" | "settings" | "agent";
+  activeView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "automations" | "chat" | "search" | "settings" | "agent";
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   searchOpen: boolean;
   activePreviewItem: { type: "note" | "task"; id: ID } | null;
   chatPanelResizing: boolean;
-  lastContentView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "settings" | "agent";
+  lastContentView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "automations" | "settings" | "agent";
   seenFeatures: string[];
   tutorialActive: boolean;
   tutorialStepIndex: number;

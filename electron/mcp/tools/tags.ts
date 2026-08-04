@@ -67,7 +67,7 @@ export function tag_note(db: Database.Database, args: Record<string, any>) {
     return q.updateNote(db, noteId as string, { tagIds: nextTagIds });
   })();
 
-  insertNotification(db, "tag_note", "Note tags updated", `Tags on "${note.title}" were updated`);
+  insertNotification(db, "tag_note", "Note tags updated", `Tags on "${note.title}" were updated`, { type: "note", id: note.id });
   return { id: noteId, title: note.title, tagIds: updated.tagIds, mode };
 }
 
@@ -88,6 +88,6 @@ export function tag_task(db: Database.Database, args: Record<string, any>) {
     return q.updateCard(db, cardId as string, { tagIds: nextTagIds });
   })();
 
-  insertNotification(db, "tag_task", "Task tags updated", `Tags on "${card.title}" were updated`);
+  insertNotification(db, "tag_task", "Task tags updated", `Tags on "${card.title}" were updated`, { type: "task", id: card.id });
   return { id: cardId, title: card.title, tagIds: updated.tagIds, mode };
 }

@@ -11,7 +11,7 @@
 import { shell } from "electron";
 import fs from "fs";
 import path from "path";
-import { registerIpcHandle, registerIpcOn } from "./registry";
+import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, hardDeleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders, stripMarkdown, findNoteFilePath } from "../notes-files";
@@ -23,6 +23,19 @@ import { invalidateRelationshipCache, computeAutoRelationships, computeSemanticR
 import { reindexNotes, reindexTasks } from "../embeddings/service";
 import { getDefaultModelId as getEmbeddingModelId } from "../embeddings/client";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
+import {
+  createAutomation,
+  getAutomationById,
+  listAutomations,
+  updateAutomation,
+  deleteAutomation,
+  listAutomationRuns,
+  countRunningAutomationRuns,
+  type AutomationInput,
+} from "../db/automation-queries";
+import { runAutomationNow } from "../lib/heartbeat-runner";
+import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
+import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
 
@@ -657,4 +670,81 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:command:create", (_e, args: Parameters<typeof q.createSlashCommand>[1]) => handle(() => q.createSlashCommand(ctx.db, args)));
   registerIpcHandle("db:command:update", (_e, { id, patch }) => handle(() => q.updateSlashCommand(ctx.db, id, patch)));
   registerIpcHandle("db:command:delete", (_e, { id }) => handle(() => q.deleteSlashCommand(ctx.db, id)));
+
+  // ── Heartbeat automations ─────────────────────────
+  registerIpcHandle("db:automation:list", (_e, { workspaceId }) => handle(() => listAutomations(ctx.db, workspaceId)));
+  registerIpcHandle("db:automation:get", (_e, { id }) => handle(() => getAutomationById(ctx.db, id)));
+  registerIpcHandle("db:automation:create", (_e, args: AutomationInput) => handle(() => {
+    const input = { ...args };
+    if (!input.nextRunAt) {
+      try {
+        const next = computeNextRun(parseSchedule(input.scheduleExpr), new Date(), input.timezone ?? undefined);
+        // A schedule with no future occurrence (e.g. a 'once' in the past) is
+        // created disabled rather than "due now" (which would fire once then
+        // disable itself).
+        if (!next) return { error: "Schedule has no future run time." };
+        input.nextRunAt = next.toISOString();
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : "Invalid schedule expression." };
+      }
+    }
+    return createAutomation(ctx.db, input);
+  }));
+  registerIpcHandle("db:automation:update", (_e, { id, patch }: { id: string; patch: Partial<Omit<AutomationInput, "workspaceId">> }) => handle(() => {
+    // Recompute next_run_at when the schedule/timezone changes.
+    if (patch.scheduleKind !== undefined || patch.scheduleExpr !== undefined || patch.timezone !== undefined) {
+      const existing = getAutomationById(ctx.db, id);
+      if (existing) {
+        const expr = patch.scheduleExpr ?? existing.scheduleExpr;
+        const tz = patch.timezone === undefined ? existing.timezone : patch.timezone;
+        try {
+          const next = computeNextRun(parseSchedule(expr), new Date(), tz ?? undefined);
+          // No future occurrence → leave next_run_at untouched (matches the
+          // invalid-expression catch below); the automation disables on its
+          // next tick rather than being stamped "due now".
+          if (next) patch.nextRunAt = next.toISOString();
+        } catch {
+          // Invalid schedule — leave next_run_at unchanged; the update still proceeds.
+        }
+      }
+    }
+    return updateAutomation(ctx.db, id, patch);
+  }));
+  registerIpcHandle("db:automation:delete", (_e, { id }) => handle(() => deleteAutomation(ctx.db, id)));
+  registerIpcHandle("db:automation:runs", (_e, { automationId, limit }: { automationId: string; limit?: number }) => handle(() => listAutomationRuns(ctx.db, automationId, limit)));
+  registerIpcHandle("db:automation:runningCount", () => handle(() => countRunningAutomationRuns(ctx.db)));
+  registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
+    const runId = runAutomationNow({ db: ctx.db, workspacePath: ctx.workspacePath }, id);
+    return runId === null ? { skipped: true } : { runId };
+  }));
+
+  // Friendly schedule preview — compute the next fire time for a proposed
+  // schedule expression (used by the Automations schedule builder).
+  registerIpcHandle("db:automation:preview", (_e, { scheduleExpr, timezone }: { scheduleKind?: string; scheduleExpr: string; timezone?: string | null }) => handle(() => {
+    try {
+      const next = computeNextRun(parseSchedule(scheduleExpr), new Date(), timezone ?? undefined);
+      return { nextRunAt: next ? next.toISOString() : null };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }));
+
+  // ── Approval inbox ──────────────────────────────
+  registerIpcHandle("db:approval:listPending", (_e, { limit }: { limit?: number }) => handle(() => listPendingApprovals(ctx.db, limit)));
+  registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => resolveApproval(ctx.db, id, resolution)));
+  registerIpcHandle("db:approval:count", () => handle(() => countPendingApprovals(ctx.db)));
+
+  // ── In-app notification center ─────────────────
+  registerIpcHandle("db:notification:list", (_e, { limit }: { limit?: number }) => handle(() => q.listMcpNotifications(ctx.db, limit)));
+  registerIpcHandle("db:notification:count", () => handle(() => q.countUnreadMcpNotifications(ctx.db)));
+  registerIpcHandle("db:notification:markRead", (_e, { id }: { id: string }) => handle(() => {
+    q.markMcpNotificationRead(ctx.db, id);
+    broadcastEvent("mcp:unread-count", q.countUnreadMcpNotifications(ctx.db));
+    return true;
+  }));
+  registerIpcHandle("db:notification:clear", () => handle(() => {
+    const n = q.clearMcpNotifications(ctx.db);
+    broadcastEvent("mcp:unread-count", 0);
+    return n;
+  }));
 }

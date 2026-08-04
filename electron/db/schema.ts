@@ -799,6 +799,84 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_slash_commands_workspace ON slash_commands(workspace_id);
     `);
   },
+
+  // v32: Heartbeat automations — scheduled / recurring background agent tasks.
+  // `automations` holds the schedule + replayed instructions + per-automation
+  // standing rules; `automation_runs` records each fire (the independent,
+  // resumable thread a run executes in). Device-local (not synced) — automations
+  // are a workspace-authoring convenience, mirroring slash_commands / pi-agent
+  // sessions. Schedule kinds: 'cron' (5-field), 'every' ("N unit"), 'once' (ISO
+  // datetime). next_run_at is an ISO string indexed for cheap due() lookups.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS automations (
+        id              TEXT PRIMARY KEY,
+        workspace_id    TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        project_id      TEXT REFERENCES projects(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL,
+        description     TEXT NOT NULL DEFAULT '',
+        instructions    TEXT NOT NULL,                 -- prompt replayed every run
+        schedule_kind   TEXT NOT NULL DEFAULT 'every', -- 'cron' | 'every' | 'once'
+        schedule_expr   TEXT NOT NULL,                 -- cron expr | "N unit" | ISO datetime
+        timezone        TEXT,                          -- optional IANA timezone
+        next_run_at     TEXT NOT NULL,                 -- ISO-8601
+        enabled         INTEGER NOT NULL DEFAULT 1,
+        max_runs        INTEGER,                       -- optional cap; NULL = unlimited
+        run_count       INTEGER NOT NULL DEFAULT 0,
+        approval_mode   TEXT NOT NULL DEFAULT 'auto',  -- 'auto' (run writes freely) | 'ask' (gate writes behind the approval inbox)
+        standing_rules  TEXT NOT NULL DEFAULT '[]',    -- JSON [{tool, target}]
+        source          TEXT NOT NULL DEFAULT 'custom',-- 'custom' | 'community'
+        community_id    TEXT,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_automations_next_run  ON automations(next_run_at);
+      CREATE INDEX IF NOT EXISTS idx_automations_workspace ON automations(workspace_id);
+
+      CREATE TABLE IF NOT EXISTS automation_runs (
+        id             TEXT PRIMARY KEY,
+        automation_id  TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+        status         TEXT NOT NULL DEFAULT 'pending', -- 'pending'|'running'|'done'|'denied'|'error'|'skipped'
+        result_note_id TEXT,                            -- note delivered by a successful run (nullable)
+        started_at     TEXT NOT NULL,
+        finished_at    TEXT,
+        error          TEXT,
+        scratch        TEXT,                            -- JSON cross-run memory
+        created_at     TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id);
+      CREATE INDEX IF NOT EXISTS idx_automation_runs_status     ON automation_runs(status);
+    `);
+  },
+
+  // v33: Durable approval inbox (OpenWorker inbox.py + hermes/openclaw approval
+  // gate). A persisted, cross-session human-attention queue. Background runs park
+  // a consequential action here and WAIT; the user approves/denies from the
+  // renderer (survives renderer reload + tray-time). Semantics: resolve-once,
+  // idempotent per (run_id, tool, args-hash), fail-closed timeout handled by the
+  // runner. `state` pending → resolved/expired; `resolution` records the choice
+  // (approved_once / approved_session / approved_always / denied).
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS approval_items (
+        id         TEXT PRIMARY KEY,
+        run_id     TEXT,                          -- automation_run id (nullable for interactive sessions)
+        session_id TEXT,                          -- pi-agent session id (nullable)
+        tool       TEXT NOT NULL,
+        args       TEXT NOT NULL DEFAULT '{}',    -- JSON tool arguments (redacted where sensitive)
+        args_hash  TEXT NOT NULL DEFAULT '',      -- idempotency key: sha1(tool + args)
+        kind       TEXT NOT NULL DEFAULT 'approval', -- 'approval' | 'question' | 'notification' | 'plan'
+        title      TEXT NOT NULL DEFAULT '',
+        body       TEXT NOT NULL DEFAULT '',
+        state      TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'resolved' | 'expired'
+        resolution TEXT,                          -- 'approved_once' | 'approved_session' | 'approved_always' | 'denied'
+        created_at TEXT NOT NULL,
+        resolved_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_approval_items_state ON approval_items(state);
+      CREATE INDEX IF NOT EXISTS idx_approval_items_run   ON approval_items(run_id);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -830,6 +908,11 @@ function ensureColumns(db: Database.Database): void {
   };
   ensure("chat_threads", "use_subagents", "use_subagents INTEGER NOT NULL DEFAULT 0");
   ensure("chat_messages", "subagents", "subagents TEXT");
+  ensure("automations", "approval_mode", "approval_mode TEXT NOT NULL DEFAULT 'auto'");
+  ensure("automations", "active_hours_start", "active_hours_start TEXT");
+  ensure("automations", "active_hours_end", "active_hours_end TEXT");
+  ensure("mcp_notifications", "target_type", "target_type TEXT");
+  ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");
   ensure("custom_services", "oauth_config", "oauth_config TEXT");
   // Multi-operation services: baseUrl + operations[] (JSON). Nullable — legacy

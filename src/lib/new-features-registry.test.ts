@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getUnseenLatestFeatures,
+  minorOf,
   NEW_FEATURES_REGISTRY,
   type NewFeature,
 } from "./new-features-registry";
@@ -18,6 +19,20 @@ const feat = (id: string, version: string): NewFeature => ({
   category: "Test",
   description: "",
   highlights: [],
+});
+
+describe("minorOf", () => {
+  it("reduces a patch tag to its minor line", () => {
+    expect(minorOf("v2.6.1")).toBe("v2.6");
+    expect(minorOf("v2.6.0")).toBe("v2.6");
+    expect(minorOf("v2.5.x")).toBe("v2.5");
+    expect(minorOf("v9.0")).toBe("v9.0");
+  });
+
+  it("reduces a condensed whole-major tag to its major line", () => {
+    expect(minorOf("v0.x")).toBe("v0");
+    expect(minorOf("v1.x")).toBe("v1");
+  });
 });
 
 describe("getUnseenLatestFeatures", () => {
@@ -35,25 +50,57 @@ describe("getUnseenLatestFeatures", () => {
     expect(getUnseenLatestFeatures([], [])).toEqual([]);
   });
 
-  it("returns only unseen features from the LATEST version", () => {
+  it("returns only unseen features from the LATEST MINOR (all patches, not just the last patch)", () => {
     const registry = [
       feat("old", "v1.0.0"),
       feat("latest-1", "v2.0.0"),
-      feat("latest-2", "v2.0.0"),
+      feat("latest-2", "v2.0.1"), // patch within the same minor
     ];
-    // Nothing seen — both latest-version features surface; the old one never does.
+    // Nothing seen — both latest-minor features surface; the old one never does.
     const result = getUnseenLatestFeatures(registry, []);
     expect(result.map((f) => f.id)).toEqual(["latest-1", "latest-2"]);
   });
 
-  it("ignores unseen features from OLDER versions", () => {
+  it("ignores unseen features from OLDER minors", () => {
     const registry = [feat("old", "v1.0.0"), feat("latest", "v2.0.0")];
-    // The old feature is unseen but belongs to a previous version — excluded.
+    // The old feature is unseen but belongs to a previous minor — excluded.
     const result = getUnseenLatestFeatures(registry, ["latest"]);
     expect(result).toEqual([]);
   });
 
-  it("filters out already-seen features within the latest version", () => {
+  it("does not re-show features the user already saw in an earlier patch of the same minor", () => {
+    const registry = [
+      feat("seen-in-2.6.0", "v2.6.0"),
+      feat("new-in-2.6.1", "v2.6.1"),
+    ];
+    // 2.6.0 was seen → only the 2.6.1 entry surfaces, exactly like the real
+    // "saw 2.6.0, now 2.6.1 ships" upgrade path.
+    const result = getUnseenLatestFeatures(registry, ["seen-in-2.6.0"]);
+    expect(result.map((f) => f.id)).toEqual(["new-in-2.6.1"]);
+  });
+
+  it("never auto-shows a condensed older-minor card (vX.Y.x)", () => {
+    const registry = [
+      feat("v2.5.x", "v2.5.x"),
+      feat("latest", "v2.6.0"),
+    ];
+    // The condensed card is unseen but belongs to an older minor — hidden at boot.
+    const result = getUnseenLatestFeatures(registry, []);
+    expect(result.map((f) => f.id)).toEqual(["latest"]);
+  });
+
+  it("excludes a condensed card even when it is the last (newest) registry entry", () => {
+    // A condensed v0.x card sitting at the end must never auto-show, regardless
+    // of registry order — its minor ("v0") must not match a gated minor.
+    const registry = [
+      feat("active", "v0.1.0"),
+      feat("condensed", "v0.x"),
+    ];
+    const result = getUnseenLatestFeatures(registry, []);
+    expect(result.map((f) => f.id)).toEqual(["active"]);
+  });
+
+  it("filters out already-seen features within the latest minor", () => {
     const registry = [
       feat("latest-1", "v2.0.0"),
       feat("latest-2", "v2.0.0"),
@@ -62,7 +109,7 @@ describe("getUnseenLatestFeatures", () => {
     expect(result.map((f) => f.id)).toEqual(["latest-2"]);
   });
 
-  it("returns [] when every latest-version feature has been seen", () => {
+  it("returns [] when every feature in the latest minor has been seen", () => {
     const registry = [
       feat("latest-1", "v2.0.0"),
       feat("latest-2", "v2.0.0"),
@@ -70,9 +117,9 @@ describe("getUnseenLatestFeatures", () => {
     expect(getUnseenLatestFeatures(registry, ["latest-1", "latest-2"])).toEqual([]);
   });
 
-  it("derives the latest version from the LAST registry entry, not by string comparison", () => {
-    // The function trusts registry order: the latest version is the last entry's
-    // version. A higher version number appearing earlier must NOT be treated as latest.
+  it("derives the latest minor from the LAST registry entry, not by string comparison", () => {
+    // The function trusts registry order: the latest minor is the last entry's
+    // minor. A higher version number appearing earlier must NOT be treated as latest.
     const registry = [
       feat("higher-but-earlier", "v9.0.0"),
       feat("actual-latest", "v2.0.0"),
@@ -121,10 +168,10 @@ describe("NEW_FEATURES_REGISTRY ordering invariant", () => {
     }
   });
 
-  it("surfaces only features whose version matches the last entry's version", () => {
-    const latestVersion = NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version;
+  it("surfaces only features whose MINOR matches the last entry's minor", () => {
+    const latestMinor = minorOf(NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version);
     const surfaced = getUnseenLatestFeatures(NEW_FEATURES_REGISTRY, []);
     expect(surfaced.length).toBeGreaterThan(0);
-    expect(surfaced.every((f) => f.version === latestVersion)).toBe(true);
+    expect(surfaced.every((f) => minorOf(f.version) === latestMinor)).toBe(true);
   });
 });

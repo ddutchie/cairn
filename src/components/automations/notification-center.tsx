@@ -1,0 +1,178 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { Bell, Check, CheckCheck, Zap, ExternalLink, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
+import { cn } from "@/lib/utils";
+import { revealNote, revealCard } from "@/lib/events";
+
+function formatWhen(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const mins = Math.round((Date.now() - t) / 60_000);
+  const hrs = Math.round(mins / 60);
+  const days = Math.round(hrs / 24);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  if (hrs < 24) return `${hrs}h`;
+  if (days < 30) return `${days}d`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function toolIcon(tool: string): React.ReactNode {
+  if (tool === "automation_run" || tool === "automation_approval") return <Zap size={13} className="text-[var(--accent)]" />;
+  return <Bell size={13} className="text-[var(--text-tertiary)]" />;
+}
+
+/**
+ * In-app notification center — a thin popover (like the sync indicator) shown
+ * top-right over whatever is open. Rows that reference a note/task navigate to
+ * it in place (the popup stays open) so you can jump to the result without
+ * dismissing. Closes on outside click / Escape.
+ */
+export function NotificationCenter({ onClose }: { onClose: () => void }) {
+  const { notifications, notificationUnreadCount, fetchNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications } =
+    useCairnStore(useShallow((s) => ({
+      notifications: s.notifications,
+      notificationUnreadCount: s.notificationUnreadCount,
+      fetchNotifications: s.fetchNotifications,
+      markNotificationRead: s.markNotificationRead,
+      markAllNotificationsRead: s.markAllNotificationsRead,
+      clearNotifications: s.clearNotifications,
+    })));
+
+  const { pendingApprovals, resolveApprovalItem, fetchPendingApprovals } = useCairnStore(useShallow((s) => ({
+    pendingApprovals: s.pendingApprovals,
+    resolveApprovalItem: s.resolveApprovalItem,
+    fetchPendingApprovals: s.fetchPendingApprovals,
+  })));
+
+  const { setView } = useCairnStore(useShallow((s) => ({ setView: s.setView })));
+
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void fetchNotifications();
+    void fetchPendingApprovals();
+    // Keep the list live while the popover is open (new runs/completions/approvals
+    // land without reopening) and keep approval items fresh so the inline
+    // Approve/Always allow/Deny controls render for newly arrived approvals.
+    const t = setInterval(() => {
+      void fetchNotifications();
+      void fetchPendingApprovals();
+    }, 3_000);
+    return () => clearInterval(t);
+  }, [fetchNotifications, fetchPendingApprovals]);
+
+  // Close on outside click / Escape (the popover only exists while open).
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  const unread = notifications.filter((n) => !n.read);
+  const sorted = [...unread, ...notifications.filter((n) => n.read)];
+
+  return (
+    <div ref={wrapRef} className="fixed top-[calc(40px+8px)] right-3 z-50 w-80 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl animate-fade-in flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border-subtle)] bg-[var(--surface-2)]">
+        <Bell size={13} className="text-[var(--accent)]" />
+        <span className="text-xs font-semibold text-[var(--text-primary)]">Notifications</span>
+        {notificationUnreadCount > 0 && (
+          <span className="text-[0.65rem] px-1.5 py-0.5 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] font-semibold">
+            {notificationUnreadCount}
+          </span>
+        )}
+        <Button variant="ghost" size="xs" className="ml-auto" onClick={() => void markAllNotificationsRead()} disabled={notificationUnreadCount === 0}>
+          <CheckCheck size={12} className="mr-1" /> Mark all read
+        </Button>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto max-h-80 pb-1">
+        {notifications.length === 0 ? (
+          <p className="px-3 py-6 text-center text-[0.714rem] text-[var(--text-tertiary)]">
+            No notifications yet — automation completions and app activity will appear here.
+          </p>
+        ) : (
+          sorted.map((n) => {
+            const targetable =
+              n.targetId !== null &&
+              (n.targetType === "note" || n.targetType === "task" || n.targetType === "automation" || n.targetType === "approval");
+            const isApproval = n.targetType === "approval";
+            const approvalPending = isApproval ? pendingApprovals.some((p) => p.id === n.targetId) : false;
+            const onClick = targetable && !isApproval
+              ? () => {
+                  if (n.targetType === "note") revealNote(setView, n.targetId!);
+                  else if (n.targetType === "task") revealCard(setView, n.targetId!);
+                  else if (n.targetType === "automation") setView("automations");
+                  void markNotificationRead(n.id);
+                }
+              : undefined;
+            return (
+              <div
+                key={n.id}
+                onClick={onClick}
+                role={targetable && !isApproval ? "button" : undefined}
+                tabIndex={targetable && !isApproval ? 0 : undefined}
+                onKeyDown={targetable && !isApproval ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } } : undefined}
+                className={cn(
+                  "flex items-start gap-2.5 px-3 py-2 text-left",
+                  targetable && !isApproval ? "cursor-pointer hover:bg-[var(--surface-2)]" : "",
+                  n.read ? "opacity-60" : "bg-[color-mix(in_srgb,var(--accent)_6%,transparent)]"
+                )}
+              >
+                <div className="mt-0.5 shrink-0">{toolIcon(n.tool)}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-[var(--text-primary)] truncate">{n.title}</span>
+                    {targetable && !isApproval && <ExternalLink size={10} className="shrink-0 text-[var(--text-tertiary)]" />}
+                    <span className="text-[0.625rem] text-[var(--text-tertiary)] ml-auto shrink-0">{formatWhen(n.createdAt)}</span>
+                  </div>
+                  <p className="text-[0.714rem] text-[var(--text-secondary)] mt-0.5 break-words line-clamp-2">{n.body}</p>
+                  {isApproval && approvalPending && (
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <Button variant="accent" size="xs" onClick={(e) => { e.stopPropagation(); void resolveApprovalItem(n.targetId!, "approved_once").then(() => void markNotificationRead(n.id)); }}>
+                        Approve
+                      </Button>
+                      <Button variant="outline" size="xs" onClick={(e) => { e.stopPropagation(); void resolveApprovalItem(n.targetId!, "approved_always").then(() => void markNotificationRead(n.id)); }}>
+                        Always allow
+                      </Button>
+                      <Button variant="danger" size="xs" onClick={(e) => { e.stopPropagation(); void resolveApprovalItem(n.targetId!, "denied").then(() => void markNotificationRead(n.id)); }}>
+                        Deny
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {!n.read && (
+                  <Button variant="ghost" size="icon" title="Dismiss" className="shrink-0" onClick={(e) => { e.stopPropagation(); void markNotificationRead(n.id); }}>
+                    <Check size={12} />
+                  </Button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-[var(--border-subtle)]">
+        <Button variant="ghost" size="xs" onClick={() => void clearNotifications()} disabled={notifications.length === 0} title="Remove all notifications">
+          <Trash2 size={11} className="mr-1 text-[var(--text-tertiary)]" /> Clear all
+        </Button>
+        <button type="button" onClick={onClose} className="text-[0.625rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">Close</button>
+      </div>
+    </div>
+  );
+}

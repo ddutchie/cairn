@@ -503,6 +503,10 @@ export interface UISlice extends AppUIState {
   toggleSidebar: () => void;
   toggleChat: () => void;
   toggleSearch: () => void;
+
+  /** Notification center modal (openable from the title bar + sidebar bells). */
+  notificationOpen: boolean;
+  setNotificationOpen: (open: boolean) => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -522,6 +526,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   chatPanelResizing: false,
   lastContentView: "overview",
   settingsSection: null,
+  notificationOpen: false,
   calendarProjectIds: [],
   seenFeatures: [],  tutorialActive: false,
   tutorialStepIndex: 0,
@@ -854,6 +859,10 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   toggleSearch() {
     set((s) => ({ searchOpen: !s.searchOpen }));
+  },
+
+  setNotificationOpen(open) {
+    set({ notificationOpen: open });
   },
 
   markFeatureAsSeen(id) {

@@ -243,12 +243,18 @@ export function resolveTagNames(db: Database.Database, workspaceId: string, tagN
   return resolvedIds;
 }
 
-export function insertNotification(db: Database.Database, tool: string, title: string, body: string): void {
+export function insertNotification(
+  db: Database.Database,
+  tool: string,
+  title: string,
+  body: string,
+  target?: { type: "note" | "task" | "automation" | "approval"; id: string } | null,
+): void {
   try {
     const id = newId();
     db.prepare(
-      "INSERT INTO mcp_notifications (id, tool, title, body, read, created_at) VALUES (?, ?, ?, ?, 0, ?)"
-    ).run(id, tool, title, body, ts());
+      "INSERT INTO mcp_notifications (id, tool, title, body, read, created_at, target_type, target_id) VALUES (?, ?, ?, ?, 0, ?, ?, ?)"
+    ).run(id, tool, title, body, ts(), target?.type ?? null, target?.id ?? null);
   } catch {
     // best-effort
   }

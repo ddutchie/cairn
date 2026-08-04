@@ -55,6 +55,14 @@ import {
   getCodebaseOverview,
   getCodebaseGraph,
   getCodebaseModuleGraph,
+  getUnreadMcpNotifications,
+  markMcpNotificationsRead,
+  markMcpNotificationRead,
+  listMcpNotifications,
+  countUnreadMcpNotifications,
+  insertMcpNotification,
+  pruneMcpNotifications,
+  clearMcpNotifications,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -1185,5 +1193,84 @@ describe("rewriteInboundWikilinks", () => {
 
     expect(updated.map((n) => n.id)).toEqual(["same-ws"]);
     expect(getNoteById(db, "other-ws")!.content).toBe("[[Shared]]"); // cross-workspace link untouched
+  });
+});
+
+describe("mcp notifications", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("inserts, lists newest-first, counts unread, and marks read", () => {
+    insertMcpNotification(db, { id: "n1", tool: "create_task", title: "Task", body: "x" });
+    insertMcpNotification(db, { id: "n2", tool: "automation_run", title: "Done", body: "y" });
+
+    expect(countUnreadMcpNotifications(db)).toBe(2);
+    const list = listMcpNotifications(db);
+    expect(list.map((n) => n.id)).toEqual(["n2", "n1"]); // newest first
+    expect(list[0].read).toBe(false);
+
+    markMcpNotificationRead(db, "n2");
+    expect(countUnreadMcpNotifications(db)).toBe(1);
+    expect(getUnreadMcpNotifications(db).map((n) => n.id)).toEqual(["n1"]);
+
+    markMcpNotificationsRead(db);
+    expect(countUnreadMcpNotifications(db)).toBe(0);
+  });
+
+  it("getUnreadMcpNotifications excludes read rows", () => {
+    insertMcpNotification(db, { id: "n1", tool: "t", title: "a", body: "1" });
+    insertMcpNotification(db, { id: "n2", tool: "t", title: "b", body: "2" });
+    markMcpNotificationRead(db, "n2");
+    expect(getUnreadMcpNotifications(db).map((n) => n.id)).toEqual(["n1"]);
+  });
+});
+
+describe("pruneMcpNotifications", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("deletes rows older than maxAgeDays but keeps recent ones", () => {
+    const now = new Date();
+    insertMcpNotification(db, { id: "old", tool: "t", title: "a", body: "1" });
+    // Backdate the old row by 60 days.
+    db.prepare("UPDATE mcp_notifications SET created_at = ? WHERE id = 'old'")
+      .run(new Date(now.getTime() - 60 * 86_400_000).toISOString());
+    insertMcpNotification(db, { id: "new", tool: "t", title: "b", body: "2" });
+
+    const deleted = pruneMcpNotifications(db, { maxAgeDays: 30, maxRows: 1000 });
+    expect(deleted).toBe(1);
+    expect(listMcpNotifications(db).map((n) => n.id)).toEqual(["new"]);
+  });
+
+  it("caps the table to the newest maxRows", () => {
+    for (let i = 0; i < 5; i++) {
+      insertMcpNotification(db, { id: `n${i}`, tool: "t", title: `t${i}`, body: `${i}` });
+    }
+    pruneMcpNotifications(db, { maxAgeDays: 9999, maxRows: 3 });
+    const rows = listMcpNotifications(db);
+    expect(rows.length).toBe(3);
+    expect(rows.map((n) => n.id)).toEqual(["n4", "n3", "n2"]); // newest kept
+  });
+});
+
+describe("clearMcpNotifications", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("removes every notification", () => {
+    insertMcpNotification(db, { id: "n1", tool: "t", title: "a", body: "1" });
+    insertMcpNotification(db, { id: "n2", tool: "t", title: "b", body: "2" });
+    expect(clearMcpNotifications(db)).toBe(2);
+    expect(listMcpNotifications(db)).toHaveLength(0);
+    expect(countUnreadMcpNotifications(db)).toBe(0);
   });
 });

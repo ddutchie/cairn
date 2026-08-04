@@ -104,6 +104,39 @@ export interface CommunityManifest {
 }
 
 /**
+ * A community automation recipe — a reusable scheduled background task.
+ * Selecting one in the New Automation flow PRE-FILLS the form (name,
+ * instructions, schedule, approval mode) so the user can tweak it and save.
+ * Recipes only use the data-only knowledge-work toolset (notes/tasks/tags/
+ * boards) — never shell/file edits.
+ */
+export interface RegistryAutomationEntry extends RegistryEntryMeta {
+  definition: {
+    /** Display name prefilled into the automation. */
+    name: string;
+    description?: string;
+    /** Prompt replayed on every run. */
+    instructions: string;
+    schedule: {
+      kind: "cron" | "every" | "once";
+      /** cron (5-field) | "every N minutes/hours/days/weeks" | ISO datetime. */
+      expr: string;
+      timezone?: string;
+    };
+    /** auto (default) = writes run freely; ask = gate writes behind the approval inbox. */
+    approvalMode?: "auto" | "ask";
+    maxRuns?: number;
+  };
+}
+
+/** The parsed cairn-community AUTOMATIONS manifest (automations.json). */
+export interface AutomationsManifest {
+  version: number;
+  updatedAt: string;
+  automations: RegistryAutomationEntry[];
+}
+
+/**
  * A community AI provider — a one-click preset for an OpenAI-compatible endpoint
  * (base URL + default model). Installed into the shared `savedProviders` list;
  * the user just enters their API key (stored in the OS keychain). Kept in a
@@ -268,6 +301,23 @@ const commandDefinition = z.object({
 
 const commandEntry = z.object({ ...entryMeta, definition: commandDefinition }).passthrough();
 
+const automationSchedule = z.object({
+  kind: z.enum(["cron", "every", "once"]),
+  expr: z.string().min(1),
+  timezone: z.string().optional(),
+});
+
+const automationDefinition = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  instructions: z.string().min(10),
+  schedule: automationSchedule,
+  approvalMode: z.enum(["auto", "ask"]).optional(),
+  maxRuns: z.number().int().min(1).optional(),
+});
+
+const automationEntry = z.object({ ...entryMeta, definition: automationDefinition }).passthrough();
+
 // Manifest-level shape only validates the envelope; entries are validated
 // individually in parseManifest so ONE bad community entry can't blank the
 // whole catalog (the reject-all behaviour of z.array(z.object(...)) would).
@@ -299,6 +349,29 @@ export function parseManifest(raw: unknown): CommunityManifest {
       return r.success ? [r.data] : [];
     }),
   } as CommunityManifest;
+}
+
+// ── automations manifest (automations.json) ─────────────────────────────────
+
+// Envelope-only validation; entries validated individually in
+// parseAutomationsManifest so one bad recipe can't blank the catalog.
+const automationsManifestSchema = z.object({
+  version: z.number(),
+  updatedAt: z.string(),
+  automations: z.array(z.unknown()),
+});
+
+/** Parse + validate an unknown payload into an AutomationsManifest, or throw. */
+export function parseAutomationsManifest(raw: unknown): AutomationsManifest {
+  const m = automationsManifestSchema.parse(raw);
+  return {
+    version: m.version,
+    updatedAt: m.updatedAt,
+    automations: m.automations.flatMap((e) => {
+      const r = automationEntry.safeParse(e);
+      return r.success ? [r.data] : [];
+    }),
+  } as AutomationsManifest;
 }
 
 // ── providers manifest (providers.json) ─────────────────────────────────────

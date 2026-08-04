@@ -1065,8 +1065,54 @@ export function getUnreadMcpNotifications(db: Database.Database): McpNotificatio
   return db.prepare("SELECT * FROM mcp_notifications WHERE read = 0 ORDER BY created_at ASC").all().map(toMcpNotification);
 }
 
+/** Recent notifications (read + unread), newest first. */
+export function listMcpNotifications(db: Database.Database, limit = 100): McpNotification[] {
+  return db
+    .prepare("SELECT * FROM mcp_notifications ORDER BY created_at DESC, rowid DESC LIMIT ?")
+    .all(limit)
+    .map(toMcpNotification);
+}
+
+export function countUnreadMcpNotifications(db: Database.Database): number {
+  const r = db.prepare("SELECT COUNT(*) AS n FROM mcp_notifications WHERE read = 0").get() as { n: number };
+  return r.n;
+}
+
+export function markMcpNotificationRead(db: Database.Database, id: string): void {
+  db.prepare("UPDATE mcp_notifications SET read = 1 WHERE id = ?").run(id);
+}
+
 export function markMcpNotificationsRead(db: Database.Database): void {
   db.prepare("UPDATE mcp_notifications SET read = 1 WHERE read = 0").run();
+}
+
+/** Remove every notification (manual "Clear all"). Returns rows deleted. */
+export function clearMcpNotifications(db: Database.Database): number {
+  const info = db.prepare("DELETE FROM mcp_notifications").run();
+  return info.changes;
+}
+
+/**
+ * Retention/pruning for mcp_notifications: delete notifications older than
+ * `maxAgeDays`, then cap the table to the newest `maxRows`. Returns the number
+ * of rows deleted. Notifications are transient activity (toasts/inbox), so they
+ * don't need indefinite retention.
+ */
+export function pruneMcpNotifications(db: Database.Database, opts: { maxAgeDays?: number; maxRows?: number } = {}): number {
+  const maxAgeDays = opts.maxAgeDays ?? 30;
+  const maxRows = opts.maxRows ?? 1000;
+  const cutoffIso = new Date(Date.now() - maxAgeDays * 86_400_000).toISOString();
+  const prune = db.transaction((cutoff: string, cap: number) => {
+    const ageInfo = db.prepare("DELETE FROM mcp_notifications WHERE created_at < ?").run(cutoff);
+    const capInfo = db.prepare(`
+      DELETE FROM mcp_notifications
+      WHERE id NOT IN (
+        SELECT id FROM mcp_notifications ORDER BY created_at DESC, rowid DESC LIMIT ?
+      )
+    `).run(cap);
+    return ageInfo.changes + capInfo.changes;
+  });
+  return prune(cutoffIso, maxRows);
 }
 
 /**
@@ -1083,8 +1129,9 @@ export function getActiveMcpWrites(db: Database.Database): Set<string> {
   }
 }
 
-export function insertMcpNotification(db: Database.Database, n: { id: string; tool: string; title: string; body: string }): void {
-  db.prepare("INSERT INTO mcp_notifications (id, tool, title, body, read, created_at) VALUES (?, ?, ?, ?, 0, ?)").run(n.id, n.tool, n.title, n.body, ts());
+export function insertMcpNotification(db: Database.Database, n: { id: string; tool: string; title: string; body: string; targetType?: "note" | "task"; targetId?: string }): void {
+  db.prepare("INSERT INTO mcp_notifications (id, tool, title, body, read, created_at, target_type, target_id) VALUES (?, ?, ?, ?, 0, ?, ?, ?)")
+    .run(n.id, n.tool, n.title, n.body, ts(), n.targetType ?? null, n.targetId ?? null);
 }
 
 // ── Idea Flow ─────────────────────────────────

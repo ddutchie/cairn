@@ -275,6 +275,10 @@ export function toChatMessage(row: any) {
   };
 }
 
+/** The complete set of notification navigation-target types. */
+export const NOTIFICATION_TARGET_TYPES = ["note", "task", "automation", "approval"] as const;
+export type NotificationTargetType = (typeof NOTIFICATION_TARGET_TYPES)[number];
+
 export interface McpNotification {
   id: string;
   tool: string;
@@ -282,6 +286,9 @@ export interface McpNotification {
   body: string;
   read: boolean;
   createdAt: string;
+  /** Optional navigation target (note/task/automation/approval) the notification links to. */
+  targetType: NotificationTargetType | null;
+  targetId: string | null;
 }
 
 export function toMcpNotification(row: any): McpNotification {
@@ -292,6 +299,8 @@ export function toMcpNotification(row: any): McpNotification {
     body: row.body as string,
     read: b(row.read),
     createdAt: row.created_at as string,
+    targetType: (NOTIFICATION_TARGET_TYPES as readonly string[]).includes(row.target_type) ? (row.target_type as NotificationTargetType) : null,
+    targetId: row.target_id ? (row.target_id as string) : null,
   };
 }
 

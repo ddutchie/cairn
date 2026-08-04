@@ -38,12 +38,12 @@ export function createTray(win: BrowserWindow): TrayHandle {
   const tray = new Tray(trayImage);
   tray.setToolTip("Cairn");
 
-  function buildMenu(unreadCount: number) {
+  function buildMenu(count: number) {
     return Menu.buildFromTemplate([
       {
-        label: unreadCount > 0
-          ? `${unreadCount} unread MCP update${unreadCount > 1 ? "s" : ""}`
-          : "No new MCP updates",
+        label: count > 0
+          ? `${count} item${count > 1 ? "s" : ""} awaiting attention (notifications + approvals)`
+          : "Nothing awaiting attention",
         enabled: false,
       },
       { type: "separator" },
@@ -60,13 +60,16 @@ export function createTray(win: BrowserWindow): TrayHandle {
 
   tray.on("click", () => { win.show(); win.focus(); });
 
+  /**
+   * Set the dock/tray attention badge. This is the COMBINED attention count
+   * (unread notifications + pending approvals) pushed by the notification
+   * poller; it does NOT broadcast `mcp:unread-count` — the poller sends the
+   * notifications-only count separately so the in-app bell badge stays accurate.
+   */
   function updateBadge(count: number) {
     tray.setContextMenu(buildMenu(count));
     if (process.platform === "darwin") {
       app.setBadgeCount(count);
-    }
-    if (!win.isDestroyed()) {
-      win.webContents.send("mcp:unread-count", count);
     }
   }
 

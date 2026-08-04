@@ -15,6 +15,8 @@ import {
   refreshManifest,
   fetchProvidersManifest,
   refreshProvidersManifest,
+  fetchAutomationsManifest,
+  refreshAutomationsManifest,
 } from "../lib/community-registry";
 
 export function registerCommunityRegistryHandlers(): void {
@@ -24,4 +26,7 @@ export function registerCommunityRegistryHandlers(): void {
   // evolve independently.
   registerIpcHandle("registry:fetchProviders", () => handle(() => fetchProvidersManifest()));
   registerIpcHandle("registry:refreshProviders", () => handle(() => refreshProvidersManifest()));
+  // Automations live in a SEPARATE manifest (automations.json), same rationale.
+  registerIpcHandle("registry:fetchAutomations", () => handle(() => fetchAutomationsManifest()));
+  registerIpcHandle("registry:refreshAutomations", () => handle(() => refreshAutomationsManifest()));
 }

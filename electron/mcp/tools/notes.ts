@@ -118,7 +118,7 @@ export function instantiate_template(db: Database.Database, snap: Snapshot, work
         folder: newFolder,
         type: "note",
       });
-      insertNotification(db, "create_note", "Note created", `"${title}" created from template "${baseName}"`);
+      insertNotification(db, "create_note", "Note created", `"${title}" created from template "${baseName}"`, { type: "note", id: noteId });
       return n;
     })();
     writeNoteFile(workspacePath, {
@@ -213,7 +213,7 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
           ...(ensureResolvedIsPinned !== undefined ? { isPinned: ensureResolvedIsPinned } : {}),
           ...(ensureFolder !== undefined ? { folder: ensureFolder } : {}),
         });
-        insertNotification(db, "update_note", "Note updated", `"${title}" was updated (ensure_note)`);
+        insertNotification(db, "update_note", "Note updated", `"${title}" was updated (ensure_note)`, { type: "note", id: existing.id });
       })();
       writeNoteFile(workspacePath, {
         id: existing.id, projectId, workspaceId: existing.workspaceId as string,
@@ -261,7 +261,7 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
           folder: newFolder,
           type: "note",
         });
-        insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
+        insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`, { type: "note", id: n.id });
         return n;
       })();
       const resolvedId = note.id;
@@ -314,7 +314,7 @@ export function append_to_note(db: Database.Database, snap: Snapshot, workspaceP
         content: newContent,
         contentText: stripMarkdown(newContent),
       });
-      insertNotification(db, "update_note", "Note updated", `Content appended to "${note.title}"`);
+      insertNotification(db, "update_note", "Note updated", `Content appended to "${note.title}"`, { type: "note", id: note.id });
       return q.getNoteById(db, noteId as string);
     })();
     writeNoteFile(workspacePath, {
@@ -358,7 +358,7 @@ export function patch_note(db: Database.Database, snap: Snapshot, workspacePath:
         content: newContent,
         contentText: stripMarkdown(newContent),
       });
-      insertNotification(db, "update_note", "Note updated", `Patch applied to "${note.title}"`);
+      insertNotification(db, "update_note", "Note updated", `Patch applied to "${note.title}"`, { type: "note", id: note.id });
       return q.getNoteById(db, noteId);
     })();
     writeNoteFile(workspacePath, {
@@ -487,7 +487,7 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
     unlockNote(db, noteId as string);
   }
 
-  insertNotification(db, "update_note", "Note renamed", `"${note.title}" renamed to "${newTitle}"`);
+  insertNotification(db, "update_note", "Note renamed", `"${note.title}" renamed to "${newTitle}"`, { type: "note", id: note.id });
   return {
     id: note.id,
     title: newTitle,

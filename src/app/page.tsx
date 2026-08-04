@@ -19,6 +19,8 @@ import { KnowledgeGraphView } from "@/components/graph/KnowledgeGraphView";
 import { InsightsView } from "@/components/insights/InsightsView";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
+import { AutomationsView } from "@/components/automations/automations-view";
+import { NotificationCenter } from "@/components/automations/notification-center";
 import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 import { UnifiedChatPanel } from "@/components/chat/UnifiedChatPanel";
@@ -57,6 +59,14 @@ export default function Home() {
     chatPanelWidth,
     chatPanelResizing,
     lastContentView,
+    startApprovalPolling,
+    stopApprovalPolling,
+    fetchApprovalCount,
+    startNotificationPolling,
+    stopNotificationPolling,
+    notificationOpen,
+    setNotificationOpen,
+    runningAutomationCount,
   } = useCairnStore(useShallow((s) => ({
     hydrate:             s.hydrate,
     hydrateFromElectron: s.hydrateFromElectron,
@@ -73,10 +83,19 @@ export default function Home() {
     chatPanelWidth:      s.chatPanelWidth,
     chatPanelResizing:   s.chatPanelResizing,
     lastContentView:     s.lastContentView,
+    startApprovalPolling: s.startApprovalPolling,
+    stopApprovalPolling:  s.stopApprovalPolling,
+    fetchApprovalCount:   s.fetchApprovalCount,
+    startNotificationPolling: s.startNotificationPolling,
+    stopNotificationPolling:  s.stopNotificationPolling,
+    notificationOpen:    s.notificationOpen,
+    setNotificationOpen: s.setNotificationOpen,
+    runningAutomationCount: s.runningAutomationCount,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
-  const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights"] as const).filter(
-    (v) => !hiddenViews.has(v)
+  const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations"] as const).filter(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (v) => !hiddenViews.has(v as any)
   );
 
   // null = still loading
@@ -111,6 +130,24 @@ export default function Home() {
     if (typeof window === "undefined") return;
     (window as unknown as { __cairnStoreRef?: typeof useCairnStore }).__cairnStoreRef = useCairnStore;
   }, []);
+
+  // Live pending-approval polling for the sidebar badge / inbox. Lightweight:
+  // a COUNT query every few seconds so a parked approval from a background run
+  // surfaces without a full renderer reload.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.electron?.approval) return;
+    void fetchApprovalCount();
+    startApprovalPolling();
+    return () => stopApprovalPolling();
+  }, [startApprovalPolling, stopApprovalPolling, fetchApprovalCount]);
+
+  // Live unread-notification polling for the bell badge + center (same pattern;
+  // also subscribes to the main-process mcp:unread-count pushes).
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.electron?.notification) return;
+    startNotificationPolling();
+    return () => stopNotificationPolling();
+  }, [startNotificationPolling, stopNotificationPolling]);
 
   useEffect(() => {
     const electron = window.electron;
@@ -375,6 +412,18 @@ export default function Home() {
       {/* Electron title bar — draggable, clears macOS traffic lights */}
       <TitleBar />
 
+      {/* Running automations bar — thin accent strip shown while any automation run is in flight */}
+      {runningAutomationCount > 0 && (
+        <button
+          onClick={() => setView("automations")}
+          className="flex items-center gap-2 px-4 py-1 text-xs text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] border-b border-[color-mix(in_srgb,var(--accent)_20%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] transition-colors text-left"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+          {runningAutomationCount} automation{runningAutomationCount === 1 ? "" : "s"} running
+          <span className="ml-auto text-[0.714rem] opacity-80">View →</span>
+        </button>
+      )}
+
       {/* Auto-update banner — shown as soon as we know a version is available or downloaded */}
       <UpdateBanner
         version={updateVersion}
@@ -412,8 +461,9 @@ export default function Home() {
             {lastContentView === "calendar-all" && <CalendarView scope="workspace" />}
             {lastContentView === "flow"      && <IdeaFlowView />}
            {lastContentView === "graph"     && <KnowledgeGraphView />}
-           {lastContentView === "insights"  && <InsightsView />}
-           {lastContentView === "settings"  && <SettingsView />}
+            {lastContentView === "insights"  && <InsightsView />}
+            {lastContentView === "automations" && <AutomationsView />}
+            {lastContentView === "settings"  && <SettingsView />}
            {/* AgentView stays mounted to preserve terminal sessions and agent state.
                CSS-hidden when inactive so xterm + AgentChatPane refs survive view switches. */}
            <div className={lastContentView === "agent" ? "contents" : "hidden"}>
@@ -428,6 +478,11 @@ export default function Home() {
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}
       </div>
+
+      {/* Notification center popover (top-right, thin; navigable rows) */}
+      {notificationOpen && (
+        <NotificationCenter onClose={() => setNotificationOpen(false)} />
+      )}
 
       {/* IPC error toasts — bottom-right, auto-dismiss after 5s */}
       <ErrorToasts toasts={toasts} onDismiss={dismiss} />

@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays, Download, GitMerge, Check,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays, Download, GitMerge, Check, Zap, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -53,33 +53,39 @@ export function Sidebar() {
     workspaces, projects: allProjects, getWorkspaceProjects,
     setActiveProject, setView, toggleSearch, toggleChat,
     createProject, updateProject, deleteProject, mergeProject,
-    cards, chatOpen, searchOpen,
-    hiddenViews,
-    moveFolderToProject, moveCardToProject, moveNoteToProject,
-  } = useCairnStore(useShallow((s) => ({    sidebarCollapsed:    s.sidebarCollapsed,
-    toggleSidebar:       s.toggleSidebar,
-    activeWorkspaceId:   s.activeWorkspaceId,
-    activeProjectId:     s.activeProjectId,
-    activeView:          s.activeView,
-    workspaces:          s.workspaces,
-    projects:            s.projects,
-    getWorkspaceProjects: s.getWorkspaceProjects,
-    setActiveProject:    s.setActiveProject,
-    setView:             s.setView,
-    toggleSearch:        s.toggleSearch,
-    toggleChat:          s.toggleChat,
-    createProject:       s.createProject,
-    updateProject:       s.updateProject,
-    deleteProject:       s.deleteProject,
-    mergeProject:        s.mergeProject,
-    cards:               s.cards,
-    chatOpen:            s.chatOpen,
-    searchOpen:          s.searchOpen,
-    hiddenViews:         s.hiddenViews,
-    moveFolderToProject: s.moveFolderToProject,
-    moveCardToProject:   s.moveCardToProject,
-    moveNoteToProject:   s.moveNoteToProject,
-  })));
+     cards, chatOpen, searchOpen,
+     hiddenViews,
+     pendingApprovalCount,
+     notificationUnreadCount,
+     setNotificationOpen,
+     moveFolderToProject, moveCardToProject, moveNoteToProject,
+   } = useCairnStore(useShallow((s) => ({    sidebarCollapsed:    s.sidebarCollapsed,
+     toggleSidebar:       s.toggleSidebar,
+     activeWorkspaceId:   s.activeWorkspaceId,
+     activeProjectId:     s.activeProjectId,
+     activeView:          s.activeView,
+     workspaces:          s.workspaces,
+     projects:            s.projects,
+     getWorkspaceProjects: s.getWorkspaceProjects,
+     setActiveProject:    s.setActiveProject,
+     setView:             s.setView,
+     toggleSearch:        s.toggleSearch,
+     toggleChat:          s.toggleChat,
+     createProject:       s.createProject,
+     updateProject:       s.updateProject,
+     deleteProject:       s.deleteProject,
+     mergeProject:        s.mergeProject,
+     cards:               s.cards,
+     chatOpen:            s.chatOpen,
+     searchOpen:          s.searchOpen,
+     hiddenViews:         s.hiddenViews,
+     pendingApprovalCount: s.pendingApprovalCount,
+     notificationUnreadCount: s.notificationUnreadCount,
+     setNotificationOpen: s.setNotificationOpen,
+     moveFolderToProject: s.moveFolderToProject,
+     moveCardToProject:   s.moveCardToProject,
+     moveNoteToProject:   s.moveNoteToProject,
+   })));
 
   // All navigable views in order (overview + notes always first)
   const visibleNavItems = React.useMemo(
@@ -307,8 +313,23 @@ export function Sidebar() {
             )}
           </nav>
 
-          {/* Bottom nav: workspace-level views + Settings */}
+          {/* Bottom nav: Automations (prominent) + workspace views + Settings + Notifications */}
           <div className="border-t border-[var(--border)] p-2 space-y-0.5">
+            {/* Automations — most important, sits above the workspace views */}
+            <button onClick={() => { setView("automations"); closeSidebarOnMobile(); }}
+              className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+                activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              <Zap size={13} /><span>Automations</span>
+              {pendingApprovalCount > 0 && (
+                <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">
+                  {pendingApprovalCount}
+                </span>
+              )}
+            </button>
+
+            {/* Divider — separates Automations from the workspace views below */}
+            <div className="my-1.5 border-t border-[var(--border-subtle)]" />
+
             {visibleNavItems.filter((item) => !item.inProject).map((item) => (
               <button key={item.view} onClick={() => { setView(item.view); closeSidebarOnMobile(); }}
                 className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
@@ -319,6 +340,21 @@ export function Sidebar() {
                 )}
               </button>
             ))}
+            {/* Notifications */}
+            <button onClick={() => { setNotificationOpen(true); closeSidebarOnMobile(); }}
+              className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+                "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              <Bell size={13} /><span>Notifications</span>
+              {notificationUnreadCount > 0 && (
+                <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">
+                  {notificationUnreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Divider — Settings is always pinned to the very bottom */}
+            <div className="my-1.5 border-t border-[var(--border-subtle)]" />
+
             <button onClick={() => { setView("settings"); closeSidebarOnMobile(); }}
               className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
                 activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
