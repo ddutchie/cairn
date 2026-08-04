@@ -26,7 +26,7 @@ vi.mock("./llama-server", () => {
   };
 });
 
-import { callLocalLLMChat, isLocalLLMAvailable } from "./local-llm";
+import { callLocalLLMChat, isLocalLLMAvailable, streamLocalLLMChat, continueLocalLLMAfterReasoning, LOCAL_LLM_MAX_TOKENS } from "./local-llm";
 
 describe("Local LLM Router (Offline Local Llama/On-Device Router)", () => {
   beforeEach(() => {
@@ -132,10 +132,72 @@ describe("Local LLM Router (Offline Local Llama/On-Device Router)", () => {
       expect(body.model).toBe("gemma-4");
       expect(body.messages).toHaveLength(2);
       expect(body.tools).toBeDefined();
+      expect(body.max_tokens).toBe(LOCAL_LLM_MAX_TOKENS);
 
       expect(result).toEqual(mockResponse);
       const toolCall = result.choices[0].message.tool_calls[0];
       expect(toolCall.function.name).toBe("suggest_connections");
+    });
+
+    it("appends a continuation user message and returns the choice when content exhausts on reasoning", async () => {
+      const contResponse = {
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Final answer: ship it." }
+          }
+        ]
+      };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => contResponse
+      });
+      global.fetch = mockFetch;
+
+      const messages = [
+        { role: "system" as const, content: "sys" },
+        { role: "user" as const, content: "u" }
+      ];
+
+      const choice = await continueLocalLLMAfterReasoning(messages);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [, init] = mockFetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      // Continuation appends a non-reasoning instruction as the last user turn.
+      expect(body.messages).toHaveLength(3);
+      expect(body.messages[2].role).toBe("user");
+      expect(body.messages[2].content).toMatch(/final.*answer/i);
+      expect(body.max_tokens).toBe(LOCAL_LLM_MAX_TOKENS);
+      expect(choice).toEqual(contResponse.choices[0]);
+    });
+
+    it("returns null on a non-OK continuation response (length-exhaustion fallback degrades to reasoning)", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => "boom" });
+      global.fetch = mockFetch;
+      const choice = await continueLocalLLMAfterReasoning([{ role: "user", content: "x" }]);
+      expect(choice).toBeNull();
+    });
+  });
+
+  describe("streamLocalLLMChat", () => {
+    it("sets the on-device max_tokens floor on the streaming body", async () => {
+      const encoder = new TextEncoder();
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: { getReader: () => ({ read: async () => ({ done: true, value: undefined }) }) }
+      });
+      global.fetch = mockFetch;
+
+      const gen = streamLocalLLMChat([{ role: "user", content: "hi" }]);
+      // drain the generator
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _ of gen) { /* just drain */ }
+
+      const [, init] = mockFetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.max_tokens).toBe(LOCAL_LLM_MAX_TOKENS);
+      expect(body.stream).toBe(true);
     });
   });
 
