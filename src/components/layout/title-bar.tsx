@@ -90,17 +90,20 @@ export function TitleBar() {
         <button
           onClick={() => setNotificationOpen(true)}
           className={cn(
-            "relative flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+            "relative flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+            notificationUnreadCount > 0
+              ? "text-[var(--accent)] hover:bg-[var(--surface-2)]"
+              : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
           )}
-          title="Notifications"
-          aria-label="Notifications"
+          title={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
+          aria-label={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
         >
-          <Bell size={14} />
-          {notificationUnreadCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-0.5 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-3.5 text-center font-semibold">
-              {notificationUnreadCount > 9 ? "9+" : notificationUnreadCount}
-            </span>
-          )}
+          <Bell
+            size={14}
+            className={cn(
+              notificationUnreadCount > 0 && "animate-bell-wobble fill-[var(--accent)]"
+            )}
+          />
         </button>
         <SyncStatusIndicator />
       </div>

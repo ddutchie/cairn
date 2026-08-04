@@ -83,7 +83,7 @@ export async function runToolLoop(
 
     if (provider === "localllm") {
       try {
-        const { callLocalLLMChat } = await import("./local-llm");
+        const { callLocalLLMChat, continueLocalLLMAfterReasoning } = await import("./local-llm");
         const res = await callLocalLLMChat(messages, combinedTools);
         const choice = res.choices?.[0];
         if (!choice) return { exhausted: true, content: "No response from local Llama on-device model.", reasoning: "" };
@@ -114,6 +114,40 @@ export async function runToolLoop(
         // re-sending reasoning_content on assistant messages causes 400s).
         const { reasoning: _r, reasoning_content: _rc, ...msgWithoutReasoning } = rawMsg;
         assistantMsg = msgWithoutReasoning;
+
+        // Reasoning-budget recovery. Reasoning models (Qwen3.5-9B, Bonsai-27B,
+        // partly Gemma-4) can spend the entire `max_tokens` budget on
+        // chain-of-thought and return an empty `content` with
+        // `finish_reason: "length"`. Cairn's self-healing parser can only
+        // repair *present* content — an empty reply leaves the chat with
+        // nothing to show. When that happens we make one continuation call
+        // asking the model to emit only the final answer (no further
+        // reasoning). If the continuation still yields nothing, we fall back
+        // to surfacing the captured reasoning so the user sees something
+        // useful instead of a blank message. Skipped when the model already
+        // emitted tool calls (we want those executed, not retried).
+        const finishReason = choice.finish_reason;
+        const hasNoContent = !assistantMsg.content || !assistantMsg.content.trim();
+        const hasNoToolCalls = !assistantMsg.tool_calls?.length;
+        if (hasNoContent && hasNoToolCalls && finishReason === "length" && accumulatedReasoning) {
+          if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
+          try {
+            const contChoice = await continueLocalLLMAfterReasoning(messages, combinedTools, signal);
+            if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
+            const contContent = contChoice?.message?.content;
+            if (contContent && contContent.trim()) {
+              assistantMsg.content = contContent;
+            }
+          } catch {
+            // Cancellation aborts the continuation — surface the aborted result
+            // instead of running the reasoning fallback for a request nobody is
+            // waiting on. Other failures fall through to the reasoning fallback.
+            if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
+          }
+          if ((!assistantMsg.content || !assistantMsg.content.trim()) && accumulatedReasoning) {
+            assistantMsg.content = `*[This reasoning model exhausted its token budget before emitting a final answer. The captured reasoning is shown below.]*\n\n${accumulatedReasoning.trim()}`;
+          }
+        }
 
         // Self-Healing Parser for On-Device XML-style tool calls and tokenizers
         if (assistantMsg.content && assistantMsg.content.includes("<|tool_call>call:")) {

@@ -4,19 +4,51 @@
 // All are presentational (no local state, no effects, no store deps).
 
 import React from "react";
-import { FileText, Circle, Pin, LayoutDashboard } from "lucide-react";
+import { FileText, Circle, Pin, LayoutDashboard, Zap, Kanban } from "lucide-react";
 import { cn, formatRelative, getDueDateStatus, parseIsoLocal } from "@/lib/utils";
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
-import { revealColumn } from "@/lib/events";
+import { revealColumn, revealNote, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { useCairnStore } from "@/store";
 import type { TaskCard, Note, BoardColumn, AppUIState } from "@/types";
 import type { ActivityGroup } from "./useProjectMetrics";
+import type { AutomationRunWithAutomation } from "@/store/slices/automations";
 import { SectionHeader } from "./primitives";
+
+// Status → text colour, mirroring STATUS_COLOR in the Automations view detail
+// dialog so run rows read consistently across surfaces.
+const RUN_STATUS_COLOR: Record<AutomationRunWithAutomation["status"], string> = {
+  done: "text-[var(--ok)]",
+  running: "text-[var(--accent)]",
+  pending: "text-[var(--text-secondary)]",
+  skipped: "text-[var(--text-tertiary)]",
+  error: "text-[var(--danger)]",
+  denied: "text-[var(--danger)]",
+};
+
+interface RunArtifactRef { type: "note" | "task"; id: string; title: string }
+
+/** Notes/tasks a run created, parsed from its scratch JSON (set by the runner). */
+function runArtifacts(run: AutomationRunWithAutomation): RunArtifactRef[] {
+  if (!run.scratch) return [];
+  try {
+    const scratch = JSON.parse(run.scratch) as { artifacts?: RunArtifactRef[] };
+    return Array.isArray(scratch.artifacts) ? scratch.artifacts : [];
+  } catch {
+    return [];
+  }
+}
 
 // ── Column stats ────────────────────────────────────────────────────────────
 
-export function ColumnBreakdownCard({
+/**
+ * Health's column-flow view — ONE representation of the board distribution
+ * (replaces the old separate "By column" bars + Board pills, which duplicated
+ * the same columns/counts). Each column row shows a proportional bar (same
+ * COLUMN_COLORS as before), the count, and the top card titles so it doubles as
+ * the board snapshot. Rows are clickable to jump to the column.
+ */
+export function TaskFlowCard({
   columns, allCards, setView,
 }: {
   columns: BoardColumn[];
@@ -26,25 +58,75 @@ export function ColumnBreakdownCard({
   if (columns.length === 0) return null;
   return (
     <div>
-      <div className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">By column</div>
-      <div className="space-y-1.5">
+      <div className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">Task flow</div>
+      <div className="space-y-2">
         {columns.map((col) => {
-          const count = allCards.filter((c) => c.columnId === col.id).length;
-          const pct   = allCards.length > 0 ? (count / allCards.length) * 100 : 0;
+          const cards = allCards.filter((c) => c.columnId === col.id);
+          const pct   = allCards.length > 0 ? (cards.length / allCards.length) * 100 : 0;
           const color = COLUMN_COLORS[col.type] ?? COLUMN_COLORS.custom;
           return (
             <button key={col.id}
               onClick={() => revealColumn(setView, col.id)}
-              className="flex items-center gap-2.5 w-full group">
-              <span className="text-[0.786rem] text-[var(--text-tertiary)] w-20 text-right flex-shrink-0 group-hover:text-[var(--text-secondary)] transition-colors truncate">{col.name}</span>
-              <div className="flex-1 h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
+              className="flex items-start gap-2.5 w-full group text-left">
+              <span className="text-[0.786rem] text-[var(--text-tertiary)] w-20 text-right flex-shrink-0 group-hover:text-[var(--text-secondary)] transition-colors truncate pt-px">{col.name}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
+                </div>
+                <div className="flex gap-x-3 mt-1">
+                  {cards.slice(0, 2).map((c) => (
+                    <span key={c.id} className="text-[0.714rem] text-[var(--text-tertiary)] truncate">{c.title}</span>
+                  ))}
+                  {cards.length === 0 && <span className="text-[0.714rem] text-[var(--text-tertiary)]">—</span>}
+                </div>
               </div>
-              <span className="text-[0.786rem] tabular-nums text-[var(--text-tertiary)] w-5 text-right flex-shrink-0">{count}</span>
+              <span className="text-[0.786rem] tabular-nums text-[var(--text-tertiary)] w-5 text-right flex-shrink-0">{cards.length}</span>
             </button>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Collapsed mini-widgets (shown when a section is collapsed) ───────────────
+
+/**
+ * The Health section's collapsed representation: a thin stacked bar whose
+ * segments are the per-column distribution (same COLUMN_COLORS as the expanded
+ * breakdown), with a one-line done/open summary. Hovering a segment shows
+ * "Column: N". The note/overdue stats render alongside in the section's
+ * collapsed view.
+ */
+export function MiniHealthBar({
+  columns, allCards, doneCount,
+}: {
+  columns: BoardColumn[];
+  allCards: TaskCard[];
+  doneCount: number;
+}) {
+  if (allCards.length === 0) return null;
+  const segments = columns
+    .map((col) => {
+      const count = allCards.filter((c) => c.columnId === col.id).length;
+      return { id: col.id, name: col.name, count, color: COLUMN_COLORS[col.type] ?? COLUMN_COLORS.custom };
+    })
+    .filter((s) => s.count > 0);
+  const openCount = allCards.length - doneCount;
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex-1 flex h-2 rounded-full overflow-hidden bg-[var(--surface-2)]">
+        {segments.map((s) => (
+          <div
+            key={s.id}
+            title={`${s.name}: ${s.count}`}
+            style={{ width: `${(s.count / allCards.length) * 100}%`, backgroundColor: s.color }}
+          />
+        ))}
+      </div>
+      <span className="text-[0.714rem] tabular-nums text-[var(--text-secondary)] flex-shrink-0 whitespace-nowrap">
+        Done {doneCount} · Open {openCount}
+      </span>
     </div>
   );
 }
@@ -80,34 +162,6 @@ export function PriorityBreakdownCard({
         ))}
       </div>
     </div>
-  );
-}
-
-// ── Column pill ──────────────────────────────────────────────────────────────
-
-export function ColumnPill({ column, cards, onClick }: { column: BoardColumn; cards: TaskCard[]; onClick: () => void }) {
-  const color = COLUMN_COLORS[column.type] ?? COLUMN_COLORS.custom;
-  const isDone = column.type === "done";
-  const isInProgress = column.type === "in_progress";
-  return (
-    <button onClick={onClick}
-      className={cn("flex-1 min-w-[110px] max-w-[180px] rounded-xl border p-3 text-left transition-all hover:border-[var(--accent)]/40 hover:bg-[var(--surface-2)] flex-shrink-0",
-        isInProgress ? "border-[var(--warning)]/30 bg-[var(--surface)]" : "border-[var(--border)] bg-[var(--surface)]")}>
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-        <span className="text-[0.714rem] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider truncate">{column.name}</span>
-      </div>
-      <div className="text-xl font-bold mb-1.5 leading-none"
-        style={{ color: isDone ? "var(--success)" : isInProgress ? "var(--warning)" : "var(--text-primary)" }}>
-        {cards.length}
-      </div>
-      <div className="space-y-0.5">
-        {cards.slice(0, 2).map((c) => (
-          <div key={c.id} className="text-[0.75rem] text-[var(--text-tertiary)] truncate leading-snug">{c.title}</div>
-        ))}
-        {cards.length === 0 && <div className="text-[0.75rem] text-[var(--text-tertiary)]">—</div>}
-      </div>
-    </button>
   );
 }
 
@@ -148,28 +202,33 @@ export function DueCard({ card, columns, today, onClick }: { card: TaskCard; col
   );
 }
 
-// ── Pinned note card ────────────────────────────────────────────────────────
+// ── Pinned note row ─────────────────────────────────────────────────────────
 
+/**
+ * Pinned notes render as compact line items (matching Recent notes) but keep a
+ * pin accent so "pinned = important" reads at a glance: an accent bar on the
+ * left edge, a pin glyph, title + one-line snippet, tags, and relative time.
+ */
 export function PinnedNoteCard({ note, onClick }: { note: Note; onClick: () => void }) {
   const getTagById = useCairnStore((s) => s.getTagById);
   const noteTags = note.tagIds.slice(0, 2).map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
   return (
     <button onClick={onClick}
-      className="p-4 rounded-xl border border-[var(--accent)]/20 bg-[var(--surface)] hover:bg-[var(--surface-2)] text-left transition-all w-full group">
-      <div className="flex items-center gap-1 mb-2">
-        <Pin size={9} className="text-[var(--accent)]" />
-        <span className="text-[0.714rem] text-[var(--accent)] font-medium">Pinned</span>
-      </div>
-      <div className="text-sm font-semibold text-[var(--text-primary)] mb-1.5 truncate group-hover:text-[var(--accent)] transition-colors">{note.title}</div>
-      <div className="text-[11.5px] text-[var(--text-tertiary)] line-clamp-2 leading-relaxed mb-3">
-        {note.contentText.slice(0, 120) || (note.type === "dashboard" ? "Dashboard" : "Empty note")}
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
-        <div className="flex gap-1">
-          {noteTags.map((tag) => <Badge key={tag.id} color={tag.color}>{tag.name}</Badge>)}
+      className="flex items-center gap-3 w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--accent)]/40 hover:bg-[var(--surface-2)] transition-colors group text-left">
+      <div className="w-0.5 h-7 rounded-full bg-[var(--accent)] flex-shrink-0" />
+      <Pin size={11} className="text-[var(--accent)] flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors truncate">{note.title}</div>
+        <div className="text-[0.786rem] text-[var(--text-tertiary)] truncate">
+          {note.contentText.slice(0, 80) || (note.type === "dashboard" ? "Dashboard" : "Empty note")}
         </div>
       </div>
+      {noteTags.length > 0 && (
+        <div className="flex gap-1 flex-shrink-0">
+          {noteTags.map((tag) => <Badge key={tag.id} color={tag.color}>{tag.name}</Badge>)}
+        </div>
+      )}
+      <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(note.updatedAt)}</span>
     </button>
   );
 }
@@ -218,6 +277,74 @@ export function RecentActivityFeed({ activityByDay }: { activityByDay: ActivityG
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── Recent automation runs feed ─────────────────────────────────────────────
+
+/**
+ * Compact "recent run results" feed for the project Overview. Mirrors the
+ * `RecentActivityFeed` row pattern (icon + title + relative time) but adds:
+ *  - status-coloured status pill (matching the Automations view detail dialog)
+ *  - artifact chips (notes/tasks the run created) when present, clickable to
+ *    reveal the artifact — same `revealNote`/`revealCard` dispatch the rest of
+ *    the Overview uses.
+ *
+ * Data shape: `AutomationRunWithAutomation[]` (run row joined with its
+ * automation name + project). One row per run.
+ */
+export function RecentAutomationRunsFeed({
+  runs,
+  setView,
+}: {
+  runs: AutomationRunWithAutomation[];
+  setView: (v: AppUIState["activeView"]) => void;
+}) {
+  return (
+    <div className="space-y-0.5">
+      {runs.map((r) => {
+        const artifacts = runArtifacts(r);
+        const ts = r.finishedAt ?? r.startedAt;
+        return (
+          <div
+            key={r.id}
+            className="flex items-center gap-3 w-full px-2 py-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors group text-left"
+          >
+            <Zap size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+            <span className="flex-1 min-w-0 truncate text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
+              {r.automationName}
+            </span>
+            {artifacts.length > 0 && (
+              <div className="flex gap-1 flex-shrink-0">
+                {artifacts.slice(0, 2).map((art) => (
+                  <button
+                    key={art.id}
+                    onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
+                    title={`Open ${art.type === "note" ? "note" : "task"}`}
+                    className="inline-flex items-center gap-1 text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-32"
+                  >
+                    {art.type === "note"
+                      ? <FileText size={10} className="shrink-0" />
+                      : <Kanban size={10} className="shrink-0" />}
+                    <span className="truncate">{art.title}</span>
+                  </button>
+                ))}
+                {artifacts.length > 2 && (
+                  <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-shrink-0">+{artifacts.length - 2}</span>
+                )}
+              </div>
+            )}
+            {r.error && (
+              <span className="text-[0.714rem] text-[var(--danger)] flex-shrink-0 truncate max-w-40" title={r.error}>{r.error}</span>
+            )}
+            <span className={cn("text-[0.714rem] font-medium flex-shrink-0 capitalize", RUN_STATUS_COLOR[r.status])}>
+              {r.status}
+            </span>
+            <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(ts)}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -20,7 +20,7 @@ import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
-import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile, importVaultProjects } from "./notes-files";
+import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile, importVaultProjects, isImportPathExcluded } from "./notes-files";
 import { findNoteFilePath, noteDir } from "./shared/notes-io";
 import * as q from "./db/queries";
 
@@ -73,14 +73,15 @@ export function startFileWatcher(
   watcher = chokidar.watch(watchPath, {
     ignored: [
       /(^|[/\\])\./,              // dot-prefixed dirs/files (.obsidian, .trash, .git, etc.)
-      '**/assets/**',             // Cairn legacy asset folder
-      '**/attachments/**',        // Obsidian attachment folder
+      /(^|[/\\])assets([/\\]|$)/i,
+      /(^|[/\\])attachments([/\\]|$)/i,
+      /(^|[/\\])templates([/\\]|$)/i,
+      /\.excalidraw\.md$/i,
       /cairn\.db.*/,              // SQLite database files
-      '**/*.tmp',                 // Atomic write temp files
+      /\.tmp$/,                   // Atomic write temp files
     ],
     persistent: true,
     ignoreInitial: true,    // don't fire for files already on disk at startup
-    depth: 10,              // recurse into subfolders
     awaitWriteFinish: {
       stabilityThreshold: 200,
       pollInterval: 100,
@@ -199,7 +200,7 @@ function maybeImportVaultProjects(db: Database.Database, workspacePath: string):
 }
 
 function handleFileAdd(filePath: string, workspacePath: string, db: Database.Database, onChanged: () => void): void {
-  if (!filePath.endsWith(".md")) return;
+  if (isImportPathExcluded(workspacePath, filePath)) return;
   let note = parseNoteFile(filePath);
   const hadCairnId = note !== null;
   // Plain .md file with no Cairn frontmatter — try to adopt it.
@@ -226,7 +227,7 @@ function handleFileAdd(filePath: string, workspacePath: string, db: Database.Dat
 }
 
 function handleFileChange(filePath: string, workspacePath: string, db: Database.Database, onChanged: () => void): void {
-  if (!filePath.endsWith(".md")) return;
+  if (isImportPathExcluded(workspacePath, filePath)) return;
   let note = parseNoteFile(filePath);
   const hadCairnId = note !== null;
   // Plain .md file — try to adopt (e.g. frontmatter was stripped by external editor)
@@ -296,7 +297,10 @@ function idPresentInDir(dir: string, noteId: string): boolean {
 }
 
 function handleFileDelete(filePath: string, db: Database.Database, onChanged: () => void): void {
-  if (!filePath.endsWith(".md")) return;
+  if (!savedWorkspacePath || isImportPathExcluded(savedWorkspacePath, filePath)) {
+    pathToNoteId.delete(filePath);
+    return;
+  }
 
   // Look up the note ID from our path map (file is already gone from disk)
   const noteId = pathToNoteId.get(filePath);

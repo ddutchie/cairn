@@ -31,6 +31,31 @@ export interface OpenAIToolDef {
   function: { name: string; description: string; parameters: Record<string, unknown> };
 }
 
+export interface ExternalToolRequirement {
+  kind: "mcp" | "service";
+  name: string;
+}
+
+/** Normalized matching key: trimmed + lowercased (ids, names, catalog ids). */
+const normKey = (value: unknown): string => (typeof value === "string" ? value.trim().toLowerCase() : "");
+
+/**
+ * True when a connector matches a requirement by any of its identifiers —
+ * runtime id, display name, or catalog/community id — case-insensitively. This
+ * is the SINGLE matcher for both requirement tool-loading (filterRequiredConfigs)
+ * and status reporting (checkRequirements) so the two can never disagree about
+ * what "installed" means.
+ */
+function requirementMatches(
+  connector: { id: string; name: string; communityId?: string | null },
+  requirementName: string,
+): boolean {
+  const key = normKey(requirementName);
+  return normKey(connector.id) === key
+    || normKey(connector.name) === key
+    || normKey(connector.communityId) === key;
+}
+
 /** Map a stored MCP server config to the runtime config the client needs. */
 function toRuntimeConfig(s: {
   id: string;
@@ -110,7 +135,9 @@ export function filterDisabledMcpDefs(defs: OpenAIToolDef[], disabledTools: stri
   });
 }
 
-/** Load the in-scope MCP + service runtime configs for a project. */
+/**
+ * Load the in-scope MCP + service runtime configs for a project.
+ */
 function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId: string) {
   const rows = [
     ...q.getToolAttachments(db, GLOBAL_TOOL_SCOPE),
@@ -128,6 +155,63 @@ function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId
   return { mcpServers, customServices };
 }
 
+/** Restrict in-scope connectors to the names declared by a connector-aware recipe. */
+function filterRequiredConfigs(
+  configs: ReturnType<typeof loadScopedConfigs>,
+  requires: ExternalToolRequirement[],
+) {
+  return {
+    mcpServers: configs.mcpServers.filter((s) => requires.some((r) => r.kind === "mcp" && requirementMatches(s, r.name))),
+    customServices: configs.customServices.filter((s) => requires.some((r) => r.kind === "service" && requirementMatches(s, r.name))),
+  };
+}
+
+export interface RequirementStatus {
+  kind: "mcp" | "service";
+  name: string;
+  /** A matching connector is installed in the workspace (by catalog id or name). */
+  installed: boolean;
+  /** Installed AND enabled AND attached to the project (or globally). */
+  attached: boolean;
+}
+
+/**
+ * Resolve a list of recipe `requires` against what's actually installed and in
+ * scope for a project. Used by the New Automation browse step to show
+ * installed/attached status per required connector and warn when one is
+ * missing. A requirement matches a connector by its catalog id (`communityId`)
+ * or its display name, case-insensitively.
+ */
+export function checkRequirements(
+  db: Database.Database,
+  workspaceId: string,
+  projectId: string,
+  requires: Array<{ kind: "mcp" | "service"; name: string }>,
+): RequirementStatus[] {
+  const rows = [
+    ...q.getToolAttachments(db, GLOBAL_TOOL_SCOPE),
+    ...(projectId ? q.getToolAttachments(db, projectId) : []),
+  ] as AttachmentRow[];
+  const attached = resolveAttachedToolIds(rows);
+
+  const mcpServers = q.getMcpServers(db, workspaceId);
+  const customServices = q.getCustomServices(db, workspaceId);
+
+  return requires.map((req) => {
+    // Aggregate across every matching connector (by runtime id, name, or
+    // catalog id), not just the first — duplicate names must not make the
+    // reported status depend on row order.
+    const pool = req.kind === "mcp" ? mcpServers : customServices;
+    const matches = pool.filter((s) => requirementMatches(s, req.name));
+    return {
+      kind: req.kind,
+      name: req.name,
+      installed: matches.length > 0,
+      attached: matches.some((s) => s.enabled && attached[req.kind].has(s.id)),
+    };
+  });
+}
+
 /**
  * Build OpenAI tool defs for all external tools in scope for a project. MCP
  * servers are queried live (with the client's own error handling → []), so a
@@ -136,9 +220,13 @@ function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId
 export async function getExternalToolDefs(
   db: Database.Database,
   workspaceId: string,
-  projectId: string
+  projectId: string,
+  requires?: ExternalToolRequirement[],
 ): Promise<OpenAIToolDef[]> {
-  const { mcpServers, customServices } = loadScopedConfigs(db, workspaceId, projectId);
+  const scoped = loadScopedConfigs(db, workspaceId, projectId);
+  const { mcpServers, customServices } = requires
+    ? filterRequiredConfigs(scoped, requires)
+    : scoped;
 
   // Query each in-scope server independently so one unreachable / failing server
   // can't hide the tools of the healthy servers (or the custom services below).
@@ -321,4 +409,3 @@ export function externalToolLabel(name: string, db?: Database.Database): string 
   }
   return name;
 }
-

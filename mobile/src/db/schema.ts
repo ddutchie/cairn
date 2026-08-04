@@ -223,6 +223,7 @@ CREATE TABLE IF NOT EXISTS sync_oplog (
   entity_id  TEXT NOT NULL,
   op         TEXT NOT NULL,
   payload    TEXT,
+  observed   TEXT,
   applied_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_oplog_hlc    ON sync_oplog(hlc);
@@ -238,6 +239,17 @@ CREATE TABLE IF NOT EXISTS sync_pending (
 CREATE TABLE IF NOT EXISTS sync_state (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_row_base (
+  entity        TEXT NOT NULL,
+  entity_id     TEXT NOT NULL,
+  base_body     TEXT,
+  delete_hlc    TEXT,
+  delete_origin TEXT,
+  put_hlc       TEXT,
+  put_observed  TEXT,
+  PRIMARY KEY (entity, entity_id)
 );
 `;
 

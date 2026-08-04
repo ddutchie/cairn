@@ -44,6 +44,7 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
     <ContextMenu>
       <ContextMenuTrigger asChild>
       <div onClick={onClick}
+        data-note-id={note.id}
         draggable={!!onDragStart}
         onDragStart={(e) => { e.stopPropagation(); onDragStart?.(note.id); }}
         onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(); }}

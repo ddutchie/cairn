@@ -14,11 +14,12 @@
  */
 
 import type { SyncDb } from "./db-adapter";
-import { Hlc, compareHlc, decodeHlc } from "./hlc";
+import { Hlc, compareHlc, decodeHlc, encodeHlc } from "./hlc";
 import { SYNCABLE_TABLES, type SyncableTable } from "./schema";
 import { inspectConflict } from "./conflict";
 
 export type Op = "put" | "delete";
+export type ObservationFrontier = Record<string, string>;
 
 export interface OplogEntry {
   hlc: string;
@@ -27,6 +28,18 @@ export interface OplogEntry {
   entity_id: string;
   op: Op;
   payload: Record<string, unknown> | null; // full row snapshot for 'put'
+  /** Exact delete HLC observed for this target when the op was authored. */
+  observed?: ObservationFrontier;
+  /** Durable delete history carried by a compacted live put for late peers. */
+  tombstone?: { hlc: string; origin: string };
+}
+
+interface RowBase {
+  base_body: string | null;
+  delete_hlc: string | null;
+  delete_origin: string | null;
+  put_hlc: string | null;
+  put_observed: string | null;
 }
 
 /** JSON-array columns merged by set-union instead of last-writer-wins. */
@@ -80,33 +93,40 @@ export class SyncEngine {
     this.deviceId = deviceId;
 
     this.ensureBaseTable();
+    this.ensureOplogObservedColumn();
     const stored = this.getState("hlc");
     this.hlc = new Hlc(deviceId, { last: stored ?? undefined, now: opts?.now });
     this.setState("device_id", deviceId);
+    // One-time recovery/upgrade passes. Both are idempotent and read-only after
+    // the first run, so gate them behind a sync_state flag (mirrors `backfilled`)
+    // instead of re-scanning every table on every app start. Ops authored after
+    // the upgrade already write the observed/delete metadata on the live paths.
+    if (this.getState("recovery_done") !== "1") {
+      this.backfillDurableTombstones();
+      this.setState("recovery_done", "1");
+    }
     this.persistHlc();
   }
 
   /**
-   * Per-row conflict ancestor. Stores the body-column value at the last point
+   * Per-row sync metadata. Stores the body-column value at the last point
    * this device agreed with the remote lineage (the "common ancestor" from the
    * plan §5). A genuine body conflict is a classic 3-way disagreement: local
    * changed the body since the ancestor AND the incoming remote also changed it
    * AND the two differ. Recording the ancestor value (not just an HLC) avoids
    * false positives on one-sided edits, where only one side moved from the
-   * ancestor. Owned by the engine (created lazily) — no external migration.
+   * ancestor, plus durable delete and current-put causal metadata. The table is
+   * also created by platform migrations; this guard keeps older databases safe.
    */
   private ensureBaseTable(): void {
-    // An earlier iteration of this table had a NOT NULL `base_hlc` column
-    // instead of `base_body`. If we detect that legacy shape, drop it — its
-    // values are irrelevant to the current 3-way body-ancestor logic, and a
-    // null ancestor just means "unknown" (no conflict), re-established on the
-    // next sync. Dropping avoids the NOT NULL base_hlc breaking inserts.
+    // An early experimental shape had a NOT NULL `base_hlc` column. Rebuild only
+    // that obsolete shape because its constraint prevents additive upserts.
     const existing = this.db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sync_row_base'")
       .get();
     if (existing) {
       const cols = (this.db.prepare("PRAGMA table_info(sync_row_base)").all() as { name: string }[]).map((c) => c.name);
-      if (!cols.includes("base_body") || cols.includes("base_hlc")) {
+      if (cols.includes("base_hlc")) {
         this.db.prepare("DROP TABLE sync_row_base").run();
       }
     }
@@ -116,10 +136,30 @@ export class SyncEngine {
            entity     TEXT NOT NULL,
            entity_id  TEXT NOT NULL,
            base_body  TEXT,
+           delete_hlc TEXT,
+           delete_origin TEXT,
+           put_hlc TEXT,
+           put_observed TEXT,
            PRIMARY KEY (entity, entity_id)
          )`,
       )
       .run();
+
+    const cols = (this.db.prepare("PRAGMA table_info(sync_row_base)").all() as { name: string }[]).map((c) => c.name);
+    for (const [name, ddl] of [
+      ["base_body", "base_body TEXT"],
+      ["delete_hlc", "delete_hlc TEXT"],
+      ["delete_origin", "delete_origin TEXT"],
+      ["put_hlc", "put_hlc TEXT"],
+      ["put_observed", "put_observed TEXT"],
+    ] as const) {
+      if (!cols.includes(name)) this.db.prepare(`ALTER TABLE sync_row_base ADD COLUMN ${ddl}`).run();
+    }
+  }
+
+  private ensureOplogObservedColumn(): void {
+    const cols = (this.db.prepare("PRAGMA table_info(sync_oplog)").all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("observed")) this.db.prepare("ALTER TABLE sync_oplog ADD COLUMN observed TEXT").run();
   }
 
   /** The common-ancestor body value for a row, or undefined if none recorded. */
@@ -140,6 +180,64 @@ export class SyncEngine {
       .run(entity, id, val);
   }
 
+  private getRowBase(entity: string, id: string): RowBase | undefined {
+    return this.db
+      .prepare(
+        `SELECT base_body, delete_hlc, delete_origin, put_hlc, put_observed
+         FROM sync_row_base WHERE entity = ? AND entity_id = ?`,
+      )
+      .get(entity, id) as RowBase | undefined;
+  }
+
+  private setDeleteVersion(entity: string, id: string, deleteHlc: string, deleteOrigin: string): RowBase {
+    const current = this.getRowBase(entity, id);
+    if (!current?.delete_hlc || compareHlc(deleteHlc, current.delete_hlc) > 0) {
+      this.db
+        .prepare(
+          `INSERT INTO sync_row_base (entity, entity_id, delete_hlc, delete_origin)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(entity, entity_id) DO UPDATE SET
+             delete_hlc = excluded.delete_hlc,
+             delete_origin = excluded.delete_origin`,
+        )
+        .run(entity, id, deleteHlc, deleteOrigin);
+    }
+    return this.getRowBase(entity, id)!;
+  }
+
+  private setPutVersion(entity: string, id: string, putHlc: string, observed: ObservationFrontier): void {
+    this.db
+      .prepare(
+        `INSERT INTO sync_row_base (entity, entity_id, put_hlc, put_observed)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(entity, entity_id) DO UPDATE SET
+           put_hlc = excluded.put_hlc,
+           put_observed = excluded.put_observed`,
+      )
+      .run(entity, id, putHlc, JSON.stringify(observed));
+  }
+
+  private backfillDurableTombstones(): void {
+    for (const entity of SYNCABLE_TABLES) {
+      const exists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(entity);
+      if (!exists) continue;
+      const bodyCol = BODY_COLUMN[entity];
+      const rows = this.db
+        .prepare(`SELECT * FROM ${entity} WHERE deleted_at IS NOT NULL AND hlc IS NOT NULL`)
+        .all() as Array<Record<string, unknown> & { id: string; hlc: string }>;
+      for (const row of rows) {
+        if (bodyCol && this.getBaseBody(entity, row.id) === undefined) this.setBaseBody(entity, row.id, row[bodyCol]);
+        // A legacy/invalid row HLC must not throw here — it would abort the whole
+        // engine construction. Canonicalize the stamp exactly like backfill()
+        // does for live rows, then use it for both delete-state helpers.
+        const stamp = validStoredHlc(row.hlc)
+          ?? backfillStamp(row.updated_at, row.created_at, this.deviceId);
+        this.setDeleteVersion(entity, row.id, stamp, decodeHlc(stamp).deviceId);
+        this.markObservedDelete(entity, row.id, stamp);
+      }
+    }
+  }
+
   // ── sync_state helpers ────────────────────────────────────────────────
   private getState(key: string): string | null {
     const row = this.db.prepare("SELECT value FROM sync_state WHERE key = ?").get(key) as
@@ -156,6 +254,26 @@ export class SyncEngine {
 
   private persistHlc(): void {
     this.setState("hlc", this.hlc.getState());
+  }
+
+  private deleteObservationKey(entity: string, id: string): string {
+    return `delete:${entity}\u0000${id}`;
+  }
+
+  private markObservedDelete(entity: string, id: string, hlc: string): void {
+    const key = `observed-${this.deleteObservationKey(entity, id)}`;
+    const current = this.getState(key);
+    if (!current || compareHlc(hlc, current) > 0) this.setState(key, hlc);
+  }
+
+  private observationSnapshot(entity: string, id: string): ObservationFrontier {
+    const key = this.deleteObservationKey(entity, id);
+    const hlc = this.getState(`observed-${key}`);
+    return hlc ? { [key]: hlc } : {};
+  }
+
+  private observesDelete(frontier: ObservationFrontier | undefined, entity: string, id: string, hlc: string): boolean {
+    return frontier?.[this.deleteObservationKey(entity, id)] === hlc;
   }
 
   /** Enable/disable the capture-trigger suppression flag (see migration v26). */
@@ -201,6 +319,7 @@ export class SyncEngine {
       this.setSuppress(true); // our hlc/deleted_at writes below must not re-stage
       for (const { entity, entity_id, op } of latest.values()) {
         const stamp = this.hlc.send();
+        const observed = this.observationSnapshot(entity, entity_id);
         const row = readRow(this.db, entity, entity_id);
         if (op === "delete" || !row) {
           // Row gone (hard delete) or explicitly tombstoned.
@@ -217,12 +336,14 @@ export class SyncEngine {
           // the stale put stays dead. FK columns on the shell are placeholders;
           // the row is a tombstone and never read as live data.
           if ((upd.changes ?? 0) === 0) this.insertTombstoneShell(entity, entity_id, stamp);
-          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "delete", payload: null });
+          this.setDeleteVersion(entity, entity_id, stamp, this.deviceId);
+          this.markObservedDelete(entity, entity_id, stamp);
+          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "delete", payload: null, observed });
         } else {
           this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, entity_id);
           // Reuse the already-fetched row (with the new hlc) for the payload
           // instead of a second readRow SELECT — the UPDATE only changed hlc.
-          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "put", payload: { ...row, hlc: stamp } });
+          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "put", payload: { ...row, hlc: stamp }, observed });
         }
         // Establish the conflict ancestor the FIRST time a row is published, so
         // a fresh row has a baseline. We must NOT advance an existing ancestor
@@ -234,6 +355,7 @@ export class SyncEngine {
         if (bodyCol && row && this.getBaseBody(entity, entity_id) === undefined) {
           this.setBaseBody(entity, entity_id, row[bodyCol]);
         }
+        if (op === "put" && row) this.setPutVersion(entity, entity_id, stamp, observed);
       }
       this.db.prepare("DELETE FROM sync_pending WHERE seq <= ?").run(maxSeq);
       this.setSuppress(false);
@@ -280,10 +402,19 @@ export class SyncEngine {
         for (const row of rows) {
           const id = row.id as string;
           if (id == null) continue;
-          const stamp = this.hlc.send();
-          this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, id);
-          // Reuse the row we already SELECTed (with the new hlc) — no re-read.
-          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: id, op: "put", payload: { ...row, hlc: stamp } });
+          // Preserve an authoritative row HLC. Legacy rows without one get a
+          // deterministic ordering hint from updated_at/created_at, never from
+          // the current wall clock, and carry no causal delete observation.
+          const stamp = validStoredHlc(row.hlc)
+            ?? backfillStamp(row.updated_at, row.created_at, this.deviceId);
+          const origin = decodeHlc(stamp).deviceId;
+          this.hlc.receive(stamp);
+          if (row.hlc !== stamp) this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, id);
+          const observed: ObservationFrontier = {};
+          this.appendOplog({ hlc: stamp, origin, entity, entity_id: id, op: "put", payload: { ...row, hlc: stamp }, observed });
+          const bodyCol = BODY_COLUMN[entity];
+          if (bodyCol && this.getBaseBody(entity, id) === undefined) this.setBaseBody(entity, id, row[bodyCol]);
+          this.setPutVersion(entity, id, stamp, observed);
           seeded++;
         }
       }
@@ -307,6 +438,7 @@ export class SyncEngine {
    */
   put(entity: SyncableTable, values: Record<string, unknown> & { id: string }): string {
     const stamp = this.hlc.send();
+    const observed = this.observationSnapshot(entity, values.id);
     this.persistHlc();
     this.setSuppress(true); // direct API manages its own oplog; don't double-stage
     const existing = readRow(this.db, entity, values.id);
@@ -328,7 +460,7 @@ export class SyncEngine {
 
     // Read back the stored row so the payload includes any DB-applied column
     // defaults (e.g. status) that `merged` may have omitted.
-    this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: values.id, op: "put", payload: readRow(this.db, entity, values.id) ?? null });
+    this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: values.id, op: "put", payload: readRow(this.db, entity, values.id) ?? null, observed });
     // Establish the conflict ancestor the first time this row is published
     // (mirrors drainPending). Never advance an existing ancestor — a later
     // local edit must stay "changed vs ancestor" so a concurrent remote edit is
@@ -337,6 +469,7 @@ export class SyncEngine {
     if (bodyCol && this.getBaseBody(entity, values.id) === undefined) {
       this.setBaseBody(entity, values.id, merged[bodyCol]);
     }
+    this.setPutVersion(entity, values.id, stamp, observed);
     this.setSuppress(false);
     return stamp;
   }
@@ -344,10 +477,13 @@ export class SyncEngine {
   /** Tombstone a row locally and log it (delete-safe — the row is not removed). */
   remove(entity: SyncableTable, id: string): string {
     const stamp = this.hlc.send();
+    const observed = this.observationSnapshot(entity, id);
     this.persistHlc();
     this.setSuppress(true);
     this.db.prepare(`UPDATE ${entity} SET deleted_at = ?, hlc = ? WHERE id = ?`).run(nowIso(), stamp, id);
-    this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: id, op: "delete", payload: null });
+    this.setDeleteVersion(entity, id, stamp, this.deviceId);
+    this.markObservedDelete(entity, id, stamp);
+    this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: id, op: "delete", payload: null, observed });
     this.setSuppress(false);
     return stamp;
   }
@@ -355,10 +491,10 @@ export class SyncEngine {
   private appendOplog(e: OplogEntry): void {
     this.db
       .prepare(
-        `INSERT INTO sync_oplog (hlc, origin, entity, entity_id, op, payload, applied_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         `INSERT INTO sync_oplog (hlc, origin, entity, entity_id, op, payload, observed, applied_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(e.hlc, e.origin, e.entity, e.entity_id, e.op, e.payload ? JSON.stringify(e.payload) : null, nowIso());
+      .run(e.hlc, e.origin, e.entity, e.entity_id, e.op, e.payload ? JSON.stringify(e.payload) : null, e.observed ? JSON.stringify(e.observed) : null, nowIso());
   }
 
   // ── export / import ───────────────────────────────────────────────────
@@ -379,7 +515,7 @@ export class SyncEngine {
     // the engine's compareHlc in JS, then delete everything else by seq.
     const rows = this.db
       .prepare("SELECT seq, hlc, entity, entity_id FROM sync_oplog")
-      .all() as Array<{ seq: number; hlc: string; entity: string; entity_id: string }>;
+      .all() as Array<{ seq: number; hlc: string; entity: SyncableTable; entity_id: string }>;
     if (rows.length === 0) return 0;
 
     const winnerSeq = new Map<string, { seq: number; hlc: string }>();
@@ -390,6 +526,31 @@ export class SyncEngine {
       if (!cur || compareHlc(r.hlc, cur.hlc) > 0 || (compareHlc(r.hlc, cur.hlc) === 0 && r.seq > cur.seq)) {
         winnerSeq.set(key, { seq: r.seq, hlc: r.hlc });
       }
+    }
+
+    // Raw HLC order is not the policy winner for delete/put races. Prefer the
+    // op whose HLC matches the reconciled row; rejected higher-clock puts must
+    // never evict the durable delete from the published compacted oplog.
+    // Pre-group the rows by their winner key once so this loop's per-winner
+    // scan is O(distinct rows) instead of a quadratic filter over the whole
+    // oplog (which dominates before the first compaction).
+    const byKey = new Map<string, Array<{ seq: number; hlc: string; entity: SyncableTable; entity_id: string }>>();
+    for (const r of rows) {
+      const k = `${r.entity}\u0000${r.entity_id}`;
+      const list = byKey.get(k);
+      if (list) list.push(r); else byKey.set(k, [r]);
+    }
+    for (const [key, winner] of winnerSeq) {
+      const split = key.indexOf("\u0000");
+      const entity = key.slice(0, split) as SyncableTable;
+      const entityId = key.slice(split + 1);
+      const row = readRow(this.db, entity, entityId);
+      const effectiveHlc = typeof row?.hlc === "string" ? row.hlc : this.getRowBase(entity, entityId)?.delete_hlc;
+      if (!effectiveHlc || effectiveHlc === winner.hlc) continue;
+      const policyRow = (byKey.get(key) ?? [])
+        .filter((r) => r.hlc === effectiveHlc)
+        .sort((a, b) => b.seq - a.seq)[0];
+      if (policyRow) winnerSeq.set(key, { seq: policyRow.seq, hlc: policyRow.hlc });
     }
 
     const keep = new Set<number>([...winnerSeq.values()].map((w) => w.seq));
@@ -423,15 +584,16 @@ export class SyncEngine {
       entity_id: string;
       op: Op;
       payload: string | null;
+      observed: string | null;
     }>;
-    return rows.map((r) => ({
-      hlc: r.hlc,
-      origin: r.origin,
-      entity: r.entity,
-      entity_id: r.entity_id,
-      op: r.op,
-      payload: r.payload ? (JSON.parse(r.payload) as Record<string, unknown>) : null,
-    }));
+    return rows.map((r) => {
+      const base = this.getRowBase(r.entity, r.entity_id);
+      const observed = parseFrontier(r.observed);
+      const tombstone = r.op === "put" && base?.delete_hlc && base.delete_origin
+        ? { hlc: base.delete_hlc, origin: base.delete_origin }
+        : undefined;
+      return { ...r, payload: r.payload ? (JSON.parse(r.payload) as Record<string, unknown>) : null, observed, tombstone };
+    });
   }
 
   /**
@@ -470,6 +632,7 @@ export class SyncEngine {
         // keeping the loop alive. Skipping makes the un-sync self-healing.
         if (!(SYNCABLE_TABLES as readonly string[]).includes(entry.entity)) continue;
         this.hlc.receive(entry.hlc);
+        if (entry.op === "delete") this.markObservedDelete(entry.entity, entry.entity_id, entry.hlc);
         const res = this.reconcileOne(entry);
         if (res.applied) applied.push({ entity: entry.entity, entity_id: entry.entity_id, op: entry.op });
         if (res.conflictCopyId) conflictCopies.push(res.conflictCopyId);
@@ -486,9 +649,78 @@ export class SyncEngine {
   }
 
   private reconcileOne(entry: OplogEntry): { applied: boolean; conflictCopyId: string | null } {
-    const { entity, entity_id, op, hlc } = entry;
+    const { entity, entity_id, op, hlc, origin, observed } = entry;
     const local = readRow(this.db, entity, entity_id);
     const localHlc = (local?.hlc as string | undefined) ?? null;
+    if (op === "put" && entry.tombstone) {
+      this.setDeleteVersion(entity, entity_id, entry.tombstone.hlc, entry.tombstone.origin);
+      this.markObservedDelete(entity, entity_id, entry.tombstone.hlc);
+    }
+    const rowBase = this.getRowBase(entity, entity_id);
+
+    // Delete/put races are causal, not wall-clock LWW. A put may revive only
+    // when its author had observed the durable delete; a delete may remove a
+    // live row unless that row's winning put had already observed this delete.
+    // Missing metadata from an older client is intentionally not proof.
+    if (op === "put" && rowBase?.delete_hlc && rowBase.delete_origin) {
+      const isAfterDelete = compareHlc(hlc, rowBase.delete_hlc) > 0
+        && this.observesDelete(observed, entity, entity_id, rowBase.delete_hlc);
+      if (!isAfterDelete) {
+        this.recordForwardedOp(entry);
+        const conflictCopyId = this.preserveRejectedNotePut(entity, entity_id, entry.payload, origin, hlc);
+        return { applied: false, conflictCopyId };
+      }
+
+      // A compacted legitimate revival can arrive after this peer already
+      // accepted an unobserved stale put with a higher wall-clock HLC. The newly
+      // learned tombstone invalidates that local lineage despite raw HLC order.
+      if (local && !local.deleted_at && localHlc && compareHlc(localHlc, hlc) > 0) {
+        const localObserved = rowBase.put_hlc === localHlc ? parseFrontier(rowBase.put_observed) : undefined;
+        if (!this.observesDelete(localObserved, entity, entity_id, rowBase.delete_hlc)) {
+          const conflictCopyId = this.preserveRejectedNotePut(
+            entity,
+            entity_id,
+            local,
+            decodeHlc(localHlc).deviceId,
+            localHlc,
+          );
+          this.recordForwardedOp(entry);
+          this.writeRow(entity, this.mergeForPut(entity, undefined, entry.payload ?? {}, hlc));
+          this.setPutVersion(entity, entity_id, hlc, observed ?? {});
+          const bodyCol = BODY_COLUMN[entity];
+          if (bodyCol) this.setBaseBody(entity, entity_id, entry.payload?.[bodyCol]);
+          return { applied: true, conflictCopyId };
+        }
+      }
+    }
+
+    if (op === "delete" && local && !local.deleted_at) {
+      if (rowBase?.delete_hlc && compareHlc(hlc, rowBase.delete_hlc) < 0) {
+        this.recordForwardedOp(entry);
+        return { applied: false, conflictCopyId: null };
+      }
+      const localObserved = rowBase?.put_hlc === localHlc ? parseFrontier(rowBase.put_observed) : undefined;
+      if (localObserved && this.observesDelete(localObserved, entity, entity_id, hlc)) {
+        this.setDeleteVersion(entity, entity_id, hlc, origin);
+        this.recordForwardedOp(entry);
+        return { applied: false, conflictCopyId: null };
+      }
+
+      // The delete wins even when a stale peer's unobserved put has the higher
+      // raw HLC. Preserve its divergent note body before tombstoning the row.
+      const conflictCopyId = this.preserveRejectedNotePut(
+        entity,
+        entity_id,
+        local,
+        localHlc ? decodeHlc(localHlc).deviceId : this.deviceId,
+        localHlc ?? hlc,
+      );
+      this.recordForwardedOp(entry);
+      this.setDeleteVersion(entity, entity_id, hlc, origin);
+      this.markObservedDelete(entity, entity_id, hlc);
+      this.db.prepare(`UPDATE ${entity} SET deleted_at = ?, hlc = ? WHERE id = ?`).run(nowIso(), hlc, entity_id);
+      return { applied: true, conflictCopyId };
+    }
 
     // Idempotency / staleness guard: never let an older op overwrite a newer row.
     if (localHlc && compareHlc(hlc, localHlc) <= 0) {
@@ -512,6 +744,8 @@ export class SyncEngine {
     this.recordForwardedOp(entry);
 
     if (op === "delete") {
+      this.setDeleteVersion(entity, entity_id, hlc, origin);
+      this.markObservedDelete(entity, entity_id, hlc);
       if (local) {
         this.db.prepare(`UPDATE ${entity} SET deleted_at = ?, hlc = ? WHERE id = ?`).run(nowIso(), hlc, entity_id);
       } else {
@@ -573,12 +807,15 @@ export class SyncEngine {
     // reading a stale earlier subset still converges on the next round.
     if (local && this.unionChangedBeyondRemote(entity, remote, merged)) {
       const stamp = this.hlc.send();
+      const nextObserved = this.observationSnapshot(entity, entity_id);
       this.persistHlc();
       merged.hlc = stamp;
       this.writeRow(entity, merged);
-      this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: entity_id, op: "put", payload: readRow(this.db, entity, entity_id) ?? null });
+      this.setPutVersion(entity, entity_id, stamp, nextObserved);
+      this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: entity_id, op: "put", payload: readRow(this.db, entity, entity_id) ?? null, observed: nextObserved });
     } else {
       this.writeRow(entity, merged);
+      this.setPutVersion(entity, entity_id, hlc, observed ?? {});
     }
     // The merged body is now the value both sides agree on → new ancestor.
     if (bodyCol) this.setBaseBody(entity, entity_id, merged[bodyCol]);
@@ -670,7 +907,37 @@ export class SyncEngine {
     clone.hlc = stamp;
     clone.deleted_at = null;
     this.writeRow(entity, clone);
-    this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: copyId, op: "put", payload: readRow(this.db, entity, copyId) ?? null });
+    const observed = this.observationSnapshot(entity, copyId);
+    this.setPutVersion(entity, copyId, stamp, observed);
+    this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: copyId, op: "put", payload: readRow(this.db, entity, copyId) ?? null, observed });
+    return copyId;
+  }
+
+  private preserveRejectedNotePut(
+    entity: SyncableTable,
+    entityId: string,
+    row: Record<string, unknown> | null,
+    losingOrigin: string,
+    losingHlc: string,
+  ): string | null {
+    const bodyCol = BODY_COLUMN[entity];
+    if (!bodyCol || !row || inspectConflict(entityId).isConflict) return null;
+    const body = row[bodyCol];
+    const ancestor = this.getBaseBody(entity, entityId);
+    if (ancestor !== undefined && body === ancestor) return null;
+
+    const parts = decodeHlc(losingHlc);
+    const suffix = parts.physical.toString(16) + parts.counter.toString(16).padStart(4, "0");
+    const copyId = `${entityId}_conflict_${losingOrigin}_${suffix}`;
+    if (readRow(this.db, entity, copyId)) return null;
+
+    const stamp = this.hlc.send();
+    const observed = this.observationSnapshot(entity, copyId);
+    const clone: Record<string, unknown> = { ...row, id: copyId, hlc: stamp, deleted_at: null };
+    clone.title = `${row.title ?? "Untitled"} (conflicted copy — ${losingOrigin})`;
+    this.writeRow(entity, clone);
+    this.setPutVersion(entity, copyId, stamp, observed);
+    this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: copyId, op: "put", payload: readRow(this.db, entity, copyId) ?? null, observed });
     return copyId;
   }
 
@@ -684,6 +951,37 @@ export class SyncEngine {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function validStoredHlc(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    decodeHlc(value);
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function backfillStamp(updatedAt: unknown, createdAt: unknown, deviceId: string): string {
+  const updated = typeof updatedAt === "string" ? Date.parse(updatedAt) : NaN;
+  const created = typeof createdAt === "string" ? Date.parse(createdAt) : NaN;
+  const physical = Number.isFinite(updated) && updated >= 0
+    ? updated
+    : Number.isFinite(created) && created >= 0 ? created : 0;
+  return encodeHlc({ physical, counter: 0, deviceId });
+}
+
+function parseFrontier(value: string | null | undefined): ObservationFrontier | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+    const entries = Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+    return Object.fromEntries(entries);
+  } catch {
+    return undefined;
+  }
 }
 
 function db_cols_notnull(db: SyncDb, table: string): Array<{ name: string; dflt: unknown }> {

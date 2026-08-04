@@ -398,6 +398,31 @@ select:focus {
   animation: cairn-indeterminate 1.4s ease-in-out infinite;
 }
 
+/* Unread-notification bell wobble — a brief shake at the start of each cycle,
+   then rest, so the attention cue reads without a constant jitter. Pivots near
+   the bell's hanger so it swings like a real bell. */
+@keyframes bell-wobble {
+  0%   { transform: rotate(0deg); }
+  8%   { transform: rotate(-14deg); }
+  18%  { transform: rotate(12deg); }
+  28%  { transform: rotate(-9deg); }
+  38%  { transform: rotate(6deg); }
+  48%  { transform: rotate(-3deg); }
+  58%  { transform: rotate(0deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.animate-bell-wobble {
+  animation: bell-wobble 2.8s ease-in-out infinite;
+  transform-origin: 50% 25%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-bell-wobble {
+    animation: none;
+  }
+}
+
 .chat-panel-responsive {
   width: 100vw;
   height: 100dvh;

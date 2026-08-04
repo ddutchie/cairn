@@ -20,6 +20,7 @@ import {
 } from "react-native-cloud-store";
 import type { OplogEntry } from "@cairn/shared/sync/engine";
 import { parseWorkspaceIdFromOplogName } from "@cairn/shared/sync/oplog-name";
+import { isOplogEntry } from "@cairn/shared/sync/oplog-guard";
 
 /** This device's oplog file for a given source workspace. */
 function oplogFileName(deviceId: string, workspaceId: string): string {
@@ -49,7 +50,8 @@ function parseNdjson(text: string): OplogEntry[] {
     const t = line.trim();
     if (!t) continue;
     try {
-      out.push(JSON.parse(t) as OplogEntry);
+      const parsed = JSON.parse(t) as unknown;
+      if (isOplogEntry(parsed)) out.push(parsed);
     } catch {
       // skip partial/corrupt lines
     }

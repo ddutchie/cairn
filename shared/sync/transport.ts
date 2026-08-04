@@ -23,28 +23,12 @@ import os from "os";
 import path from "path";
 import type { OplogEntry } from "./engine";
 import { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName } from "./oplog-name";
+import { isOplogEntry } from "./oplog-guard";
 
 // Re-export the pure filename helpers so existing importers of "./transport"
 // keep working; the definitions live in the Node-free ./oplog-name module so
 // the React-Native mobile transport can share them without pulling in fs/path.
 export { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName };
-
-const OPS = new Set(["put", "delete"]);
-
-/** Structural guard so only well-formed entries reach applyRemote. */
-function isOplogEntry(v: unknown): v is OplogEntry {
-  if (typeof v !== "object" || v === null) return false;
-  const e = v as Record<string, unknown>;
-  return (
-    typeof e.hlc === "string" &&
-    typeof e.origin === "string" &&
-    typeof e.entity === "string" &&
-    typeof e.entity_id === "string" &&
-    typeof e.op === "string" &&
-    OPS.has(e.op) &&
-    (e.payload === null || (typeof e.payload === "object" && e.payload !== null))
-  );
-}
 
 /** Serialise entries to the ndjson body written to disk (trailing newline when non-empty). */
 function serializeOplog(entries: OplogEntry[]): string {

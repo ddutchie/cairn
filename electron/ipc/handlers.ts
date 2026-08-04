@@ -48,7 +48,7 @@ import { registerSettingsHandlers } from "./settings-handlers";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
 import * as q from "../db/queries";
-import { writeNoteFile, deleteNoteFile, importVaultProjects, syncNotesFromDisk } from "../notes-files";
+import { writeNoteFile, deleteNoteFile, importVaultProjects, previewVaultImport, saveImportExclusions, syncNotesFromDisk } from "../notes-files";
 import { suppressNextChange } from "../file-watcher";
 import { getProjectName } from "./result-helpers";
 import { broadcastEvent } from "./registry";
@@ -93,9 +93,7 @@ export function registerAppHandlers(
         properties: ["openDirectory", "createDirectory"],
       });
       if (result.canceled || result.filePaths.length === 0) return null;
-      const chosen = result.filePaths[0];
-      writeWorkspaceConfig(userDataPath, chosen);
-      return chosen;
+      return result.filePaths[0];
     });
   });
 
@@ -142,12 +140,16 @@ export function registerAppHandlers(
     mergeThemeFile({ accent });
   }));
 
-  registerIpcHandle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => handle(async () => {
-    writeWorkspaceConfig(userDataPath, newPath);
+  registerIpcHandle("app:initWorkspace", (_e, { workspacePath: newPath, excludedFolders }: { workspacePath: string; excludedFolders?: string[] }) => handle(async () => {
+    // Complete the filesystem setup BEFORE persisting the workspace path: if
+    // mkdir / exclusion config / re-init fails, the old workspace stays the
+    // active one rather than committing a half-initialised path.
     fs.mkdirSync(newPath, { recursive: true });
+    if (Array.isArray(excludedFolders)) saveImportExclusions(newPath, excludedFolders);
     if (onReinitialise) {
       await onReinitialise(newPath);
     }
+    writeWorkspaceConfig(userDataPath, newPath);
     return { ok: true };
   }));
 
@@ -162,7 +164,8 @@ export function registerAppHandlers(
   // discovered projects attach to it — the caller (onboarding) knows the id of
   // the workspace it just created. When omitted, importVaultProjects falls back
   // to the oldest workspace.
-  registerIpcHandle("app:rescanWorkspace", (_e, { workspaceId }: { workspaceId?: string } = {}) => handle(() => {
+  registerIpcHandle("app:rescanWorkspace", (_e, { workspaceId, excludedFolders }: { workspaceId?: string; excludedFolders?: string[] } = {}) => handle(() => {
+    if (Array.isArray(excludedFolders)) saveImportExclusions(ctx.workspacePath, excludedFolders);
     // Snapshot the live project ids BEFORE the scan so we can report exactly
     // which projects the import newly created (for the onboarding summary).
     const beforeIds = new Set(
@@ -199,30 +202,16 @@ export function registerAppHandlers(
     return { projectsCreated: created, createdProjects };
   }));
 
-  // Read-only probe of a folder the user is about to adopt as a workspace. Used
-  // by onboarding to surface "Obsidian vault detected" on the folder-select
-  // step. Cheap: checks for a `.obsidian` dir and counts top-level markdown /
-  // folders without recursing the whole tree.
+  // Read-only recursive preview of a folder before onboarding adopts it. No
+  // frontmatter or config is written until rescanWorkspace is confirmed.
   registerIpcHandle("app:probeWorkspaceFolder", (_e, { folder }: { folder: string }) => handle(() => {
-    const result = { isObsidianVault: false, markdownCount: 0, folderCount: 0 };
-    if (!folder || typeof folder !== "string") return result;
-    try {
-      result.isObsidianVault = fs.existsSync(path.join(folder, ".obsidian"));
-      const SKIP = new Set(["assets", "attachments"]);
-      for (const entry of fs.readdirSync(folder)) {
-        if (entry.startsWith(".")) continue;
-        let stat: fs.Stats;
-        try { stat = fs.lstatSync(path.join(folder, entry)); } catch { continue; }
-        if (stat.isDirectory()) {
-          if (!SKIP.has(entry)) result.folderCount++;
-        } else if (entry.endsWith(".md") && !entry.endsWith(".md.tmp")) {
-          result.markdownCount++;
-        }
-      }
-    } catch {
-      // Unreadable folder — return the zeroed default rather than throwing.
+    // A blank/non-string folder must not reach previewVaultImport — its
+    // path.join("", ".obsidian") would resolve against the process CWD and could
+    // misreport an unrelated directory as a vault. Return a literal empty preview.
+    if (!folder || typeof folder !== "string") {
+      return { isObsidianVault: false, vaultName: "Notes", noteCount: 0, skippedCount: 0, projects: [], excludedFolders: [] };
     }
-    return result;
+    return previewVaultImport(folder);
   }));
 
   // ── App paths (for MCP config generation) ─────────

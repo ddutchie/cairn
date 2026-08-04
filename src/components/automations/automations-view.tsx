@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity, FileText, Kanban, Sparkles } from "lucide-react";
+import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity, FileText, Kanban, Sparkles, Plug } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ import { ScheduleBuilder } from "./schedule-builder";
 import { BrowseAutomationsContent } from "./browse-automations";
 import { TimePicker } from "@/components/ui/time-picker";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
-import type { RegistryAutomationEntry } from "@/types";
+import type { RegistryAutomationEntry, RegistryRequirement, McpServerConfig, CustomServiceConfig } from "@/types";
 
 function formatRelative(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -119,6 +119,8 @@ export function AutomationsView() {
   const [activeHoursStart, setActiveHoursStart] = useState("");
   const [activeHoursEnd, setActiveHoursEnd] = useState("");
   const [scheduleValid, setScheduleValid] = useState(true);
+  /** External connectors the automation needs in scope (from a community recipe). */
+  const [requires, setRequires] = useState<RegistryRequirement[]>([]);
 
   const wsProjects = useMemo(
     () => (activeWorkspaceId ? projects.filter((p) => p.workspaceId === activeWorkspaceId && !p.archivedAt) : []),
@@ -161,6 +163,7 @@ export function AutomationsView() {
     setApprovalMode("auto");
     setActiveHoursStart("");
     setActiveHoursEnd("");
+    setRequires([]);
     setDialogOpen(true);
   }
 
@@ -174,9 +177,13 @@ export function AutomationsView() {
     setExpr(def.schedule.expr);
     setTimezone(def.schedule.timezone ?? "");
     setMaxRuns(def.maxRuns !== undefined ? String(def.maxRuns) : "");
-    setApprovalMode(def.approvalMode ?? "auto");
+    // Connector-aware recipes default to 'ask' — external tool calls stay gated
+    // behind the approval inbox (never auto-approved side effects), regardless
+    // of the recipe's own approvalMode hint.
+    setApprovalMode(def.approvalMode ?? (def.requires?.length ? "ask" : "auto"));
     setActiveHoursStart("");
     setActiveHoursEnd("");
+    setRequires(def.requires ?? []);
     setPrefillNonce((n) => n + 1);
   }
 
@@ -192,6 +199,7 @@ export function AutomationsView() {
     setApprovalMode(a.approvalMode);
     setActiveHoursStart(a.activeHoursStart ?? "");
     setActiveHoursEnd(a.activeHoursEnd ?? "");
+    setRequires(a.requires ?? []);
     setDialogOpen(true);
   }
 
@@ -216,6 +224,7 @@ export function AutomationsView() {
       approvalMode,
       activeHoursStart: activeHoursStart.trim() || null,
       activeHoursEnd: activeHoursEnd.trim() || null,
+      requires,
       ...(communityEntry ? { source: "community" as const, communityId: communityEntry.id } : {}),
     };
     if (editing) {
@@ -275,6 +284,15 @@ export function AutomationsView() {
                     {a.projectId && projectName.has(a.projectId) && (
                       <span className="text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--accent-dim)] text-[var(--accent)] max-w-40 truncate">
                         {projectName.get(a.projectId)}
+                      </span>
+                    )}
+                    {a.requires.length > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1 text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-secondary)]"
+                        title={`Needs: ${a.requires.map((r) => r.name).join(", ")}`}
+                      >
+                        <Plug size={9} />
+                        {a.requires.map((r) => r.name).join(", ")}
                       </span>
                     )}
                   </div>
@@ -354,6 +372,9 @@ export function AutomationsView() {
           scheduleValid={scheduleValid}
           onScheduleValidityChange={setScheduleValid}
           projects={wsProjects}
+          activeWorkspaceId={activeWorkspaceId ?? ""}
+          requires={requires}
+          setRequires={setRequires}
           onPick={prefillFromCommunity}
           scheduleKey={`${editing?.id ?? "new"}-${prefillNonce}`}
           onSave={() => void save()}
@@ -389,6 +410,10 @@ interface AutomationDialogProps {
   scheduleValid: boolean;
   onScheduleValidityChange: (valid: boolean) => void;
   projects: Array<{ id: string; name: string }>;
+  /** Workspace the automation runs in — used for connector status checks in browse. */
+  activeWorkspaceId: string;
+  requires: RegistryRequirement[];
+  setRequires: (r: RegistryRequirement[]) => void;
   onSave: () => void;
   /** Called when a community recipe is chosen (pre-fills the form). */
   onPick: (entry: RegistryAutomationEntry) => void;
@@ -405,9 +430,49 @@ function AutomationDialog({
   activeHoursStart, setActiveHoursStart, activeHoursEnd, setActiveHoursEnd,
   scheduleValid, onScheduleValidityChange,
   projects,
+  activeWorkspaceId, requires, setRequires,
   onSave, onPick, scheduleKey,
 }: AutomationDialogProps) {
   const [browse, setBrowse] = useState(false);
+  // Installed + enabled connectors (MCP servers / HTTP services) in the active
+  // workspace, offered as toggleable "requires" for the automation. Retains the
+  // catalog id (communityId) alongside the display name because a recipe
+  // requirement may name either; without it a display-name-only match renders an
+  // imported catalog requirement as unchecked and lets duplicates slip in.
+  type ConnectorOption = { id: string; kind: "mcp" | "service"; name: string; communityId?: string };
+  const [connectors, setConnectors] = useState<ConnectorOption[]>([]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    let cancelled = false;
+    void Promise.all([
+      window.electron?.tools.listMcpServers(activeWorkspaceId).catch(() => []) as Promise<McpServerConfig[]>,
+      window.electron?.tools.listServices(activeWorkspaceId).catch(() => []) as Promise<CustomServiceConfig[]>,
+    ]).then(([mcps, svcs]) => {
+      if (cancelled) return;
+      setConnectors([
+        ...mcps.filter((m) => m.enabled).map((m) => ({ id: m.id, kind: "mcp" as const, name: m.name, communityId: m.communityId })),
+        ...svcs.filter((s) => s.enabled).map((s) => ({ id: s.id, kind: "service" as const, name: s.name, communityId: s.communityId })),
+      ]);
+    });
+    return () => { cancelled = true; };
+  }, [activeWorkspaceId]);
+
+  // Single matcher for both checked-state and removal so a requirement can never
+  // be added twice (or left stuck) when one of its identifiers matches.
+  const matchesRequirement = (r: { kind: "mcp" | "service"; name: string }, c: ConnectorOption) =>
+    r.kind === c.kind &&
+    [c.communityId, c.name].some((value) => value?.toLowerCase() === r.name.toLowerCase());
+
+  const toggleConnector = (c: ConnectorOption) => {
+    const has = requires.some((r) => matchesRequirement(r, c));
+    setRequires(
+      has
+        ? requires.filter((r) => !matchesRequirement(r, c))
+        : [...requires, { kind: c.kind, name: c.communityId ?? c.name }],
+    );
+  };
+
   return (
     <ModalShell
       open={open}
@@ -432,6 +497,8 @@ function AutomationDialog({
         <BrowseAutomationsContent
           onPick={(entry) => { onPick(entry); setBrowse(false); }}
           onBack={() => setBrowse(false)}
+          workspaceId={activeWorkspaceId}
+          projectId={projectId}
         />
       ) : (
         <div className="space-y-4">
@@ -508,9 +575,61 @@ function AutomationDialog({
           <span className="text-[0.714rem] text-[var(--text-tertiary)]">
             {approvalMode === "ask"
               ? "Write actions park in the approval inbox and the run waits for your decision."
-              : "Only data tools run — no shell or file edits either way."}
+              : requires.length > 0
+                ? "External connector calls are still gated behind the approval inbox — only data tools run freely."
+                : "Only data tools run — no shell or file edits either way."}
           </span>
         </label>
+        {requires.length > 0 && (
+          <div className="rounded-md border border-[color-mix(in_srgb,var(--accent)_35%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] px-3 py-2 text-[0.714rem] text-[var(--text-secondary)] flex items-center gap-2">
+            <Plug size={12} className="text-[var(--accent)] shrink-0" />
+            <span>
+              This automation needs its attached connectors to run. Runs are offered
+              the project&apos;s attached MCP/service tools, and every external call
+              waits for your approval.
+            </span>
+          </div>
+        )}
+
+        <div className="block space-y-1">
+          <span className="text-xs text-[var(--text-secondary)]">Connectors (optional)</span>
+          {connectors.length === 0 ? (
+            <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+              No enabled connectors in this workspace. Add one under Settings → Tools → Browse Community, then it can appear here.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-1">
+                {connectors.map((c) => {
+                  const selected = requires.some((r) => matchesRequirement(r, c));
+                  return (
+                    <label
+                      key={`${c.kind}:${c.id}`}
+                      className={cn(
+                        "flex items-center gap-2 rounded border px-2 py-1.5 cursor-pointer transition-colors",
+                        selected ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]" : "border-[var(--border)] hover:border-[var(--text-tertiary)]"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleConnector(c)}
+                        className="accent-[var(--accent)]"
+                      />
+                      <span className="text-xs text-[var(--text-primary)] truncate">{c.name}</span>
+                      <span className="text-[0.65rem] uppercase tracking-wide text-[var(--text-tertiary)] ml-auto border border-[var(--border)] rounded px-1 py-px">
+                        {c.kind === "mcp" ? "MCP" : "HTTP"}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+                Selected connectors are offered to the run, but only if they&apos;re enabled and attached to the chosen project (Settings → Tools) will their tools actually appear. External calls always wait for your approval.
+              </p>
+            </>
+          )}
+        </div>
         </div>
       )}
     </ModalShell>
@@ -598,6 +717,9 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
             <InfoRow label="Total runs" value={`${automation.runCount}${automation.maxRuns ? ` / max ${automation.maxRuns}` : ""}`} />
             <InfoRow label="Approval" value={automation.approvalMode === "ask" ? "Ask" : "Auto"} />
             <InfoRow label="Status" value={automation.enabled ? "Enabled" : "Disabled"} />
+            {automation.requires.length > 0 && (
+              <InfoRow label="Needs" value={automation.requires.map((r) => r.name).join(", ")} />
+            )}
             {automation.timezone && <InfoRow label="Timezone" value={automation.timezone} />}
           </div>
 

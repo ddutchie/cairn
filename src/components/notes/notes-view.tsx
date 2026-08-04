@@ -438,16 +438,42 @@ export function NotesView() {
     return () => window.removeEventListener("cairn:new-note", handler);
   }, []);
 
-  // Deep-link from search/overview
+  // Deep-link from search/overview: select the note, reveal + expand its folder
+  // in the sidebar tree, and scroll it into view. Any collapsed ancestor folder
+  // is expanded so the note is actually visible in the hierarchy.
   useEffect(() => {
     const handler = (e: Event) => {
       const { noteId } = (e as CustomEvent).detail;
       setActiveNoteId(noteId);
       setMobileShowEditor(true);
+      // A deep link should land on the note in the normal tree — clear any
+      // filter/tag so it isn't hidden.
+      setFilter("");
+      setActiveTagId(null);
+
+      const note = notes.find((n) => n.id === noteId);
+      if (note && note.folder && activeProjectId) {
+        // Expand every ancestor folder (setNotesFolderCollapsed(false) is
+        // idempotent — collapsed folders open, open ones stay open).
+        const parts = note.folder.split("/").filter(Boolean);
+        let path = "";
+        for (const part of parts) {
+          path = path ? `${path}/${part}` : part;
+          setNotesFolderCollapsed(activeProjectId, path, false);
+        }
+      }
+
+      // Wait a couple of frames so the tree re-renders with the expanded
+      // folders (and the note's row exists) before scrolling it into view.
+      const scroll = () => {
+        const el = sidebarRef.current?.querySelector(`[data-note-id="${CSS.escape(noteId)}"]`);
+        el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      };
+      requestAnimationFrame(() => requestAnimationFrame(scroll));
     };
     window.addEventListener("cairn:select-note", handler);
     return () => window.removeEventListener("cairn:select-note", handler);
-  }, []);
+  }, [setNotesFolderCollapsed, notes, activeProjectId]);
 
   // Deep-link from graph: filter by tag
   useEffect(() => {

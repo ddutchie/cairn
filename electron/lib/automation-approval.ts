@@ -28,6 +28,15 @@ export const APPROVAL_POLL_MS = 1_000;
 /** Read-only tool names are never gated — they can't change state. */
 const READ_TOOL_PREFIXES = ["get_", "list_", "search_"];
 
+/**
+ * True for external-tool names (namespaced MCP `mcp__…` / service `svc__…`
+ * calls). Mirrors isExternalToolName in external-tools.ts — kept local so the
+ * policy module stays dependency-light (no pull of the MCP client stack).
+ */
+export function isExternalTool(name: string): boolean {
+  return /^(?:mcp|svc)__/.test(name);
+}
+
 export function isReadTool(name: string): boolean {
   return READ_TOOL_PREFIXES.some((p) => name.startsWith(p));
 }
@@ -63,17 +72,29 @@ export function waitForApproval(db: Database.Database, itemId: string, timeoutMs
 export type ApprovalGate = (name: string, args: Record<string, unknown>) => Promise<{ allow: boolean; reason?: string }>;
 
 /**
- * Build the approval gate for an automation. Returns undefined in 'auto' mode
- * (run freely) or for read-only-only concerns. In 'ask' mode, write tools park
- * a durable approval item (idempotent per run+tool+args) and block until the
- * user resolves it; denied/timeout fail closed.
+ * Build the approval gate for an automation. Returns undefined when there is
+ * nothing to gate.
+ *
+ *   - 'ask' mode (regardless of requires): every non-read tool parks a durable
+ *     approval item and blocks until the user resolves it.
+ *   - 'auto' mode + a connector-aware automation (declares `requires`): external
+ *     MCP/service tool calls are STILL gated behind the approval inbox — external
+ *     side effects are never auto-approved. Built-in data tools run freely.
+ *
+ * Denied/timeout fail closed.
  */
 export function makeApprovalGate(db: Database.Database, run: AutomationRun, automation: Automation): ApprovalGate | undefined {
-  if (automation.approvalMode !== "ask") {
+  const connectorAware = (automation.requires ?? []).length > 0;
+  const gateAllWrites = automation.approvalMode === "ask";
+  const gateExternalOnly = !gateAllWrites && connectorAware;
+  if (!gateAllWrites && !gateExternalOnly) {
     return undefined;
   }
   return async (name: string, args: Record<string, unknown>): Promise<{ allow: boolean; reason?: string }> => {
     if (isReadTool(name)) return { allow: true };
+    // In auto mode only EXTERNAL tools are gated — built-in data tools (the
+    // data-only toolset) still run freely.
+    if (gateExternalOnly && !isExternalTool(name)) return { allow: true };
     const item = parkApproval(db, {
       runId: run.id,
       sessionId: run.id,

@@ -877,6 +877,46 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_approval_items_run   ON approval_items(run_id);
     `);
   },
+
+  // v34: Sync Phase 1 delete-wins metadata. `sync_row_base` remains the
+  // common-ancestor store for note conflict detection and now also owns durable
+  // delete/current-put causal metadata independently of domain tombstone rows.
+  // `observed` carries exact target-delete observations authored with each op.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sync_row_base (
+        entity       TEXT NOT NULL,
+        entity_id    TEXT NOT NULL,
+        base_body    TEXT,
+        delete_hlc   TEXT,
+        delete_origin TEXT,
+        put_hlc      TEXT,
+        put_observed TEXT,
+        PRIMARY KEY (entity, entity_id)
+      );
+    `);
+    const baseCols = (db.prepare("PRAGMA table_info(sync_row_base)").all() as { name: string }[]).map((c) => c.name);
+    for (const [name, ddl] of [
+      ["base_body", "base_body TEXT"],
+      ["delete_hlc", "delete_hlc TEXT"],
+      ["delete_origin", "delete_origin TEXT"],
+      ["put_hlc", "put_hlc TEXT"],
+      ["put_observed", "put_observed TEXT"],
+    ] as const) {
+      if (!baseCols.includes(name)) db.exec(`ALTER TABLE sync_row_base ADD COLUMN ${ddl}`);
+    }
+    const oplogCols = (db.prepare("PRAGMA table_info(sync_oplog)").all() as { name: string }[]).map((c) => c.name);
+    if (!oplogCols.includes("observed")) db.exec("ALTER TABLE sync_oplog ADD COLUMN observed TEXT");
+  },
+
+  // v35: Connector-aware automations — `automations.requires` column
+  // (JSON [{kind:'mcp'|'service', name}], NULL = data-only recipe). Added
+  // AFTER v32 shipped so databases already at v32+ (which ran the automations
+  // CREATE TABLE without this column) get it appended here, idempotently.
+  (db) => {
+    const cols = (db.prepare("PRAGMA table_info(automations)").all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("requires")) db.exec("ALTER TABLE automations ADD COLUMN requires TEXT");
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -911,6 +951,7 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "approval_mode", "approval_mode TEXT NOT NULL DEFAULT 'auto'");
   ensure("automations", "active_hours_start", "active_hours_start TEXT");
   ensure("automations", "active_hours_end", "active_hours_end TEXT");
+  ensure("automations", "requires", "requires TEXT");
   ensure("mcp_notifications", "target_type", "target_type TEXT");
   ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");

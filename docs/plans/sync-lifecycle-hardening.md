@@ -1,6 +1,6 @@
 # Sync Lifecycle Hardening — Delete/Resurrection & Stale-Peer Safety
 
-Status: Draft / plan
+Status: Phases 1–3 implemented; Phase 4 outstanding
 Owner: —
 Date: 2026-07-24
 Related: `shared/sync/engine.ts`, `shared/sync/hlc.ts`, `mobile/src/db/queries.ts`, `electron/db/queries.ts`, `electron/sync/desktop-sync.ts`, `docs/plans/mobile-app-viability.md` (§4–§5)
@@ -113,7 +113,7 @@ is silently lost.
 ## 4. Work plan (phased)
 
 ### Phase 1 — Delete-wins reconciliation (fixes Symptom 2)
-- **1a.** Add a durable tombstone record keyed by (entity, entity_id) storing `delete_hlc`
+- **1a.** ✅ Add a durable tombstone record keyed by (entity, entity_id) storing `delete_hlc`
   (persisted independently of the row, so a compacted/absent row still carries the delete
   fact). Engine-owned table: **`sync_row_base`**.
   - **Ownership.** The table is owned by the sync engine, not the domain schema. It is
@@ -133,11 +133,11 @@ is silently lost.
     record are treated as "no recorded delete" (adapter returns `null`), so pre-migration
     data degrades gracefully rather than erroring. The adapter must **create** the row base
     on delete, **access** it in `reconcileOne`, and **preserve** it across compaction.
-- **1b.** In `reconcileOne`, gate `put`-over-tombstone on causal-after semantics (§3). Add
+- **1b.** ✅ In `reconcileOne`, gate `put`-over-tombstone on causal-after semantics (§3). Add
   the mirror gate for `delete`-over-live.
-- **1c.** Preserve losing content as a conflict copy when delete wins over a divergent put
+- **1c.** ✅ Preserve losing content as a conflict copy when delete wins over a divergent put
   (no silent loss).
-- **Tests:** stale-peer put with higher wall-clock HLC must NOT resurrect a deleted note;
+- **Tests:** ✅ stale-peer put with higher wall-clock HLC must NOT resurrect a deleted note;
   legitimate edit-after-observed-delete MUST revive.
 
 ### Phase 2 — Unify delete representation (fixes Symptom 1 root) ✅ DONE
@@ -159,16 +159,16 @@ is silently lost.
   Phase 1 concern — the durable tombstone this phase provides is the prerequisite.)
 
 ### Phase 3 — Backfill causality safety
-- **3a.** `backfill()` must **not** mint fresh HLCs that could leapfrog a peer's delete.
+- **3a.** ✅ `backfill()` must **not** mint fresh HLCs that could leapfrog a peer's delete.
   Preserve each row's **existing `hlc`** in the seeded op wherever one exists — the stored
   HLC is the only authoritative causal stamp. Only where a pre-existing row has *no* HLC at
   all may backfill derive a placeholder from the row's `updated_at` (never `Date.now()`).
-- **3b.** An `updated_at`-derived backfill stamp is a **best-effort ordering hint only** and
+- **3b.** ✅ An `updated_at`-derived backfill stamp is a **best-effort ordering hint only** and
   must be explicitly prohibited from counting as authoritative causal evidence in the §3
   delete-wins test: a backfilled op carrying such a derived stamp must **not** be treated as
   having observed a peer's delete (its observation token is empty/unknown), so it can never
   resurrect a tombstoned row. Only a genuine, HLC-carrying, observation-tokened op can.
-- **Tests:** a device backfilling old rows cannot resurrect a note another device already
+- **Tests:** ✅ a device backfilling old rows cannot resurrect a note another device already
   deleted.
 
 ### Phase 4 — Visibility & recovery (defensive, ships alongside)

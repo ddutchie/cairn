@@ -416,6 +416,13 @@ export interface ProvidersFetchResult {
   error?: string;
 }
 
+/** An external connector (MCP server / HTTP service) a recipe needs in scope. */
+export interface RegistryRequirement {
+  kind: "mcp" | "service";
+  /** Matches the connector's catalog id (slug) or display name, case-insensitive. */
+  name: string;
+}
+
 /** A community automation recipe that pre-fills the New Automation form. */
 export interface RegistryAutomationDefinition {
   /** Display name prefilled into the automation. */
@@ -431,6 +438,12 @@ export interface RegistryAutomationDefinition {
   };
   approvalMode?: "auto" | "ask";
   maxRuns?: number;
+  /**
+   * External connectors the recipe needs in scope. When present the automation
+   * is connector-aware: runs get the project's attached external tools and
+   * external tool calls default to the approval inbox (never auto-approved).
+   */
+  requires?: RegistryRequirement[];
 }
 
 export interface RegistryAutomationEntry extends RegistryEntryMeta {

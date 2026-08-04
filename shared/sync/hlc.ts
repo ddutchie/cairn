@@ -27,6 +27,11 @@ const PHYSICAL_HEX_WIDTH = 12; // ms fits in 12 hex digits until year ~10889
 const COUNTER_HEX_WIDTH = 4; // up to 65535 events per physical ms
 const MAX_COUNTER = 0xffff;
 
+// Fixed-width validation patterns — widths are module constants (never derived
+// from input), so these are safe to build once and reuse across every decode.
+const PHYSICAL_RE = new RegExp(`^[0-9a-f]{${PHYSICAL_HEX_WIDTH}}$`);
+const COUNTER_RE = new RegExp(`^[0-9a-f]{${COUNTER_HEX_WIDTH}}$`);
+
 export function encodeHlc(parts: HlcParts): string {
   const p = parts.physical.toString(16).padStart(PHYSICAL_HEX_WIDTH, "0");
   const c = parts.counter.toString(16).padStart(COUNTER_HEX_WIDTH, "0");
@@ -37,7 +42,10 @@ export function decodeHlc(stamp: string): HlcParts {
   const [p, c, ...rest] = stamp.split(":");
   // Validate before parsing: a malformed stamp must fail loudly rather than
   // silently yielding NaN, which would corrupt compareHlc ordering.
-  if (!/^[0-9a-f]+$/i.test(p ?? "") || !/^[0-9a-f]+$/i.test(c ?? "") || rest.length === 0) {
+  const deviceId = rest.join(":");
+  if (!PHYSICAL_RE.test(p ?? "")
+    || !COUNTER_RE.test(c ?? "")
+    || deviceId.length === 0) {
     throw new Error(`Malformed HLC stamp: ${JSON.stringify(stamp)}`);
   }
   const physical = parseInt(p, 16);
@@ -48,7 +56,7 @@ export function decodeHlc(stamp: string): HlcParts {
   return {
     physical,
     counter,
-    deviceId: rest.join(":"),
+    deviceId,
   };
 }
 

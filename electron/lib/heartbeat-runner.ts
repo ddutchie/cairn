@@ -22,7 +22,7 @@ import type { OpenAIMessage } from "./llm";
 import { runToolLoop } from "./chat-loop";
 import { getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
-import { buildSystemPrompt, type ChatRequest } from "./tools";
+import { buildSystemPrompt, TOOLS, type ChatRequest } from "./tools";
 import { insertNotification } from "../mcp/db";
 import {
   bumpAutomationRunCount,
@@ -35,6 +35,7 @@ import {
   type AutomationRun,
 } from "../db/automation-queries";
 import { makeApprovalGate } from "./automation-approval";
+import { getExternalToolDefs, checkRequirements } from "./external-tools";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -99,6 +100,31 @@ export async function runAutomation(
     return;
   }
 
+  // Connector-aware automation: every declared connector must actually be
+  // installed AND enabled + attached (project or global scope), else the run
+  // cannot deliver the tools the recipe promises. Fail up front with a
+  // connector-specific message instead of silently running without them — a
+  // detached connector would otherwise degrade to a data-only run and surprise
+  // the user when its expected side effects never happen.
+  const requires = automation.requires ?? [];
+  if (requires.length > 0) {
+    const statuses = checkRequirements(db, automation.workspaceId, automation.projectId ?? "", requires);
+    const unavailable = statuses.filter((s) => !s.installed || !s.attached);
+    if (unavailable.length > 0) {
+      const detail = unavailable
+        .map((s) => `${s.name} (${s.kind})${s.installed ? " — not attached to this project" : " — not installed"}`)
+        .join(", ");
+      const label = `required connector${unavailable.length > 1 ? "s" : ""} unavailable`;
+      updateAutomationRun(db, run.id, {
+        status: "skipped",
+        finishedAt: new Date().toISOString(),
+        error: `${label}: ${detail}`,
+      });
+      insertNotification(db, "automation_run", `Automation skipped: "${automation.name}"`, `Skipped — ${label}: ${detail}`);
+      return;
+    }
+  }
+
   const apiKey = resolveLlmApiKey(cached.apiKey);
   const provider = (cached.provider ?? (isLocal(cached.baseUrl) ? "localllm" : "openai")) as "openai" | "localllm";
   const abortCtrl = new AbortController();
@@ -121,6 +147,39 @@ export async function runAutomation(
     { role: "system", content: buildSystemPrompt(req) },
     { role: "user", content: automation.instructions },
   ];
+
+  // Connector-aware automation: load the project's attached external tools
+  // (MCP servers / custom services) and offer them to the loop as extraTools.
+  // getExternalToolDefs filters to enabled + project/global-attached connectors,
+  // so a missing/attached-only requirement simply contributes no tools and the
+  // agent works with what's actually in scope. External calls stay gated behind
+  // the approval inbox by makeApprovalGate (never auto-approved side effects).
+  // A connector-load failure is NOT degraded away: the recipe declared these
+  // connectors as required, so a run that can't assemble their tools is failed
+  // up front rather than silently continuing with built-in tools only.
+  // The cast mirrors chat.ts/pi-agent-loop: external defs are OpenAIToolDef[]
+  // (open tool-name strings), the loop's extraTools slot is the typed TOOLS.
+  let extraTools: typeof TOOLS | undefined;
+  if ((automation.requires ?? []).length > 0) {
+    try {
+      extraTools = (await getExternalToolDefs(
+        db,
+        automation.workspaceId,
+        automation.projectId ?? "",
+        automation.requires,
+      )) as unknown as typeof TOOLS;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[heartbeat] failed to assemble external tools:", err);
+      updateAutomationRun(db, run.id, {
+        status: "error",
+        finishedAt: new Date().toISOString(),
+        error: `Failed to load required connector tools: ${message}`,
+      });
+      insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, `Failed to load required connector tools: ${message}`);
+      return;
+    }
+  }
 
   // Report the tool currently executing into the run's scratch JSON so the
   // Automations view can show a live "running: <tool>" chip while the run is
@@ -177,7 +236,7 @@ export async function runAutomation(
     (e) => recordArtifact(e.tool, e.cairnRef), // emitToolCallDone — collect created/changed notes/cards
     undefined,                       // onToken
     undefined,                       // onThought
-    undefined,                       // extraTools
+    extraTools,                      // connector-aware recipes get their attached external tools
     undefined,                       // toolsOverride
     undefined,                       // argMutator
     makeApprovalGate(db, run, automation),

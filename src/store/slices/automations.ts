@@ -9,7 +9,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ID } from "@/types";
+import type { ID, RegistryRequirement } from "@/types";
 import { id } from "@/lib/utils";
 
 export type ScheduleKind = "cron" | "every" | "once";
@@ -32,6 +32,11 @@ export interface Automation {
   activeHoursStart: string | null;
   activeHoursEnd: string | null;
   standingRules: Array<{ tool: string; target?: string }>;
+  /**
+   * External connectors (MCP servers / HTTP services) the automation needs in
+   * scope. Empty = data-only automation.
+   */
+  requires: RegistryRequirement[];
   source: "custom" | "community";
   communityId: ID | null;
   createdAt: string;
@@ -52,6 +57,17 @@ export interface AutomationRun {
   createdAt: string;
 }
 
+/**
+ * A run joined with its parent automation's name + project (mirrors
+ * `AutomationRunWithAutomation` in `electron/db/automation-queries.ts`).
+ * Used by the project Overview's "Recent run results" feed so each row can
+ * show the automation name without an N+1 lookup.
+ */
+export interface AutomationRunWithAutomation extends AutomationRun {
+  automationName: string;
+  automationProjectId: ID | null;
+}
+
 export interface AutomationInput {
   workspaceId: ID;
   projectId?: ID | null;
@@ -69,6 +85,7 @@ export interface AutomationInput {
   activeHoursStart?: string | null;
   activeHoursEnd?: string | null;
   standingRules?: Array<{ tool: string; target?: string }>;
+  requires?: RegistryRequirement[];
   /** Provenance when prefilled from the cairn-community catalog. */
   source?: "custom" | "community";
   communityId?: ID | null;
@@ -101,6 +118,12 @@ export interface AutomationsSlice {
   lastRuns: Record<ID, AutomationRun | undefined>;
   /** Full run history per automation (loaded for the detail view). */
   runsById: Record<ID, AutomationRun[]>;
+  /**
+   * Recent runs across automations scoped to the active project (joined with
+   * automation name). Driven by the project Overview's "Recent run results"
+   * feed. Empty until `fetchRecentProjectRuns` is called on Overview mount.
+   */
+  recentProjectRuns: AutomationRunWithAutomation[];
   /** Pending approval items (parked by 'ask'-mode runs), newest first. */
   pendingApprovals: ApprovalItem[];
   /** Live pending-approval count for the sidebar badge. */
@@ -115,6 +138,7 @@ export interface AutomationsSlice {
   runNow: (id: ID) => Promise<boolean>;
   fetchRun: (automationId: ID) => Promise<AutomationRun | undefined>;
   fetchRuns: (automationId: ID, limit?: number) => Promise<void>;
+  fetchRecentProjectRuns: (workspaceId: ID, projectId: ID, limit?: number) => Promise<void>;
   fetchPendingApprovals: () => Promise<void>;
   fetchApprovalCount: () => Promise<void>;
   fetchRunningCount: () => Promise<void>;
@@ -137,6 +161,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   automations: [],
   lastRuns: {},
   runsById: {},
+  recentProjectRuns: [],
   pendingApprovals: [],
   pendingApprovalCount: 0,
   runningAutomationCount: 0,
@@ -233,6 +258,24 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
       set((s) => ({ runsById: { ...s.runsById, [automationId]: runs } }));
     } catch (err) {
       console.error("[automations] fetchRuns error", err);
+    }
+  },
+
+  async fetchRecentProjectRuns(workspaceId, projectId, limit = 8) {
+    if (typeof window === "undefined" || !window.electron?.automation) return;
+    // Clear the previous project's rows immediately so the Overview never shows
+    // stale runs while the new project's fetch is in flight (or if it fails).
+    if (get().activeWorkspaceId === workspaceId && get().activeProjectId === projectId) {
+      set({ recentProjectRuns: [] });
+    }
+    try {
+      const rows = (await window.electron.automation.recentRuns(workspaceId, projectId, limit)) as AutomationRunWithAutomation[];
+      // Guard against a stale fetch landing after the user switched projects
+      // (or workspaces).
+      if (get().activeWorkspaceId !== workspaceId || get().activeProjectId !== projectId) return;
+      set({ recentProjectRuns: rows });
+    } catch (err) {
+      console.error("[automations] fetchRecentProjectRuns error", err);
     }
   },
 

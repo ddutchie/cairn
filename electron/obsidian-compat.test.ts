@@ -26,6 +26,9 @@ import {
   adoptExternalNoteFile,
   syncNotesFromDisk,
   importVaultProjects,
+  previewVaultImport,
+  saveImportExclusions,
+  isImportPathExcluded,
 } from "./notes-files";
 import type { NoteData } from "./notes-files";
 
@@ -669,6 +672,154 @@ describe("importVaultProjects auto-creates projects from folders", () => {
     expect(projects.map((p) => p.name)).toEqual(["Real"]);
   });
 
+  it("previews importable projects recursively without modifying vault files", () => {
+    writePlainMdFile(path.join(tmpDir, "Research", "papers"), "Paper.md", "# Paper\n");
+    writePlainMdFile(path.join(tmpDir, "templates"), "Meeting.md", "# Template\n");
+    writePlainMdFile(path.join(tmpDir, "Research"), "Drawing.excalidraw.md", "scene data\n");
+    writePlainMdFile(tmpDir, "Inbox.md", "# Inbox\n");
+    const before = fs.readFileSync(path.join(tmpDir, "Research", "papers", "Paper.md"), "utf-8");
+
+    const preview = previewVaultImport(tmpDir);
+
+    expect(preview.noteCount).toBe(2);
+    expect(preview.skippedCount).toBe(2);
+    expect(preview.projects).toEqual([
+      { name: path.basename(tmpDir), noteCount: 1, root: true, projectKey: toSlug(path.basename(tmpDir)) },
+      { name: "Research", noteCount: 1, root: false, projectKey: toSlug("Research") },
+    ]);
+    expect(fs.readFileSync(path.join(tmpDir, "Research", "papers", "Paper.md"), "utf-8")).toBe(before);
+  });
+
+  it("uses project keys so preview counts match slug-collapsed imports", () => {
+    const vaultName = path.basename(tmpDir);
+    writePlainMdFile(tmpDir, "Root.md", "# Root\n");
+    writePlainMdFile(path.join(tmpDir, vaultName), "Nested.md", "# Nested\n");
+
+    const preview = previewVaultImport(tmpDir);
+
+    expect(preview.projects).toHaveLength(2);
+    expect(new Set(preview.projects.map((project) => project.projectKey)).size).toBe(1);
+  });
+
+  it("skips a non-Obsidian notes/ folder with only nested .md files in the preview", () => {
+    // Regression: the preview must not promise a nonzero import for a `notes/`
+    // tree the scan would skip (no direct .md files and not an Obsidian vault).
+    writePlainMdFile(path.join(tmpDir, "notes", "sub"), "Deep.md", "# Deep\n");
+
+    const preview = previewVaultImport(tmpDir);
+
+    expect(preview.projects.some((project) => project.name === "notes")).toBe(false);
+    expect(preview.noteCount).toBe(0);
+  });
+
+  it("skips templates and Excalidraw files without stamping frontmatter", () => {
+    seedWorkspaceOnly();
+    const template = writePlainMdFile(path.join(tmpDir, "templates"), "Meeting.md", "# Template\n");
+    const drawing = writePlainMdFile(path.join(tmpDir, "Research"), "Drawing.excalidraw.md", "scene data\n");
+    const real = writePlainMdFile(path.join(tmpDir, "Research"), "Paper.md", "# Paper\n");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    expect((db.prepare("SELECT COUNT(*) n FROM notes").get() as { n: number }).n).toBe(1);
+    expect(fs.readFileSync(template, "utf-8")).toBe("# Template\n");
+    expect(fs.readFileSync(drawing, "utf-8")).toBe("scene data\n");
+    expect(fs.readFileSync(real, "utf-8")).toContain("projectId:");
+  });
+
+  it("persists excluded top-level folders across later scans", () => {
+    seedWorkspaceOnly();
+    const privateNote = writePlainMdFile(path.join(tmpDir, "Private"), "Secret.md", "# Secret\n");
+    writePlainMdFile(path.join(tmpDir, "Public"), "Shared.md", "# Shared\n");
+    saveImportExclusions(tmpDir, ["Private"]);
+
+    syncNotesFromDisk(db, tmpDir);
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as Array<{ name: string }>;
+    expect(projects.map((project) => project.name)).toEqual(["Public"]);
+    expect(fs.readFileSync(privateNote, "utf-8")).toBe("# Secret\n");
+    // Seed a live "Private" project so adoption can RESOLVE the file's owning
+    // project — a null return then proves the exclusion gate, not missing-
+    // project resolution.
+    createProject(db, { id: "proj-private", workspaceId: "ws1", name: "Private" });
+    expect(adoptExternalNoteFile(db, tmpDir, privateNote)).toBeNull();
+  });
+
+  it("falls back to the last valid exclusions when the config is corrupted mid-life", () => {
+    // Regression for the review finding: a truncated / conflict-marked config
+    // must never fail OPEN to importing folders the user excluded.
+    seedWorkspaceOnly();
+    const privateNote = writePlainMdFile(path.join(tmpDir, "Private"), "Secret.md", "# Secret\n");
+    writePlainMdFile(path.join(tmpDir, "Public"), "Shared.md", "# Shared\n");
+    saveImportExclusions(tmpDir, ["Private"]);
+    syncNotesFromDisk(db, tmpDir); // first read caches the valid exclusions
+
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), "{ this is not json", "utf-8");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as Array<{ name: string }>;
+    expect(projects.map((project) => project.name)).toEqual(["Public"]);
+    // Seed a live "Private" project so adoption can RESOLVE the file's owning
+    // project — a null return then proves the exclusion gate survived the
+    // corrupted config, not missing-project resolution.
+    createProject(db, { id: "proj-private", workspaceId: "ws1", name: "Private" });
+    expect(adoptExternalNoteFile(db, tmpDir, privateNote)).toBeNull();
+  });
+
+  it("halts the scan when the config is malformed and never parsed successfully", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Private"), "Secret.md", "# Secret\n");
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), "{ this is not json", "utf-8");
+
+    expect(importVaultProjects(db, tmpDir)).toBe(0);
+    syncNotesFromDisk(db, tmpDir);
+
+    const notes = db.prepare("SELECT COUNT(*) n FROM notes").get() as { n: number };
+    expect(notes.n).toBe(0);
+  });
+
+  it("treats a non-string excludedFolders entry as invalid (halts a never-valid config)", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Private"), "Secret.md", "# Secret\n");
+    // A single bad entry poisons the whole list — it must halt, not silently
+    // drop the entry and import folders the user intended to keep out.
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), JSON.stringify({ excludedFolders: ["Private", 42] }), "utf-8");
+
+    expect(importVaultProjects(db, tmpDir)).toBe(0);
+    syncNotesFromDisk(db, tmpDir);
+
+    const notes = db.prepare("SELECT COUNT(*) n FROM notes").get() as { n: number };
+    expect(notes.n).toBe(0);
+  });
+
+  it("falls back to the last valid exclusions when a new entry is non-string", () => {
+    seedWorkspaceOnly();
+    const privateNote = writePlainMdFile(path.join(tmpDir, "Private"), "Secret.md", "# Secret\n");
+    writePlainMdFile(path.join(tmpDir, "Public"), "Shared.md", "# Shared\n");
+    saveImportExclusions(tmpDir, ["Private"]);
+    syncNotesFromDisk(db, tmpDir); // caches the valid exclusions
+
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), JSON.stringify({ excludedFolders: ["Private", 42] }), "utf-8");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as Array<{ name: string }>;
+    expect(projects.map((project) => project.name)).toEqual(["Public"]);
+    expect(adoptExternalNoteFile(db, tmpDir, privateNote)).toBeNull();
+  });
+
+  it("halts freshly-malformed configs in isImportPathExcluded for root and nested paths", () => {
+    seedWorkspaceOnly();
+    const rootMd = writePlainMdFile(tmpDir, "Root.md", "# Root\n");
+    const nestedMd = writePlainMdFile(path.join(tmpDir, "Folder"), "Note.md", "# Note\n");
+    // Never valid — must halt on first encounter, even before a scan runs.
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), "{ this is not json", "utf-8");
+
+    expect(isImportPathExcluded(tmpDir, rootMd)).toBe(true);
+    expect(isImportPathExcluded(tmpDir, nestedMd)).toBe(true);
+  });
+
   it("does not create a project for an empty top-level folder (no .md files)", () => {
     seedWorkspaceOnly();
     fs.mkdirSync(path.join(tmpDir, "Empty"), { recursive: true });
@@ -903,5 +1054,3 @@ describe("filename stability (Obsidian wikilink safety)", () => {
     expect(fs.existsSync(path.join(projectDir, "kernel", "electron-process.md"))).toBe(false);
   });
 });
-
-

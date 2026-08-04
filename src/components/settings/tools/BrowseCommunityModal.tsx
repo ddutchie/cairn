@@ -11,6 +11,9 @@ import {
   ShieldCheck,
   WifiOff,
   Search,
+  LogIn,
+  CheckCircle,
+  X,
 } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
@@ -87,6 +90,11 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
   // Entry currently prompting for secrets: name → the header names + values.
   const [secretPrompt, setSecretPrompt] = useState<{ entry: CardEntry; names: string[] } | null>(null);
   const [secretValues, setSecretValues] = useState<Record<string, string>>({});
+  // Just-installed entry that still needs its required key: OAuth connect (or a
+  // confirmation when its API keys were stored at install).
+  const [justInstalled, setJustInstalled] = useState<{ entry: CardEntry; toolId: string; kind: Kind; oauth: boolean; connected: boolean; secretCount: number } | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   const load = useCallback(async (force: boolean) => {
     const reg = window.electron?.registry;
@@ -162,11 +170,35 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
     async (e: CardEntry, secrets: Record<string, string>) => {
       setInstalling(entryName(e));
       setInstallError(null);
+      setJustInstalled(null);
+      setConnecting(false);
+      setConnectError(null);
       try {
-        if (e.kind === "mcp") await installCommunityMcp(e.mcp!, secrets);
-        else await installCommunityService(e.service!, secrets);
+        const toolId =
+          e.kind === "mcp"
+            ? await installCommunityMcp(e.mcp!, secrets)
+            : await installCommunityService(e.service!, secrets);
         setSecretPrompt(null);
         setSecretValues({});
+        if (isOAuth(e)) {
+          // OAuth connectors need an interactive connect (browser sign-in) —
+          // ask for it right after install so the user isn't left wondering
+          // why the connector is "Installed" but unusable.
+          const status =
+            e.kind === "mcp"
+              ? await window.electron?.tools.mcpAuthStatus(toolId)
+              : await window.electron?.tools.serviceAuthStatus(toolId);
+          setJustInstalled({
+            entry: e, toolId, kind: e.kind, oauth: true,
+            connected: status?.connected ?? false,
+            secretCount: Object.keys(secrets).length,
+          });
+        } else {
+          setJustInstalled({
+            entry: e, toolId, kind: e.kind, oauth: false, connected: false,
+            secretCount: Object.keys(secrets).length,
+          });
+        }
       } catch (err) {
         setInstallError(err instanceof Error ? err.message : "Install failed.");
       } finally {
@@ -175,6 +207,45 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
     },
     [installCommunityMcp, installCommunityService]
   );
+
+  /** Kick off the OAuth browser flow for the just-installed connector. */
+  const connectInstalled = useCallback(async () => {
+    if (!justInstalled) return;
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const r =
+        justInstalled.kind === "mcp"
+          ? await window.electron?.tools.startMcpAuth(justInstalled.toolId)
+          : await window.electron?.tools.startServiceAuth(justInstalled.toolId);
+      if (r?.status === "already_authorized") {
+        setConnecting(false);
+        setJustInstalled((j) => (j ? { ...j, connected: true } : j));
+      } else if (r?.status === "error") {
+        setConnecting(false);
+        setConnectError(r.error ?? "Sign-in failed");
+      }
+      // "redirected": browser opened — onOauthCallback flips busy off.
+    } catch (err) {
+      setConnecting(false);
+      setConnectError(err instanceof Error ? err.message : "Sign-in failed");
+    }
+  }, [justInstalled]);
+
+  // Track completion of the OAuth flow started from the post-install prompt.
+  useEffect(() => {
+    const off = window.electron?.tools.onOauthCallback((e) => {
+      if (!justInstalled || e.serverId !== justInstalled.toolId) return;
+      setConnecting(false);
+      if (e.status === "authorized") {
+        setConnectError(null);
+        setJustInstalled((j) => (j ? { ...j, connected: true } : j));
+      } else if (e.status === "error") {
+        setConnectError(e.error ?? "Sign-in failed");
+      }
+    });
+    return () => { off?.(); };
+  }, [justInstalled]);
 
   const onInstallClick = useCallback(
     (e: CardEntry) => {
@@ -251,6 +322,52 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
       {installError && (
         <div className="mt-3 text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
           {installError}
+        </div>
+      )}
+
+      {/* Post-install prompt: ask for the required key (OAuth connect) or confirm. */}
+      {justInstalled && (
+        <div className="mt-3 rounded-lg border border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[color-mix(in_srgb,var(--ok)_8%,transparent)] px-3 py-2 text-[0.714rem]">
+          <div className="flex items-center gap-2">
+            <Check size={13} className="text-[var(--ok)] shrink-0" />
+            <span className="text-[var(--text-primary)] font-medium">
+              {entryName(justInstalled.entry)} installed
+              {justInstalled.secretCount > 0 ? " — API key saved to your keychain" : ""}.
+            </span>
+            {justInstalled.oauth && !justInstalled.connected && !connecting && (
+              <Button variant="outline" size="sm" className="ml-auto" onClick={() => void connectInstalled()}>
+                <LogIn size={11} /> Connect now
+              </Button>
+            )}
+            {justInstalled.oauth && justInstalled.connected && (
+              <span className="flex items-center gap-1 text-[var(--ok)] ml-auto">
+                <CheckCircle size={11} /> Connected
+              </span>
+            )}
+            {justInstalled.oauth && !justInstalled.connected && connecting && (
+              <span className="flex items-center gap-1 text-[var(--text-tertiary)] ml-auto">
+                <Loader2 size={11} className="animate-spin" /> Waiting for browser…
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => { setJustInstalled(null); setConnecting(false); setConnectError(null); }}
+              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              aria-label="Dismiss"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          {justInstalled.oauth && !justInstalled.connected && (
+            <p className="text-[var(--text-tertiary)] mt-1">
+              Connect your account so this connector can call external tools. After connecting, enable it and attach it to a project under MCP Servers / Custom HTTP Services.
+            </p>
+          )}
+          {connectError && (
+            <p className="text-[var(--danger)] mt-1 flex items-center gap-1">
+              <WifiOff size={11} /> {connectError}
+            </p>
+          )}
         </div>
       )}
 

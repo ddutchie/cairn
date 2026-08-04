@@ -261,8 +261,12 @@ const api = {
     update: (id: string, patch: unknown) => invoke("db:automation:update", { id, patch }),
     delete: (id: string) => invoke("db:automation:delete", { id }),
     runs:   (automationId: string, limit?: number) => invoke("db:automation:runs", { automationId, limit }),
+    recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) => invoke("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
     runNow: (id: string) => invoke("db:automation:runNow", { id }),
     runningCount: () => invoke("db:automation:runningCount"),
+    /** Installed/attached status per required connector (New Automation browse guard). */
+    checkRequirements: (workspaceId: string, projectId: string, requires: Array<{ kind: "mcp" | "service"; name: string }>) =>
+      invoke<Array<{ kind: "mcp" | "service"; name: string; installed: boolean; attached: boolean }>>("db:automation:checkRequirements", { workspaceId, projectId, requires }),
     preview: (scheduleKind: string, scheduleExpr: string, timezone?: string | null) => invoke("db:automation:preview", { scheduleKind, scheduleExpr, timezone }),
   },
 
@@ -472,9 +476,9 @@ const api = {
   needsWorkspaceSetup: () => invoke<boolean>("app:needsWorkspaceSetup"),
   setTheme: (theme: string) => invoke("app:setTheme", theme),
   setAccent: (accent: string) => invoke("app:setAccent", accent),
-  initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
-  rescanWorkspace: (workspaceId?: string) => invoke<{ projectsCreated: number; createdProjects: { id: string; name: string; noteCount: number }[] }>("app:rescanWorkspace", { workspaceId }),
-  probeWorkspaceFolder: (folder: string) => invoke<{ isObsidianVault: boolean; markdownCount: number; folderCount: number }>("app:probeWorkspaceFolder", { folder }),
+  initWorkspace: (workspacePath: string, excludedFolders?: string[]) => invoke<{ ok: true }>("app:initWorkspace", { workspacePath, excludedFolders }),
+  rescanWorkspace: (workspaceId?: string, excludedFolders?: string[]) => invoke<{ projectsCreated: number; createdProjects: { id: string; name: string; noteCount: number }[] }>("app:rescanWorkspace", { workspaceId, excludedFolders }),
+  probeWorkspaceFolder: (folder: string) => invoke<{ isObsidianVault: boolean; vaultName: string; noteCount: number; skippedCount: number; projects: { name: string; noteCount: number; root: boolean; projectKey: string }[]; excludedFolders: string[] }>("app:probeWorkspaceFolder", { folder }),
   relaunch: () => invoke("app:relaunch"),
   resetAllData: () => invoke("app:reset"),
   getAiSettings: () => invoke<Record<string, unknown> | null>("app:getAiSettings"),

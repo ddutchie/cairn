@@ -45,6 +45,203 @@ export {
   setPathRemover
 };
 
+const IMPORT_CONFIG_FILE = ".cairn-import.json";
+const DEFAULT_SKIP_DIRS = new Set(["assets", "attachments", "templates"]);
+
+export interface VaultImportPreview {
+  isObsidianVault: boolean;
+  vaultName: string;
+  noteCount: number;
+  skippedCount: number;
+  projects: Array<{ name: string; noteCount: number; root: boolean; projectKey: string }>;
+  excludedFolders: string[];
+}
+
+function isSkippedMarkdown(name: string): boolean {
+  const lower = name.toLowerCase();
+  return !lower.endsWith(".md") || lower.endsWith(".md.tmp") || lower.endsWith(".excalidraw.md");
+}
+
+function isSkippedDirectory(name: string): boolean {
+  return name.startsWith(".") || DEFAULT_SKIP_DIRS.has(name.toLowerCase());
+}
+
+// Last successfully-parsed exclusion set per workspace. The config file is
+// written atomically (temp + rename, see saveImportExclusions), but a cloud-sync
+// conflict copy or an interrupted external edit can still leave it truncated or
+// conflict-marked. Falling back to the last valid set — instead of failing open
+// to "import everything" — keeps folders the user excluded excluded through the
+// hiccup.
+const lastValidExclusions = new Map<string, Set<string>>();
+// Workspaces whose config file exists but is currently unreadable/malformed AND
+// was never parsed successfully. Imports HALT for these until the file is
+// repaired — no silent adoption of previously-excluded folders.
+const haltedWorkspaces = new Set<string>();
+
+function readImportExclusions(workspacePath: string): Set<string> {
+  const configPath = path.join(workspacePath, IMPORT_CONFIG_FILE);
+  let raw: string;
+  try {
+    raw = fs.readFileSync(configPath, "utf-8");
+  } catch (err) {
+    // A genuinely missing config means "no exclusions" — clear the workspace's
+    // cached state. Any OTHER read failure means the file exists but is
+    // currently unreadable: fall back to the last valid set, else halt.
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      lastValidExclusions.delete(workspacePath);
+      haltedWorkspaces.delete(workspacePath);
+      return new Set();
+    }
+    if (lastValidExclusions.has(workspacePath)) return new Set(lastValidExclusions.get(workspacePath)!);
+    haltedWorkspaces.add(workspacePath);
+    return new Set();
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    // ANY non-string entry (not just some) makes the whole file invalid — a
+    // single bad value means we can't trust the list, so it must fall back/halt
+    // rather than silently dropping entries and importing folders the user
+    // intended to keep out.
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray((parsed as { excludedFolders?: unknown }).excludedFolders) ||
+      (parsed as { excludedFolders: unknown[] }).excludedFolders.some((v) => typeof v !== "string")
+    ) {
+      throw new Error("invalid shape");
+    }
+    const set = new Set((parsed as { excludedFolders: string[] }).excludedFolders);
+    lastValidExclusions.set(workspacePath, set);
+    haltedWorkspaces.delete(workspacePath);
+    return set;
+  } catch {
+    // Present but malformed/truncated. Never fail open: fall back to the last
+    // valid exclusions we parsed. If we never parsed a valid file, halt imports
+    // for this workspace until the file is repaired.
+    if (lastValidExclusions.has(workspacePath)) return new Set(lastValidExclusions.get(workspacePath)!);
+    haltedWorkspaces.add(workspacePath);
+    return new Set();
+  }
+}
+
+/** True when the workspace's import config is present but broken beyond the last-known-good copy. */
+export function isImportConfigHalted(workspacePath: string): boolean {
+  return haltedWorkspaces.has(workspacePath);
+}
+
+/** Shared watcher/scanner boundary: true when a path must never be imported. */
+export function isImportPathExcluded(workspacePath: string, filePath: string): boolean {
+  const rel = path.relative(notesDir(workspacePath), filePath);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return true;
+  const segments = rel.split(path.sep);
+  if (segments.some((segment) => isSkippedDirectory(segment))) return true;
+  if (isSkippedMarkdown(segments[segments.length - 1])) return true;
+  // Load/parse the config (which REGISTERS the halted state for a malformed
+  // newly-encountered file) after the cheap lexical checks, then evaluate the
+  // refreshed halt state. Checking halt before reading would miss a config that
+  // just turned malformed, letting root notes and nested files through.
+  const excludedFolders = readImportExclusions(workspacePath);
+  if (isImportConfigHalted(workspacePath)) return true;
+  return segments.length > 1 && excludedFolders.has(segments[0]);
+}
+
+export function saveImportExclusions(workspacePath: string, excludedFolders: string[]): void {
+  const clean = [...new Set(excludedFolders.filter((name) => name && !name.startsWith(".")))].sort();
+  const target = path.join(workspacePath, IMPORT_CONFIG_FILE);
+  const body = JSON.stringify({ excludedFolders: clean }, null, 2) + "\n";
+  // Write via a temp file + atomic rename so a crash mid-write can never leave a
+  // truncated config that readImportExclusions would then reject.
+  const tmp = path.join(workspacePath, `${IMPORT_CONFIG_FILE}.${process.pid}.${Date.now()}.tmp`);
+  fs.writeFileSync(tmp, body, "utf-8");
+  try {
+    fs.renameSync(tmp, target);
+  } catch {
+    // Cross-device or locked-target fallback — write in place, clean up the temp.
+    fs.writeFileSync(target, body, "utf-8");
+    try { fs.unlinkSync(tmp); } catch { /* best effort */ }
+  }
+}
+
+function countImportableMarkdown(dir: string): { included: number; skipped: number } {
+  let included = 0;
+  let skipped = 0;
+  let entries: string[];
+  try { entries = fs.readdirSync(dir); } catch { return { included, skipped }; }
+  for (const entry of entries) {
+    const fp = path.join(dir, entry);
+    let stat: fs.Stats;
+    try { stat = fs.lstatSync(fp); } catch { continue; }
+    if (stat.isDirectory()) {
+      if (isSkippedDirectory(entry)) {
+        skipped += countAllMarkdown(fp);
+      } else {
+        const nested = countImportableMarkdown(fp);
+        included += nested.included;
+        skipped += nested.skipped;
+      }
+    } else if (entry.toLowerCase().endsWith(".md")) {
+      if (isSkippedMarkdown(entry)) skipped++; else included++;
+    }
+  }
+  return { included, skipped };
+}
+
+function countAllMarkdown(dir: string): number {
+  let count = 0;
+  let entries: string[];
+  try { entries = fs.readdirSync(dir); } catch { return 0; }
+  for (const entry of entries) {
+    const fp = path.join(dir, entry);
+    let stat: fs.Stats;
+    try { stat = fs.lstatSync(fp); } catch { continue; }
+    if (stat.isDirectory()) count += countAllMarkdown(fp);
+    else if (entry.toLowerCase().endsWith(".md") && !entry.toLowerCase().endsWith(".md.tmp")) count++;
+  }
+  return count;
+}
+
+/** Read-only recursive preview. Never parses or writes note contents. */
+export function previewVaultImport(workspacePath: string): VaultImportPreview {
+  const result: VaultImportPreview = {
+    isObsidianVault: fs.existsSync(path.join(workspacePath, ".obsidian")),
+    vaultName: path.basename(workspacePath) || "Notes",
+    noteCount: 0,
+    skippedCount: 0,
+    projects: [],
+    excludedFolders: [...readImportExclusions(workspacePath)].sort(),
+  };
+  let entries: string[];
+  try { entries = fs.readdirSync(workspacePath); } catch { return result; }
+  let rootNotes = 0;
+  for (const entry of entries) {
+    const fp = path.join(workspacePath, entry);
+    let stat: fs.Stats;
+    try { stat = fs.lstatSync(fp); } catch { continue; }
+    if (stat.isDirectory()) {
+      if (isSkippedDirectory(entry)) {
+        result.skippedCount += countAllMarkdown(fp);
+        continue;
+      }
+      // Mirror the import filtering (importVaultProjects / syncDir): a legacy
+      // `notes/` folder is only a project when it's part of an Obsidian vault or
+      // has direct .md files. Without this the preview can promise a nonzero
+      // import for a `notes/` tree the scan would then skip entirely.
+      if (entry === "notes" && !isImportableNotesFolder(workspacePath)) {
+        result.skippedCount += countAllMarkdown(fp);
+        continue;
+      }
+      const counts = countImportableMarkdown(fp);
+      result.skippedCount += counts.skipped;
+      if (counts.included > 0) result.projects.push({ name: entry, noteCount: counts.included, root: false, projectKey: toSlug(entry) });
+    } else if (entry.toLowerCase().endsWith(".md")) {
+      if (isSkippedMarkdown(entry)) result.skippedCount++; else rootNotes++;
+    }
+  }
+  if (rootNotes > 0) result.projects.unshift({ name: result.vaultName, noteCount: rootNotes, root: true, projectKey: toSlug(result.vaultName) });
+  result.noteCount = result.projects.reduce((sum, project) => sum + project.noteCount, 0);
+  return result;
+}
+
 
 // ── Startup sync ──────────────────────────────
 //
@@ -63,6 +260,11 @@ export function syncNotesFromDisk(db: Database.Database, workspacePath: string, 
   const root = notesDir(workspacePath);
   if (!fs.existsSync(root)) return;
   cleanStaleTmpFiles(root);
+  // A malformed import config with no known-good value halts the scan rather
+  // than adopting folders the user may have excluded. Reading the exclusions
+  // first is what registers the halted state for a never-valid config.
+  const excludedFolders = readImportExclusions(workspacePath);
+  if (isImportConfigHalted(workspacePath)) return;
   // Auto-create projects for any top-level folders (and loose root .md files)
   // that don't yet have a matching project in the DB. This is what lets a user
   // point Cairn at an existing Obsidian vault — or copy a folder of notes into
@@ -75,7 +277,7 @@ export function syncNotesFromDisk(db: Database.Database, workspacePath: string, 
   } catch (err) {
     console.error("[sync] importVaultProjects failed:", err);
   }
-  syncDir(db, root, workspacePath);
+  syncDir(db, root, workspacePath, excludedFolders);
 }
 
 /**
@@ -163,7 +365,11 @@ export function importVaultProjects(
   }
   if (!wsId) return 0;
 
-  const SKIP_DIRS = new Set(["assets", "attachments"]);
+  const excludedFolders = readImportExclusions(workspacePath);
+  // A malformed import config with no known-good value halts project discovery
+  // rather than adopting folders the user may have excluded. Reading the
+  // exclusions above is what registers the halted state.
+  if (isImportConfigHalted(workspacePath)) return 0;
   // Live-project slugs only — must match adoptExternalNoteFile's resolution set.
   const existingSlugs = new Set(activeProjectsBySlug(db).keys());
 
@@ -187,7 +393,7 @@ export function importVaultProjects(
     }
 
     if (stat.isDirectory()) {
-      if (SKIP_DIRS.has(entry)) continue;
+      if (isSkippedDirectory(entry) || excludedFolders.has(entry)) continue;
       // Legacy `notes/` handling mirrors syncDir: only treat it as a project
       // folder when it's part of an Obsidian vault or has direct .md files.
       if (entry === "notes" && !isImportableNotesFolder(workspacePath)) continue;
@@ -200,7 +406,7 @@ export function importVaultProjects(
       ensureProject(db, wsId, entry);
       existingSlugs.add(slug);
       created++;
-    } else if (entry.endsWith(".md") && !entry.endsWith(".md.tmp")) {
+    } else if (!isSkippedMarkdown(entry)) {
       hasLooseRootMd = true;
     }
   }
@@ -245,7 +451,7 @@ function dirHasMarkdown(dir: string): boolean {
     return false;
   }
   for (const item of items) {
-    if (item.startsWith(".")) continue;
+    if (isSkippedDirectory(item)) continue;
     const fp = path.join(dir, item);
     let st: fs.Stats;
     try {
@@ -255,7 +461,7 @@ function dirHasMarkdown(dir: string): boolean {
     }
     if (st.isDirectory()) {
       if (dirHasMarkdown(fp)) return true;
-    } else if (item.endsWith(".md") && !item.endsWith(".md.tmp")) {
+    } else if (!isSkippedMarkdown(item)) {
       return true;
     }
   }
@@ -414,15 +620,11 @@ function cleanStaleTmpFiles(dir: string): void {
   } catch { /* root unreadable */ }
 }
 
-function syncDir(db: Database.Database, dir: string, workspacePath: string): void {
-  // Known non-note directories to skip when scanning from workspace root
-  const SKIP_DIRS = new Set(["assets", "attachments"]);
-
+function syncDir(db: Database.Database, dir: string, workspacePath: string, excludedFolders: Set<string>): void {
   for (const entry of fs.readdirSync(dir)) {
     // Skip dot-prefixed directories (.obsidian, .trash, .git, etc.)
-    if (entry.startsWith(".")) continue;
-    // Skip known infrastructure directories
-    if (SKIP_DIRS.has(entry) && dir === workspacePath) continue;
+    if (isSkippedDirectory(entry)) continue;
+    if (dir === workspacePath && excludedFolders.has(entry)) continue;
 
     if (entry === "notes" && dir === workspacePath) {
       // If it's already an Obsidian vault (contains a .obsidian folder at root), do NOT skip notes/
@@ -446,8 +648,8 @@ function syncDir(db: Database.Database, dir: string, workspacePath: string): voi
     const fp = path.join(dir, entry);
     const stat = fs.lstatSync(fp);
     if (stat.isDirectory()) {
-      syncDir(db, fp, workspacePath);
-    } else if (entry.endsWith(".md")) {
+      syncDir(db, fp, workspacePath, excludedFolders);
+    } else if (!isSkippedMarkdown(entry)) {
       let note = parseNoteFile(fp);
       // Plain .md without Cairn frontmatter — adopt it in-place
       if (!note) note = adoptExternalNoteFile(db, workspacePath, fp);
@@ -506,6 +708,7 @@ export function adoptExternalNoteFile(
     const rel  = path.relative(root, filePath); // e.g. "my-project/sub/Note Title.md"
     const segments = rel.split(path.sep);
     if (segments.length < 1) return null;
+    if (isImportPathExcluded(workspacePath, filePath)) return null;
 
     // A file directly in the vault root (segments === ["Note.md"]) has no owning
     // folder. It belongs to the catch-all project named after the vault folder
@@ -664,5 +867,3 @@ export function upsertNoteFromFile(db: Database.Database, note: NoteData): void 
     archivedAt: note.archivedAt,
   });
 }
-
-
