@@ -1267,6 +1267,58 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       expect(applied?.origin).toBe("A");
     });
 
+    it("labels activity rows with the row title, author and conflict side", () => {
+      const clkA = clockFrom(14_150_000);
+      const clkB = clockFrom(14_150_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      q.updateNote(A.db, "n1", { content: "edited on A" });
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // A title beats a raw uuid in the UI, and it is resolved on read so it
+      // tracks later renames.
+      const entry = B.engine.listSyncActivity().find((r) => r.entity_id === "n1");
+      expect(entry?.title).toBe("Shared");
+      expect(entry?.isSelf).toBe(false);
+      expect(entry?.conflict_side).toBeNull();
+
+      // Our own drained ops are echoed back by gossip; those are not peer work.
+      const own = A.engine.listSyncActivity().find((r) => r.isSelf);
+      if (own) expect(own.origin).toBe("A");
+    });
+
+    it("reports which side a conflict copy preserved", () => {
+      const clkA = clockFrom(14_170_000);
+      const clkB = clockFrom(14_170_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(1);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      clkB.advance(50);
+      q.updateNote(B.db, "n1", { content: "phone kept editing" });
+      B.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // On A the refused *remote* put was rescued into the copy.
+      const onA = A.engine
+        .listSyncActivity()
+        .find((r) => r.entity_id === "n1" && r.op === "put" && r.conflict_copy_id);
+      expect(onA?.conflict_side).toBe("remote");
+
+      // On B the *local* divergent row was moved aside so the delete could land.
+      const onB = B.engine
+        .listSyncActivity()
+        .find((r) => r.entity_id === "n1" && r.op === "delete" && r.conflict_copy_id);
+      expect(onB?.conflict_side).toBe("local");
+    });
+
     it("does not log stale no-ops, so idle syncs cannot evict a delete-won record", () => {
       const clkA = clockFrom(14_200_000);
       const clkB = clockFrom(14_200_000);

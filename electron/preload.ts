@@ -603,6 +603,9 @@ const api = {
         origin: string;
         outcome: "applied" | "conflict-copy" | "delete-won" | "skipped-stale";
         conflict_copy_id: string | null;
+        title: string | null;
+        isSelf: boolean;
+        conflict_side: "local" | "remote" | null;
       }>>("sync:activity", { limit }),
     // Notes deleted by another device that can still be restored. `total` may
     // exceed `rows.length` — never present the page size as the count.

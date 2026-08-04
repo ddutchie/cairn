@@ -52,6 +52,12 @@ export interface SyncActivityEntry {
   origin: string;
   outcome: SyncOutcome;
   conflict_copy_id: string | null;
+  /** Current title of the affected row, or null if it no longer exists. */
+  title: string | null;
+  /** True when this device authored the change. */
+  isSelf: boolean;
+  /** Whose version the conflict copy holds. */
+  conflict_side: "local" | "remote" | null;
 }
 
 /** A note another device deleted that can still be brought back. */

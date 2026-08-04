@@ -47,6 +47,20 @@ export interface SyncActivityRow {
   origin: string;
   outcome: SyncOutcome;
   conflict_copy_id: string | null;
+  /**
+   * The row's current title/name, when it still exists. Resolved on read rather
+   * than snapshotted so it tracks renames; null for a row that is gone or has
+   * no title column — the UI should fall back to a generic label, not an id.
+   */
+  title: string | null;
+  /** True when this device authored the op (an echo of our own change). */
+  isSelf: boolean;
+  /**
+   * Which side of a conflict the copy holds. `local` = our version was set
+   * aside so the peer's could land; `remote` = the peer's refused edit was set
+   * aside. For a recovery UI, which side was preserved is the whole question.
+   */
+  conflict_side: "local" | "remote" | null;
 }
 
 /** A peer-deleted row that still holds content, so it can be restored. */
@@ -1131,12 +1145,35 @@ export class SyncEngine {
 
   /** Most recent reconcile decisions, newest first. */
   listSyncActivity(limit = 100): SyncActivityRow[] {
-    return this.db
+    const rows = this.db
       .prepare(
         `SELECT seq, at, entity, entity_id, op, hlc, origin, outcome, conflict_copy_id
          FROM sync_activity ORDER BY seq DESC LIMIT ?`,
       )
-      .all(Math.max(1, Math.min(limit, SYNC_ACTIVITY_LIMIT))) as SyncActivityRow[];
+      .all(Math.max(1, Math.min(limit, SYNC_ACTIVITY_LIMIT))) as Array<
+      Omit<SyncActivityRow, "title" | "isSelf" | "conflict_side">
+    >;
+    return rows.map((row) => ({
+      ...row,
+      title: this.rowLabel(row.entity, row.entity_id),
+      isSelf: row.origin === this.deviceId,
+      // A rejected put is the peer's edit being preserved; every other copy is
+      // the local version being moved aside so the remote could win in place.
+      conflict_side: row.conflict_copy_id ? (row.op === "put" && row.outcome === "delete-won" ? "remote" : "local") : null,
+    }));
+  }
+
+  /** Current title/name of a row, or null if it's gone or has no such column. */
+  private rowLabel(entity: SyncableTable, id: string): string | null {
+    if (!(SYNCABLE_TABLES as readonly string[]).includes(entity)) return null;
+    const cols = tableColumns(this.db, entity);
+    const titleCol = cols.includes("title") ? "title" : cols.includes("name") ? "name" : null;
+    if (!titleCol) return null;
+    const row = this.db
+      .prepare(`SELECT "${titleCol}" AS label FROM ${entity} WHERE id = ?`)
+      .get(id) as { label?: unknown } | undefined;
+    const label = row?.label;
+    return typeof label === "string" && label.trim() ? label : null;
   }
 
   /**

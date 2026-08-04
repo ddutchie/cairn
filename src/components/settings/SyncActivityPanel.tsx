@@ -15,6 +15,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { History, RotateCcw, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useCairnStore } from "@/store";
+import { revealNote, revealCard } from "@/lib/events";
 import {
   fetchSyncActivity,
   fetchRestorableNotes,
@@ -77,6 +79,42 @@ function relativeTime(iso: string): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+/** Absolute timestamp for the tooltip, so the relative form is never the only truth. */
+function absoluteTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d.toLocaleString() : "";
+}
+
+/**
+ * Device ids are opaque (`desktop_k3j4h5g61x2`). Name this device explicitly and
+ * shorten peers, rather than showing a user a raw identifier.
+ */
+function deviceLabel(origin: string, isSelf: boolean): string {
+  if (isSelf) return "this device";
+  const trimmed = origin.replace(/^(desktop|mobile|ios|android)[_-]/i, "");
+  const short = trimmed.length > 8 ? `${trimmed.slice(0, 8)}…` : trimmed;
+  if (/^mobile|^ios/i.test(origin)) return `your phone (${short})`;
+  if (/^desktop/i.test(origin)) return `another desktop (${short})`;
+  return `another device (${short})`;
+}
+
+/** Human label for the affected row: its title, else a generic entity name. */
+function rowLabel(entry: SyncActivityEntry): string {
+  if (entry.title) return entry.title;
+  const singular = entry.entity.replace(/s$/, "").replace(/_/g, " ");
+  return `a ${singular}`;
+}
+
+/** Re-render on an interval so "just now" doesn't get stuck on an open pane. */
+function useTicker(active: boolean, ms = 60_000): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setTick((n) => n + 1), ms);
+    return () => clearInterval(id);
+  }, [active, ms]);
+}
+
 export function SyncActivityPanel() {
   const [activity, setActivity] = useState<SyncActivityEntry[]>([]);
   const [restorable, setRestorable] = useState<RestorableNote[]>([]);
@@ -86,6 +124,10 @@ export function SyncActivityPanel() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
   const alive = useRef(true);
+  const setView = useCairnStore((s) => s.setView);
+
+  // Re-render periodically so relative times stay honest while the pane is open.
+  useTicker(true);
 
   // Re-fetch whenever sync reports new work, so a deletion that lands while the
   // pane is open actually shows up — the whole point is visibility.
@@ -189,8 +231,11 @@ export function SyncActivityPanel() {
                       {note.title || "Untitled"}
                     </div>
                     <div className="text-[0.643rem] text-[var(--text-tertiary)]">
-                      deleted {note.deleted_at ? relativeTime(note.deleted_at) : "recently"}
-                      {note.delete_origin ? ` on ${note.delete_origin}` : ""}
+                      deleted{" "}
+                      <span title={note.deleted_at ? absoluteTime(note.deleted_at) : undefined}>
+                        {note.deleted_at ? relativeTime(note.deleted_at) : "recently"}
+                      </span>
+                      {note.delete_origin ? ` on ${deviceLabel(note.delete_origin, false)}` : ""}
                     </div>
                   </div>
                   <Button
@@ -246,29 +291,52 @@ export function SyncActivityPanel() {
                   token: "var(--text-tertiary)",
                   hint: "",
                 };
+                // Only offer navigation when the row still exists (title
+                // resolved) and we know how to reach that entity.
+                const target =
+                  entry.title && entry.entity === "notes"
+                    ? () => revealNote(setView, entry.entity_id)
+                    : entry.title && entry.entity === "task_cards"
+                      ? () => revealCard(setView, entry.entity_id)
+                      : null;
+                const copyNote =
+                  entry.conflict_side === "remote"
+                    ? " · their edit kept as a copy"
+                    : entry.conflict_side === "local"
+                      ? " · your version kept as a copy"
+                      : "";
                 return (
-                  <li
-                    key={entry.seq}
-                    className="flex items-start gap-2 p-2 rounded-lg bg-[var(--surface-3)]"
-                    title={meta.hint}
-                  >
-                    <span
-                      className="mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[0.607rem] font-semibold uppercase tracking-wide"
-                      style={{
-                        color: meta.token,
-                        background: `color-mix(in srgb, ${meta.token} 14%, transparent)`,
-                      }}
-                    >
-                      {meta.label}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[0.714rem] text-[var(--text-secondary)] truncate">
-                        {entry.op === "delete" ? "Delete" : "Change"} to {entry.entity}{" "}
-                        <span className="font-mono text-[var(--text-tertiary)]">{entry.entity_id}</span>
-                      </div>
-                      <div className="text-[0.643rem] text-[var(--text-tertiary)]">
-                        from {entry.origin} · seen {relativeTime(entry.at)}
-                        {entry.conflict_copy_id ? " · a copy was kept" : ""}
+                  <li key={entry.seq} className="rounded-lg bg-[var(--surface-3)]">
+                    <div className="flex items-start gap-2 p-2">
+                      <span
+                        className="mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[0.607rem] font-semibold uppercase tracking-wide"
+                        style={{
+                          color: meta.token,
+                          background: `color-mix(in srgb, ${meta.token} 14%, transparent)`,
+                        }}
+                        title={meta.hint}
+                      >
+                        {meta.label}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        {target ? (
+                          <button
+                            type="button"
+                            onClick={target}
+                            className="block max-w-full text-left text-[0.714rem] text-[var(--text-secondary)] truncate hover:text-[var(--accent)] hover:underline transition-colors"
+                          >
+                            {entry.op === "delete" ? "Deleted" : "Changed"} {rowLabel(entry)}
+                          </button>
+                        ) : (
+                          <div className="text-[0.714rem] text-[var(--text-secondary)] truncate">
+                            {entry.op === "delete" ? "Deleted" : "Changed"} {rowLabel(entry)}
+                          </div>
+                        )}
+                        <div className="text-[0.643rem] text-[var(--text-tertiary)]">
+                          from {deviceLabel(entry.origin, entry.isSelf)} ·{" "}
+                          <span title={absoluteTime(entry.at)}>seen {relativeTime(entry.at)}</span>
+                          {copyNote}
+                        </div>
                       </div>
                     </div>
                   </li>

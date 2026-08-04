@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { GitMerge, ChevronRight } from "lucide-react-native";
+import { GitMerge, ChevronRight, Trash2 } from "lucide-react-native";
 import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
 import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
+import { restorableCount } from "@/db/queries";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
 import { SectionLabel } from "@/components/SectionLabel";
 import { ICON_CHECK } from "@/components/toolbar-icons";
@@ -28,11 +29,19 @@ export default function SyncScreen() {
   const router = useRouter();
   const { state, pending, conflicts, lastResult: last } = useSyncStatus();
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [restorable, setRestorable] = useState(0);
   const styles = useMemo(() => makeStyles(t), [t]);
   const busy = state === "syncing";
 
   const refresh = useCallback(() => {
     iCloudAvailable().then(setAvailable).catch(() => setAvailable(false));
+    // Peer deletions are only discoverable after a sync applies them, so read
+    // the count on focus rather than once at mount.
+    try {
+      setRestorable(restorableCount());
+    } catch {
+      setRestorable(0);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => refresh(), [refresh]));
@@ -106,6 +115,24 @@ export default function SyncScreen() {
           </Pressable>
         )}
 
+        {restorable > 0 && (
+          <Pressable
+            style={[styles.conflictRow, styles.restoreRowActive]}
+            onPress={() => router.push("/restore")}
+          >
+            <Trash2 size={18} color={t.danger} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.conflictTitle, { color: t.textPrimary }]}>
+                {restorable} note{restorable === 1 ? "" : "s"} deleted elsewhere
+              </Text>
+              <Text style={styles.conflictHelp}>
+                Another device deleted {restorable === 1 ? "it" : "them"}. Tap to restore.
+              </Text>
+            </View>
+            <ChevronRight size={18} color={t.textTertiary} />
+          </Pressable>
+        )}
+
         <Text style={styles.note}>
           Bidirectional, offline-first. Edits made on this phone and the desktop reconcile via the
           shared sync engine. Body conflicts are kept as a &quot;conflicted copy&quot; note, never lost.
@@ -135,6 +162,7 @@ function makeStyles(t: Theme) {
     resultLine: { ...typeScale.caption, color: t.textPrimary, marginBottom: 4 },
     conflictRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 16, padding: 14, backgroundColor: t.surface2, borderRadius: 12, borderWidth: 1, borderColor: t.border },
     conflictRowActive: { borderColor: t.warning, backgroundColor: t.surface3 },
+    restoreRowActive: { borderColor: t.danger, backgroundColor: t.surface3 },
     conflictTitle: { ...typeScale.control, color: t.textSecondary },
     conflictHelp: { ...typeScale.caption, color: t.textTertiary, marginTop: 2, lineHeight: 16 },
     note: { marginTop: 24, ...typeScale.caption, color: t.textTertiary, lineHeight: 18 },
