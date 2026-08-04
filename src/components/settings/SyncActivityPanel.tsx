@@ -65,6 +65,7 @@ const REFUSAL_TEXT: Record<RestoreRefusal, string> = {
   orphaned: "Its project was deleted too. Restore the project first.",
   "self-deleted": "This device deleted that note, so it isn't offered for recovery.",
   "no-delete-record": "Sync has no record of that deletion, so it can't be undone from here.",
+  "preserved-as-copy": "Your edit is kept as a conflict copy — resolve it from the conflicts view instead.",
 };
 
 /**

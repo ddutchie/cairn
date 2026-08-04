@@ -78,7 +78,8 @@ export type RestoreRefusal =
   | "conflict-copy"
   | "orphaned"
   | "self-deleted"
-  | "no-delete-record";
+  | "no-delete-record"
+  | "preserved-as-copy";
 
 export interface RestoreOutcome {
   restored: boolean;

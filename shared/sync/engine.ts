@@ -81,7 +81,8 @@ export type RestoreRefusal =
   | "conflict-copy" // resolve via the conflict UI, not restore
   | "orphaned" // its project/workspace is gone, so reviving would diverge
   | "self-deleted" // this device authored the delete
-  | "no-delete-record"; // tombstoned, but sync holds no delete metadata for it
+  | "no-delete-record" // tombstoned, but sync holds no delete metadata for it
+  | "preserved-as-copy"; // a live conflict copy already holds this content — resolve that instead
 
 export type RestoreResult =
   | { restored: true; hlc: string }
@@ -1269,6 +1270,16 @@ export class SyncEngine {
     // orphan (the parent may have been hard-deleted on the peer).
     if (!this.parentsLive(entity, row)) return { ok: false, reason: "orphaned" };
 
+    // When this device lost a delete/edit race, the delete-won path both
+    // tombstoned this row (keeping its body) AND cloned that body into a live
+    // conflict copy. Offering restore then produces two identical notes, and
+    // the user has to notice and delete one. If such a copy already preserves
+    // this content, send them to conflict resolution instead — the edit is not
+    // at risk, so this is a redundant second door, not a lost note.
+    if (this.hasLivePreservingCopy(entity, id, row)) {
+      return { ok: false, reason: "preserved-as-copy" };
+    }
+
     return { ok: true, row, base };
   }
 
@@ -1295,10 +1306,34 @@ export class SyncEngine {
   }
 
   /**
-   * FK metadata for a table, cached per engine instance. `listRestorable` calls
-   * `parentsLive` once per candidate row, and the schema cannot change under a
-   * live engine, so re-reading the PRAGMA every time is pure overhead.
+   * True when a live conflict copy already holds this tombstoned row's content.
+   *
+   * The delete-won path clones the losing body into `<id>_conflict_<origin>_<ts>`
+   * and then tombstones the original with its body intact, so the two match. In
+   * that case the edit is safe in the copy and restore would just duplicate it —
+   * we suppress the restore offer and point at conflict resolution instead.
+   *
+   * Only checks entities with a body column (notes); everything else has no
+   * conflict-copy mechanism, so the answer is trivially false.
    */
+  private hasLivePreservingCopy(entity: SyncableTable, id: string, row: Record<string, unknown>): boolean {
+    const bodyCol = BODY_COLUMN[entity];
+    if (!bodyCol) return false;
+    const body = row[bodyCol];
+    // Copies are `<id>_conflict_<origin>_<ts>`. Escape LIKE wildcards in the id
+    // (note ids are nanoid, but `_` is a LIKE metachar), then confirm each hit
+    // really parses back to THIS original — the deviceId can itself contain the
+    // separator, so a prefix match alone is not proof.
+    const likePrefix = `${id}_conflict_`.replace(/[\\%_]/g, "\\$&");
+    const candidates = this.db
+      .prepare(`SELECT id, "${bodyCol}" AS body FROM ${entity} WHERE deleted_at IS NULL AND id LIKE ? ESCAPE '\\'`)
+      .all(`${likePrefix}%`) as Array<{ id: string; body: unknown }>;
+    for (const c of candidates) {
+      if (inspectConflict(c.id).originalId !== id) continue;
+      if (String(c.body ?? "") === String(body ?? "")) return true;
+    }
+    return false;
+  }
   private foreignKeys(entity: SyncableTable): Array<{ table: string; from: string; to: string | null }> {
     const cached = this.fkCache.get(entity);
     if (cached) return cached;

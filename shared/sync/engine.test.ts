@@ -1210,6 +1210,62 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       syncFolder(dir, A.engine, B.engine);
     }
 
+    it("does not offer restore for a row already preserved by a live conflict copy", () => {
+      // The on-device repro (v2.6.1 hardware test): delete on A, edit the same
+      // note on B while B hasn't observed the delete. B's delete-won path
+      // tombstones the row (keeping its body) AND clones it into a conflict
+      // copy — so the tombstone and the copy hold the SAME content. Offering
+      // restore then duplicates the note. Suppress it; the edit is safe in the
+      // copy, so point the user at conflict resolution instead.
+      const clkA = clockFrom(14_760_000);
+      const clkB = clockFrom(14_760_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(1);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      clkB.advance(50);
+      q.updateNote(B.db, "n1", { content: "phone kept editing" });
+      B.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // B has both a tombstoned n1 and a live conflict copy of it.
+      const copy = B.db
+        .prepare("SELECT id, content FROM notes WHERE id LIKE 'n1_conflict_%' AND deleted_at IS NULL")
+        .get() as { id: string; content: string } | undefined;
+      expect(copy?.content).toBe("phone kept editing");
+      const tombstoned = B.db.prepare("SELECT content FROM notes WHERE id = 'n1'").get() as { content: string };
+      expect(tombstoned.content).toBe("phone kept editing"); // same body → redundant restore
+
+      // So restore is refused on B (the losing device) and n1 is not listed.
+      expect(B.engine.listRestorable("notes").rows.map((r) => r.entity_id)).not.toContain("n1");
+      expect(B.engine.restoreDeleted("notes", "n1")).toEqual({
+        restored: false,
+        reason: "preserved-as-copy",
+      });
+    });
+
+    it("still offers restore when the delete won cleanly with no divergent copy", () => {
+      // Plain peer delete, no competing local edit → no conflict copy exists, so
+      // restore is the only way back and must still be offered.
+      const clkA = clockFrom(14_780_000);
+      const clkB = clockFrom(14_780_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      expect(B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id LIKE 'n1_conflict_%'").get()).toEqual({ c: 0 });
+      expect(B.engine.listRestorable("notes").rows.map((r) => r.entity_id)).toContain("n1");
+      expect(B.engine.restoreDeleted("notes", "n1").restored).toBe(true);
+    });
+
     it("logs an applied outcome for a peer edit that lands cleanly", () => {
       const clkA = clockFrom(14_000_000);
       const clkB = clockFrom(14_000_000);
