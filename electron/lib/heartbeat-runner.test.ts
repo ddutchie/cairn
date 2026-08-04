@@ -13,6 +13,9 @@ import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, saveMcpServer, setToolAttachment } from "../db/queries";
 import { createAutomation, createAutomationRun, getAutomationRunById } from "../db/automation-queries";
+// vi.mock calls are hoisted above this import, so the static import sees the
+// mocked config-cache / chat-loop / external-tools modules.
+import { runAutomation } from "./heartbeat-runner";
 
 const { runToolLoopMock } = vi.hoisted(() => ({ runToolLoopMock: vi.fn() }));
 
@@ -33,8 +36,6 @@ vi.mock("./external-tools", async (importOriginal) => {
     getExternalToolDefs: vi.fn(async () => []),
   };
 });
-
-const { runAutomation } = await import("./heartbeat-runner");
 
 function makeDb(): Database.Database {
   const db = new BetterSqlite3(":memory:");
