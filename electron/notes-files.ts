@@ -83,18 +83,34 @@ function readImportExclusions(workspacePath: string): Set<string> {
   let raw: string;
   try {
     raw = fs.readFileSync(configPath, "utf-8");
-  } catch {
-    // Genuinely missing config — no exclusions, and nothing to preserve.
-    lastValidExclusions.delete(workspacePath);
-    haltedWorkspaces.delete(workspacePath);
+  } catch (err) {
+    // A genuinely missing config means "no exclusions" — clear the workspace's
+    // cached state. Any OTHER read failure means the file exists but is
+    // currently unreadable: fall back to the last valid set, else halt.
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      lastValidExclusions.delete(workspacePath);
+      haltedWorkspaces.delete(workspacePath);
+      return new Set();
+    }
+    if (lastValidExclusions.has(workspacePath)) return new Set(lastValidExclusions.get(workspacePath)!);
+    haltedWorkspaces.add(workspacePath);
     return new Set();
   }
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { excludedFolders?: unknown }).excludedFolders)) {
+    // ANY non-string entry (not just some) makes the whole file invalid — a
+    // single bad value means we can't trust the list, so it must fall back/halt
+    // rather than silently dropping entries and importing folders the user
+    // intended to keep out.
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray((parsed as { excludedFolders?: unknown }).excludedFolders) ||
+      (parsed as { excludedFolders: unknown[] }).excludedFolders.some((v) => typeof v !== "string")
+    ) {
       throw new Error("invalid shape");
     }
-    const set = new Set((parsed as { excludedFolders: unknown[] }).excludedFolders.filter((v): v is string => typeof v === "string"));
+    const set = new Set((parsed as { excludedFolders: string[] }).excludedFolders);
     lastValidExclusions.set(workspacePath, set);
     haltedWorkspaces.delete(workspacePath);
     return set;
@@ -115,15 +131,18 @@ export function isImportConfigHalted(workspacePath: string): boolean {
 
 /** Shared watcher/scanner boundary: true when a path must never be imported. */
 export function isImportPathExcluded(workspacePath: string, filePath: string): boolean {
-  // A malformed config with no known-good value halts ALL adoption rather than
-  // importing folders the user may have excluded.
-  if (isImportConfigHalted(workspacePath)) return true;
   const rel = path.relative(notesDir(workspacePath), filePath);
   if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return true;
   const segments = rel.split(path.sep);
   if (segments.some((segment) => isSkippedDirectory(segment))) return true;
   if (isSkippedMarkdown(segments[segments.length - 1])) return true;
-  return segments.length > 1 && readImportExclusions(workspacePath).has(segments[0]);
+  // Load/parse the config (which REGISTERS the halted state for a malformed
+  // newly-encountered file) after the cheap lexical checks, then evaluate the
+  // refreshed halt state. Checking halt before reading would miss a config that
+  // just turned malformed, letting root notes and nested files through.
+  const excludedFolders = readImportExclusions(workspacePath);
+  if (isImportConfigHalted(workspacePath)) return true;
+  return segments.length > 1 && excludedFolders.has(segments[0]);
 }
 
 export function saveImportExclusions(workspacePath: string, excludedFolders: string[]): void {

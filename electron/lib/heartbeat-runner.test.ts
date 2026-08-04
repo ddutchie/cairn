@@ -17,7 +17,10 @@ import { createAutomation, createAutomationRun, getAutomationRunById } from "../
 // mocked config-cache / chat-loop / external-tools modules.
 import { runAutomation } from "./heartbeat-runner";
 
-const { runToolLoopMock } = vi.hoisted(() => ({ runToolLoopMock: vi.fn() }));
+const { runToolLoopMock, getExternalToolDefsMock } = vi.hoisted(() => ({
+  runToolLoopMock: vi.fn(),
+  getExternalToolDefsMock: vi.fn(async () => []),
+}));
 
 vi.mock("./config-cache", () => ({
   getCachedConfig: () => ({ aiConfig: { baseUrl: "https://api.test.invalid", model: "gpt-test" } }),
@@ -33,7 +36,7 @@ vi.mock("./external-tools", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./external-tools")>();
   return {
     ...actual,
-    getExternalToolDefs: vi.fn(async () => []),
+    getExternalToolDefs: getExternalToolDefsMock,
   };
 });
 
@@ -117,5 +120,27 @@ describe("runAutomation connector requirements", () => {
 
     expect(runToolLoopMock).toHaveBeenCalled();
     expect(getAutomationRunById(db, run.id)!.status).toBe("done");
+  });
+
+  it("errors the run when required-tool loading fails, without running the loop", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    saveMcpServer(db, {
+      id: "m-linear", workspaceId: "ws1", name: "Linear", transport: "http",
+      baseUrl: "https://mcp.linear.app/mcp", enabled: true, source: "community",
+      communityId: "linear",
+    });
+    setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m-linear", enabled: true });
+    const automation = makeAutomation(db, { projectId: "p1", requires: [{ kind: "mcp", name: "linear" }] });
+    const run = createAutomationRun(db, automation.id, "running");
+    getExternalToolDefsMock.mockRejectedValueOnce(new Error("connector exploded"));
+
+    await runAutomation({ db, workspacePath: "/tmp" }, run, automation);
+
+    expect(runToolLoopMock).not.toHaveBeenCalled();
+    const updated = getAutomationRunById(db, run.id)!;
+    expect(updated.status).toBe("error");
+    expect(updated.error).toMatch(/connector exploded/);
   });
 });

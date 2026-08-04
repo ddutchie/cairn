@@ -138,6 +138,24 @@ describe("transport oplog shape validation", () => {
     const got = readPeerOplogs(dir, "dev_a");
     expect(got.map((e) => e.entity_id).sort()).toEqual(["causal", "legacy", "tombstoned"]);
   });
+
+  it("rejects put payloads that are not row records (null or array)", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    const file = path.join(dir, "oplog-dev_b.ndjson");
+    fs.writeFileSync(
+      file,
+      [
+        JSON.stringify({ ...entry, entity_id: "valid-put", payload: { id: "n1", title: "T" } }),
+        JSON.stringify({ ...entry, entity_id: "null-payload", op: "put", payload: null }),
+        JSON.stringify({ ...entry, entity_id: "array-payload", op: "put", payload: [] }),
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    const got = readPeerOplogs(dir, "dev_a");
+    expect(got.map((e) => e.entity_id).sort()).toEqual(["valid-put"]);
+  });
 });
 
 describe("transport write behaviour", () => {

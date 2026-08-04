@@ -28,6 +28,7 @@ import {
   importVaultProjects,
   previewVaultImport,
   saveImportExclusions,
+  isImportPathExcluded,
 } from "./notes-files";
 import type { NoteData } from "./notes-files";
 
@@ -737,6 +738,10 @@ describe("importVaultProjects auto-creates projects from folders", () => {
     const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as Array<{ name: string }>;
     expect(projects.map((project) => project.name)).toEqual(["Public"]);
     expect(fs.readFileSync(privateNote, "utf-8")).toBe("# Secret\n");
+    // Seed a live "Private" project so adoption can RESOLVE the file's owning
+    // project — a null return then proves the exclusion gate, not missing-
+    // project resolution.
+    createProject(db, { id: "proj-private", workspaceId: "ws1", name: "Private" });
     expect(adoptExternalNoteFile(db, tmpDir, privateNote)).toBeNull();
   });
 
@@ -755,6 +760,10 @@ describe("importVaultProjects auto-creates projects from folders", () => {
 
     const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as Array<{ name: string }>;
     expect(projects.map((project) => project.name)).toEqual(["Public"]);
+    // Seed a live "Private" project so adoption can RESOLVE the file's owning
+    // project — a null return then proves the exclusion gate survived the
+    // corrupted config, not missing-project resolution.
+    createProject(db, { id: "proj-private", workspaceId: "ws1", name: "Private" });
     expect(adoptExternalNoteFile(db, tmpDir, privateNote)).toBeNull();
   });
 
@@ -768,6 +777,47 @@ describe("importVaultProjects auto-creates projects from folders", () => {
 
     const notes = db.prepare("SELECT COUNT(*) n FROM notes").get() as { n: number };
     expect(notes.n).toBe(0);
+  });
+
+  it("treats a non-string excludedFolders entry as invalid (halts a never-valid config)", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Private"), "Secret.md", "# Secret\n");
+    // A single bad entry poisons the whole list — it must halt, not silently
+    // drop the entry and import folders the user intended to keep out.
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), JSON.stringify({ excludedFolders: ["Private", 42] }), "utf-8");
+
+    expect(importVaultProjects(db, tmpDir)).toBe(0);
+    syncNotesFromDisk(db, tmpDir);
+
+    const notes = db.prepare("SELECT COUNT(*) n FROM notes").get() as { n: number };
+    expect(notes.n).toBe(0);
+  });
+
+  it("falls back to the last valid exclusions when a new entry is non-string", () => {
+    seedWorkspaceOnly();
+    const privateNote = writePlainMdFile(path.join(tmpDir, "Private"), "Secret.md", "# Secret\n");
+    writePlainMdFile(path.join(tmpDir, "Public"), "Shared.md", "# Shared\n");
+    saveImportExclusions(tmpDir, ["Private"]);
+    syncNotesFromDisk(db, tmpDir); // caches the valid exclusions
+
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), JSON.stringify({ excludedFolders: ["Private", 42] }), "utf-8");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as Array<{ name: string }>;
+    expect(projects.map((project) => project.name)).toEqual(["Public"]);
+    expect(adoptExternalNoteFile(db, tmpDir, privateNote)).toBeNull();
+  });
+
+  it("halts freshly-malformed configs in isImportPathExcluded for root and nested paths", () => {
+    seedWorkspaceOnly();
+    const rootMd = writePlainMdFile(tmpDir, "Root.md", "# Root\n");
+    const nestedMd = writePlainMdFile(path.join(tmpDir, "Folder"), "Note.md", "# Note\n");
+    // Never valid — must halt on first encounter, even before a scan runs.
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), "{ this is not json", "utf-8");
+
+    expect(isImportPathExcluded(tmpDir, rootMd)).toBe(true);
+    expect(isImportPathExcluded(tmpDir, nestedMd)).toBe(true);
   });
 
   it("does not create a project for an empty top-level folder (no .md files)", () => {

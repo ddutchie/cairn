@@ -95,8 +95,8 @@ export function TitleBar() {
               ? "text-[var(--accent)] hover:bg-[var(--surface-2)]"
               : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
           )}
-          title="Notifications"
-          aria-label="Notifications"
+          title={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
+          aria-label={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
         >
           <Bell
             size={14}

@@ -417,6 +417,12 @@ select:focus {
   transform-origin: 50% 25%;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .animate-bell-wobble {
+    animation: none;
+  }
+}
+
 .chat-panel-responsive {
   width: 100vw;
   height: 100dvh;

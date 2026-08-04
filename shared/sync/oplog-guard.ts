@@ -44,6 +44,12 @@ function isOplogEntry(v: unknown): v is OplogEntry {
     typeof (e.tombstone as Record<string, unknown>).origin === "string" &&
     decodeHlc((e.tombstone as Record<string, unknown>).hlc as string).deviceId === (e.tombstone as Record<string, unknown>).origin
   );
+  // A `put` must carry a full row snapshot — a null or array payload can't be a
+  // valid record and would silently produce an empty/undefined row on apply.
+  // Non-put ops keep the looser legacy rule (null, or an object/record).
+  const payloadValid = e.op === "put"
+    ? typeof e.payload === "object" && e.payload !== null && !Array.isArray(e.payload)
+    : e.payload === null || (typeof e.payload === "object" && e.payload !== null && !Array.isArray(e.payload));
   return (
     validHlc(e.hlc) &&
     typeof e.origin === "string" &&
@@ -52,7 +58,7 @@ function isOplogEntry(v: unknown): v is OplogEntry {
     typeof e.entity_id === "string" &&
     typeof e.op === "string" &&
     OPS.has(e.op) &&
-    (e.payload === null || (typeof e.payload === "object" && e.payload !== null)) &&
+    payloadValid &&
     observedValid &&
     tombstoneValid
   );

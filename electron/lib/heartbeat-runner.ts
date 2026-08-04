@@ -154,8 +154,9 @@ export async function runAutomation(
   // so a missing/attached-only requirement simply contributes no tools and the
   // agent works with what's actually in scope. External calls stay gated behind
   // the approval inbox by makeApprovalGate (never auto-approved side effects).
-  // A connector-load failure degrades to no extra tools rather than failing the
-  // run (mirrors chat.ts / pi-agent-loop).
+  // A connector-load failure is NOT degraded away: the recipe declared these
+  // connectors as required, so a run that can't assemble their tools is failed
+  // up front rather than silently continuing with built-in tools only.
   // The cast mirrors chat.ts/pi-agent-loop: external defs are OpenAIToolDef[]
   // (open tool-name strings), the loop's extraTools slot is the typed TOOLS.
   let extraTools: typeof TOOLS | undefined;
@@ -168,8 +169,15 @@ export async function runAutomation(
         automation.requires,
       )) as unknown as typeof TOOLS;
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error("[heartbeat] failed to assemble external tools:", err);
-      extraTools = undefined;
+      updateAutomationRun(db, run.id, {
+        status: "error",
+        finishedAt: new Date().toISOString(),
+        error: `Failed to load required connector tools: ${message}`,
+      });
+      insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, `Failed to load required connector tools: ${message}`);
+      return;
     }
   }
 
