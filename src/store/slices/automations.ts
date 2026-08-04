@@ -9,7 +9,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ID } from "@/types";
+import type { ID, RegistryRequirement } from "@/types";
 import { id } from "@/lib/utils";
 
 export type ScheduleKind = "cron" | "every" | "once";
@@ -32,6 +32,11 @@ export interface Automation {
   activeHoursStart: string | null;
   activeHoursEnd: string | null;
   standingRules: Array<{ tool: string; target?: string }>;
+  /**
+   * External connectors (MCP servers / HTTP services) the automation needs in
+   * scope. Empty = data-only automation.
+   */
+  requires: RegistryRequirement[];
   source: "custom" | "community";
   communityId: ID | null;
   createdAt: string;
@@ -69,6 +74,7 @@ export interface AutomationInput {
   activeHoursStart?: string | null;
   activeHoursEnd?: string | null;
   standingRules?: Array<{ tool: string; target?: string }>;
+  requires?: RegistryRequirement[];
   /** Provenance when prefilled from the cairn-community catalog. */
   source?: "custom" | "community";
   communityId?: ID | null;

@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import BetterSqlite3 from "better-sqlite3";
+import type Database from "better-sqlite3";
 
 // external-tools imports mcp-client + custom-services (→ secure-store → electron).
 vi.mock("electron", () => ({
@@ -6,7 +8,9 @@ vi.mock("electron", () => ({
   safeStorage: { isEncryptionAvailable: () => false },
 }));
 
-import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel, filterDisabledMcpDefs } from "./external-tools";
+import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel, filterDisabledMcpDefs, checkRequirements } from "./external-tools";
+import { applySchema } from "../db/schema";
+import { createWorkspace, createProject, saveMcpServer, saveCustomService, setToolAttachment } from "../db/queries";
 
 describe("external-tools scoping", () => {
   it("collects enabled attachments by type", () => {
@@ -117,5 +121,75 @@ describe("filterDisabledMcpDefs", () => {
   it("keeps defs whose name doesn't parse as an mcp tool", () => {
     const defs = [def("not-namespaced"), def("svc__s1__call")];
     expect(filterDisabledMcpDefs(defs, ["call"])).toHaveLength(2);
+  });
+});
+
+describe("checkRequirements", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    createWorkspace(db, { id: "ws-1", name: "W" });
+    createProject(db, { id: "proj-1", workspaceId: "ws-1", name: "P" });
+    saveMcpServer(db, {
+      id: "m-linear", workspaceId: "ws-1", name: "Linear", transport: "http",
+      baseUrl: "https://mcp.linear.app/mcp", enabled: true, source: "community",
+      communityId: "linear", authMode: "oauth",
+    });
+    saveCustomService(db, {
+      id: "svc-brave", workspaceId: "ws-1", name: "Brave Search",
+      apiUrl: "https://api.search.brave.com", method: "GET",
+      toolDefinition: JSON.stringify({ name: "brave_web_search", description: "Search", parameters: { type: "object", properties: {} } }),
+      enabled: true, source: "community", communityId: "brave",
+    });
+  });
+
+  afterEach(() => { db.close(); });
+
+  it("flags a connector as attached when it is enabled + project-attached", () => {
+    setToolAttachment(db, { projectId: "proj-1", toolType: "mcp", toolId: "m-linear", enabled: true });
+    const status = checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "Linear" }]);
+    expect(status[0]).toMatchObject({ kind: "mcp", name: "Linear", installed: true, attached: true });
+  });
+
+  it("matches by catalog id (communityId) case-insensitively", () => {
+    setToolAttachment(db, { projectId: "proj-1", toolType: "mcp", toolId: "m-linear", enabled: true });
+    expect(checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "LINEAR" }])[0].attached).toBe(true);
+  });
+
+  it("installed but not attached → attached false", () => {
+    const status = checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "Linear" }]);
+    expect(status[0]).toMatchObject({ installed: true, attached: false });
+  });
+
+  it("global-scope attachment counts as attached", () => {
+    setToolAttachment(db, { projectId: "__global__", toolType: "mcp", toolId: "m-linear", enabled: true });
+    expect(checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "Linear" }])[0].attached).toBe(true);
+  });
+
+  it("a disabled connector is installed but not attached", () => {
+    saveMcpServer(db, {
+      id: "m-github", workspaceId: "ws-1", name: "GitHub", transport: "http",
+      baseUrl: "https://mcp.github.com/mcp", enabled: false, source: "community",
+      communityId: "github", authMode: "oauth",
+    });
+    const status = checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "github" }]);
+    expect(status[0]).toMatchObject({ installed: true, attached: false });
+  });
+
+  it("reports a service requirement against the service catalog", () => {
+    setToolAttachment(db, { projectId: "proj-1", toolType: "service", toolId: "svc-brave", enabled: true });
+    const status = checkRequirements(db, "ws-1", "proj-1", [{ kind: "service", name: "brave" }]);
+    expect(status[0]).toMatchObject({ kind: "service", name: "brave", installed: true, attached: true });
+  });
+
+  it("flags a connector that is not installed at all", () => {
+    const status = checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "Slack" }]);
+    expect(status[0]).toMatchObject({ installed: false, attached: false });
+  });
+
+  it("handles an empty requires list", () => {
+    expect(checkRequirements(db, "ws-1", "proj-1", [])).toEqual([]);
   });
 });

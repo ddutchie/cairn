@@ -825,6 +825,7 @@ const MIGRATIONS: Migration[] = [
         run_count       INTEGER NOT NULL DEFAULT 0,
         approval_mode   TEXT NOT NULL DEFAULT 'auto',  -- 'auto' (run writes freely) | 'ask' (gate writes behind the approval inbox)
         standing_rules  TEXT NOT NULL DEFAULT '[]',    -- JSON [{tool, target}]
+        requires        TEXT,                          -- JSON [{kind:'mcp'|'service', name}] connector requirements (NULL = data-only recipe)
         source          TEXT NOT NULL DEFAULT 'custom',-- 'custom' | 'community'
         community_id    TEXT,
         created_at      TEXT NOT NULL,
@@ -911,6 +912,7 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "approval_mode", "approval_mode TEXT NOT NULL DEFAULT 'auto'");
   ensure("automations", "active_hours_start", "active_hours_start TEXT");
   ensure("automations", "active_hours_end", "active_hours_end TEXT");
+  ensure("automations", "requires", "requires TEXT");
   ensure("mcp_notifications", "target_type", "target_type TEXT");
   ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");

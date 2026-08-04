@@ -166,6 +166,19 @@ const FEATURES = [
       "Community Recipes & Notifications: Start from a community recipe (automations.json) that pre-fills the form, and track every update in the notification center opened from the title-bar bell.",
     ],
   },
+  {
+    id: "v2.6.1-connector-automations",
+    version: "v2.6.1",
+    title: "Connector-Aware Automations",
+    category: "Automation",
+    description: "Automations can now use your attached MCP servers and HTTP services — Linear digests, GitHub PR summaries, Slack recaps. Required connectors are checked at setup, and their keys or OAuth sign-in are asked for at install.",
+    highlights: [
+      "Recipes That Need Connectors: New community recipes pull in Linear, GitHub, or Slack — the recipe card shows which connectors it needs and whether they're installed and attached to the project.",
+      "Keys Asked At Install: Install a connector and you're prompted for its API key or OAuth sign-in on the spot — no guessing later where the key goes.",
+      "Gated External Calls: Connector calls from an automation wait for your approval in the inbox by default — external side effects are never auto-approved.",
+      "Connector Badges: Saved automations show the connectors they depend on, so you can see at a glance which ones need a key or a connection.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

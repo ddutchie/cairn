@@ -104,6 +104,19 @@ export interface CommunityManifest {
 }
 
 /**
+ * An external connector a recipe needs in scope to do its job — an MCP server
+ * or a custom HTTP service. `name` matches the connector's catalog id (slug,
+ * e.g. "linear") OR its display definition.name ("Linear"), case-insensitively.
+ * Recipes that declare `requires` are connector-aware: their runs are offered
+ * the project's attached external tools, and external tool calls are gated
+ * behind the approval inbox by default (never auto-approved).
+ */
+export interface RegistryRequirement {
+  kind: "mcp" | "service";
+  name: string;
+}
+
+/**
  * A community automation recipe — a reusable scheduled background task.
  * Selecting one in the New Automation flow PRE-FILLS the form (name,
  * instructions, schedule, approval mode) so the user can tweak it and save.
@@ -126,6 +139,13 @@ export interface RegistryAutomationEntry extends RegistryEntryMeta {
     /** auto (default) = writes run freely; ask = gate writes behind the approval inbox. */
     approvalMode?: "auto" | "ask";
     maxRuns?: number;
+    /**
+     * External connectors (MCP servers / HTTP services) the recipe needs in
+     * scope. When present, the automation is connector-aware: the runner loads
+     * the project's attached external tools, and external tool calls are
+     * DEFAULT-gated to the approval inbox (never auto-approved side effects).
+     */
+    requires?: RegistryRequirement[];
   };
 }
 
@@ -307,6 +327,11 @@ const automationSchedule = z.object({
   timezone: z.string().optional(),
 });
 
+const automationRequirement = z.object({
+  kind: z.enum(["mcp", "service"]),
+  name: z.string().min(1),
+});
+
 const automationDefinition = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -314,6 +339,10 @@ const automationDefinition = z.object({
   schedule: automationSchedule,
   approvalMode: z.enum(["auto", "ask"]).optional(),
   maxRuns: z.number().int().min(1).optional(),
+  // Fail-soft at the ENTRY level like every other field: a recipe with a
+  // malformed requirement drops the whole recipe (safeParse on the entry),
+  // it never blanks the catalog.
+  requires: z.array(automationRequirement).optional(),
 });
 
 const automationEntry = z.object({ ...entryMeta, definition: automationDefinition }).passthrough();

@@ -34,6 +34,7 @@ import {
   type AutomationInput,
 } from "../db/automation-queries";
 import { runAutomationNow } from "../lib/heartbeat-runner";
+import { checkRequirements } from "../lib/external-tools";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
 
@@ -713,6 +714,9 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:automation:delete", (_e, { id }) => handle(() => deleteAutomation(ctx.db, id)));
   registerIpcHandle("db:automation:runs", (_e, { automationId, limit }: { automationId: string; limit?: number }) => handle(() => listAutomationRuns(ctx.db, automationId, limit)));
   registerIpcHandle("db:automation:runningCount", () => handle(() => countRunningAutomationRuns(ctx.db)));
+  registerIpcHandle("db:automation:checkRequirements", (_e, { workspaceId, projectId, requires }: { workspaceId: string; projectId?: string | null; requires: Array<{ kind: "mcp" | "service"; name: string }> }) =>
+    handle(() => checkRequirements(ctx.db, workspaceId, projectId ?? "", requires)),
+  );
   registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
     const runId = runAutomationNow({ db: ctx.db, workspacePath: ctx.workspacePath }, id);
     return runId === null ? { skipped: true } : { runId };

@@ -208,4 +208,53 @@ describe("parseAutomationsManifest", () => {
     });
     expect(m.automations.map((a) => a.id)).toEqual(["good"]);
   });
+
+  it("parses a recipe's required connectors", () => {
+    const m = parseAutomationsManifest({
+      version: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      automations: [
+        {
+          id: "linear-digest",
+          author: "cairn",
+          version: "1.0.0",
+          category: "Automation",
+          tags: ["linear"],
+          blurb: "Weekly Linear digest",
+          definition: {
+            name: "Linear digest",
+            instructions: "Summarise this week's Linear issues into a note.",
+            schedule: { kind: "cron", expr: "0 9 * * 1" },
+            requires: [{ kind: "mcp", name: "Linear" }],
+          },
+        },
+      ],
+    });
+    expect(m.automations).toHaveLength(1);
+    expect(m.automations[0].definition.requires).toEqual([{ kind: "mcp", name: "Linear" }]);
+  });
+
+  it("drops a recipe with a malformed requirement (never blanks the catalog)", () => {
+    const m = parseAutomationsManifest({
+      version: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      automations: [
+        { id: "ok", author: "x", version: "1", tags: [], blurb: "", definition: { name: "OK", instructions: "Do a useful thing here.", schedule: { kind: "every", expr: "every 24 hours" } } },
+        {
+          id: "bad-req",
+          author: "x",
+          version: "1",
+          tags: [],
+          blurb: "",
+          definition: {
+            name: "Bad",
+            instructions: "Do a useful thing here.",
+            schedule: { kind: "every", expr: "every 24 hours" },
+            requires: [{ kind: "ftp", name: "" }],
+          },
+        },
+      ],
+    });
+    expect(m.automations.map((a) => a.id)).toEqual(["ok"]);
+  });
 });

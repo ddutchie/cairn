@@ -22,7 +22,7 @@ import type { OpenAIMessage } from "./llm";
 import { runToolLoop } from "./chat-loop";
 import { getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
-import { buildSystemPrompt, type ChatRequest } from "./tools";
+import { buildSystemPrompt, TOOLS, type ChatRequest } from "./tools";
 import { insertNotification } from "../mcp/db";
 import {
   bumpAutomationRunCount,
@@ -35,6 +35,7 @@ import {
   type AutomationRun,
 } from "../db/automation-queries";
 import { makeApprovalGate } from "./automation-approval";
+import { getExternalToolDefs } from "./external-tools";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -122,6 +123,26 @@ export async function runAutomation(
     { role: "user", content: automation.instructions },
   ];
 
+  // Connector-aware automation: load the project's attached external tools
+  // (MCP servers / custom services) and offer them to the loop as extraTools.
+  // getExternalToolDefs filters to enabled + project/global-attached connectors,
+  // so a missing/attached-only requirement simply contributes no tools and the
+  // agent works with what's actually in scope. External calls stay gated behind
+  // the approval inbox by makeApprovalGate (never auto-approved side effects).
+  // A connector-load failure degrades to no extra tools rather than failing the
+  // run (mirrors chat.ts / pi-agent-loop).
+  // The cast mirrors chat.ts/pi-agent-loop: external defs are OpenAIToolDef[]
+  // (open tool-name strings), the loop's extraTools slot is the typed TOOLS.
+  let extraTools: typeof TOOLS | undefined;
+  if ((automation.requires ?? []).length > 0) {
+    try {
+      extraTools = (await getExternalToolDefs(db, automation.workspaceId, automation.projectId ?? "")) as unknown as typeof TOOLS;
+    } catch (err) {
+      console.error("[heartbeat] failed to assemble external tools:", err);
+      extraTools = undefined;
+    }
+  }
+
   // Report the tool currently executing into the run's scratch JSON so the
   // Automations view can show a live "running: <tool>" chip while the run is
   // in flight.
@@ -177,7 +198,7 @@ export async function runAutomation(
     (e) => recordArtifact(e.tool, e.cairnRef), // emitToolCallDone — collect created/changed notes/cards
     undefined,                       // onToken
     undefined,                       // onThought
-    undefined,                       // extraTools
+    extraTools,                      // connector-aware recipes get their attached external tools
     undefined,                       // toolsOverride
     undefined,                       // argMutator
     makeApprovalGate(db, run, automation),

@@ -5,13 +5,13 @@ import { applySchema } from "../db/schema";
 import { createWorkspace, createProject } from "../db/queries";
 import { createAutomation, createAutomationRun, type Automation, type AutomationRun } from "../db/automation-queries";
 import { listPendingApprovals, parkApproval, resolveApproval } from "../db/approval-queries";
-import { makeApprovalGate, waitForApproval, isReadTool } from "./automation-approval";
+import { makeApprovalGate, waitForApproval, isReadTool, isExternalTool } from "./automation-approval";
 
 let db: Database.Database;
 let automation: Automation;
 let run: AutomationRun;
 
-function makeAutomation(approvalMode: "auto" | "ask"): Automation {
+function makeAutomation(approvalMode: "auto" | "ask", requires: Array<{ kind: "mcp" | "service"; name: string }> = []): Automation {
   const a = createAutomation(db, {
     workspaceId: "ws-1",
     projectId: "proj-1",
@@ -21,6 +21,7 @@ function makeAutomation(approvalMode: "auto" | "ask"): Automation {
     scheduleExpr: "every 1 hour",
     nextRunAt: new Date(Date.now() + 60_000).toISOString(),
     approvalMode,
+    requires,
   });
   return a;
 }
@@ -60,6 +61,13 @@ describe("automation approval gate", () => {
     expect(isReadTool("search_notes")).toBe(true);
     expect(isReadTool("create_task")).toBe(false);
     expect(isReadTool("ensure_note")).toBe(false);
+  });
+
+  it("classifies external (namespaced mcp/svc) tools", () => {
+    expect(isExternalTool("mcp__srv1__linear_search_issues")).toBe(true);
+    expect(isExternalTool("svc__s1__brave_web_search")).toBe(true);
+    expect(isExternalTool("create_task")).toBe(false);
+    expect(isExternalTool("get_note")).toBe(false);
   });
 
   it("allows read tools immediately in ask mode", async () => {
@@ -104,5 +112,33 @@ describe("automation approval gate", () => {
     expect(res).toBeNull();
     const after = listPendingApprovals(db);
     expect(after.length).toBe(0); // timed out → resolved as denied
+  });
+
+  it("connector-aware auto automation still gates EXTERNAL tools", async () => {
+    const a = makeAutomation("auto", [{ kind: "mcp", name: "Linear" }]);
+    const gate = makeApprovalGate(db, run, a)!;
+    expect(gate).toBeDefined();
+
+    // External tool call → parked for approval.
+    const promise = gate("mcp__srv1__linear_create_issue", { title: "X" });
+    const pending = await waitForPending();
+    expect(pending[0].tool).toBe("mcp__srv1__linear_create_issue");
+
+    resolveApproval(db, pending[0].id, "approved_once");
+    expect((await promise).allow).toBe(true);
+  });
+
+  it("connector-aware auto automation lets built-in data tools run freely", async () => {
+    const a = makeAutomation("auto", [{ kind: "mcp", name: "Linear" }]);
+    const gate = makeApprovalGate(db, run, a)!;
+    // Built-in write tools are NOT parked — only external calls are gated.
+    const res = await gate("create_task", { title: "Ship it" });
+    expect(res.allow).toBe(true);
+    expect(listPendingApprovals(db).length).toBe(0);
+  });
+
+  it("data-only auto automation yields no gate", () => {
+    const a = makeAutomation("auto");
+    expect(makeApprovalGate(db, run, a)).toBeUndefined();
   });
 });

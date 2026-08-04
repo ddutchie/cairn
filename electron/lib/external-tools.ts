@@ -110,7 +110,9 @@ export function filterDisabledMcpDefs(defs: OpenAIToolDef[], disabledTools: stri
   });
 }
 
-/** Load the in-scope MCP + service runtime configs for a project. */
+/**
+ * Load the in-scope MCP + service runtime configs for a project.
+ */
 function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId: string) {
   const rows = [
     ...q.getToolAttachments(db, GLOBAL_TOOL_SCOPE),
@@ -126,6 +128,62 @@ function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId
     .filter((s) => s.enabled && attached.service.has(s.id));
 
   return { mcpServers, customServices };
+}
+
+export interface RequirementStatus {
+  kind: "mcp" | "service";
+  name: string;
+  /** A matching connector is installed in the workspace (by catalog id or name). */
+  installed: boolean;
+  /** Installed AND enabled AND attached to the project (or globally). */
+  attached: boolean;
+}
+
+/**
+ * Resolve a list of recipe `requires` against what's actually installed and in
+ * scope for a project. Used by the New Automation browse step to show
+ * installed/attached status per required connector and warn when one is
+ * missing. A requirement matches a connector by its catalog id (`communityId`)
+ * or its display name, case-insensitively.
+ */
+export function checkRequirements(
+  db: Database.Database,
+  workspaceId: string,
+  projectId: string,
+  requires: Array<{ kind: "mcp" | "service"; name: string }>,
+): RequirementStatus[] {
+  const rows = [
+    ...q.getToolAttachments(db, GLOBAL_TOOL_SCOPE),
+    ...(projectId ? q.getToolAttachments(db, projectId) : []),
+  ] as AttachmentRow[];
+  const attached = resolveAttachedToolIds(rows);
+
+  const mcpServers = q.getMcpServers(db, workspaceId);
+  const customServices = q.getCustomServices(db, workspaceId);
+
+  return requires.map((req) => {
+    const key = req.name.toLowerCase();
+    if (req.kind === "mcp") {
+      const server = mcpServers.find(
+        (s) => s.communityId?.toLowerCase() === key || s.name.toLowerCase() === key,
+      );
+      return {
+        kind: req.kind,
+        name: req.name,
+        installed: Boolean(server),
+        attached: Boolean(server && server.enabled && attached.mcp.has(server.id)),
+      };
+    }
+    const svc = customServices.find(
+      (s) => s.communityId?.toLowerCase() === key || s.name.toLowerCase() === key,
+    );
+    return {
+      kind: req.kind,
+      name: req.name,
+      installed: Boolean(svc),
+      attached: Boolean(svc && svc.enabled && attached.service.has(svc.id)),
+    };
+  });
 }
 
 /**
