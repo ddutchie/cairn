@@ -35,14 +35,16 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
 
   // Seed the form once per OPEN. `project` identity changes on every store
   // refresh (db:changed rehydrates rows as new objects), so depending on it
-  // would overwrite the user's in-progress edits. A ref keeps the freshest
-  // project visible at the moment the modal opens.
+  // would overwrite the user's in-progress edits. The ref tracks the freshest
+  // project via an effect (never touched during render) and is read only when
+  // the modal opens.
   const seedRef = useRef(project);
-  seedRef.current = project;
+  useEffect(() => {
+    seedRef.current = project;
+  }, [project]);
   useEffect(() => {
     if (!open) return;
     const p = seedRef.current;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEditIcon(p.icon ?? "");
     setEditDesc(p.description ?? "");
     setEditStatus(p.status);
