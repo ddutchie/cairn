@@ -179,6 +179,20 @@ const FEATURES = [
       "Connector Badges: Saved automations show the connectors they depend on, so you can see at a glance which ones need a key or a connection.",
     ],
   },
+  {
+    id: "v2.6.1-vault-import-preview",
+    version: "v2.6.1",
+    title: "See Before You Import",
+    category: "Onboarding",
+    description:
+      "Pointing Cairn at an existing Obsidian vault or Markdown folder now shows you exactly what it will adopt before a single file is touched. Review the projects and note counts, untick the folders you want left alone, then confirm.",
+    highlights: [
+      "Read-Only Preview: Choosing a folder no longer changes it — Cairn scans and reports the projects and notes it found, and only writes once you confirm.",
+      "Exclude What You Don't Want: Untick any top-level folder to leave it out, with counts updating as you go. Your choices stick for later scans and file watching.",
+      "Sensible Defaults: Templates, attachments, asset folders, and Excalidraw drawings are skipped automatically, so scratch files don't become notes.",
+      "Backup Reminder: The preview explains that Cairn adds a small frontmatter block on first touch and suggests a backup or git commit first.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };
