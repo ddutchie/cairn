@@ -1,0 +1,283 @@
+"use client";
+
+/**
+ * Sync visibility & recovery (plan §4 Phase 4).
+ *
+ * Two questions this answers, both of which used to be unanswerable:
+ *   - "Why did my note vanish?"  → the reconcile decision log.
+ *   - "Can I get it back?"       → one-tap restore for peer-deleted notes.
+ *
+ * Restore goes through the engine so the revival carries proof it observed the
+ * delete; a plain un-delete would simply be re-deleted on the next exchange.
+ */
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { History, RotateCcw, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  fetchSyncActivity,
+  fetchRestorableNotes,
+  restoreDeletedNote,
+  useSyncStatus,
+  type SyncActivityEntry,
+  type RestorableNote,
+  type SyncOutcome,
+  type RestoreRefusal,
+} from "@/lib/sync-client";
+
+/** Plain-English label + tone per reconcile outcome. */
+const OUTCOME_META: Record<SyncOutcome, { label: string; token: string; hint: string }> = {
+  applied: {
+    label: "Applied",
+    token: "var(--success)",
+    hint: "The incoming change was accepted.",
+  },
+  "conflict-copy": {
+    label: "Conflict copy",
+    token: "var(--warning)",
+    hint: "Both sides edited this — the local version was kept as a separate copy.",
+  },
+  "delete-won": {
+    label: "Delete won",
+    token: "var(--danger)",
+    hint: "A deletion took precedence over an edit that hadn't seen it.",
+  },
+  "skipped-stale": {
+    label: "Skipped",
+    token: "var(--text-tertiary)",
+    hint: "Older than what this device already had, so it was ignored.",
+  },
+};
+
+/** Why a restore didn't happen, in words a user can act on. */
+const REFUSAL_TEXT: Record<RestoreRefusal, string> = {
+  missing: "That note is no longer in the database.",
+  live: "That note is already restored.",
+  shell: "This device never received the note's content, so there's nothing to bring back.",
+  "conflict-copy": "This is a conflict copy — resolve it from the conflicts view instead.",
+  orphaned: "Its project was deleted too. Restore the project first.",
+  "self-deleted": "This device deleted that note, so it isn't offered for recovery.",
+};
+
+function refusalText(reason?: string): string {
+  if (!reason) return "Couldn't restore that note.";
+  return REFUSAL_TEXT[reason as RestoreRefusal] ?? reason;
+}
+
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "";
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 60) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+export function SyncActivityPanel() {
+  const [activity, setActivity] = useState<SyncActivityEntry[]>([]);
+  const [restorable, setRestorable] = useState<RestorableNote[]>([]);
+  const [restorableTotal, setRestorableTotal] = useState(0);
+  const [showLog, setShowLog] = useState(false);
+  const [restoring, setRestoring] = useState<ReadonlySet<string>>(new Set());
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loaded, setLoaded] = useState(false);
+  const alive = useRef(true);
+
+  // Re-fetch whenever sync reports new work, so a deletion that lands while the
+  // pane is open actually shows up — the whole point is visibility.
+  const status = useSyncStatus();
+
+  const load = useCallback(
+    async () => Promise.all([fetchSyncActivity(50), fetchRestorableNotes(20)]),
+    [],
+  );
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  // Fetch in an async closure (not directly in the effect body) so the writes
+  // land after the await and are dropped if this unmounts mid-flight.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [acts, restores] = await load();
+      if (cancelled) return;
+      setActivity(acts);
+      setRestorable(restores.rows);
+      setRestorableTotal(restores.total);
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load, status.lastSyncAt, status.pending]);
+
+  const onRestore = async (id: string) => {
+    setRestoring((prev) => new Set(prev).add(id));
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    try {
+      const res = await restoreDeletedNote(id);
+      if (!alive.current) return;
+      if (!res.restored) {
+        setErrors((prev) => ({ ...prev, [id]: refusalText(res.reason) }));
+      } else if (res.fileError) {
+        // The row came back but its file didn't — say so rather than implying
+        // a clean success.
+        setErrors((prev) => ({
+          ...prev,
+          [id]: `Restored, but the note file couldn't be written: ${res.fileError}`,
+        }));
+      }
+      const [acts, restores] = await load();
+      if (!alive.current) return;
+      setActivity(acts);
+      setRestorable(restores.rows);
+      setRestorableTotal(restores.total);
+    } finally {
+      if (alive.current) {
+        setRestoring((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    }
+  };
+
+  // Nothing recorded yet (fresh install, or sync never ran) — say so rather
+  // than rendering an empty shell.
+  if (loaded && activity.length === 0 && restorable.length === 0) {
+    return (
+      <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-4">
+        No sync activity recorded yet. Once this device exchanges changes with your phone, decisions
+        show up here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      {restorable.length > 0 && (
+        <div className="p-3 rounded-xl border border-[color-mix(in_srgb,var(--danger)_35%,transparent)] bg-[color-mix(in_srgb,var(--danger)_6%,transparent)] space-y-2">
+          <div className="text-xs font-semibold text-[var(--text-primary)]">
+            {restorableTotal === 1
+              ? "1 note was deleted on another device"
+              : `${restorableTotal} notes were deleted on another device`}
+          </div>
+          <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+            Restoring brings the note back everywhere — it won&apos;t be deleted again on the next
+            sync.
+          </p>
+          <ul className="space-y-1.5">
+            {restorable.map((note) => (
+              <li key={note.entity_id} className="p-2 rounded-lg bg-[var(--surface-3)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[0.786rem] text-[var(--text-primary)] truncate">
+                      {note.title || "Untitled"}
+                    </div>
+                    <div className="text-[0.643rem] text-[var(--text-tertiary)]">
+                      deleted {note.deleted_at ? relativeTime(note.deleted_at) : "recently"}
+                      {note.delete_origin ? ` on ${note.delete_origin}` : ""}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={restoring.has(note.entity_id)}
+                    onClick={() => onRestore(note.entity_id)}
+                  >
+                    <RotateCcw
+                      size={12}
+                      className={cn("mr-1.5", restoring.has(note.entity_id) && "animate-spin")}
+                    />
+                    Restore
+                  </Button>
+                </div>
+                {errors[note.entity_id] && (
+                  <div className="flex items-start gap-1.5 mt-1.5 text-[0.643rem] text-[var(--danger)]">
+                    <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                    <span>{errors[note.entity_id]}</span>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+          {restorableTotal > restorable.length && (
+            <p className="text-[0.643rem] text-[var(--text-tertiary)]">
+              Showing {restorable.length} of {restorableTotal}.
+            </p>
+          )}
+        </div>
+      )}
+
+      {activity.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowLog((v) => !v)}
+            aria-expanded={showLog}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
+          >
+            {showLog ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <History size={13} className="text-[var(--accent)]" />
+            Sync activity
+          </button>
+
+          {showLog && (
+            <ul className="mt-2 space-y-1 max-h-64 overflow-y-auto">
+              {activity.map((entry) => {
+                // Tolerate an outcome written by a different build rather than
+                // crashing the whole settings pane on an unknown key.
+                const meta = OUTCOME_META[entry.outcome] ?? {
+                  label: entry.outcome,
+                  token: "var(--text-tertiary)",
+                  hint: "",
+                };
+                return (
+                  <li
+                    key={entry.seq}
+                    className="flex items-start gap-2 p-2 rounded-lg bg-[var(--surface-3)]"
+                    title={meta.hint}
+                  >
+                    <span
+                      className="mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[0.607rem] font-semibold uppercase tracking-wide"
+                      style={{
+                        color: meta.token,
+                        background: `color-mix(in srgb, ${meta.token} 14%, transparent)`,
+                      }}
+                    >
+                      {meta.label}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[0.714rem] text-[var(--text-secondary)] truncate">
+                        {entry.op === "delete" ? "Delete" : "Change"} to {entry.entity}{" "}
+                        <span className="font-mono text-[var(--text-tertiary)]">{entry.entity_id}</span>
+                      </div>
+                      <div className="text-[0.643rem] text-[var(--text-tertiary)]">
+                        from {entry.origin} · seen {relativeTime(entry.at)}
+                        {entry.conflict_copy_id ? " · a copy was kept" : ""}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

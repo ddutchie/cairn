@@ -1,6 +1,6 @@
 # Sync Lifecycle Hardening — Delete/Resurrection & Stale-Peer Safety
 
-Status: Phases 1–3 implemented; Phase 4 outstanding
+Status: Phases 1–4 implemented (Phase 4 desktop UI; mobile UI is a follow-up)
 Owner: —
 Date: 2026-07-24
 Related: `shared/sync/engine.ts`, `shared/sync/hlc.ts`, `mobile/src/db/queries.ts`, `electron/db/queries.ts`, `electron/sync/desktop-sync.ts`, `docs/plans/mobile-app-viability.md` (§4–§5)
@@ -171,11 +171,45 @@ is silently lost.
 - **Tests:** ✅ a device backfilling old rows cannot resurrect a note another device already
   deleted.
 
-### Phase 4 — Visibility & recovery (defensive, ships alongside)
+### Phase 4 — Visibility & recovery (defensive, ships alongside) ✅ DONE
 - **4a.** Lightweight sync activity log: record applied ops (entity, op, hlc, origin,
   outcome: applied/skipped-stale/conflict-copy/delete-won) with a bounded ring buffer.
 - **4b.** Surface "recently changed by sync" + "restore" affordance for notes that were
   tombstoned by a peer, so a surprise deletion is recoverable in one tap.
+
+**As built:**
+- `sync_activity` is engine-owned and created lazily (no migration on either platform);
+  it is derived telemetry, so writes are wrapped and can never roll back a reconcile batch.
+- **Only decisive outcomes are logged** (`applied` / `conflict-copy` / `delete-won`).
+  Idle sync re-reads a peer's whole compacted oplog every cycle, so logging
+  `skipped-stale` would flood the 500-row buffer and evict the very events the log
+  exists to explain — in a 500-note workspace it turned over in one 30s cycle.
+- `restoreDeleted()` reuses `put()` so the revival carries exact proof it observed the
+  delete. That is the only thing the Phase 1 gate accepts, so a restore converges
+  instead of being re-deleted on the next exchange.
+- **`listRestorable()` and `restoreDeleted()` share one predicate** (`restorability()`).
+  An earlier split (SQL guard for the list, JS guard for the action) meant a
+  whitespace-titled note could be listed but refused — a dead Restore button.
+- Refusals are typed and surfaced: `missing` / `live` / `shell` / `conflict-copy` /
+  `orphaned` / `self-deleted`. Notably:
+  - **shell** uses `sync_row_base.put_hlc IS NOT NULL`, not a title heuristic — a
+    tombstone shell is a row whose content never arrived, and reviving one would
+    publish an FK-invalid husk to peers.
+  - **orphaned** checks FK parents are live (via `PRAGMA foreign_key_list`). Desktop
+    hard-deletes projects, so reviving a note under a dead project creates a
+    permanently divergent row: invisible on one device, present on the other.
+  - **self-deleted** needs its own `local_delete_hlc` column. `delete_origin` records
+    the *winning* delete and is overwritten by a higher-HLC peer delete, so when two
+    devices delete the same row independently the first one's own action gets
+    attributed to the peer — and Cairn's startup conflict cleanup does exactly that
+    on every device, every launch.
+- Timestamps shown for a delete are derived from the delete's HLC (when it was
+  authored), not from local `deleted_at` (when we applied it, possibly days later).
+- The recovery prompt is bounded to a 30-day window so it can't become a permanent
+  banner, and reports a true `total` separately from the returned page.
+
+**Scoped to desktop:** the engine half is shared, so mobile records the log and could
+restore, but no mobile UI is wired yet. That is a follow-up, not a gap in Phase 4.
 
 ---
 

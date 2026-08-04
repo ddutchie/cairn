@@ -20,7 +20,7 @@ import path from "path";
 import { applySchema } from "../../electron/db/schema";
 import { SYNCABLE_TABLES } from "./schema";
 import * as q from "../../electron/db/queries";
-import { SyncEngine } from "./engine";
+import { SyncEngine, SYNC_ACTIVITY_LIMIT } from "./engine";
 import { writeOplogFile, readPeerOplogs } from "./transport";
 import { compareHlc } from "./hlc";
 
@@ -1198,6 +1198,350 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       expect(A.engine.drainPending()).toBe(0);
       expect(B.engine.drainPending()).toBe(0);
       expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+  });
+
+  describe("Phase 4 — sync visibility & recovery", () => {
+    function seedNoteOnBoth(A: ReturnType<typeof makeDevice>, B: ReturnType<typeof makeDevice>) {
+      q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+      q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+      q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "Shared", content: "line 1" });
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+    }
+
+    it("logs an applied outcome for a peer edit that lands cleanly", () => {
+      const clkA = clockFrom(14_000_000);
+      const clkB = clockFrom(14_000_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      q.updateNote(A.db, "n1", { content: "edited on A" });
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      const entries = B.engine
+        .listSyncActivity()
+        .filter((r) => r.entity === "notes" && r.entity_id === "n1" && r.op === "put")
+        .sort((a, b) => a.seq - b.seq);
+      // syncFolder makes two passes, so the op is re-delivered — but a replay
+      // decides nothing and is deliberately not logged. A clean edit must never
+      // produce a conflict copy or a delete outcome.
+      expect(entries[0].outcome).toBe("applied");
+      expect(entries[0].origin).toBe("A");
+      expect(entries[0].conflict_copy_id).toBeNull();
+      expect(new Set(entries.map((r) => r.outcome))).toEqual(new Set(["applied"]));
+      expect(entries.every((r) => r.conflict_copy_id === null)).toBe(true);
+    });
+
+    it("logs delete-won with the conflict copy when a stale peer put is refused", () => {
+      const clkA = clockFrom(14_100_000);
+      const clkB = clockFrom(14_100_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(1);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      clkB.advance(50); // higher wall clock, but never observed the delete
+      q.updateNote(B.db, "n1", { content: "phone kept editing" });
+      B.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // A refuses B's unobserved revival and says so, naming the rescued copy.
+      const refusal = A.engine
+        .listSyncActivity()
+        .find((r) => r.entity_id === "n1" && r.op === "put" && r.outcome === "delete-won");
+      expect(refusal).toBeDefined();
+      expect(refusal?.origin).toBe("B");
+      expect(refusal?.conflict_copy_id).toMatch(/^n1_conflict_/);
+
+      // B, which held the note live, records the delete winning over its own row.
+      const applied = B.engine
+        .listSyncActivity()
+        .find((r) => r.entity_id === "n1" && r.op === "delete" && r.outcome === "delete-won");
+      expect(applied).toBeDefined();
+      expect(applied?.origin).toBe("A");
+    });
+
+    it("does not log stale no-ops, so idle syncs cannot evict a delete-won record", () => {
+      const clkA = clockFrom(14_200_000);
+      const clkB = clockFrom(14_200_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      q.updateNote(A.db, "n1", { content: "v2" });
+      A.engine.drainPending();
+      const ops = A.engine.exportOplog();
+      B.engine.applyRemote(ops);
+      const afterFirst = B.engine.listSyncActivity().length;
+      B.engine.applyRemote(ops); // same batch again — pure no-op
+      B.engine.applyRemote(ops);
+
+      // Replays decide nothing, so they must not consume ring-buffer space.
+      expect(B.engine.listSyncActivity().length).toBe(afterFirst);
+      expect(B.engine.listSyncActivity().every((r) => r.outcome !== "skipped-stale")).toBe(true);
+    });
+
+    it("keeps a delete-won record visible after many idle syncs", () => {
+      const clkA = clockFrom(14_250_000);
+      const clkB = clockFrom(14_250_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+      q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+      // A workspace big enough that logging every re-read would overflow the cap.
+      for (let i = 0; i < 60; i++) {
+        q.createNote(A.db, { id: `n${i}`, projectId: "p1", workspaceId: "ws1", title: `N${i}`, content: "x" });
+      }
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      clkA.advance(5);
+      q.deleteNote(A.db, "n7");
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // Idle convergence: the peer's whole compacted oplog is re-read each cycle.
+      for (let i = 0; i < 30; i++) syncFolder(dir, A.engine, B.engine);
+
+      const deleteWon = B.engine
+        .listSyncActivity(SYNC_ACTIVITY_LIMIT)
+        .find((r) => r.entity_id === "n7" && r.outcome === "delete-won");
+      expect(deleteWon).toBeDefined();
+    });
+
+    it("bounds the activity log to the newest SYNC_ACTIVITY_LIMIT rows", () => {
+      const clkA = clockFrom(14_300_000);
+      const clkB = clockFrom(14_300_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+      q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // Each new note is a fresh decision (an 'applied' put), so this genuinely
+      // exceeds the cap rather than replaying no-ops.
+      for (let i = 0; i < SYNC_ACTIVITY_LIMIT + 80; i++) {
+        clkA.advance(1);
+        q.createNote(A.db, { id: `n${i}`, projectId: "p1", workspaceId: "ws1", title: `N${i}`, content: "x" });
+        A.engine.drainPending();
+      }
+      syncFolder(dir, A.engine, B.engine);
+
+      const total = (B.db.prepare("SELECT COUNT(*) c FROM sync_activity").get() as { c: number }).c;
+      expect(total).toBeGreaterThan(0);
+      expect(total).toBeLessThanOrEqual(SYNC_ACTIVITY_LIMIT);
+      // listSyncActivity never exceeds the cap even when asked for more.
+      expect(B.engine.listSyncActivity(10_000).length).toBeLessThanOrEqual(SYNC_ACTIVITY_LIMIT);
+    });
+
+    it("lists a peer's delete as restorable but not the device's own delete", () => {
+      const clkA = clockFrom(14_400_000);
+      const clkB = clockFrom(14_400_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // B lost the note to a peer → offer recovery, with the content intact.
+      const restorable = B.engine.listRestorable("notes");
+      expect(restorable.rows.map((r) => r.entity_id)).toEqual(["n1"]);
+      expect(restorable.total).toBe(1);
+      expect(restorable.rows[0].title).toBe("Shared");
+      expect(restorable.rows[0].delete_origin).toBe("A");
+
+      // A deleted it deliberately, so it must not be nagged about its own action.
+      expect(A.engine.listRestorable("notes").rows.map((r) => r.entity_id)).not.toContain("n1");
+    });
+
+    it("still treats a delete as self-authored after a peer's delete outranks it", () => {
+      // Both devices tombstone the same row independently (Cairn's startup
+      // cleanup does exactly this). delete_origin records the WINNING delete, so
+      // the first deleter's own action would otherwise be blamed on the peer and
+      // shown as data loss.
+      const clkA = clockFrom(14_420_000);
+      const clkB = clockFrom(14_420_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(1);
+      q.deleteNote(A.db, "n1"); // earlier
+      A.engine.drainPending();
+      clkB.advance(50);
+      q.deleteNote(B.db, "n1"); // later → wins, so delete_origin becomes B on A
+      B.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      for (const dev of [A, B]) {
+        expect(dev.engine.listRestorable("notes").rows.map((r) => r.entity_id)).not.toContain("n1");
+      }
+      expect(A.engine.restoreDeleted("notes", "n1")).toEqual({
+        restored: false,
+        reason: "self-deleted",
+      });
+    });
+
+    it("never offers a conflict copy for restore", () => {
+      const clkA = clockFrom(14_450_000);
+      const clkB = clockFrom(14_450_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      // Force a conflict copy, then have the peer delete it.
+      clkA.advance(1);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      clkB.advance(50);
+      q.updateNote(B.db, "n1", { content: "divergent" });
+      B.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      const copy = A.db
+        .prepare("SELECT id FROM notes WHERE id LIKE 'n1_conflict_%' AND deleted_at IS NULL")
+        .get() as { id: string } | undefined;
+      expect(copy?.id).toBeTruthy();
+      const copyId = copy!.id;
+
+      clkB.advance(5);
+      q.deleteNote(B.db, copyId); // peer discards the copy
+      B.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // Conflict copies have their own resolution flow; the app also tombstones
+      // nested ones at startup, so restoring here would just be undone.
+      expect(A.engine.listRestorable("notes").rows.map((r) => r.entity_id)).not.toContain(copyId);
+      expect(A.engine.restoreDeleted("notes", copyId)).toEqual({
+        restored: false,
+        reason: "conflict-copy",
+      });
+    });
+
+    it("refuses to restore a note whose project was deleted too", () => {
+      const clkA = clockFrom(14_470_000);
+      const clkB = clockFrom(14_470_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      A.engine.remove("notes", "n1");
+      A.engine.remove("projects", "p1");
+      syncFolder(dir, A.engine, B.engine);
+
+      // Reviving the note alone would leave it pointing at a dead project —
+      // invisible on one device, present on the other, diverging forever.
+      expect(B.engine.listRestorable("notes").rows.map((r) => r.entity_id)).not.toContain("n1");
+      expect(B.engine.restoreDeleted("notes", "n1")).toEqual({
+        restored: false,
+        reason: "orphaned",
+      });
+    });
+
+    it("offers a peer-deleted note even when its title is blank or whitespace", () => {
+      // The list and the action must agree: a title-based shell heuristic made
+      // a whitespace-titled note listable but un-restorable (a dead button).
+      const clkA = clockFrom(14_490_000);
+      const clkB = clockFrom(14_490_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+      q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+      q.createNote(A.db, { id: "n9", projectId: "p1", workspaceId: "ws1", title: "   ", content: "real body" });
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      clkA.advance(5);
+      q.deleteNote(A.db, "n9");
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      expect(B.engine.listRestorable("notes").rows.map((r) => r.entity_id)).toContain("n9");
+      expect(B.engine.restoreDeleted("notes", "n9").restored).toBe(true);
+    });
+
+    it("restores a peer-deleted note so the revival survives further syncs", () => {
+      const clkA = clockFrom(14_500_000);
+      const clkB = clockFrom(14_500_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+      expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+
+      // One tap on B.
+      clkB.advance(10);
+      const res = B.engine.restoreDeleted("notes", "n1");
+      expect(res.restored).toBe(true);
+
+      syncFolder(dir, A.engine, B.engine);
+      syncFolder(dir, A.engine, B.engine); // must not be undone on a later pass
+
+      // The restore is a causally-valid revival, so it holds on BOTH devices —
+      // this is what distinguishes it from a stale peer's resurrection.
+      for (const dev of [A, B]) {
+        const row = dev.db.prepare("SELECT title, content FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as
+          | { title: string; content: string }
+          | undefined;
+        expect(row?.title).toBe("Shared");
+        expect(row?.content).toBe("line 1");
+      }
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+      expect(B.engine.listRestorable("notes").rows.map((r) => r.entity_id)).not.toContain("n1");
+    });
+
+    it("refuses to restore a contentless tombstone shell", () => {
+      const clkA = clockFrom(14_600_000);
+      const clkB = clockFrom(14_600_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      // A creates and deletes a note, then compacts so only the delete ships.
+      clkA.advance(5);
+      q.createNote(A.db, { id: "n2", projectId: "p1", workspaceId: "ws1", title: "Ghost", content: "x" });
+      A.engine.drainPending();
+      clkA.advance(5);
+      q.deleteNote(A.db, "n2");
+      A.engine.drainPending();
+      A.engine.compactOplog();
+
+      const C = makeDevice("C", clockFrom(14_650_000).now);
+      C.engine.applyRemote(A.engine.exportOplog());
+
+      // C only ever saw the delete → a shell with no content to bring back.
+      expect(C.engine.restoreDeleted("notes", "n2")).toEqual({ restored: false, reason: "shell" });
+      expect(C.engine.listRestorable("notes").rows.map((r) => r.entity_id)).not.toContain("n2");
+    });
+
+    it("reports why a restore was refused for an absent or live row", () => {
+      const clkA = clockFrom(14_700_000);
+      const clkB = clockFrom(14_700_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      expect(B.engine.restoreDeleted("notes", "n1")).toEqual({ restored: false, reason: "live" });
+      expect(B.engine.restoreDeleted("notes", "does-not-exist")).toEqual({
+        restored: false,
+        reason: "missing",
+      });
     });
   });
 });
