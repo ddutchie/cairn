@@ -413,6 +413,14 @@ export function listSyncActivity(db: Database.Database, limit = 100) {
 }
 
 /**
+ * Peer devices whose sync protocol version differs from this build's — used to
+ * prompt the user to update a device that is too old to honour deletes.
+ */
+export function listPeerProtocols(db: Database.Database) {
+  return getDesktopEngine(db).listPeerProtocols();
+}
+
+/**
  * Notes tombstoned by another device that can genuinely be brought back, newest
  * first, plus the true total (which may exceed the returned page).
  */

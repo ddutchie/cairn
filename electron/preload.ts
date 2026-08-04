@@ -625,6 +625,9 @@ const api = {
     // Retry the .md write for a restore whose DB half already succeeded.
     repairNoteFile: (id: string) =>
       invoke<{ repaired: boolean; reason?: string; fileError?: string }>("sync:repairNoteFile", { id }),
+    // Peer devices on a different sync protocol version (behind = too old to honour deletes).
+    peerProtocols: () =>
+      invoke<Array<{ deviceId: string; version: number; behind: boolean }>>("sync:peerProtocols"),
   },
 
   // ── AI write lock events ──────────────────────

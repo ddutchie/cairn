@@ -12,7 +12,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { History, RotateCcw, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { History, RotateCcw, ChevronDown, ChevronRight, AlertTriangle, ArrowUpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -22,11 +22,13 @@ import {
   fetchRestorableNotes,
   restoreDeletedNote,
   repairNoteFile,
+  fetchPeerProtocols,
   useSyncStatus,
   type SyncActivityEntry,
   type RestorableNote,
   type SyncOutcome,
   type RestoreRefusal,
+  type PeerProtocol,
 } from "@/lib/sync-client";
 
 /** How many recoverable notes to show per page. */
@@ -165,6 +167,7 @@ export function SyncActivityPanel() {
   const [restoring, setRestoring] = useState<ReadonlySet<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [fileFailures, setFileFailures] = useState<FileFailure[]>(() => loadFileFailures());
+  const [stalePeers, setStalePeers] = useState<PeerProtocol[]>([]);
   const [loaded, setLoaded] = useState(false);
   const alive = useRef(true);
   const setView = useCairnStore((s) => s.setView);
@@ -177,7 +180,7 @@ export function SyncActivityPanel() {
   const status = useSyncStatus();
 
   const load = useCallback(
-    async () => Promise.all([fetchSyncActivity(50), fetchRestorableNotes(pageSize)]),
+    async () => Promise.all([fetchSyncActivity(50), fetchRestorableNotes(pageSize), fetchPeerProtocols()]),
     [pageSize],
   );
 
@@ -209,11 +212,12 @@ export function SyncActivityPanel() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [acts, restores] = await load();
+      const [acts, restores, peers] = await load();
       if (cancelled) return;
       setActivity(acts);
       setRestorable(restores.rows);
       setRestorableTotal(restores.total);
+      setStalePeers(peers);
       setLoaded(true);
     })();
     return () => {
@@ -239,11 +243,12 @@ export function SyncActivityPanel() {
         // so this is the only remaining trace of the problem.
         recordFileFailure({ id, title, error: res.fileError });
       }
-      const [acts, restores] = await load();
+      const [acts, restores, peers] = await load();
       if (!alive.current) return;
       setActivity(acts);
       setRestorable(restores.rows);
       setRestorableTotal(restores.total);
+      setStalePeers(peers);
     } finally {
       if (alive.current) {
         setRestoring((prev) => {
@@ -281,7 +286,13 @@ export function SyncActivityPanel() {
 
   // Nothing recorded yet (fresh install, or sync never ran) — say so rather
   // than rendering an empty shell.
-  if (loaded && activity.length === 0 && restorable.length === 0 && fileFailures.length === 0) {
+  if (
+    loaded &&
+    activity.length === 0 &&
+    restorable.length === 0 &&
+    fileFailures.length === 0 &&
+    stalePeers.length === 0
+  ) {
     return (
       <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-4">
         No sync activity recorded yet. Once this device exchanges changes with your phone, decisions
@@ -290,8 +301,26 @@ export function SyncActivityPanel() {
     );
   }
 
+  const behindPeers = stalePeers.filter((p) => p.behind);
+
   return (
     <div className="mt-4 space-y-3">
+      {behindPeers.length > 0 && (
+        <div className="flex gap-2.5 p-3 rounded-xl border border-[color-mix(in_srgb,var(--warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)]">
+          <ArrowUpCircle size={15} className="text-[var(--warning)] mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-[var(--text-primary)]">
+              {behindPeers.length === 1
+                ? "Another device is on an older version"
+                : `${behindPeers.length} devices are on an older version`}
+            </div>
+            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-0.5">
+              Update Cairn on your other {behindPeers.length === 1 ? "device" : "devices"} so deletions
+              sync correctly. Until then, a note you delete here can reappear from the older device.
+            </p>
+          </div>
+        </div>
+      )}
       {/* Rendered independently of the restorable list: once the row is live it
           leaves that list, but the missing file still needs fixing. */}
       {fileFailures.length > 0 && (

@@ -50,6 +50,10 @@ function isOplogEntry(v: unknown): v is OplogEntry {
   const payloadValid = e.op === "put"
     ? typeof e.payload === "object" && e.payload !== null && !Array.isArray(e.payload)
     : e.payload === null || (typeof e.payload === "object" && e.payload !== null && !Array.isArray(e.payload));
+  // Protocol version is optional (absent = pre-versioning = 1). If present it
+  // must be a positive integer; a garbage value would corrupt stale-peer
+  // detection, so reject the whole entry rather than trust it.
+  const versionValid = e.v === undefined || (typeof e.v === "number" && Number.isInteger(e.v) && e.v >= 1);
   return (
     validHlc(e.hlc) &&
     typeof e.origin === "string" &&
@@ -60,7 +64,8 @@ function isOplogEntry(v: unknown): v is OplogEntry {
     OPS.has(e.op) &&
     payloadValid &&
     observedValid &&
-    tombstoneValid
+    tombstoneValid &&
+    versionValid
   );
 }
 

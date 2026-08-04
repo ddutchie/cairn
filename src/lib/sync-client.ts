@@ -94,6 +94,14 @@ export interface RepairOutcome {
   fileError?: string;
 }
 
+/** A peer device on a different sync protocol version than this build. */
+export interface PeerProtocol {
+  deviceId: string;
+  version: number;
+  /** True when the peer is on an OLDER protocol — it may not honour deletes. */
+  behind: boolean;
+}
+
 type SyncApi = {
   status: () => Promise<SyncStatus>;
   onStatus: (cb: (s: SyncStatus) => void) => () => void;
@@ -108,6 +116,7 @@ type SyncApi = {
   listRestorable: (limit?: number) => Promise<{ rows: RestorableNote[]; total: number }>;
   restoreNote: (id: string) => Promise<RestoreOutcome>;
   repairNoteFile: (id: string) => Promise<RepairOutcome>;
+  peerProtocols: () => Promise<PeerProtocol[]>;
 };
 
 export function syncApi(): SyncApi | null {
@@ -248,6 +257,17 @@ export async function repairNoteFile(id: string): Promise<RepairOutcome> {
     return await api.repairNoteFile(id);
   } catch (err) {
     return { repaired: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Peers on an older/newer sync protocol than this build. Empty outside Electron. */
+export async function fetchPeerProtocols(): Promise<PeerProtocol[]> {
+  const api = syncApi();
+  if (!api?.peerProtocols) return [];
+  try {
+    return (await api.peerProtocols()) ?? [];
+  } catch {
+    return [];
   }
 }
 

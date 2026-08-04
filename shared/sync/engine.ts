@@ -108,6 +108,33 @@ const LOGGED_OUTCOMES: ReadonlySet<SyncOutcome> = new Set<SyncOutcome>([
 /** How far back a peer delete is still offered for recovery. */
 const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * Oplog wire-protocol version this build writes and understands.
+ *
+ * The format was unversioned through v2.6.1; that implicit shape is **protocol
+ * 1**, and a missing `v` is read as 1 so legacy entries need no rewrite. Bump
+ * this only for a wire change that a peer must understand to stay convergent
+ * (a new causal field, a changed reconciliation rule). Additive optional fields
+ * that older peers can safely ignore (as `observed`/`tombstone` were) do NOT
+ * need a bump.
+ *
+ * The point of stamping it now, while only two historical shapes exist, is that
+ * a peer can be *told* it is behind instead of us inferring capability from
+ * which optional fields happen to be present.
+ */
+export const SYNC_PROTOCOL_VERSION = 1;
+
+/** sync_state key prefix for the highest protocol version seen from a peer. */
+const PEER_PROTOCOL_PREFIX = "peer_protocol:";
+
+/** A peer whose observed protocol version differs from this build's. */
+export interface PeerProtocol {
+  deviceId: string;
+  version: number;
+  /** True when the peer is writing an OLDER protocol than this build enforces. */
+  behind: boolean;
+}
+
 export interface OplogEntry {
   hlc: string;
   origin: string;
@@ -119,6 +146,11 @@ export interface OplogEntry {
   observed?: ObservationFrontier;
   /** Durable delete history carried by a compacted live put for late peers. */
   tombstone?: { hlc: string; origin: string };
+  /**
+   * Wire-protocol version (SYNC_PROTOCOL_VERSION). Optional on the type so a
+   * pre-versioning entry deserialises cleanly; absence is treated as 1.
+   */
+  v?: number;
 }
 
 interface RowBase {
@@ -743,7 +775,11 @@ export class SyncEngine {
       const tombstone = r.op === "put" && base?.delete_hlc && base.delete_origin
         ? { hlc: base.delete_hlc, origin: base.delete_origin }
         : undefined;
-      return { ...r, payload: r.payload ? (JSON.parse(r.payload) as Record<string, unknown>) : null, observed, tombstone };
+      // Stamp the wire-protocol version at the export boundary. It is not stored
+      // per-row (it describes the format, not the edit), so every exported entry
+      // carries this build's version uniformly. A peer reads it to know whether
+      // we are ahead of or behind them.
+      return { ...r, payload: r.payload ? (JSON.parse(r.payload) as Record<string, unknown>) : null, observed, tombstone, v: SYNC_PROTOCOL_VERSION };
     });
   }
 
@@ -777,6 +813,13 @@ export class SyncEngine {
     const run = this.db.transaction(() => {
       this.setSuppress(true); // reconcile writes must not be re-captured as local ops
       for (const entry of sorted) {
+        // Note the peer's wire-protocol version (absent = pre-versioning = 1) so
+        // the UI can flag a device that is behind this build. Kept outside the
+        // syncable-entity guard below: even an op for a dropped entity still
+        // tells us how old that peer's writer is.
+        if (entry.origin && entry.origin !== this.deviceId) {
+          this.notePeerProtocol(entry.origin, entry.v ?? 1);
+        }
         // Ignore ops for entities we no longer sync (e.g. chat_threads /
         // chat_messages, removed in v28). A peer still running an old build — or
         // an oplog file it published before upgrading — can carry these; without
@@ -1118,6 +1161,44 @@ export class SyncEngine {
       .prepare("SELECT 1 FROM sync_oplog WHERE hlc = ? AND entity = ? AND entity_id = ?")
       .get(entry.hlc, entry.entity, entry.entity_id);
     if (!exists) this.appendOplog(entry);
+  }
+
+  // ── protocol versioning ───────────────────────────────────────────────
+
+  /**
+   * Record the highest wire-protocol version seen from a peer. Monotonic — a
+   * peer that upgrades and writes a newer version is never downgraded in our
+   * record, so a single old file lingering in the folder can't mask that the
+   * device has since updated.
+   */
+  private notePeerProtocol(deviceId: string, version: number): void {
+    if (!Number.isFinite(version) || version < 1) return;
+    const key = `${PEER_PROTOCOL_PREFIX}${deviceId}`;
+    const current = Number(this.getState(key) ?? 0);
+    if (version > current) this.setState(key, String(version));
+  }
+
+  /**
+   * Peers whose observed protocol version differs from this build's, so the UI
+   * can prompt the user to update a device. `behind: true` is the important
+   * case — that peer may not honour deletes, so the fleet is only as strong as
+   * it. A peer AHEAD of us is reported too (informational: this build is old).
+   */
+  listPeerProtocols(): PeerProtocol[] {
+    const rows = this.db
+      .prepare(`SELECT key, value FROM sync_state WHERE key LIKE ? ESCAPE '\\'`)
+      .all(`${PEER_PROTOCOL_PREFIX.replace(/[\\%_]/g, "\\$&")}%`) as Array<{ key: string; value: string }>;
+    const out: PeerProtocol[] = [];
+    for (const r of rows) {
+      const version = Number(r.value);
+      if (!Number.isFinite(version) || version === SYNC_PROTOCOL_VERSION) continue;
+      out.push({
+        deviceId: r.key.slice(PEER_PROTOCOL_PREFIX.length),
+        version,
+        behind: version < SYNC_PROTOCOL_VERSION,
+      });
+    }
+    return out;
   }
 
   // ── Phase 4: visibility & recovery ────────────────────────────────────

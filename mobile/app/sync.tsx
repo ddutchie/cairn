@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { GitMerge, ChevronRight, Trash2 } from "lucide-react-native";
+import { GitMerge, ChevronRight, Trash2, ArrowUpCircle } from "lucide-react-native";
 import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
 import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
-import { restorableCount } from "@/db/queries";
+import { restorableCount, stalePeerCount } from "@/db/queries";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
 import { SectionLabel } from "@/components/SectionLabel";
 import { ICON_CHECK } from "@/components/toolbar-icons";
@@ -30,6 +30,7 @@ export default function SyncScreen() {
   const { state, pending, conflicts, lastResult: last } = useSyncStatus();
   const [available, setAvailable] = useState<boolean | null>(null);
   const [restorable, setRestorable] = useState(0);
+  const [stalePeers, setStalePeers] = useState(0);
   const styles = useMemo(() => makeStyles(t), [t]);
   const busy = state === "syncing";
 
@@ -42,6 +43,12 @@ export default function SyncScreen() {
     } catch (err) {
       console.warn("[cairn] restorableCount failed", err);
       setRestorable(0);
+    }
+    try {
+      setStalePeers(stalePeerCount());
+    } catch (err) {
+      console.warn("[cairn] stalePeerCount failed", err);
+      setStalePeers(0);
     }
   }, []);
 
@@ -132,6 +139,20 @@ export default function SyncScreen() {
             </View>
             <ChevronRight size={18} color={t.textTertiary} />
           </Pressable>
+        )}
+
+        {stalePeers > 0 && (
+          <View style={[styles.conflictRow, styles.restoreRowActive]}>
+            <ArrowUpCircle size={18} color={t.warning} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.conflictTitle, { color: t.textPrimary }]}>
+                {stalePeers === 1 ? "Another device needs updating" : `${stalePeers} devices need updating`}
+              </Text>
+              <Text style={styles.conflictHelp}>
+                Update Cairn there so deletions sync correctly — until then a deleted note can reappear.
+              </Text>
+            </View>
+          </View>
         )}
 
         <Text style={styles.note}>
