@@ -44,7 +44,7 @@ export interface WorkspaceSlice {
    * Persist a workspace path (already known) to workspace-config.json.
    * Used by create-workspace.tsx when the folder was chosen in the same session.
    */
-  initWorkspacePath: (workspacePath: string) => Promise<void>;
+  initWorkspacePath: (workspacePath: string, excludedFolders?: string[]) => Promise<void>;
   /** Read the current workspace path from the Electron config. */
   getWorkspacePath: () => Promise<string | null>;
 }
@@ -212,9 +212,9 @@ export const createWorkspaceSlice: StateCreator<
     return folder;
   },
 
-  async initWorkspacePath(workspacePath) {
+  async initWorkspacePath(workspacePath, excludedFolders) {
     if (!isElectron() || !window.electron) return;
-    await window.electron.initWorkspace(workspacePath);
+    await window.electron.initWorkspace(workspacePath, excludedFolders);
   },
 
   async getWorkspacePath() {

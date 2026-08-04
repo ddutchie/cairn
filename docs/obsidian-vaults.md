@@ -31,6 +31,10 @@ so you won't get duplicate projects or notes.
 
 - Dot-folders: `.obsidian`, `.git`, `.trash`, etc.
 - Infrastructure folders: `assets`, `attachments`.
+- Template folders named `templates` at any depth.
+- Excalidraw scene files ending in `*.excalidraw.md`.
+- Top-level folders you untick in the onboarding import preview. Cairn remembers
+  these choices in `.cairn-import.json` and continues skipping them on later scans.
 
 A top-level folder becomes a project only if it holds at least one non-skipped
 `.md` file (searched recursively). If your vault has many organisational folders
@@ -101,13 +105,24 @@ Obsidian resolves `[[wikilinks]]` by **filename**. Cairn respects this:
 - **Moving a note to another folder/project** relocates the file, keeping its
   filename.
 
+## Import preview and backup
+
+When Cairn detects an Obsidian vault during onboarding, it scans the folder
+read-only first and shows the projects and note counts it found. Untick any
+top-level folder you do not want Cairn to adopt. No note frontmatter is written
+until you confirm by creating the workspace.
+
+Make a backup or git commit before confirming. This gives you a straightforward
+rollback for Cairn's first-touch frontmatter changes: close Cairn, restore the
+vault files from your backup, and remove `.cairn-import.json` if you also want to
+reset the saved exclusions.
+
 ## Known limitations
 
-- **Every `.md` file is treated as a note.** If your vault contains non-note
-  Markdown (e.g. `templates/`, `*.excalidraw.md`, or Kanban/Dataview helper
-  files), those will be imported as notes and stamped with Cairn frontmatter.
-  If this matters to you, move such files out before importing, or keep them in
-  a dot-folder Cairn ignores.
+- **Plugin-specific Markdown may still need exclusion.** Cairn skips templates
+  and Excalidraw files by default, but Kanban/Dataview helper files use no single
+  reliable filename convention. Untick their top-level folder in the preview or
+  keep them in a dot-folder Cairn ignores.
 - **First-touch git diffs.** The first time Cairn writes a note it re-serialises
   the YAML frontmatter (normalising quoting and key order) and adds its own keys,
   which produces a one-time diff even on notes you didn't edit. Subsequent saves

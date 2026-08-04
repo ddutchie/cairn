@@ -17,6 +17,8 @@ import { StepImportedProjects, type ImportedProject } from "./StepImportedProjec
 import { StepDone } from "./StepDone";
 import type { ToggleableView } from "@/store/slices/ui";
 
+type ImportPreview = Awaited<ReturnType<NonNullable<typeof window.electron>["probeWorkspaceFolder"]>>;
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -28,7 +30,7 @@ interface Props {
 // ── Onboarding wizard ─────────────────────────────────────────────────────────
 
 export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props) {
-  const { createWorkspace, selectAndInitWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, aiConfig, setAIConfig, setAgentConfig, hiddenViews, setHiddenViews, createProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, selectAndInitWorkspace: s.selectAndInitWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, hiddenViews: s.hiddenViews, setHiddenViews: s.setHiddenViews, createProject: s.createProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
+  const { createWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, aiConfig, setAIConfig, setAgentConfig, hiddenViews, setHiddenViews, createProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, hiddenViews: s.hiddenViews, setHiddenViews: s.setHiddenViews, createProject: s.createProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
 
   // ── Wizard step ──────────────────────────────────────────────────────────────
   const [step, setStep] = useState<OnboardingStep>(initialStep);
@@ -40,6 +42,9 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   const [submitting, setSubmitting] = useState(false);
   // Vault detection (populated by probing the chosen folder).
   const [isObsidianVault, setIsObsidianVault] = useState(false);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [previewReady, setPreviewReady] = useState(false);
+  const [excludedFolders, setExcludedFolders] = useState<Set<string>>(new Set());
   // Projects auto-created from the vault by the post-workspace rescan. When
   // non-empty we show a "found these projects" summary instead of prompting the
   // user to create their first project.
@@ -92,9 +97,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       getWorkspacePath().then((p) => {
         if (!p) return;
         setChosenFolder(p);
-        window.electron?.probeWorkspaceFolder?.(p)
-          .then((probe) => setIsObsidianVault(!!probe?.isObsidianVault))
-          .catch(() => {});
+        void loadImportPreview(p);
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,20 +116,29 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
+  async function loadImportPreview(folder: string) {
+    setPreviewReady(false);
+    setImportPreview(null);
+    try {
+      const probe = await window.electron?.probeWorkspaceFolder?.(folder);
+      if (!probe) throw new Error("Folder preview unavailable");
+      setIsObsidianVault(!!probe.isObsidianVault);
+      setImportPreview(probe);
+      setExcludedFolders(new Set(probe.excludedFolders ?? []));
+      setPreviewReady(true);
+    } catch {
+      setIsObsidianVault(false);
+      setPreviewReady(false);
+    }
+  }
+
   async function handleChooseFolder() {
     setSubmitting(true);
     try {
-      const folder = await selectAndInitWorkspace();
+      const folder = await window.electron?.selectWorkspaceFolder?.();
       if (!folder) return;
       setChosenFolder(folder);
-      // Probe the folder so the details step can hint that an Obsidian vault was
-      // detected. Best-effort — a failed probe just skips the hint.
-      try {
-        const probe = await window.electron?.probeWorkspaceFolder?.(folder);
-        setIsObsidianVault(!!probe?.isObsidianVault);
-      } catch {
-        setIsObsidianVault(false);
-      }
+      await loadImportPreview(folder);
       setStep("workspace-details");
     } finally {
       setSubmitting(false);
@@ -142,7 +154,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       // Only write the workspace path if the folder was chosen fresh this session
       // (i.e. we started at choose-folder and the user picked a new folder)
       if (chosenFolder && initialStep === "choose-folder") {
-        await initWorkspacePath(chosenFolder);
+        await initWorkspacePath(chosenFolder, [...excludedFolders]);
       }
       const ws = await createWorkspace(trimmed, wsIcon);
       // The workspace record now exists. Re-scan the chosen folder so any
@@ -152,7 +164,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       // couldn't auto-create projects. Capture the created projects so a later
       // step can show them instead of prompting to create one.
       try {
-        const res = await window.electron?.rescanWorkspace?.(ws.id);
+        const res = await window.electron?.rescanWorkspace?.(ws.id, [...excludedFolders]);
         setImportedProjects(res?.createdProjects ?? []);
       } catch {
         // Best-effort — onboarding shouldn't block on the rescan.
@@ -209,9 +221,18 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         submitting={submitting}
         showBack={step === "workspace-details" && initialStep === "choose-folder"}
         isObsidianVault={isObsidianVault}
+        importPreview={importPreview}
+        previewReady={previewReady}
+        excludedFolders={excludedFolders}
         onBack={() => setStep("choose-folder")}
         onNameChange={setWsName}
         onIconChange={setWsIcon}
+        onToggleExcludedFolder={(folder) => setExcludedFolders((current) => {
+          const next = new Set(current);
+          if (next.has(folder)) next.delete(folder); else next.add(folder);
+          return next;
+        })}
+        onRetryPreview={() => chosenFolder && void loadImportPreview(chosenFolder)}
         onSubmit={handleCreateWorkspace}
       />
     );
