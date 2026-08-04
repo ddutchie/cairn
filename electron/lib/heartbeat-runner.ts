@@ -136,7 +136,12 @@ export async function runAutomation(
   let extraTools: typeof TOOLS | undefined;
   if ((automation.requires ?? []).length > 0) {
     try {
-      extraTools = (await getExternalToolDefs(db, automation.workspaceId, automation.projectId ?? "")) as unknown as typeof TOOLS;
+      extraTools = (await getExternalToolDefs(
+        db,
+        automation.workspaceId,
+        automation.projectId ?? "",
+        automation.requires,
+      )) as unknown as typeof TOOLS;
     } catch (err) {
       console.error("[heartbeat] failed to assemble external tools:", err);
       extraTools = undefined;

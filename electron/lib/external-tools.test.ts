@@ -8,9 +8,10 @@ vi.mock("electron", () => ({
   safeStorage: { isEncryptionAvailable: () => false },
 }));
 
-import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel, filterDisabledMcpDefs, checkRequirements } from "./external-tools";
+import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel, filterDisabledMcpDefs, checkRequirements, getExternalToolDefs } from "./external-tools";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, saveMcpServer, saveCustomService, setToolAttachment } from "../db/queries";
+import * as mcpClient from "./mcp-client";
 
 describe("external-tools scoping", () => {
   it("collects enabled attachments by type", () => {
@@ -191,5 +192,49 @@ describe("checkRequirements", () => {
 
   it("handles an empty requires list", () => {
     expect(checkRequirements(db, "ws-1", "proj-1", [])).toEqual([]);
+  });
+});
+
+describe("getExternalToolDefs requirement filtering", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    createWorkspace(db, { id: "ws-1", name: "W" });
+    createProject(db, { id: "proj-1", workspaceId: "ws-1", name: "P" });
+    saveMcpServer(db, {
+      id: "m-linear", workspaceId: "ws-1", name: "Linear", transport: "http",
+      baseUrl: "https://mcp.linear.app/mcp", enabled: true, source: "community",
+      communityId: "linear", authMode: "oauth",
+    });
+    saveMcpServer(db, {
+      id: "m-github", workspaceId: "ws-1", name: "GitHub", transport: "http",
+      baseUrl: "https://mcp.github.com/mcp", enabled: true, source: "community",
+      communityId: "github", authMode: "oauth",
+    });
+    setToolAttachment(db, { projectId: "proj-1", toolType: "mcp", toolId: "m-linear", enabled: true });
+    setToolAttachment(db, { projectId: "proj-1", toolType: "mcp", toolId: "m-github", enabled: true });
+    vi.spyOn(mcpClient, "listTools").mockImplementation(async (server) => [{
+      type: "function",
+      function: { name: `mcp__${server.id}__search`, description: server.name ?? "Search", parameters: {} },
+    }]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    db.close();
+  });
+
+  it("only exposes connectors declared by the recipe", async () => {
+    const defs = await getExternalToolDefs(db, "ws-1", "proj-1", [{ kind: "mcp", name: "linear" }]);
+    expect(defs.map((d) => d.function.name)).toEqual(["mcp__m-linear__search"]);
+  });
+
+  it("matches requirements by connector id and display name", async () => {
+    const byId = await getExternalToolDefs(db, "ws-1", "proj-1", [{ kind: "mcp", name: "m-github" }]);
+    const byName = await getExternalToolDefs(db, "ws-1", "proj-1", [{ kind: "mcp", name: "GitHub" }]);
+    expect(byId.map((d) => d.function.name)).toEqual(["mcp__m-github__search"]);
+    expect(byName.map((d) => d.function.name)).toEqual(["mcp__m-github__search"]);
   });
 });

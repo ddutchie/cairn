@@ -31,6 +31,11 @@ export interface OpenAIToolDef {
   function: { name: string; description: string; parameters: Record<string, unknown> };
 }
 
+export interface ExternalToolRequirement {
+  kind: "mcp" | "service";
+  name: string;
+}
+
 /** Map a stored MCP server config to the runtime config the client needs. */
 function toRuntimeConfig(s: {
   id: string;
@@ -130,6 +135,23 @@ function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId
   return { mcpServers, customServices };
 }
 
+/** Restrict in-scope connectors to the names declared by a connector-aware recipe. */
+function filterRequiredConfigs(
+  configs: ReturnType<typeof loadScopedConfigs>,
+  requires: ExternalToolRequirement[],
+) {
+  const matches = (connector: { id: string; name: string; communityId?: string | null }, name: string) => {
+    const key = name.trim().toLowerCase();
+    return connector.id.toLowerCase() === key
+      || connector.name.toLowerCase() === key
+      || connector.communityId?.toLowerCase() === key;
+  };
+  return {
+    mcpServers: configs.mcpServers.filter((s) => requires.some((r) => r.kind === "mcp" && matches(s, r.name))),
+    customServices: configs.customServices.filter((s) => requires.some((r) => r.kind === "service" && matches(s, r.name))),
+  };
+}
+
 export interface RequirementStatus {
   kind: "mcp" | "service";
   name: string;
@@ -194,9 +216,13 @@ export function checkRequirements(
 export async function getExternalToolDefs(
   db: Database.Database,
   workspaceId: string,
-  projectId: string
+  projectId: string,
+  requires?: ExternalToolRequirement[],
 ): Promise<OpenAIToolDef[]> {
-  const { mcpServers, customServices } = loadScopedConfigs(db, workspaceId, projectId);
+  const scoped = loadScopedConfigs(db, workspaceId, projectId);
+  const { mcpServers, customServices } = requires
+    ? filterRequiredConfigs(scoped, requires)
+    : scoped;
 
   // Query each in-scope server independently so one unreachable / failing server
   // can't hide the tools of the healthy servers (or the custom services below).
@@ -379,4 +405,3 @@ export function externalToolLabel(name: string, db?: Database.Database): string 
   }
   return name;
 }
-
