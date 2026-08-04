@@ -44,9 +44,16 @@ describe("tool approval presentation rules", () => {
   });
 
   it("states where each action reaches, distinguishing local from external", () => {
-    expect(approvalScopeLabel("read")).toContain("stays on this Mac");
-    expect(approvalScopeLabel("write")).toContain("stays on this Mac");
-    expect(approvalScopeLabel("bash")).toContain("runs on this Mac");
-    expect(approvalScopeLabel("mcp__tavily__search")).toContain("leaves this Mac");
+    expect(approvalScopeLabel("read")).toContain("stays on this device");
+    expect(approvalScopeLabel("write")).toContain("stays on this device");
+    expect(approvalScopeLabel("bash")).toContain("runs on this device");
+    expect(approvalScopeLabel("mcp__tavily__search")).toContain("leaves this device");
+  });
+
+  it("uses platform-neutral wording (no hardcoded 'Mac')", () => {
+    // Cairn is a cross-platform desktop app — the approval copy must not assume macOS.
+    for (const tool of ["read", "write", "bash", "mcp__x__y"]) {
+      expect(approvalScopeLabel(tool)).not.toMatch(/\bMac\b/);
+    }
   });
 });

@@ -44,7 +44,8 @@ export function approvalGrantScope(name: string): "command" | "session" | "none"
 /** Where an action reaches, for the approval card's one-line scope note. */
 export function approvalScopeLabel(name: string): string {
   const risk = riskForTool(name);
-  if (risk === "EXTERNAL") return "leaves this Mac via a connected service";
-  if (risk === "EXEC") return "runs on this Mac";
-  return "stays on this Mac";
+  // "this device" rather than "this Mac" — Cairn ships on Windows and Linux too.
+  if (risk === "EXTERNAL") return "leaves this device via a connected service";
+  if (risk === "EXEC") return "runs on this device";
+  return "stays on this device";
 }
