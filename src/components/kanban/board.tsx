@@ -774,7 +774,7 @@ function PriorityChip({ p, active, onClick }: { p: Priority; active: boolean; on
       aria-pressed={active}
       className={cn(
         "flex items-center gap-1 px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
-        active ? "border-transparent" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50"
+        active ? "" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50"
       )}
       style={active ? {
         background: `color-mix(in srgb, ${color} 12%, transparent)`,

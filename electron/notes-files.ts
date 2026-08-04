@@ -66,18 +66,58 @@ function isSkippedDirectory(name: string): boolean {
   return name.startsWith(".") || DEFAULT_SKIP_DIRS.has(name.toLowerCase());
 }
 
+// Last successfully-parsed exclusion set per workspace. The config file is
+// written atomically (temp + rename, see saveImportExclusions), but a cloud-sync
+// conflict copy or an interrupted external edit can still leave it truncated or
+// conflict-marked. Falling back to the last valid set — instead of failing open
+// to "import everything" — keeps folders the user excluded excluded through the
+// hiccup.
+const lastValidExclusions = new Map<string, Set<string>>();
+// Workspaces whose config file exists but is currently unreadable/malformed AND
+// was never parsed successfully. Imports HALT for these until the file is
+// repaired — no silent adoption of previously-excluded folders.
+const haltedWorkspaces = new Set<string>();
+
 function readImportExclusions(workspacePath: string): Set<string> {
+  const configPath = path.join(workspacePath, IMPORT_CONFIG_FILE);
+  let raw: string;
   try {
-    const parsed = JSON.parse(fs.readFileSync(path.join(workspacePath, IMPORT_CONFIG_FILE), "utf-8")) as unknown;
-    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { excludedFolders?: unknown }).excludedFolders)) return new Set();
-    return new Set((parsed as { excludedFolders: unknown[] }).excludedFolders.filter((v): v is string => typeof v === "string"));
+    raw = fs.readFileSync(configPath, "utf-8");
   } catch {
+    // Genuinely missing config — no exclusions, and nothing to preserve.
+    lastValidExclusions.delete(workspacePath);
+    haltedWorkspaces.delete(workspacePath);
+    return new Set();
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { excludedFolders?: unknown }).excludedFolders)) {
+      throw new Error("invalid shape");
+    }
+    const set = new Set((parsed as { excludedFolders: unknown[] }).excludedFolders.filter((v): v is string => typeof v === "string"));
+    lastValidExclusions.set(workspacePath, set);
+    haltedWorkspaces.delete(workspacePath);
+    return set;
+  } catch {
+    // Present but malformed/truncated. Never fail open: fall back to the last
+    // valid exclusions we parsed. If we never parsed a valid file, halt imports
+    // for this workspace until the file is repaired.
+    if (lastValidExclusions.has(workspacePath)) return new Set(lastValidExclusions.get(workspacePath)!);
+    haltedWorkspaces.add(workspacePath);
     return new Set();
   }
 }
 
+/** True when the workspace's import config is present but broken beyond the last-known-good copy. */
+export function isImportConfigHalted(workspacePath: string): boolean {
+  return haltedWorkspaces.has(workspacePath);
+}
+
 /** Shared watcher/scanner boundary: true when a path must never be imported. */
 export function isImportPathExcluded(workspacePath: string, filePath: string): boolean {
+  // A malformed config with no known-good value halts ALL adoption rather than
+  // importing folders the user may have excluded.
+  if (isImportConfigHalted(workspacePath)) return true;
   const rel = path.relative(notesDir(workspacePath), filePath);
   if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return true;
   const segments = rel.split(path.sep);
@@ -88,7 +128,19 @@ export function isImportPathExcluded(workspacePath: string, filePath: string): b
 
 export function saveImportExclusions(workspacePath: string, excludedFolders: string[]): void {
   const clean = [...new Set(excludedFolders.filter((name) => name && !name.startsWith(".")))].sort();
-  fs.writeFileSync(path.join(workspacePath, IMPORT_CONFIG_FILE), JSON.stringify({ excludedFolders: clean }, null, 2) + "\n", "utf-8");
+  const target = path.join(workspacePath, IMPORT_CONFIG_FILE);
+  const body = JSON.stringify({ excludedFolders: clean }, null, 2) + "\n";
+  // Write via a temp file + atomic rename so a crash mid-write can never leave a
+  // truncated config that readImportExclusions would then reject.
+  const tmp = path.join(workspacePath, `${IMPORT_CONFIG_FILE}.${process.pid}.${Date.now()}.tmp`);
+  fs.writeFileSync(tmp, body, "utf-8");
+  try {
+    fs.renameSync(tmp, target);
+  } catch {
+    // Cross-device or locked-target fallback — write in place, clean up the temp.
+    fs.writeFileSync(target, body, "utf-8");
+    try { fs.unlinkSync(tmp); } catch { /* best effort */ }
+  }
 }
 
 function countImportableMarkdown(dir: string): { included: number; skipped: number } {
@@ -151,6 +203,14 @@ export function previewVaultImport(workspacePath: string): VaultImportPreview {
         result.skippedCount += countAllMarkdown(fp);
         continue;
       }
+      // Mirror the import filtering (importVaultProjects / syncDir): a legacy
+      // `notes/` folder is only a project when it's part of an Obsidian vault or
+      // has direct .md files. Without this the preview can promise a nonzero
+      // import for a `notes/` tree the scan would then skip entirely.
+      if (entry === "notes" && !isImportableNotesFolder(workspacePath)) {
+        result.skippedCount += countAllMarkdown(fp);
+        continue;
+      }
       const counts = countImportableMarkdown(fp);
       result.skippedCount += counts.skipped;
       if (counts.included > 0) result.projects.push({ name: entry, noteCount: counts.included, root: false, projectKey: toSlug(entry) });
@@ -181,6 +241,11 @@ export function syncNotesFromDisk(db: Database.Database, workspacePath: string, 
   const root = notesDir(workspacePath);
   if (!fs.existsSync(root)) return;
   cleanStaleTmpFiles(root);
+  // A malformed import config with no known-good value halts the scan rather
+  // than adopting folders the user may have excluded. Reading the exclusions
+  // first is what registers the halted state for a never-valid config.
+  const excludedFolders = readImportExclusions(workspacePath);
+  if (isImportConfigHalted(workspacePath)) return;
   // Auto-create projects for any top-level folders (and loose root .md files)
   // that don't yet have a matching project in the DB. This is what lets a user
   // point Cairn at an existing Obsidian vault — or copy a folder of notes into
@@ -193,7 +258,7 @@ export function syncNotesFromDisk(db: Database.Database, workspacePath: string, 
   } catch (err) {
     console.error("[sync] importVaultProjects failed:", err);
   }
-  syncDir(db, root, workspacePath, readImportExclusions(workspacePath));
+  syncDir(db, root, workspacePath, excludedFolders);
 }
 
 /**
@@ -282,6 +347,10 @@ export function importVaultProjects(
   if (!wsId) return 0;
 
   const excludedFolders = readImportExclusions(workspacePath);
+  // A malformed import config with no known-good value halts project discovery
+  // rather than adopting folders the user may have excluded. Reading the
+  // exclusions above is what registers the halted state.
+  if (isImportConfigHalted(workspacePath)) return 0;
   // Live-project slugs only — must match adoptExternalNoteFile's resolution set.
   const existingSlugs = new Set(activeProjectsBySlug(db).keys());
 

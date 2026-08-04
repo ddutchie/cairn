@@ -208,13 +208,15 @@ export const createWorkspaceSlice: StateCreator<
     if (!folder) return null;
     // initWorkspace writes workspace-config.json, opens the new DB in-process,
     // restarts the file watcher, and fires db:changed — no relaunch needed.
-    await window.electron.initWorkspace(folder);
+    await ipcAwait((e) => e.initWorkspace(folder));
     return folder;
   },
 
   async initWorkspacePath(workspacePath, excludedFolders) {
     if (!isElectron() || !window.electron) return;
-    await window.electron.initWorkspace(workspacePath, excludedFolders);
+    // Route through the shared IPC helper so a database-affecting operation
+    // respects the main-process access boundary and surfaces ipc errors.
+    await ipcAwait((e) => e.initWorkspace(workspacePath, excludedFolders));
   },
 
   async getWorkspacePath() {

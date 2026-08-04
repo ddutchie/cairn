@@ -126,6 +126,9 @@ describe("transport oplog shape validation", () => {
         JSON.stringify({ ...entry, entity_id: "bad-array", observed: [] }),
         JSON.stringify({ ...entry, entity_id: "bad-value", observed: { dev_b: 42 } }),
         JSON.stringify({ ...entry, entity_id: "bad-hlc", observed: { dev_b: "not-an-hlc" } }),
+        JSON.stringify({ ...entry, entity_id: "tombstoned", tombstone: { hlc: "0000000003e8:0000:dev_b", origin: "dev_b" } }),
+        JSON.stringify({ ...entry, entity_id: "bad-tombstone-hlc", tombstone: { hlc: "nope", origin: "dev_b" } }),
+        JSON.stringify({ ...entry, entity_id: "bad-tombstone-origin", tombstone: { hlc: "0000000003e8:0000:dev_b", origin: "dev_c" } }),
         JSON.stringify({ ...entry, entity_id: "wrong-origin", origin: "someone-else" }),
         JSON.stringify({ ...entry, entity_id: "legacy" }),
       ].join("\n") + "\n",
@@ -133,7 +136,7 @@ describe("transport oplog shape validation", () => {
     );
 
     const got = readPeerOplogs(dir, "dev_a");
-    expect(got.map((e) => e.entity_id).sort()).toEqual(["causal", "legacy"]);
+    expect(got.map((e) => e.entity_id).sort()).toEqual(["causal", "legacy", "tombstoned"]);
   });
 });
 

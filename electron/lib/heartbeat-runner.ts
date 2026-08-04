@@ -35,7 +35,7 @@ import {
   type AutomationRun,
 } from "../db/automation-queries";
 import { makeApprovalGate } from "./automation-approval";
-import { getExternalToolDefs } from "./external-tools";
+import { getExternalToolDefs, checkRequirements } from "./external-tools";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -98,6 +98,31 @@ export async function runAutomation(
     });
     insertNotification(db, "automation_run", `Automation skipped: "${automation.name}"`, "No AI connection configured for background runs.");
     return;
+  }
+
+  // Connector-aware automation: every declared connector must actually be
+  // installed AND enabled + attached (project or global scope), else the run
+  // cannot deliver the tools the recipe promises. Fail up front with a
+  // connector-specific message instead of silently running without them — a
+  // detached connector would otherwise degrade to a data-only run and surprise
+  // the user when its expected side effects never happen.
+  const requires = automation.requires ?? [];
+  if (requires.length > 0) {
+    const statuses = checkRequirements(db, automation.workspaceId, automation.projectId ?? "", requires);
+    const unavailable = statuses.filter((s) => !s.installed || !s.attached);
+    if (unavailable.length > 0) {
+      const detail = unavailable
+        .map((s) => `${s.name} (${s.kind})${s.installed ? " — not attached to this project" : " — not installed"}`)
+        .join(", ");
+      const label = `required connector${unavailable.length > 1 ? "s" : ""} unavailable`;
+      updateAutomationRun(db, run.id, {
+        status: "skipped",
+        finishedAt: new Date().toISOString(),
+        error: `${label}: ${detail}`,
+      });
+      insertNotification(db, "automation_run", `Automation skipped: "${automation.name}"`, `Skipped — ${label}: ${detail}`);
+      return;
+    }
   }
 
   const apiKey = resolveLlmApiKey(cached.apiKey);

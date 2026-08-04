@@ -61,6 +61,19 @@ describe("StepWorkspaceDetails import preview", () => {
     expect(screen.getByRole("button", { name: "Waiting for preview…" })).toBeDisabled();
   });
 
+  it("keeps the retry action available after a failed probe", async () => {
+    const user = userEvent.setup();
+    const props = renderStep({
+      previewReady: false,
+      importPreview: null,
+      isObsidianVault: false,
+      onRetryPreview: vi.fn(),
+    });
+    const retry = screen.getByRole("button", { name: "Retry folder preview" });
+    await user.click(retry);
+    expect(props.onRetryPreview).toHaveBeenCalled();
+  });
+
   it("shows the preview for ordinary Markdown folders without .obsidian", () => {
     renderStep({ isObsidianVault: false });
     expect(screen.getByText(/8 notes across 2 projects/i)).toBeInTheDocument();

@@ -263,10 +263,16 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
 
   async fetchRecentProjectRuns(workspaceId, projectId, limit = 8) {
     if (typeof window === "undefined" || !window.electron?.automation) return;
+    // Clear the previous project's rows immediately so the Overview never shows
+    // stale runs while the new project's fetch is in flight (or if it fails).
+    if (get().activeWorkspaceId === workspaceId && get().activeProjectId === projectId) {
+      set({ recentProjectRuns: [] });
+    }
     try {
       const rows = (await window.electron.automation.recentRuns(workspaceId, projectId, limit)) as AutomationRunWithAutomation[];
-      // Guard against a stale fetch landing after the user switched projects.
-      if (get().activeProjectId !== projectId) return;
+      // Guard against a stale fetch landing after the user switched projects
+      // (or workspaces).
+      if (get().activeWorkspaceId !== workspaceId || get().activeProjectId !== projectId) return;
       set({ recentProjectRuns: rows });
     } catch (err) {
       console.error("[automations] fetchRecentProjectRuns error", err);

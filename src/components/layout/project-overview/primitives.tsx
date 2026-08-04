@@ -46,12 +46,15 @@ export function CollapsibleSection({
   collapsedView?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const bodyId = React.useId();
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
         <button
           type="button"
           onClick={onToggle}
+          aria-expanded={!collapsed}
+          aria-controls={bodyId}
           title={collapsed ? `Expand ${title}` : `Collapse ${title}`}
           className="flex items-center gap-1 text-[0.786rem] font-semibold text-[var(--text-secondary)] uppercase tracking-wider hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
         >
@@ -69,7 +72,7 @@ export function CollapsibleSection({
       </div>
       {collapsed
         ? (collapsedView ?? null)
-        : <div>{children}</div>}
+        : <div id={bodyId}>{children}</div>}
     </section>
   );
 }

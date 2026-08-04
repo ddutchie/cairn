@@ -700,6 +700,17 @@ describe("importVaultProjects auto-creates projects from folders", () => {
     expect(new Set(preview.projects.map((project) => project.projectKey)).size).toBe(1);
   });
 
+  it("skips a non-Obsidian notes/ folder with only nested .md files in the preview", () => {
+    // Regression: the preview must not promise a nonzero import for a `notes/`
+    // tree the scan would skip (no direct .md files and not an Obsidian vault).
+    writePlainMdFile(path.join(tmpDir, "notes", "sub"), "Deep.md", "# Deep\n");
+
+    const preview = previewVaultImport(tmpDir);
+
+    expect(preview.projects.some((project) => project.name === "notes")).toBe(false);
+    expect(preview.noteCount).toBe(0);
+  });
+
   it("skips templates and Excalidraw files without stamping frontmatter", () => {
     seedWorkspaceOnly();
     const template = writePlainMdFile(path.join(tmpDir, "templates"), "Meeting.md", "# Template\n");
@@ -727,6 +738,36 @@ describe("importVaultProjects auto-creates projects from folders", () => {
     expect(projects.map((project) => project.name)).toEqual(["Public"]);
     expect(fs.readFileSync(privateNote, "utf-8")).toBe("# Secret\n");
     expect(adoptExternalNoteFile(db, tmpDir, privateNote)).toBeNull();
+  });
+
+  it("falls back to the last valid exclusions when the config is corrupted mid-life", () => {
+    // Regression for the review finding: a truncated / conflict-marked config
+    // must never fail OPEN to importing folders the user excluded.
+    seedWorkspaceOnly();
+    const privateNote = writePlainMdFile(path.join(tmpDir, "Private"), "Secret.md", "# Secret\n");
+    writePlainMdFile(path.join(tmpDir, "Public"), "Shared.md", "# Shared\n");
+    saveImportExclusions(tmpDir, ["Private"]);
+    syncNotesFromDisk(db, tmpDir); // first read caches the valid exclusions
+
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), "{ this is not json", "utf-8");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT name FROM projects ORDER BY name").all() as Array<{ name: string }>;
+    expect(projects.map((project) => project.name)).toEqual(["Public"]);
+    expect(adoptExternalNoteFile(db, tmpDir, privateNote)).toBeNull();
+  });
+
+  it("halts the scan when the config is malformed and never parsed successfully", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Private"), "Secret.md", "# Secret\n");
+    fs.writeFileSync(path.join(tmpDir, ".cairn-import.json"), "{ this is not json", "utf-8");
+
+    expect(importVaultProjects(db, tmpDir)).toBe(0);
+    syncNotesFromDisk(db, tmpDir);
+
+    const notes = db.prepare("SELECT COUNT(*) n FROM notes").get() as { n: number };
+    expect(notes.n).toBe(0);
   });
 
   it("does not create a project for an empty top-level folder (no .md files)", () => {

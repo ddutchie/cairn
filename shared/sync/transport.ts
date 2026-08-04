@@ -22,56 +22,13 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import type { OplogEntry } from "./engine";
-import { decodeHlc } from "./hlc";
 import { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName } from "./oplog-name";
+import { isOplogEntry } from "./oplog-guard";
 
 // Re-export the pure filename helpers so existing importers of "./transport"
 // keep working; the definitions live in the Node-free ./oplog-name module so
 // the React-Native mobile transport can share them without pulling in fs/path.
 export { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName };
-
-const OPS = new Set(["put", "delete"]);
-
-function validHlc(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  try {
-    decodeHlc(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Structural guard so only well-formed entries reach applyRemote. */
-function isOplogEntry(v: unknown): v is OplogEntry {
-  if (typeof v !== "object" || v === null) return false;
-  const e = v as Record<string, unknown>;
-  const observedValid = e.observed === undefined || (
-    typeof e.observed === "object" &&
-    e.observed !== null &&
-    !Array.isArray(e.observed) &&
-    Object.values(e.observed).every(validHlc)
-  );
-  const tombstoneValid = e.tombstone === undefined || (
-    typeof e.tombstone === "object" &&
-    e.tombstone !== null &&
-    validHlc((e.tombstone as Record<string, unknown>).hlc) &&
-    typeof (e.tombstone as Record<string, unknown>).origin === "string" &&
-    decodeHlc((e.tombstone as Record<string, unknown>).hlc as string).deviceId === (e.tombstone as Record<string, unknown>).origin
-  );
-  return (
-    validHlc(e.hlc) &&
-    typeof e.origin === "string" &&
-    decodeHlc(e.hlc).deviceId === e.origin &&
-    typeof e.entity === "string" &&
-    typeof e.entity_id === "string" &&
-    typeof e.op === "string" &&
-    OPS.has(e.op) &&
-    (e.payload === null || (typeof e.payload === "object" && e.payload !== null)) &&
-    observedValid &&
-    tombstoneValid
-  );
-}
 
 /** Serialise entries to the ndjson body written to disk (trailing newline when non-empty). */
 function serializeOplog(entries: OplogEntry[]): string {

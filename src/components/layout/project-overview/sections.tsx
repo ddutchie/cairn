@@ -109,7 +109,7 @@ export function MiniHealthBar({
   const segments = columns
     .map((col) => {
       const count = allCards.filter((c) => c.columnId === col.id).length;
-      return { name: col.name, count, color: COLUMN_COLORS[col.type] ?? COLUMN_COLORS.custom };
+      return { id: col.id, name: col.name, count, color: COLUMN_COLORS[col.type] ?? COLUMN_COLORS.custom };
     })
     .filter((s) => s.count > 0);
   const openCount = allCards.length - doneCount;
@@ -118,7 +118,7 @@ export function MiniHealthBar({
       <div className="flex-1 flex h-2 rounded-full overflow-hidden bg-[var(--surface-2)]">
         {segments.map((s) => (
           <div
-            key={s.name}
+            key={s.id}
             title={`${s.name}: ${s.count}`}
             style={{ width: `${(s.count / allCards.length) * 100}%`, backgroundColor: s.color }}
           />

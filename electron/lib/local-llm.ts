@@ -87,7 +87,7 @@ export async function callLocalLLMChat(messages: OpenAIMessage[], tools?: any[])
  * still produced no usable content.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function continueLocalLLMAfterReasoning(messages: OpenAIMessage[], tools?: any[]): Promise<any | null> {
+export async function continueLocalLLMAfterReasoning(messages: OpenAIMessage[], tools?: any[], signal?: AbortSignal): Promise<any | null> {
   const port = await ensureLlamaServerRunning();
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -106,7 +106,8 @@ export async function continueLocalLLMAfterReasoning(messages: OpenAIMessage[], 
   const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
     method: "POST",
     headers,
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    ...(signal ? { signal } : {})
   });
 
   if (!response.ok) {

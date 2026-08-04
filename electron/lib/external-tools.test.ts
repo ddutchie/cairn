@@ -159,6 +159,13 @@ describe("checkRequirements", () => {
     expect(checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "LINEAR" }])[0].attached).toBe(true);
   });
 
+  it("reports installed/attached for requirements given by runtime connector id", () => {
+    setToolAttachment(db, { projectId: "proj-1", toolType: "mcp", toolId: "m-linear", enabled: true });
+    const byId = checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "m-linear" }]);
+    expect(byId[0]).toMatchObject({ installed: true, attached: true });
+    expect(checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "M-LINEAR" }])[0].attached).toBe(true);
+  });
+
   it("installed but not attached → attached false", () => {
     const status = checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "Linear" }]);
     expect(status[0]).toMatchObject({ installed: true, attached: false });

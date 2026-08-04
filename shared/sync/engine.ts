@@ -97,8 +97,14 @@ export class SyncEngine {
     const stored = this.getState("hlc");
     this.hlc = new Hlc(deviceId, { last: stored ?? undefined, now: opts?.now });
     this.setState("device_id", deviceId);
-    this.rebuildObservedFrontier();
-    this.backfillDurableTombstones();
+    // One-time recovery/upgrade passes. Both are idempotent and read-only after
+    // the first run, so gate them behind a sync_state flag (mirrors `backfilled`)
+    // instead of re-scanning every table on every app start. Ops authored after
+    // the upgrade already write the observed/delete metadata on the live paths.
+    if (this.getState("recovery_done") !== "1") {
+      this.backfillDurableTombstones();
+      this.setState("recovery_done", "1");
+    }
     this.persistHlc();
   }
 
@@ -211,11 +217,6 @@ export class SyncEngine {
       .run(entity, id, putHlc, JSON.stringify(observed));
   }
 
-  private rebuildObservedFrontier(): void {
-    const rows = this.db.prepare("SELECT hlc, origin FROM sync_oplog").all() as Array<{ hlc: string; origin: string }>;
-    for (const row of rows) this.markObserved(row.origin, row.hlc);
-  }
-
   private backfillDurableTombstones(): void {
     for (const entity of SYNCABLE_TABLES) {
       const exists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(entity);
@@ -226,8 +227,13 @@ export class SyncEngine {
         .all() as Array<Record<string, unknown> & { id: string; hlc: string }>;
       for (const row of rows) {
         if (bodyCol && this.getBaseBody(entity, row.id) === undefined) this.setBaseBody(entity, row.id, row[bodyCol]);
-        this.setDeleteVersion(entity, row.id, row.hlc, decodeHlc(row.hlc).deviceId);
-        this.markObservedDelete(entity, row.id, row.hlc);
+        // A legacy/invalid row HLC must not throw here — it would abort the whole
+        // engine construction. Canonicalize the stamp exactly like backfill()
+        // does for live rows, then use it for both delete-state helpers.
+        const stamp = validStoredHlc(row.hlc)
+          ?? backfillStamp(row.updated_at, row.created_at, this.deviceId);
+        this.setDeleteVersion(entity, row.id, stamp, decodeHlc(stamp).deviceId);
+        this.markObservedDelete(entity, row.id, stamp);
       }
     }
   }
@@ -248,12 +254,6 @@ export class SyncEngine {
 
   private persistHlc(): void {
     this.setState("hlc", this.hlc.getState());
-  }
-
-  private markObserved(origin: string, hlc: string): void {
-    const key = `observed:${origin}`;
-    const current = this.getState(key);
-    if (!current || compareHlc(hlc, current) > 0) this.setState(key, hlc);
   }
 
   private deleteObservationKey(entity: string, id: string): string {
@@ -356,7 +356,6 @@ export class SyncEngine {
           this.setBaseBody(entity, entity_id, row[bodyCol]);
         }
         if (op === "put" && row) this.setPutVersion(entity, entity_id, stamp, observed);
-        this.markObserved(this.deviceId, stamp);
       }
       this.db.prepare("DELETE FROM sync_pending WHERE seq <= ?").run(maxSeq);
       this.setSuppress(false);
@@ -471,7 +470,6 @@ export class SyncEngine {
       this.setBaseBody(entity, values.id, merged[bodyCol]);
     }
     this.setPutVersion(entity, values.id, stamp, observed);
-    this.markObserved(this.deviceId, stamp);
     this.setSuppress(false);
     return stamp;
   }
@@ -486,7 +484,6 @@ export class SyncEngine {
     this.setDeleteVersion(entity, id, stamp, this.deviceId);
     this.markObservedDelete(entity, id, stamp);
     this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: id, op: "delete", payload: null, observed });
-    this.markObserved(this.deviceId, stamp);
     this.setSuppress(false);
     return stamp;
   }
@@ -534,6 +531,15 @@ export class SyncEngine {
     // Raw HLC order is not the policy winner for delete/put races. Prefer the
     // op whose HLC matches the reconciled row; rejected higher-clock puts must
     // never evict the durable delete from the published compacted oplog.
+    // Pre-group the rows by their winner key once so this loop's per-winner
+    // scan is O(distinct rows) instead of a quadratic filter over the whole
+    // oplog (which dominates before the first compaction).
+    const byKey = new Map<string, Array<{ seq: number; hlc: string; entity: SyncableTable; entity_id: string }>>();
+    for (const r of rows) {
+      const k = `${r.entity}\u0000${r.entity_id}`;
+      const list = byKey.get(k);
+      if (list) list.push(r); else byKey.set(k, [r]);
+    }
     for (const [key, winner] of winnerSeq) {
       const split = key.indexOf("\u0000");
       const entity = key.slice(0, split) as SyncableTable;
@@ -541,8 +547,8 @@ export class SyncEngine {
       const row = readRow(this.db, entity, entityId);
       const effectiveHlc = typeof row?.hlc === "string" ? row.hlc : this.getRowBase(entity, entityId)?.delete_hlc;
       if (!effectiveHlc || effectiveHlc === winner.hlc) continue;
-      const policyRow = rows
-        .filter((r) => r.entity === entity && r.entity_id === entityId && r.hlc === effectiveHlc)
+      const policyRow = (byKey.get(key) ?? [])
+        .filter((r) => r.hlc === effectiveHlc)
         .sort((a, b) => b.seq - a.seq)[0];
       if (policyRow) winnerSeq.set(key, { seq: policyRow.seq, hlc: policyRow.hlc });
     }
@@ -582,7 +588,7 @@ export class SyncEngine {
     }>;
     return rows.map((r) => {
       const base = this.getRowBase(r.entity, r.entity_id);
-      const observed = r.observed ? (JSON.parse(r.observed) as ObservationFrontier) : undefined;
+      const observed = parseFrontier(r.observed);
       const tombstone = r.op === "put" && base?.delete_hlc && base.delete_origin
         ? { hlc: base.delete_hlc, origin: base.delete_origin }
         : undefined;
@@ -626,7 +632,6 @@ export class SyncEngine {
         // keeping the loop alive. Skipping makes the un-sync self-healing.
         if (!(SYNCABLE_TABLES as readonly string[]).includes(entry.entity)) continue;
         this.hlc.receive(entry.hlc);
-        this.markObserved(entry.origin, entry.hlc);
         if (entry.op === "delete") this.markObservedDelete(entry.entity, entry.entity_id, entry.hlc);
         const res = this.reconcileOne(entry);
         if (res.applied) applied.push({ entity: entry.entity, entity_id: entry.entity_id, op: entry.op });
@@ -808,7 +813,6 @@ export class SyncEngine {
       this.writeRow(entity, merged);
       this.setPutVersion(entity, entity_id, stamp, nextObserved);
       this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: entity_id, op: "put", payload: readRow(this.db, entity, entity_id) ?? null, observed: nextObserved });
-      this.markObserved(this.deviceId, stamp);
     } else {
       this.writeRow(entity, merged);
       this.setPutVersion(entity, entity_id, hlc, observed ?? {});
@@ -906,7 +910,6 @@ export class SyncEngine {
     const observed = this.observationSnapshot(entity, copyId);
     this.setPutVersion(entity, copyId, stamp, observed);
     this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: copyId, op: "put", payload: readRow(this.db, entity, copyId) ?? null, observed });
-    this.markObserved(this.deviceId, stamp);
     return copyId;
   }
 
@@ -935,7 +938,6 @@ export class SyncEngine {
     this.writeRow(entity, clone);
     this.setPutVersion(entity, copyId, stamp, observed);
     this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: copyId, op: "put", payload: readRow(this.db, entity, copyId) ?? null, observed });
-    this.markObserved(this.deviceId, stamp);
     return copyId;
   }
 

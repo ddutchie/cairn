@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { ipcAwaitResult } from "@/store/ipc";
 import { DEFAULT_WORKSPACE_ICON, DEFAULT_PROJECT_ICON } from "@/lib/workspace-icons";
 import type { OnboardingStep } from "./shared";
 import { StepChooseFolder } from "./StepChooseFolder";
@@ -164,8 +165,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       // couldn't auto-create projects. Capture the created projects so a later
       // step can show them instead of prompting to create one.
       try {
-        const res = await window.electron?.rescanWorkspace?.(ws.id, [...excludedFolders]);
-        setImportedProjects(res?.createdProjects ?? []);
+        const result = await ipcAwaitResult<{ projectsCreated: number; createdProjects: ImportedProject[] }>(
+          (e) => e.rescanWorkspace(ws.id, [...excludedFolders]) as unknown as Promise<{ data: { projectsCreated: number; createdProjects: ImportedProject[] } } | { error: string }>,
+        );
+        setImportedProjects("data" in result ? result.data.createdProjects : []);
       } catch {
         // Best-effort — onboarding shouldn't block on the rescan.
         setImportedProjects([]);

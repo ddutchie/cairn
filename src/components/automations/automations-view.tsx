@@ -224,7 +224,7 @@ export function AutomationsView() {
       approvalMode,
       activeHoursStart: activeHoursStart.trim() || null,
       activeHoursEnd: activeHoursEnd.trim() || null,
-      requires: requires.length > 0 ? requires : undefined,
+      requires,
       ...(communityEntry ? { source: "community" as const, communityId: communityEntry.id } : {}),
     };
     if (editing) {
@@ -435,8 +435,12 @@ function AutomationDialog({
 }: AutomationDialogProps) {
   const [browse, setBrowse] = useState(false);
   // Installed + enabled connectors (MCP servers / HTTP services) in the active
-  // workspace, offered as toggleable "requires" for the automation.
-  const [connectors, setConnectors] = useState<Array<{ id: string; kind: "mcp" | "service"; name: string }>>([]);
+  // workspace, offered as toggleable "requires" for the automation. Retains the
+  // catalog id (communityId) alongside the display name because a recipe
+  // requirement may name either; without it a display-name-only match renders an
+  // imported catalog requirement as unchecked and lets duplicates slip in.
+  type ConnectorOption = { id: string; kind: "mcp" | "service"; name: string; communityId?: string };
+  const [connectors, setConnectors] = useState<ConnectorOption[]>([]);
 
   useEffect(() => {
     if (!activeWorkspaceId) return;
@@ -447,19 +451,25 @@ function AutomationDialog({
     ]).then(([mcps, svcs]) => {
       if (cancelled) return;
       setConnectors([
-        ...mcps.filter((m) => m.enabled).map((m) => ({ id: m.id, kind: "mcp" as const, name: m.name })),
-        ...svcs.filter((s) => s.enabled).map((s) => ({ id: s.id, kind: "service" as const, name: s.name })),
+        ...mcps.filter((m) => m.enabled).map((m) => ({ id: m.id, kind: "mcp" as const, name: m.name, communityId: m.communityId })),
+        ...svcs.filter((s) => s.enabled).map((s) => ({ id: s.id, kind: "service" as const, name: s.name, communityId: s.communityId })),
       ]);
     });
     return () => { cancelled = true; };
   }, [activeWorkspaceId]);
 
-  const toggleConnector = (c: { id: string; kind: "mcp" | "service"; name: string }) => {
-    const has = requires.some((r) => r.kind === c.kind && r.name.toLowerCase() === c.name.toLowerCase());
+  // Single matcher for both checked-state and removal so a requirement can never
+  // be added twice (or left stuck) when one of its identifiers matches.
+  const matchesRequirement = (r: { kind: "mcp" | "service"; name: string }, c: ConnectorOption) =>
+    r.kind === c.kind &&
+    [c.communityId, c.name].some((value) => value?.toLowerCase() === r.name.toLowerCase());
+
+  const toggleConnector = (c: ConnectorOption) => {
+    const has = requires.some((r) => matchesRequirement(r, c));
     setRequires(
       has
-        ? requires.filter((r) => !(r.kind === c.kind && r.name.toLowerCase() === c.name.toLowerCase()))
-        : [...requires, { kind: c.kind, name: c.name }],
+        ? requires.filter((r) => !matchesRequirement(r, c))
+        : [...requires, { kind: c.kind, name: c.communityId ?? c.name }],
     );
   };
 
@@ -591,7 +601,7 @@ function AutomationDialog({
             <>
               <div className="grid grid-cols-1 gap-1">
                 {connectors.map((c) => {
-                  const selected = requires.some((r) => r.kind === c.kind && r.name.toLowerCase() === c.name.toLowerCase());
+                  const selected = requires.some((r) => matchesRequirement(r, c));
                   return (
                     <label
                       key={`${c.kind}:${c.id}`}

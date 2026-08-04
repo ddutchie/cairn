@@ -1,0 +1,120 @@
+/**
+ * Heartbeat runner — connector-requirement gating.
+ *
+ * A connector-aware automation whose `requires` list references a connector
+ * that is no longer installed or attached must be recorded as skipped with a
+ * connector-specific error — NOT run silently without its tools (the fail-open
+ * behaviour the review flagged).
+ */
+
+import { describe, it, expect, vi, afterEach } from "vitest";
+import BetterSqlite3 from "better-sqlite3";
+import type Database from "better-sqlite3";
+import { applySchema } from "../db/schema";
+import { createWorkspace, createProject, saveMcpServer, setToolAttachment } from "../db/queries";
+import { createAutomation, createAutomationRun, getAutomationRunById } from "../db/automation-queries";
+
+const { runToolLoopMock } = vi.hoisted(() => ({ runToolLoopMock: vi.fn() }));
+
+vi.mock("./config-cache", () => ({
+  getCachedConfig: () => ({ aiConfig: { baseUrl: "https://api.test.invalid", model: "gpt-test" } }),
+}));
+
+vi.mock("./chat-loop", () => ({
+  runToolLoop: (...args: unknown[]) => runToolLoopMock(...args),
+}));
+
+// Keep the REAL checkRequirements (that's the gate under test) but stub the
+// live MCP tool discovery so the "attached → runs" case never hits the network.
+vi.mock("./external-tools", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./external-tools")>();
+  return {
+    ...actual,
+    getExternalToolDefs: vi.fn(async () => []),
+  };
+});
+
+const { runAutomation } = await import("./heartbeat-runner");
+
+function makeDb(): Database.Database {
+  const db = new BetterSqlite3(":memory:");
+  applySchema(db);
+  return db;
+}
+
+function makeAutomation(db: Database.Database, opts: { projectId?: string; requires?: Array<{ kind: "mcp" | "service"; name: string }> }) {
+  return createAutomation(db, {
+    workspaceId: "ws1",
+    projectId: opts.projectId,
+    name: "Linear digest",
+    instructions: "Summarise today's Linear activity.",
+    scheduleKind: "every",
+    scheduleExpr: "1 hour",
+    nextRunAt: new Date().toISOString(),
+    requires: opts.requires,
+  });
+}
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("runAutomation connector requirements", () => {
+  it("skips the run when a required connector is not attached, with a connector-specific error", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    // No MCP server / attachment exists at all.
+    const automation = makeAutomation(db, { projectId: "p1", requires: [{ kind: "mcp", name: "linear" }] });
+    const run = createAutomationRun(db, automation.id, "running");
+
+    await runAutomation({ db, workspacePath: "/tmp" }, run, automation);
+
+    const updated = getAutomationRunById(db, run.id)!;
+    expect(updated.status).toBe("skipped");
+    expect(updated.error).toMatch(/linear/i);
+    expect(updated.error).toMatch(/not installed/);
+    expect(runToolLoopMock).not.toHaveBeenCalled();
+  });
+
+  it("skips the run when a required connector is installed but detached", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    saveMcpServer(db, {
+      id: "m-linear", workspaceId: "ws1", name: "Linear", transport: "http",
+      baseUrl: "https://mcp.linear.app/mcp", enabled: true, source: "community",
+      communityId: "linear",
+    });
+    // Installed + enabled but NOT attached to the project.
+    const automation = makeAutomation(db, { projectId: "p1", requires: [{ kind: "mcp", name: "linear" }] });
+    const run = createAutomationRun(db, automation.id, "running");
+
+    await runAutomation({ db, workspacePath: "/tmp" }, run, automation);
+
+    const updated = getAutomationRunById(db, run.id)!;
+    expect(updated.status).toBe("skipped");
+    expect(updated.error).toMatch(/not attached/);
+    expect(runToolLoopMock).not.toHaveBeenCalled();
+  });
+
+  it("runs normally when the required connector is installed and attached", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    saveMcpServer(db, {
+      id: "m-linear", workspaceId: "ws1", name: "Linear", transport: "http",
+      baseUrl: "https://mcp.linear.app/mcp", enabled: true, source: "community",
+      communityId: "linear",
+    });
+    setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m-linear", enabled: true });
+    const automation = makeAutomation(db, { projectId: "p1", requires: [{ kind: "mcp", name: "linear" }] });
+    const run = createAutomationRun(db, automation.id, "running");
+    runToolLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+
+    await runAutomation({ db, workspacePath: "/tmp" }, run, automation);
+
+    expect(runToolLoopMock).toHaveBeenCalled();
+    expect(getAutomationRunById(db, run.id)!.status).toBe("done");
+  });
+});

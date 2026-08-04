@@ -825,7 +825,6 @@ const MIGRATIONS: Migration[] = [
         run_count       INTEGER NOT NULL DEFAULT 0,
         approval_mode   TEXT NOT NULL DEFAULT 'auto',  -- 'auto' (run writes freely) | 'ask' (gate writes behind the approval inbox)
         standing_rules  TEXT NOT NULL DEFAULT '[]',    -- JSON [{tool, target}]
-        requires        TEXT,                          -- JSON [{kind:'mcp'|'service', name}] connector requirements (NULL = data-only recipe)
         source          TEXT NOT NULL DEFAULT 'custom',-- 'custom' | 'community'
         community_id    TEXT,
         created_at      TEXT NOT NULL,
@@ -908,6 +907,15 @@ const MIGRATIONS: Migration[] = [
     }
     const oplogCols = (db.prepare("PRAGMA table_info(sync_oplog)").all() as { name: string }[]).map((c) => c.name);
     if (!oplogCols.includes("observed")) db.exec("ALTER TABLE sync_oplog ADD COLUMN observed TEXT");
+  },
+
+  // v35: Connector-aware automations — `automations.requires` column
+  // (JSON [{kind:'mcp'|'service', name}], NULL = data-only recipe). Added
+  // AFTER v32 shipped so databases already at v32+ (which ran the automations
+  // CREATE TABLE without this column) get it appended here, idempotently.
+  (db) => {
+    const cols = (db.prepare("PRAGMA table_info(automations)").all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("requires")) db.exec("ALTER TABLE automations ADD COLUMN requires TEXT");
   },
 ];
 

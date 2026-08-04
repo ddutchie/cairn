@@ -5,7 +5,7 @@
 // project identity (icon/description/status/priority), the agent code
 // directory, and a shortcut to manage tools & connectors (Settings → Tools).
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Settings2, Check, FolderOpen, Wrench } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -33,27 +33,28 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
   const [editPriority, setEditPriority] = useState<Priority | "">("");
   const [codeDirInput, setCodeDirInput] = useState("");
 
+  // Seed the form once per OPEN. `project` identity changes on every store
+  // refresh (db:changed rehydrates rows as new objects), so depending on it
+  // would overwrite the user's in-progress edits. A ref keeps the freshest
+  // project visible at the moment the modal opens.
+  const seedRef = useRef(project);
+  seedRef.current = project;
   useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setEditIcon(project.icon ?? "");
-      setEditDesc(project.description ?? "");
-      setEditStatus(project.status);
-      setEditPriority(project.priority);
-      setCodeDirInput(project.codeDirectory ?? "");
-    }
-  }, [open, project]);
+    if (!open) return;
+    const p = seedRef.current;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditIcon(p.icon ?? "");
+    setEditDesc(p.description ?? "");
+    setEditStatus(p.status);
+    setEditPriority(p.priority);
+    setCodeDirInput(p.codeDirectory ?? "");
+  }, [open]);
 
   async function handlePickCodeDir() {
     const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
     if (result?.data) {
       setCodeDirInput(result.data);
-      updateProject(project.id, { codeDirectory: result.data });
     }
-  }
-
-  function handleSaveCodeDir() {
-    updateProject(project.id, { codeDirectory: codeDirInput.trim() || null });
   }
 
   function handleSave() {
@@ -62,6 +63,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
       description: editDesc.trim() || undefined,
       status: editStatus || undefined,
       priority: editPriority || undefined,
+      codeDirectory: codeDirInput.trim() || null,
     });
     setOpen(false);
   }
@@ -185,7 +187,6 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
               <input
                 value={codeDirInput}
                 onChange={(e) => setCodeDirInput(e.target.value)}
-                onBlur={handleSaveCodeDir}
                 onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                 placeholder="Path for agent sessions…"
                 className="flex-1 min-w-0 px-2 py-1.5 text-xs font-mono rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:text-[var(--text-primary)] transition-colors"

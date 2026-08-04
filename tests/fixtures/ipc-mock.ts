@@ -307,7 +307,7 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     needsWorkspaceSetup:   () => Promise.resolve(needsSetup),
     setTheme:              noop,
     setAccent:             noop,
-    initWorkspace:         () => Promise.resolve({ requiresRestart: false }),
+    initWorkspace:         () => Promise.resolve({ ok: true }),
     rescanWorkspace:       () => Promise.resolve({ projectsCreated: 0, createdProjects: [] }),
     probeWorkspaceFolder:  () => Promise.resolve({ isObsidianVault: false, vaultName: "Notes", noteCount: 0, skippedCount: 0, projects: [], excludedFolders: [] }),
     relaunch:              noop,

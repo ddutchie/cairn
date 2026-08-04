@@ -27,10 +27,12 @@ export function ToolsAttachPanel({
   projectId: string;
   workspaceId: string;
   onManage: () => void;
-  /** Collapsed state for the section (per-project, persisted by the parent). */
-  collapsed?: boolean;
-  onToggle?: () => void;
-}) {
+} & (
+  /** Collapsible mode: both the collapsed state and its toggle are supplied together. */
+  | { collapsed: boolean; onToggle: () => void }
+  /** Non-collapsible mode: neither is provided. */
+  | { collapsed?: undefined; onToggle?: undefined }
+)) {
   const {
     mcpServers,
     customServices,

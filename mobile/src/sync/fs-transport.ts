@@ -19,8 +19,8 @@ import {
   PathUtils,
 } from "react-native-cloud-store";
 import type { OplogEntry } from "@cairn/shared/sync/engine";
-import { decodeHlc } from "@cairn/shared/sync/hlc";
 import { parseWorkspaceIdFromOplogName } from "@cairn/shared/sync/oplog-name";
+import { isOplogEntry } from "@cairn/shared/sync/oplog-guard";
 
 /** This device's oplog file for a given source workspace. */
 function oplogFileName(deviceId: string, workspaceId: string): string {
@@ -42,43 +42,6 @@ function baseName(entryPath: string): string {
 
 function toNdjson(entries: OplogEntry[]): string {
   return entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length ? "\n" : "");
-}
-
-function validHlc(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  try {
-    decodeHlc(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isOplogEntry(value: unknown): value is OplogEntry {
-  if (typeof value !== "object" || value === null) return false;
-  const entry = value as Record<string, unknown>;
-  const observedValid = entry.observed === undefined || (
-    typeof entry.observed === "object" &&
-    entry.observed !== null &&
-    !Array.isArray(entry.observed) &&
-    Object.values(entry.observed).every(validHlc)
-  );
-  const tombstoneValid = entry.tombstone === undefined || (
-    typeof entry.tombstone === "object"
-    && entry.tombstone !== null
-    && validHlc((entry.tombstone as Record<string, unknown>).hlc)
-    && typeof (entry.tombstone as Record<string, unknown>).origin === "string"
-    && decodeHlc((entry.tombstone as Record<string, unknown>).hlc as string).deviceId === (entry.tombstone as Record<string, unknown>).origin
-  );
-  return validHlc(entry.hlc)
-    && typeof entry.origin === "string"
-    && decodeHlc(entry.hlc).deviceId === entry.origin
-    && typeof entry.entity === "string"
-    && typeof entry.entity_id === "string"
-    && (entry.op === "put" || entry.op === "delete")
-    && (entry.payload === null || (typeof entry.payload === "object" && entry.payload !== null))
-    && observedValid
-    && tombstoneValid;
 }
 
 function parseNdjson(text: string): OplogEntry[] {

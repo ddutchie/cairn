@@ -36,6 +36,26 @@ export interface ExternalToolRequirement {
   name: string;
 }
 
+/** Normalized matching key: trimmed + lowercased (ids, names, catalog ids). */
+const normKey = (value: unknown): string => (typeof value === "string" ? value.trim().toLowerCase() : "");
+
+/**
+ * True when a connector matches a requirement by any of its identifiers —
+ * runtime id, display name, or catalog/community id — case-insensitively. This
+ * is the SINGLE matcher for both requirement tool-loading (filterRequiredConfigs)
+ * and status reporting (checkRequirements) so the two can never disagree about
+ * what "installed" means.
+ */
+function requirementMatches(
+  connector: { id: string; name: string; communityId?: string | null },
+  requirementName: string,
+): boolean {
+  const key = normKey(requirementName);
+  return normKey(connector.id) === key
+    || normKey(connector.name) === key
+    || normKey(connector.communityId) === key;
+}
+
 /** Map a stored MCP server config to the runtime config the client needs. */
 function toRuntimeConfig(s: {
   id: string;
@@ -140,15 +160,9 @@ function filterRequiredConfigs(
   configs: ReturnType<typeof loadScopedConfigs>,
   requires: ExternalToolRequirement[],
 ) {
-  const matches = (connector: { id: string; name: string; communityId?: string | null }, name: string) => {
-    const key = name.trim().toLowerCase();
-    return connector.id.toLowerCase() === key
-      || connector.name.toLowerCase() === key
-      || connector.communityId?.toLowerCase() === key;
-  };
   return {
-    mcpServers: configs.mcpServers.filter((s) => requires.some((r) => r.kind === "mcp" && matches(s, r.name))),
-    customServices: configs.customServices.filter((s) => requires.some((r) => r.kind === "service" && matches(s, r.name))),
+    mcpServers: configs.mcpServers.filter((s) => requires.some((r) => r.kind === "mcp" && requirementMatches(s, r.name))),
+    customServices: configs.customServices.filter((s) => requires.some((r) => r.kind === "service" && requirementMatches(s, r.name))),
   };
 }
 
@@ -184,26 +198,16 @@ export function checkRequirements(
   const customServices = q.getCustomServices(db, workspaceId);
 
   return requires.map((req) => {
-    const key = req.name.toLowerCase();
-    if (req.kind === "mcp") {
-      const server = mcpServers.find(
-        (s) => s.communityId?.toLowerCase() === key || s.name.toLowerCase() === key,
-      );
-      return {
-        kind: req.kind,
-        name: req.name,
-        installed: Boolean(server),
-        attached: Boolean(server && server.enabled && attached.mcp.has(server.id)),
-      };
-    }
-    const svc = customServices.find(
-      (s) => s.communityId?.toLowerCase() === key || s.name.toLowerCase() === key,
-    );
+    // Aggregate across every matching connector (by runtime id, name, or
+    // catalog id), not just the first — duplicate names must not make the
+    // reported status depend on row order.
+    const pool = req.kind === "mcp" ? mcpServers : customServices;
+    const matches = pool.filter((s) => requirementMatches(s, req.name));
     return {
       kind: req.kind,
       name: req.name,
-      installed: Boolean(svc),
-      attached: Boolean(svc && svc.enabled && attached.service.has(svc.id)),
+      installed: matches.length > 0,
+      attached: matches.some((s) => s.enabled && attached[req.kind].has(s.id)),
     };
   });
 }

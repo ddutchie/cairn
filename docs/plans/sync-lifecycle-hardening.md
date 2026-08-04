@@ -1,6 +1,6 @@
 # Sync Lifecycle Hardening — Delete/Resurrection & Stale-Peer Safety
 
-Status: Phase 1 and Phase 2 implemented
+Status: Phases 1–3 implemented; Phase 4 outstanding
 Owner: —
 Date: 2026-07-24
 Related: `shared/sync/engine.ts`, `shared/sync/hlc.ts`, `mobile/src/db/queries.ts`, `electron/db/queries.ts`, `electron/sync/desktop-sync.ts`, `docs/plans/mobile-app-viability.md` (§4–§5)

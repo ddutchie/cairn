@@ -141,12 +141,15 @@ export function registerAppHandlers(
   }));
 
   registerIpcHandle("app:initWorkspace", (_e, { workspacePath: newPath, excludedFolders }: { workspacePath: string; excludedFolders?: string[] }) => handle(async () => {
-    writeWorkspaceConfig(userDataPath, newPath);
+    // Complete the filesystem setup BEFORE persisting the workspace path: if
+    // mkdir / exclusion config / re-init fails, the old workspace stays the
+    // active one rather than committing a half-initialised path.
     fs.mkdirSync(newPath, { recursive: true });
     if (Array.isArray(excludedFolders)) saveImportExclusions(newPath, excludedFolders);
     if (onReinitialise) {
       await onReinitialise(newPath);
     }
+    writeWorkspaceConfig(userDataPath, newPath);
     return { ok: true };
   }));
 
@@ -202,7 +205,12 @@ export function registerAppHandlers(
   // Read-only recursive preview of a folder before onboarding adopts it. No
   // frontmatter or config is written until rescanWorkspace is confirmed.
   registerIpcHandle("app:probeWorkspaceFolder", (_e, { folder }: { folder: string }) => handle(() => {
-    if (!folder || typeof folder !== "string") return previewVaultImport("");
+    // A blank/non-string folder must not reach previewVaultImport — its
+    // path.join("", ".obsidian") would resolve against the process CWD and could
+    // misreport an unrelated directory as a vault. Return a literal empty preview.
+    if (!folder || typeof folder !== "string") {
+      return { isObsidianVault: false, vaultName: "Notes", noteCount: 0, skippedCount: 0, projects: [], excludedFolders: [] };
+    }
     return previewVaultImport(folder);
   }));
 

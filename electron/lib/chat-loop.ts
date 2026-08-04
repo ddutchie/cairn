@@ -130,14 +130,19 @@ export async function runToolLoop(
         const hasNoContent = !assistantMsg.content || !assistantMsg.content.trim();
         const hasNoToolCalls = !assistantMsg.tool_calls?.length;
         if (hasNoContent && hasNoToolCalls && finishReason === "length" && accumulatedReasoning) {
+          if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
           try {
-            const contChoice = await continueLocalLLMAfterReasoning(messages, combinedTools);
+            const contChoice = await continueLocalLLMAfterReasoning(messages, combinedTools, signal);
+            if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
             const contContent = contChoice?.message?.content;
             if (contContent && contContent.trim()) {
               assistantMsg.content = contContent;
             }
           } catch {
-            // Continuation failed — fall through to the reasoning fallback below.
+            // Cancellation aborts the continuation — surface the aborted result
+            // instead of running the reasoning fallback for a request nobody is
+            // waiting on. Other failures fall through to the reasoning fallback.
+            if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
           }
           if ((!assistantMsg.content || !assistantMsg.content.trim()) && accumulatedReasoning) {
             assistantMsg.content = `*[This reasoning model exhausted its token budget before emitting a final answer. The captured reasoning is shown below.]*\n\n${accumulatedReasoning.trim()}`;

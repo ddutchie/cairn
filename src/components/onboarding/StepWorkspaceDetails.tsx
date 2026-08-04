@@ -82,7 +82,7 @@ export function StepWorkspaceDetails({
           )}
         </div>
 
-        {(isObsidianVault || hasImport) && (
+        {chosenFolder && (isObsidianVault || hasImport || !previewReady) && (
           <div className="flex flex-col gap-3">
             <div role="status" aria-live="polite" className="flex items-start gap-2 bg-[var(--accent-dim)] border border-[color-mix(in_srgb,var(--accent)_35%,transparent)] rounded-lg px-3 py-2">
               <Sparkles size={14} className="text-[var(--accent)] shrink-0 mt-0.5" />
@@ -114,7 +114,7 @@ export function StepWorkspaceDetails({
                         onClick={() => onToggleExcludedFolder?.(project.name)}
                         className="w-full flex items-center gap-2 px-3 py-2 text-left border-b last:border-b-0 border-[var(--border)] hover:bg-[var(--surface-3)] disabled:hover:bg-transparent"
                       >
-                        <span className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", excluded ? "border-[var(--border)]" : "border-[var(--accent)] bg-[var(--accent)] text-white")}>
+                        <span className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", excluded ? "border-[var(--border)]" : "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-fg)]")}>
                           {!excluded && <Check size={11} />}
                         </span>
                         <FolderOpen size={13} className="text-[var(--text-tertiary)]" />
@@ -174,7 +174,7 @@ export function StepWorkspaceDetails({
           className={cn(
             "w-full py-2 rounded-lg text-sm font-medium transition-all",
             name.trim() && !submitting && previewReady
-              ? "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
+              ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[var(--accent-hover)]"
               : "bg-[var(--surface-2)] text-[var(--text-tertiary)] cursor-not-allowed"
           )}
         >
