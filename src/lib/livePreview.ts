@@ -32,7 +32,7 @@ import { makeCalloutWidget, parseCalloutSource, calloutWidgetTheme } from "./cal
 // height/measurement issue is solved. See the Cairn "Notes Editor" board task.
 // When false: callout blockquotes render as ordinary blockquotes (Tier 1 border)
 // and the calloutField / widget are not added to the editor.
-const CALLOUTS_ENABLED = false;
+const CALLOUTS_ENABLED = true;
 
 // ── Widgets ────────────────────────────────────────────────────────────────
 
