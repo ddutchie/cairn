@@ -199,9 +199,9 @@ const FEATURES = [
     title: "Live Preview Editor",
     category: "Editor",
     description:
-      "The note editor now renders rich blocks inline as you write — callouts and code blocks show the way they will in reading mode, and click straight into raw Markdown to edit. A preview panel follows your cursor so you can watch a table or callout take shape, and instantly spot broken Markdown.",
+      "The note editor now renders rich blocks inline as you write — callouts, code blocks, tables, math, and Mermaid diagrams all show the way they will in reading mode, and click straight into raw Markdown to edit. A preview panel follows your cursor so you can watch a table or diagram take shape, and instantly spot broken Markdown.",
     highlights: [
-      "Inline Callouts & Code: `> [!note]` callouts and fenced code blocks render live in the editor, with syntax highlighting and copy — click any block to edit its raw Markdown.",
+      "Inline Everything: `> [!note]` callouts, fenced code (with highlighting + copy), GFM tables, $$ math, and ```mermaid diagrams render live in the editor — click any block to edit its raw Markdown.",
       "Edit / Read + Live Preview: Two clear modes, plus a Live Preview toggle to flip inline rendering off and edit the plain source when you need to.",
       "Follow-the-Cursor Preview: The bottom panel live-renders the table, callout, code, or math block you're editing — a broken table or unclosed fence shows immediately. Resize it S / M / L.",
     ],
