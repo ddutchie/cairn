@@ -293,6 +293,11 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalTitle(note.title);
     titleRef.current = note.title;
+    // Clear any preview from the previous note — the selection/block preview is
+    // only refreshed on cursor/selection activity, so without this the last
+    // note's preview lingers until you click in the new one.
+    setPreviewText(null);
+    setBlockPreview(null);
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTitleChange = useCallback(
