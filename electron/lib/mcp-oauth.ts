@@ -75,6 +75,21 @@ export interface OAuthServerConfig {
   transport: "http" | "sse";
   /** Optional requested scope. */
   scope?: string;
+  /**
+   * Optional pre-registered OAuth client id. When set, DCR is skipped entirely
+   * — required by servers like Slack that forbid dynamic registration. Auth
+   * stays public-PKCE (no client secret — Slack MCP works this way, cf. the
+   * official Claude Code config which ships only a `clientId` + `callbackPort`).
+   * Combine with {@link redirectUri} for a fixed redirect the provider requires
+   * pre-registered.
+   */
+  clientId?: string;
+  /**
+   * Optional fixed redirect URI, e.g. a loopback URL the provider requires to
+   * be pre-registered in the app config (`http://127.0.0.1:<port>/callback`).
+   * When unset, a random-port loopback (or the cairn:// deep link) is used.
+   */
+  redirectUri?: string;
 }
 
 /**
@@ -85,6 +100,8 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
   private _state: string;
   private _redirectUri: string;
   private readonly _toolType: ToolKind;
+  private readonly _clientId?: string;
+  private readonly _fixedRedirectUri?: string;
 
   constructor(
     private readonly serverId: string,
@@ -101,20 +118,31 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
      * same id (mirrors the secretRef namespacing in secure-store).
      */
     toolType: ToolKind = "mcp",
+    /**
+     * Pre-registered OAuth client id — skips dynamic client registration
+     * (servers like Slack forbid DCR). Public value; auth stays PKCE.
+     */
+    clientId?: string,
+    /** Fixed redirect URI the provider requires pre-registered (e.g. loopback). */
+    fixedRedirectUri?: string,
   ) {
     this._state = state ?? randomUUID();
     this._redirectUri = redirectUri ?? OAUTH_REDIRECT_URI;
     this._toolType = toolType;
+    this._clientId = clientId;
+    this._fixedRedirectUri = fixedRedirectUri;
   }
 
   get redirectUrl(): string {
-    return this._redirectUri;
+    // A fixed redirect wins over the dynamic loopback / deep-link URI — the
+    // provider only accepts a URL that was registered ahead of time.
+    return this._fixedRedirectUri ?? this._redirectUri;
   }
 
   get clientMetadata(): OAuthClientMetadata {
     return {
       client_name: `Cairn — ${this.serverName}`,
-      redirect_uris: [this._redirectUri],
+      redirect_uris: [this.redirectUrl],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
@@ -128,6 +156,12 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
   }
 
   clientInformation(): OAuthClientInformationMixed | undefined {
+    if (this._clientId) {
+      // Pre-registered public client — advertise it so the SDK skips DCR and
+      // authorizes with PKCE (no client secret, matching how Anthropic's Slack
+      // integration works). Nothing to persist in the keychain.
+      return { client_id: this._clientId };
+    }
     return (
       secrets.getToolJson<OAuthClientInformationFull>(this._toolType, this.serverId, KEY_CLIENT_INFO) ??
       undefined
@@ -193,6 +227,8 @@ export function isOAuthServer(cfg: { authMode?: "none" | "oauth" }): boolean {
  * is supplied (used when re-binding to a pending attempt is not needed — normal
  * connect/refresh paths don't need a stable state). `redirectUri` overrides the
  * advertised redirect (loopback URL for the interactive flow; defaults cairn://).
+ * A pre-registered client id + a fixed redirect URI flow straight through from
+ * the server config (public PKCE — no client secret).
  */
 export function makeProvider(
   cfg: OAuthServerConfig,
@@ -200,7 +236,16 @@ export function makeProvider(
   state?: string,
   redirectUri?: string,
 ): KeychainOAuthProvider {
-  return new KeychainOAuthProvider(cfg.id, serverName, cfg.scope, state, redirectUri);
+  return new KeychainOAuthProvider(
+    cfg.id,
+    serverName,
+    cfg.scope,
+    state,
+    redirectUri,
+    "mcp",
+    cfg.clientId,
+    cfg.redirectUri,
+  );
 }
 
 function makeOAuthTransport(cfg: OAuthServerConfig, provider: OAuthClientProvider) {
@@ -209,6 +254,54 @@ function makeOAuthTransport(cfg: OAuthServerConfig, provider: OAuthClientProvide
     return new SSEClientTransport(url, { authProvider: provider });
   }
   return new StreamableHTTPClientTransport(url, { authProvider: provider });
+}
+
+/**
+ * Extract the port from a fixed loopback redirect URI, e.g.
+ * `http://127.0.0.1:48123/callback` → 48123. Requires a plain-HTTP URI with the
+ * exact `/callback` path — the loopback listener only binds 127.0.0.1 on the
+ * given port and only answers `/callback`, so an `https:` scheme or any other
+ * path would be advertised to the provider yet never reachable. Throws for a
+ * misconfigured redirect so the failure surfaces loudly at sign-in time.
+ * Exported for unit testing.
+ */
+export function loopbackPortOf(redirectUri: string): number {
+  const url = new URL(redirectUri);
+  if (url.protocol !== "http:") {
+    throw new Error(`Redirect URI must use plain http (loopback), got scheme "${url.protocol}".`);
+  }
+  const hostname = url.hostname;
+  if (hostname !== "127.0.0.1" && hostname !== "localhost") {
+    throw new Error(`Redirect URI must be a 127.0.0.1 loopback URL, got host "${hostname}".`);
+  }
+  if (!url.port) {
+    throw new Error(`Redirect URI must include a fixed port, got "${redirectUri}".`);
+  }
+  if (url.pathname !== "/callback") {
+    throw new Error(`Redirect URI must use the exact /callback path, got "${url.pathname}".`);
+  }
+  return Number(url.port);
+}
+
+/**
+ * Turn a connect-time OAuth error into an actionable message. The SDK throws
+ * "does not support dynamic client registration" when the server has no
+ * registration endpoint (e.g. Slack) — that's not a user-actionable failure on
+ * its own, so point them at the pre-registered client id / redirect URI fields.
+ */
+function oauthErrorHint(e: unknown, cfg: { redirectUri?: string }): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  if (/does not support dynamic client registration|registration_endpoint/i.test(raw)) {
+    return [
+      `This server does not support automatic registration (incompatible auth server).`,
+      `If it needs a pre-registered app, set the "Requires a pre-registered app" option and add its Client ID`,
+      cfg.redirectUri
+        ? `and the redirect URI registered for the app.`
+        : `and a redirect URI you register with the provider.`,
+      `Then sign in again. (${raw})`,
+    ].join(" ");
+  }
+  return raw;
 }
 
 /** True if the server already has stored OAuth tokens (i.e. is "connected"). */
@@ -304,10 +397,23 @@ export async function startServerAuth(
   const isStale = () => authGeneration.get(cfg.id) !== myGen;
 
   let listener: LoopbackListener | null = null;
+  // A fixed redirect URI must bind to that exact loopback port so the
+  // pre-registered callback URL is honoured; otherwise a random port is used.
+  const fixedRedirect = cfg.redirectUri?.trim();
   try {
-    listener = await startLoopbackListener();
+    listener = await startLoopbackListener(
+      fixedRedirect ? { port: loopbackPortOf(fixedRedirect) } : undefined
+    );
   } catch {
-    // Loopback couldn't bind; fall back to the cairn:// deep-link flow.
+    // Loopback couldn't bind. A fixed redirect has no deep-link alternative
+    // (the provider only accepts its registered URL), so it's a hard error;
+    // otherwise fall back to the cairn:// deep-link flow.
+    if (fixedRedirect) {
+      return {
+        status: "error",
+        error: `Could not bind loopback listener on ${fixedRedirect}. Make sure the port is free and matches the redirect URL registered with the provider.`,
+      };
+    }
     return startServerAuthDeepLink(cfg, serverName);
   }
 
@@ -318,10 +424,15 @@ export async function startServerAuth(
     return { status: "error", error: "Superseded by a newer sign-in." };
   }
 
-  // The loopback port changes every attempt, so a client registration saved with
-  // a previous redirect URI no longer applies — clear it so DCR re-registers with
-  // the current loopback URL. (Tokens are kept; they may still be valid.)
-  secrets.deleteSecret("mcp", cfg.id, KEY_CLIENT_INFO);
+  // The loopback port changes every attempt for the dynamic path, so a client
+  // registration saved with a previous redirect URI no longer applies — clear
+  // it so DCR re-registers with the current loopback URL. (Tokens are kept;
+  // they may still be valid.) A fixed redirect is stable across attempts and a
+  // pre-registered client id needs no registration at all, so nothing is
+  // cleared there.
+  if (!fixedRedirect) {
+    secrets.deleteSecret("mcp", cfg.id, KEY_CLIENT_INFO);
+  }
   secrets.deleteSecret("mcp", cfg.id, KEY_VERIFIER);
 
   const provider = makeProvider(cfg, serverName, undefined, listener.redirectUri);
@@ -338,7 +449,7 @@ export async function startServerAuth(
     if (!(e instanceof UnauthorizedError)) {
       listener.close();
       await client.close().catch(() => {});
-      return { status: "error", error: e instanceof Error ? e.message : String(e) };
+      return { status: "error", error: oauthErrorHint(e, cfg) };
     }
   }
 
@@ -497,6 +608,10 @@ export interface OAuthServiceConfig {
    */
   serverUrl: string;
   scope?: string;
+  /** Optional pre-registered client id — skips DCR (public PKCE, no secret). */
+  clientId?: string;
+  /** Optional fixed redirect URI the provider requires pre-registered. */
+  redirectUri?: string;
 }
 
 /** Active loopback listeners for in-flight SERVICE sign-ins, keyed by service id. */
@@ -524,13 +639,25 @@ export async function startServiceAuth(
   const isStale = () => serviceAuthGeneration.get(cfg.id) !== myGen;
 
   let listener: LoopbackListener;
+  // A fixed redirect URI must bind to that exact loopback port (a pre-registered
+  // client's callback URL); otherwise a random port is used.
+  const fixedRedirect = cfg.redirectUri?.trim();
   try {
-    listener = await startLoopbackListener();
+    listener = await startLoopbackListener(
+      fixedRedirect ? { port: loopbackPortOf(fixedRedirect) } : undefined
+    );
   } catch (e) {
     // Unlike MCP, services have no cairn:// deep-link fallback path yet (the
     // deep-link pending registry is tied to MCP transports), so a bind failure
     // is a hard error rather than a silent downgrade.
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return {
+      status: "error",
+      error: fixedRedirect
+        ? `Could not bind loopback listener on ${fixedRedirect}. Make sure the port is free and matches the redirect URL registered with the provider.`
+        : e instanceof Error
+          ? e.message
+          : String(e),
+    };
   }
 
   if (isStale()) {
@@ -538,10 +665,14 @@ export async function startServiceAuth(
     return { status: "error", error: "Superseded by a newer sign-in." };
   }
 
-  // The loopback port changes each attempt, so a client registration saved with
-  // a previous redirect URI no longer applies — clear it so DCR re-registers with
-  // the current loopback URL. Tokens are kept (they may still be valid).
-  secrets.deleteSecret("service", cfg.id, KEY_CLIENT_INFO);
+  // The loopback port changes each attempt (dynamic path), so a client
+  // registration saved with a previous redirect URI no longer applies — clear
+  // it so DCR re-registers with the current loopback URL. Tokens are kept
+  // (they may still be valid). A fixed redirect is stable across attempts and a
+  // pre-registered client id needs no registration at all, so nothing is cleared.
+  if (!fixedRedirect) {
+    secrets.deleteSecret("service", cfg.id, KEY_CLIENT_INFO);
+  }
   secrets.deleteSecret("service", cfg.id, KEY_VERIFIER);
 
   const provider = new KeychainOAuthProvider(
@@ -551,6 +682,8 @@ export async function startServiceAuth(
     undefined,
     listener.redirectUri,
     "service",
+    cfg.clientId,
+    cfg.redirectUri,
   );
 
   let result: Awaited<ReturnType<typeof auth>>;
@@ -558,7 +691,7 @@ export async function startServiceAuth(
     result = await auth(provider, { serverUrl: cfg.serverUrl, scope: cfg.scope });
   } catch (e) {
     listener.close();
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: oauthErrorHint(e, cfg) };
   }
 
   if (result === "AUTHORIZED") {
@@ -641,6 +774,8 @@ export async function getAccessToken(
     // Redirect URI is irrelevant for a non-interactive refresh; keep the default.
     undefined,
     "service",
+    cfg.clientId,
+    cfg.redirectUri,
   );
 
   const stored = provider.tokens();

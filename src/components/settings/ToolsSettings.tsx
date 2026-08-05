@@ -219,7 +219,11 @@ export function ToolsSettings() {
             >
               <div className="flex flex-col gap-2">
                 {server.authMode === "oauth" ? (
-                  <McpAuthButton serverId={server.id} />
+                  <McpAuthButton
+                    serverId={server.id}
+                    requiresClientId={!!server.oauthClientIdRequired && !server.oauthClientId}
+                    onEdit={() => setEditingMcp(server.id)}
+                  />
                 ) : (
                   <TestButton
                     onTest={async () => {

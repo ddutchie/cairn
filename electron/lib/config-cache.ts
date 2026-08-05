@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { findUserDataDir } from "../runtime/port-discovery";
+import { resolveMaxOutputTokens } from "../../shared/models/model-catalog";
 
 const CONFIG_CACHE_FILE = "ai-settings-cache.json";
 
@@ -24,6 +25,11 @@ export interface CachedConfig {
     contextLimit?: number;
     aiEnabled?: boolean;
     subagentsEnabled?: boolean;
+    // Max output tokens: Auto (default) sends NO max_tokens; a manual value is a
+    // deliberate cap. Persisted so main-process consumers (e.g. the tool builder)
+    // honour the same Auto semantics as the chat loop.
+    maxOutputAuto?: boolean;
+    maxOutputTokens?: number;
     // Saved cloud/local API connections the user can switch between, plus the
     // id of the active one. Persisted so the switcher survives restarts.
     savedProviders?: Array<{ id: string; name: string; baseUrl: string; apiKey: string; model: string }>;
@@ -73,6 +79,20 @@ function getCachePath(): string {
   return path.join(userData, CONFIG_CACHE_FILE);
 }
 
+/**
+ * Persist only max-output-token values the consumers would actually honour.
+ * `resolveMaxOutputTokens` floors fractional caps and rejects <1 (which would
+ * floor to a broken `max_tokens: 0`); any candidate it rejects falls back to
+ * the existing cached value instead of being stored verbatim.
+ */
+function normalizeMaxOutputTokens(
+  candidate: unknown,
+  current: number | undefined,
+): number | undefined {
+  const resolved = resolveMaxOutputTokens(typeof candidate === "number" ? candidate : null);
+  return resolved ?? current;
+}
+
 export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" | "fontScale", config: unknown): void {
   try {
     const filePath = getCachePath();
@@ -117,6 +137,13 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         contextLimit: typeof configRecord.contextLimit === "number" ? configRecord.contextLimit : current.aiConfig?.contextLimit,
         aiEnabled: typeof configRecord.aiEnabled === "boolean" ? configRecord.aiEnabled : current.aiConfig?.aiEnabled,
         subagentsEnabled: typeof configRecord.subagentsEnabled === "boolean" ? configRecord.subagentsEnabled : current.aiConfig?.subagentsEnabled,
+        maxOutputAuto: typeof configRecord.maxOutputAuto === "boolean" ? configRecord.maxOutputAuto : current.aiConfig?.maxOutputAuto,
+        // Normalize the candidate through the same helper consumers use: only a
+        // value resolveMaxOutputTokens honours (>= 1, floored) is persisted; an
+        // invalid candidate (Auto sentinel, <1, fractional-down-to-0) preserves
+        // the existing cached value rather than storing one that would be
+        // silently ignored on read. maxOutputAuto is deliberately untouched.
+        maxOutputTokens: normalizeMaxOutputTokens(configRecord.maxOutputTokens, current.aiConfig?.maxOutputTokens),
         // Saved-provider switcher state (array + active id). Each provider's
         // apiKey is scrubbed to a ref (or dropped) so no raw key is cached.
         savedProviders: Array.isArray((config as { savedProviders?: unknown }).savedProviders)

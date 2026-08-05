@@ -77,4 +77,17 @@ describe("startLoopbackListener", () => {
       b.close();
     }
   });
+
+  it("binds a FIXED port when requested (pre-registered redirect)", async () => {
+    const l = await startLoopbackListener({ port: 48123 });
+    try {
+      expect(l.redirectUri).toBe("http://127.0.0.1:48123/callback");
+      // A request to the fixed-port callback still resolves normally.
+      const status = await get(`${l.redirectUri}?code=c&state=s`);
+      expect(status).toBe(200);
+      await expect(l.waitForCallback).resolves.toEqual({ code: "c", state: "s" });
+    } finally {
+      l.close();
+    }
+  });
 });

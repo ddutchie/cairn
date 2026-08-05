@@ -41,6 +41,20 @@ export interface RegistryMcpEntry extends RegistryEntryMeta {
     headers?: Record<string, string>;
     authMode?: "none" | "oauth";
     oauthScope?: string;
+    /**
+     * Optional pre-registered OAuth client id (confidential OAuth, skips DCR).
+     * Client secrets are NEVER allowed in a manifest — the user enters theirs
+     * after install.
+     */
+    oauthClientId?: string;
+    /** Optional fixed redirect URI the provider requires pre-registered. */
+    oauthRedirectUri?: string;
+    /**
+     * True when this provider forbids dynamic client registration, so the user
+     * must supply a pre-registered client id (+ redirect URI) to connect. The
+     * UI surfaces those fields and routes "Sign in" to them.
+     */
+    requiresClientId?: boolean;
     disabledTools?: string[];
     enabled: boolean;
   };
@@ -75,7 +89,7 @@ export interface RegistryServiceEntry extends RegistryEntryMeta {
     responseKeys?: string[];
     apiKeyUrl?: string;
     authMode?: "none" | "oauth";
-    oauth?: { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string };
+    oauth?: { serverUrl?: string; scope?: string; clientId?: string; redirectUri?: string; authorizationUrl?: string; tokenUrl?: string };
     enabled: boolean;
   };
 }
@@ -224,6 +238,9 @@ const mcpDefinition = z.object({
   headers,
   authMode: z.enum(["none", "oauth"]).optional(),
   oauthScope: z.string().optional(),
+  oauthClientId: z.string().optional(),
+  oauthRedirectUri: z.string().optional(),
+  requiresClientId: z.boolean().optional(),
   disabledTools: z.array(z.string()).optional(),
   enabled: z.boolean(),
 });
@@ -233,6 +250,7 @@ const oauthConfig = z
     serverUrl: z.string().url().startsWith("https://").optional(),
     scope: z.string().optional(),
     clientId: z.string().optional(),
+    redirectUri: z.string().optional(),
     authorizationUrl: z.string().url().startsWith("https://").optional(),
     tokenUrl: z.string().url().startsWith("https://").optional(),
   })

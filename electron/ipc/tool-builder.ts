@@ -27,6 +27,7 @@ import * as builder from "../lib/tool-builder";
 import * as secrets from "../lib/secure-store";
 import { buildBuilderSystemPrompt, BUILDER_TOOL_DEFS } from "../lib/tool-builder-prompt";
 import { parseToolArgs } from "../lib/parse-tool-args";
+import { resolveMaxOutputTokens } from "../../shared/models/model-catalog";
 
 interface OpenAIMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -55,6 +56,8 @@ interface AIConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /** Max output tokens; undefined on Auto (omit max_tokens so the model finishes naturally). */
+  maxTokens?: number;
 }
 
 function resolveConfig(): AIConfig {
@@ -67,6 +70,10 @@ function resolveConfig(): AIConfig {
     // v2.5.9 keychain migration — resolve it to the real key here (same as chat.ts /
     // pi-agent.ts). Sending the raw ref as a bearer token 401s the provider.
     apiKey: secrets.resolveLlmApiKey(cached?.apiKey),
+    // Same Auto semantics as the chat loop: Auto (default) sends NO cap — the
+    // old hardcoded 2048 truncated long tool definitions. Only a deliberate
+    // manual value is sent.
+    maxTokens: cached?.maxOutputAuto === false ? resolveMaxOutputTokens(cached?.maxOutputTokens) : undefined,
   };
 }
 
@@ -88,7 +95,9 @@ async function callModel(
       tools: BUILDER_TOOL_DEFS,
       tool_choice: "auto",
       temperature: 0.2,
-      max_tokens: 2048,
+      // Auto → omit max_tokens so the model finishes naturally; a manual cap is
+      // a deliberate ceiling. The old hardcoded 2048 truncated long definitions.
+      ...(config.maxTokens ? { max_tokens: config.maxTokens } : {}),
     }),
   });
   if (!res.ok) {

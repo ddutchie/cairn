@@ -68,14 +68,34 @@ function looksLikeBareCredential(name: string, value: string): boolean {
  * or auth configuration it points at.
  */
 function oauthConfigChanged(
-  prev: { baseUrl: string; transport: string; authMode?: string; oauthScope?: string },
-  next: { baseUrl?: string; transport?: string; authMode?: string; oauthScope?: string },
+  prev: {
+    baseUrl: string;
+    transport: string;
+    authMode?: string;
+    oauthScope?: string;
+    oauthClientId?: string;
+    oauthRedirectUri?: string;
+  },
+  next: {
+    baseUrl?: string;
+    transport?: string;
+    authMode?: string;
+    oauthScope?: string;
+    oauthClientId?: string;
+    oauthRedirectUri?: string;
+  },
 ): boolean {
   return (
     (next.baseUrl !== undefined && next.baseUrl !== prev.baseUrl) ||
     (next.transport !== undefined && next.transport !== prev.transport) ||
     (next.authMode !== undefined && (next.authMode ?? "none") !== (prev.authMode ?? "none")) ||
-    (next.oauthScope !== undefined && (next.oauthScope ?? "") !== (prev.oauthScope ?? ""))
+    (next.oauthScope !== undefined && (next.oauthScope ?? "") !== (prev.oauthScope ?? "")) ||
+    // OAuth fields compare unconditionally against the NULL/undefined values
+    // saveMcpServer persists: a field the renderer omits or clears writes NULL,
+    // so it MUST invalidate previously-issued OAuth artefacts rather than being
+    // skipped by an `!== undefined` guard.
+    (next.oauthClientId ?? null) !== (prev.oauthClientId ?? null) ||
+    (next.oauthRedirectUri ?? null) !== (prev.oauthRedirectUri ?? null)
   );
 }
 
@@ -86,18 +106,20 @@ function oauthConfigChanged(
  * {@link oauthConfigChanged} for custom services.
  */
 function serviceOAuthConfigChanged(
-  prev: { apiUrl: string; authMode?: string; oauth?: { serverUrl?: string; scope?: string; clientId?: string } },
-  next: { apiUrl?: string; authMode?: string; oauth?: { serverUrl?: string; scope?: string; clientId?: string } },
+  prev: { apiUrl: string; authMode?: string; oauth?: { serverUrl?: string; scope?: string; clientId?: string; redirectUri?: string } },
+  next: { apiUrl?: string; authMode?: string; oauth?: { serverUrl?: string; scope?: string; clientId?: string; redirectUri?: string } },
 ): boolean {
   const p = prev.oauth ?? {};
-  const n = next.oauth;
+  const n = next.oauth ?? {};
   return (
     (next.apiUrl !== undefined && next.apiUrl !== prev.apiUrl) ||
     (next.authMode !== undefined && (next.authMode ?? "none") !== (prev.authMode ?? "none")) ||
-    (n !== undefined &&
-      ((n.serverUrl ?? "") !== (p.serverUrl ?? "") ||
-        (n.scope ?? "") !== (p.scope ?? "") ||
-        (n.clientId ?? "") !== (p.clientId ?? "")))
+    // Normalize the entire oauth object to its empty form so an omitted or
+    // cleared oauth (e.g. switching to header auth) invalidates prior artefacts.
+    (n.serverUrl ?? "") !== (p.serverUrl ?? "") ||
+    (n.scope ?? "") !== (p.scope ?? "") ||
+    (n.clientId ?? "") !== (p.clientId ?? "") ||
+    (n.redirectUri ?? "") !== (p.redirectUri ?? "")
   );
 }
 
@@ -147,6 +169,8 @@ export function registerToolsHandlers(db: Database): void {
         headers: server.headers,
         authMode: server.authMode,
         oauthScope: server.oauthScope,
+        oauthClientId: server.oauthClientId,
+        oauthRedirectUri: server.oauthRedirectUri,
         name: server.name,
       });
     })
@@ -165,6 +189,8 @@ export function registerToolsHandlers(db: Database): void {
         headers: server.headers,
         authMode: server.authMode,
         oauthScope: server.oauthScope,
+        oauthClientId: server.oauthClientId,
+        oauthRedirectUri: server.oauthRedirectUri,
         name: server.name,
       });
     })
@@ -181,7 +207,14 @@ export function registerToolsHandlers(db: Database): void {
       if (!server) throw new Error("MCP server not found");
       if (server.authMode !== "oauth") throw new Error("Server is not configured for OAuth");
       return mcpOauth.startServerAuth(
-        { id: server.id, baseUrl: server.baseUrl, transport: server.transport, scope: server.oauthScope },
+        {
+          id: server.id,
+          baseUrl: server.baseUrl,
+          transport: server.transport,
+          scope: server.oauthScope,
+          clientId: server.oauthClientId,
+          redirectUri: server.oauthRedirectUri,
+        },
         server.name,
         (result) => broadcastEvent("tools:oauthCallback", result),
       );
@@ -277,6 +310,8 @@ export function registerToolsHandlers(db: Database): void {
           id: svc.id,
           serverUrl: externalTools.serviceOAuthServerUrl(svc),
           scope: svc.oauth?.scope,
+          clientId: svc.oauth?.clientId,
+          redirectUri: svc.oauth?.redirectUri,
         },
         svc.name,
         (result) => broadcastEvent("tools:oauthCallback", result),

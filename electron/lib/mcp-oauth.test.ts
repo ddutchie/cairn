@@ -47,6 +47,7 @@ import {
   hasTokens,
   signOut,
   getAccessToken,
+  loopbackPortOf,
   OAUTH_REDIRECT_URI,
 } from "./mcp-oauth";
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
@@ -100,6 +101,30 @@ describe("parseOAuthCallback", () => {
   });
 });
 
+describe("loopbackPortOf", () => {
+  it("extracts a fixed port from a loopback redirect URI", () => {
+    expect(loopbackPortOf("http://127.0.0.1:48123/callback")).toBe(48123);
+    expect(loopbackPortOf("http://localhost:3118/callback")).toBe(3118);
+  });
+
+  it("rejects non-loopback hosts", () => {
+    expect(() => loopbackPortOf("https://mcp.slack.com/callback")).toThrow(/loopback/);
+  });
+
+  it("rejects a port-less redirect URI", () => {
+    expect(() => loopbackPortOf("http://127.0.0.1/callback")).toThrow(/fixed port/);
+  });
+
+  it("rejects an https redirect URI (loopback is plain http only)", () => {
+    expect(() => loopbackPortOf("https://127.0.0.1:48123/callback")).toThrow(/plain http/);
+  });
+
+  it("rejects a redirect URI whose path is not exactly /callback", () => {
+    expect(() => loopbackPortOf("http://127.0.0.1:48123/other")).toThrow(/\/callback/);
+    expect(() => loopbackPortOf("http://127.0.0.1:48123/")).toThrow(/\/callback/);
+  });
+});
+
 describe("KeychainOAuthProvider", () => {
   it("exposes the fixed redirect URI and a stable state", () => {
     const p = new KeychainOAuthProvider("srv1", "My Server", undefined, "fixed-state");
@@ -118,6 +143,34 @@ describe("KeychainOAuthProvider", () => {
     const p = new KeychainOAuthProvider("srv1", "My Server", undefined, "st", loopback);
     expect(p.redirectUrl).toBe(loopback);
     expect(p.clientMetadata.redirect_uris).toEqual([loopback]);
+  });
+
+  it("prefers a fixed redirect URI over the dynamic loopback URI", () => {
+    const dynamic = "http://127.0.0.1:53682/callback";
+    const fixed = "http://127.0.0.1:48123/callback";
+    const p = new KeychainOAuthProvider("srv1", "My Server", undefined, "st", dynamic, "mcp", "123.456", fixed);
+    expect(p.redirectUrl).toBe(fixed);
+    expect(p.clientMetadata.redirect_uris).toEqual([fixed]);
+  });
+
+  it("advertises a pre-registered client id so the SDK skips DCR", () => {
+    const p = new KeychainOAuthProvider("srv1", "My Server", undefined, undefined, undefined, "mcp", "1601185624273.8899143856786");
+    expect(p.clientInformation()).toEqual({ client_id: "1601185624273.8899143856786" });
+    // Public PKCE — never a client secret.
+    expect(p.clientInformation()).not.toHaveProperty("client_secret");
+    expect(p.clientMetadata.token_endpoint_auth_method).toBe("none");
+  });
+
+  it("a pre-registered client id still round-trips stored OAuth artefacts", () => {
+    const p = new KeychainOAuthProvider("srv1", "n", undefined, undefined, undefined, "mcp", "cid-1");
+    p.saveTokens({ access_token: "tok", token_type: "Bearer", refresh_token: "ref" });
+    p.saveCodeVerifier("verifier-123");
+    expect(hasTokens("srv1")).toBe(true);
+    expect(p.tokens()?.access_token).toBe("tok");
+    expect(p.codeVerifier()).toBe("verifier-123");
+    // signOut clears tokens but the derived client id remains (it's config, not storage).
+    signOut("srv1");
+    expect(p.clientInformation()).toEqual({ client_id: "cid-1" });
   });
 
   it("round-trips tokens, client info, and verifier via the keychain", () => {

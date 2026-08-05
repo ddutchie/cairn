@@ -28,6 +28,8 @@ export function ServiceForm({
   const [authMode, setAuthMode] = useState<"none" | "oauth">(initial?.authMode ?? "none");
   const [oauthScope, setOauthScope] = useState(initial?.oauth?.scope ?? "");
   const [oauthServerUrl, setOauthServerUrl] = useState(initial?.oauth?.serverUrl ?? "");
+  const [oauthClientId, setOauthClientId] = useState(initial?.oauth?.clientId ?? "");
+  const [oauthRedirectUri, setOauthRedirectUri] = useState(initial?.oauth?.redirectUri ?? "");
 
   let toolDefValid = false;
   try {
@@ -101,6 +103,20 @@ export function ServiceForm({
               Leave empty to auto-discover the OAuth server from the API URL (works for most modern services).
             </p>
           </div>
+          <div>
+            <label className={labelCls}>Client ID (optional)</label>
+            <input value={oauthClientId} onChange={(e) => setOauthClientId(e.target.value)} placeholder="e.g. 1601185624273.8899143856786" className={cn(inputCls, "font-mono")} />
+            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+              Required when the provider doesn&apos;t support dynamic registration (e.g. Slack) — the public client id of your app. Not a secret.
+            </p>
+          </div>
+          <div>
+            <label className={labelCls}>Redirect URI (optional)</label>
+            <input value={oauthRedirectUri} onChange={(e) => setOauthRedirectUri(e.target.value)} placeholder="http://127.0.0.1:48123/callback" className={cn(inputCls, "font-mono")} />
+            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+              Register this exact URL in the provider&apos;s app settings when a pre-registered client is required; the port must be free.
+            </p>
+          </div>
         </>
       ) : (
         <HeaderEditor rows={rows} onChange={setRows} />
@@ -148,6 +164,11 @@ export function ServiceForm({
                         ...initial?.oauth,
                         ...(oauthScope.trim() ? { scope: oauthScope.trim() } : {}),
                         ...(oauthServerUrl.trim() ? { serverUrl: oauthServerUrl.trim() } : {}),
+                        // Assigned AFTER the spread (not conditional-spread) so an
+                        // emptied input writes undefined and actually clears a
+                        // retained initial value instead of silently keeping it.
+                        clientId: oauthClientId.trim() ? oauthClientId.trim() : undefined,
+                        redirectUri: oauthRedirectUri.trim() ? oauthRedirectUri.trim() : undefined,
                       }
                     : undefined,
                 enabled: initial?.enabled ?? false,

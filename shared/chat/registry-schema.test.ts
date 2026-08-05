@@ -258,3 +258,49 @@ describe("parseAutomationsManifest", () => {
     expect(m.automations.map((a) => a.id)).toEqual(["ok"]);
   });
 });
+
+describe("registry-schema pre-registered-client flags", () => {
+  it("parses requiresClientId on an MCP entry", () => {
+    const m = parseManifest({
+      version: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      mcpServers: [
+        {
+          id: "slack",
+          author: "cairn",
+          version: "1.0.0",
+          tags: [],
+          blurb: "",
+          definition: {
+            name: "Slack",
+            transport: "http",
+            baseUrl: "https://mcp.slack.com/mcp",
+            authMode: "oauth",
+            requiresClientId: true,
+            enabled: true,
+          },
+        },
+      ],
+      services: [],
+    });
+    expect(m.mcpServers).toHaveLength(1);
+    expect(m.mcpServers[0].definition.requiresClientId).toBe(true);
+  });
+
+  it("parses a service oauth redirectUri (pre-registered client)", () => {
+    const m = parseManifest(
+      manifestWith({
+        name: "S",
+        apiUrl: "https://api.example.com",
+        method: "GET",
+        toolDefinition: '{"name":"op","parameters":{"type":"object","properties":{}}}',
+        authMode: "oauth",
+        oauth: { clientId: "123.456", redirectUri: "http://127.0.0.1:48123/callback" },
+        enabled: true,
+      })
+    );
+    expect(m.services).toHaveLength(1);
+    expect(m.services[0].definition.oauth?.clientId).toBe("123.456");
+    expect(m.services[0].definition.oauth?.redirectUri).toBe("http://127.0.0.1:48123/callback");
+  });
+});

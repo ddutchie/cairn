@@ -71,11 +71,14 @@ export interface LoopbackListener {
 }
 
 /**
- * Start an ephemeral loopback HTTP server for one OAuth round-trip. Binds to a
- * random free port on 127.0.0.1 and resolves once the browser hits
+ * Start a loopback HTTP server for one OAuth round-trip. By default binds to a
+ * random free port on 127.0.0.1; pass `{ port }` to bind a FIXED port — needed
+ * by providers (e.g. Slack) that require the redirect URI to be pre-registered
+ * in the app config, so the exact `http://127.0.0.1:<port>/callback` URL must
+ * be stable across attempts. Resolves once the browser hits
  * `/callback?code=…&state=…`.
  */
-export function startLoopbackListener(): Promise<LoopbackListener> {
+export function startLoopbackListener(opts?: { port?: number }): Promise<LoopbackListener> {
   return new Promise<LoopbackListener>((resolveListener, rejectListener) => {
     let settled = false;
     let resolveCb!: (cb: OAuthCallback) => void;
@@ -161,7 +164,7 @@ export function startLoopbackListener(): Promise<LoopbackListener> {
       rejectListener(err);
     });
 
-    server.listen(0, LOOPBACK_HOST, () => {
+    server.listen(opts?.port ?? 0, LOOPBACK_HOST, () => {
       const { port } = server.address() as AddressInfo;
       timer = setTimeout(
         () => shutdown("Sign-in timed out — the browser step wasn't completed in time."),

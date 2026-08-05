@@ -56,6 +56,10 @@ export interface McpServerRuntimeConfig {
   authMode?: "none" | "oauth";
   /** Optional requested OAuth scope. */
   oauthScope?: string;
+  /** Pre-registered OAuth client id — skips DCR (public PKCE, e.g. Slack). */
+  oauthClientId?: string;
+  /** Fixed redirect URI (loopback URL pre-registered with the provider). */
+  oauthRedirectUri?: string;
   /** Display name, used to label the OAuth client registration. */
   name?: string;
 }
@@ -85,6 +89,8 @@ function configSignature(cfg: McpServerRuntimeConfig): string {
     headers: cfg.headers ?? {},
     authMode: cfg.authMode ?? "none",
     oauthScope: cfg.oauthScope ?? "",
+    oauthClientId: cfg.oauthClientId ?? "",
+    oauthRedirectUri: cfg.oauthRedirectUri ?? "",
   });
 }
 
@@ -94,7 +100,14 @@ function makeTransport(cfg: McpServerRuntimeConfig) {
   // the bearer token from the keychain. Static headers are not used here.
   if (isOAuthServer(cfg)) {
     const provider = makeProvider(
-      { id: cfg.id, baseUrl: cfg.baseUrl, transport: cfg.transport, scope: cfg.oauthScope },
+      {
+        id: cfg.id,
+        baseUrl: cfg.baseUrl,
+        transport: cfg.transport,
+        scope: cfg.oauthScope,
+        clientId: cfg.oauthClientId,
+        redirectUri: cfg.oauthRedirectUri,
+      },
       cfg.name ?? cfg.id,
     );
     if (cfg.transport === "sse") {
