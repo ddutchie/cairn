@@ -226,6 +226,26 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: 
           code({ className, children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             return <InlineCode className={className}>{children}</InlineCode>;
           },
+          input({ type, checked, ...props }: React.InputHTMLAttributes<HTMLInputElement> & ExtraProps) {
+            // GFM task-list checkboxes come through as bare <input type="checkbox">
+            // where `checked` is present only when checked (undefined otherwise).
+            // Rendering that directly makes React flip the input uncontrolled↔
+            // controlled when the previewed text changes (e.g. drag-selecting
+            // across checkboxes updates the preview), which warns. Render a
+            // STABLE controlled, read-only checkbox: `checked` is always a
+            // boolean and there's a no-op onChange. Non-checkbox inputs (rare in
+            // markdown) pass through unchanged.
+            if (type !== "checkbox") return <input type={type} checked={checked} {...props} />;
+            return (
+              <input
+                type="checkbox"
+                checked={checked === true}
+                readOnly
+                disabled
+                className="accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px] mr-1 cursor-default"
+              />
+            );
+          },
           h1({ children }: React.HTMLAttributes<HTMLHeadingElement> & ExtraProps) { return <h1>{children}</h1>; },
           h2({ children }: React.HTMLAttributes<HTMLHeadingElement> & ExtraProps) { return <h2>{children}</h2>; },
           h3({ children }: React.HTMLAttributes<HTMLHeadingElement> & ExtraProps) { return <h3>{children}</h3>; },
