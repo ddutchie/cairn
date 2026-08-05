@@ -14,6 +14,7 @@ import type { WidgetType } from "@codemirror/view";
 import type { ReactNode } from "react";
 import { BlockPreviewWidget } from "./block-preview-widget";
 import { CodeBlock } from "@/components/notes/CodeBlock";
+import { MermaidDiagram } from "@/components/notes/MermaidDiagram";
 
 export interface CodeBlockData {
   language: string;
@@ -65,6 +66,12 @@ export class CodeBlockWidget extends BlockPreviewWidget {
   }
 
   protected render(): ReactNode {
+    // A ```mermaid fence renders as a diagram (mirrors read-mode, where
+    // markdown-code-fence routes mermaid to MermaidDiagram); every other
+    // language renders as a highlighted code listing.
+    if (this.data.language.toLowerCase() === "mermaid") {
+      return <MermaidDiagram chart={this.data.code} />;
+    }
     return <CodeBlock code={this.data.code} language={this.data.language || undefined} />;
   }
 }

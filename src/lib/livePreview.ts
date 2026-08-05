@@ -27,6 +27,8 @@ import {
 import { syntaxTree } from "@codemirror/language";
 import { makeCalloutWidget, parseCalloutSource } from "./callout-widget";
 import { makeCodeBlockWidget, parseFencedCode } from "./code-block-widget";
+import { makeMathBlockWidget } from "./math-block-widget";
+import { makeTableBlockWidget, isTableSource } from "./table-block-widget";
 import { blockWidgetTheme } from "./block-preview-widget";
 
 // Master kill-switch for Tier 2 inline block widgets (callouts + fenced code
@@ -116,18 +118,22 @@ interface BlockWidget extends BlockRange {
 }
 
 /**
- * Find every block that should render as an inline widget (callouts + fenced
- * code blocks), each with its char/line range and a widget factory. Both kinds
- * share the same StateField + click-to-edit machinery; adding a new block type
- * (tables, mermaid, …) means adding another branch here.
+ * Find every block that should render as an inline widget (callouts, fenced code
+ * incl. mermaid, GFM tables, and $$ math), each with its char/line range and a
+ * widget factory. All kinds share the same StateField + click-to-edit
+ * machinery; adding a new block type means adding another branch here.
  */
 function findBlockWidgets(state: EditorState): BlockWidget[] {
   const { doc } = state;
   const out: BlockWidget[] = [];
-  const push = (from: number, toRaw: number, raw: string, makeWidget: () => WidgetType) => {
+  // Push a block spanning whole lines. `blockLineCount`, when given, clamps the
+  // range to that many lines from `from` — used to trim a callout/blockquote or
+  // table whose lezer node over-extends into a following paragraph when there's
+  // no blank line between them (otherwise the widget would swallow that text).
+  const push = (from: number, toRaw: number, makeWidget: () => WidgetType, blockLineCount?: number) => {
     const lineStart = doc.lineAt(from).number;
-    const lineEnd = doc.lineAt(toRaw).number;
-    void raw;
+    let lineEnd = doc.lineAt(Math.min(toRaw, doc.length)).number;
+    if (blockLineCount != null) lineEnd = Math.min(lineEnd, lineStart + blockLineCount - 1);
     out.push({
       from: doc.line(lineStart).from,
       to: doc.line(lineEnd).to,
@@ -147,16 +153,58 @@ function findBlockWidgets(state: EditorState): BlockWidget[] {
         const raw = doc.sliceString(node.from, nodeTo);
         const data = parseCalloutSource(raw);
         if (!data) return;
-        push(node.from, nodeTo, raw, () => makeCalloutWidget(data));
+        // A blockquote directly followed by a paragraph (no blank line) can have
+        // its node range extend past the `>` lines. Count the actual leading
+        // `>` lines so the widget covers only the callout, not the next para.
+        const quoteLines = countLeadingQuoteLines(raw);
+        push(node.from, nodeTo, () => makeCalloutWidget(data), quoteLines);
       } else if (node.name === "FencedCode") {
         const nodeTo = Math.min(node.to, doc.length);
         const raw = doc.sliceString(node.from, nodeTo);
         const data = parseFencedCode(raw);
         if (!data) return;
-        push(node.from, nodeTo, raw, () => makeCodeBlockWidget(data));
+        push(node.from, nodeTo, () => makeCodeBlockWidget(data));
+      } else if (node.name === "Table") {
+        const nodeTo = Math.min(node.to, doc.length);
+        const raw = doc.sliceString(node.from, nodeTo);
+        if (!isTableSource(raw)) return;
+        push(node.from, nodeTo, () => makeTableBlockWidget(raw));
       }
     },
   });
+  // $$ … $$ display-math isn't a distinct node in the base grammar (it lands in
+  // a Paragraph), so scan for delimiter pairs separately.
+  for (const m of findMathBlocks(doc)) {
+    push(m.from, m.to, () => makeMathBlockWidget(doc.sliceString(m.from, m.to)));
+  }
+  return out;
+}
+
+/** Count the leading contiguous `>` blockquote lines in a raw block. */
+function countLeadingQuoteLines(raw: string): number {
+  const lines = raw.split("\n");
+  let n = 0;
+  for (const l of lines) {
+    if (/^\s*>/.test(l)) n++;
+    else break;
+  }
+  return n || lines.length;
+}
+
+/** Find $$ … $$ display-math blocks (char ranges) by scanning delimiter pairs. */
+function findMathBlocks(doc: EditorState["doc"]): { from: number; to: number }[] {
+  const out: { from: number; to: number }[] = [];
+  let openLine = -1;
+  for (let i = 1; i <= doc.lines; i++) {
+    const line = doc.line(i);
+    if (line.text.trim() !== "$$") continue;
+    if (openLine === -1) {
+      openLine = i;
+    } else {
+      out.push({ from: doc.line(openLine).from, to: line.to });
+      openLine = -1;
+    }
+  }
   return out;
 }
 
@@ -191,11 +239,19 @@ const blockWidgetField = StateField.define<DecorationSet>({
 function buildBlockWidgetDecorations(state: EditorState): DecorationSet {
   const active = activeLines(state);
   const decos: Range<Decoration>[] = [];
-  for (const block of findBlockWidgets(state)) {
+  // Sort by start so overlapping candidates can be dropped deterministically —
+  // block replace decorations must never overlap or Decoration.set throws.
+  const blocks = findBlockWidgets(state).sort((a, b) => a.from - b.from);
+  let lastTo = -1;
+  for (const block of blocks) {
+    if (block.from < lastTo) continue; // overlaps a kept block — skip defensively
     let cursorInside = false;
     for (let ln = block.lineStart; ln <= block.lineEnd; ln++) {
       if (active.has(ln)) { cursorInside = true; break; }
     }
+    // Even when the cursor is inside (widget hidden), advance lastTo so a later
+    // overlapping candidate is still dropped.
+    lastTo = Math.max(lastTo, block.to);
     if (cursorInside) continue; // show raw source for editing
     decos.push(
       Decoration.replace({ widget: block.makeWidget(), block: true }).range(block.from, block.to),

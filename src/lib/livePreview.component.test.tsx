@@ -5,6 +5,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { livePreview, foldedBlockFromCursor } from "@/lib/livePreview";
 import { parseCalloutSource } from "@/lib/callout-widget";
 import { parseFencedCode } from "@/lib/code-block-widget";
+import { isTableSource } from "@/lib/table-block-widget";
 
 /**
  * Live Preview decoration tests. The main risk in mixing replace + mark + line
@@ -216,6 +217,47 @@ describe("livePreview decorations", () => {
     expect(foldedBlockFromCursor(view.state, 1)?.lineStart).toBe(fenceLine);
     view.destroy();
   });
+
+  it("renders a table widget when the cursor is outside it", () => {
+    const doc = "intro\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nafter";
+    const view = mount(doc, 0);
+    expect(view.contentDOM.querySelector(".cm-lp-tableblock")).toBeTruthy();
+    // Cursor inside → raw pipe source, no widget.
+    view.dispatch({ selection: { anchor: doc.indexOf("| 1 | 2 |") } });
+    expect(view.contentDOM.querySelector(".cm-lp-tableblock")).toBeNull();
+    expect(view.contentDOM.textContent).toContain("| 1 | 2 |");
+    view.destroy();
+  });
+
+  it("renders a math widget for a $$ block when the cursor is outside it", () => {
+    const doc = "intro\n\n$$\nx = y^2\n$$\n\nafter";
+    const view = mount(doc, 0);
+    expect(view.contentDOM.querySelector(".cm-lp-mathblock")).toBeTruthy();
+    view.dispatch({ selection: { anchor: doc.indexOf("x = y^2") } });
+    expect(view.contentDOM.querySelector(".cm-lp-mathblock")).toBeNull();
+    view.destroy();
+  });
+
+  it("renders a mermaid fence as a code widget (diagram), not lingering raw", () => {
+    const doc = "intro\n\n```mermaid\ngraph TD\nA-->B\n```\n\nafter";
+    const view = mount(doc, 0);
+    // Mermaid renders through the code widget container.
+    expect(view.contentDOM.querySelector(".cm-lp-codeblock")).toBeTruthy();
+    view.destroy();
+  });
+
+  it("does not let a callout with no trailing blank line swallow the next paragraph", () => {
+    // The blockquote node can over-extend into the following paragraph when
+    // there's no blank line; the widget range must stop at the `>` lines so
+    // "after" stays editable text below the callout.
+    const doc = "> [!note] Title\n> body\nafter paragraph";
+    const view = mount(doc, doc.indexOf("after paragraph") + 2); // cursor in the paragraph
+    // The callout is folded (cursor outside it) …
+    expect(view.contentDOM.querySelector(".cm-lp-callout")).toBeTruthy();
+    // … but the paragraph after it is NOT part of the widget — its text shows.
+    expect(view.contentDOM.textContent).toContain("after paragraph");
+    view.destroy();
+  });
 });
 
 describe("parseCalloutSource", () => {
@@ -269,5 +311,18 @@ describe("parseFencedCode", () => {
 
   it("returns null for non-fence input", () => {
     expect(parseFencedCode("not a fence")).toBeNull();
+  });
+});
+
+describe("isTableSource", () => {
+  it("accepts a well-formed GFM table (header + delimiter row)", () => {
+    expect(isTableSource("| a | b |\n| --- | --- |\n| 1 | 2 |")).toBe(true);
+    expect(isTableSource("| a | b |\n| :-- | --: |")).toBe(true);
+  });
+
+  it("rejects prose with a stray pipe and single-line input", () => {
+    expect(isTableSource("a | b just prose")).toBe(false);
+    expect(isTableSource("| only one row |")).toBe(false);
+    expect(isTableSource("| a | b |\nno delimiter here")).toBe(false);
   });
 });
