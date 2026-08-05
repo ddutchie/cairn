@@ -185,7 +185,13 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot, in
 
   if (!content.trim()) {
     return (
-      <div className="flex items-center justify-center h-full text-xs text-[var(--text-tertiary)] p-8">
+      <div
+        className={
+          inline
+            ? "text-xs text-[var(--text-tertiary)]"
+            : "flex items-center justify-center h-full text-xs text-[var(--text-tertiary)] p-8"
+        }
+      >
         Empty file
       </div>
     );

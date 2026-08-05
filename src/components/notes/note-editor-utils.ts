@@ -169,20 +169,26 @@ export function extractStructuredBlockAtOffset(
   {
     let openIdx = -1;
     let openFence = "";
+    let openLen = 0;
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(FENCE_RE);
       if (!m) continue;
-      const fence = m[2][0];
+      const run = m[2];
+      const fence = run[0];
       if (openIdx === -1) {
         openIdx = i;
         openFence = fence;
-      } else if (fence === openFence) {
-        // Closing fence at i — the block spans [openIdx, i].
+        openLen = run.length;
+      } else if (fence === openFence && run.length >= openLen) {
+        // CommonMark: a closing fence must use the same marker char AND be at
+        // least as long as the opener. A shorter/embedded fence-like line is
+        // part of the code content, not a close.
         if (cur >= openIdx && cur <= i) {
           return { kind: "code", text: lines.slice(openIdx, i + 1).join("\n") };
         }
         openIdx = -1;
         openFence = "";
+        openLen = 0;
       }
     }
     // Unclosed opener that reaches the cursor.

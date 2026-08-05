@@ -219,6 +219,15 @@ describe("extractStructuredBlockAtOffset — live current-block preview", () => 
     expect(b?.text).toBe("```js\nconst x = 1;");
   });
 
+  it("does not close a fence on a shorter same-char fence inside it (CommonMark)", () => {
+    // A 4-backtick fence can CONTAIN a 3-backtick line; that inner line is
+    // content, not a close. The block must run to the real 4-backtick close.
+    const doc = "````md\n```\ninner\n```\n````\nafter";
+    const b = extractStructuredBlockAtOffset(doc, at(doc, "inner"));
+    expect(b?.kind).toBe("code");
+    expect(b?.text).toBe("````md\n```\ninner\n```\n````");
+  });
+
   it("returns a math block between $$ fences", () => {
     const doc = "text\n\n$$\nx = y^2\n$$\n\nafter";
     expect(extractStructuredBlockAtOffset(doc, at(doc, "x = y^2"))?.kind).toBe("math");
