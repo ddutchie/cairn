@@ -3,7 +3,7 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, Maximize2, Minimize2, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
+import { Pin, PinOff, Calendar, Eye, Pencil, Code, Wand2, Loader2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, Maximize2, Minimize2, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -29,7 +29,7 @@ interface NoteEditorProps {
   onBack?: () => void;
 }
 
-type EditorMode = "write" | "read";
+type EditorMode = "write" | "raw" | "read";
 
 export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects, noteChangeMarks, clearNoteChangeMark, notesFullscreen, toggleNotesFullscreen } = useCairnStore(useShallow((s) => ({
@@ -678,6 +678,19 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
               Write
             </button>
             <button
+              onClick={() => { setMode("raw"); setTimeout(() => editorRef.current?.focus(), 50); }}
+              title="Edit the raw markdown (Live Preview off)"
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                mode === "raw"
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+              )}
+            >
+              <Code size={11} />
+              Raw
+            </button>
+            <button
               onClick={() => { flushPending(); setMode("read"); }}
               className={cn(
                 "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
@@ -844,8 +857,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         />
       </div>
 
-      {/* ── AI + Format toolbar — write mode only ───────────────────────────── */}
-      {mode === "write" && (
+      {/* ── AI + Format toolbar — any editing mode (write or raw), not read ── */}
+      {mode !== "read" && (
         <AITextToolbar
           onAction={handleAIAction}
           onFormat={handleFormat}
@@ -920,7 +933,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         </div>
 
         {/* Wikilink autocomplete picker — rendered in a portal at fixed viewport coords */}
-        {wikilinkPicker && mode === "write" && (
+        {wikilinkPicker && mode !== "read" && (
           <WikilinkPicker
             notes={notes.filter((n) => n.id !== note.id)}
             projects={projects}
