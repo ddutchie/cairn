@@ -494,6 +494,19 @@ select:focus {
 .prose-cairn td { padding: 0.35rem 0.6rem; border: 1px solid var(--border); }
 .prose-cairn tr:nth-child(even) td { background: var(--surface-2); }
 
+/* ── Preview panel size scaling ──────────────────────────────────────────── */
+/* The editor's preview panel (MDPreviewPanel) has an S/M/L toggle that sets
+   --preview-scale on the panel. Scale the prose type with it so a smaller panel
+   also gets denser text. Only the rem-based sizes need scaling; `em`-based ones
+   (code, etc.) already follow their parent. */
+[data-md-preview-portal] { --preview-scale: 1; }
+[data-md-preview-portal] .prose-cairn { font-size: calc(0.875rem * var(--preview-scale)); }
+[data-md-preview-portal] .prose-cairn h1 { font-size: calc(1.5rem * var(--preview-scale)); }
+[data-md-preview-portal] .prose-cairn h2 { font-size: calc(1.2rem * var(--preview-scale)); }
+[data-md-preview-portal] .prose-cairn h3 { font-size: calc(1rem * var(--preview-scale)); }
+[data-md-preview-portal] .prose-cairn table { font-size: calc(0.8rem * var(--preview-scale)); }
+[data-md-preview-portal] .prose-cairn pre code { font-size: calc(0.8rem * var(--preview-scale)); }
+
 /* ── CodeMirror 6 search panel ───────────────────────────────────────────── */
 /* Global overrides — EditorView.theme() alone can lose to CM6's base sheet. */
 
