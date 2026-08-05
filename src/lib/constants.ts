@@ -147,5 +147,8 @@ export const NOTES_COLLAPSED_FOLDERS_KEY = "notesCollapsedFolders";
 /** localStorage key for per-project collapsed Project Overview sections (Record<`${projectId}:${sectionId}`, true>). */
 export const OVERVIEW_COLLAPSED_KEY = "overviewCollapsedSections";
 
-/** localStorage key for the last-used note editor mode ("write" | "read"). */
+/** localStorage key for the last-used note editor mode ("edit" | "read"). */
 export const NOTE_EDITOR_MODE_KEY = "noteEditorMode";
+
+/** localStorage key for whether Live Preview is on within Edit mode. */
+export const NOTE_LIVE_PREVIEW_KEY = "noteLivePreview";

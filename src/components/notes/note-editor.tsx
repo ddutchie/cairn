@@ -22,14 +22,14 @@ import { MDPreviewPanel } from "./MDPreviewPanel";
 import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset } from "./note-editor-utils";
 import { useNoteMarkdownComponents } from "./note-markdown-components";
 import { storage } from "@/lib/storage";
-import { NOTE_EDITOR_MODE_KEY } from "@/lib/constants";
+import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
 
 interface NoteEditorProps {
   note: Note;
   onBack?: () => void;
 }
 
-type EditorMode = "write" | "raw" | "read";
+type EditorMode = "edit" | "read";
 
 export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects, noteChangeMarks, clearNoteChangeMark, notesFullscreen, toggleNotesFullscreen } = useCairnStore(useShallow((s) => ({
@@ -54,14 +54,26 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Remember the last-used editor mode across notes/sessions so readers stay
-  // in Read and writers stay in Write without re-toggling each time.
-  const [mode, setModeState] = useState<EditorMode>(
-    () => storage.get<EditorMode>(NOTE_EDITOR_MODE_KEY) ?? "write"
-  );
+  // Remember the last-used editor mode across notes/sessions so readers stay in
+  // Read and writers stay in Edit without re-toggling each time. Migrate the
+  // legacy three-mode value: "write"/"raw" both collapse to "edit" (raw was just
+  // "edit with Live Preview off", now a separate toggle below).
+  const [mode, setModeState] = useState<EditorMode>(() => {
+    const saved = storage.get<string>(NOTE_EDITOR_MODE_KEY);
+    return saved === "read" ? "read" : "edit";
+  });
   const setMode = useCallback((next: EditorMode) => {
     setModeState(next);
     storage.set(NOTE_EDITOR_MODE_KEY, next);
+  }, []);
+  // Live Preview (inline widgets + marker hiding) on/off within Edit mode.
+  // Defaults on; persisted separately so the choice survives note/session change.
+  const [livePreviewOn, setLivePreviewOnState] = useState<boolean>(
+    () => storage.get<boolean>(NOTE_LIVE_PREVIEW_KEY) ?? true,
+  );
+  const setLivePreviewOn = useCallback((next: boolean) => {
+    setLivePreviewOnState(next);
+    storage.set(NOTE_LIVE_PREVIEW_KEY, next);
   }, []);
   const noteContent0 = note.content ?? "";
   const [wordCount, setWordCount] = useState(() => countWords(noteContent0));
@@ -682,45 +694,53 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             </Button>
           )}
 
-          {/* Mode toggle */}
-          <div className="flex items-center gap-0.5 bg-[var(--surface-2)] rounded-md p-0.5">
-            <button
-              onClick={() => { setMode("write"); setTimeout(() => editorRef.current?.focus(), 50); }}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-                mode === "write"
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              <Pencil size={11} />
-              Write
-            </button>
-            <button
-              onClick={() => { setMode("raw"); setTimeout(() => editorRef.current?.focus(), 50); }}
-              title="Edit the raw markdown (Live Preview off)"
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-                mode === "raw"
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              <Code size={11} />
-              Raw
-            </button>
-            <button
-              onClick={() => { flushPending(); setMode("read"); }}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-                mode === "read"
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              <Eye size={11} />
-              Read
-            </button>
+          {/* Mode toggle — Edit / Read. Live Preview is a separate toggle
+              (right) since Raw was just "Edit with Live Preview off". */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0.5 bg-[var(--surface-2)] rounded-md p-0.5">
+              <button
+                onClick={() => { setMode("edit"); setTimeout(() => editorRef.current?.focus(), 50); }}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                  mode === "edit"
+                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                <Pencil size={11} />
+                Edit
+              </button>
+              <button
+                onClick={() => { flushPending(); setMode("read"); }}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                  mode === "read"
+                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                <Eye size={11} />
+                Read
+              </button>
+            </div>
+            {/* Live Preview toggle — only meaningful while editing. On = inline
+                widgets + marker hiding; off = raw Markdown. */}
+            {mode === "edit" && (
+              <button
+                onClick={() => { setLivePreviewOn(!livePreviewOn); setTimeout(() => editorRef.current?.focus(), 50); }}
+                title={livePreviewOn ? "Live Preview on — click to edit raw Markdown" : "Live Preview off — click to render inline"}
+                aria-pressed={livePreviewOn}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border transition-colors",
+                  livePreviewOn
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                <Code size={11} />
+                Live Preview
+              </button>
+            )}
           </div>
         </div>
 
@@ -947,7 +967,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             placeholder="Write here…"
             readOnly={isAiWriting}
             changedLines={changedLines}
-            livePreview={mode === "write"}
+            livePreview={mode === "edit" && livePreviewOn}
           />
         </div>
 
