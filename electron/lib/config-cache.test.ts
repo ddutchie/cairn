@@ -77,6 +77,21 @@ describe("config-cache AI settings round-trip", () => {
     expect(ai?.maxSteps).toBe(500);
     expect(ai?.model).toBe("gpt-4o-mini");
   });
+
+  it("persists maxOutputAuto / maxOutputTokens (so main-process tools honour Auto)", async () => {
+    const { saveCachedConfig, getCachedConfig } = await import("./config-cache");
+    saveCachedConfig("ai", { maxOutputAuto: false, maxOutputTokens: 8192 });
+    expect(getCachedConfig().aiConfig?.maxOutputAuto).toBe(false);
+    expect(getCachedConfig().aiConfig?.maxOutputTokens).toBe(8192);
+    // Default (Auto) must be representable too: an explicit true survives.
+    saveCachedConfig("ai", { maxOutputAuto: true });
+    expect(getCachedConfig().aiConfig?.maxOutputAuto).toBe(true);
+    // A later connection-only save must not clobber the max-output fields.
+    saveCachedConfig("ai", { model: "gpt-4o" });
+    const ai = getCachedConfig().aiConfig;
+    expect(ai?.maxOutputAuto).toBe(true);
+    expect(ai?.maxOutputTokens).toBe(8192);
+  });
 });
 
 describe("config-cache without Electron", () => {

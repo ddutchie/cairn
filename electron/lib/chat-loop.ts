@@ -86,6 +86,10 @@ export async function runToolLoop(
     if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
 
     let assistantMsg: OpenAIMessage & { reasoning?: string };
+    // Captured finish_reason for THIS round. "length" means the model hit its
+    // output-token limit mid-turn — any tool calls in that message may carry
+    // truncated arguments (see the truncation guard below).
+    let turnFinishReason: string | null = null;
 
     if (provider === "localllm") {
       try {
@@ -133,6 +137,7 @@ export async function runToolLoop(
         // useful instead of a blank message. Skipped when the model already
         // emitted tool calls (we want those executed, not retried).
         const finishReason = choice.finish_reason;
+        turnFinishReason = finishReason ?? null;
         const hasNoContent = !assistantMsg.content || !assistantMsg.content.trim();
         const hasNoToolCalls = !assistantMsg.tool_calls?.length;
         if (hasNoContent && hasNoToolCalls && finishReason === "length" && accumulatedReasoning) {
@@ -224,7 +229,6 @@ export async function runToolLoop(
       if (!reader) return { exhausted: true, content: "No response stream", reasoning: "" };
 
       let contentBuffer = "";
-      let streamFinishReason: string | null = null;
       const toolCallBuffers: Map<number, { id: string; name: string; args: string; thought_signature?: string }> = new Map();
 
       for await (const jsonStr of iterSseData(reader, signal ?? undefined)) {
@@ -248,7 +252,7 @@ export async function runToolLoop(
           // Capture the finish reason — "length" means the model hit max_tokens.
           // A reasoning model can hit it having emitted only chain-of-thought.
           if (chunk.choices?.[0]?.finish_reason) {
-            streamFinishReason = chunk.choices[0].finish_reason;
+            turnFinishReason = chunk.choices[0].finish_reason;
           }
           if (!delta) continue;
 
@@ -328,7 +332,7 @@ export async function runToolLoop(
       if (
         (!assistantMsg.content || !assistantMsg.content.trim()) &&
         !assistantMsg.tool_calls?.length &&
-        streamFinishReason === "length" &&
+        turnFinishReason === "length" &&
         accumulatedReasoning.trim()
       ) {
         const surfaced = `*[This model hit its output-token limit before giving a final answer. Its reasoning is shown below — raise or clear "Max output tokens" in AI settings for a complete reply.]*\n\n${accumulatedReasoning.trim()}`;
@@ -342,6 +346,32 @@ export async function runToolLoop(
     if (!assistantMsg.tool_calls?.length) {
       messages.push(assistantMsg);
       return { exhausted: false, content: accumulatedContent, reasoning: accumulatedReasoning };
+    }
+
+    // Output-token-limit truncation guard. A "length" finish means the model ran
+    // out of tokens mid-turn, so every tool call in this message may carry
+    // truncated arguments. The worst case is a cut that lands on a well-formed
+    // boundary: the partial JSON parses cleanly and would be executed with
+    // silently missing fields — something no JSON parser can detect. Mirroring
+    // pi's `failToolCallsFromTruncatedMessage`, refuse to execute ANY of them:
+    // emit the chip + a structured error so the model re-issues with complete
+    // arguments (or the user raises the output-token cap).
+    if (turnFinishReason === "length") {
+      messages.push(assistantMsg);
+      // Tailor the guidance to the config: on Auto we send NO max_tokens, so a
+      // "length" cut comes from the provider's own output cap, not our setting.
+      const capHint = maxTokens
+        ? "Try raising the Max output tokens setting."
+        : "Max output tokens is set to Auto (no cap is sent), so this is the provider's own output limit — try a manual Max output tokens value or a model with a larger output cap.";
+      const truncatedError =
+        `Tool call not executed: the model hit its output-token limit, so the arguments may be truncated. ` +
+        `Re-issue the tool call with complete arguments. ${capHint}`;
+      for (const call of assistantMsg.tool_calls) {
+        emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args: {}, callId: call.id });
+        emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: truncatedError });
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: truncatedError }) });
+      }
+      continue;
     }
 
     messages.push(assistantMsg);

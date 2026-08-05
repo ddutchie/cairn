@@ -123,6 +123,78 @@ describe("parseToolArgs", () => {
     });
   });
 
+  describe("repair: missing commas (structural only)", () => {
+    it("inserts a missing comma between two string properties", () => {
+      // The model dropped the `,` between title and spaceId — the classic
+      // `Expected "," or "}" after property value` failure.
+      const r = parseToolArgs('{"title":"New Page" "spaceId":"TEST","content":"Body"}');
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.repaired).toBe(true);
+        expect(r.value).toEqual({ title: "New Page", spaceId: "TEST", content: "Body" });
+      }
+    });
+
+    it("inserts a missing comma when properties are separated by a newline", () => {
+      const raw = '{\n"title":"New Page"\n"spaceId":"TEST",\n"content":"Body"\n}';
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ title: "New Page", spaceId: "TEST", content: "Body" });
+    });
+
+    it("inserts a missing comma before a number-valued property", () => {
+      const r = parseToolArgs('{"a":"x" "b":2}');
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ a: "x", b: 2 });
+    });
+
+    it("inserts a missing comma before a boolean-valued property", () => {
+      const r = parseToolArgs('{"a":"x" "b":true}');
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ a: "x", b: true });
+    });
+
+    it("inserts a missing comma inside a nested object", () => {
+      const r = parseToolArgs('{"meta":{"a":1 "b":2},"title":"X"}');
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ meta: { a: 1, b: 2 }, title: "X" });
+    });
+
+    it("inserts a missing comma before a nested object value", () => {
+      const r = parseToolArgs('{"a": {"b":1} "c":2}');
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ a: { b: 1 }, c: 2 });
+    });
+
+    it("inserts a missing comma between array elements (strings)", () => {
+      const r = parseToolArgs('{"tags":["a" "b"],"title":"X"}');
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ tags: ["a", "b"], title: "X" });
+    });
+
+    it("inserts a missing comma between array elements (numbers)", () => {
+      const r = parseToolArgs('{"tags":[1 2 3],"title":"X"}');
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ tags: [1, 2, 3], title: "X" });
+    });
+
+    it("inserts a missing comma between consecutive objects in an array", () => {
+      const r = parseToolArgs('{"items":[{"a":1} {"b":2}],"title":"X"}');
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ items: [{ a: 1 }, { b: 2 }], title: "X" });
+    });
+
+    it("fixes a missing comma at the top level (multi-line, mixed values)", () => {
+      const raw = '{"projectId":"p1","title":"Doc" "content":"# H\nbody",\n"priority":"high"}';
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.repaired).toBe(true);
+        expect(r.value).toEqual({ projectId: "p1", title: "Doc", content: "# H\nbody", priority: "high" });
+      }
+    });
+  });
+
   describe("combined breakage", () => {
     it("fixes a literal newline and trailing comma at once (both lossless repairs)", () => {
       const raw = '{"title":"Note","content":"one\ntwo",}';
@@ -132,6 +204,40 @@ describe("parseToolArgs", () => {
         expect(r.repaired).toBe(true);
         expect(r.value).toEqual({ title: "Note", content: "one\ntwo" });
       }
+    });
+
+    it("fixes a literal newline AND a missing comma in one pass", () => {
+      const raw = '{"title":"Note" "content":"line1\nline2"}';
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.repaired).toBe(true);
+        expect(r.value).toEqual({ title: "Note", content: "line1\nline2" });
+      }
+    });
+  });
+
+  describe("missing-comma repair must NEVER guess or merge text", () => {
+    it("fails loud (never concatenates) when a value is followed by a bare string that is not a key", () => {
+      // {"title":"My" "page"} must NOT become title="My page" — we can't know
+      // that intent, so it must fail rather than silently corrupt content.
+      const r = parseToolArgs('{"title":"My" "page"}');
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/malformed tool-call arguments/i);
+    });
+
+    it("fails loud when a value is followed by a stray non-key token", () => {
+      const r = parseToolArgs('{"title":"New Page" "More","spaceId":"TEST"}');
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/malformed tool-call arguments/i);
+    });
+
+    it("fails loud on early-closed quote with leftover text (never rewrites to title=My page)", () => {
+      // content is intended to hold `He said "hi"` but the quotes were emitted
+      // unescaped → the JSON is irrecoverably ambiguous → must fail, not guess.
+      const r = parseToolArgs('{"content":"He said "hi""}');
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/malformed tool-call arguments/i);
     });
   });
 

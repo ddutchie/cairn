@@ -24,6 +24,11 @@ export interface CachedConfig {
     contextLimit?: number;
     aiEnabled?: boolean;
     subagentsEnabled?: boolean;
+    // Max output tokens: Auto (default) sends NO max_tokens; a manual value is a
+    // deliberate cap. Persisted so main-process consumers (e.g. the tool builder)
+    // honour the same Auto semantics as the chat loop.
+    maxOutputAuto?: boolean;
+    maxOutputTokens?: number;
     // Saved cloud/local API connections the user can switch between, plus the
     // id of the active one. Persisted so the switcher survives restarts.
     savedProviders?: Array<{ id: string; name: string; baseUrl: string; apiKey: string; model: string }>;
@@ -117,6 +122,8 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         contextLimit: typeof configRecord.contextLimit === "number" ? configRecord.contextLimit : current.aiConfig?.contextLimit,
         aiEnabled: typeof configRecord.aiEnabled === "boolean" ? configRecord.aiEnabled : current.aiConfig?.aiEnabled,
         subagentsEnabled: typeof configRecord.subagentsEnabled === "boolean" ? configRecord.subagentsEnabled : current.aiConfig?.subagentsEnabled,
+        maxOutputAuto: typeof configRecord.maxOutputAuto === "boolean" ? configRecord.maxOutputAuto : current.aiConfig?.maxOutputAuto,
+        maxOutputTokens: typeof configRecord.maxOutputTokens === "number" ? configRecord.maxOutputTokens : current.aiConfig?.maxOutputTokens,
         // Saved-provider switcher state (array + active id). Each provider's
         // apiKey is scrubbed to a ref (or dropped) so no raw key is cached.
         savedProviders: Array.isArray((config as { savedProviders?: unknown }).savedProviders)
