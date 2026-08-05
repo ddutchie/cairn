@@ -43,6 +43,7 @@ export function parseCalloutSource(raw: string): CalloutData | null {
 
 export class CalloutWidget extends WidgetType {
   private root: Root | null = null;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(private readonly data: CalloutData) {
     super();
@@ -63,16 +64,9 @@ export class CalloutWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const container = document.createElement("div");
     container.className = "cm-lp-callout";
-    // Mount the React callout SYNCHRONOUSLY. This is the crux of the cursor-drift
-    // fix: CodeMirror measures the widget's height immediately after toDOM()
-    // returns, and it uses that height to position every line below it. If React
-    // painted asynchronously (a plain createRoot().render()), the container would
-    // still be ~0px tall at measure time, so CM placed the cursor several lines
-    // off — and no amount of requestMeasure() after the fact fully recovered,
-    // because the first (wrong) layout had already mapped click coordinates.
-    // flushSync forces the render to commit before we return, so the DOM has its
-    // real height the first time CM measures. `estimatedHeight = -1` keeps CM
-    // from ever assuming the widget matches the replaced source lines.
+    // Mount the React callout SYNCHRONOUSLY so CodeMirror's first height measure
+    // (which happens right after toDOM returns, and positions every line below)
+    // sees real content rather than a 0px shell.
     this.root = createRoot(container);
     flushSync(() => {
       this.root?.render(
@@ -86,16 +80,22 @@ export class CalloutWidget extends WidgetType {
         </Callout>,
       );
     });
-    // The collapsible header toggles height at runtime (open/closed), which
-    // changes the widget's size AFTER the initial synchronous measure. The
-    // toggle is a React onClick inside <Callout>; listen on the container (fires
-    // for the same click) and re-measure once React has committed the new
-    // height — a double rAF waits out that commit. This is only for the toggle
-    // transition; initial layout is already correct from the flushSync above.
-    if (this.data.collapsible) {
-      container.addEventListener("click", () => {
-        requestAnimationFrame(() => requestAnimationFrame(() => view.requestMeasure()));
+    // flushSync commits the React tree, but the widget's height keeps changing
+    // AFTER that first measure: NoteMarkdownPreview resolves images/embeds in a
+    // useEffect, fonts finish loading, and the collapsible header toggles open/
+    // closed. Any of these shifts the height CM already committed, which is what
+    // desyncs clicks/cursor from the lines below. A ResizeObserver tells CM to
+    // re-measure on every size change, so the layout self-corrects once the
+    // content settles instead of being frozen at the (often wrong) first height.
+    let lastHeight = -1;
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const h = entries[0]?.contentRect.height ?? 0;
+        if (h === lastHeight) return; // ignore width-only / no-op notifications
+        lastHeight = h;
+        view.requestMeasure();
       });
+      this.resizeObserver.observe(container);
     }
     return container;
   }
@@ -107,6 +107,10 @@ export class CalloutWidget extends WidgetType {
   }
 
   destroy(): void {
+    // Stop observing before unmount so a teardown-time resize can't queue a
+    // measure against a destroyed widget.
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     // Unmount asynchronously — React forbids unmounting synchronously from
     // within a render/commit cycle, which CM's DOM updates can be inside of.
     const root = this.root;
@@ -133,7 +137,16 @@ export function makeCalloutWidget(data: CalloutData): WidgetType {
 // styling; this only manages block spacing so it sits like a paragraph.
 export const calloutWidgetTheme = EditorView.theme({
   ".cm-lp-callout": {
-    // Callout already has my-3; keep the CM line box from adding extra height.
     margin: "0",
+    // CRITICAL for correct cursor/click mapping: <Callout> has `my-3` (top+
+    // bottom margins). Without a block formatting context those child margins
+    // COLLAPSE THROUGH this container, so its border-box height (what CM and the
+    // ResizeObserver measure) is ~24px shorter than the space it actually paints.
+    // CM then lays out the lines below at the short height while the browser
+    // paints the callout taller — so clicks/cursor land a line or two too low.
+    // `flow-root` contains the child margins inside the measured box, making the
+    // measured height match the painted height. (overflow:hidden would also work
+    // but risks clipping; flow-root is the intent-revealing choice.)
+    display: "flow-root",
   },
 });

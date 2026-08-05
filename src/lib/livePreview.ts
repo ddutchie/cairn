@@ -14,7 +14,7 @@
  * mutated — only the *rendering* is decorated. Raw markdown stays on disk.
  */
 
-import { EditorState, Range, StateField } from "@codemirror/state";
+import { EditorState, EditorSelection, Prec, Range, StateField } from "@codemirror/state";
 import {
   Decoration,
   DecorationSet,
@@ -22,6 +22,7 @@ import {
   ViewPlugin,
   ViewUpdate,
   WidgetType,
+  keymap,
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import { makeCalloutWidget, parseCalloutSource, calloutWidgetTheme } from "./callout-widget";
@@ -414,11 +415,67 @@ const livePreviewTheme = EditorView.theme({
 });
 
 /**
+ * Vertical-cursor motion across a folded callout widget.
+ *
+ * A `block: true` replace decoration is one atomic unit, so CodeMirror's default
+ * ArrowUp/ArrowDown jumps clean OVER the whole callout — the selection never
+ * lands on a line inside it, so the "cursor inside → show raw source" unfold
+ * (driven by `activeLines`) never fires and the widget appears un-enterable.
+ *
+ * These handlers make a vertical move that would cross a folded callout instead
+ * land the cursor at the callout's first line, which unfolds it for editing — so
+ * the widget behaves like the text it stands in for. Moving again from inside
+ * the (now unfolded) callout advances normally, because it's no longer folded.
+ *
+ * Only acts on a single collapsed cursor entering a FOLDED callout from the
+ * adjacent line; every other case (selections, cursor already inside, no
+ * adjacent callout) falls through to CM's default handling by returning false.
+ */
+export function foldedCalloutFromCursor(state: EditorState, dir: 1 | -1): CalloutBlock | null {
+  const sel = state.selection.main;
+  if (!sel.empty) return null;
+  const curLine = state.doc.lineAt(sel.head).number;
+  const active = activeLines(state);
+  for (const block of findCalloutBlocks(state)) {
+    // A callout the cursor is already inside is unfolded — let CM move normally.
+    let inside = false;
+    for (let ln = block.lineStart; ln <= block.lineEnd; ln++) {
+      if (active.has(ln)) { inside = true; break; }
+    }
+    if (inside) continue;
+    // Entering from the line directly above (moving down) or below (moving up).
+    if (dir === 1 && curLine === block.lineStart - 1) return block;
+    if (dir === -1 && curLine === block.lineEnd + 1) return block;
+  }
+  return null;
+}
+
+function moveIntoCallout(view: EditorView, dir: 1 | -1): boolean {
+  const block = foldedCalloutFromCursor(view.state, dir);
+  if (!block) return false;
+  // Land on the callout's first line so activeLines picks it up and it unfolds.
+  const target = view.state.doc.line(block.lineStart).from;
+  view.dispatch({
+    selection: EditorSelection.cursor(target),
+    scrollIntoView: true,
+    userEvent: "select",
+  });
+  return true;
+}
+
+const calloutCursorKeymap = Prec.high(
+  keymap.of([
+    { key: "ArrowDown", run: (v) => moveIntoCallout(v, 1) },
+    { key: "ArrowUp", run: (v) => moveIntoCallout(v, -1) },
+  ]),
+);
+
+/**
  * Live Preview extension. Add to the editor's extension array. Reversible via a
  * Compartment if you want to toggle it at runtime.
  */
 export function livePreview() {
   const exts = [livePreviewPlugin, livePreviewTheme];
-  if (CALLOUTS_ENABLED) exts.unshift(calloutField, calloutWidgetTheme);
+  if (CALLOUTS_ENABLED) exts.unshift(calloutField, calloutWidgetTheme, calloutCursorKeymap);
   return exts;
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { livePreview } from "@/lib/livePreview";
+import { livePreview, foldedCalloutFromCursor } from "@/lib/livePreview";
 import { parseCalloutSource } from "@/lib/callout-widget";
 
 /**
@@ -125,6 +125,70 @@ describe("livePreview decorations", () => {
     const block = view.lineBlockAt(pos);
     expect(view.state.doc.lineAt(block.from).number).toBe(line.number);
     view.destroy();
+  });
+
+  it("observes the callout widget for later height changes and stops on destroy", () => {
+    // flushSync only fixes the FIRST measure; the widget's height keeps shifting
+    // afterwards (async markdown/image resolution, font load, collapsible toggle),
+    // which is what desyncs the cursor. A ResizeObserver must watch the widget so
+    // CM re-measures once the content settles — and disconnect on teardown.
+    const observed: Element[] = [];
+    let disconnects = 0;
+    const RealRO = globalThis.ResizeObserver;
+    class SpyRO {
+      observe(el: Element) { observed.push(el); }
+      unobserve() {}
+      disconnect() { disconnects += 1; }
+    }
+    globalThis.ResizeObserver = SpyRO as unknown as typeof ResizeObserver;
+    try {
+      const doc = "intro\n\n> [!note] Title\n> body\n\nafter";
+      const view = mount(doc, 0);
+      const widget = view.contentDOM.querySelector(".cm-lp-callout");
+      expect(widget).toBeTruthy();
+      // The rendered widget container is being observed for resize.
+      expect(observed).toContain(widget);
+      view.destroy();
+      expect(disconnects).toBeGreaterThan(0);
+    } finally {
+      globalThis.ResizeObserver = RealRO;
+    }
+  });
+
+  it("detects a folded callout the cursor would skip when moving down/up", () => {
+    // A block widget is atomic, so CM's default ArrowDown skips the whole
+    // callout and it never unfolds. foldedCalloutFromCursor is the decision that
+    // redirects the move into the callout's first line instead. Callouts sit
+    // between blank lines (a blockquote needs a blank line to terminate), so the
+    // adjacent line is the blank line directly above/below the widget.
+    const doc = "intro\n\n> [!note] Title\n> body\n\nafter";
+    const view = mount(doc, 0);
+    const block = view.state.doc.lineAt(doc.indexOf("> [!note]")).number; // 3
+    const blankAbove = block - 1; // line 2
+    const blankBelow = view.state.doc.lineAt(doc.indexOf("after")).number - 1; // line 5
+
+    // Cursor on the blank line directly above → ArrowDown enters the callout.
+    view.dispatch({ selection: { anchor: view.state.doc.line(blankAbove).from } });
+    expect(foldedCalloutFromCursor(view.state, 1)?.lineStart).toBe(block);
+
+    // Cursor on the blank line directly below → ArrowUp enters the callout.
+    view.dispatch({ selection: { anchor: view.state.doc.line(blankBelow).from } });
+    expect(foldedCalloutFromCursor(view.state, -1)?.lineStart).toBe(block);
+    view.destroy();
+  });
+
+  it("does not redirect when the cursor is already inside (unfolded) callout or none is adjacent", () => {
+    const doc = "intro\n\n> [!note] Title\n> body\n\nafter";
+    // Cursor inside the callout source → it's unfolded, so no redirect.
+    const inside = mount(doc, doc.indexOf("Title"));
+    expect(foldedCalloutFromCursor(inside.state, 1)).toBeNull();
+    expect(foldedCalloutFromCursor(inside.state, -1)).toBeNull();
+    inside.destroy();
+
+    // A plain document with no callout adjacent to the cursor.
+    const plain = mount("line one\nline two\nline three", 0);
+    expect(foldedCalloutFromCursor(plain.state, 1)).toBeNull();
+    plain.destroy();
   });
 });
 
