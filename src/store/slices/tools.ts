@@ -247,6 +247,9 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
       headers,
       authMode: entry.definition.authMode ?? "none",
       oauthScope: entry.definition.oauthScope,
+      oauthClientId: entry.definition.oauthClientId,
+      oauthRedirectUri: entry.definition.oauthRedirectUri,
+      oauthClientIdRequired: entry.definition.requiresClientId,
       disabledTools: entry.definition.disabledTools,
       // Install DISABLED so the user reviews (and, for OAuth, connects) before it goes live.
       enabled: false,

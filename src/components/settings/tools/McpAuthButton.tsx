@@ -30,8 +30,23 @@ function api(toolType: ToolType) {
  * uses OAuth. Both share the exact same browser flow (loopback redirect +
  * `tools:oauthCallback` completion event); only the four IPC method names differ,
  * selected by {@link toolType}.
+ *
+ * When {@link requiresClientId} is set (the provider forbids dynamic client
+ * registration) and the tool has no stored client id yet, "Sign in" routes to
+ * {@link onEdit} so the user fills in the pre-registered app details instead of
+ * failing on an opaque DCR error.
  */
-export function AuthButton({ toolId, toolType }: { toolId: string; toolType: ToolType }) {
+export function AuthButton({
+  toolId,
+  toolType,
+  requiresClientId,
+  onEdit,
+}: {
+  toolId: string;
+  toolType: ToolType;
+  requiresClientId?: boolean;
+  onEdit?: () => void;
+}) {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +75,14 @@ export function AuthButton({ toolId, toolType }: { toolId: string; toolType: Too
   }, [toolId, refresh]);
 
   const signIn = useCallback(async () => {
+    // A provider that forbids DCR can't be signed in until a pre-registered
+    // client id exists — route the user to the form (which surfaces the fields)
+    // rather than attempting a doomed connect.
+    if (requiresClientId) {
+      setError("This server needs a pre-registered app. Add its Client ID (and Redirect URI) in the settings below, then sign in again.");
+      onEdit?.();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -76,7 +99,7 @@ export function AuthButton({ toolId, toolType }: { toolId: string; toolType: Too
       setBusy(false);
       setError(err instanceof Error ? err.message : "Sign-in failed");
     }
-  }, [toolId, toolType, refresh]);
+  }, [toolId, toolType, refresh, requiresClientId, onEdit]);
 
   const signOut = useCallback(async () => {
     await api(toolType)?.signOut(toolId);
@@ -126,6 +149,14 @@ export function AuthButton({ toolId, toolType }: { toolId: string; toolType: Too
 }
 
 /** Back-compat thin wrapper for the MCP call site. */
-export function McpAuthButton({ serverId }: { serverId: string }) {
-  return <AuthButton toolId={serverId} toolType="mcp" />;
+export function McpAuthButton({
+  serverId,
+  requiresClientId,
+  onEdit,
+}: {
+  serverId: string;
+  requiresClientId?: boolean;
+  onEdit?: () => void;
+}) {
+  return <AuthButton toolId={serverId} toolType="mcp" requiresClientId={requiresClientId} onEdit={onEdit} />;
 }

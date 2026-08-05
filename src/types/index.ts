@@ -179,6 +179,28 @@ export interface McpServerConfig {
   authMode?: "none" | "oauth";
   /** Optional requested OAuth scope string (space-delimited). */
   oauthScope?: string;
+  /**
+   * Optional pre-registered OAuth client id. When set, Cairn SKIPS dynamic
+   * client registration and authenticates as a public PKCE client against a
+   * fixed app (e.g. Slack's MCP server, which forbids DCR). This is a PUBLIC
+   * value (never a secret) — stored in SQLite.
+   */
+  oauthClientId?: string;
+  /**
+   * Optional fixed redirect URI for the OAuth flow, e.g. a loopback URL the
+   * provider requires to be pre-registered (`http://127.0.0.1:48123/callback`).
+   * When unset, Cairn uses its normal random-port loopback (public PKCE / DCR
+   * providers like Canva, Figma).
+   */
+  oauthRedirectUri?: string;
+  /**
+   * True when this server's provider forbids dynamic client registration, so
+   * sign-in is impossible until the user supplies a pre-registered `oauthClientId`
+   * (and usually an `oauthRedirectUri`). Set by community connectors that need a
+   * pre-registered app (e.g. Slack). The UI surfaces the Client ID / Redirect URI
+   * fields and routes "Sign in" to them instead of failing on DCR.
+   */
+  oauthClientIdRequired?: boolean;
   enabled: boolean;
   source: ToolSource;
   /** Set when installed from the community registry. */
@@ -244,6 +266,8 @@ export interface CustomServiceConfig {
     serverUrl?: string;
     scope?: string;
     clientId?: string;
+    /** Fixed redirect URI (loopback URL) a pre-registered client requires. */
+    redirectUri?: string;
     authorizationUrl?: string;
     tokenUrl?: string;
   };
@@ -287,6 +311,15 @@ export interface RegistryMcpDefinition {
   headers?: Record<string, string>;
   authMode?: "none" | "oauth";
   oauthScope?: string;
+  /** Optional pre-registered public client id (confidential-style, skips DCR). */
+  oauthClientId?: string;
+  /** Optional fixed redirect URI the provider requires pre-registered. */
+  oauthRedirectUri?: string;
+  /**
+   * True when this connector's provider forbids dynamic client registration, so
+   * the user must supply a pre-registered client id (+ redirect URI) to connect.
+   */
+  requiresClientId?: boolean;
   disabledTools?: string[];
   enabled: boolean;
 }
@@ -313,6 +346,8 @@ export interface RegistryServiceDefinition {
     serverUrl?: string;
     scope?: string;
     clientId?: string;
+    /** Fixed redirect URI (loopback URL) a pre-registered client requires. */
+    redirectUri?: string;
     authorizationUrl?: string;
     tokenUrl?: string;
   };

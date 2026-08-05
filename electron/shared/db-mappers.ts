@@ -100,7 +100,7 @@ function pObj(v: string | null | undefined): Record<string, string> {
  * the optional `oauth?` type), rather than surfacing an empty object.
  */
 function parseOAuthConfig(v: string | null | undefined):
-  | { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string }
+  | { serverUrl?: string; scope?: string; clientId?: string; redirectUri?: string; authorizationUrl?: string; tokenUrl?: string }
   | undefined {
   if (!v) return undefined;
   try {
@@ -122,6 +122,9 @@ export function toMcpServer(row: any) {
     headers: pObj(row.headers),
     authMode: (row.auth_mode ?? "none") as "none" | "oauth",
     oauthScope: (row.oauth_scope ?? undefined) as string | undefined,
+    oauthClientId: (row.oauth_client_id ?? undefined) as string | undefined,
+    oauthRedirectUri: (row.oauth_redirect_uri ?? undefined) as string | undefined,
+    oauthClientIdRequired: row.oauth_client_id_required === 1,
     enabled: row.enabled === 1,
     source: (row.source ?? "manual") as "manual" | "community" | "ai-builder",
     communityId: (row.community_id ?? undefined) as string | undefined,

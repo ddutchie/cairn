@@ -1436,6 +1436,7 @@ interface McpServerInput {
   id: string; workspaceId: string; name: string; description?: string;
   transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
   authMode?: "none" | "oauth"; oauthScope?: string;
+  oauthClientId?: string; oauthRedirectUri?: string; oauthClientIdRequired?: boolean;
   enabled: boolean; source: string; communityId?: string; version?: string;
   /** Raw (un-namespaced) tool names disabled for this server, workspace-wide. */
   disabledTools?: string[];
@@ -1454,8 +1455,8 @@ export function getMcpServerById(db: Database.Database, id: string) {
 export function saveMcpServer(db: Database.Database, s: McpServerInput) {
   const now = ts();
   db.prepare(`
-    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, enabled, source, community_id, version, disabled_tools, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, oauth_client_id, oauth_redirect_uri, oauth_client_id_required, enabled, source, community_id, version, disabled_tools, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name        = excluded.name,
       description = excluded.description,
@@ -1464,6 +1465,9 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
       headers     = excluded.headers,
       auth_mode   = excluded.auth_mode,
       oauth_scope = excluded.oauth_scope,
+      oauth_client_id        = excluded.oauth_client_id,
+      oauth_redirect_uri     = excluded.oauth_redirect_uri,
+      oauth_client_id_required = excluded.oauth_client_id_required,
       enabled     = excluded.enabled,
       source      = excluded.source,
       community_id= excluded.community_id,
@@ -1473,6 +1477,7 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
   `).run(
     s.id, s.workspaceId, s.name, s.description ?? null, s.transport, s.baseUrl,
     j(s.headers ?? {}), s.authMode ?? "none", s.oauthScope ?? null,
+    s.oauthClientId ?? null, s.oauthRedirectUri ?? null, s.oauthClientIdRequired ? 1 : 0,
     s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
     j(s.disabledTools ?? []), now, now,
   );
@@ -1492,7 +1497,7 @@ interface CustomServiceInput {
   toolDefinition?: string; responseKeys?: string[]; apiKeyUrl?: string;
   baseUrl?: string; operations?: unknown[];
   authMode?: "none" | "oauth";
-  oauth?: { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string };
+  oauth?: { serverUrl?: string; scope?: string; clientId?: string; redirectUri?: string; authorizationUrl?: string; tokenUrl?: string };
   enabled: boolean; source: string; communityId?: string; version?: string;
 }
 

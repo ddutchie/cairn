@@ -64,6 +64,8 @@ function toRuntimeConfig(s: {
   headers?: Record<string, string>;
   authMode?: "none" | "oauth";
   oauthScope?: string;
+  oauthClientId?: string;
+  oauthRedirectUri?: string;
   name?: string;
 }): mcpClient.McpServerRuntimeConfig {
   return {
@@ -73,6 +75,8 @@ function toRuntimeConfig(s: {
     headers: s.headers,
     authMode: s.authMode,
     oauthScope: s.oauthScope,
+    oauthClientId: s.oauthClientId,
+    oauthRedirectUri: s.oauthRedirectUri,
     name: s.name,
   };
 }
@@ -363,12 +367,18 @@ export function makeServiceBearerResolver(svc: {
   name: string;
   apiUrl: string;
   authMode?: "none" | "oauth";
-  oauth?: { serverUrl?: string; scope?: string };
+  oauth?: { serverUrl?: string; scope?: string; clientId?: string; redirectUri?: string };
 }): services.BearerResolver | undefined {
   if (svc.authMode !== "oauth") return undefined;
   return () =>
     mcpOauth.getAccessToken(
-      { id: svc.id, serverUrl: serviceOAuthServerUrl(svc), scope: svc.oauth?.scope },
+      {
+        id: svc.id,
+        serverUrl: serviceOAuthServerUrl(svc),
+        scope: svc.oauth?.scope,
+        clientId: svc.oauth?.clientId,
+        redirectUri: svc.oauth?.redirectUri,
+      },
       svc.name,
     );
 }

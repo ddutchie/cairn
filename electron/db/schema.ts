@@ -917,6 +917,30 @@ const MIGRATIONS: Migration[] = [
     const cols = (db.prepare("PRAGMA table_info(automations)").all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes("requires")) db.exec("ALTER TABLE automations ADD COLUMN requires TEXT");
   },
+
+  // v36: Pre-registered OAuth client for remote MCP servers (e.g. Slack's MCP
+  // server, which forbids dynamic client registration). oauth_client_id is a
+  // PUBLIC client id (never a secret); oauth_redirect_uri is a fixed loopback
+  // URL the provider requires pre-registered (e.g.
+  // http://127.0.0.1:<port>/callback). Auth stays public-PKCE — no secret is
+  // stored. Both nullable — existing public-PKCE/DCR servers work unchanged.
+  (db) => {
+    const cols = (db.prepare("PRAGMA table_info(mcp_servers)").all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("oauth_client_id")) db.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_client_id TEXT");
+    if (!cols.includes("oauth_redirect_uri")) db.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_redirect_uri TEXT");
+  },
+
+  // v37: Pre-registered-app marker for remote MCP servers. oauth_client_id_required
+  // is true when the provider forbids dynamic client registration (e.g. Slack),
+  // so the UI prompts for the client id / redirect URI before sign-in instead of
+  // failing on DCR. Set by community connectors (`requiresClientId`); the form
+  // exposes it as a "requires a pre-registered app" toggle.
+  (db) => {
+    const cols = (db.prepare("PRAGMA table_info(mcp_servers)").all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("oauth_client_id_required")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_client_id_required INTEGER NOT NULL DEFAULT 0");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -960,6 +984,12 @@ function ensureColumns(db: Database.Database): void {
   // single-op rows leave them empty and use api_url/method/tool_definition.
   ensure("custom_services", "base_url", "base_url TEXT");
   ensure("custom_services", "operations", "operations TEXT");
+  // Pre-registered OAuth client for MCP servers (v36) — late-added columns
+  // survive even if a DB's user_version was advanced past the migration by an
+  // interim build.
+  ensure("mcp_servers", "oauth_client_id", "oauth_client_id TEXT");
+  ensure("mcp_servers", "oauth_redirect_uri", "oauth_redirect_uri TEXT");
+  ensure("mcp_servers", "oauth_client_id_required", "oauth_client_id_required INTEGER NOT NULL DEFAULT 0");
 }
 
 function runMigrations(db: Database.Database): void {
