@@ -114,8 +114,8 @@ describe("livePreview decorations", () => {
   it("keeps document positions after a callout addressable (cursor-drift guard)", () => {
     // The regression this whole card exists for: a callout widget must not
     // desync the lines below it, so a position AFTER the callout must still map
-    // back to the correct line. flushSync in toDOM gives the widget real height
-    // at measure time, so coordsAt/lineBlockAt for a later position stay sane.
+    // back to the correct line. estimatedHeight=-1 + the ResizeObserver keep the
+    // widget's measured height honest, so lineBlockAt for a later position stays sane.
     const doc = "intro\n\n> [!note] Title\n> body\n\ntarget line after callout";
     const view = mount(doc, 0);
     expect(view.contentDOM.querySelector(".cm-lp-callout")).toBeTruthy();
@@ -130,9 +130,9 @@ describe("livePreview decorations", () => {
   });
 
   it("observes the callout widget for later height changes and stops on destroy", () => {
-    // flushSync only fixes the FIRST measure; the widget's height keeps shifting
-    // afterwards (async markdown/image resolution, font load, collapsible toggle),
-    // which is what desyncs the cursor. A ResizeObserver must watch the widget so
+    // The widget renders async and its height keeps shifting (markdown/image
+    // resolution, font load, collapsible toggle), which is what desyncs the
+    // cursor. A ResizeObserver must watch the widget so
     // CM re-measures once the content settles — and disconnect on teardown.
     const observed: Element[] = [];
     let disconnects = 0;

@@ -35,7 +35,7 @@ export class MathBlockWidget extends BlockPreviewWidget {
   }
 
   protected render(): ReactNode {
-    return <NoteMarkdownPreview content={this.data.raw} className="!py-1" />;
+    return <NoteMarkdownPreview content={this.data.raw.trim()} inline />;
   }
 }
 

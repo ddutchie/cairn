@@ -69,7 +69,7 @@ export class CalloutWidget extends BlockPreviewWidget {
         collapsible={this.data.collapsible}
         defaultOpen={this.data.defaultOpen}
       >
-        {this.data.body ? <NoteMarkdownPreview content={this.data.body} /> : null}
+        {this.data.body ? <NoteMarkdownPreview content={this.data.body} inline /> : null}
       </Callout>
     );
   }

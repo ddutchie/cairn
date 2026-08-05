@@ -142,19 +142,31 @@ function computeBlockWidgets(state: EditorState): BlockWidget[] {
   const { doc } = state;
   const out: BlockWidget[] = [];
   // Push a block spanning whole lines. `blockLineCount`, when given, clamps the
-  // range to that many lines from `from` — used to trim a callout/blockquote or
-  // table whose lezer node over-extends into a following paragraph when there's
-  // no blank line between them (otherwise the widget would swallow that text).
-  const push = (from: number, toRaw: number, makeWidget: () => WidgetType, blockLineCount?: number) => {
+  // range to that many lines from `from` (used for a callout/blockquote whose
+  // lezer node over-extends into a following paragraph). Trailing BLANK lines
+  // are always trimmed off the range: a lezer node can include trailing empty
+  // lines, which otherwise (a) get covered by the widget and (b) render as a run
+  // of whitespace text nodes inside the widget → a big empty gap above the
+  // content. `makeWidget` receives the trimmed raw so its render matches.
+  const push = (
+    from: number,
+    toRaw: number,
+    makeWidget: (trimmedRaw: string) => WidgetType,
+    blockLineCount?: number,
+  ) => {
     const lineStart = doc.lineAt(from).number;
     let lineEnd = doc.lineAt(Math.min(toRaw, doc.length)).number;
     if (blockLineCount != null) lineEnd = Math.min(lineEnd, lineStart + blockLineCount - 1);
+    // Trim trailing blank lines.
+    while (lineEnd > lineStart && doc.line(lineEnd).text.trim() === "") lineEnd--;
+    const fromPos = doc.line(lineStart).from;
+    const toPos = doc.line(lineEnd).to;
     out.push({
-      from: doc.line(lineStart).from,
-      to: doc.line(lineEnd).to,
+      from: fromPos,
+      to: toPos,
       lineStart,
       lineEnd,
-      makeWidget,
+      makeWidget: () => makeWidget(doc.sliceString(fromPos, toPos)),
     });
   };
   syntaxTree(state).iterate({
@@ -183,14 +195,14 @@ function computeBlockWidgets(state: EditorState): BlockWidget[] {
         const nodeTo = Math.min(node.to, doc.length);
         const raw = doc.sliceString(node.from, nodeTo);
         if (!isTableSource(raw)) return;
-        push(node.from, nodeTo, () => makeTableBlockWidget(raw));
+        push(node.from, nodeTo, (trimmed) => makeTableBlockWidget(trimmed));
       }
     },
   });
   // $$ … $$ display-math isn't a distinct node in the base grammar (it lands in
   // a Paragraph), so scan for delimiter pairs separately.
   for (const m of findMathBlocks(doc)) {
-    push(m.from, m.to, () => makeMathBlockWidget(doc.sliceString(m.from, m.to)));
+    push(m.from, m.to, (trimmed) => makeMathBlockWidget(trimmed));
   }
   return out;
 }

@@ -40,4 +40,23 @@ describe("NoteMarkdownPreview — task-list checkboxes", () => {
     expect(controlledWarning).toBe(false);
     errSpy.mockRestore();
   });
+
+  it("inline mode drops the full-pane chrome (padding / h-full / overflow)", () => {
+    // Embedded inside a callout body or block widget, the preview must sit
+    // compactly — not carry the standalone pane's px-6 py-5 h-full overflow,
+    // which was inflating callout/table widgets and making them look different
+    // from read mode.
+    const { container: pane } = render(<NoteMarkdownPreview content={"hi"} />);
+    const { container: inline } = render(<NoteMarkdownPreview content={"hi"} inline />);
+    const paneRoot = pane.querySelector(".prose-cairn") as HTMLElement;
+    const inlineRoot = inline.querySelector(".prose-cairn") as HTMLElement;
+    expect(paneRoot.className).toContain("h-full");
+    expect(paneRoot.className).toContain("px-6");
+    expect(inlineRoot.className).not.toContain("h-full");
+    expect(inlineRoot.className).not.toContain("px-6");
+    expect(inlineRoot.className).not.toContain("overflow-y-auto");
+    // Inline zeroes the first/last child margins so the block (e.g. a table
+    // wrapper's my-3) hugs the top of its host — no empty space above it.
+    expect(inlineRoot.className).toContain("[&>*:first-child]:mt-0");
+  });
 });

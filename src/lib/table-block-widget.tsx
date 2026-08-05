@@ -49,7 +49,9 @@ export class TableBlockWidget extends BlockPreviewWidget {
   }
 
   protected render(): ReactNode {
-    return <NoteMarkdownPreview content={this.data.raw} className="!py-1" />;
+    // Trim so stray leading/trailing blank lines can't render as whitespace
+    // text nodes that inflate the widget's height.
+    return <NoteMarkdownPreview content={this.data.raw.trim()} inline />;
   }
 }
 

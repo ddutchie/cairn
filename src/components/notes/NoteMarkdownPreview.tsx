@@ -25,6 +25,13 @@ interface NoteMarkdownPreviewProps {
   className?: string;
   filePath?: string;
   projectRoot?: string;
+  /**
+   * Inline/embedded rendering (e.g. inside a callout body or a Live Preview
+   * block widget): drops the full-pane chrome (`px-6 py-5`, `h-full`,
+   * `overflow-y-auto`) so the content sits compactly in its host container the
+   * way it does in read mode. Default false = the standalone preview pane.
+   */
+  inline?: boolean;
 }
 
 interface MarkdownImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> {
@@ -153,7 +160,7 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
   );
 }
 
-function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: NoteMarkdownPreviewProps) {
+function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot, inline }: NoteMarkdownPreviewProps) {
   // Content-aware plugins: omit the math stack (remark-math + rehype-katex + the
   // two custom LaTeX passes ≈ 12ms on a large note) when the source has no `$`.
   // Keyed on math/highlight *presence* (booleans), not raw content, so the
@@ -185,7 +192,13 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: 
   }
 
   return (
-    <div className={`prose-cairn px-6 py-5 overflow-y-auto h-full ${className ?? ""}`}>
+    <div
+      className={`prose-cairn ${
+        inline
+          ? "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+          : "px-6 py-5 overflow-y-auto h-full"
+      } ${className ?? ""}`}
+    >
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}

@@ -400,11 +400,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
       });
     }, [readOnly]);
 
-    // Toggle Live Preview marker-hiding at runtime via its compartment.
-    // Dispatch on a microtask, not synchronously in the effect: the dispatch
-    // rebuilds decorations, which mounts block widgets (callout/code) whose
-    // toDOM uses flushSync — illegal while React is still flushing this effect.
-    // Deferring runs the reconfigure in CM's own context where flushSync is ok.
+    // Toggle Live Preview at runtime via its compartment. Dispatch on a
+    // microtask, not synchronously in the effect: the dispatch rebuilds
+    // decorations and mounts React-backed block widgets, which is better done
+    // outside React's own commit phase than synchronously within it.
     useEffect(() => {
       // Skip when the enabled state hasn't actually changed since what's applied
       // — notably on mount, where the compartment was already initialized to
