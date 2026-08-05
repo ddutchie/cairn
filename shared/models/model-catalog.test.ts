@@ -19,6 +19,7 @@ import {
   providerLogoUrlFor,
   supportsImageInput,
   resolveMaxOutputTokens,
+  positiveTokenLimit,
 } from "./model-catalog";
 
 describe("parseModelCatalog", () => {
@@ -79,6 +80,35 @@ describe("parseModelCatalog", () => {
     expect(parseModelCatalog(null)).toEqual({});
     expect(parseModelCatalog("nope")).toEqual({});
   });
+
+  it("coerces a zero/negative limit.output to null (models.dev has real output:0 entries)", () => {
+    const map = parseModelCatalog({
+      p: {
+        models: {
+          zero: { limit: { context: 8000, output: 0 } },
+          neg: { limit: { context: 8000, output: -1 } },
+          ok: { limit: { context: 8000, output: 4096 } },
+        },
+      },
+    });
+    expect(map["zero"].maxOutput).toBeNull();
+    expect(map["neg"].maxOutput).toBeNull();
+    expect(map["ok"].maxOutput).toBe(4096);
+  });
+});
+
+describe("positiveTokenLimit", () => {
+  it("accepts positive integers, floors fractions, rejects the rest", () => {
+    expect(positiveTokenLimit(4096)).toBe(4096);
+    expect(positiveTokenLimit(4096.9)).toBe(4096);
+    expect(positiveTokenLimit(1)).toBe(1);
+    expect(positiveTokenLimit(0)).toBeNull();
+    expect(positiveTokenLimit(0.5)).toBeNull();
+    expect(positiveTokenLimit(-10)).toBeNull();
+    expect(positiveTokenLimit(Number.NaN)).toBeNull();
+    expect(positiveTokenLimit("4096")).toBeNull();
+    expect(positiveTokenLimit(null)).toBeNull();
+  });
 });
 
 describe("supportsImageInput", () => {
@@ -107,9 +137,10 @@ describe("resolveMaxOutputTokens", () => {
     expect(resolveMaxOutputTokens(null)).toBeUndefined();
   });
 
-  it("sends a positive user override verbatim (deliberate cost/latency cap)", () => {
+  it("sends a user override >= 1 verbatim (deliberate cost/latency cap), floored", () => {
     expect(resolveMaxOutputTokens(5000)).toBe(5000);
     expect(resolveMaxOutputTokens(200.9)).toBe(200); // floored
+    expect(resolveMaxOutputTokens(1)).toBe(1);
     expect(resolveMaxOutputTokens(384000)).toBe(384000);
   });
 
@@ -117,6 +148,12 @@ describe("resolveMaxOutputTokens", () => {
     expect(resolveMaxOutputTokens(0)).toBeUndefined();
     expect(resolveMaxOutputTokens(-5)).toBeUndefined();
     expect(resolveMaxOutputTokens(Number.NaN)).toBeUndefined();
+  });
+
+  it("omits rather than sending max_tokens:0 for a fractional override in (0,1)", () => {
+    // Regression: `> 0` then Math.floor turned 0.1 / 0.999 into 0 — a broken cap.
+    expect(resolveMaxOutputTokens(0.1)).toBeUndefined();
+    expect(resolveMaxOutputTokens(0.999)).toBeUndefined();
   });
 });
 

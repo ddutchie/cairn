@@ -203,6 +203,7 @@ export function registerPiAgentHandler(
       apiKey: req.config?.apiKey,
       maxSteps: req.config?.maxSteps,
       temperature: req.config?.temperature,
+      maxTokens: req.config?.maxTokens,
       autoApprove: req.config?.autoApprove,
     });
 
@@ -297,6 +298,7 @@ export function registerPiAgentHandler(
       apiKey: req.config?.apiKey,
       maxSteps: req.config?.maxSteps,
       temperature: req.config?.temperature,
+      maxTokens: req.config?.maxTokens,
       autoApprove: req.config?.autoApprove,
     });
 
