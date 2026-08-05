@@ -3,7 +3,7 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, Maximize2, Minimize2, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
+import { Pin, PinOff, Calendar, Eye, Pencil, Code, Wand2, Loader2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, Maximize2, Minimize2, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -19,17 +19,17 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { makeLatexPlugins, makeRehypeChangedLines, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
-import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines } from "./note-editor-utils";
+import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset, migrateEditorMode, initialLivePreviewOn } from "./note-editor-utils";
 import { useNoteMarkdownComponents } from "./note-markdown-components";
 import { storage } from "@/lib/storage";
-import { NOTE_EDITOR_MODE_KEY } from "@/lib/constants";
+import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
 
 interface NoteEditorProps {
   note: Note;
   onBack?: () => void;
 }
 
-type EditorMode = "write" | "read";
+type EditorMode = "edit" | "read";
 
 export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects, noteChangeMarks, clearNoteChangeMark, notesFullscreen, toggleNotesFullscreen } = useCairnStore(useShallow((s) => ({
@@ -54,14 +54,26 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Remember the last-used editor mode across notes/sessions so readers stay
-  // in Read and writers stay in Write without re-toggling each time.
-  const [mode, setModeState] = useState<EditorMode>(
-    () => storage.get<EditorMode>(NOTE_EDITOR_MODE_KEY) ?? "write"
-  );
+  // Remember the last-used editor mode across notes/sessions so readers stay in
+  // Read and writers stay in Edit without re-toggling each time. Migrate the
+  // legacy three-mode value: "write"/"raw" both collapse to "edit" (raw was just
+  // "edit with Live Preview off", now a separate toggle below).
+  const legacyMode = storage.get<string>(NOTE_EDITOR_MODE_KEY);
+  const [mode, setModeState] = useState<EditorMode>(() => migrateEditorMode(legacyMode));
   const setMode = useCallback((next: EditorMode) => {
     setModeState(next);
     storage.set(NOTE_EDITOR_MODE_KEY, next);
+  }, []);
+  // Live Preview (inline widgets + marker hiding) on/off within Edit mode.
+  // Defaults on; persisted separately so the choice survives note/session change.
+  // Migration: if a user's legacy mode was "raw" and they have no explicit Live
+  // Preview preference yet, honour that intent by starting with it OFF.
+  const [livePreviewOn, setLivePreviewOnState] = useState<boolean>(() =>
+    initialLivePreviewOn(storage.get<boolean>(NOTE_LIVE_PREVIEW_KEY), legacyMode),
+  );
+  const setLivePreviewOn = useCallback((next: boolean) => {
+    setLivePreviewOnState(next);
+    storage.set(NOTE_LIVE_PREVIEW_KEY, next);
   }, []);
   const noteContent0 = note.content ?? "";
   const [wordCount, setWordCount] = useState(() => countWords(noteContent0));
@@ -152,6 +164,10 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
 
   // MD preview panel state — selected text to render in the bottom panel
   const [previewText, setPreviewText] = useState<string | null>(null);
+  // Live preview of the STRUCTURED block (table/callout/code/math) the cursor is
+  // in, shown when there's no selection so you can see it render — and spot a
+  // broken table/fence — while editing. Selection preview (previewText) wins.
+  const [blockPreview, setBlockPreview] = useState<{ kind: string; text: string } | null>(null);
 
   // ── Wikilink picker state ──────────────────────────────────────────────────
   const [wikilinkPicker, setWikilinkPicker] = useState<{
@@ -289,6 +305,11 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalTitle(note.title);
     titleRef.current = note.title;
+    // Clear any preview from the previous note — the selection/block preview is
+    // only refreshed on cursor/selection activity, so without this the last
+    // note's preview lingers until you click in the new one.
+    setPreviewText(null);
+    setBlockPreview(null);
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTitleChange = useCallback(
@@ -325,6 +346,16 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       setActiveSectionTitle((prev) => (prev === section ? prev : section));
       const extracted = extractSectionTextAtOffset(title, content, offset);
       setActiveSectionText(extracted ? extracted.text : null);
+      // Live "current block" preview: show the enclosing structured block so a
+      // user editing a table/callout/code/math block sees it render live. Prose
+      // returns null → no panel. Selection preview (previewText) takes priority
+      // in the render below.
+      const block = extractStructuredBlockAtOffset(content, offset);
+      setBlockPreview((prev) => {
+        if (block === null) return prev === null ? prev : null;
+        if (prev && prev.kind === block.kind && prev.text === block.text) return prev;
+        return block;
+      });
     },
     []
   );
@@ -663,32 +694,53 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             </Button>
           )}
 
-          {/* Mode toggle */}
-          <div className="flex items-center gap-0.5 bg-[var(--surface-2)] rounded-md p-0.5">
-            <button
-              onClick={() => { setMode("write"); setTimeout(() => editorRef.current?.focus(), 50); }}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-                mode === "write"
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              <Pencil size={11} />
-              Write
-            </button>
-            <button
-              onClick={() => { flushPending(); setMode("read"); }}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-                mode === "read"
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              <Eye size={11} />
-              Read
-            </button>
+          {/* Mode toggle — Edit / Read. Live Preview is a separate toggle
+              (right) since Raw was just "Edit with Live Preview off". */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0.5 bg-[var(--surface-2)] rounded-md p-0.5">
+              <button
+                onClick={() => { setMode("edit"); setTimeout(() => editorRef.current?.focus(), 50); }}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                  mode === "edit"
+                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                <Pencil size={11} />
+                Edit
+              </button>
+              <button
+                onClick={() => { flushPending(); setMode("read"); }}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                  mode === "read"
+                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                <Eye size={11} />
+                Read
+              </button>
+            </div>
+            {/* Live Preview toggle — only meaningful while editing. On = inline
+                widgets + marker hiding; off = raw Markdown. */}
+            {mode === "edit" && (
+              <button
+                onClick={() => { setLivePreviewOn(!livePreviewOn); setTimeout(() => editorRef.current?.focus(), 50); }}
+                title={livePreviewOn ? "Live Preview on — click to edit raw Markdown" : "Live Preview off — click to render inline"}
+                aria-pressed={livePreviewOn}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border transition-colors",
+                  livePreviewOn
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                <Code size={11} />
+                Live Preview
+              </button>
+            )}
           </div>
         </div>
 
@@ -844,8 +896,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         />
       </div>
 
-      {/* ── AI + Format toolbar — write mode only ───────────────────────────── */}
-      {mode === "write" && (
+      {/* ── AI + Format toolbar — any editing mode (write or raw), not read ── */}
+      {mode !== "read" && (
         <AITextToolbar
           onAction={handleAIAction}
           onFormat={handleFormat}
@@ -915,12 +967,12 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             placeholder="Write here…"
             readOnly={isAiWriting}
             changedLines={changedLines}
-            livePreview={mode === "write"}
+            livePreview={mode === "edit" && livePreviewOn}
           />
         </div>
 
         {/* Wikilink autocomplete picker — rendered in a portal at fixed viewport coords */}
-        {wikilinkPicker && mode === "write" && (
+        {wikilinkPicker && mode !== "read" && (
           <WikilinkPicker
             notes={notes.filter((n) => n.id !== note.id)}
             projects={projects}
@@ -981,12 +1033,24 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
 
 
       {/* ── MD preview panel — docked to bottom of editor ───────────────────── */}
-      {previewText && (
-        <MDPreviewPanel
-          text={previewText}
-          onDismiss={() => setPreviewText(null)}
-        />
-      )}
+      {/* Selection preview wins; otherwise show the current structured block
+          (table/callout/code/math) live while editing. Not shown in Read mode. */}
+      {(() => {
+        if (mode === "read") return null;
+        if (previewText) {
+          return <MDPreviewPanel text={previewText} onDismiss={() => setPreviewText(null)} />;
+        }
+        if (blockPreview) {
+          return (
+            <MDPreviewPanel
+              text={blockPreview.text}
+              label={`${blockPreview.kind} preview`}
+              onDismiss={() => setBlockPreview(null)}
+            />
+          );
+        }
+        return null;
+      })()}
      </div>
    );
  }

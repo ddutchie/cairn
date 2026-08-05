@@ -222,6 +222,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
     // Compartment for the Live Preview extension so it can be toggled at
     // runtime (Live Preview ↔ raw) without rebuilding editor state.
     const livePreviewCompartment = useRef(new Compartment());
+    // The livePreviewEnabled value currently applied to the compartment. Seeded
+    // from the mount value below so the toggle effect can skip the redundant
+    // reconfigure (+ widget remount) on first render.
+    const appliedLivePreview = useRef(livePreviewEnabled);
 
     useImperativeHandle(ref, () => ({
       getSelection() {
@@ -396,15 +400,27 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
       });
     }, [readOnly]);
 
-    // Toggle Live Preview marker-hiding at runtime via its compartment.
+    // Toggle Live Preview at runtime via its compartment. Dispatch on a
+    // microtask, not synchronously in the effect: the dispatch rebuilds
+    // decorations and mounts React-backed block widgets, which is better done
+    // outside React's own commit phase than synchronously within it.
     useEffect(() => {
-      const view = viewRef.current;
-      if (!view) return;
-      view.dispatch({
-        effects: livePreviewCompartment.current.reconfigure(
-          livePreviewEnabled ? livePreview() : [],
-        ),
+      // Skip when the enabled state hasn't actually changed since what's applied
+      // — notably on mount, where the compartment was already initialized to
+      // this value (avoids a needless decoration rebuild + block-widget remount).
+      if (appliedLivePreview.current === livePreviewEnabled) return;
+      let cancelled = false;
+      queueMicrotask(() => {
+        const view = viewRef.current;
+        if (cancelled || !view) return;
+        view.dispatch({
+          effects: livePreviewCompartment.current.reconfigure(
+            livePreviewEnabled ? livePreview() : [],
+          ),
+        });
+        appliedLivePreview.current = livePreviewEnabled;
       });
+      return () => { cancelled = true; };
     }, [livePreviewEnabled]);
 
     // When the note ID changes (different note selected), replace the full doc

@@ -25,6 +25,13 @@ interface NoteMarkdownPreviewProps {
   className?: string;
   filePath?: string;
   projectRoot?: string;
+  /**
+   * Inline/embedded rendering (e.g. inside a callout body or a Live Preview
+   * block widget): drops the full-pane chrome (`px-6 py-5`, `h-full`,
+   * `overflow-y-auto`) so the content sits compactly in its host container the
+   * way it does in read mode. Default false = the standalone preview pane.
+   */
+  inline?: boolean;
 }
 
 interface MarkdownImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> {
@@ -153,7 +160,7 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
   );
 }
 
-function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: NoteMarkdownPreviewProps) {
+function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot, inline }: NoteMarkdownPreviewProps) {
   // Content-aware plugins: omit the math stack (remark-math + rehype-katex + the
   // two custom LaTeX passes ≈ 12ms on a large note) when the source has no `$`.
   // Keyed on math/highlight *presence* (booleans), not raw content, so the
@@ -178,14 +185,26 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: 
 
   if (!content.trim()) {
     return (
-      <div className="flex items-center justify-center h-full text-xs text-[var(--text-tertiary)] p-8">
+      <div
+        className={
+          inline
+            ? "text-xs text-[var(--text-tertiary)]"
+            : "flex items-center justify-center h-full text-xs text-[var(--text-tertiary)] p-8"
+        }
+      >
         Empty file
       </div>
     );
   }
 
   return (
-    <div className={`prose-cairn px-6 py-5 overflow-y-auto h-full ${className ?? ""}`}>
+    <div
+      className={`prose-cairn ${
+        inline
+          ? "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+          : "px-6 py-5 overflow-y-auto h-full"
+      } ${className ?? ""}`}
+    >
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
@@ -225,6 +244,26 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: 
           },
           code({ className, children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             return <InlineCode className={className}>{children}</InlineCode>;
+          },
+          input({ type, checked, ...props }: React.InputHTMLAttributes<HTMLInputElement> & ExtraProps) {
+            // GFM task-list checkboxes come through as bare <input type="checkbox">
+            // where `checked` is present only when checked (undefined otherwise).
+            // Rendering that directly makes React flip the input uncontrolled↔
+            // controlled when the previewed text changes (e.g. drag-selecting
+            // across checkboxes updates the preview), which warns. Render a
+            // STABLE controlled, read-only checkbox: `checked` is always a
+            // boolean and there's a no-op onChange. Non-checkbox inputs (rare in
+            // markdown) pass through unchanged.
+            if (type !== "checkbox") return <input type={type} checked={checked} {...props} />;
+            return (
+              <input
+                type="checkbox"
+                checked={checked === true}
+                readOnly
+                disabled
+                className="accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px] mr-1 cursor-default"
+              />
+            );
           },
           h1({ children }: React.HTMLAttributes<HTMLHeadingElement> & ExtraProps) { return <h1>{children}</h1>; },
           h2({ children }: React.HTMLAttributes<HTMLHeadingElement> & ExtraProps) { return <h2>{children}</h2>; },
