@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { livePreview, foldedCalloutFromCursor } from "@/lib/livePreview";
+import { livePreview, foldedBlockFromCursor } from "@/lib/livePreview";
 import { parseCalloutSource } from "@/lib/callout-widget";
+import { parseFencedCode } from "@/lib/code-block-widget";
 
 /**
  * Live Preview decoration tests. The main risk in mixing replace + mark + line
@@ -157,7 +158,7 @@ describe("livePreview decorations", () => {
 
   it("detects a folded callout the cursor would skip when moving down/up", () => {
     // A block widget is atomic, so CM's default ArrowDown skips the whole
-    // callout and it never unfolds. foldedCalloutFromCursor is the decision that
+    // callout and it never unfolds. foldedBlockFromCursor is the decision that
     // redirects the move into the callout's first line instead. Callouts sit
     // between blank lines (a blockquote needs a blank line to terminate), so the
     // adjacent line is the blank line directly above/below the widget.
@@ -169,11 +170,11 @@ describe("livePreview decorations", () => {
 
     // Cursor on the blank line directly above → ArrowDown enters the callout.
     view.dispatch({ selection: { anchor: view.state.doc.line(blankAbove).from } });
-    expect(foldedCalloutFromCursor(view.state, 1)?.lineStart).toBe(block);
+    expect(foldedBlockFromCursor(view.state, 1)?.lineStart).toBe(block);
 
     // Cursor on the blank line directly below → ArrowUp enters the callout.
     view.dispatch({ selection: { anchor: view.state.doc.line(blankBelow).from } });
-    expect(foldedCalloutFromCursor(view.state, -1)?.lineStart).toBe(block);
+    expect(foldedBlockFromCursor(view.state, -1)?.lineStart).toBe(block);
     view.destroy();
   });
 
@@ -181,14 +182,39 @@ describe("livePreview decorations", () => {
     const doc = "intro\n\n> [!note] Title\n> body\n\nafter";
     // Cursor inside the callout source → it's unfolded, so no redirect.
     const inside = mount(doc, doc.indexOf("Title"));
-    expect(foldedCalloutFromCursor(inside.state, 1)).toBeNull();
-    expect(foldedCalloutFromCursor(inside.state, -1)).toBeNull();
+    expect(foldedBlockFromCursor(inside.state, 1)).toBeNull();
+    expect(foldedBlockFromCursor(inside.state, -1)).toBeNull();
     inside.destroy();
 
     // A plain document with no callout adjacent to the cursor.
     const plain = mount("line one\nline two\nline three", 0);
-    expect(foldedCalloutFromCursor(plain.state, 1)).toBeNull();
+    expect(foldedBlockFromCursor(plain.state, 1)).toBeNull();
     plain.destroy();
+  });
+
+  it("renders a code-block widget when the cursor is outside the fence", () => {
+    const doc = "text\n\n```js\nconst x = 1;\n```\n\nafter";
+    const view = mount(doc, 0); // cursor on line 1, outside the fence
+    expect(view.contentDOM.querySelector(".cm-lp-codeblock")).toBeTruthy();
+    view.destroy();
+  });
+
+  it("shows raw source (no code widget) when the cursor is inside the fence", () => {
+    const doc = "text\n\n```js\nconst x = 1;\n```\n\nafter";
+    const view = mount(doc, doc.indexOf("const x")); // cursor inside the code
+    expect(view.contentDOM.querySelector(".cm-lp-codeblock")).toBeNull();
+    expect(view.contentDOM.textContent).toContain("const x = 1;");
+    view.destroy();
+  });
+
+  it("arrow-navigates into a folded code block from the adjacent line", () => {
+    const doc = "text\n\n```js\nconst x = 1;\n```\n\nafter";
+    const view = mount(doc, 0);
+    const fenceLine = view.state.doc.lineAt(doc.indexOf("```js")).number;
+    // Cursor on the blank line directly above the fence → ArrowDown enters it.
+    view.dispatch({ selection: { anchor: view.state.doc.line(fenceLine - 1).from } });
+    expect(foldedBlockFromCursor(view.state, 1)?.lineStart).toBe(fenceLine);
+    view.destroy();
   });
 });
 
@@ -210,5 +236,38 @@ describe("parseCalloutSource", () => {
 
   it("returns null for an ordinary blockquote", () => {
     expect(parseCalloutSource("> just a quote\n> more")).toBeNull();
+  });
+});
+
+describe("parseFencedCode", () => {
+  it("parses language and code from a closed fence", () => {
+    const data = parseFencedCode("```js\nconst x = 1;\nconst y = 2;\n```");
+    expect(data).not.toBeNull();
+    expect(data?.language).toBe("js");
+    expect(data?.code).toBe("const x = 1;\nconst y = 2;");
+  });
+
+  it("handles a fence with no language", () => {
+    expect(parseFencedCode("```\nplain\n```")).toEqual({ language: "", code: "plain" });
+  });
+
+  it("takes only the first info-string token as the language", () => {
+    expect(parseFencedCode("```ts title=foo\ncode\n```")?.language).toBe("ts");
+  });
+
+  it("supports ~~~ fences", () => {
+    expect(parseFencedCode("~~~python\nprint(1)\n~~~")).toEqual({ language: "python", code: "print(1)" });
+  });
+
+  it("renders an unclosed fence that already has body (block being typed)", () => {
+    expect(parseFencedCode("```js\nconst x = 1;")).toEqual({ language: "js", code: "const x = 1;" });
+  });
+
+  it("returns null for a bare opening fence with no body or close yet", () => {
+    expect(parseFencedCode("```js")).toBeNull();
+  });
+
+  it("returns null for non-fence input", () => {
+    expect(parseFencedCode("not a fence")).toBeNull();
   });
 });

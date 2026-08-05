@@ -1,19 +1,18 @@
 "use client";
 
 /**
- * CalloutWidget — a CodeMirror block widget that renders an Obsidian-style
+ * CalloutWidget — a Live Preview block widget that renders an Obsidian-style
  * callout (`> [!note] …`) inline in the editor, reusing the same <Callout>
- * React component the Read-mode preview uses.
+ * React component the Read-mode preview uses. Built on BlockPreviewWidget, which
+ * handles the mount/measure/teardown lifecycle common to all block widgets.
  *
- * This is the "click-to-edit" Tier 2 approach: the widget is a read-only
- * rendering. When the cursor enters the callout's source range the livePreview
- * extension skips the widget entirely and shows the raw `>` lines, so editing
- * happens on plain markdown. No edit-round-trip inside the widget is needed.
+ * Click-to-edit: cursor outside the callout → widget; cursor inside → raw `>`
+ * source (livePreview.ts skips the widget for the active block).
  */
 
-import { EditorView, WidgetType } from "@codemirror/view";
-import { createRoot, type Root } from "react-dom/client";
-import { flushSync } from "react-dom";
+import type { WidgetType } from "@codemirror/view";
+import type { ReactNode } from "react";
+import { BlockPreviewWidget } from "./block-preview-widget";
 import { Callout, parseCalloutDirective } from "@/components/notes/Callout";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 
@@ -41,10 +40,7 @@ export function parseCalloutSource(raw: string): CalloutData | null {
   return { ...directive, body };
 }
 
-export class CalloutWidget extends WidgetType {
-  private root: Root | null = null;
-  private resizeObserver: ResizeObserver | null = null;
-
+export class CalloutWidget extends BlockPreviewWidget {
   constructor(private readonly data: CalloutData) {
     super();
   }
@@ -61,70 +57,21 @@ export class CalloutWidget extends WidgetType {
     );
   }
 
-  toDOM(view: EditorView): HTMLElement {
-    const container = document.createElement("div");
-    container.className = "cm-lp-callout";
-    // Mount the React callout SYNCHRONOUSLY so CodeMirror's first height measure
-    // (which happens right after toDOM returns, and positions every line below)
-    // sees real content rather than a 0px shell.
-    this.root = createRoot(container);
-    flushSync(() => {
-      this.root?.render(
-        <Callout
-          type={this.data.type}
-          title={this.data.title}
-          collapsible={this.data.collapsible}
-          defaultOpen={this.data.defaultOpen}
-        >
-          {this.data.body ? <NoteMarkdownPreview content={this.data.body} /> : null}
-        </Callout>,
-      );
-    });
-    // flushSync commits the React tree, but the widget's height keeps changing
-    // AFTER that first measure: NoteMarkdownPreview resolves images/embeds in a
-    // useEffect, fonts finish loading, and the collapsible header toggles open/
-    // closed. Any of these shifts the height CM already committed, which is what
-    // desyncs clicks/cursor from the lines below. A ResizeObserver tells CM to
-    // re-measure on every size change, so the layout self-corrects once the
-    // content settles instead of being frozen at the (often wrong) first height.
-    let lastHeight = -1;
-    if (typeof ResizeObserver !== "undefined") {
-      this.resizeObserver = new ResizeObserver((entries) => {
-        const h = entries[0]?.contentRect.height ?? 0;
-        if (h === lastHeight) return; // ignore width-only / no-op notifications
-        lastHeight = h;
-        view.requestMeasure();
-      });
-      this.resizeObserver.observe(container);
-    }
-    return container;
+  protected extraClass(): string {
+    return "cm-lp-callout";
   }
 
-  // The rendered callout height differs from the source lines it replaces, so
-  // CM must always re-measure rather than assume the widget matches text.
-  get estimatedHeight(): number {
-    return -1;
-  }
-
-  destroy(): void {
-    // Stop observing before unmount so a teardown-time resize can't queue a
-    // measure against a destroyed widget.
-    this.resizeObserver?.disconnect();
-    this.resizeObserver = null;
-    // Unmount asynchronously — React forbids unmounting synchronously from
-    // within a render/commit cycle, which CM's DOM updates can be inside of.
-    const root = this.root;
-    this.root = null;
-    if (root) queueMicrotask(() => root.unmount());
-  }
-
-  // Let clicks fall through to CodeMirror so clicking the callout places the
-  // cursor into its source range (which then reveals the raw markdown for
-  // editing). The collapsible header's own React onClick still fires on the
-  // way through. Returning true here would swallow the click and make the
-  // callout un-selectable ("can't click in").
-  ignoreEvent(): boolean {
-    return false;
+  protected render(): ReactNode {
+    return (
+      <Callout
+        type={this.data.type}
+        title={this.data.title}
+        collapsible={this.data.collapsible}
+        defaultOpen={this.data.defaultOpen}
+      >
+        {this.data.body ? <NoteMarkdownPreview content={this.data.body} /> : null}
+      </Callout>
+    );
   }
 }
 
@@ -132,21 +79,3 @@ export class CalloutWidget extends WidgetType {
 export function makeCalloutWidget(data: CalloutData): WidgetType {
   return new CalloutWidget(data);
 }
-
-// Theme for the widget container. The <Callout> component brings its own
-// styling; this only manages block spacing so it sits like a paragraph.
-export const calloutWidgetTheme = EditorView.theme({
-  ".cm-lp-callout": {
-    margin: "0",
-    // CRITICAL for correct cursor/click mapping: <Callout> has `my-3` (top+
-    // bottom margins). Without a block formatting context those child margins
-    // COLLAPSE THROUGH this container, so its border-box height (what CM and the
-    // ResizeObserver measure) is ~24px shorter than the space it actually paints.
-    // CM then lays out the lines below at the short height while the browser
-    // paints the callout taller — so clicks/cursor land a line or two too low.
-    // `flow-root` contains the child margins inside the measured box, making the
-    // measured height match the painted height. (overflow:hidden would also work
-    // but risks clipping; flow-root is the intent-revealing choice.)
-    display: "flow-root",
-  },
-});

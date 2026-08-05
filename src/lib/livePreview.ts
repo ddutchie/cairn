@@ -25,15 +25,16 @@ import {
   keymap,
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
-import { makeCalloutWidget, parseCalloutSource, calloutWidgetTheme } from "./callout-widget";
+import { makeCalloutWidget, parseCalloutSource } from "./callout-widget";
+import { makeCodeBlockWidget, parseFencedCode } from "./code-block-widget";
+import { blockWidgetTheme } from "./block-preview-widget";
 
-// TEMPORARILY DISABLED — inline callout block widgets have a layout/cursor bug
-// (cursor drifts below the widget; clicking in is unreliable). The plumbing is
-// left intact behind this flag so it can be re-enabled once the block-widget
-// height/measurement issue is solved. See the Cairn "Notes Editor" board task.
-// When false: callout blockquotes render as ordinary blockquotes (Tier 1 border)
-// and the calloutField / widget are not added to the editor.
-const CALLOUTS_ENABLED = true;
+// Master kill-switch for Tier 2 inline block widgets (callouts + fenced code
+// blocks; tables/mermaid/math later). Block widgets are the finicky part
+// (height measurement, cursor enter/exit), so this stays as an escape hatch.
+// When false: callouts render as ordinary blockquotes (Tier 1 border) and code
+// fences stay raw — the block StateField/widgets/keymap are not added.
+const BLOCK_WIDGETS_ENABLED = true;
 
 // ── Widgets ────────────────────────────────────────────────────────────────
 
@@ -102,49 +103,70 @@ function activeLines(state: EditorState): Set<number> {
 // the ViewPlugin below. Both share `findCalloutBlocks` so the inline passes can
 // skip lines a widget covers.
 
-interface CalloutBlock {
+interface BlockRange {
   from: number;
   to: number;
   lineStart: number;
   lineEnd: number;
 }
 
-/** Find every callout blockquote in the document, with its char + line range. */
-function findCalloutBlocks(state: EditorState): (CalloutBlock & { raw: string })[] {
+/** A detected block-widget candidate: its range plus a factory for its widget. */
+interface BlockWidget extends BlockRange {
+  makeWidget: () => WidgetType;
+}
+
+/**
+ * Find every block that should render as an inline widget (callouts + fenced
+ * code blocks), each with its char/line range and a widget factory. Both kinds
+ * share the same StateField + click-to-edit machinery; adding a new block type
+ * (tables, mermaid, …) means adding another branch here.
+ */
+function findBlockWidgets(state: EditorState): BlockWidget[] {
   const { doc } = state;
-  const out: (CalloutBlock & { raw: string })[] = [];
+  const out: BlockWidget[] = [];
+  const push = (from: number, toRaw: number, raw: string, makeWidget: () => WidgetType) => {
+    const lineStart = doc.lineAt(from).number;
+    const lineEnd = doc.lineAt(toRaw).number;
+    void raw;
+    out.push({
+      from: doc.line(lineStart).from,
+      to: doc.line(lineEnd).to,
+      lineStart,
+      lineEnd,
+      makeWidget,
+    });
+  };
   syntaxTree(state).iterate({
     enter: (node) => {
-      if (node.name !== "Blockquote") return;
-      // Skip a blockquote nested inside another blockquote: a nested callout
-      // (`> [!note]` containing `> > [!tip]`) would otherwise emit overlapping
-      // block ranges, which throw when added to a Decoration.set(sorted) during
-      // measurement. Only the outermost blockquote becomes a callout widget.
-      if (node.node.parent?.name === "Blockquote") return;
-      const nodeTo = Math.min(node.to, doc.length);
-      const raw = doc.sliceString(node.from, nodeTo);
-      if (!parseCalloutSource(raw)) return;
-      const lineStart = doc.lineAt(node.from).number;
-      const lineEnd = doc.lineAt(nodeTo).number;
-      out.push({
-        from: doc.line(lineStart).from,
-        to: doc.line(lineEnd).to,
-        lineStart,
-        lineEnd,
-        raw,
-      });
+      if (node.name === "Blockquote") {
+        // Skip a blockquote nested inside another blockquote: a nested callout
+        // would emit overlapping block ranges, which throw when added to a
+        // Decoration.set(sorted). Only the outermost becomes a callout widget.
+        if (node.node.parent?.name === "Blockquote") return;
+        const nodeTo = Math.min(node.to, doc.length);
+        const raw = doc.sliceString(node.from, nodeTo);
+        const data = parseCalloutSource(raw);
+        if (!data) return;
+        push(node.from, nodeTo, raw, () => makeCalloutWidget(data));
+      } else if (node.name === "FencedCode") {
+        const nodeTo = Math.min(node.to, doc.length);
+        const raw = doc.sliceString(node.from, nodeTo);
+        const data = parseFencedCode(raw);
+        if (!data) return;
+        push(node.from, nodeTo, raw, () => makeCodeBlockWidget(data));
+      }
     },
   });
   return out;
 }
 
-/** Line numbers covered by a callout widget (cursor outside) — used by the
+/** Line numbers covered by a block widget (cursor outside) — used by the
  *  inline ViewPlugin to skip those lines. */
-function calloutWidgetLineSet(state: EditorState): Set<number> {
+function blockWidgetLineSet(state: EditorState): Set<number> {
   const set = new Set<number>();
-  if (!CALLOUTS_ENABLED) return set; // feature disabled → treat as ordinary blockquotes
+  if (!BLOCK_WIDGETS_ENABLED) return set; // feature disabled → treat blocks as plain
   const active = activeLines(state);
-  for (const block of findCalloutBlocks(state)) {
+  for (const block of findBlockWidgets(state)) {
     let cursorInside = false;
     for (let ln = block.lineStart; ln <= block.lineEnd; ln++) {
       if (active.has(ln)) { cursorInside = true; break; }
@@ -155,29 +177,28 @@ function calloutWidgetLineSet(state: EditorState): Set<number> {
   return set;
 }
 
-const calloutField = StateField.define<DecorationSet>({
+const blockWidgetField = StateField.define<DecorationSet>({
   create(state) {
-    return buildCalloutDecorations(state);
+    return buildBlockWidgetDecorations(state);
   },
   update(deco, tr) {
-    if (tr.docChanged || tr.selection) return buildCalloutDecorations(tr.state);
+    if (tr.docChanged || tr.selection) return buildBlockWidgetDecorations(tr.state);
     return deco.map(tr.changes);
   },
   provide: (f) => EditorView.decorations.from(f),
 });
 
-function buildCalloutDecorations(state: EditorState): DecorationSet {
+function buildBlockWidgetDecorations(state: EditorState): DecorationSet {
   const active = activeLines(state);
   const decos: Range<Decoration>[] = [];
-  for (const block of findCalloutBlocks(state)) {
+  for (const block of findBlockWidgets(state)) {
     let cursorInside = false;
     for (let ln = block.lineStart; ln <= block.lineEnd; ln++) {
       if (active.has(ln)) { cursorInside = true; break; }
     }
     if (cursorInside) continue; // show raw source for editing
-    const data = parseCalloutSource(block.raw)!;
     decos.push(
-      Decoration.replace({ widget: makeCalloutWidget(data), block: true }).range(block.from, block.to),
+      Decoration.replace({ widget: block.makeWidget(), block: true }).range(block.from, block.to),
     );
   }
   return Decoration.set(decos, true);
@@ -197,7 +218,7 @@ function buildDecorations(view: EditorView): DecorationSet {
   // Lines covered by a callout widget (from the StateField) — the inline passes
   // below skip these so we don't emit decorations that overlap the block
   // widget's replaced range.
-  const calloutWidgetLines = calloutWidgetLineSet(view.state);
+  const blockWidgetLines = blockWidgetLineSet(view.state);
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(view.state).iterate({
       from,
@@ -210,7 +231,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         const line = doc.lineAt(node.from).number;
         if (active.has(line)) return;
         // Skip marks inside a callout that's being widget-replaced.
-        if (calloutWidgetLines.has(line)) return;
+        if (blockWidgetLines.has(line)) return;
 
         if (name === "HeaderMark" || name === "QuoteMark") {
           // Hide the mark AND the single trailing space so the heading/quote
@@ -236,7 +257,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         const startLine = doc.lineAt(node.from).number;
         const endLine = doc.lineAt(Math.min(node.to, doc.length)).number;
         for (let ln = startLine; ln <= endLine; ln++) {
-          if (calloutWidgetLines.has(ln)) continue;
+          if (blockWidgetLines.has(ln)) continue;
           const line = doc.line(ln);
           otherDecos.push(blockquoteLine.range(line.from));
         }
@@ -273,7 +294,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         if (node.name !== "ListMark") return;
         const line = doc.lineAt(node.from).number;
         if (active.has(line)) return;
-        if (calloutWidgetLines.has(line)) return;
+        if (blockWidgetLines.has(line)) return;
         const text = doc.sliceString(node.from, node.to);
         if (text === "-" || text === "*" || text === "+") {
           replaceDecos.push(hideBulletMark.range(node.from, node.to));
@@ -283,7 +304,7 @@ function buildDecorations(view: EditorView): DecorationSet {
 
     // Highlight (`==text==`) and wikilinks (`[[Title]]`) — scanned via regex on
     // the visible text since neither is a distinct node in the base grammar.
-    scanInlinePatterns(view, from, to, active, calloutWidgetLines, replaceDecos, otherDecos);
+    scanInlinePatterns(view, from, to, active, blockWidgetLines, replaceDecos, otherDecos);
   }
 
   // RangeSet requires ascending, non-overlapping ranges sorted by `from`.
@@ -311,7 +332,7 @@ function scanInlinePatterns(
   from: number,
   to: number,
   active: Set<number>,
-  calloutWidgetLines: Set<number>,
+  blockWidgetLines: Set<number>,
   replaceDecos: Range<Decoration>[],
   otherDecos: Range<Decoration>[],
 ): void {
@@ -324,7 +345,7 @@ function scanInlinePatterns(
   while ((m = HIGHLIGHT_RE.exec(text)) !== null) {
     const start = from + m.index;
     const end = start + m[0].length;
-    if (calloutWidgetLines.has(doc.lineAt(start).number)) continue;
+    if (blockWidgetLines.has(doc.lineAt(start).number)) continue;
     // Always style the inner text; only hide the "==" markers off-active-line.
     const innerFrom = start + 2;
     const innerTo = end - 2;
@@ -340,7 +361,7 @@ function scanInlinePatterns(
   while ((m = WIKILINK_RE.exec(text)) !== null) {
     const start = from + m.index;
     const end = start + m[0].length;
-    if (calloutWidgetLines.has(doc.lineAt(start).number)) continue;
+    if (blockWidgetLines.has(doc.lineAt(start).number)) continue;
     const innerFrom = start + 2;
     const innerTo = end - 2;
     otherDecos.push(wikilinkMark.range(innerFrom, innerTo));
@@ -415,29 +436,29 @@ const livePreviewTheme = EditorView.theme({
 });
 
 /**
- * Vertical-cursor motion across a folded callout widget.
+ * Vertical-cursor motion across a folded block widget (callout or code block).
  *
  * A `block: true` replace decoration is one atomic unit, so CodeMirror's default
- * ArrowUp/ArrowDown jumps clean OVER the whole callout — the selection never
+ * ArrowUp/ArrowDown jumps clean OVER the whole widget — the selection never
  * lands on a line inside it, so the "cursor inside → show raw source" unfold
  * (driven by `activeLines`) never fires and the widget appears un-enterable.
  *
- * These handlers make a vertical move that would cross a folded callout instead
- * land the cursor at the callout's first line, which unfolds it for editing — so
+ * These handlers make a vertical move that would cross a folded widget instead
+ * land the cursor at the widget's first line, which unfolds it for editing — so
  * the widget behaves like the text it stands in for. Moving again from inside
- * the (now unfolded) callout advances normally, because it's no longer folded.
+ * the (now unfolded) block advances normally, because it's no longer folded.
  *
- * Only acts on a single collapsed cursor entering a FOLDED callout from the
+ * Only acts on a single collapsed cursor entering a FOLDED block from the
  * adjacent line; every other case (selections, cursor already inside, no
- * adjacent callout) falls through to CM's default handling by returning false.
+ * adjacent block) falls through to CM's default handling by returning false.
  */
-export function foldedCalloutFromCursor(state: EditorState, dir: 1 | -1): CalloutBlock | null {
+export function foldedBlockFromCursor(state: EditorState, dir: 1 | -1): BlockRange | null {
   const sel = state.selection.main;
   if (!sel.empty) return null;
   const curLine = state.doc.lineAt(sel.head).number;
   const active = activeLines(state);
-  for (const block of findCalloutBlocks(state)) {
-    // A callout the cursor is already inside is unfolded — let CM move normally.
+  for (const block of findBlockWidgets(state)) {
+    // A block the cursor is already inside is unfolded — let CM move normally.
     let inside = false;
     for (let ln = block.lineStart; ln <= block.lineEnd; ln++) {
       if (active.has(ln)) { inside = true; break; }
@@ -450,10 +471,10 @@ export function foldedCalloutFromCursor(state: EditorState, dir: 1 | -1): Callou
   return null;
 }
 
-function moveIntoCallout(view: EditorView, dir: 1 | -1): boolean {
-  const block = foldedCalloutFromCursor(view.state, dir);
+function moveIntoBlock(view: EditorView, dir: 1 | -1): boolean {
+  const block = foldedBlockFromCursor(view.state, dir);
   if (!block) return false;
-  // Land on the callout's first line so activeLines picks it up and it unfolds.
+  // Land on the block's first line so activeLines picks it up and it unfolds.
   const target = view.state.doc.line(block.lineStart).from;
   view.dispatch({
     selection: EditorSelection.cursor(target),
@@ -463,10 +484,10 @@ function moveIntoCallout(view: EditorView, dir: 1 | -1): boolean {
   return true;
 }
 
-const calloutCursorKeymap = Prec.high(
+const blockWidgetKeymap = Prec.high(
   keymap.of([
-    { key: "ArrowDown", run: (v) => moveIntoCallout(v, 1) },
-    { key: "ArrowUp", run: (v) => moveIntoCallout(v, -1) },
+    { key: "ArrowDown", run: (v) => moveIntoBlock(v, 1) },
+    { key: "ArrowUp", run: (v) => moveIntoBlock(v, -1) },
   ]),
 );
 
@@ -476,6 +497,6 @@ const calloutCursorKeymap = Prec.high(
  */
 export function livePreview() {
   const exts = [livePreviewPlugin, livePreviewTheme];
-  if (CALLOUTS_ENABLED) exts.unshift(calloutField, calloutWidgetTheme, calloutCursorKeymap);
+  if (BLOCK_WIDGETS_ENABLED) exts.unshift(blockWidgetField, blockWidgetTheme, blockWidgetKeymap);
   return exts;
 }
