@@ -55,6 +55,8 @@ export interface ChatStreamRequest {
     apiKey?: string;
     maxSteps?: number;
     temperature?: number;
+    /** Max output/completion tokens per reply (resolved from model + user setting). */
+    maxTokens?: number;
   };
   systemPrompt?: string;
   /** Attachments on the current user message (base64 data URLs; kind tells

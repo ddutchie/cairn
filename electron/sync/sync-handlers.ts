@@ -23,6 +23,7 @@ import {
   listRestorableNotes,
   restoreDeletedNote,
   repairNoteFile,
+  listPeerProtocols,
   type ConflictResolveDeps,
 } from "./desktop-sync";
 
@@ -129,6 +130,9 @@ export function registerSyncHandlers(
     "sync:activity",
     (((_e: never, args?: { limit?: number }) => wrap(() => listSyncActivity(ctx.db, args?.limit ?? 100))) as never),
   );
+
+  // Peers on an older (or newer) sync protocol than this build.
+  register("sync:peerProtocols", (() => wrap(() => listPeerProtocols(ctx.db))) as never);
 
   // Notes a peer deleted that can still be brought back.
   register(

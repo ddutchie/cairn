@@ -13,6 +13,7 @@
 
 import { EditorView, WidgetType } from "@codemirror/view";
 import { createRoot, type Root } from "react-dom/client";
+import { flushSync } from "react-dom";
 import { Callout, parseCalloutDirective } from "@/components/notes/Callout";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 
@@ -62,28 +63,40 @@ export class CalloutWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const container = document.createElement("div");
     container.className = "cm-lp-callout";
-    // Mount the React callout. NoteMarkdownPreview renders the body markdown so
-    // nested formatting (bold, links, lists) works inside the callout.
+    // Mount the React callout SYNCHRONOUSLY. This is the crux of the cursor-drift
+    // fix: CodeMirror measures the widget's height immediately after toDOM()
+    // returns, and it uses that height to position every line below it. If React
+    // painted asynchronously (a plain createRoot().render()), the container would
+    // still be ~0px tall at measure time, so CM placed the cursor several lines
+    // off — and no amount of requestMeasure() after the fact fully recovered,
+    // because the first (wrong) layout had already mapped click coordinates.
+    // flushSync forces the render to commit before we return, so the DOM has its
+    // real height the first time CM measures. `estimatedHeight = -1` keeps CM
+    // from ever assuming the widget matches the replaced source lines.
     this.root = createRoot(container);
-    this.root.render(
-      <Callout
-        type={this.data.type}
-        title={this.data.title}
-        collapsible={this.data.collapsible}
-        defaultOpen={this.data.defaultOpen}
-      >
-        {this.data.body ? <NoteMarkdownPreview content={this.data.body} /> : null}
-      </Callout>,
-    );
-    // React renders asynchronously, so the container has ~0 height when CM first
-    // measures it. That desyncs the layout below the widget (the cursor lands
-    // several lines off). Ask CM to re-measure once React has painted. A double
-    // rAF ensures the commit + layout have flushed before we remeasure.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (this.root) view.requestMeasure();
-      });
+    flushSync(() => {
+      this.root?.render(
+        <Callout
+          type={this.data.type}
+          title={this.data.title}
+          collapsible={this.data.collapsible}
+          defaultOpen={this.data.defaultOpen}
+        >
+          {this.data.body ? <NoteMarkdownPreview content={this.data.body} /> : null}
+        </Callout>,
+      );
     });
+    // The collapsible header toggles height at runtime (open/closed), which
+    // changes the widget's size AFTER the initial synchronous measure. The
+    // toggle is a React onClick inside <Callout>; listen on the container (fires
+    // for the same click) and re-measure once React has committed the new
+    // height — a double rAF waits out that commit. This is only for the toggle
+    // transition; initial layout is already correct from the flushSync above.
+    if (this.data.collapsible) {
+      container.addEventListener("click", () => {
+        requestAnimationFrame(() => requestAnimationFrame(() => view.requestMeasure()));
+      });
+    }
     return container;
   }
 

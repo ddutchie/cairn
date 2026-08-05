@@ -139,6 +139,26 @@ describe("transport oplog shape validation", () => {
     expect(got.map((e) => e.entity_id).sort()).toEqual(["causal", "legacy", "tombstoned"]);
   });
 
+  it("accepts a valid protocol version and rejects a malformed one", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    const file = path.join(dir, "oplog-dev_b.ndjson");
+    fs.writeFileSync(
+      file,
+      [
+        JSON.stringify({ ...entry, entity_id: "versioned", v: 1 }),
+        JSON.stringify({ ...entry, entity_id: "no-version" }), // absent = pre-versioning, allowed
+        JSON.stringify({ ...entry, entity_id: "bad-version-type", v: "1" }),
+        JSON.stringify({ ...entry, entity_id: "bad-version-frac", v: 1.5 }),
+        JSON.stringify({ ...entry, entity_id: "bad-version-zero", v: 0 }),
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    const got = readPeerOplogs(dir, "dev_a");
+    expect(got.map((e) => e.entity_id).sort()).toEqual(["no-version", "versioned"]);
+  });
+
   it("rejects put payloads that are not row records (null or array)", () => {
     const dir = tmpDir();
     dirs.push(dir);

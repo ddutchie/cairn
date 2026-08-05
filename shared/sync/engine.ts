@@ -81,7 +81,8 @@ export type RestoreRefusal =
   | "conflict-copy" // resolve via the conflict UI, not restore
   | "orphaned" // its project/workspace is gone, so reviving would diverge
   | "self-deleted" // this device authored the delete
-  | "no-delete-record"; // tombstoned, but sync holds no delete metadata for it
+  | "no-delete-record" // tombstoned, but sync holds no delete metadata for it
+  | "preserved-as-copy"; // a live conflict copy already holds this content — resolve that instead
 
 export type RestoreResult =
   | { restored: true; hlc: string }
@@ -107,6 +108,33 @@ const LOGGED_OUTCOMES: ReadonlySet<SyncOutcome> = new Set<SyncOutcome>([
 /** How far back a peer delete is still offered for recovery. */
 const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * Oplog wire-protocol version this build writes and understands.
+ *
+ * The format was unversioned through v2.6.1; that implicit shape is **protocol
+ * 1**, and a missing `v` is read as 1 so legacy entries need no rewrite. Bump
+ * this only for a wire change that a peer must understand to stay convergent
+ * (a new causal field, a changed reconciliation rule). Additive optional fields
+ * that older peers can safely ignore (as `observed`/`tombstone` were) do NOT
+ * need a bump.
+ *
+ * The point of stamping it now, while only two historical shapes exist, is that
+ * a peer can be *told* it is behind instead of us inferring capability from
+ * which optional fields happen to be present.
+ */
+export const SYNC_PROTOCOL_VERSION = 1;
+
+/** sync_state key prefix for the highest protocol version seen from a peer. */
+const PEER_PROTOCOL_PREFIX = "peer_protocol:";
+
+/** A peer whose observed protocol version differs from this build's. */
+export interface PeerProtocol {
+  deviceId: string;
+  version: number;
+  /** True when the peer is writing an OLDER protocol than this build enforces. */
+  behind: boolean;
+}
+
 export interface OplogEntry {
   hlc: string;
   origin: string;
@@ -118,6 +146,11 @@ export interface OplogEntry {
   observed?: ObservationFrontier;
   /** Durable delete history carried by a compacted live put for late peers. */
   tombstone?: { hlc: string; origin: string };
+  /**
+   * Wire-protocol version (SYNC_PROTOCOL_VERSION). Optional on the type so a
+   * pre-versioning entry deserialises cleanly; absence is treated as 1.
+   */
+  v?: number;
 }
 
 interface RowBase {
@@ -742,7 +775,11 @@ export class SyncEngine {
       const tombstone = r.op === "put" && base?.delete_hlc && base.delete_origin
         ? { hlc: base.delete_hlc, origin: base.delete_origin }
         : undefined;
-      return { ...r, payload: r.payload ? (JSON.parse(r.payload) as Record<string, unknown>) : null, observed, tombstone };
+      // Stamp the wire-protocol version at the export boundary. It is not stored
+      // per-row (it describes the format, not the edit), so every exported entry
+      // carries this build's version uniformly. A peer reads it to know whether
+      // we are ahead of or behind them.
+      return { ...r, payload: r.payload ? (JSON.parse(r.payload) as Record<string, unknown>) : null, observed, tombstone, v: SYNC_PROTOCOL_VERSION };
     });
   }
 
@@ -776,6 +813,13 @@ export class SyncEngine {
     const run = this.db.transaction(() => {
       this.setSuppress(true); // reconcile writes must not be re-captured as local ops
       for (const entry of sorted) {
+        // Note the peer's wire-protocol version (absent = pre-versioning = 1) so
+        // the UI can flag a device that is behind this build. Kept outside the
+        // syncable-entity guard below: even an op for a dropped entity still
+        // tells us how old that peer's writer is.
+        if (entry.origin && entry.origin !== this.deviceId) {
+          this.notePeerProtocol(entry.origin, entry.v ?? 1);
+        }
         // Ignore ops for entities we no longer sync (e.g. chat_threads /
         // chat_messages, removed in v28). A peer still running an old build — or
         // an oplog file it published before upgrading — can carry these; without
@@ -1119,6 +1163,44 @@ export class SyncEngine {
     if (!exists) this.appendOplog(entry);
   }
 
+  // ── protocol versioning ───────────────────────────────────────────────
+
+  /**
+   * Record the highest wire-protocol version seen from a peer. Monotonic — a
+   * peer that upgrades and writes a newer version is never downgraded in our
+   * record, so a single old file lingering in the folder can't mask that the
+   * device has since updated.
+   */
+  private notePeerProtocol(deviceId: string, version: number): void {
+    if (!Number.isFinite(version) || version < 1) return;
+    const key = `${PEER_PROTOCOL_PREFIX}${deviceId}`;
+    const current = Number(this.getState(key) ?? 0);
+    if (version > current) this.setState(key, String(version));
+  }
+
+  /**
+   * Peers whose observed protocol version differs from this build's, so the UI
+   * can prompt the user to update a device. `behind: true` is the important
+   * case — that peer may not honour deletes, so the fleet is only as strong as
+   * it. A peer AHEAD of us is reported too (informational: this build is old).
+   */
+  listPeerProtocols(): PeerProtocol[] {
+    const rows = this.db
+      .prepare(`SELECT key, value FROM sync_state WHERE key LIKE ? ESCAPE '\\'`)
+      .all(`${PEER_PROTOCOL_PREFIX.replace(/[\\%_]/g, "\\$&")}%`) as Array<{ key: string; value: string }>;
+    const out: PeerProtocol[] = [];
+    for (const r of rows) {
+      const version = Number(r.value);
+      if (!Number.isFinite(version) || version === SYNC_PROTOCOL_VERSION) continue;
+      out.push({
+        deviceId: r.key.slice(PEER_PROTOCOL_PREFIX.length),
+        version,
+        behind: version < SYNC_PROTOCOL_VERSION,
+      });
+    }
+    return out;
+  }
+
   // ── Phase 4: visibility & recovery ────────────────────────────────────
 
   private recordActivity(entry: OplogEntry, outcome: SyncOutcome, conflictCopyId: string | null): void {
@@ -1269,6 +1351,16 @@ export class SyncEngine {
     // orphan (the parent may have been hard-deleted on the peer).
     if (!this.parentsLive(entity, row)) return { ok: false, reason: "orphaned" };
 
+    // When this device lost a delete/edit race, the delete-won path both
+    // tombstoned this row (keeping its body) AND cloned that body into a live
+    // conflict copy. Offering restore then produces two identical notes, and
+    // the user has to notice and delete one. If such a copy already preserves
+    // this content, send them to conflict resolution instead — the edit is not
+    // at risk, so this is a redundant second door, not a lost note.
+    if (this.hasLivePreservingCopy(entity, id, row)) {
+      return { ok: false, reason: "preserved-as-copy" };
+    }
+
     return { ok: true, row, base };
   }
 
@@ -1295,10 +1387,34 @@ export class SyncEngine {
   }
 
   /**
-   * FK metadata for a table, cached per engine instance. `listRestorable` calls
-   * `parentsLive` once per candidate row, and the schema cannot change under a
-   * live engine, so re-reading the PRAGMA every time is pure overhead.
+   * True when a live conflict copy already holds this tombstoned row's content.
+   *
+   * The delete-won path clones the losing body into `<id>_conflict_<origin>_<ts>`
+   * and then tombstones the original with its body intact, so the two match. In
+   * that case the edit is safe in the copy and restore would just duplicate it —
+   * we suppress the restore offer and point at conflict resolution instead.
+   *
+   * Only checks entities with a body column (notes); everything else has no
+   * conflict-copy mechanism, so the answer is trivially false.
    */
+  private hasLivePreservingCopy(entity: SyncableTable, id: string, row: Record<string, unknown>): boolean {
+    const bodyCol = BODY_COLUMN[entity];
+    if (!bodyCol) return false;
+    const body = row[bodyCol];
+    // Copies are `<id>_conflict_<origin>_<ts>`. Escape LIKE wildcards in the id
+    // (note ids are nanoid, but `_` is a LIKE metachar), then confirm each hit
+    // really parses back to THIS original — the deviceId can itself contain the
+    // separator, so a prefix match alone is not proof.
+    const likePrefix = `${id}_conflict_`.replace(/[\\%_]/g, "\\$&");
+    const candidates = this.db
+      .prepare(`SELECT id, "${bodyCol}" AS body FROM ${entity} WHERE deleted_at IS NULL AND id LIKE ? ESCAPE '\\'`)
+      .all(`${likePrefix}%`) as Array<{ id: string; body: unknown }>;
+    for (const c of candidates) {
+      if (inspectConflict(c.id).originalId !== id) continue;
+      if (String(c.body ?? "") === String(body ?? "")) return true;
+    }
+    return false;
+  }
   private foreignKeys(entity: SyncableTable): Array<{ table: string; from: string; to: string | null }> {
     const cached = this.fkCache.get(entity);
     if (cached) return cached;

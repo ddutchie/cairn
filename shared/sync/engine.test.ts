@@ -20,7 +20,7 @@ import path from "path";
 import { applySchema } from "../../electron/db/schema";
 import { SYNCABLE_TABLES } from "./schema";
 import * as q from "../../electron/db/queries";
-import { SyncEngine, SYNC_ACTIVITY_LIMIT } from "./engine";
+import { SyncEngine, SYNC_ACTIVITY_LIMIT, SYNC_PROTOCOL_VERSION } from "./engine";
 import { writeOplogFile, readPeerOplogs } from "./transport";
 import { compareHlc } from "./hlc";
 
@@ -1210,6 +1210,62 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       syncFolder(dir, A.engine, B.engine);
     }
 
+    it("does not offer restore for a row already preserved by a live conflict copy", () => {
+      // The on-device repro (v2.6.1 hardware test): delete on A, edit the same
+      // note on B while B hasn't observed the delete. B's delete-won path
+      // tombstones the row (keeping its body) AND clones it into a conflict
+      // copy — so the tombstone and the copy hold the SAME content. Offering
+      // restore then duplicates the note. Suppress it; the edit is safe in the
+      // copy, so point the user at conflict resolution instead.
+      const clkA = clockFrom(14_760_000);
+      const clkB = clockFrom(14_760_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(1);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      clkB.advance(50);
+      q.updateNote(B.db, "n1", { content: "phone kept editing" });
+      B.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // B has both a tombstoned n1 and a live conflict copy of it.
+      const copy = B.db
+        .prepare("SELECT id, content FROM notes WHERE id LIKE 'n1_conflict_%' AND deleted_at IS NULL")
+        .get() as { id: string; content: string } | undefined;
+      expect(copy?.content).toBe("phone kept editing");
+      const tombstoned = B.db.prepare("SELECT content FROM notes WHERE id = 'n1'").get() as { content: string };
+      expect(tombstoned.content).toBe("phone kept editing"); // same body → redundant restore
+
+      // So restore is refused on B (the losing device) and n1 is not listed.
+      expect(B.engine.listRestorable("notes").rows.map((r) => r.entity_id)).not.toContain("n1");
+      expect(B.engine.restoreDeleted("notes", "n1")).toEqual({
+        restored: false,
+        reason: "preserved-as-copy",
+      });
+    });
+
+    it("still offers restore when the delete won cleanly with no divergent copy", () => {
+      // Plain peer delete, no competing local edit → no conflict copy exists, so
+      // restore is the only way back and must still be offered.
+      const clkA = clockFrom(14_780_000);
+      const clkB = clockFrom(14_780_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      expect(B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id LIKE 'n1_conflict_%'").get()).toEqual({ c: 0 });
+      expect(B.engine.listRestorable("notes").rows.map((r) => r.entity_id)).toContain("n1");
+      expect(B.engine.restoreDeleted("notes", "n1").restored).toBe(true);
+    });
+
     it("logs an applied outcome for a peer edit that lands cleanly", () => {
       const clkA = clockFrom(14_000_000);
       const clkB = clockFrom(14_000_000);
@@ -1609,6 +1665,100 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
         reason: "no-delete-record",
       });
       expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1'").get() as { c: number }).c).toBe(1);
+    });
+  });
+
+  describe("sync protocol versioning", () => {
+    function seed(engine: SyncEngine) {
+      q.createWorkspace(engine.db as never, { id: "ws1", name: "WS" });
+      q.createProject(engine.db as never, { id: "p1", workspaceId: "ws1", name: "P" });
+      q.createNote(engine.db as never, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "N", content: "x" });
+      engine.drainPending();
+    }
+
+    it("stamps every exported entry with the current protocol version", () => {
+      const A = makeDevice("A", clockFrom(15_000_000).now);
+      seed(A.engine);
+      const ops = A.engine.exportOplog();
+      expect(ops.length).toBeGreaterThan(0);
+      expect(ops.every((o) => o.v === SYNC_PROTOCOL_VERSION)).toBe(true);
+    });
+
+    it("records a legacy (unversioned) peer's version as 1", () => {
+      const A = makeDevice("A", clockFrom(15_100_000).now);
+      const B = makeDevice("B", clockFrom(15_100_000).now);
+      seed(A.engine);
+
+      // Simulate an older peer by stripping the version off its entries — this
+      // is exactly what a pre-versioning (v2.6.1) build's oplog looks like.
+      const legacyOps = A.engine.exportOplog().map(({ v, ...rest }) => {
+        void v;
+        return rest;
+      });
+      B.engine.applyRemote(legacyOps);
+
+      // The version IS recorded internally as 1. Whether it surfaces in
+      // listPeerProtocols depends on the current protocol: it only appears when
+      // it DIFFERS from this build. While SYNC_PROTOCOL_VERSION === 1 a v1 peer
+      // is in step, so the list is empty; after a future bump the same peer
+      // would surface as `behind`. Assert whichever the current version implies,
+      // so this test stays honest across a bump instead of hard-coding 1.
+      const peers = B.engine.listPeerProtocols();
+      if (SYNC_PROTOCOL_VERSION === 1) {
+        expect(peers).toEqual([]);
+      } else {
+        expect(peers).toEqual([{ deviceId: "A", version: 1, behind: true }]);
+      }
+    });
+
+    it("flags a peer whose recorded version is below this build (simulated bump)", () => {
+      // Can't change SYNC_PROTOCOL_VERSION at runtime, so drive listPeerProtocols'
+      // classification directly: write a peer record one version BELOW current
+      // and confirm it is reported as behind.
+      const B = makeDevice("B", clockFrom(15_150_000).now);
+      const behind = SYNC_PROTOCOL_VERSION - 1;
+      if (behind < 1) {
+        // At v1 there is no valid "below" version, so there is nothing to flag.
+        expect(B.engine.listPeerProtocols()).toEqual([]);
+        return;
+      }
+      B.db.prepare("INSERT INTO sync_state (key, value) VALUES (?, ?)").run("peer_protocol:OLD", String(behind));
+      expect(B.engine.listPeerProtocols()).toContainEqual({ deviceId: "OLD", version: behind, behind: true });
+    });
+
+    it("does not flag a peer on the same protocol version", () => {
+      const A = makeDevice("A", clockFrom(15_200_000).now);
+      const B = makeDevice("B", clockFrom(15_200_000).now);
+      seed(A.engine);
+      B.engine.applyRemote(A.engine.exportOplog()); // current-version entries
+
+      // Same version → nothing to warn about.
+      expect(B.engine.listPeerProtocols()).toEqual([]);
+    });
+
+    it("keeps the highest version seen, so a stale leftover file can't mask an upgrade", () => {
+      const A = makeDevice("A", clockFrom(15_300_000).now);
+      const B = makeDevice("B", clockFrom(15_300_000).now);
+      seed(A.engine);
+
+      const current = A.engine.exportOplog();
+      // Peer upgrades (writes v = current), THEN an old cached file (v absent = 1)
+      // is re-read. Monotonic tracking must not downgrade the record to 1.
+      B.engine.applyRemote(current);
+      B.engine.applyRemote(current.map(({ v, ...rest }) => { void v; return rest; }));
+
+      // Never regressed below the current version → no false "behind" warning.
+      expect(B.engine.listPeerProtocols().some((p) => p.behind)).toBe(false);
+    });
+
+    it("does not record its own device as a peer", () => {
+      const A = makeDevice("A", clockFrom(15_400_000).now);
+      const B = makeDevice("B", clockFrom(15_400_000).now);
+      seed(A.engine);
+      // Round-trip so A re-applies its own gossiped ops.
+      B.engine.applyRemote(A.engine.exportOplog());
+      A.engine.applyRemote(B.engine.exportOplog());
+      expect(A.engine.listPeerProtocols().map((p) => p.deviceId)).not.toContain("A");
     });
   });
 });

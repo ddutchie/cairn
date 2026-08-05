@@ -29,7 +29,7 @@ import {
   prewarmModelCatalog,
   subscribeModelCatalog,
 } from "@/lib/models-dev";
-import { supportsImageInput } from "../../../../shared/models/model-catalog";
+import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
 import { rasterizePdfToImages } from "@/lib/pdf-rasterize";
 
@@ -462,9 +462,14 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
               });
             });
           } else {
+            // Skip assistant turns with no content and no tool calls — a
+            // thinking model that stopped mid-reasoning leaves an empty turn
+            // (its reasoning is stripped before re-send), and replaying it
+            // trips the provider's "content or tool_calls must be set" 400.
+            if (!m.content?.trim()) return;
             history.push({
               role: "assistant",
-              content: m.content || null,
+              content: m.content,
             });
           }
         } else if (m.role === "system") {
@@ -489,6 +494,13 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         apiKey:      aiConfig.apiKey      || undefined,
         maxSteps:    aiConfig.maxSteps    ?? 30,
         temperature: aiConfig.temperature ?? 0.3,
+        // Max output tokens: Auto (default) sends nothing so the model finishes
+        // naturally — capping only ever truncates a long reasoning+answer and
+        // can leave "thinking" models with empty content (a 400 next turn). A
+        // manual value is a deliberate user cost/latency ceiling.
+        maxTokens: resolveMaxOutputTokens(
+          aiConfig.maxOutputAuto === false ? aiConfig.maxOutputTokens : undefined,
+        ),
       },
       systemPrompt,
       images: attachmentsToSend?.map((a) => ({ name: a.name, dataUrl: a.dataUrl, kind: a.kind })),

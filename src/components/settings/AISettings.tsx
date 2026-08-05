@@ -5,7 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
 import { Cpu, Globe, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { contextLimitForModel } from "@/lib/models-dev";
+import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
 import { MCPServerSettings } from "./MCPSettings";
 import { LlamaServerConsole } from "./LlamaServerConsole";
@@ -61,6 +61,24 @@ export function AISettings() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, provider, contextAuto]);
+
+  // Max output tokens. Auto (default) sends NO cap so the model finishes
+  // naturally — capping only ever truncates a long reasoning+answer. A manual
+  // value is a deliberate cost/latency ceiling. We surface the model's
+  // advertised limit.output (when known) as guidance next to the field.
+  const maxOutputAuto = aiConfig.maxOutputAuto ?? true;
+  const [advertisedMaxOutput, setAdvertisedMaxOutput] = useState<number | null>(null);
+  useEffect(() => {
+    if (provider === "localllm") return;
+    let cancelled = false;
+    const id = (model ?? "").trim();
+    if (!id) { setAdvertisedMaxOutput(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
+    modelInfoForModel(id).then((info) => {
+      if (cancelled) return;
+      setAdvertisedMaxOutput(info?.maxOutput ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [model, provider]);
 
   // Shared Max-steps control — rendered after the provider-specific block for
   // both providers (passed into the Llama console so its position is unchanged).
@@ -204,6 +222,36 @@ export function AISettings() {
                   contextLimit: detectedContext ?? aiConfig.contextLimit ?? 128000,
                 })
               }
+            />
+
+            {/* Max output tokens — Auto (default) sends no cap so the model
+                finishes naturally; a manual value is a deliberate ceiling.
+                Capping is what broke "thinking" models (empty reply → 400). */}
+            <StepperSettingsRow
+              label="Max output tokens"
+              description={
+                maxOutputAuto
+                  ? advertisedMaxOutput
+                    ? `Auto: no limit — the model finishes on its own (it supports up to ${advertisedMaxOutput.toLocaleString()} output tokens, per models.dev). Recommended, especially for reasoning models. Set a value only to cap cost.`
+                    : "Auto: no limit — the model finishes on its own. Recommended, especially for reasoning models, which need room to think before answering. Set a value only to cap cost per reply."
+                  : advertisedMaxOutput
+                    ? `Manual cap on a single reply. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. "${model}" supports up to ${advertisedMaxOutput.toLocaleString()} tokens (models.dev). Tap Auto to remove the cap.`
+                    : "Manual cap on a single reply's length. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. Tap Auto to remove the cap."
+              }
+              icon="gauge"
+              value={aiConfig.maxOutputTokens ?? 8192}
+              onChange={(v) => updateAIConfig({ maxOutputTokens: v, maxOutputAuto: false })}
+              presets={[4096, 8192, 16384, 32768, 65536]}
+              min={256}
+              max={advertisedMaxOutput ?? 384000}
+              step={256}
+              inputWidth="w-28"
+              formatPreset={(n) => (n >= 1000 ? `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k` : String(n))}
+              autoState={maxOutputAuto ? "detected" : "idle"}
+              autoActive={maxOutputAuto}
+              autoSuppressesValue
+              suppressedPlaceholder="No limit"
+              onAuto={() => updateAIConfig({ maxOutputAuto: true })}
             />
 
             {/* Subagents — dispatch → research/write architecture. Cloud only

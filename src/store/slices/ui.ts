@@ -251,6 +251,16 @@ export interface AIConfig {
    * value (custom input or preset). Defaults to true.
    */
   contextAuto?: boolean;
+  /**
+   * Max output (completion) tokens to request per reply. When `maxOutputAuto`
+   * is true this is ignored and the value is resolved from the model's
+   * models.dev `limit.output` (bounded). A manual value lets power users pin a
+   * ceiling — important for "thinking" models, whose reasoning counts against
+   * this budget, so too small a value yields an empty reply. Defaults to Auto.
+   */
+  maxOutputTokens?: number;
+  /** When true, max output tokens auto-resolves from the catalog. Defaults to true. */
+  maxOutputAuto?: boolean;
   /** When false, all in-app AI features are hidden/disabled. Defaults to true. */
   aiEnabled: boolean;
   /**
@@ -290,6 +300,15 @@ export interface AgentConfig {
    * value (custom input or preset). Defaults to true.
    */
   contextAuto?: boolean;
+  /**
+   * Max output tokens per turn. When `maxOutputAuto` is true (default) this is
+   * ignored and no cap is sent, so the model finishes naturally — capping only
+   * ever truncates a long reasoning+answer and can stall "thinking" models. A
+   * manual value is a deliberate cost/latency ceiling.
+   */
+  maxOutputTokens?: number;
+  /** When true, no max-output cap is sent. Defaults to true. */
+  maxOutputAuto?: boolean;
   /** Automatically approve tool execution without prompt. */
   autoApprove: boolean;
   /**

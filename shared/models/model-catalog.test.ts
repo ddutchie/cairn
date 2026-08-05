@@ -18,6 +18,8 @@ import {
   providerLogoUrl,
   providerLogoUrlFor,
   supportsImageInput,
+  resolveMaxOutputTokens,
+  positiveTokenLimit,
 } from "./model-catalog";
 
 describe("parseModelCatalog", () => {
@@ -41,6 +43,7 @@ describe("parseModelCatalog", () => {
     });
     expect(map["gpt-5"]).toEqual({
       context: 1000000,
+      maxOutput: 128000,
       input: 1.25,
       output: 10,
       modes: ["text", "image", "pdf"],
@@ -49,6 +52,7 @@ describe("parseModelCatalog", () => {
     });
     expect(map["claude-4"]).toEqual({
       context: 1000000,
+      maxOutput: null,
       input: null,
       output: null,
       modes: [],
@@ -63,6 +67,7 @@ describe("parseModelCatalog", () => {
     });
     expect(map["deepseek-v4-flash"]).toEqual({
       context: null,
+      maxOutput: null,
       input: null,
       output: null,
       modes: [],
@@ -74,6 +79,35 @@ describe("parseModelCatalog", () => {
   it("returns an empty map for junk input", () => {
     expect(parseModelCatalog(null)).toEqual({});
     expect(parseModelCatalog("nope")).toEqual({});
+  });
+
+  it("coerces a zero/negative limit.output to null (models.dev has real output:0 entries)", () => {
+    const map = parseModelCatalog({
+      p: {
+        models: {
+          zero: { limit: { context: 8000, output: 0 } },
+          neg: { limit: { context: 8000, output: -1 } },
+          ok: { limit: { context: 8000, output: 4096 } },
+        },
+      },
+    });
+    expect(map["zero"].maxOutput).toBeNull();
+    expect(map["neg"].maxOutput).toBeNull();
+    expect(map["ok"].maxOutput).toBe(4096);
+  });
+});
+
+describe("positiveTokenLimit", () => {
+  it("accepts positive integers, floors fractions, rejects the rest", () => {
+    expect(positiveTokenLimit(4096)).toBe(4096);
+    expect(positiveTokenLimit(4096.9)).toBe(4096);
+    expect(positiveTokenLimit(1)).toBe(1);
+    expect(positiveTokenLimit(0)).toBeNull();
+    expect(positiveTokenLimit(0.5)).toBeNull();
+    expect(positiveTokenLimit(-10)).toBeNull();
+    expect(positiveTokenLimit(Number.NaN)).toBeNull();
+    expect(positiveTokenLimit("4096")).toBeNull();
+    expect(positiveTokenLimit(null)).toBeNull();
   });
 });
 
@@ -94,10 +128,44 @@ describe("supportsImageInput", () => {
   });
 });
 
+describe("resolveMaxOutputTokens", () => {
+  it("omits (returns undefined) by default so the model finishes naturally", () => {
+    // The correct default: send no cap → provider runs to finish_reason:"stop"
+    // with full reasoning + answer. A cap only ever truncates the tail case.
+    expect(resolveMaxOutputTokens()).toBeUndefined();
+    expect(resolveMaxOutputTokens(undefined)).toBeUndefined();
+    expect(resolveMaxOutputTokens(null)).toBeUndefined();
+  });
+
+  it("sends a user override >= 1 verbatim (deliberate cost/latency cap), floored", () => {
+    expect(resolveMaxOutputTokens(5000)).toBe(5000);
+    expect(resolveMaxOutputTokens(200.9)).toBe(200); // floored
+    expect(resolveMaxOutputTokens(1)).toBe(1);
+    expect(resolveMaxOutputTokens(384000)).toBe(384000);
+  });
+
+  it("ignores non-positive / non-finite overrides and omits the field", () => {
+    expect(resolveMaxOutputTokens(0)).toBeUndefined();
+    expect(resolveMaxOutputTokens(-5)).toBeUndefined();
+    expect(resolveMaxOutputTokens(Number.NaN)).toBeUndefined();
+  });
+
+  it("omits rather than sending max_tokens:0 for a fractional override in (0,1)", () => {
+    // Regression: `> 0` then Math.floor turned 0.1 / 0.999 into 0 — a broken cap.
+    expect(resolveMaxOutputTokens(0.1)).toBeUndefined();
+    expect(resolveMaxOutputTokens(0.999)).toBeUndefined();
+  });
+});
+
 describe("normalizeModelInfo", () => {
   it("passes well-formed entries through unchanged", () => {
-    const info = { context: 1000, input: 1, output: 2, modes: ["text"], toolCall: true, provider: "x" };
+    const info = { context: 1000, maxOutput: 8000, input: 1, output: 2, modes: ["text"], toolCall: true, provider: "x" };
     expect(normalizeModelInfo(info as never)).toEqual(info);
+  });
+
+  it("defaults maxOutput to null when a legacy cache entry lacks it", () => {
+    const legacy = { context: 1000, input: 1, output: 2, modes: ["text"], toolCall: true, provider: "x" };
+    expect(normalizeModelInfo(legacy as never)?.maxOutput).toBeNull();
   });
 
   it("migrates the legacy pre-`modes` image boolean", () => {

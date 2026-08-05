@@ -20,7 +20,7 @@
 
 import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
-import { buildApiUrl, type OpenAIMessage } from "./llm";
+import { buildApiUrl, type OpenAIMessage, isSendableMessage } from "./llm";
 import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
 import { parseToolArgs } from "./parse-tool-args";
@@ -319,7 +319,7 @@ async function runSubagent(
   // explicit nudge to write the findings. This is the standard "force final
   // answer" pattern and rescues most empty-output cases on small models.
   if (metrics.toolCalls > 0 || messages.some((m) => m.role === "tool")) {
-    const forced = await forceFinalAnswer(cfg, messages, metrics, addCost, signal);
+    const forced = await forceFinalAnswer(cfg, messages, metrics, addCost, signal, req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined);
     if (forced.trim()) {
       if (childId) events?.onSubagentToken?.({ childId, delta: forced.trim() });
       return forced.trim();
@@ -340,6 +340,7 @@ async function forceFinalAnswer(
   metrics: SubagentMetrics,
   addCost?: (cost: unknown) => void,
   signal?: AbortSignal,
+  maxTokens?: number,
 ): Promise<string> {
   const nudged: OpenAIMessage[] = [
     ...messages,
@@ -364,7 +365,7 @@ async function forceFinalAnswer(
         model: cfg.model,
         messages: nudged,
         tool_choice: "none",
-        max_tokens: 4096,
+        ...(maxTokens ? { max_tokens: maxTokens } : {}),
         temperature: 0.2,
         stream: false,
       }),
@@ -416,6 +417,8 @@ export async function runDispatchLoop(
   const argMutator = opts?.argMutator;
   const events = opts?.events;
   const signal = opts?.signal;
+  // Undefined/0 → omit max_tokens (let the model finish naturally).
+  const maxTokens = req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined;
   let subSeq = 0;
   const date = new Date().toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -430,7 +433,11 @@ export async function runDispatchLoop(
 
   const messages: OpenAIMessage[] = [
     { role: "system", content: DISPATCH_SYSTEM_PROMPT(date) },
-    ...(req.history ?? []).map((m) => {
+    ...(req.history ?? [])
+      // Drop assistant turns with neither content nor tool_calls (a stalled
+      // "thinking" turn) — replaying one 400s the whole request.
+      .filter(isSendableMessage)
+      .map((m) => {
       const out: OpenAIMessage = { role: m.role, content: m.content };
       if (m.tool_calls) out.tool_calls = m.tool_calls;
       if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
@@ -468,7 +475,7 @@ export async function runDispatchLoop(
           messages,
           tools: DISPATCH_TOOLS,
           tool_choice: "auto",
-          max_tokens: 4096,
+          ...(maxTokens ? { max_tokens: maxTokens } : {}),
           temperature,
           stream: false,
           stream_options: undefined,
@@ -534,7 +541,7 @@ export async function runDispatchLoop(
       if (!finalContent && metrics.subagentRuns > 0) {
         // Dispatcher-side forced answer: its cost isn't surfaced (subagent
         // rings carry their own), so no cost accumulator is passed.
-        finalContent = (await forceFinalAnswer(cfg, messages, metrics, undefined, signal)).trim();
+        finalContent = (await forceFinalAnswer(cfg, messages, metrics, undefined, signal, maxTokens)).trim();
       }
       return { content: finalContent, reasoning: finalReasoning, metrics };
     }

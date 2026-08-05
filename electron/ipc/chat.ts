@@ -11,7 +11,7 @@ import type { BrowserWindow } from "electron";
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { broadcastToChat } from "../chat-popout";
 import type Database from "better-sqlite3";
-import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "../lib/llm";
+import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown, isSendableMessage } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { getExternalToolDefs } from "../lib/external-tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
@@ -154,13 +154,19 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
 
     const messages: OpenAIMessage[] = [
       { role: "system", content: buildSystemPrompt(req) },
-      ...(req.history ?? []).map((m) => {
-        const out: OpenAIMessage = { role: m.role, content: m.content };
-        if (m.tool_calls) out.tool_calls = m.tool_calls;
-        if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
-        if (m.name) out.name = m.name;
-        return out;
-      }),
+      ...(req.history ?? [])
+        // Drop assistant turns that carry neither content nor tool_calls — a
+        // thinking model that timed out or stopped mid-reasoning leaves such a
+        // turn behind, and replaying it makes the provider reject the whole
+        // request with "content or tool_calls must be set" (400).
+        .filter(isSendableMessage)
+        .map((m) => {
+          const out: OpenAIMessage = { role: m.role, content: m.content };
+          if (m.tool_calls) out.tool_calls = m.tool_calls;
+          if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
+          if (m.name) out.name = m.name;
+          return out;
+        }),
       userMessage,
     ];
 

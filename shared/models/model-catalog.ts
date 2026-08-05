@@ -14,9 +14,12 @@
  */
 
 /** Per-model info extracted from the models.dev catalog. */
-export interface ModelInfo {
-  /** Context window in tokens (limit.context). */
+export interface ModelInfo {  /** Context window in tokens (limit.context). */
   context: number | null;
+  /** Max output/completion tokens the model can emit in one reply (limit.output).
+   *  Shown as guidance in AI/Agent settings (the ceiling a manual "Max output
+   *  tokens" cap can use). null when unknown. */
+  maxOutput: number | null;
   /** USD per 1M input tokens (cost.input). */
   input: number | null;
   /** USD per 1M output tokens (cost.output). */
@@ -27,6 +30,17 @@ export interface ModelInfo {
   toolCall: boolean | null;
   /** models.dev provider slug that owns the catalog entry (drives the logo). */
   provider: string | null;
+}
+
+/**
+ * A token *limit* is only meaningful when it's a positive integer. models.dev
+ * has real entries with `limit.output: 0` (~180 at time of writing); a 0 or
+ * negative cap is unusable (it would drive a broken `max={0}` on the settings
+ * stepper), so coerce zero/negative/non-finite to null. Fractions are floored.
+ */
+export function positiveTokenLimit(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 1) return null;
+  return Math.floor(v);
 }
 
 /** Provider logo URL served by models.dev. */
@@ -273,6 +287,7 @@ export function normalizeModelInfo(info: ModelInfo | null | undefined): ModelInf
       : [];
   return {
     context: typeof info.context === "number" ? info.context : null,
+    maxOutput: positiveTokenLimit(info.maxOutput),
     input: typeof info.input === "number" ? info.input : null,
     output: typeof info.output === "number" ? info.output : null,
     modes,
@@ -293,7 +308,7 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
     if (!models || typeof models !== "object") continue;
     for (const [id, model] of Object.entries(models as Record<string, unknown>)) {
       const m = model as {
-        limit?: { context?: unknown };
+        limit?: { context?: unknown; output?: unknown };
         cost?: { input?: unknown; output?: unknown };
         modalities?: { input?: unknown };
         tool_call?: unknown;
@@ -305,6 +320,7 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
         : [];
       map[id] = {
         context: readNum(m.limit?.context),
+        maxOutput: positiveTokenLimit(m.limit?.output),
         input: readNum(m.cost?.input),
         output: readNum(m.cost?.output),
         modes: inModes,
@@ -419,4 +435,39 @@ export function formatModelCost(input: number | null, output: number | null): st
     return `${n < 0 ? "-" : ""}$${s}`;
   };
   return `${fmt(i)}/${fmt(o)}`;
+}
+
+/**
+ * Default max output tokens used only as a floor when a user's manual value is
+ * missing/invalid but they've turned Auto off. Comfortably above a "thinking"
+ * model's reasoning budget. NOT used in Auto mode (Auto omits the field).
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
+
+/**
+ * Resolve the `max_tokens` to send for a chat request, or `undefined` to OMIT
+ * the field entirely.
+ *
+ * The correct default is to send NOTHING: given no cap, providers run the model
+ * to its natural `finish_reason:"stop"` — emitting full reasoning AND a complete
+ * answer, typically using far fewer tokens than any cap we'd pick. A fixed cap
+ * only ever truncates the tail case: a "thinking" model can spend the whole
+ * budget on reasoning and stop with empty content (`finish_reason:"length"`),
+ * which then trips a "content or tool_calls must be set" 400 on the next
+ * message. (That regression is what the old hardcoded 4096 caused.)
+ *
+ * So:
+ *  - `userOverride` (>= 1) → send it, floored. A user's explicit cap is a
+ *    deliberate cost/latency ceiling; honour it.
+ *  - otherwise (Auto, or a fractional/zero/negative value) → return `undefined`:
+ *    omit `max_tokens` and let the model finish naturally, bounded only by the
+ *    provider's own server-side limit.
+ */
+export function resolveMaxOutputTokens(userOverride?: number | null): number | undefined {
+  // Require >= 1 before flooring: a fractional cap in (0,1) would floor to 0 and
+  // send `max_tokens: 0` (a broken cap), which is worse than omitting the field.
+  if (typeof userOverride === "number" && Number.isFinite(userOverride) && userOverride >= 1) {
+    return Math.floor(userOverride);
+  }
+  return undefined;
 }

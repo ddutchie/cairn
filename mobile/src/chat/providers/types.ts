@@ -53,6 +53,21 @@ export interface UIMessage {
   parts: UIPart[];
 }
 
+/**
+ * True when an assistant turn has something the provider will accept — real
+ * text or at least one tool call. A "thinking" model that stops mid-reasoning
+ * leaves a turn with neither (reasoning isn't a text part); replaying it trips
+ * the OpenAI-compatible "content or tool_calls must be set" 400 on the next
+ * message. Non-assistant roles are always sendable (the provider only rejects
+ * assistant turns for the missing-payload reason).
+ */
+export function assistantTurnIsSendable(role: RorkRole, parts: UIPart[]): boolean {
+  if (role !== "assistant") return true;
+  const hasText = parts.some((p) => p.type === "text" && (p as TextPart).text.trim().length > 0);
+  const hasTool = parts.some((p) => p.type !== "text" && p.type !== "file");
+  return hasText || hasTool;
+}
+
 /** A tool the model may call. `jsonSchema` is a JSON Schema object for the args. */
 export interface AiTool {
   description: string;

@@ -11,7 +11,7 @@ import { useCairnStore } from "@/store";
 import { ContextRing } from "./ContextRing";
 import type { PiAgentMessage, PiSubagentMessage } from "@/types";
 import { humanizeTool } from "@/lib/humanize-tool";
-import { approvalPreview, riskForTool } from "@/lib/tool-risk";
+import { approvalPreview, riskForTool, approvalGrantScope, approvalScopeLabel } from "@/lib/tool-risk";
 import { ConnectorToolCard, type ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 
 export type AgentConnectorMeta = ConnectorMeta;
@@ -64,7 +64,8 @@ function ApprovalCard({ tc, sessionId }: { tc: ToolChipProps["tc"]; sessionId: s
   const risk = riskForTool(tc.name);
   const humanized = humanizeTool(tc.name, tc.args);
   const preview = approvalPreview(tc.name, tc.args);
-  const scope = risk === "EXTERNAL" ? "leaves this Mac via a connected service" : risk === "EXEC" ? "runs on this Mac" : "stays on this Mac";
+  const scope = approvalScopeLabel(tc.name);
+  const grant = approvalGrantScope(tc.name);
 
   return (
     <div data-testid="approval-card" className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning,#f59e0b)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning,#f59e0b)_6%,var(--surface))] px-3 py-2.5">
@@ -81,8 +82,8 @@ function ApprovalCard({ tc, sessionId }: { tc: ToolChipProps["tc"]; sessionId: s
       {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
       <div className="mt-2 flex items-center justify-end gap-1.5">
         <button data-testid="approval-deny" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors">Deny</button>
-        {risk === "EXEC" && tc.name === "bash" && <button data-testid="approval-allow-command" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this command</button>}
-        {risk !== "READ" && risk !== "EXEC" && <button data-testid="approval-allow-session" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "session")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this tool</button>}
+        {grant === "command" && <button data-testid="approval-allow-command" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this command</button>}
+        {grant === "session" && <button data-testid="approval-allow-session" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "session")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this tool</button>}
         <button data-testid="approval-allow-once" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded transition-opacity">Allow once</button>
       </div>
     </div>

@@ -8,7 +8,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { id, cn } from "@/lib/utils";
-import { contextLimitForModel } from "@/lib/models-dev";
+import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
@@ -446,6 +446,22 @@ export function AgentSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelAgent, contextAutoAgent]);
 
+  // Max output tokens — Auto (default) sends no cap so the model finishes
+  // naturally; a manual value is a deliberate ceiling. Same rationale as the
+  // AI Chat setting: capping stalls "thinking" models mid-reasoning.
+  const maxOutputAutoAgent = agentConfig.maxOutputAuto ?? true;
+  const [advertisedMaxOutputAgent, setAdvertisedMaxOutputAgent] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const mid = (modelAgent ?? "").trim();
+    if (!mid) { setAdvertisedMaxOutputAgent(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
+    modelInfoForModel(mid).then((info) => {
+      if (cancelled) return;
+      setAdvertisedMaxOutputAgent(info?.maxOutput ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [modelAgent]);
+
   async function handleSaveAgent(agent: Omit<CodingAgent, "createdAt" | "updatedAt">) {
     await saveAgent(agent);
     setAdding(false);
@@ -539,6 +555,36 @@ export function AgentSettings() {
               contextLimit: detectedContextAgent ?? contextLimitAgent ?? 128000,
             })
           }
+        />
+
+        {/* Max output tokens — Auto (default) sends no cap so the model finishes
+            naturally; a manual value is a deliberate ceiling. Capping stalls
+            reasoning models mid-thought. */}
+        <StepperSettingsRow
+          label="Max output tokens"
+          description={
+            maxOutputAutoAgent
+              ? advertisedMaxOutputAgent
+                ? `Auto: no limit — the agent's model finishes on its own (up to ${advertisedMaxOutputAgent.toLocaleString()} tokens, per models.dev). Recommended, especially for reasoning models. Set a value only to cap cost.`
+                : "Auto: no limit — the agent's model finishes on its own. Recommended, especially for reasoning models, which need room to think before acting. Set a value only to cap cost per turn."
+              : advertisedMaxOutputAgent
+                ? `Manual cap per turn. Reasoning models count their thinking against this, so too low a value can stall them before they act. "${modelAgent}" supports up to ${advertisedMaxOutputAgent.toLocaleString()} tokens (models.dev). Tap Auto to remove the cap.`
+                : "Manual cap on output tokens per turn. Reasoning models count their thinking against this, so too low a value can stall them. Tap Auto to remove the cap."
+          }
+          icon="gauge"
+          value={agentConfig.maxOutputTokens ?? 8192}
+          onChange={(v) => updateAgent({ maxOutputTokens: v, maxOutputAuto: false })}
+          presets={[4096, 8192, 16384, 32768, 65536]}
+          min={256}
+          max={advertisedMaxOutputAgent ?? 384000}
+          step={256}
+          inputWidth="w-28"
+          formatPreset={(n) => (n >= 1000 ? `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k` : String(n))}
+          autoState={maxOutputAutoAgent ? "detected" : "idle"}
+          autoActive={maxOutputAutoAgent}
+          autoSuppressesValue
+          suppressedPlaceholder="No limit"
+          onAuto={() => updateAgent({ maxOutputAuto: true })}
         />
 
         {/* Auto-approve */}

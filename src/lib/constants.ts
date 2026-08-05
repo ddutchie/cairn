@@ -101,6 +101,8 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   temperature:  0.3,
   contextLimit: 128000,
   contextAuto:  true,
+  maxOutputTokens: 8192,
+  maxOutputAuto: true,
   aiEnabled:    true,
   subagentsEnabled: false,
 };
@@ -114,6 +116,8 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   temperature:  0.3,
   contextLimit: 128000,
   contextAuto:  true,
+  maxOutputTokens: 8192,
+  maxOutputAuto: true,
   autoApprove:  true,
 };
 

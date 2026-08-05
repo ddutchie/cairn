@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalPreview, riskForTool } from "./tool-risk";
+import { approvalPreview, riskForTool, approvalGrantScope, approvalScopeLabel } from "./tool-risk";
 
 describe("tool approval presentation rules", () => {
   it("classifies local, executable, and external tools", () => {
@@ -19,5 +19,41 @@ describe("tool approval presentation rules", () => {
   it("handles missing bash and write preview values", () => {
     expect(approvalPreview("bash", {})).toBe("");
     expect(approvalPreview("write", {})).toBe("");
+  });
+
+  // approval-grant-scope: which standing-grant affordance the approval card
+  // offers per tool. This is the security-relevant part — a wrong mapping would
+  // let a consequential action be pre-authorised too broadly.
+  it("scopes a bash grant to the exact command", () => {
+    expect(approvalGrantScope("bash")).toBe("command");
+  });
+
+  it("scopes local-write and external grants to the session", () => {
+    expect(approvalGrantScope("write")).toBe("session");
+    expect(approvalGrantScope("update_task")).toBe("session");
+    expect(approvalGrantScope("mcp__linear__create_issue")).toBe("session");
+    expect(approvalGrantScope("svc__slack__post")).toBe("session");
+  });
+
+  it("offers no standing grant for reads or non-bash exec", () => {
+    expect(approvalGrantScope("read")).toBe("none");
+    expect(approvalGrantScope("grep")).toBe("none");
+    // spawn_subagent is EXEC but not bash → no command-scoped grant, and EXEC is
+    // excluded from session grants, so one-off only.
+    expect(approvalGrantScope("spawn_subagent")).toBe("none");
+  });
+
+  it("states where each action reaches, distinguishing local from external", () => {
+    expect(approvalScopeLabel("read")).toContain("stays on this device");
+    expect(approvalScopeLabel("write")).toContain("stays on this device");
+    expect(approvalScopeLabel("bash")).toContain("runs on this device");
+    expect(approvalScopeLabel("mcp__tavily__search")).toContain("leaves this device");
+  });
+
+  it("uses platform-neutral wording (no hardcoded 'Mac')", () => {
+    // Cairn is a cross-platform desktop app — the approval copy must not assume macOS.
+    for (const tool of ["read", "write", "bash", "mcp__x__y"]) {
+      expect(approvalScopeLabel(tool)).not.toMatch(/\bMac\b/);
+    }
   });
 });

@@ -95,6 +95,26 @@ export type OpenAIMessage = {
   }>;
 };
 
+/**
+ * An assistant turn is unusable to the provider when it carries neither
+ * `content` nor `tool_calls` — OpenAI-compatible APIs reject the whole request
+ * with `Invalid assistant message: content or tool_calls must be set` (400).
+ *
+ * This happens with "thinking"/reasoning models: if the model times out or
+ * stops streaming mid-reasoning, the turn's only payload was reasoning (which
+ * is deliberately stripped before re-send, since replaying reasoning also
+ * 400s). Replaying that stripped, empty turn on the next message poisons the
+ * request. Drop such turns before sending.
+ */
+export function isSendableMessage(m: {
+  role: string;
+  content: string | null;
+  tool_calls?: unknown[];
+}): boolean {
+  if (m.role !== "assistant") return true;
+  return Boolean(m.content?.trim()) || Boolean(m.tool_calls?.length);
+}
+
 export async function callLLM(config: LLMConfig, systemPrompt: string, userPrompt: string): Promise<string> {
   if (config.provider === "localllm") {
     const { callLocalLLMChat } = await import("./local-llm");

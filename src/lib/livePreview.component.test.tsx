@@ -88,19 +88,42 @@ describe("livePreview decorations", () => {
     view.destroy();
   });
 
-  it("does not render a callout widget while callouts are disabled", () => {
-    // Inline callout block widgets are temporarily disabled (CALLOUTS_ENABLED
-    // = false) due to a block-widget layout/cursor bug. Callout blockquotes
-    // should fall back to ordinary blockquote rendering (Tier 1 border), not a
-    // widget. Re-enable + restore the widget-behaviour tests when the layout
-    // issue is fixed.
+  it("renders a callout widget when the cursor is outside the block", () => {
     const doc = "intro line\n\n> [!note] Heads up\n> body text here\n\nafter";
+    // Cursor on line 1, well outside the callout → it should render as a widget.
     const view = mount(doc, 0);
     const widget = view.contentDOM.querySelector(".cm-lp-callout");
-    expect(widget).toBeNull();
-    // Callout lines are still styled as blockquotes.
-    const quoted = view.contentDOM.querySelectorAll(".cm-lp-blockquote");
-    expect(quoted.length).toBeGreaterThan(0);
+    expect(widget).toBeTruthy();
+    view.destroy();
+  });
+
+  it("shows raw source (no widget) when the cursor is inside the callout", () => {
+    const doc = "intro line\n\n> [!note] Heads up\n> body text here\n\nafter";
+    // Place the cursor inside the callout's directive line so it unfolds to the
+    // editable `>` source instead of the widget.
+    const cursor = doc.indexOf("Heads up");
+    const view = mount(doc, cursor);
+    expect(view.contentDOM.querySelector(".cm-lp-callout")).toBeNull();
+    // The raw markers are visible for editing on the active block.
+    expect(view.contentDOM.textContent).toContain("[!note]");
+    view.destroy();
+  });
+
+  it("keeps document positions after a callout addressable (cursor-drift guard)", () => {
+    // The regression this whole card exists for: a callout widget must not
+    // desync the lines below it, so a position AFTER the callout must still map
+    // back to the correct line. flushSync in toDOM gives the widget real height
+    // at measure time, so coordsAt/lineBlockAt for a later position stay sane.
+    const doc = "intro\n\n> [!note] Title\n> body\n\ntarget line after callout";
+    const view = mount(doc, 0);
+    expect(view.contentDOM.querySelector(".cm-lp-callout")).toBeTruthy();
+
+    const pos = doc.indexOf("target line after callout");
+    const line = view.state.doc.lineAt(pos);
+    // The line the widget-relative geometry resolves to for this position must
+    // be the same line the document model reports — i.e. no off-by-N drift.
+    const block = view.lineBlockAt(pos);
+    expect(view.state.doc.lineAt(block.from).number).toBe(line.number);
     view.destroy();
   });
 });

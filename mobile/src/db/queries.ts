@@ -1306,6 +1306,11 @@ export function listSyncActivity(limit = 50): SyncActivityRow[] {
   return getEngine().listSyncActivity(limit);
 }
 
+/** Peers on an older sync protocol than this build — too old to honour deletes. */
+export function stalePeerCount(): number {
+  return getEngine().listPeerProtocols().filter((p) => p.behind).length;
+}
+
 /**
  * Resolve a conflict by keeping the CONFLICT-COPY's body: overwrite the
  * original note with the copy's content, then delete the copy. If the original

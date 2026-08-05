@@ -230,6 +230,30 @@ log stays a desktop diagnostic — on mobile the recovery path is what carries t
 
 ## 6. Risks & notes
 
+### Wire-protocol versioning (✅ shipped v2.6.2)
+
+The oplog now carries a `v` field (`SYNC_PROTOCOL_VERSION`, currently **1**), stamped at the
+export boundary (`exportOplog`), validated by the shared guard, and read by `applyRemote` into a
+per-peer record in `sync_state` (`peer_protocol:<deviceId>`, monotonic). `listPeerProtocols()`
+reports any peer whose version differs; a peer that is **behind** may not honour deletes, and both
+desktop (Settings → Sync) and mobile (Sync screen) surface a "device needs updating" hint.
+
+**Skew contract:**
+- A missing `v` means a pre-2.6.2 build → treated as protocol **1**. All 2.6.1 and earlier entries
+  read cleanly; no rewrite.
+- **Bump `SYNC_PROTOCOL_VERSION` only** for a wire change a peer must understand to stay convergent
+  (a new causal field, a changed reconciliation rule). Additive optional fields an older peer can
+  safely ignore — as `observed`/`tombstone` were — do **not** need a bump.
+- **Degradation when a peer predates a version:** delete-wins is only enforced on devices at that
+  version, so a mixed fleet is as weak as its oldest member — a behind peer can re-broadcast a note
+  deleted elsewhere. The new hint makes this *visible and actionable* (update the old device) rather
+  than silent, which was the whole point of doing this while only two shapes existed in the wild.
+- **Downgrade:** an older build ignores `v` (and `sync_row_base` / `sync_oplog.observed`), reverting
+  to wall-clock reconciliation. Structurally safe (mobile's migration loop no-ops at a higher
+  `user_version`; extra columns ignored) but delete-wins is not enforced on that device.
+
+---
+
 - ~~Changing desktop to soft-delete means **every desktop live query must exclude
   tombstones**~~ — **resolved in Phase 2**: the list/search reads already filtered
   `deleted_at IS NULL`; only the by-id reads needed the guard. No ghost rows.
