@@ -122,8 +122,23 @@ interface BlockWidget extends BlockRange {
  * incl. mermaid, GFM tables, and $$ math), each with its char/line range and a
  * widget factory. All kinds share the same StateField + click-to-edit
  * machinery; adding a new block type means adding another branch here.
+ *
+ * Result is cached per EditorState (WeakMap): within one update cycle the
+ * StateField (decorations), the ViewPlugin (blockWidgetLineSet), and the arrow
+ * keymap all ask for the same computation, which otherwise means 2–3 full
+ * syntax-tree scans per keystroke. EditorStates are immutable and short-lived,
+ * so instance-keyed caching is safe and self-evicting.
  */
+const blockWidgetCache = new WeakMap<EditorState, BlockWidget[]>();
 function findBlockWidgets(state: EditorState): BlockWidget[] {
+  const cached = blockWidgetCache.get(state);
+  if (cached) return cached;
+  const result = computeBlockWidgets(state);
+  blockWidgetCache.set(state, result);
+  return result;
+}
+
+function computeBlockWidgets(state: EditorState): BlockWidget[] {
   const { doc } = state;
   const out: BlockWidget[] = [];
   // Push a block spanning whole lines. `blockLineCount`, when given, clamps the
@@ -530,8 +545,11 @@ export function foldedBlockFromCursor(state: EditorState, dir: 1 | -1): BlockRan
 function moveIntoBlock(view: EditorView, dir: 1 | -1): boolean {
   const block = foldedBlockFromCursor(view.state, dir);
   if (!block) return false;
-  // Land on the block's first line so activeLines picks it up and it unfolds.
-  const target = view.state.doc.line(block.lineStart).from;
+  // Land on the block's NEAR edge for natural vertical motion: moving down
+  // enters at its first line, moving up enters at its last line. Either way the
+  // cursor is inside the block's range, so activeLines unfolds it.
+  const targetLine = dir === -1 ? block.lineEnd : block.lineStart;
+  const target = view.state.doc.line(targetLine).from;
   view.dispatch({
     selection: EditorSelection.cursor(target),
     scrollIntoView: true,

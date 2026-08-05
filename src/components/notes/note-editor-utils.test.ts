@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset } from "./note-editor-utils";
+import { toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset, migrateEditorMode, initialLivePreviewOn } from "./note-editor-utils";
 
 describe("toggleCheckboxInSource — list-item checkboxes", () => {
   it("toggles an unchecked list item to checked", () => {
@@ -233,5 +233,35 @@ describe("extractStructuredBlockAtOffset — live current-block preview", () => 
 
   it("returns null for empty content", () => {
     expect(extractStructuredBlockAtOffset("", 0)).toBeNull();
+  });
+});
+
+describe("editor mode migration (Write/Raw/Read → Edit/Read + Live Preview)", () => {
+  it("migrates legacy modes to edit/read", () => {
+    expect(migrateEditorMode("write")).toBe("edit");
+    expect(migrateEditorMode("raw")).toBe("edit");
+    expect(migrateEditorMode("read")).toBe("read");
+    expect(migrateEditorMode("edit")).toBe("edit");
+    expect(migrateEditorMode(null)).toBe("edit");
+    expect(migrateEditorMode(undefined)).toBe("edit");
+  });
+
+  it("initial Live Preview honours an explicit stored preference over everything", () => {
+    expect(initialLivePreviewOn(true, "raw")).toBe(true);
+    expect(initialLivePreviewOn(false, "write")).toBe(false);
+  });
+
+  it("with no stored preference, a legacy 'raw' mode starts Live Preview OFF", () => {
+    // Regression: raw meant "edit with Live Preview off"; migrating must not
+    // silently turn Live Preview back on for those users.
+    expect(initialLivePreviewOn(null, "raw")).toBe(false);
+    expect(initialLivePreviewOn(undefined, "raw")).toBe(false);
+  });
+
+  it("with no stored preference and a non-raw legacy mode, defaults ON", () => {
+    expect(initialLivePreviewOn(null, "write")).toBe(true);
+    expect(initialLivePreviewOn(null, "read")).toBe(true);
+    expect(initialLivePreviewOn(null, null)).toBe(true);
+    expect(initialLivePreviewOn(undefined, undefined)).toBe(true);
   });
 });

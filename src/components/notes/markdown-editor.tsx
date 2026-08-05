@@ -222,6 +222,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
     // Compartment for the Live Preview extension so it can be toggled at
     // runtime (Live Preview ↔ raw) without rebuilding editor state.
     const livePreviewCompartment = useRef(new Compartment());
+    // The livePreviewEnabled value currently applied to the compartment. Seeded
+    // from the mount value below so the toggle effect can skip the redundant
+    // reconfigure (+ widget remount) on first render.
+    const appliedLivePreview = useRef(livePreviewEnabled);
 
     useImperativeHandle(ref, () => ({
       getSelection() {
@@ -402,6 +406,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
     // toDOM uses flushSync — illegal while React is still flushing this effect.
     // Deferring runs the reconfigure in CM's own context where flushSync is ok.
     useEffect(() => {
+      // Skip when the enabled state hasn't actually changed since what's applied
+      // — notably on mount, where the compartment was already initialized to
+      // this value (avoids a needless decoration rebuild + block-widget remount).
+      if (appliedLivePreview.current === livePreviewEnabled) return;
       let cancelled = false;
       queueMicrotask(() => {
         const view = viewRef.current;
@@ -411,6 +419,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
             livePreviewEnabled ? livePreview() : [],
           ),
         });
+        appliedLivePreview.current = livePreviewEnabled;
       });
       return () => { cancelled = true; };
     }, [livePreviewEnabled]);

@@ -96,6 +96,30 @@ export function diffChangedLines(prev: string, next: string): number[] {
   return changed;
 }
 
+// ── Editor-mode migration (Write/Raw/Read → Edit/Read + Live Preview toggle) ──
+
+/**
+ * Migrate a persisted editor mode to the current two-mode model. The legacy
+ * value could be "write" | "raw" | "read"; "write"/"raw" both become "edit"
+ * (raw was just "edit with Live Preview off", now a separate toggle).
+ */
+export function migrateEditorMode(saved: string | null | undefined): "edit" | "read" {
+  return saved === "read" ? "read" : "edit";
+}
+
+/**
+ * Initial Live Preview on/off. An explicit stored preference always wins.
+ * Otherwise default on — EXCEPT when the user's legacy mode was "raw" (Live
+ * Preview off), which we honour so their raw-editing preference isn't lost.
+ */
+export function initialLivePreviewOn(
+  savedPref: boolean | null | undefined,
+  savedMode: string | null | undefined,
+): boolean {
+  if (savedPref != null) return savedPref;
+  return savedMode !== "raw";
+}
+
 // ── Structured-block extraction (for the live "current block" preview) ────────
 
 /** Kinds of structured markdown block worth previewing live while editing. */

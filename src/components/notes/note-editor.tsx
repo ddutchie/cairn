@@ -19,7 +19,7 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { makeLatexPlugins, makeRehypeChangedLines, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
-import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset } from "./note-editor-utils";
+import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset, migrateEditorMode, initialLivePreviewOn } from "./note-editor-utils";
 import { useNoteMarkdownComponents } from "./note-markdown-components";
 import { storage } from "@/lib/storage";
 import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
@@ -58,18 +58,18 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   // Read and writers stay in Edit without re-toggling each time. Migrate the
   // legacy three-mode value: "write"/"raw" both collapse to "edit" (raw was just
   // "edit with Live Preview off", now a separate toggle below).
-  const [mode, setModeState] = useState<EditorMode>(() => {
-    const saved = storage.get<string>(NOTE_EDITOR_MODE_KEY);
-    return saved === "read" ? "read" : "edit";
-  });
+  const legacyMode = storage.get<string>(NOTE_EDITOR_MODE_KEY);
+  const [mode, setModeState] = useState<EditorMode>(() => migrateEditorMode(legacyMode));
   const setMode = useCallback((next: EditorMode) => {
     setModeState(next);
     storage.set(NOTE_EDITOR_MODE_KEY, next);
   }, []);
   // Live Preview (inline widgets + marker hiding) on/off within Edit mode.
   // Defaults on; persisted separately so the choice survives note/session change.
-  const [livePreviewOn, setLivePreviewOnState] = useState<boolean>(
-    () => storage.get<boolean>(NOTE_LIVE_PREVIEW_KEY) ?? true,
+  // Migration: if a user's legacy mode was "raw" and they have no explicit Live
+  // Preview preference yet, honour that intent by starting with it OFF.
+  const [livePreviewOn, setLivePreviewOnState] = useState<boolean>(() =>
+    initialLivePreviewOn(storage.get<boolean>(NOTE_LIVE_PREVIEW_KEY), legacyMode),
   );
   const setLivePreviewOn = useCallback((next: boolean) => {
     setLivePreviewOnState(next);
