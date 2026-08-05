@@ -54,7 +54,12 @@ export default function SyncScreen() {
 
   useFocusEffect(useCallback(() => refresh(), [refresh]));
 
-  const onSync = () => void requestSync("manual");
+  // Refresh counts after a manual sync settles (success or failure) — peer
+  // protocol versions and restorable deletions are only discoverable once a
+  // sync has applied incoming changes, so don't wait for the next focus.
+  const onSync = () => {
+    void requestSync("manual").finally(refresh);
+  };
   const close = () => {
     if (router.canGoBack()) router.back();
   };
@@ -142,7 +147,7 @@ export default function SyncScreen() {
         )}
 
         {stalePeers > 0 && (
-          <View style={[styles.conflictRow, styles.restoreRowActive]}>
+          <View style={[styles.conflictRow, styles.conflictRowActive]}>
             <ArrowUpCircle size={18} color={t.warning} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.conflictTitle, { color: t.textPrimary }]}>

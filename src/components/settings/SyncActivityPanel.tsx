@@ -284,6 +284,11 @@ export function SyncActivityPanel() {
     }
   };
 
+  // Only peers on a LOWER protocol version drive the "needs updating" banner;
+  // a peer merely on a different version (e.g. ahead) is informational and must
+  // not, on its own, keep the empty-state from showing.
+  const behindPeers = stalePeers.filter((p) => p.behind);
+
   // Nothing recorded yet (fresh install, or sync never ran) — say so rather
   // than rendering an empty shell.
   if (
@@ -291,7 +296,7 @@ export function SyncActivityPanel() {
     activity.length === 0 &&
     restorable.length === 0 &&
     fileFailures.length === 0 &&
-    stalePeers.length === 0
+    behindPeers.length === 0
   ) {
     return (
       <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-4">
@@ -300,8 +305,6 @@ export function SyncActivityPanel() {
       </p>
     );
   }
-
-  const behindPeers = stalePeers.filter((p) => p.behind);
 
   return (
     <div className="mt-4 space-y-3">
