@@ -247,9 +247,12 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
       headers,
       authMode: entry.definition.authMode ?? "none",
       oauthScope: entry.definition.oauthScope,
-      oauthClientId: entry.definition.oauthClientId,
-      oauthRedirectUri: entry.definition.oauthRedirectUri,
-      oauthClientIdRequired: entry.definition.requiresClientId,
+      // Reinstalling onto an existing row must not wipe OAuth fields the user
+      // entered (client id / redirect URI) when the manifest omits them — prefer
+      // a supplied manifest value, else keep the existing server's.
+      oauthClientId: entry.definition.oauthClientId ?? existing?.oauthClientId,
+      oauthRedirectUri: entry.definition.oauthRedirectUri ?? existing?.oauthRedirectUri,
+      oauthClientIdRequired: entry.definition.requiresClientId ?? existing?.oauthClientIdRequired,
       disabledTools: entry.definition.disabledTools,
       // Install DISABLED so the user reviews (and, for OAuth, connects) before it goes live.
       enabled: false,

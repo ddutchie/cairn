@@ -284,6 +284,14 @@ export function parseToolArgs(raw: string | null | undefined): ParseToolArgsResu
     try {
       const value = parsePartialJson(repaired, 0);
       if (value && typeof value === "object" && !Array.isArray(value)) {
+        // `partial-json` happily ignores trailing content after a complete value,
+        // so a model output like `{"title":"x"} and more…` would otherwise be
+        // accepted with the tail silently dropped. Verify the parser consumed the
+        // whole input: reject when any non-whitespace remains after the value.
+        const extent = jsonValueExtent(repaired);
+        if (extent < 0 || repaired.slice(extent).trim() !== "") {
+          throw new Error("unconsumed content after tool-call arguments JSON");
+        }
         return { ok: true, value: value as Record<string, unknown>, repaired: true };
       }
     } catch {
@@ -292,4 +300,83 @@ export function parseToolArgs(raw: string | null | undefined): ParseToolArgsResu
 
     return { ok: false, error: `malformed tool-call arguments JSON from model: ${(strictErr as Error).message}` };
   }
+}
+
+/**
+ * Index just past the first complete JSON value in `src`, or -1 when no complete
+ * value is found. Used to prove a tolerance-parsed string had no leftover
+ * non-whitespace content. Handles nested objects/arrays, strings (with escapes),
+ * numbers, and the `true`/`false`/`null` literals.
+ */
+function jsonValueExtent(src: string): number {
+  let i = 0;
+  const n = src.length;
+  const isWs = (c: string) => c === " " || c === "\t" || c === "\n" || c === "\r";
+  while (i < n && isWs(src[i])) i++;
+  const first = src[i];
+  if (first === "{") {
+    // Balanced scan over the top-level object: every `{`/`[` increments depth,
+    // `}`/`]` decrements — a well-formed value returns to 0 exactly at its end.
+    let depth = 1;
+    let inString = false;
+    let escaped = false;
+    i++;
+    for (; i < n; i++) {
+      const c = src[i];
+      if (inString) {
+        if (escaped) { escaped = false; continue; }
+        if (c === "\\") { escaped = true; continue; }
+        if (c === '"') inString = false;
+        continue;
+      }
+      if (c === '"') { inString = true; continue; }
+      if (c === "{" || c === "[") depth++;
+      else if (c === "}" || c === "]") {
+        depth--;
+        if (depth === 0) return i + 1;
+      }
+    }
+    return -1;
+  }
+  if (first === "[") {
+    // Arrays use the same balanced scan — treat as the object case above.
+    let depth = 1;
+    let inString = false;
+    let escaped = false;
+    i++;
+    for (; i < n; i++) {
+      const c = src[i];
+      if (inString) {
+        if (escaped) { escaped = false; continue; }
+        if (c === "\\") { escaped = true; continue; }
+        if (c === '"') inString = false;
+        continue;
+      }
+      if (c === '"') { inString = true; continue; }
+      if (c === "{" || c === "[") depth++;
+      else if (c === "}" || c === "]") {
+        depth--;
+        if (depth === 0) return i + 1;
+      }
+    }
+    return -1;
+  }
+  if (first === '"') {
+    i++;
+    let escaped = false;
+    for (; i < n; i++) {
+      const c = src[i];
+      if (escaped) { escaped = false; continue; }
+      if (c === "\\") { escaped = true; continue; }
+      if (c === '"') return i + 1;
+    }
+    return -1;
+  }
+  const number = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(src.slice(i));
+  if (number && number[0].length > 0) return i + number[0].length;
+  const kw = src.slice(i, i + 5);
+  if (kw.startsWith("true")) return i + 4;
+  if (kw.startsWith("false")) return i + 5;
+  if (kw.startsWith("null")) return i + 4;
+  return -1;
 }

@@ -258,18 +258,27 @@ function makeOAuthTransport(cfg: OAuthServerConfig, provider: OAuthClientProvide
 
 /**
  * Extract the port from a fixed loopback redirect URI, e.g.
- * `http://127.0.0.1:48123/callback` → 48123. Throws for a non-loopback or
- * port-less URI so a misconfigured redirect fails loudly at sign-in time.
+ * `http://127.0.0.1:48123/callback` → 48123. Requires a plain-HTTP URI with the
+ * exact `/callback` path — the loopback listener only binds 127.0.0.1 on the
+ * given port and only answers `/callback`, so an `https:` scheme or any other
+ * path would be advertised to the provider yet never reachable. Throws for a
+ * misconfigured redirect so the failure surfaces loudly at sign-in time.
  * Exported for unit testing.
  */
 export function loopbackPortOf(redirectUri: string): number {
   const url = new URL(redirectUri);
+  if (url.protocol !== "http:") {
+    throw new Error(`Redirect URI must use plain http (loopback), got scheme "${url.protocol}".`);
+  }
   const hostname = url.hostname;
   if (hostname !== "127.0.0.1" && hostname !== "localhost") {
     throw new Error(`Redirect URI must be a 127.0.0.1 loopback URL, got host "${hostname}".`);
   }
   if (!url.port) {
     throw new Error(`Redirect URI must include a fixed port, got "${redirectUri}".`);
+  }
+  if (url.pathname !== "/callback") {
+    throw new Error(`Redirect URI must use the exact /callback path, got "${url.pathname}".`);
   }
   return Number(url.port);
 }

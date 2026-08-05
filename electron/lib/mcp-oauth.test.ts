@@ -114,6 +114,15 @@ describe("loopbackPortOf", () => {
   it("rejects a port-less redirect URI", () => {
     expect(() => loopbackPortOf("http://127.0.0.1/callback")).toThrow(/fixed port/);
   });
+
+  it("rejects an https redirect URI (loopback is plain http only)", () => {
+    expect(() => loopbackPortOf("https://127.0.0.1:48123/callback")).toThrow(/plain http/);
+  });
+
+  it("rejects a redirect URI whose path is not exactly /callback", () => {
+    expect(() => loopbackPortOf("http://127.0.0.1:48123/other")).toThrow(/\/callback/);
+    expect(() => loopbackPortOf("http://127.0.0.1:48123/")).toThrow(/\/callback/);
+  });
 });
 
 describe("KeychainOAuthProvider", () => {

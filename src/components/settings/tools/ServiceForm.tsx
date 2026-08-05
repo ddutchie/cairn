@@ -164,8 +164,11 @@ export function ServiceForm({
                         ...initial?.oauth,
                         ...(oauthScope.trim() ? { scope: oauthScope.trim() } : {}),
                         ...(oauthServerUrl.trim() ? { serverUrl: oauthServerUrl.trim() } : {}),
-                        ...(oauthClientId.trim() ? { clientId: oauthClientId.trim() } : {}),
-                        ...(oauthRedirectUri.trim() ? { redirectUri: oauthRedirectUri.trim() } : {}),
+                        // Assigned AFTER the spread (not conditional-spread) so an
+                        // emptied input writes undefined and actually clears a
+                        // retained initial value instead of silently keeping it.
+                        clientId: oauthClientId.trim() ? oauthClientId.trim() : undefined,
+                        redirectUri: oauthRedirectUri.trim() ? oauthRedirectUri.trim() : undefined,
                       }
                     : undefined,
                 enabled: initial?.enabled ?? false,

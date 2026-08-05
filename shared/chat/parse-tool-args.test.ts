@@ -248,4 +248,29 @@ describe("parseToolArgs", () => {
       if (!r.ok) expect(r.error).toMatch(/malformed tool-call arguments/i);
     });
   });
+
+  describe("unconsumed trailing content", () => {
+    it("rejects a complete object followed by non-whitespace text", () => {
+      const r = parseToolArgs('{"title":"x"} and then some');
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/malformed tool-call arguments/i);
+    });
+
+    it("rejects a second object appended after the first", () => {
+      const r = parseToolArgs('{"a":1}{"b":2}');
+      expect(r.ok).toBe(false);
+    });
+
+    it("accepts trailing whitespace after a complete object", () => {
+      const r = parseToolArgs('{"a":1}   \n ');
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ a: 1 });
+    });
+
+    it("still accepts a trailing comma (partial-json's documented case)", () => {
+      const r = parseToolArgs('{"a":1,}');
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toEqual({ a: 1 });
+    });
+  });
 });

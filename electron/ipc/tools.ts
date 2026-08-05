@@ -90,8 +90,12 @@ function oauthConfigChanged(
     (next.transport !== undefined && next.transport !== prev.transport) ||
     (next.authMode !== undefined && (next.authMode ?? "none") !== (prev.authMode ?? "none")) ||
     (next.oauthScope !== undefined && (next.oauthScope ?? "") !== (prev.oauthScope ?? "")) ||
-    (next.oauthClientId !== undefined && (next.oauthClientId ?? "") !== (prev.oauthClientId ?? "")) ||
-    (next.oauthRedirectUri !== undefined && (next.oauthRedirectUri ?? "") !== (prev.oauthRedirectUri ?? ""))
+    // OAuth fields compare unconditionally against the NULL/undefined values
+    // saveMcpServer persists: a field the renderer omits or clears writes NULL,
+    // so it MUST invalidate previously-issued OAuth artefacts rather than being
+    // skipped by an `!== undefined` guard.
+    (next.oauthClientId ?? null) !== (prev.oauthClientId ?? null) ||
+    (next.oauthRedirectUri ?? null) !== (prev.oauthRedirectUri ?? null)
   );
 }
 
@@ -106,15 +110,16 @@ function serviceOAuthConfigChanged(
   next: { apiUrl?: string; authMode?: string; oauth?: { serverUrl?: string; scope?: string; clientId?: string; redirectUri?: string } },
 ): boolean {
   const p = prev.oauth ?? {};
-  const n = next.oauth;
+  const n = next.oauth ?? {};
   return (
     (next.apiUrl !== undefined && next.apiUrl !== prev.apiUrl) ||
     (next.authMode !== undefined && (next.authMode ?? "none") !== (prev.authMode ?? "none")) ||
-    (n !== undefined &&
-      ((n.serverUrl ?? "") !== (p.serverUrl ?? "") ||
-        (n.scope ?? "") !== (p.scope ?? "") ||
-        (n.clientId ?? "") !== (p.clientId ?? "") ||
-        (n.redirectUri ?? "") !== (p.redirectUri ?? "")))
+    // Normalize the entire oauth object to its empty form so an omitted or
+    // cleared oauth (e.g. switching to header auth) invalidates prior artefacts.
+    (n.serverUrl ?? "") !== (p.serverUrl ?? "") ||
+    (n.scope ?? "") !== (p.scope ?? "") ||
+    (n.clientId ?? "") !== (p.clientId ?? "") ||
+    (n.redirectUri ?? "") !== (p.redirectUri ?? "")
   );
 }
 
