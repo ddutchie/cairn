@@ -18,6 +18,7 @@ import {
   providerLogoUrl,
   providerLogoUrlFor,
   supportsImageInput,
+  resolveMaxOutputTokens,
 } from "./model-catalog";
 
 describe("parseModelCatalog", () => {
@@ -41,6 +42,7 @@ describe("parseModelCatalog", () => {
     });
     expect(map["gpt-5"]).toEqual({
       context: 1000000,
+      maxOutput: 128000,
       input: 1.25,
       output: 10,
       modes: ["text", "image", "pdf"],
@@ -49,6 +51,7 @@ describe("parseModelCatalog", () => {
     });
     expect(map["claude-4"]).toEqual({
       context: 1000000,
+      maxOutput: null,
       input: null,
       output: null,
       modes: [],
@@ -63,6 +66,7 @@ describe("parseModelCatalog", () => {
     });
     expect(map["deepseek-v4-flash"]).toEqual({
       context: null,
+      maxOutput: null,
       input: null,
       output: null,
       modes: [],
@@ -94,10 +98,37 @@ describe("supportsImageInput", () => {
   });
 });
 
+describe("resolveMaxOutputTokens", () => {
+  it("omits (returns undefined) by default so the model finishes naturally", () => {
+    // The correct default: send no cap → provider runs to finish_reason:"stop"
+    // with full reasoning + answer. A cap only ever truncates the tail case.
+    expect(resolveMaxOutputTokens()).toBeUndefined();
+    expect(resolveMaxOutputTokens(undefined)).toBeUndefined();
+    expect(resolveMaxOutputTokens(null)).toBeUndefined();
+  });
+
+  it("sends a positive user override verbatim (deliberate cost/latency cap)", () => {
+    expect(resolveMaxOutputTokens(5000)).toBe(5000);
+    expect(resolveMaxOutputTokens(200.9)).toBe(200); // floored
+    expect(resolveMaxOutputTokens(384000)).toBe(384000);
+  });
+
+  it("ignores non-positive / non-finite overrides and omits the field", () => {
+    expect(resolveMaxOutputTokens(0)).toBeUndefined();
+    expect(resolveMaxOutputTokens(-5)).toBeUndefined();
+    expect(resolveMaxOutputTokens(Number.NaN)).toBeUndefined();
+  });
+});
+
 describe("normalizeModelInfo", () => {
   it("passes well-formed entries through unchanged", () => {
-    const info = { context: 1000, input: 1, output: 2, modes: ["text"], toolCall: true, provider: "x" };
+    const info = { context: 1000, maxOutput: 8000, input: 1, output: 2, modes: ["text"], toolCall: true, provider: "x" };
     expect(normalizeModelInfo(info as never)).toEqual(info);
+  });
+
+  it("defaults maxOutput to null when a legacy cache entry lacks it", () => {
+    const legacy = { context: 1000, input: 1, output: 2, modes: ["text"], toolCall: true, provider: "x" };
+    expect(normalizeModelInfo(legacy as never)?.maxOutput).toBeNull();
   });
 
   it("migrates the legacy pre-`modes` image boolean", () => {

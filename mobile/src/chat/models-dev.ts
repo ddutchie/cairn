@@ -32,9 +32,11 @@ import {
 import { getDb } from "../db";
 
 const API_URL = "https://models.dev/api.json";
-const CACHE_KEY = "ai.modelInfo.cache"; // JSON { [modelId]: ModelInfo }
+// v2: bumped when the parsed ModelInfo shape gains a field (maxOutput) so
+// existing caches re-fetch immediately instead of waiting out the weekly TTL.
+const CACHE_KEY = "ai.modelInfo.cache.v2"; // JSON { [modelId]: ModelInfo }
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // refresh weekly
-const CACHE_AT_KEY = "ai.modelInfo.cachedAt";
+const CACHE_AT_KEY = "ai.modelInfo.cachedAt.v2";
 // Canonical owner map (models.json): id → provider slug for logo resolution.
 // Tiny (282 entries) and keyed by canonical "<provider>/<model>" ids, so it's
 // cached separately with its own freshness window.

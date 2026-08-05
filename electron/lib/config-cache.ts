@@ -35,6 +35,7 @@ export interface CachedConfig {
     apiKey?: string;
     maxSteps?: number;
     temperature?: number;
+    maxTokens?: number;
     autoApprove?: boolean;
     // The coding agent's active saved-provider id. The provider LIST itself is
     // shared and persisted under aiConfig.savedProviders (single source of truth).
@@ -133,6 +134,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         apiKey: resolveCachedKey(configRecord.apiKey, current.agentConfig?.apiKey),
         maxSteps: typeof configRecord.maxSteps === "number" ? configRecord.maxSteps : current.agentConfig?.maxSteps,
         temperature: typeof configRecord.temperature === "number" ? configRecord.temperature : current.agentConfig?.temperature,
+        maxTokens: typeof configRecord.maxTokens === "number" ? configRecord.maxTokens : current.agentConfig?.maxTokens,
         autoApprove: typeof configRecord.autoApprove === "boolean" ? configRecord.autoApprove : current.agentConfig?.autoApprove,
         activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.agentConfig?.activeProviderId,
       };
@@ -179,7 +181,7 @@ export function getEmbeddingsSettingsCached(): CachedEmbeddingsConfig {
  */
 export function cacheLlmConnection(
   type: "ai" | "agent",
-  config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; autoApprove?: boolean } | undefined,
+  config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; maxTokens?: number; autoApprove?: boolean } | undefined,
 ): void {
   if (!config) return;
   if (config.baseUrl === undefined && config.model === undefined && config.apiKey === undefined) return;

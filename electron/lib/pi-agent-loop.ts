@@ -57,6 +57,13 @@ export interface AgentLLMConfig {
   contextWindow?: number;
   /** Whether to automatically approve tool calls or prompt the user. */
   autoApprove?: boolean;
+  /**
+   * Max output tokens per turn. Undefined/0 → OMIT max_tokens so the model
+   * finishes naturally — the old hardcoded cap could stall a "thinking" agent
+   * model mid-reasoning (empty content → a 400 on the next turn). A positive
+   * value is the user's deliberate cap.
+   */
+  maxTokens?: number;
 }
 
 // ── Message types ─────────────────────────────────────────────────────────────
@@ -518,6 +525,9 @@ export async function runAgentLoop(
     contextWindow = 128_000,
   } = llmConfig;
 
+  // Undefined/0 → omit max_tokens (let the model finish naturally).
+  const maxTokens = llmConfig.maxTokens && llmConfig.maxTokens > 0 ? llmConfig.maxTokens : undefined;
+
   // Plan mode always uses 0.1 for deterministic analysis regardless of user setting
   const temperature = mode === "plan" ? 0.1 : (configTemp ?? 0.3);
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
@@ -583,7 +593,8 @@ export async function runAgentLoop(
             messages: contextMessages,
             tools: allTools,
             tool_choice: "auto",
-            max_tokens: 8192,
+            // Only send max_tokens when the user set an explicit cap (see maxTokens above).
+            ...(maxTokens ? { max_tokens: maxTokens } : {}),
             temperature,
             stream: true,
             stream_options: { include_usage: true },

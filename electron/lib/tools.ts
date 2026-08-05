@@ -142,7 +142,7 @@ export interface ChatRequest {
   projectId?: string;
   workspaceId?: string;
   history?: ChatHistoryEntry[];
-  config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number };
+  config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; maxTokens?: number };
   systemPrompt?: string;
   /** Attachments on the current user message (base64 data URLs; kind="pdf"
    *  becomes an Anthropic-style `document` part, images become `image_url`). */

@@ -70,6 +70,12 @@ export async function runToolLoop(
 ): Promise<RunToolLoopResult> {
   const maxSteps    = req.config?.maxSteps    ?? 30;
   const temperature = req.config?.temperature ?? 0.3;
+  // Max output tokens. Undefined/0 → OMIT max_tokens so the model finishes
+  // naturally (full reasoning + answer, bounded by the provider's own limit).
+  // A positive value is the user's deliberate cap. The old hardcoded 4096 was
+  // the bug: it guillotined "thinking" models mid-reasoning, yielding empty
+  // content that then tripped a 400 on the next message.
+  const maxTokens   = req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined;
   // Built-in tools (or a caller-supplied override) + any external tools in scope.
   const baseTools = toolsOverride ?? TOOLS;
   const combinedTools = extraTools.length > 0 ? [...baseTools, ...extraTools] : baseTools;
@@ -196,7 +202,9 @@ export async function runToolLoop(
             messages,
             tools: combinedTools,
             tool_choice: "auto",
-            max_tokens: 4096,
+            // Only send max_tokens when the user set an explicit cap — omitting
+            // it lets the model finish naturally (see maxTokens above).
+            ...(maxTokens ? { max_tokens: maxTokens } : {}),
             temperature,
             stream: true,
             stream_options: { include_usage: true },
@@ -216,6 +224,7 @@ export async function runToolLoop(
       if (!reader) return { exhausted: true, content: "No response stream", reasoning: "" };
 
       let contentBuffer = "";
+      let streamFinishReason: string | null = null;
       const toolCallBuffers: Map<number, { id: string; name: string; args: string; thought_signature?: string }> = new Map();
 
       for await (const jsonStr of iterSseData(reader, signal ?? undefined)) {
@@ -236,6 +245,11 @@ export async function runToolLoop(
             );
           }
           const delta = chunk.choices?.[0]?.delta;
+          // Capture the finish reason — "length" means the model hit max_tokens.
+          // A reasoning model can hit it having emitted only chain-of-thought.
+          if (chunk.choices?.[0]?.finish_reason) {
+            streamFinishReason = chunk.choices[0].finish_reason;
+          }
           if (!delta) continue;
 
           if (delta.content) {
@@ -302,6 +316,26 @@ export async function runToolLoop(
         // would violate both OpenAI and Anthropic message schemas.
         tool_calls: toolCalls,
       };
+
+      // Reasoning-budget exhaustion safety net (cloud/streaming). By default we
+      // omit max_tokens so this shouldn't happen, but a user-set cap (or a
+      // provider's own server-side limit) can still stop a "thinking" model with
+      // finish_reason:"length" having emitted only reasoning and no content.
+      // That empty turn is useless to show AND, if persisted, poisons the next
+      // request (the provider rejects an assistant message with neither content
+      // nor tool_calls — a 400). Surface the captured reasoning so the reply is
+      // never empty.
+      if (
+        (!assistantMsg.content || !assistantMsg.content.trim()) &&
+        !assistantMsg.tool_calls?.length &&
+        streamFinishReason === "length" &&
+        accumulatedReasoning.trim()
+      ) {
+        const surfaced = `*[This model hit its output-token limit before giving a final answer. Its reasoning is shown below — raise or clear "Max output tokens" in AI settings for a complete reply.]*\n\n${accumulatedReasoning.trim()}`;
+        assistantMsg.content = surfaced;
+        accumulatedContent = surfaced;
+        if (onToken) onToken(surfaced);
+      }
     }
 
     // No tool calls — model is ready to produce its final reply

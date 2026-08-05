@@ -29,11 +29,15 @@ import {
   parseModelCatalog,
   providerLogoUrl,
   type ModelInfo,
+  resolveMaxOutputTokens,
 } from "../../shared/models/model-catalog";
 
 const API_URL = "https://models.dev/api.json";
-const CACHE_KEY = "ai.modelInfo.cache"; // JSON { [modelId]: ModelInfo }
-const CACHE_AT_KEY = "ai.modelInfo.cachedAt";
+// v2: bumped when the parsed ModelInfo shape gains a field (maxOutput) so
+// existing caches re-fetch immediately instead of waiting out the weekly TTL
+// with the old field-poor entries.
+const CACHE_KEY = "ai.modelInfo.cache.v2"; // JSON { [modelId]: ModelInfo }
+const CACHE_AT_KEY = "ai.modelInfo.cachedAt.v2";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // refresh weekly
 // Canonical owner map (models.json): id → provider slug for logo resolution.
 // Tiny (282 entries) and keyed by canonical "<provider>/<model>" ids, so it's
@@ -248,6 +252,18 @@ export async function contextLimitForModel(
 /** Warm the catalog cache in the background (best-effort, fire-and-forget). */
 export function prewarmModelCatalog(): void {
   void ensureMap();
+}
+
+/**
+ * The `max_tokens` to send for a chat request, or `undefined` to omit the field.
+ * `userOverride` is the user's explicit "Max output tokens" (undefined/0 = Auto,
+ * which omits the cap so the model finishes naturally). Kept async for a stable
+ * call site even though it no longer needs the catalog.
+ */
+export async function maxOutputTokensForModel(
+  userOverride?: number | null,
+): Promise<number | undefined> {
+  return resolveMaxOutputTokens(userOverride);
 }
 
 /**

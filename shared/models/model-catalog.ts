@@ -17,6 +17,10 @@
 export interface ModelInfo {
   /** Context window in tokens (limit.context). */
   context: number | null;
+  /** Max output/completion tokens the model can emit in one reply (limit.output).
+   *  Shown as guidance in AI/Agent settings (the ceiling a manual "Max output
+   *  tokens" cap can use). null when unknown. */
+  maxOutput: number | null;
   /** USD per 1M input tokens (cost.input). */
   input: number | null;
   /** USD per 1M output tokens (cost.output). */
@@ -273,6 +277,7 @@ export function normalizeModelInfo(info: ModelInfo | null | undefined): ModelInf
       : [];
   return {
     context: typeof info.context === "number" ? info.context : null,
+    maxOutput: typeof info.maxOutput === "number" ? info.maxOutput : null,
     input: typeof info.input === "number" ? info.input : null,
     output: typeof info.output === "number" ? info.output : null,
     modes,
@@ -293,7 +298,7 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
     if (!models || typeof models !== "object") continue;
     for (const [id, model] of Object.entries(models as Record<string, unknown>)) {
       const m = model as {
-        limit?: { context?: unknown };
+        limit?: { context?: unknown; output?: unknown };
         cost?: { input?: unknown; output?: unknown };
         modalities?: { input?: unknown };
         tool_call?: unknown;
@@ -305,6 +310,7 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
         : [];
       map[id] = {
         context: readNum(m.limit?.context),
+        maxOutput: readNum(m.limit?.output),
         input: readNum(m.cost?.input),
         output: readNum(m.cost?.output),
         modes: inModes,
@@ -419,4 +425,36 @@ export function formatModelCost(input: number | null, output: number | null): st
     return `${n < 0 ? "-" : ""}$${s}`;
   };
   return `${fmt(i)}/${fmt(o)}`;
+}
+
+/**
+ * Default max output tokens used only as a floor when a user's manual value is
+ * missing/invalid but they've turned Auto off. Comfortably above a "thinking"
+ * model's reasoning budget. NOT used in Auto mode (Auto omits the field).
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
+
+/**
+ * Resolve the `max_tokens` to send for a chat request, or `undefined` to OMIT
+ * the field entirely.
+ *
+ * The correct default is to send NOTHING: given no cap, providers run the model
+ * to its natural `finish_reason:"stop"` — emitting full reasoning AND a complete
+ * answer, typically using far fewer tokens than any cap we'd pick. A fixed cap
+ * only ever truncates the tail case: a "thinking" model can spend the whole
+ * budget on reasoning and stop with empty content (`finish_reason:"length"`),
+ * which then trips a "content or tool_calls must be set" 400 on the next
+ * message. (That regression is what the old hardcoded 4096 caused.)
+ *
+ * So:
+ *  - `userOverride` (a positive number) → send it. A user's explicit cap is a
+ *    deliberate cost/latency ceiling; honour it.
+ *  - otherwise (Auto) → return `undefined`: omit `max_tokens` and let the model
+ *    finish naturally, bounded only by the provider's own server-side limit.
+ */
+export function resolveMaxOutputTokens(userOverride?: number | null): number | undefined {
+  if (typeof userOverride === "number" && Number.isFinite(userOverride) && userOverride > 0) {
+    return Math.floor(userOverride);
+  }
+  return undefined;
 }

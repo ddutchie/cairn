@@ -35,6 +35,7 @@ import {
   type TextPart,
   type ToolPart,
   type UIMessage,
+  assistantTurnIsSendable,
 } from "./types";
 
 // ── request mapping ─────────────────────────────────────────────────────────
@@ -106,6 +107,10 @@ function mapMessage(m: UIMessage): OpenAIMessage[] {
   }
 
   const text = textParts.map((p) => p.text).join("");
+  // Skip an assistant turn with no sendable payload — a thinking model that
+  // stopped mid-reasoning leaves one behind, and replaying it trips the
+  // provider's "content or tool_calls must be set" 400 on the next message.
+  if (!assistantTurnIsSendable(m.role, m.parts)) return out;
   out.push({ role: m.role, content: text });
   return out;
 }
@@ -135,6 +140,9 @@ function makeStreamer(config: OpenAIConfig) {
       model: config.model,
       messages: messages.flatMap(mapMessage),
       stream: true,
+      // Deliberately no max_tokens: omitting it lets the model finish naturally
+      // (full reasoning + answer). A cap only ever truncates the tail case and
+      // can leave "thinking" models with empty content — see mapMessage.
       // Ask for a final usage chunk (prompt/completion tokens) to drive the
       // context ring. Standard OpenAI honours it; some OpenAI-compatible
       // gateways reject unknown fields with a 400, so we retry without it below.

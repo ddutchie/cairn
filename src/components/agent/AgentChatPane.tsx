@@ -17,6 +17,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import { getCommandsForScope } from "@/lib/slash-commands";
+import { resolveMaxOutputTokens } from "../../../shared/models/model-catalog";
 import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanTaskList } from "./PlanTaskList";
@@ -520,6 +521,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
          maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
+         // Auto (default) → undefined → omit max_tokens so the model finishes naturally.
+         maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
           autoApprove: session.autoApprove ?? agentConfig.autoApprove ?? true,
        },
     };
@@ -590,6 +593,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
         maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
+         maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
          autoApprove,
       },
     });

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Footprints, Thermometer, Layers, Loader2 } from "lucide-react";
+import { Footprints, Thermometer, Layers, Gauge, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Toggle as UiToggle, type ToggleProps } from "@/components/ui/toggle";
 
@@ -91,12 +91,13 @@ export function Toggle({
 
 // ── Stepper settings row ───────────────────────
 
-export type StepperIcon = "footprints" | "thermometer" | "layers";
+export type StepperIcon = "footprints" | "thermometer" | "layers" | "gauge";
 
 const ICON_MAP: Record<StepperIcon, React.ComponentType<{ size?: number; className?: string }>> = {
   footprints: Footprints,
   thermometer: Thermometer,
   layers: Layers,
+  gauge: Gauge,
 };
 
 /**
@@ -119,6 +120,8 @@ export function StepperSettingsRow({
   autoState,
   autoActive,
   onAuto,
+  autoSuppressesValue,
+  suppressedPlaceholder = "Auto",
 }: {
   label: string;
   description?: string;
@@ -139,10 +142,21 @@ export function StepperSettingsRow({
   autoActive?: boolean;
   /** Handler for the "Auto" quick-button (e.g. detect + apply a models.dev value). Always renders the button when provided. */
   onAuto?: () => void;
+  /**
+   * When true, Auto means "no explicit value" (not "auto-applied number"), so
+   * the input shows a placeholder and no preset is highlighted — otherwise a
+   * previously-typed number lingers as if still selected after tapping Auto.
+   */
+  autoSuppressesValue?: boolean;
+  /** Placeholder shown in the input when the value is suppressed by Auto. */
+  suppressedPlaceholder?: string;
 }) {
   const Icon = ICON_MAP[icon];
   const [draft, setDraft] = useState(String(value));
   const blurringRef = useRef(false);
+  // When Auto is active and represents "no value", the row shows nothing
+  // selected: empty input (placeholder) and no highlighted preset.
+  const suppressed = Boolean(autoSuppressesValue && autoActive);
 
   useEffect(() => {
     if (!blurringRef.current) setDraft(String(value));
@@ -169,7 +183,8 @@ export function StepperSettingsRow({
             min={min}
             max={max}
             step={step}
-            value={draft}
+            value={suppressed ? "" : draft}
+            placeholder={suppressed ? suppressedPlaceholder : undefined}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => {
               blurringRef.current = true;
@@ -215,7 +230,7 @@ export function StepperSettingsRow({
               onClick={() => onChange(n)}
               className={cn(
                 "px-2 py-1 text-[0.714rem] rounded border transition-colors",
-                value === n
+                !suppressed && value === n
                   ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                   : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
               )}
