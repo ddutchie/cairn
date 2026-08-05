@@ -19,7 +19,7 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { makeLatexPlugins, makeRehypeChangedLines, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
-import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines } from "./note-editor-utils";
+import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset } from "./note-editor-utils";
 import { useNoteMarkdownComponents } from "./note-markdown-components";
 import { storage } from "@/lib/storage";
 import { NOTE_EDITOR_MODE_KEY } from "@/lib/constants";
@@ -152,6 +152,10 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
 
   // MD preview panel state — selected text to render in the bottom panel
   const [previewText, setPreviewText] = useState<string | null>(null);
+  // Live preview of the STRUCTURED block (table/callout/code/math) the cursor is
+  // in, shown when there's no selection so you can see it render — and spot a
+  // broken table/fence — while editing. Selection preview (previewText) wins.
+  const [blockPreview, setBlockPreview] = useState<{ kind: string; text: string } | null>(null);
 
   // ── Wikilink picker state ──────────────────────────────────────────────────
   const [wikilinkPicker, setWikilinkPicker] = useState<{
@@ -325,6 +329,16 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       setActiveSectionTitle((prev) => (prev === section ? prev : section));
       const extracted = extractSectionTextAtOffset(title, content, offset);
       setActiveSectionText(extracted ? extracted.text : null);
+      // Live "current block" preview: show the enclosing structured block so a
+      // user editing a table/callout/code/math block sees it render live. Prose
+      // returns null → no panel. Selection preview (previewText) takes priority
+      // in the render below.
+      const block = extractStructuredBlockAtOffset(content, offset);
+      setBlockPreview((prev) => {
+        if (block === null) return prev === null ? prev : null;
+        if (prev && prev.kind === block.kind && prev.text === block.text) return prev;
+        return block;
+      });
     },
     []
   );
@@ -994,12 +1008,24 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
 
 
       {/* ── MD preview panel — docked to bottom of editor ───────────────────── */}
-      {previewText && (
-        <MDPreviewPanel
-          text={previewText}
-          onDismiss={() => setPreviewText(null)}
-        />
-      )}
+      {/* Selection preview wins; otherwise show the current structured block
+          (table/callout/code/math) live while editing. Not shown in Read mode. */}
+      {(() => {
+        if (mode === "read") return null;
+        if (previewText) {
+          return <MDPreviewPanel text={previewText} onDismiss={() => setPreviewText(null)} />;
+        }
+        if (blockPreview) {
+          return (
+            <MDPreviewPanel
+              text={blockPreview.text}
+              label={`${blockPreview.kind} preview`}
+              onDismiss={() => setBlockPreview(null)}
+            />
+          );
+        }
+        return null;
+      })()}
      </div>
    );
  }

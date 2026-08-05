@@ -7,9 +7,11 @@ import { NoteMarkdownPreview } from "./NoteMarkdownPreview";
 interface MDPreviewPanelProps {
   text: string;
   onDismiss: () => void;
+  /** Header label; defaults to "Preview". Used to show e.g. "table preview". */
+  label?: string;
 }
 
-export function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
+export function MDPreviewPanel({ text, onDismiss, label = "Preview" }: MDPreviewPanelProps) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onDismiss(); }
     document.addEventListener("keydown", onKey);
@@ -24,7 +26,7 @@ export function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between px-4 py-1.5 border-b border-[var(--border)]" style={{ background: "var(--surface-2)" }}>
-        <span className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Preview</span>
+        <span className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">{label}</span>
         <button
           onClick={onDismiss}
           aria-label="Close preview"

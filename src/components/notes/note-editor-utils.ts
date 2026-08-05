@@ -95,3 +95,121 @@ export function diffChangedLines(prev: string, next: string): number[] {
   }
   return changed;
 }
+
+// ── Structured-block extraction (for the live "current block" preview) ────────
+
+/** Kinds of structured markdown block worth previewing live while editing. */
+export type StructuredBlockKind = "table" | "callout" | "code" | "math";
+
+export interface StructuredBlock {
+  kind: StructuredBlockKind;
+  /** The raw markdown of the whole block (all its lines). */
+  text: string;
+}
+
+/** Which line index (0-based) contains the given character offset. */
+function lineIndexAtOffset(lines: string[], offset: number): number {
+  let pos = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const end = pos + lines[i].length + 1; // +1 for the newline
+    if (offset < end) return i;
+    pos = end;
+  }
+  return Math.max(0, lines.length - 1);
+}
+
+const FENCE_RE = /^(\s*)(`{3,}|~{3,})/;
+const TABLE_SEP_RE = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/;
+
+/**
+ * Given the note's raw markdown and a cursor offset, return the STRUCTURED block
+ * enclosing the cursor (table / callout / fenced code / math), or null when the
+ * cursor is in plain prose (paragraph, heading, list). Used to drive a live
+ * "current block" preview so a user editing e.g. a table can see it render — and
+ * immediately notice when the markdown is broken — without a selection.
+ *
+ * This is a line scanner on the raw text (not the lezer tree), deliberately
+ * independent of the editor so it's pure and unit-testable. It errs toward
+ * returning a block only when the cursor is clearly inside one.
+ */
+export function extractStructuredBlockAtOffset(
+  content: string,
+  offset: number,
+): StructuredBlock | null {
+  if (!content) return null;
+  const lines = content.split("\n");
+  const cur = lineIndexAtOffset(lines, offset);
+
+  // 1) Fenced code (``` or ~~~). Walk fences top-down; if the cursor line falls
+  //    within an open/close pair (or after an unclosed opener), it's code.
+  {
+    let openIdx = -1;
+    let openFence = "";
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(FENCE_RE);
+      if (!m) continue;
+      const fence = m[2][0];
+      if (openIdx === -1) {
+        openIdx = i;
+        openFence = fence;
+      } else if (fence === openFence) {
+        // Closing fence at i — the block spans [openIdx, i].
+        if (cur >= openIdx && cur <= i) {
+          return { kind: "code", text: lines.slice(openIdx, i + 1).join("\n") };
+        }
+        openIdx = -1;
+        openFence = "";
+      }
+    }
+    // Unclosed opener that reaches the cursor.
+    if (openIdx !== -1 && cur >= openIdx) {
+      return { kind: "code", text: lines.slice(openIdx).join("\n") };
+    }
+  }
+
+  // 2) Math block ($$ … $$). Same paired-delimiter logic on lines that are just `$$`.
+  {
+    const isMathFence = (l: string) => l.trim() === "$$";
+    let openIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!isMathFence(lines[i])) continue;
+      if (openIdx === -1) openIdx = i;
+      else {
+        if (cur >= openIdx && cur <= i) {
+          return { kind: "math", text: lines.slice(openIdx, i + 1).join("\n") };
+        }
+        openIdx = -1;
+      }
+    }
+  }
+
+  const line = lines[cur] ?? "";
+
+  // 3) Callout — a blockquote run (contiguous `>` lines) whose first line is a
+  //    `[!type]` directive. Only when the cursor is on a `>` line.
+  if (/^\s*>/.test(line)) {
+    let start = cur;
+    while (start > 0 && /^\s*>/.test(lines[start - 1])) start--;
+    let end = cur;
+    while (end < lines.length - 1 && /^\s*>/.test(lines[end + 1])) end++;
+    const first = lines[start].replace(/^\s*>\s?/, "");
+    if (/^\[![^\]]+\]/.test(first)) {
+      return { kind: "callout", text: lines.slice(start, end + 1).join("\n") };
+    }
+  }
+
+  // 4) Table — a contiguous run of pipe-containing lines that includes a
+  //    separator row (`|---|`). Only when the cursor line is part of the run.
+  if (line.includes("|")) {
+    let start = cur;
+    while (start > 0 && lines[start - 1].includes("|") && lines[start - 1].trim() !== "") start--;
+    let end = cur;
+    while (end < lines.length - 1 && lines[end + 1].includes("|") && lines[end + 1].trim() !== "") end++;
+    const block = lines.slice(start, end + 1);
+    if (block.some((l) => TABLE_SEP_RE.test(l))) {
+      return { kind: "table", text: block.join("\n") };
+    }
+  }
+
+  return null;
+}

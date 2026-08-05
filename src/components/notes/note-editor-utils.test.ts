@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toggleCheckboxInSource, diffChangedLines } from "./note-editor-utils";
+import { toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset } from "./note-editor-utils";
 
 describe("toggleCheckboxInSource — list-item checkboxes", () => {
   it("toggles an unchecked list item to checked", () => {
@@ -179,5 +179,59 @@ describe("diffChangedLines", () => {
     const out = diffChangedLines("a\nb\nc", "a\nB\nC\nD");
     expect(out).toEqual([...out].sort((x, y) => x - y));
     expect(new Set(out).size).toBe(out.length);
+  });
+});
+
+describe("extractStructuredBlockAtOffset — live current-block preview", () => {
+  // Cursor helper: offset of the first occurrence of `needle` in `doc`.
+  const at = (doc: string, needle: string) => doc.indexOf(needle);
+
+  it("returns the table when the cursor is inside one", () => {
+    const doc = "intro\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nafter";
+    const block = extractStructuredBlockAtOffset(doc, at(doc, "| 1 | 2 |"));
+    expect(block?.kind).toBe("table");
+    expect(block?.text).toBe("| a | b |\n| --- | --- |\n| 1 | 2 |");
+  });
+
+  it("does not treat a lone pipe line (no separator row) as a table", () => {
+    const doc = "a | b is just prose with a pipe";
+    expect(extractStructuredBlockAtOffset(doc, 3)).toBeNull();
+  });
+
+  it("returns the callout when the cursor is inside a blockquote directive", () => {
+    const doc = "text\n\n> [!note] Title\n> body line\n\nafter";
+    const block = extractStructuredBlockAtOffset(doc, at(doc, "body line"));
+    expect(block?.kind).toBe("callout");
+    expect(block?.text).toBe("> [!note] Title\n> body line");
+  });
+
+  it("does not treat an ordinary blockquote as a callout", () => {
+    const doc = "> just a quote\n> more";
+    expect(extractStructuredBlockAtOffset(doc, 3)).toBeNull();
+  });
+
+  it("returns the fenced code block (incl. an unclosed one being typed)", () => {
+    const closed = "```js\nconst x = 1;\n```\nafter";
+    expect(extractStructuredBlockAtOffset(closed, at(closed, "const x"))?.kind).toBe("code");
+    const open = "text\n```js\nconst x = 1;";
+    const b = extractStructuredBlockAtOffset(open, at(open, "const x"));
+    expect(b?.kind).toBe("code");
+    expect(b?.text).toBe("```js\nconst x = 1;");
+  });
+
+  it("returns a math block between $$ fences", () => {
+    const doc = "text\n\n$$\nx = y^2\n$$\n\nafter";
+    expect(extractStructuredBlockAtOffset(doc, at(doc, "x = y^2"))?.kind).toBe("math");
+  });
+
+  it("returns null for plain prose / headings / lists", () => {
+    const doc = "# Heading\n\nJust a paragraph.\n\n- a list item";
+    expect(extractStructuredBlockAtOffset(doc, at(doc, "paragraph"))).toBeNull();
+    expect(extractStructuredBlockAtOffset(doc, at(doc, "Heading"))).toBeNull();
+    expect(extractStructuredBlockAtOffset(doc, at(doc, "list item"))).toBeNull();
+  });
+
+  it("returns null for empty content", () => {
+    expect(extractStructuredBlockAtOffset("", 0)).toBeNull();
   });
 });
