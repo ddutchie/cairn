@@ -397,14 +397,22 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
     }, [readOnly]);
 
     // Toggle Live Preview marker-hiding at runtime via its compartment.
+    // Dispatch on a microtask, not synchronously in the effect: the dispatch
+    // rebuilds decorations, which mounts block widgets (callout/code) whose
+    // toDOM uses flushSync — illegal while React is still flushing this effect.
+    // Deferring runs the reconfigure in CM's own context where flushSync is ok.
     useEffect(() => {
-      const view = viewRef.current;
-      if (!view) return;
-      view.dispatch({
-        effects: livePreviewCompartment.current.reconfigure(
-          livePreviewEnabled ? livePreview() : [],
-        ),
+      let cancelled = false;
+      queueMicrotask(() => {
+        const view = viewRef.current;
+        if (cancelled || !view) return;
+        view.dispatch({
+          effects: livePreviewCompartment.current.reconfigure(
+            livePreviewEnabled ? livePreview() : [],
+          ),
+        });
       });
+      return () => { cancelled = true; };
     }, [livePreviewEnabled]);
 
     // When the note ID changes (different note selected), replace the full doc

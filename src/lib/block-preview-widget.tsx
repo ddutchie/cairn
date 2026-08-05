@@ -49,11 +49,21 @@ export abstract class BlockPreviewWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const container = document.createElement("div");
     container.className = `${BLOCK_WIDGET_CLASS} ${this.extraClass()}`.trim();
-    // (1) Mount synchronously so the first CM measure sees real height.
     this.root = createRoot(container);
-    flushSync(() => {
-      this.root?.render(this.render());
-    });
+    // (1) Prefer a SYNCHRONOUS mount so CodeMirror's first height measure sees
+    // real content, not a 0px shell. But `flushSync` is illegal while React is
+    // already rendering — and CM can rebuild decorations (calling toDOM) from
+    // inside a React commit, e.g. when the Live Preview compartment is
+    // reconfigured in a useEffect (Write⇄Raw toggle). In that case flushSync
+    // throws. Fall back to a plain async render then; the ResizeObserver in (2)
+    // catches the height once React paints, so layout still self-corrects.
+    try {
+      flushSync(() => {
+        this.root?.render(this.render());
+      });
+    } catch {
+      this.root.render(this.render());
+    }
     // (2) Re-measure when the height changes after the initial commit.
     let lastHeight = -1;
     if (typeof ResizeObserver !== "undefined") {
