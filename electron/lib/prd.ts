@@ -29,7 +29,11 @@ export async function generatePrd(
 
   let prdMarkdown: string;
   try {
-    prdMarkdown = await callLLM(llmConfig, systemPrompt, userPrompt);
+    prdMarkdown = await callLLM(llmConfig, systemPrompt, userPrompt, {
+      source: "prd",
+      projectId: args.projectId,
+      workspaceId: project.workspaceId,
+    });
   } catch (err) {
     return { error: `Failed to generate PRD: ${(err as Error).message}` };
   }

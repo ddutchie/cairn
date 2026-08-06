@@ -138,7 +138,6 @@ interface GitStatusEntry {
   path: string;
   status: string;
 }
-
 interface GitStatus {
   branch: string;
   ahead: string;
@@ -148,6 +147,29 @@ interface GitStatus {
   staged: GitStatusEntry[];
   unstaged: GitStatusEntry[];
   untracked: GitStatusEntry[];
+}
+
+// ── Inline types for the Usage view (usage:overview / usage:recent) ──────────
+type UsageSource =
+  | "chat" | "pi-agent" | "chat-subagent" | "pi-subagent" | "automation"
+  | "prd" | "commit-message" | "pr-description" | "explain" | "flow-ai-summary"
+  | "summary" | "tool-builder";
+interface UsageTotals {
+  promptTokens: number; completionTokens: number; reasoningTokens: number;
+  costUsd: number; requests: number;
+}
+interface UsageOverviewData {
+  totals: UsageTotals;
+  previous: UsageTotals | null;
+  series: Array<UsageTotals & { day: string }>;
+  bySource: Array<UsageTotals & { source: UsageSource }>;
+  byModel: Array<UsageTotals & { model: string }>;
+}
+interface UsageRecentRow {
+  id: string; workspaceId: string | null; projectId: string | null; source: UsageSource;
+  sessionId: string | null; provider: string | null; model: string; baseUrl: string | null;
+  promptTokens: number; completionTokens: number; reasoningTokens: number;
+  costUsd: number | null; costEstimated: boolean; finishReason: string | null; createdAt: number;
 }
 
 // Helper: invoke an IPC channel and unwrap the IpcResult<T> wrapper.
@@ -441,6 +463,17 @@ const api = {
         isFreeTier: boolean | null;
         currency: "USD" | "CNY";
       } | null>("ai:fetchKeyInfo", args),
+  },
+
+  // ── Usage statistics (LLM/agent usage log) ─────
+  usage: {
+    overview: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number }) =>
+      invoke<UsageOverviewData>("usage:overview", args),
+    recent: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number }) =>
+      invoke<UsageRecentRow[]>("usage:recent", args),
+    /** Push the models.dev per-1M pricing map (used for cost estimation). */
+    setPricing: (map: Record<string, { input: number | null; output: number | null }>) =>
+      invoke<{ ok: boolean }>("app:modelPricing", map),
   },
 
   // ── App paths ─────────────────────────────────

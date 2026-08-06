@@ -238,7 +238,12 @@ export async function executeTool(
 
       let tasksRaw: string;
       try {
-        tasksRaw = await callLLM(llmConfig, systemPrompt, userPrompt);
+        tasksRaw = await callLLM(llmConfig, systemPrompt, userPrompt, {
+          source: "chat",
+          sessionId: req.threadId,
+          projectId: col.projectId,
+          workspaceId: project?.workspaceId,
+        });
       } catch (err) {
         return { error: `Failed to generate tasks: ${(err as Error).message}` };
       }

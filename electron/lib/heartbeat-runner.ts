@@ -36,6 +36,7 @@ import {
 } from "../db/automation-queries";
 import { makeApprovalGate } from "./automation-approval";
 import { getExternalToolDefs, checkRequirements } from "./external-tools";
+import { recordLlmUsage } from "./usage-recorder";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -128,6 +129,10 @@ export async function runAutomation(
   const apiKey = resolveLlmApiKey(cached.apiKey);
   const provider = (cached.provider ?? (isLocal(cached.baseUrl) ? "localllm" : "openai")) as "openai" | "localllm";
   const abortCtrl = new AbortController();
+  // const-narrowed copies so the onUsage closure below keeps string types
+  // (TS does not preserve property narrowing into closures).
+  const cachedModel = cached.model;
+  const cachedBaseUrl = cached.baseUrl;
 
   const req: ChatRequest = {
     message: automation.instructions,
@@ -232,7 +237,23 @@ export async function runAutomation(
     abortCtrl.signal,
     undefined,                       // getWin
     provider,
-    undefined,                       // onUsage
+    // Persist one usage row per automation round for the Usage view (previously
+    // usage was never captured for background runs).
+    (pt, ct, rt, costUsd) => {
+      recordLlmUsage({
+        source: "automation",
+        sessionId: run.id,
+        projectId: automation.projectId ?? undefined,
+        workspaceId: automation.workspaceId,
+        provider,
+        model: cachedModel,
+        baseUrl: cachedBaseUrl,
+        promptTokens: pt,
+        completionTokens: ct,
+        reasoningTokens: rt ?? 0,
+        costUsd,
+      });
+    },
     (e) => recordArtifact(e.tool, e.cairnRef), // emitToolCallDone — collect created/changed notes/cards
     undefined,                       // onToken
     undefined,                       // onThought

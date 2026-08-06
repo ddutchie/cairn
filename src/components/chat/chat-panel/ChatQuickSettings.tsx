@@ -24,10 +24,11 @@ const MAX_STEPS_PRESETS = [10, 20, 30, 50, 1000] as const;
  * mid-stream.
  */
 export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
-  const { aiConfig, setAIConfig, setSettingsSection, setView } = useCairnStore(
+  const { aiConfig, setAIConfig, selectSavedProvider, setSettingsSection, setView } = useCairnStore(
     useShallow((s) => ({
       aiConfig: s.aiConfig,
       setAIConfig: s.setAIConfig,
+      selectSavedProvider: s.selectSavedProvider,
       setSettingsSection: s.setSettingsSection,
       setView: s.setView,
     })),
@@ -40,6 +41,9 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
   const isLocal = isLocalBaseUrl(aiConfig.baseUrl);
   const subagentsSupported = provider !== "localllm";
 
+  const savedProviders = aiConfig.savedProviders ?? [];
+  const activeProviderId = aiConfig.activeProviderId;
+
   // Populate the endpoint's model list when the popover opens (cloud only) —
   // from the per-endpoint cache if present, else fetch once. No hardcoded
   // fallbacks: the picker shows only real models. Refresh re-queries anytime.
@@ -47,8 +51,17 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
     if (open && provider !== "localllm") {
       ensureModels(aiConfig.baseUrl, aiConfig.apiKey);
     }
+    // Re-resolve when a provider switch changes the endpoint.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, aiConfig.baseUrl]);
+
+  const handleProviderChange = useCallback((value: string) => {
+    if (value === "__localllm__") {
+      setAIConfig({ provider: "localllm", activeProviderId: undefined });
+    } else {
+      selectSavedProvider(value);
+    }
+  }, [selectSavedProvider, setAIConfig]);
 
   const openFullSettings = useCallback(() => {
     setSettingsSection("ai");
@@ -58,6 +71,8 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
 
   const maxSteps = aiConfig.maxSteps ?? 30;
   const temperature = aiConfig.temperature ?? 0.3;
+
+  const providerSelectValue = provider === "localllm" ? "__localllm__" : (activeProviderId ?? "");
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -92,6 +107,24 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
         >
           <div className="text-[0.643rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
             Chat settings
+          </div>
+
+          {/* Provider */}
+          <div className="space-y-1">
+            <span className="text-[0.714rem] text-[var(--text-secondary)]">Provider</span>
+            <select
+              value={providerSelectValue}
+              onChange={(e) => handleProviderChange(e.target.value)}
+              disabled={disabled}
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text-primary)] outline-none disabled:opacity-50"
+            >
+              <option value="__localllm__">On-device (Llama)</option>
+              {savedProviders.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Model */}

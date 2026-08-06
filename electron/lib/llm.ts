@@ -4,6 +4,8 @@
 
 import { encode } from "gpt-tokenizer";
 import { pdfTokenEstimate } from "../../shared/models/pdf-attach";
+import { recordLlmUsage, extractCost } from "./usage-recorder";
+import type { UsageSource } from "../db/usage-queries";
 
 /**
  * Normalise a user-supplied base URL by stripping trailing slashes.
@@ -115,7 +117,37 @@ export function isSendableMessage(m: {
   return Boolean(m.content?.trim()) || Boolean(m.tool_calls?.length);
 }
 
-export async function callLLM(config: LLMConfig, systemPrompt: string, userPrompt: string): Promise<string> {
+/** Optional attribution for a one-shot `callLLM` — drives the Usage log row. */
+export interface LlmCallOpts {
+  /** Where the call originated (defaults to "chat"). */
+  source?: UsageSource;
+  sessionId?: string;
+  projectId?: string;
+  workspaceId?: string;
+}
+
+export async function callLLM(
+  config: LLMConfig,
+  systemPrompt: string,
+  userPrompt: string,
+  opts: LlmCallOpts = {},
+): Promise<string> {
+  const record = (pt: number, ct: number, rt: number, cost?: number) => {
+    recordLlmUsage({
+      source: opts.source ?? "chat",
+      sessionId: opts.sessionId,
+      projectId: opts.projectId,
+      workspaceId: opts.workspaceId,
+      provider: config.provider,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      promptTokens: pt,
+      completionTokens: ct,
+      reasoningTokens: rt,
+      costUsd: cost,
+    });
+  };
+
   if (config.provider === "localllm") {
     const { callLocalLLMChat } = await import("./local-llm");
     const messages: OpenAIMessage[] = [
@@ -123,7 +155,19 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
       { role: "user", content: userPrompt },
     ];
     const res = await callLocalLLMChat(messages);
-    return res.choices?.[0]?.message?.content ?? "";
+    const content = res.choices?.[0]?.message?.content ?? "";
+    const usage = res?.usage;
+    if (usage) {
+      record(
+        usage.prompt_tokens ?? 0,
+        usage.completion_tokens ?? 0,
+        usage.completion_tokens_details?.reasoning_tokens ?? 0,
+        extractCost(res?.cost, usage),
+      );
+    } else {
+      record(tok(systemPrompt) + tok(userPrompt), tok(content), 0);
+    }
+    return content;
   }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -141,6 +185,7 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
       temperature: 0.4,
       // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
       stream: true,
+      stream_options: { include_usage: true },
     }),
   });
   if (!response.ok) throw new Error(`LLM error ${response.status}: ${await response.text().catch(() => response.statusText)}`);
@@ -150,6 +195,7 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
 
   const decoder = new TextDecoder();
   let content = "";
+  let usage: { pt?: number; ct?: number; rt?: number; chunkCost?: unknown; raw?: unknown } | undefined;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -160,10 +206,25 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
       if (jsonStr === "[DONE]") break;
       try {
         const obj = JSON.parse(jsonStr);
+        if (obj.usage) {
+          usage = {
+            pt: obj.usage.prompt_tokens ?? 0,
+            ct: obj.usage.completion_tokens ?? 0,
+            rt: obj.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+            chunkCost: obj.cost,
+            raw: obj.usage,
+          };
+        }
         const delta = obj.choices?.[0]?.delta?.content ?? "";
         if (delta) content += delta;
       } catch { /* skip malformed lines */ }
     }
+  }
+
+  if (usage) {
+    record(usage.pt ?? 0, usage.ct ?? 0, usage.rt ?? 0, extractCost(usage.chunkCost, usage.raw));
+  } else {
+    record(tok(systemPrompt) + tok(userPrompt), tok(content), 0);
   }
   return content;
 }

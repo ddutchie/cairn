@@ -207,7 +207,10 @@ export function registerFlowHandlers(ctx: DbContext): void {
 
         let summary: string;
         try {
-          summary = await callLLM({ baseUrl, model, apiKey }, systemPrompt, userPrompt);
+          summary = await callLLM({ baseUrl, model, apiKey }, systemPrompt, userPrompt, {
+            source: "flow-ai-summary",
+            sessionId: args.nodeId,
+          });
         } catch (e) {
           throw new Error(`AI call failed: ${(e as Error).message}`);
         }

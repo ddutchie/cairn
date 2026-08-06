@@ -13,7 +13,7 @@ import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accen
 // ── View visibility ───────────────────────────────────────────────────────────
 
 /** Views that can be hidden. Overview and Notes are always visible. */
-export type ToggleableView = "board" | "flow" | "calendar" | "calendar-all" | "agent" | "graph" | "insights" | "chat";
+export type ToggleableView = "board" | "flow" | "calendar" | "calendar-all" | "agent" | "graph" | "insights" | "usage" | "chat";
 
 export const HIDDEN_VIEWS_KEY = "hiddenViews";
 export const SEEN_FEATURES_KEY = "seenFeatures";

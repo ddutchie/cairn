@@ -25,6 +25,7 @@ import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
 import { parseToolArgs } from "./parse-tool-args";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
+import { recordLlmUsage, extractCost } from "./usage-recorder";
 
 /** Loosely-typed OpenAI function tool — the synthetic dispatch tools ("research",
  *  "write") aren't in the schema-derived `typeof TOOLS` union, so we widen. */
@@ -288,6 +289,20 @@ async function runSubagent(
     getWin,
     cfg.provider,
     (pt, ct, rt, cost) => {
+      // Persist one usage row per subagent round for the Usage view.
+      recordLlmUsage({
+        source: "chat-subagent",
+        sessionId: childId,
+        projectId: req.projectId,
+        workspaceId: req.workspaceId,
+        provider: cfg.provider,
+        model: cfg.model,
+        baseUrl: cfg.baseUrl,
+        promptTokens: pt,
+        completionTokens: ct,
+        reasoningTokens: rt ?? 0,
+        costUsd: cost,
+      });
       // Accumulate into the total-cost figures…
       metrics.promptTokens += pt; metrics.completionTokens += ct; if (rt) metrics.reasoningTokens += rt;
       // …and report THIS subagent's own context window (its latest prompt size)
@@ -319,7 +334,11 @@ async function runSubagent(
   // explicit nudge to write the findings. This is the standard "force final
   // answer" pattern and rescues most empty-output cases on small models.
   if (metrics.toolCalls > 0 || messages.some((m) => m.role === "tool")) {
-    const forced = await forceFinalAnswer(cfg, messages, metrics, addCost, signal, req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined);
+    const forced = await forceFinalAnswer(
+      cfg, messages, metrics, addCost, signal,
+      req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined,
+      { sessionId: childId, projectId: req.projectId, workspaceId: req.workspaceId },
+    );
     if (forced.trim()) {
       if (childId) events?.onSubagentToken?.({ childId, delta: forced.trim() });
       return forced.trim();
@@ -341,6 +360,7 @@ async function forceFinalAnswer(
   addCost?: (cost: unknown) => void,
   signal?: AbortSignal,
   maxTokens?: number,
+  attrib?: { sessionId?: string; projectId?: string; workspaceId?: string },
 ): Promise<string> {
   const nudged: OpenAIMessage[] = [
     ...messages,
@@ -378,6 +398,19 @@ async function forceFinalAnswer(
       metrics.completionTokens += data.usage.completion_tokens ?? 0;
       metrics.reasoningTokens += data.usage.completion_tokens_details?.reasoning_tokens ?? 0;
       addCost?.(data.cost ?? data.usage?.cost);
+      recordLlmUsage({
+        source: "chat-subagent",
+        sessionId: attrib?.sessionId,
+        projectId: attrib?.projectId,
+        workspaceId: attrib?.workspaceId,
+        provider: cfg.provider,
+        model: cfg.model,
+        baseUrl: cfg.baseUrl,
+        promptTokens: data.usage.prompt_tokens ?? 0,
+        completionTokens: data.usage.completion_tokens ?? 0,
+        reasoningTokens: data.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+        costUsd: extractCost(data.cost, data.usage),
+      });
     }
     return (data.choices?.[0]?.message?.content as string) ?? "";
   } catch {
@@ -499,6 +532,20 @@ export async function runDispatchLoop(
       const pt = data.usage.prompt_tokens ?? 0;
       const ct = data.usage.completion_tokens ?? 0;
       const rt = data.usage.completion_tokens_details?.reasoning_tokens ?? 0;
+      // Persist one usage row per dispatcher round for the Usage view.
+      recordLlmUsage({
+        source: "chat-subagent",
+        sessionId: req.threadId,
+        projectId: req.projectId,
+        workspaceId: req.workspaceId,
+        provider: cfg.provider,
+        model: cfg.model,
+        baseUrl: cfg.baseUrl,
+        promptTokens: pt,
+        completionTokens: ct,
+        reasoningTokens: rt,
+        costUsd: extractCost(data.cost, data.usage),
+      });
       // Total-cost figures accumulate across all turns…
       metrics.promptTokens += pt;
       metrics.completionTokens += ct;

@@ -190,6 +190,7 @@ async function ensureMap(): Promise<InfoMap> {
     memoryCache = cached;
     version += 1;
     emit();
+    pushModelPricingToMain();
     return cached;
   }
   if (inflight) return inflight;
@@ -203,6 +204,7 @@ async function ensureMap(): Promise<InfoMap> {
       writeSetting(CACHE_KEY, JSON.stringify(map));
       writeSetting(CACHE_AT_KEY, String(Date.now()));
       emit();
+      pushModelPricingToMain();
       return map;
     } catch {
       // Don't cache the empty result — leaving memoryCache unset lets the next
@@ -252,6 +254,32 @@ export async function contextLimitForModel(
 /** Warm the catalog cache in the background (best-effort, fire-and-forget). */
 export function prewarmModelCatalog(): void {
   void ensureMap();
+}
+
+/**
+ * The compact `modelId → { input, output }` per-1M pricing map (USD), sent to
+ * the main process so the usage recorder can estimate cost for providers that
+ * don't report it. Best-effort — no-op when the catalog isn't loaded yet or no
+ * Electron bridge exists.
+ */
+export function getModelPricingMap(): Record<string, { input: number | null; output: number | null }> {
+  const src = memoryCache ?? loadCache() ?? {};
+  const out: Record<string, { input: number | null; output: number | null }> = {};
+  for (const [id, info] of Object.entries(src)) {
+    if (info.input == null && info.output == null) continue;
+    out[id] = { input: info.input ?? null, output: info.output ?? null };
+  }
+  return out;
+}
+
+/** Push the pricing map to the Electron main process (usage recorder). */
+export function pushModelPricingToMain(): void {
+  if (typeof window === "undefined" || !window.electron?.usage?.setPricing) return;
+  try {
+    window.electron.usage.setPricing(getModelPricingMap());
+  } catch {
+    // best-effort
+  }
 }
 
 /**

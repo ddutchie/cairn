@@ -21,6 +21,7 @@ import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
 import { fetchProvidersManifest } from "../lib/community-registry";
+import { recordLlmUsage } from "../lib/usage-recorder";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -72,6 +73,7 @@ export { callLLM } from "../lib/llm";
 export function registerChatHandler(db: Database.Database, workspacePath: string, getWin?: () => BrowserWindow | null): void {
   registerIpcHandle("chat:compactThread", async (_event, req: {
     messages: Array<{ role: string; content: string }>;
+    threadId?: string;
     config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string };
   }) => {
     try {
@@ -88,7 +90,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       const { generateSummary } = await import("../lib/compaction");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const agentMsgs = req.messages as any[];
-      const summary = await generateSummary(agentMsgs, llmConfig, new AbortController().signal);
+      const summary = await generateSummary(agentMsgs, llmConfig, new AbortController().signal, { sessionId: req.threadId });
       return { data: { summary } };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -199,6 +201,20 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     const allTools = externalDefs.length > 0 ? [...TOOLS, ...externalDefs] : TOOLS;
 
     const addUsage = (pt: number, ct: number, rt?: number, cost?: number) => {
+      // Persist one usage row per tool-loop round (source = chat) for the Usage view.
+      recordLlmUsage({
+        source: "chat",
+        sessionId: req.threadId,
+        projectId: req.projectId,
+        workspaceId: req.workspaceId,
+        provider,
+        model,
+        baseUrl,
+        promptTokens: pt,
+        completionTokens: ct,
+        reasoningTokens: typeof rt === "number" ? rt : 0,
+        costUsd: cost,
+      });
       promptTokens = pt;
       completionTokens += ct;
       if (typeof rt === "number") reasoningTokens += rt;
