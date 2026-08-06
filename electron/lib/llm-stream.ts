@@ -9,15 +9,19 @@
  *     finish_reason, reasoning field }. Records WHICH reasoning field the
  *     provider used (`reasoning_content` / `reasoning` / `reasoning_text`) so it
  *     can be round-tripped verbatim (pi behaviour).
- *   - `buildChatCompletionsBody` — request body shape (system prompt travels as
- *     a `role: "system"` message, never a top-level `system:` field).
+ *   - `buildChatCompletionsBody` — request body shape (the system prompt travels
+ *     as a `role: "system"` message — or `role: "developer"` for reasoning models
+ *     on providers that support it, see `resolveSystemRole` — never a top-level
+ *     `system:` field).
  *   - `failToolCallsFromTruncatedMessage` — `finish_reason: "length"` guard:
  *     refuse to execute ANY tool call from a turn the model had to cut short.
- *   - `prepareContextMessages`   — system prepend + reasoning round-trip +
- *     empty-turn filtering around an optional context pruner.
+ *   - `prepareContextMessages`   — system prepend (via `systemRole`, defaulting
+ *     to `"system"`) + reasoning round-trip + empty-turn filtering around an
+ *     optional context pruner.
  *
- * The two loops keep their own orchestration (chat runs tools sequentially,
- * pi-agent in parallel with approvals/subagents), but they share this layer.
+ * The two loops keep their own orchestration (both run tool calls in parallel;
+ * the agent additionally has approval gates / plan mode / subagents), but they
+ * share this layer.
  */
 
 import { iterSseData } from "./sse";

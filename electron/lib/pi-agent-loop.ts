@@ -568,9 +568,10 @@ export async function runAgentLoop(
 
     // Build messages array — apply context pruning, reasoning round-trip, and
     // empty-turn filtering via the shared helper (identical to chat's stream
-    // semantics). The system prompt travels as a `role: "system"` message (never
-    // a top-level `system:` field), reasoning round-trips to the SAME model
-    // under its native field, and reasoning is kept out of the pruner so
+    // semantics). The system prompt travels as a `systemRole` message — `"system"`
+    // by default, or `"developer"` for reasoning models on providers that support
+    // it — never a top-level `system:` field. Reasoning round-trips to the SAME
+    // model under its native field, and reasoning is kept out of the pruner so
     // compaction summaries can never see chain-of-thought.
     const contextMessages = await prepareContextMessages({
       systemPrompt,
