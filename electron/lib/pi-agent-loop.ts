@@ -18,6 +18,7 @@ import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
 import { isLocalEndpoint, calculatePromptBreakdown, scaleBreakdown, buildApiUrl, type TokenBreakdown } from "./llm";
 import { recordLlmUsage, extractCost } from "./usage-recorder";
+import type { UsageSource } from "../db/usage-queries";
 import {
   buildChatCompletionsBody,
   consumeAssistantStream,
@@ -509,6 +510,8 @@ export async function runAgentLoop(
   callbacks: AgentLoopCallbacks,
   toolCtx: AgentToolContext,
   mode: "plan" | "execute" = "execute",
+  /** Usage-log source for this loop's rows — "pi-subagent" for spawned children. */
+  usageSource: UsageSource = "pi-agent",
 ): Promise<void> {
   const { signal } = session.abortCtrl;
   // Assemble external tool defs (MCP servers + custom services) in scope for the
@@ -689,7 +692,7 @@ export async function runAgentLoop(
         const rt = usage.reasoningTokens;
         // Persist one usage row per agent round for the Usage view.
         recordLlmUsage({
-          source: "pi-agent",
+          source: usageSource,
           sessionId: toolCtx.sessionId,
           projectId: toolCtx.req.projectId,
           workspaceId: toolCtx.req.workspaceId,

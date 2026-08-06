@@ -188,18 +188,28 @@ export function UsageView() {
             {/* Chart */}
             <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
               <div className="flex items-center justify-between px-4 pt-3 pb-1">
-                <div className="text-xs font-semibold text-[var(--text-primary)]">Token usage</div>
+                <div className="text-xs font-semibold text-[var(--text-primary)]">
+                  {metric === "tokens" ? "Token usage" : metric === "cost" ? "Cost" : "Requests"}
+                </div>
                 <div className="text-[0.643rem] text-[var(--text-tertiary)]">
                   {metric === "tokens" ? "daily totals" : metric === "cost" ? "provider-reported + models.dev estimates" : "LLM calls"}
                 </div>
               </div>
               <div className="flex items-center gap-4 px-4 pb-1 text-[0.643rem] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[var(--accent)]" /> Input
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[var(--info)]" /> Output
-                </span>
+                {metric === "tokens" ? (
+                  <>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[var(--accent)]" /> Input
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[var(--info)]" /> Output
+                    </span>
+                  </>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[var(--info)]" /> {metric === "cost" ? "Cost" : "Requests"}
+                  </span>
+                )}
               </div>
               <div className="px-2 pb-2">
                 <UsageChart series={overview?.series ?? []} metric={metric} />

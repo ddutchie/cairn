@@ -151,7 +151,7 @@ export function resolveProviderName(baseUrl?: string, providerSlug?: string): st
         return humanizeSlug(providerSlug);
       }
       const slug = endpointLogoSlug(baseUrl);
-      if (slug && slug !== "openai") return slug;
+      if (slug && slug !== "openai") return humanizeSlug(slug);
       return host;
     }
   }

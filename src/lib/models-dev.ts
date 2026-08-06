@@ -276,9 +276,11 @@ export function getModelPricingMap(): Record<string, { input: number | null; out
 export function pushModelPricingToMain(): void {
   if (typeof window === "undefined" || !window.electron?.usage?.setPricing) return;
   try {
-    window.electron.usage.setPricing(getModelPricingMap());
+    // Silently swallow a rejected pricing push — the main process just keeps
+    // its previous (or empty) pricing map; estimation stays best-effort.
+    window.electron.usage.setPricing(getModelPricingMap()).catch(() => {});
   } catch {
-    // best-effort
+    // best-effort (e.g. no IPC bridge yet)
   }
 }
 

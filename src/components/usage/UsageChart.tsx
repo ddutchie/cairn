@@ -44,13 +44,17 @@ export function UsageChart({ series, metric }: Props) {
     const X = (i: number) => PAD_L + i * colW;
     const valOf = (d: UsageDayBucket) => (metric === "cost" ? d.costUsd : metric === "requests" ? d.requests : d.completionTokens);
     const vals = series.map(valOf);
-    const inVals = series.map((d) => d.promptTokens);
-    const top = Math.max.apply(null, vals.concat(metric === "tokens" ? inVals : []));
+    // The input (prompt) series is only meaningful for the tokens metric —
+    // Cost and Requests must scale from their own selected values alone.
+    const inVals = metric === "tokens" ? series.map((d) => d.promptTokens) : [];
+    const top = Math.max.apply(null, vals.concat(inVals));
     const nice = niceCeil(top);
     const Y = (v: number) => PAD_T + (HEIGHT - PAD_T - PAD_B) * (1 - v / nice);
 
     const line = (arr: number[]) => arr.map((v, i) => `${i === 0 ? "M" : "L"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
-    const area = `${line(inVals)} L${X(n - 1).toFixed(1)},${Y(0).toFixed(1)} L${X(0).toFixed(1)},${Y(0).toFixed(1)} Z`;
+    const area = inVals.length > 0
+      ? `${line(inVals)} L${X(n - 1).toFixed(1)},${Y(0).toFixed(1)} L${X(0).toFixed(1)},${Y(0).toFixed(1)} Z`
+      : null;
 
     const yTicks = [];
     for (let t = 0; t <= 4; t++) {
@@ -61,7 +65,7 @@ export function UsageChart({ series, metric }: Props) {
     for (let i = 0; i < n; i += step) {
       xLabels.push({ x: X(i), t: fmtDay(series[i].day) });
     }
-    return { paths: { area, in: line(inVals), out: line(vals) }, yTicks, xLabels, yMax: nice };
+    return { paths: { area, in: inVals.length > 0 ? line(inVals) : null, out: line(vals) }, yTicks, xLabels, yMax: nice };
   }, [series, metric, w]);
 
   const handleMove = useCallback(
@@ -109,8 +113,12 @@ export function UsageChart({ series, metric }: Props) {
           ))}
           {paths && (
             <>
-              <path d={paths.area} fill="color-mix(in srgb, var(--accent) 16%, transparent)" stroke="none" />
-              <path d={paths.in} fill="none" stroke="var(--accent)" strokeWidth={1.5} />
+              {metric === "tokens" && paths.area && (
+                <path d={paths.area} fill="color-mix(in srgb, var(--accent) 16%, transparent)" stroke="none" />
+              )}
+              {metric === "tokens" && paths.in && (
+                <path d={paths.in} fill="none" stroke="var(--accent)" strokeWidth={1.5} />
+              )}
               <path d={paths.out} fill="none" stroke="var(--info)" strokeWidth={2} strokeLinejoin="round" />
             </>
           )}
@@ -118,11 +126,13 @@ export function UsageChart({ series, metric }: Props) {
               draw explicit markers so "only today" still shows on the chart. */}
           {series.length === 1 && yMax > 0 && (
             <g>
-              <circle
-                cx={PAD_L}
-                cy={PAD_T + (HEIGHT - PAD_T - PAD_B) * (1 - series[0].promptTokens / yMax)}
-                r={4} fill="var(--accent)" stroke="var(--surface)" strokeWidth={1.5}
-              />
+              {metric === "tokens" && (
+                <circle
+                  cx={PAD_L}
+                  cy={PAD_T + (HEIGHT - PAD_T - PAD_B) * (1 - series[0].promptTokens / yMax)}
+                  r={4} fill="var(--accent)" stroke="var(--surface)" strokeWidth={1.5}
+                />
+              )}
               <circle
                 cx={PAD_L}
                 cy={PAD_T + (HEIGHT - PAD_T - PAD_B) * (1 - (metric === "cost" ? series[0].costUsd : metric === "requests" ? series[0].requests : series[0].completionTokens) / yMax)}
@@ -133,7 +143,7 @@ export function UsageChart({ series, metric }: Props) {
           {hovered && (
             <g>
               <line x1={hoverX} x2={hoverX} y1={PAD_T} y2={HEIGHT - PAD_B} stroke="var(--muted)" strokeWidth={1} strokeDasharray="3 3" />
-              <circle cx={hoverX} cy={inY} r={3.5} fill="var(--accent)" />
+              {metric === "tokens" && <circle cx={hoverX} cy={inY} r={3.5} fill="var(--accent)" />}
               <circle cx={hoverX} cy={outY} r={3.5} fill="var(--info)" />
             </g>
           )}
@@ -144,7 +154,7 @@ export function UsageChart({ series, metric }: Props) {
           className="pointer-events-none absolute z-10 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 shadow-xl"
           style={{
             left: Math.min(w - 170, Math.max(8, hoverX - 85)),
-            top: Math.max(4, inY - 86),
+            top: Math.max(4, outY - 86),
           }}
         >
           <div className="text-[0.643rem] uppercase tracking-[0.06em] text-[var(--text-tertiary)] mb-1">{fmtDay(hovered.day)}</div>

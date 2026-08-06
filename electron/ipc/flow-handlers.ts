@@ -205,11 +205,31 @@ export function registerFlowHandlers(ctx: DbContext): void {
         const userPrompt = `Summarise the following connected items into a concise paragraph (3–5 sentences). Focus on themes, relationships, and key points. Reply with plain prose only — no bullet points, no headers, no XML, no tool calls, no markdown formatting of any kind.\n\n${parts.join("\n\n")}`;
         const systemPrompt = "You are a concise synthesis assistant. Your only job is to write a short prose paragraph summarising the provided content. Output plain text only — no XML, no tool calls, no function invocations, no markdown, no bullet points, no headings. Just the summary text.";
 
+        // Resolve the owning flow's project + workspace so the usage record is
+        // scoped to the flow's project (not left unset for the Usage view).
+        let flowProjectId: string | undefined;
+        let flowWorkspaceId: string | undefined;
+        try {
+          const flowNode = ctx.db.prepare("SELECT flow_id FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as { flow_id?: string } | undefined;
+          const flow = flowNode?.flow_id
+            ? ctx.db.prepare("SELECT project_id FROM idea_flows WHERE id = ?").get(flowNode.flow_id) as { project_id?: string } | undefined
+            : undefined;
+          const project = flow?.project_id
+            ? ctx.db.prepare("SELECT workspace_id FROM projects WHERE id = ?").get(flow.project_id) as { workspace_id?: string } | undefined
+            : undefined;
+          flowProjectId = flow?.project_id;
+          flowWorkspaceId = project?.workspace_id;
+        } catch {
+          // best-effort scoping — fall back to unset ids
+        }
+
         let summary: string;
         try {
           summary = await callLLM({ baseUrl, model, apiKey }, systemPrompt, userPrompt, {
             source: "flow-ai-summary",
             sessionId: args.nodeId,
+            projectId: flowProjectId,
+            workspaceId: flowWorkspaceId,
           });
         } catch (e) {
           throw new Error(`AI call failed: ${(e as Error).message}`);

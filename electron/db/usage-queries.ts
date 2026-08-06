@@ -247,9 +247,39 @@ export interface UsageRecentRow {
   createdAt: number;
 }
 
+/**
+ * Write a recovered turn-level cost (provider credit-diff) back onto the usage
+ * rows recorded for that chat turn. Only rows without a provider-reported cost
+ * (estimated or null) are touched, and the total is distributed proportionally
+ * to each round's completion tokens so per-day totals stay accurate.
+ */
+export function applyRecoveredTurnCost(
+  db: Database.Database,
+  sessionId: string | undefined,
+  fromMs: number,
+  totalCost: number,
+): void {
+  if (!sessionId || !Number.isFinite(totalCost) || totalCost < 0) return;
+  const rows = db.prepare(
+    `SELECT id, completion_tokens FROM llm_usage
+     WHERE source = 'chat' AND session_id = ? AND created_at >= ? AND (cost_usd IS NULL OR cost_estimated = 1)`
+  ).all(sessionId, fromMs) as Array<{ id: string; completion_tokens: number }>;
+  if (rows.length === 0) return;
+  const totalOut = rows.reduce((a, r) => a + r.completion_tokens, 0);
+  const update = db.prepare("UPDATE llm_usage SET cost_usd = ?, cost_estimated = 0 WHERE id = ?");
+  const apply = db.transaction(() => {
+    for (const r of rows) {
+      const share = totalOut > 0
+        ? (r.completion_tokens / totalOut) * totalCost
+        : totalCost / rows.length;
+      update.run(share, r.id);
+    }
+  });
+  apply();
+}
+
 /** Most recent per-call rows for the history table. */
-export function queryRecentUsage(db: Database.Database, filter: UsageQueryFilter, limit = 50): UsageRecentRow[] {
-  const where = whereClause(filter);
+export function queryRecentUsage(db: Database.Database, filter: UsageQueryFilter, limit = 50): UsageRecentRow[] {  const where = whereClause(filter);
   const rows = db
     .prepare(
       `SELECT id, workspace_id, project_id, source, session_id, provider, model, base_url,

@@ -11,7 +11,6 @@
 
 import { randomBytes } from "crypto";
 import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../pi-agent-loop";
-import { recordLlmUsage } from "../usage-recorder";
 
 export interface SpawnSubagentArgs {
   prompt: string;
@@ -104,26 +103,15 @@ export async function spawnSubagentTool(
       onToolStart:   (name, label, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "start" }),
       onToolEnd:     (name, label, ok, output, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "end", ok, output }),
       onStepStart:  () => childToolCtx.send("pi-agent:step", { sessionId: childSessionId }),
-      onUsage:      (pt, ct, rt, breakdown, costUsd) => {
-        recordLlmUsage({
-          source: "pi-subagent",
-          sessionId: childSessionId,
-          projectId: childToolCtx.req.projectId,
-          workspaceId: childToolCtx.req.workspaceId,
-          provider: llmConfig.provider,
-          model: llmConfig.model,
-          baseUrl: llmConfig.baseUrl,
-          promptTokens: pt,
-          completionTokens: ct,
-          reasoningTokens: rt ?? 0,
-          costUsd,
-        });
-        childToolCtx.send("pi-agent:usage", { sessionId: childSessionId, promptTokens: pt, completionTokens: ct, breakdown });
-      },
+      // Usage recording for the child happens inside runAgentLoop with source
+      // "pi-subagent"; this callback only relays the renderer event.
+      onUsage:      (pt, ct, breakdown) => childToolCtx.send("pi-agent:usage", { sessionId: childSessionId, promptTokens: pt, completionTokens: ct, breakdown }),
       onDone:       () => { /* handled below via session.messages */ },
       onError:      (msg) => { errorMessage = msg; },
     },
     childToolCtx,
+    "execute",
+    "pi-subagent",
   );
 
   // Extract the final assistant message from history

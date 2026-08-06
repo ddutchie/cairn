@@ -25,6 +25,13 @@ describe("model-pricing", () => {
     expect(pricePerMillion("playground-gpt-4o")).toEqual({ input: 2.5, output: 10 });
   });
 
+  it("requires a separator boundary before a fuzzy suffix match", () => {
+    // "chatgpt-4o" ends in "gpt-4o" but the preceding char is a letter — no match.
+    expect(pricePerMillion("chatgpt-4o")).toBeNull();
+    expect(pricePerMillion("my-gpt-4o")).toEqual({ input: 2.5, output: 10 });
+    expect(pricePerMillion("openai/gpt-4o")).toEqual({ input: 2.5, output: 10 });
+  });
+
   it("estimates cost from per-1M pricing", () => {
     // 1M input + 200K output @ deepseek rates
     expect(estimateCostUsd("deepseek-v4-flash", 1_000_000, 200_000)).toBeCloseTo(0.04 + 0.024, 6);

@@ -18,7 +18,7 @@
  */
 
 import type { AgentLLMConfig, AgentMessage, AgentToolResultMsg, PiAgentSession } from "./pi-agent-loop";
-import { buildApiUrl } from "./llm";
+import { buildApiUrl, postChatCompletions } from "./llm";
 import { recordLlmUsage, extractCost } from "./usage-recorder";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -128,11 +128,10 @@ export async function generateSummary(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const response = await fetch(buildApiUrl(baseUrl, "chat/completions"), {
-    method: "POST",
+  const response = await postChatCompletions(
+    buildApiUrl(baseUrl, "chat/completions"),
     headers,
-    signal,
-    body: JSON.stringify({
+    {
       model,
       // System prompt as a `role: "system"` message (not a top-level `system:`
       // field) so strict OpenAI-compatible providers don't reject the request
@@ -145,9 +144,10 @@ export async function generateSummary(
       temperature: 0.1, // deterministic summary
       // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
       stream: true,
-      stream_options: { include_usage: true },
-    }),
-  });
+    },
+    true,
+    signal,
+  );
 
   if (!response.ok) {
     throw new Error(`Compaction LLM call failed: ${response.status} ${response.statusText}`);

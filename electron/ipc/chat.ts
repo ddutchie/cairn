@@ -22,6 +22,7 @@ import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
 import { fetchProvidersManifest } from "../lib/community-registry";
 import { recordLlmUsage } from "../lib/usage-recorder";
+import { applyRecoveredTurnCost } from "../db/usage-queries";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -312,6 +313,8 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     // Pre-stream snapshot of provider credits (for providers like NeuralWatt
     // that don't include cost in streaming responses). We diff after the stream
     // to recover per-request cost — only used when the stream didn't report it.
+    // `turnStart` scopes the recovery write-back to exactly this turn's rows.
+    const turnStart = Date.now();
     let creditsBefore: number | null = null;
     if (apiKey && !isLocalEndpointUrl) {
       try {
@@ -363,6 +366,10 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
                 if (promptTokens > 0) {
                   send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd });
                 }
+                // Write the recovered provider-reported cost back onto this
+                // turn's recorded usage rows (they were persisted during the
+                // loop, when the provider's inline cost wasn't known yet).
+                applyRecoveredTurnCost(db, req.threadId, turnStart, diff);
               }
             }
           }

@@ -126,21 +126,49 @@ export interface LlmCallOpts {
   workspaceId?: string;
 }
 
+/**
+ * POST a chat-completions request, optionally requesting the streaming usage
+ * chunk (`stream_options.include_usage`). A handful of strict OpenAI-compatible
+ * endpoints reject the `stream_options` field with a 400 — retry once without
+ * it so a usage-requesting call still succeeds against them.
+ */
+export async function postChatCompletions(
+  url: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown>,
+  includeUsage: boolean,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const attempt = includeUsage ? { ...body, stream_options: { include_usage: true } } : body;
+  const res = await fetch(url, { method: "POST", headers, signal, body: JSON.stringify(attempt) });
+  if (!res.ok && res.status === 400 && includeUsage) {
+    const { stream_options: _omit, ...without } = body;
+    return fetch(url, { method: "POST", headers, signal, body: JSON.stringify(without) });
+  }
+  return res;
+}
+
 export async function callLLM(
   config: LLMConfig,
   systemPrompt: string,
   userPrompt: string,
   opts: LlmCallOpts = {},
 ): Promise<string> {
-  const record = (pt: number, ct: number, rt: number, cost?: number) => {
+  const record = (
+    pt: number,
+    ct: number,
+    rt: number,
+    cost?: number,
+    meta?: { provider?: string; model?: string; baseUrl?: string },
+  ) => {
     recordLlmUsage({
       source: opts.source ?? "chat",
       sessionId: opts.sessionId,
       projectId: opts.projectId,
       workspaceId: opts.workspaceId,
-      provider: config.provider,
-      model: config.model,
-      baseUrl: config.baseUrl,
+      provider: meta?.provider ?? config.provider,
+      model: meta?.model ?? config.model,
+      baseUrl: meta?.baseUrl ?? config.baseUrl,
       promptTokens: pt,
       completionTokens: ct,
       reasoningTokens: rt,
@@ -150,10 +178,18 @@ export async function callLLM(
 
   if (config.provider === "localllm") {
     const { callLocalLLMChat } = await import("./local-llm");
+    const { ensureLlamaServerRunning } = await import("./llama-server");
     const messages: OpenAIMessage[] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ];
+    // On-device requests always hit the llama-server's gemma-4 — record the
+    // real endpoint/model rather than the (possibly empty) remote config.
+    const localMeta = {
+      provider: "localllm",
+      model: "gemma-4",
+      baseUrl: `http://127.0.0.1:${await ensureLlamaServerRunning()}/v1`,
+    };
     const res = await callLocalLLMChat(messages);
     const content = res.choices?.[0]?.message?.content ?? "";
     const usage = res?.usage;
@@ -163,19 +199,20 @@ export async function callLLM(
         usage.completion_tokens ?? 0,
         usage.completion_tokens_details?.reasoning_tokens ?? 0,
         extractCost(res?.cost, usage),
+        localMeta,
       );
     } else {
-      record(tok(systemPrompt) + tok(userPrompt), tok(content), 0);
+      record(tok(systemPrompt) + tok(userPrompt), tok(content), 0, undefined, localMeta);
     }
     return content;
   }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
-  const response = await fetch(buildApiUrl(config.baseUrl, "chat/completions"), {
-    method: "POST",
+  const response = await postChatCompletions(
+    buildApiUrl(config.baseUrl, "chat/completions"),
     headers,
-    body: JSON.stringify({
+    {
       model: config.model,
       messages: [
         { role: "system", content: systemPrompt },
@@ -185,9 +222,9 @@ export async function callLLM(
       temperature: 0.4,
       // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
       stream: true,
-      stream_options: { include_usage: true },
-    }),
-  });
+    },
+    true,
+  );
   if (!response.ok) throw new Error(`LLM error ${response.status}: ${await response.text().catch(() => response.statusText)}`);
 
   const reader = response.body?.getReader();

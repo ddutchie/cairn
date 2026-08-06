@@ -9,7 +9,13 @@ import { describe, it, expect, beforeEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "./schema";
-import { insertLlmUsage, queryUsageOverview, queryRecentUsage, type LlmUsageRecord } from "./usage-queries";
+import { insertLlmUsage, queryUsageOverview, queryRecentUsage, applyRecoveredTurnCost, type LlmUsageRecord } from "./usage-queries";
+
+// The per-day series buckets via SQLite's `localtime` modifier, which honours
+// the process TZ. Pin it to UTC so the "2026-08-05 / 2026-08-06" date
+// assertions are deterministic on any host (an east-of-UTC timezone would
+// shift noon-UTC rows into the following day).
+process.env.TZ = "UTC";
 
 describe("usage-queries", () => {
   let db: Database.Database;
@@ -116,5 +122,26 @@ describe("usage-queries", () => {
     const recent = queryRecentUsage(db, {}, 2);
     expect(recent).toHaveLength(2);
     expect(recent[0].model).toBe("m0");
+  });
+
+  it("writes a recovered turn cost back onto estimated rows proportionally", () => {
+    insertLlmUsage(db, rec({ source: "chat", sessionId: "t1", completionTokens: 100, costUsd: 0.01, costEstimated: true, createdAt: NOW }));
+    insertLlmUsage(db, rec({ source: "chat", sessionId: "t1", completionTokens: 300, costUsd: 0.03, costEstimated: true, createdAt: NOW + 1 }));
+    // A different thread must be untouched.
+    insertLlmUsage(db, rec({ source: "chat", sessionId: "other", completionTokens: 50, costUsd: 0.02, costEstimated: true, createdAt: NOW }));
+
+    applyRecoveredTurnCost(db, "t1", NOW, 1.0);
+
+    const rows = queryRecentUsage(db, {}, 10).filter((r) => r.sessionId === "t1");
+    expect(rows).toHaveLength(2);
+    // Estimates replaced by the recovered cost (100/400 and 300/400 of $1).
+    expect(rows.find((r) => r.completionTokens === 100)!.costUsd).toBeCloseTo(0.25, 6);
+    expect(rows.find((r) => r.completionTokens === 300)!.costUsd).toBeCloseTo(0.75, 6);
+    expect(rows.every((r) => r.costEstimated === false)).toBe(true);
+
+    // The other thread's row still has its estimate.
+    const other = queryRecentUsage(db, {}, 10).find((r) => r.sessionId === "other")!;
+    expect(other.costUsd).toBe(0.02);
+    expect(other.costEstimated).toBe(true);
   });
 });

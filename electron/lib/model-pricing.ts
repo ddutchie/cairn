@@ -18,12 +18,15 @@ export function pricePerMillion(model: string): { input: number | null; output: 
   if (!pricing || !model) return null;
   const exact = pricing[model];
   if (exact) return exact;
-  // Normalized/fuzzy match for gateway ids (e.g. "playground-claude-opus" →
-  // "claude-opus-...") — try stripping a leading provider prefix and matching
-  // on a model-name token.
+  // Fuzzy match for gateway ids that embed the catalog id as a whole token —
+  // e.g. "playground-gpt-4o" → "gpt-4o". A match only counts when a separator
+  // (-, /, :, .) precedes it, so "chatgpt-4o" can never hit "gpt-4o" pricing.
   const base = model.toLowerCase();
+  const boundary = (s: string, start: number) => start === 0 || /[-/:._]/.test(s[start - 1] ?? "");
   for (const [id, price] of Object.entries(pricing)) {
-    if (id.toLowerCase().endsWith(base) || base.endsWith(id.toLowerCase())) return price;
+    const nid = id.toLowerCase();
+    if (nid && base.endsWith(nid) && boundary(base, base.length - nid.length)) return price;
+    if (nid.endsWith(base) && boundary(nid, nid.length - base.length)) return price;
   }
   return null;
 }
