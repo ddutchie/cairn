@@ -342,7 +342,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   const isChatActive = useCairnStore((s) => s.activeSessionId === "chat");
 
-  useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive]);
+  // Scroll to the bottom when messages/loading change, and whenever the
+  // ask_questions form appears — otherwise it can land out of view if the user
+  // had scrolled up when the model asked its questions.
+  useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive, pendingQuestions]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
   const handleAttachImages = useCallback(async (files: File[]) => {

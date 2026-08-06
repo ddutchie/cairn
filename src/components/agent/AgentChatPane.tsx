@@ -193,11 +193,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const sendPromptRef   = useRef<(text: string) => void>(() => {});
   const firedSessions   = useRef(new Set<string>());
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom on new messages / streaming growth, and whenever the
+  // ask_questions form appears — otherwise it can land out of view if the user
+  // had scrolled up when the model asked its questions.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (isActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, messages[messages.length - 1]?.content?.length, isActive]);
+  }, [messages.length, messages[messages.length - 1]?.content?.length, isActive, pendingQuestions]);
   /* eslint-enable react-hooks/exhaustive-deps */
 
   // Focus input when pane becomes active
