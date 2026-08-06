@@ -185,4 +185,60 @@ describe("runToolLoop — finish_reason length truncation guard", () => {
     db.close();
     fs.rmSync(workspacePath, { recursive: true, force: true });
   });
+
+  it("executes multiple tool calls in one turn in parallel and persists all results", async () => {
+    const db = makeDb();
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-chatloop-"));
+    const server = await makeServer([
+      [
+        // Two parallel ensure_note calls in a single turn (index 0 and 1).
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_a", function: { name: "ensure_note", arguments: "" } }] } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ projectId: "proj1", title: "Note A" }) } }] } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 1, id: "call_b", function: { name: "ensure_note", arguments: "" } }] } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: JSON.stringify({ projectId: "proj1", title: "Note B" }) } }] } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+        "data: [DONE]\n\n",
+      ].join(""),
+      textOnlySSE(["Both notes created."]),
+    ]);
+    servers.push(server);
+
+    const emitToolCallEvents: string[] = [];
+    const doneEvents: { ok?: boolean; error?: string }[] = [];
+
+    const messages = [
+      { role: "system" as const, content: "test" },
+      { role: "user" as const, content: "create two notes" },
+    ];
+
+    const result = await runToolLoop(
+      db,
+      chatReq,
+      workspacePath,
+      server.url,
+      "test-model",
+      "test-key",
+      messages,
+      (e) => emitToolCallEvents.push(e.tool),
+      undefined,
+      undefined,
+      "openai",
+      undefined,
+      (e) => doneEvents.push({ ok: e.ok, error: e.error }),
+    );
+
+    // Both chips fired (in source order) and both completed successfully.
+    expect(emitToolCallEvents).toEqual(["ensure_note", "ensure_note"]);
+    expect(doneEvents).toHaveLength(2);
+    expect(doneEvents.every((d) => d.ok)).toBe(true);
+
+    // Both parallel calls persisted their notes.
+    const titles = (db.prepare("SELECT title FROM notes ORDER BY title").all() as { title: string }[]).map((r) => r.title);
+    expect(titles).toEqual(["Note A", "Note B"]);
+
+    expect(result.content).toBe("Both notes created.");
+
+    db.close();
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  });
 });

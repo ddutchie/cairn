@@ -342,7 +342,12 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   const isChatActive = useCairnStore((s) => s.activeSessionId === "chat");
 
-  useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive]);
+  // Scroll to the bottom when messages/loading change, and whenever the
+  // ask_questions form appears — otherwise it can land out of view if the user
+  // had scrolled up when the model asked its questions. `pendingQuestions` is
+  // an array, so depend on its length (a scalar) to avoid a deps-change warning.
+  const pendingQuestionCount = pendingQuestions?.length ?? 0;
+  useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive, pendingQuestionCount]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
   const handleAttachImages = useCallback(async (files: File[]) => {
@@ -501,6 +506,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         maxTokens: resolveMaxOutputTokens(
           aiConfig.maxOutputAuto === false ? aiConfig.maxOutputTokens : undefined,
         ),
+        // Reasoning models get the `developer` system role (OpenAI convention).
+        isReasoningModel: getModelInfo(aiConfig.model)?.reasoning === true,
       },
       systemPrompt,
       images: attachmentsToSend?.map((a) => ({ name: a.name, dataUrl: a.dataUrl, kind: a.kind })),

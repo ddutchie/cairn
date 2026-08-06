@@ -32,6 +32,7 @@ describe("parseModelCatalog", () => {
             cost: { input: 1.25, output: 10 },
             modalities: { input: ["text", "image", "pdf"] },
             tool_call: true,
+            reasoning: true,
           },
         },
       },
@@ -48,6 +49,7 @@ describe("parseModelCatalog", () => {
       output: 10,
       modes: ["text", "image", "pdf"],
       toolCall: true,
+      reasoning: true,
       provider: "openai",
     });
     expect(map["claude-4"]).toEqual({
@@ -57,6 +59,7 @@ describe("parseModelCatalog", () => {
       output: null,
       modes: [],
       toolCall: null,
+      reasoning: null,
       provider: "anthropic",
     });
   });
@@ -72,6 +75,7 @@ describe("parseModelCatalog", () => {
       output: null,
       modes: [],
       toolCall: null,
+      reasoning: null,
       provider: "deepseek",
     });
   });
@@ -159,7 +163,7 @@ describe("resolveMaxOutputTokens", () => {
 
 describe("normalizeModelInfo", () => {
   it("passes well-formed entries through unchanged", () => {
-    const info = { context: 1000, maxOutput: 8000, input: 1, output: 2, modes: ["text"], toolCall: true, provider: "x" };
+    const info = { context: 1000, maxOutput: 8000, input: 1, output: 2, modes: ["text"], toolCall: true, reasoning: true, provider: "x" };
     expect(normalizeModelInfo(info as never)).toEqual(info);
   });
 

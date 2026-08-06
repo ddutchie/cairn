@@ -16,12 +16,12 @@ import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
 import type { OpenAIMessage } from "./llm";
 import { buildApiUrl } from "./llm";
+import { buildChatCompletionsBody, consumeAssistantStream, failToolCallsFromTruncatedMessage, interruptedStreamToolCallError } from "./llm-stream";
 import { TOOLS, type ChatRequest } from "./tools";
 import { executeTool } from "../ipc/chat-executor";
 import { executeExternalTool, isExternalToolName, externalToolLabel } from "./external-tools";
 import { extractExternalRef } from "./external-ref";
 import { externalOutputError } from "./tool-result";
-import { iterSseData } from "./sse";
 import { traceTool } from "./tool-trace";
 import { parseToolArgs } from "./parse-tool-args";
 
@@ -90,6 +90,10 @@ export async function runToolLoop(
     // output-token limit mid-turn — any tool calls in that message may carry
     // truncated arguments (see the truncation guard below).
     let turnFinishReason: string | null = null;
+    // True only for the SSE streaming (cloud) branch. The interrupted-stream
+    // guard below must NOT apply to the localllm non-streaming path, where a
+    // null finish_reason is a normal, complete response.
+    let streamingTurn = false;
 
     if (provider === "localllm") {
       try {
@@ -194,6 +198,7 @@ export async function runToolLoop(
         return { exhausted: true, content: `Local LLM Engine error: ${String(err)}`, reasoning: accumulatedReasoning };
       }
     } else {
+      streamingTurn = true;
       let response: Response;
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -202,18 +207,13 @@ export async function runToolLoop(
           method: "POST",
           headers,
           signal,
-          body: JSON.stringify({
+          body: JSON.stringify(buildChatCompletionsBody({
             model,
             messages,
             tools: combinedTools,
-            tool_choice: "auto",
-            // Only send max_tokens when the user set an explicit cap — omitting
-            // it lets the model finish naturally (see maxTokens above).
-            ...(maxTokens ? { max_tokens: maxTokens } : {}),
+            maxTokens,
             temperature,
-            stream: true,
-            stream_options: { include_usage: true },
-          }),
+          })),
         });
       } catch (_err) {
         if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
@@ -228,118 +228,56 @@ export async function runToolLoop(
       const reader = response.body?.getReader();
       if (!reader) return { exhausted: true, content: "No response stream", reasoning: "" };
 
-      let contentBuffer = "";
-      const toolCallBuffers: Map<number, { id: string; name: string; args: string; thought_signature?: string }> = new Map();
-
-      for await (const jsonStr of iterSseData(reader, signal ?? undefined)) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const chunk = JSON.parse(jsonStr) as any;
-          if (chunk.usage && onUsage) {
-            const topCost = chunk.cost as { request_cost_usd?: unknown } | undefined;
-            onUsage(
-              chunk.usage.prompt_tokens ?? 0,
-              chunk.usage.completion_tokens ?? 0,
-              chunk.usage.completion_tokens_details?.reasoning_tokens ?? 0,
-              typeof chunk.usage.cost === "number"
-                ? chunk.usage.cost
-                : typeof topCost?.request_cost_usd === "number"
-                  ? topCost.request_cost_usd
-                  : undefined,
-            );
-          }
-          const delta = chunk.choices?.[0]?.delta;
-          // Capture the finish reason — "length" means the model hit max_tokens.
-          // A reasoning model can hit it having emitted only chain-of-thought.
-          if (chunk.choices?.[0]?.finish_reason) {
-            turnFinishReason = chunk.choices[0].finish_reason;
-          }
-          if (!delta) continue;
-
-          if (delta.content) {
-            contentBuffer += delta.content;
-            accumulatedContent += delta.content;
-            if (onToken) onToken(delta.content);
-          }
-
-          // Reasoning / thinking stream (Claude thinking_delta, OpenAI delta.reasoning,
-          // DeepSeek/Qwen-style delta.reasoning_content).
-          // Models that don't expose reasoning text simply never emit this field —
-          // the panel stays hidden. Reasoning is NOT merged into content/tool JSON.
-          const thought = delta.reasoning_content ?? delta.reasoning;
-          if (thought) {
-            accumulatedReasoning += thought;
-            if (onThought) onThought(thought);
-          }
-
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const idx: number = tc.index ?? 0;
-              if (!toolCallBuffers.has(idx)) {
-                toolCallBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
-              }
-              const buf = toolCallBuffers.get(idx)!;
-              if (tc.id) buf.id = tc.id;
-              if (tc.function?.name) buf.name = tc.function.name;
-              if (tc.function?.arguments) buf.args += tc.function.arguments;
-              // Gemini 3.x thought signature — opaque blob to round-trip back.
-              if (tc.thought_signature) buf.thought_signature = tc.thought_signature;
-            }
-          }
-        } catch { /* skip malformed SSE JSON line */ }
-      }
+      // Shared SSE parse (same as the agent loop) so reasoning-field capture,
+      // finish_reason tracking, and tool-call buffering can never diverge again.
+      const turn = await consumeAssistantStream(reader, {
+        signal,
+        onToken: (delta) => { if (onToken) onToken(delta); },
+        onThought: (delta) => { if (onThought) onThought(delta); },
+        onUsage: (usage) => {
+          if (!onUsage) return;
+          const topCost = usage.chunkCost as { request_cost_usd?: unknown } | undefined;
+          const raw = usage.raw as { cost?: unknown };
+          onUsage(
+            usage.promptTokens,
+            usage.completionTokens,
+            usage.reasoningTokens,
+            typeof raw.cost === "number"
+              ? raw.cost
+              : typeof topCost?.request_cost_usd === "number"
+                ? topCost.request_cost_usd
+                : undefined,
+          );
+        },
+      });
+      // Reasoning and content are accumulated here (onToken/onThought only stream).
+      accumulatedContent += turn.content;
+      accumulatedReasoning += turn.reasoning;
+      turnFinishReason = turn.finishReason;
 
       // Dev trace: per-tool assembled arguments.
-      for (const [idx, buf] of toolCallBuffers.entries()) {
+      for (let i = 0; i < turn.toolCalls.length; i++) {
+        const tc = turn.toolCalls[i];
         traceTool("sse-args", {
-          toolIndex: idx,
-          toolName: buf.name,
-          arguments: buf.args,
+          toolIndex: turn.toolCallIndexes[i],
+          toolName: tc.function.name,
+          arguments: tc.function.arguments,
         });
       }
 
       if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
 
-      const toolCalls = toolCallBuffers.size > 0
-        ? Array.from(toolCallBuffers.entries())
-            .sort(([a], [b]) => a - b)
-            .map(([, buf]) => ({
-              id: buf.id,
-              type: "function" as const,
-              function: { name: buf.name, arguments: buf.args },
-              ...(buf.thought_signature ? { thought_signature: buf.thought_signature } : {}),
-            }))
-        : undefined;
+      const toolCalls = turn.toolCalls.length > 0 ? turn.toolCalls : undefined;
 
       assistantMsg = {
         role: "assistant" as const,
-        content: contentBuffer || null,
+        content: turn.content || null,
         // Note: reasoning is intentionally NOT included here. It is
         // accumulated separately in `accumulatedReasoning` and returned
-        // to the caller for UI/persistence. Sending it back to the API
-        // would violate both OpenAI and Anthropic message schemas.
+        // to the caller for UI/persistence (the ThinkingPanel renders it).
+        // Reasoning is never baked into `content` — matching pi.
         tool_calls: toolCalls,
       };
-
-      // Reasoning-budget exhaustion safety net (cloud/streaming). By default we
-      // omit max_tokens so this shouldn't happen, but a user-set cap (or a
-      // provider's own server-side limit) can still stop a "thinking" model with
-      // finish_reason:"length" having emitted only reasoning and no content.
-      // That empty turn is useless to show AND, if persisted, poisons the next
-      // request (the provider rejects an assistant message with neither content
-      // nor tool_calls — a 400). Surface the captured reasoning so the reply is
-      // never empty.
-      if (
-        (!assistantMsg.content || !assistantMsg.content.trim()) &&
-        !assistantMsg.tool_calls?.length &&
-        turnFinishReason === "length" &&
-        accumulatedReasoning.trim()
-      ) {
-        const surfaced = `*[This model hit its output-token limit before giving a final answer. Its reasoning is shown below — raise or clear "Max output tokens" in AI settings for a complete reply.]*\n\n${accumulatedReasoning.trim()}`;
-        assistantMsg.content = surfaced;
-        accumulatedContent = surfaced;
-        if (onToken) onToken(surfaced);
-      }
     }
 
     // No tool calls — model is ready to produce its final reply
@@ -348,34 +286,41 @@ export async function runToolLoop(
       return { exhausted: false, content: accumulatedContent, reasoning: accumulatedReasoning };
     }
 
-    // Output-token-limit truncation guard. A "length" finish means the model ran
-    // out of tokens mid-turn, so every tool call in this message may carry
-    // truncated arguments. The worst case is a cut that lands on a well-formed
-    // boundary: the partial JSON parses cleanly and would be executed with
-    // silently missing fields — something no JSON parser can detect. Mirroring
-    // pi's `failToolCallsFromTruncatedMessage`, refuse to execute ANY of them:
-    // emit the chip + a structured error so the model re-issues with complete
+    // Output-token-limit / interrupted-stream truncation guard. A "length"
+    // finish (or a stream that ended without ANY finish_reason — connection cut
+    // mid-call) means the tool calls in this message may carry truncated
+    // arguments. The worst case is a cut that lands on a well-formed boundary:
+    // the partial JSON parses cleanly and would be executed with silently
+    // missing fields — something no JSON parser can detect. Mirroring pi's
+    // `failToolCallsFromTruncatedMessage`, refuse to execute ANY of them: emit
+    // the chip + a structured error so the model re-issues with complete
     // arguments (or the user raises the output-token cap).
-    if (turnFinishReason === "length") {
+    const streamInterrupted = streamingTurn && turnFinishReason === null && (assistantMsg.tool_calls?.length ?? 0) > 0;
+    if (turnFinishReason === "length" || streamInterrupted) {
       messages.push(assistantMsg);
-      // Tailor the guidance to the config: on Auto we send NO max_tokens, so a
-      // "length" cut comes from the provider's own output cap, not our setting.
-      const capHint = maxTokens
-        ? "Try raising the Max output tokens setting."
-        : "Max output tokens is set to Auto (no cap is sent), so this is the provider's own output limit — try a manual Max output tokens value or a model with a larger output cap.";
-      const truncatedError =
-        `Tool call not executed: the model hit its output-token limit, so the arguments may be truncated. ` +
-        `Re-issue the tool call with complete arguments. ${capHint}`;
-      for (const call of assistantMsg.tool_calls) {
-        emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args: {}, callId: call.id });
-        emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: truncatedError });
-        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: truncatedError }) });
-      }
+      const toolResults = failToolCallsFromTruncatedMessage(assistantMsg.tool_calls, {
+        maxTokens,
+        error: streamInterrupted ? interruptedStreamToolCallError() : undefined,
+        labelFor: (name) => externalToolLabel(name, db),
+        emitStart: (tool, label, callId, args) => emitToolCall({ tool, label, args, callId }),
+        emitEnd: (tool, label, ok, output, callId, _args) => emitToolCallDone?.({ tool, callId, ok, error: output }),
+      });
+      for (const tr of toolResults) messages.push(tr);
       continue;
     }
 
     messages.push(assistantMsg);
-    for (const call of assistantMsg.tool_calls) {
+
+    // ── Execute tool calls ───────────────────────────────────────────────
+    // Run parallel tool calls like the agent loop does. The per-tool
+    // concurrency guards (file mutex, note locks, atomic writes) live in the
+    // shared tool implementations, so parallel execution is equally safe here.
+    // Results are appended back in source order so the model sees a stable
+    // sequence. When an approval gate is present (heartbeat runner), execution
+    // stays sequential so human prompts never stack and the abort-while-waiting
+    // break is preserved.
+    type ToolCallMsg = { id: string; function: { name: string; arguments: string } };
+    const runOne = async (call: ToolCallMsg): Promise<{ call: ToolCallMsg; content: string; abort?: boolean }> => {
       let args: Record<string, unknown>;
       let parseError: string | null = null;
       const parsed = parseToolArgs(call.function.arguments);
@@ -399,15 +344,9 @@ export async function runToolLoop(
       if (parseError) {
         emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args: {}, callId: call.id });
         emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: parseError });
-        messages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: JSON.stringify({ error: parseError }),
-        });
-        continue;
+        return { call, content: JSON.stringify({ error: parseError }) };
       }
 
-      let result: unknown;
       try {
         if (argMutator) args = argMutator(call.function.name, args);
         if (approvalGate) {
@@ -416,12 +355,7 @@ export async function runToolLoop(
             const reason = gate.reason ?? "Blocked by user";
             emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args, callId: call.id });
             emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: reason });
-            messages.push({
-              role: "tool",
-              tool_call_id: call.id,
-              content: JSON.stringify({ error: reason }),
-            });
-            continue;
+            return { call, content: JSON.stringify({ error: reason }) };
           }
           // The gate can block for a long time (human decision) — if the run was
           // aborted while waiting, don't execute this or any remaining tool call.
@@ -429,12 +363,7 @@ export async function runToolLoop(
             const reason = "Aborted while waiting for approval";
             emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args, callId: call.id });
             emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: reason });
-            messages.push({
-              role: "tool",
-              tool_call_id: call.id,
-              content: JSON.stringify({ error: reason }),
-            });
-            break;
+            return { call, content: JSON.stringify({ error: reason }), abort: true };
           }
         }
         if (isExternalToolName(call.function.name)) {
@@ -446,20 +375,36 @@ export async function runToolLoop(
           const externalRef = extractExternalRef(output);
           const externalError = externalOutputError(output);
           emitToolCallDone?.({ tool: call.function.name, externalRef, output, callId: call.id, ok: externalError === undefined, error: externalError });
-          result = output;
-        } else {
-          result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone, call.id);
+          return { call, content: typeof output === "string" ? output : JSON.stringify(output) };
         }
+        const result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone, call.id);
+        return { call, content: typeof result === "string" ? result : JSON.stringify(result) };
       } catch (toolErr) {
         const message = `Tool "${call.function.name}" failed: ${String(toolErr)}`;
-        result = { error: message };
         // executeTool fires its own emitDone only on the success return path; a
         // thrown exception skips it, so emit a failure done here (keyed by callId
         // so the renderer updates the same chip) — otherwise the chip would hang
         // in its running state with no failure signal.
         emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: message });
+        return { call, content: JSON.stringify({ error: message }) };
       }
-      messages.push({ role: "tool", tool_call_id: call.id, content: typeof result === "string" ? result : JSON.stringify(result) });
+    };
+
+    const appendResult = (r: { call: ToolCallMsg; content: string }) => {
+      messages.push({ role: "tool", tool_call_id: r.call.id, content: r.content });
+    };
+
+    if (approvalGate) {
+      // Sequential: approval gates prompt a human — never stack them.
+      for (const call of assistantMsg.tool_calls) {
+        const r = await runOne(call);
+        appendResult(r);
+        if (r.abort) break;
+      }
+    } else {
+      // Parallel (agent parity), reordered back into source order.
+      const results = await Promise.all(assistantMsg.tool_calls.map((call) => runOne(call)));
+      for (const r of results) appendResult(r);
     }
   }
 

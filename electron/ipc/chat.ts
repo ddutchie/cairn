@@ -16,6 +16,7 @@ import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { getExternalToolDefs } from "../lib/external-tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { runToolLoop } from "../lib/chat-loop";
+import { resolveSystemRole } from "../lib/llm-stream";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
@@ -153,7 +154,10 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       : { role: "user", content: req.message };
 
     const messages: OpenAIMessage[] = [
-      { role: "system", content: buildSystemPrompt(req) },
+      {
+        role: resolveSystemRole({ isReasoningModel: req.config?.isReasoningModel, baseUrl, provider, modelId: model }),
+        content: buildSystemPrompt(req),
+      },
       ...(req.history ?? [])
         // Drop assistant turns that carry neither content nor tool_calls — a
         // thinking model that timed out or stopped mid-reasoning leaves such a

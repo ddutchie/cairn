@@ -25,6 +25,7 @@ import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
+import { getModelInfo, prewarmModelCatalog } from "@/lib/models-dev";
 import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
@@ -164,6 +165,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    // Warm the models.dev catalog so getModelInfo() can resolve the reasoning
+    // flag (for the `developer` system role) once data arrives.
+    prewarmModelCatalog();
     let cancelled = false;
     const fetchRegistry = window.electron?.registry?.fetch;
     if (!fetchRegistry) return () => { cancelled = true; };
@@ -192,11 +196,15 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const sendPromptRef   = useRef<(text: string) => void>(() => {});
   const firedSessions   = useRef(new Set<string>());
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom on new messages / streaming growth, and whenever the
+  // ask_questions form appears — otherwise it can land out of view if the user
+  // had scrolled up when the model asked its questions.
+  // Use a scalar (pendingQuestions?.length) rather than the array so React
+  // doesn't flag the dependency change.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (isActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, messages[messages.length - 1]?.content?.length, isActive]);
+  }, [messages.length, messages[messages.length - 1]?.content?.length, isActive, pendingQuestions?.length ?? 0]);
   /* eslint-enable react-hooks/exhaustive-deps */
 
   // Focus input when pane becomes active
@@ -521,9 +529,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
          maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
-         // Auto (default) → undefined → omit max_tokens so the model finishes naturally.
-         maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
+          // Auto (default) → undefined → omit max_tokens so the model finishes naturally.
+          maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
           autoApprove: session.autoApprove ?? agentConfig.autoApprove ?? true,
+          // Reasoning models get the `developer` system role (OpenAI convention).
+          isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
        },
     };
     window.electron?.piAgent.prompt(promptPayload);
@@ -595,6 +605,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
          temperature: agentConfig.temperature ?? 0.3,
          maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
          autoApprove,
+         isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
       },
     });
   }
