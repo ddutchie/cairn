@@ -346,7 +346,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   // ask_questions form appears — otherwise it can land out of view if the user
   // had scrolled up when the model asked its questions. `pendingQuestions` is
   // an array, so depend on its length (a scalar) to avoid a deps-change warning.
-  useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive, pendingQuestions?.length ?? 0]);
+  const pendingQuestionCount = pendingQuestions?.length ?? 0;
+  useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive, pendingQuestionCount]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
   const handleAttachImages = useCallback(async (files: File[]) => {

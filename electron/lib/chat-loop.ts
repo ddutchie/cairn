@@ -298,7 +298,7 @@ export async function runToolLoop(
         error: streamInterrupted ? interruptedStreamToolCallError() : undefined,
         labelFor: (name) => externalToolLabel(name, db),
         emitStart: (tool, label, callId, args) => emitToolCall({ tool, label, args, callId }),
-        emitEnd: (tool, label, ok, output, callId, args) => emitToolCallDone?.({ tool, callId, ok, error: output }),
+        emitEnd: (tool, label, ok, output, callId, _args) => emitToolCallDone?.({ tool, callId, ok, error: output }),
       });
       for (const tr of toolResults) messages.push(tr);
       continue;
