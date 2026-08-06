@@ -46,6 +46,7 @@ import { registerMigrationHandlers } from "./migration-handlers";
 import { registerSettingsHandlers } from "./settings-handlers";
 import { registerUsageHandlers } from "./usage-handlers";
 import { initUsageRecorder } from "../lib/usage-recorder";
+import { runStartupHygiene } from "../lib/db-hygiene";
 
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
@@ -73,6 +74,10 @@ export function registerIpcHandlers(ctx: DbContext): void {
   registerEmbeddingsHandlers(ctx);
   registerRuntimeHandlers(ctx);
   registerUsageHandlers(ctx);
+
+  // DB file-size hygiene: switch to incremental auto-vacuum + reclaim bloat
+  // (re-armed on every registration, including after a workspace re-init).
+  runStartupHygiene(ctx.db);
 }
 
 /**
