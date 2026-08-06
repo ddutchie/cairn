@@ -23,7 +23,7 @@ import { runAgentLoop, pendingApprovals, type PiAgentSession, type AgentLLMConfi
 import { buildCompactionTransformer, compactNow } from "../lib/compaction";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { discoverSkills, renderSkillsXml } from "../lib/skills";
-import { normaliseBaseUrl } from "../lib/llm";
+import { normaliseBaseUrl, isLocalEndpoint } from "../lib/llm";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
@@ -238,6 +238,7 @@ export function registerPiAgentHandler(
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
       isReasoningModel: reqConfig?.isReasoningModel,
+      provider: reqConfig?.provider ?? (isLocalEndpoint(reqConfig?.baseUrl ?? "") ? "localllm" : undefined),
     };
 
     let session = sessions.get(sessionId);
@@ -334,6 +335,7 @@ export function registerPiAgentHandler(
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
       isReasoningModel: reqConfig?.isReasoningModel,
+      provider: reqConfig?.provider ?? (isLocalEndpoint(reqConfig?.baseUrl ?? "") ? "localllm" : undefined),
     };
 
     let session = sessions.get(sessionId);

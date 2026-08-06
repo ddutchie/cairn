@@ -93,78 +93,87 @@ export async function consumeAssistantStream(
   const streamCallIds: Map<number, string> = new Map();
 
   for await (const jsonStr of iterSseData(reader, signal)) {
+    // Only JSON.parse is guarded — malformed lines are skipped, but any error
+    // from a consumer callback below propagates instead of being swallowed.
+    let chunk: unknown;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const chunk = JSON.parse(jsonStr) as any;
+      chunk = JSON.parse(jsonStr);
+    } catch {
+      continue; // skip malformed SSE JSON line
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const c = chunk as any;
 
-      // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
-      if (chunk.usage) {
-        opts.onUsage?.({
-          promptTokens: chunk.usage.prompt_tokens ?? 0,
-          completionTokens: chunk.usage.completion_tokens ?? 0,
-          reasoningTokens: chunk.usage.completion_tokens_details?.reasoning_tokens ?? 0,
-          raw: chunk.usage,
-          chunkCost: chunk.cost,
-        });
-      }
+    // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
+    if (c.usage) {
+      opts.onUsage?.({
+        promptTokens: c.usage.prompt_tokens ?? 0,
+        completionTokens: c.usage.completion_tokens ?? 0,
+        reasoningTokens: c.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+        raw: c.usage,
+        chunkCost: c.cost,
+      });
+    }
 
-      const choice = chunk.choices?.[0];
-      // Capture the finish reason — "length" means the model hit max_tokens.
-      // A reasoning model can hit it having emitted only chain-of-thought.
-      if (choice?.finish_reason) finishReason = choice.finish_reason;
+    const choice = c.choices?.[0];
+    // Capture the finish reason — "length" means the model hit max_tokens.
+    // A reasoning model can hit it having emitted only chain-of-thought.
+    if (choice?.finish_reason) finishReason = choice.finish_reason;
 
-      const delta = choice?.delta;
-      if (!delta) continue;
+    const delta = choice?.delta;
+    if (!delta) continue;
 
-      if (delta.content) {
-        content += delta.content;
-        opts.onToken?.(delta.content);
-      }
+    if (delta.content) {
+      content += delta.content;
+      opts.onToken?.(delta.content);
+    }
 
-      // Some endpoints return reasoning in reasoning_content (llama.cpp), or
-      // reasoning / reasoning_text (other OpenAI-compatible endpoints). Use the
-      // first non-empty field and remember WHICH one so the reasoning can be
-      // round-tripped under the same field name on the next request.
-      let thoughtField: string | null = null;
-      for (const field of REASONING_FIELDS) {
-        const value = (delta as Record<string, unknown>)[field];
-        if (typeof value === "string" && value.length > 0) { thoughtField = field; break; }
-      }
-      if (thoughtField) {
-        reasoningField ??= thoughtField;
-        const thought = (delta as Record<string, unknown>)[thoughtField] as string;
-        reasoning += thought;
-        opts.onThought?.(thought);
-      }
+    // Some endpoints return reasoning in reasoning_content (llama.cpp), or
+    // reasoning / reasoning_text (other OpenAI-compatible endpoints). Use the
+    // first non-empty field and remember WHICH one so the reasoning can be
+    // round-tripped under the same field name on the next request.
+    let thoughtField: string | null = null;
+    for (const field of REASONING_FIELDS) {
+      const value = (delta as Record<string, unknown>)[field];
+      if (typeof value === "string" && value.length > 0) { thoughtField = field; break; }
+    }
+    if (thoughtField) {
+      reasoningField ??= thoughtField;
+      const thought = (delta as Record<string, unknown>)[thoughtField] as string;
+      reasoning += thought;
+      opts.onThought?.(thought);
+    }
 
-      if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const idx: number = tc.index ?? 0;
-          const isNew = !toolBuffers.has(idx);
-          if (isNew) {
-            toolBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
-          }
-          const buf = toolBuffers.get(idx)!;
-          if (tc.id) buf.id = tc.id;
-          if (tc.function?.name) buf.name = tc.function.name;
-          if (tc.function?.arguments) buf.args += tc.function.arguments;
-          // Gemini 3.x thought signature — opaque blob to round-trip back.
-          if (tc.thought_signature) buf.thought_signature = tc.thought_signature;
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        const idx: number = tc.index ?? 0;
+        const isNew = !toolBuffers.has(idx);
+        if (isNew) {
+          toolBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
+        }
+        const buf = toolBuffers.get(idx)!;
+        if (tc.id) buf.id = tc.id;
+        if (tc.function?.name) buf.name = tc.function.name;
+        if (tc.function?.arguments) buf.args += tc.function.arguments;
+        // Gemini 3.x thought signature — opaque blob to round-trip back.
+        if (tc.thought_signature) buf.thought_signature = tc.thought_signature;
 
-          // Fire pending chip as soon as we see the tool name during streaming.
-          if (buf.name && !streamCallIds.has(idx)) {
-            const callId = opts.makeCallId?.(idx, buf.name) ?? `${buf.name}:${Date.now()}:${idx}`;
-            streamCallIds.set(idx, callId);
-            opts.onToolPending?.(buf.name, callId);
-          }
+        // Fire pending chip as soon as we see the tool name during streaming.
+        if (buf.name && !streamCallIds.has(idx)) {
+          const callId = opts.makeCallId?.(idx, buf.name) ?? `${buf.name}:${Date.now()}:${idx}`;
+          streamCallIds.set(idx, callId);
+          opts.onToolPending?.(buf.name, callId);
         }
       }
-    } catch { /* skip malformed SSE JSON line */ }
+    }
   }
 
   const entries = Array.from(toolBuffers.entries()).sort(([a], [b]) => a - b);
-  const toolCalls: StreamToolCall[] = entries.map(([, buf]) => ({
-    id: buf.id,
+  const toolCalls: StreamToolCall[] = entries.map(([, buf], i) => ({
+    // An interrupted stream can cut before the id chunk arrives — synthesize a
+    // stable id so the assistant message's tool_calls and its tool results can
+    // reference it consistently (empty ids would collide across tools).
+    id: buf.id || `${buf.name || "tool"}:stream:${i}`,
     type: "function",
     function: { name: buf.name, arguments: buf.args },
     ...(buf.thought_signature ? { thought_signature: buf.thought_signature } : {}),
@@ -249,14 +258,54 @@ export function failToolCallsFromTruncatedMessage(
   const error = opts.error ?? truncatedToolCallError(opts.maxTokens);
   return toolCalls.map((tc, i) => {
     const label = opts.labelFor(tc.function.name);
-    const callId = opts.callIdFor?.(tc, i) ?? tc.id;
+    // A truncated/interrupted stream can cut before the id chunk arrives —
+    // synthesize a stable id so the emitted chip and the returned tool result
+    // share one identifier (empty ids would collide across tools). consumeAssistantStream
+    // already normalizes ids upstream, so this is a defensive fallback.
+    const resolvedId = tc.id || `${tc.function.name || "tool"}:truncated:${i}`;
+    const callId = opts.callIdFor?.(tc, i) ?? resolvedId;
     opts.emitStart(tc.function.name, label, callId, {});
     opts.emitEnd(tc.function.name, label, false, error, callId, {});
-    return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error }) };
+    return { role: "tool", tool_call_id: resolvedId, content: JSON.stringify({ error }) };
   });
 }
 
 // ── Message preparation ──────────────────────────────────────────────────────
+
+/**
+ * Providers with quirky system-role handling (pi's `detectCompat` denylist):
+ * their URLs are excluded from the `developer` role even for reasoning models.
+ */
+const NON_STANDARD_PROVIDERS = new Set([
+  "nvidia",
+  "cerebras",
+  "xai",
+  "together",
+  "zai",
+  "moonshotai",
+  "moonshotai-cn",
+  "ant-ling",
+  // Cairn-specific: the on-device Llama server wraps small models (Qwen/DeepSeek
+  // based) that don't understand the developer role.
+  "localllm",
+]);
+
+/** Base-URL fragments that identify the same non-standard providers. */
+const NON_STANDARD_URL_FRAGMENTS = [
+  "integrate.api.nvidia.com",
+  "cerebras.ai",
+  "api.x.ai",
+  "api.together.ai",
+  "api.together.xyz",
+  "chutes.ai",
+  "deepseek.com",
+  "api.z.ai",
+  "open.bigmodel.cn",
+  "api.moonshot.",
+  "api.cloudflare.com",
+  "gateway.ai.cloudflare.com",
+  "api.ant-ling.com",
+];
 
 /**
  * Whether a provider/baseUrl is a known-good `developer`-role target, mirroring
@@ -269,19 +318,8 @@ export function supportsDeveloperRole(opts: { baseUrl?: string; provider?: strin
   const baseUrl = opts.baseUrl ?? "";
   const provider = opts.provider ?? "";
   const isNonStandard =
-    provider === "nvidia" || baseUrl.includes("integrate.api.nvidia.com") ||
-    provider === "cerebras" || baseUrl.includes("cerebras.ai") ||
-    provider === "xai" || baseUrl.includes("api.x.ai") ||
-    provider === "together" || baseUrl.includes("api.together.ai") || baseUrl.includes("api.together.xyz") ||
-    baseUrl.includes("chutes.ai") ||
-    baseUrl.includes("deepseek.com") ||
-    provider === "zai" || baseUrl.includes("api.z.ai") || baseUrl.includes("open.bigmodel.cn") ||
-    provider === "moonshotai" || provider === "moonshotai-cn" || baseUrl.includes("api.moonshot.") ||
-    baseUrl.includes("api.cloudflare.com") || baseUrl.includes("gateway.ai.cloudflare.com") ||
-    provider === "ant-ling" || baseUrl.includes("api.ant-ling.com") ||
-    // Cairn-specific: the on-device Llama server wraps small models (Qwen/DeepSeek
-    // based) that don't understand the developer role.
-    provider === "localllm";
+    NON_STANDARD_PROVIDERS.has(provider) ||
+    NON_STANDARD_URL_FRAGMENTS.some((frag) => baseUrl.includes(frag));
   const isOpenRouter = provider === "openrouter" || baseUrl.includes("openrouter.ai");
   const isOpenRouterDevModel =
     isOpenRouter && (opts.modelId?.startsWith("anthropic/") || opts.modelId?.startsWith("openai/"));
@@ -338,7 +376,14 @@ function isOutgoingSendable(m: Record<string, unknown>): boolean {
  *   3. Drop empty assistant turns (neither content, nor tool calls, nor
  *      reasoning) that would poison the request with "content or tool_calls
  *      must be set".
- *   4. Prepend the system prompt as a `role: "system"` message.
+ *   4. Prepend the system prompt under `systemRole` — `"system"` by default,
+ *      or `"developer"` for reasoning models on providers that support it.
+ *
+ * NOTE: reasoning round-trip depends on the pruner preserving message object
+ * references (identity). The built-in sliding-window pruner returns the same
+ * objects it was given, so round-trip works. A custom `pruner` that replaces or
+ * re-creates messages (e.g. a compaction summarizer) will lose those messages'
+ * reasoning by design — the summary is what gets sent instead.
  */
 export async function prepareContextMessages<M extends OutgoingMessage>(opts: {
   systemPrompt: string;

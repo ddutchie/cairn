@@ -73,6 +73,8 @@ export interface AgentLLMConfig {
   maxTokens?: number;
   /** Whether the selected model is a reasoning/thinking model (from the models.dev catalog). */
   isReasoningModel?: boolean;
+  /** Provider slug (e.g. "openai", "localllm") for provider-aware role resolution. */
+  provider?: string;
 }
 
 // ── Message types ─────────────────────────────────────────────────────────────
@@ -577,6 +579,7 @@ export async function runAgentLoop(
       systemRole: resolveSystemRole({
         isReasoningModel: llmConfig.isReasoningModel,
         baseUrl,
+        provider: llmConfig.provider,
         modelId: model,
       }),
       pruner,
@@ -805,7 +808,10 @@ export async function runAgentLoop(
       const label = isExternalToolName(tc.function.name)
         ? externalToolLabel(tc.function.name, toolCtx.db)
         : (CODING_LABELS[tc.function.name]?.(args) ?? tc.function.name);
-      const pendingCallId = streamCallIds.get(tcIdx);
+      // Map the tool-call array position back to its original stream index
+      // (they diverge when the provider emitted non-contiguous indexes), so the
+      // chip callId matches the one fired during streaming.
+      const pendingCallId = streamCallIds.get(turn.toolCallIndexes[tcIdx] ?? tcIdx);
        callbacks.onToolStart(tc.function.name, label, pendingCallId, args);
 
       // Yield to the event loop so the IPC layer dispatches the onToolStart event

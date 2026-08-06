@@ -25,7 +25,7 @@ import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
-import { getModelInfo } from "@/lib/models-dev";
+import { getModelInfo, prewarmModelCatalog } from "@/lib/models-dev";
 import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
@@ -165,6 +165,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    // Warm the models.dev catalog so getModelInfo() can resolve the reasoning
+    // flag (for the `developer` system role) once data arrives.
+    prewarmModelCatalog();
     let cancelled = false;
     const fetchRegistry = window.electron?.registry?.fetch;
     if (!fetchRegistry) return () => { cancelled = true; };
@@ -602,6 +605,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
          temperature: agentConfig.temperature ?? 0.3,
          maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
          autoApprove,
+         isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
       },
     });
   }

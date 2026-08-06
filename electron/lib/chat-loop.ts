@@ -90,6 +90,10 @@ export async function runToolLoop(
     // output-token limit mid-turn — any tool calls in that message may carry
     // truncated arguments (see the truncation guard below).
     let turnFinishReason: string | null = null;
+    // True only for the SSE streaming (cloud) branch. The interrupted-stream
+    // guard below must NOT apply to the localllm non-streaming path, where a
+    // null finish_reason is a normal, complete response.
+    let streamingTurn = false;
 
     if (provider === "localllm") {
       try {
@@ -194,6 +198,7 @@ export async function runToolLoop(
         return { exhausted: true, content: `Local LLM Engine error: ${String(err)}`, reasoning: accumulatedReasoning };
       }
     } else {
+      streamingTurn = true;
       let response: Response;
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -290,7 +295,7 @@ export async function runToolLoop(
     // `failToolCallsFromTruncatedMessage`, refuse to execute ANY of them: emit
     // the chip + a structured error so the model re-issues with complete
     // arguments (or the user raises the output-token cap).
-    const streamInterrupted = turnFinishReason === null && (assistantMsg.tool_calls?.length ?? 0) > 0;
+    const streamInterrupted = streamingTurn && turnFinishReason === null && (assistantMsg.tool_calls?.length ?? 0) > 0;
     if (turnFinishReason === "length" || streamInterrupted) {
       messages.push(assistantMsg);
       const toolResults = failToolCallsFromTruncatedMessage(assistantMsg.tool_calls, {

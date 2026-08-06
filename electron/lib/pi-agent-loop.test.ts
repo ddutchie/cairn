@@ -495,7 +495,7 @@ describe("runAgentLoop — SSE streaming", () => {
     expect(log).toContain("step-start");
     expect(log).toContain("token:Re-issued successfully.");
     expect(log[log.length - 1]).toBe("done");
-    expect(log).not.toContain(expect.stringContaining("error:"));
+    expect(log.some((e) => e.startsWith("error:"))).toBe(false);
   });
 
   // ── 10. Reasoning-only turn (length) is stored for round-trip, not surfaced ─
@@ -523,7 +523,7 @@ describe("runAgentLoop — SSE streaming", () => {
     // Reasoning is never baked into content (pi behaviour) — no surfaced token bubble
     expect(log.some((e) => e.startsWith("token:*[This model hit its output-token limit"))).toBe(false);
     expect(log[log.length - 1]).toBe("done");
-    expect(log).not.toContain(expect.stringContaining("error:"));
+    expect(log.some((e) => e.startsWith("error:"))).toBe(false);
 
     // The message stored on the session keeps an EMPTY content; the reasoning
     // stays in its own field (with round-trip metadata) so it can be sent back
@@ -698,7 +698,7 @@ describe.skipIf(!LIVE_TESTS_ENABLED || !liveBaseUrl)("runAgentLoop — live endp
 
     expect(log).toContain("done");
     expect(log.some((e) => e.startsWith("token:"))).toBe(true);
-    expect(log).not.toContain(expect.stringContaining("error:"));
+    expect(log.some((e) => e.startsWith("error:"))).toBe(false);
   }, 30_000);
 
   it("executes a tool call and returns a result", async () => {
@@ -721,6 +721,6 @@ describe.skipIf(!LIVE_TESTS_ENABLED || !liveBaseUrl)("runAgentLoop — live endp
       // If the model chose to call ls, verify ordering
       expect(toolsReadyIdx).toBeLessThan(toolStartIdx);
     }
-    expect(log).not.toContain(expect.stringContaining("error:"));
+    expect(log.some((e) => e.startsWith("error:"))).toBe(false);
   }, 60_000);
 });

@@ -40,11 +40,13 @@ export function QuestionForm({ questions, onSubmit, disabled = false }: Question
       )}>
         {questions.map((q) => (
           <div key={q.id} className="flex flex-col gap-1">
-            <label className="text-[0.786rem] font-semibold text-[var(--text-primary)]">{q.label}</label>
+            <label htmlFor={q.id} className="text-[0.786rem] font-semibold text-[var(--text-primary)]">{q.label}</label>
             {/* The question is rendered as persistent text — NOT as the textarea
                 placeholder — so it stays visible while the user types. */}
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] leading-relaxed">{q.prompt}</p>
+            <p id={`${q.id}-prompt`} className="text-[0.714rem] text-[var(--text-tertiary)] leading-relaxed">{q.prompt}</p>
             <textarea
+              id={q.id}
+              aria-describedby={`${q.id}-prompt`}
               value={answers[q.id] ?? ""}
               onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
               onKeyDown={(e) => {

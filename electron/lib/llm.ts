@@ -357,7 +357,12 @@ export function calculatePromptBreakdown(
   }
 
   for (const msg of messages) {
-    if (msg.role === "system") {
+    if (msg.role === "system" || msg.role === "developer") {
+      // The system prompt travels as `role: "system"` (or `"developer"` for
+      // reasoning models). When it is also passed separately via `systemPrompt`,
+      // the in-array copy is skipped so it is never double-counted — but if no
+      // separate prompt was given, the in-array message IS the source of truth
+      // and its tokens belong to the system bucket, not conversation.
       if (!systemPrompt) {
         let content = msg.content ?? "";
         const skillsMatch = content.match(/<available_skills>[\s\S]*?<\/available_skills>/);

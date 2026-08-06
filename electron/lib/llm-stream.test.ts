@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { consumeAssistantStream, prepareContextMessages, resolveSystemRole, supportsDeveloperRole } from "./llm-stream";
+import { consumeAssistantStream, failToolCallsFromTruncatedMessage, prepareContextMessages, resolveSystemRole, supportsDeveloperRole } from "./llm-stream";
 
 function sseReader(...chunks: string[]): ReadableStreamDefaultReader<Uint8Array> {
   const encoder = new TextEncoder();
@@ -217,5 +217,31 @@ describe("resolveSystemRole (pi parity)", () => {
   it("exposes the denylist predicate for consumers", () => {
     expect(supportsDeveloperRole({ baseUrl: "https://api.openai.com/v1" })).toBe(true);
     expect(supportsDeveloperRole({ baseUrl: "https://api.deepseek.com/v1" })).toBe(false);
+  });
+});
+
+describe("failToolCallsFromTruncatedMessage", () => {
+  it("synthesizes a stable id for tool calls whose id chunk never arrived", () => {
+    const starts: string[] = [];
+    const ends: string[] = [];
+    const results = failToolCallsFromTruncatedMessage(
+      [
+        { id: "", function: { name: "ls" } },
+        { id: "call_ok", function: { name: "ls" } },
+      ],
+      {
+        maxTokens: undefined,
+        labelFor: (n) => n,
+        emitStart: (name, label, callId) => starts.push(`${name}:${callId}`),
+        emitEnd: (name, label, ok, output, callId) => ends.push(`${name}:${callId}:${ok}`),
+      },
+    );
+
+    // The id-less tool got a synthesized id, used for both the chip and result.
+    expect(starts).toHaveLength(2);
+    expect(results[0].tool_call_id).toBe("ls:truncated:0");
+    expect(starts[0]).toBe("ls:ls:truncated:0");
+    expect(results[1].tool_call_id).toBe("call_ok");
+    expect(results.every((r) => r.content.includes("not executed"))).toBe(true);
   });
 });
