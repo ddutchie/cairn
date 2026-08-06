@@ -20,6 +20,7 @@ import { InsightsView } from "@/components/insights/InsightsView";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AutomationsView } from "@/components/automations/automations-view";
+import { UsageView } from "@/components/usage/UsageView";
 import { NotificationCenter } from "@/components/automations/notification-center";
 import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
@@ -93,7 +94,7 @@ export default function Home() {
     runningAutomationCount: s.runningAutomationCount,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
-  const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations"] as const).filter(
+  const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations", "usage"] as const).filter(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (v) => !hiddenViews.has(v as any)
   );
@@ -463,6 +464,7 @@ export default function Home() {
            {lastContentView === "graph"     && <KnowledgeGraphView />}
             {lastContentView === "insights"  && <InsightsView />}
             {lastContentView === "automations" && <AutomationsView />}
+            {lastContentView === "usage" && <UsageView />}
             {lastContentView === "settings"  && <SettingsView />}
            {/* AgentView stays mounted to preserve terminal sessions and agent state.
                CSS-hidden when inactive so xterm + AgentChatPane refs survive view switches. */}

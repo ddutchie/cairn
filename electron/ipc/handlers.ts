@@ -44,6 +44,9 @@ import { registerUrlMetadataHandler } from "./url-metadata";
 import { registerMobileHandlers } from "./mobile-handlers";
 import { registerMigrationHandlers } from "./migration-handlers";
 import { registerSettingsHandlers } from "./settings-handlers";
+import { registerUsageHandlers } from "./usage-handlers";
+import { initUsageRecorder } from "../lib/usage-recorder";
+import { runStartupHygiene } from "../lib/db-hygiene";
 
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
@@ -58,6 +61,8 @@ import { broadcastEvent } from "./registry";
  * Called from main.ts once the DB context is established.
  */
 export function registerIpcHandlers(ctx: DbContext): void {
+  // Point the LLM usage recorder at the current DB (swapped on workspace change).
+  initUsageRecorder(ctx.db);
   registerDbHandlers(ctx);
   registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
   registerChatDbHandlers(ctx);
@@ -68,6 +73,11 @@ export function registerIpcHandlers(ctx: DbContext): void {
   registerGraphHandlers(ctx);
   registerEmbeddingsHandlers(ctx);
   registerRuntimeHandlers(ctx);
+  registerUsageHandlers(ctx);
+
+  // DB file-size hygiene: switch to incremental auto-vacuum + reclaim bloat
+  // (re-armed on every registration, including after a workspace re-init).
+  runStartupHygiene(ctx.db);
 }
 
 /**

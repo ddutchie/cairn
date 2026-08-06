@@ -365,6 +365,10 @@ app.whenReady().then(async () => {
     ctx.db = newDb;
     ctx.workspacePath = newWorkspacePath;
 
+    // Re-arm DB hygiene (auto-vacuum + periodic reclaim) for the new DB.
+    const { runStartupHygiene } = await import("./lib/db-hygiene");
+    runStartupHygiene(newDb);
+
     // Restart file watcher on the new path
     startFileWatcher(newWorkspacePath, newDb, notifyDbChanged);
 

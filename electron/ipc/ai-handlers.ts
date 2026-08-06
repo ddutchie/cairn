@@ -210,7 +210,7 @@ export function registerAiHandlers(ctx: DbContext): void {
         + "Use types: feat, fix, refactor, chore, docs, style, test, perf.";
 
       const userPrompt = `Generate a commit message for the following diff:\n\n${args.diff.slice(0, 8000)}`;
-      const result = await callLLM(resolved, systemPrompt, userPrompt);
+      const result = await callLLM(resolved, systemPrompt, userPrompt, { source: "commit-message" });
       const parsed = parseLLMResponse(result, { primary: "SUBJECT", secondary: "BODY" }, { primary: "Update", secondary: "" });
       return { subject: parsed.primary, body: parsed.secondary };
     });
@@ -236,7 +236,7 @@ export function registerAiHandlers(ctx: DbContext): void {
         + "Respond in this format:\n\nTITLE\n<title>\n\nDESCRIPTION\n<markdown description>\n\n";
 
       const userPrompt = `Generate a PR description for the following branch diff:\n\n${args.diff.slice(0, 8000)}`;
-      const result = await callLLM(resolved, systemPrompt, userPrompt);
+      const result = await callLLM(resolved, systemPrompt, userPrompt, { source: "pr-description" });
       const parsed = parseLLMResponse(result, { primary: "TITLE", secondary: "DESCRIPTION" }, { primary: "Pull Request", secondary: "" });
       return { title: parsed.primary, description: parsed.secondary };
     });
@@ -265,7 +265,7 @@ export function registerAiHandlers(ctx: DbContext): void {
         + "MODULES\n<one line per module: `- name — its responsibility in <=12 words`>\n\n"
         + "Be concise and concrete. Do not invent modules that aren't listed.";
       const userPrompt = `Explain this project's architecture:\n\n${args.summary.slice(0, 6000)}`;
-      const result = await callLLM(resolved, systemPrompt, userPrompt);
+      const result = await callLLM(resolved, systemPrompt, userPrompt, { source: "explain" });
       const parsed = parseLLMResponse(result, { primary: "OVERVIEW", secondary: "MODULES" }, { primary: "", secondary: "" });
       return { overview: parsed.primary, modules: parsed.secondary };
     });

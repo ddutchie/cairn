@@ -25,6 +25,7 @@ import { resolveEmbeddingModelId, getDefaultModelId } from "../embeddings/client
 import * as manifest from "../embeddings/manifest";
 import { syncNotesFromDisk, deleteNoteFile, reconcileProjectFolders } from "../notes-files";
 import { computeSemanticRelationships } from "../db/graph-queries";
+import { reclaimFreeSpace } from "../lib/db-hygiene";
 import { findTombstonedNotes } from "../db/queries";
 import { getProjectName } from "../ipc/result-helpers";
 import { saveCachedConfig } from "../lib/config-cache";
@@ -300,6 +301,9 @@ export async function runBootSequence(
         }
       }
     }
+    // The model-change reindex DELETEd + re-inserted every vector row — drain
+    // the freed pages so the DB file doesn't keep the old model's footprint.
+    reclaimFreeSpace(ctx.db);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[boot] Embeddings reindex failed:", msg);

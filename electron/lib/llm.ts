@@ -4,6 +4,8 @@
 
 import { encode } from "gpt-tokenizer";
 import { pdfTokenEstimate } from "../../shared/models/pdf-attach";
+import { recordLlmUsage, extractCost } from "./usage-recorder";
+import type { UsageSource } from "../db/usage-queries";
 
 /**
  * Normalise a user-supplied base URL by stripping trailing slashes.
@@ -115,23 +117,102 @@ export function isSendableMessage(m: {
   return Boolean(m.content?.trim()) || Boolean(m.tool_calls?.length);
 }
 
-export async function callLLM(config: LLMConfig, systemPrompt: string, userPrompt: string): Promise<string> {
+/** Optional attribution for a one-shot `callLLM` — drives the Usage log row. */
+export interface LlmCallOpts {
+  /** Where the call originated (defaults to "chat"). */
+  source?: UsageSource;
+  sessionId?: string;
+  projectId?: string;
+  workspaceId?: string;
+}
+
+/**
+ * POST a chat-completions request, optionally requesting the streaming usage
+ * chunk (`stream_options.include_usage`). A handful of strict OpenAI-compatible
+ * endpoints reject the `stream_options` field with a 400 — retry once without
+ * it so a usage-requesting call still succeeds against them.
+ */
+export async function postChatCompletions(
+  url: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown>,
+  includeUsage: boolean,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const attempt = includeUsage ? { ...body, stream_options: { include_usage: true } } : body;
+  const res = await fetch(url, { method: "POST", headers, signal, body: JSON.stringify(attempt) });
+  if (!res.ok && res.status === 400 && includeUsage) {
+    const { stream_options: _omit, ...without } = body;
+    return fetch(url, { method: "POST", headers, signal, body: JSON.stringify(without) });
+  }
+  return res;
+}
+
+export async function callLLM(
+  config: LLMConfig,
+  systemPrompt: string,
+  userPrompt: string,
+  opts: LlmCallOpts = {},
+): Promise<string> {
+  const record = (
+    pt: number,
+    ct: number,
+    rt: number,
+    cost?: number,
+    meta?: { provider?: string; model?: string; baseUrl?: string },
+  ) => {
+    recordLlmUsage({
+      source: opts.source ?? "chat",
+      sessionId: opts.sessionId,
+      projectId: opts.projectId,
+      workspaceId: opts.workspaceId,
+      provider: meta?.provider ?? config.provider,
+      model: meta?.model ?? config.model,
+      baseUrl: meta?.baseUrl ?? config.baseUrl,
+      promptTokens: pt,
+      completionTokens: ct,
+      reasoningTokens: rt,
+      costUsd: cost,
+    });
+  };
+
   if (config.provider === "localllm") {
     const { callLocalLLMChat } = await import("./local-llm");
+    const { ensureLlamaServerRunning } = await import("./llama-server");
     const messages: OpenAIMessage[] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ];
+    // On-device requests always hit the llama-server's gemma-4 — record the
+    // real endpoint/model rather than the (possibly empty) remote config.
+    const localMeta = {
+      provider: "localllm",
+      model: "gemma-4",
+      baseUrl: `http://127.0.0.1:${await ensureLlamaServerRunning()}/v1`,
+    };
     const res = await callLocalLLMChat(messages);
-    return res.choices?.[0]?.message?.content ?? "";
+    const content = res.choices?.[0]?.message?.content ?? "";
+    const usage = res?.usage;
+    if (usage) {
+      record(
+        usage.prompt_tokens ?? 0,
+        usage.completion_tokens ?? 0,
+        usage.completion_tokens_details?.reasoning_tokens ?? 0,
+        extractCost(res?.cost, usage),
+        localMeta,
+      );
+    } else {
+      record(tok(systemPrompt) + tok(userPrompt), tok(content), 0, undefined, localMeta);
+    }
+    return content;
   }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
-  const response = await fetch(buildApiUrl(config.baseUrl, "chat/completions"), {
-    method: "POST",
+  const response = await postChatCompletions(
+    buildApiUrl(config.baseUrl, "chat/completions"),
     headers,
-    body: JSON.stringify({
+    {
       model: config.model,
       messages: [
         { role: "system", content: systemPrompt },
@@ -141,8 +222,9 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
       temperature: 0.4,
       // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
       stream: true,
-    }),
-  });
+    },
+    true,
+  );
   if (!response.ok) throw new Error(`LLM error ${response.status}: ${await response.text().catch(() => response.statusText)}`);
 
   const reader = response.body?.getReader();
@@ -150,6 +232,7 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
 
   const decoder = new TextDecoder();
   let content = "";
+  let usage: { pt?: number; ct?: number; rt?: number; chunkCost?: unknown; raw?: unknown } | undefined;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -160,10 +243,25 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
       if (jsonStr === "[DONE]") break;
       try {
         const obj = JSON.parse(jsonStr);
+        if (obj.usage) {
+          usage = {
+            pt: obj.usage.prompt_tokens ?? 0,
+            ct: obj.usage.completion_tokens ?? 0,
+            rt: obj.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+            chunkCost: obj.cost,
+            raw: obj.usage,
+          };
+        }
         const delta = obj.choices?.[0]?.delta?.content ?? "";
         if (delta) content += delta;
       } catch { /* skip malformed lines */ }
     }
+  }
+
+  if (usage) {
+    record(usage.pt ?? 0, usage.ct ?? 0, usage.rt ?? 0, extractCost(usage.chunkCost, usage.raw));
+  } else {
+    record(tok(systemPrompt) + tok(userPrompt), tok(content), 0);
   }
   return content;
 }

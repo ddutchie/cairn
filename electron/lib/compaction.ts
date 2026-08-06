@@ -18,7 +18,8 @@
  */
 
 import type { AgentLLMConfig, AgentMessage, AgentToolResultMsg, PiAgentSession } from "./pi-agent-loop";
-import { buildApiUrl } from "./llm";
+import { buildApiUrl, postChatCompletions } from "./llm";
+import { recordLlmUsage, extractCost } from "./usage-recorder";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -118,6 +119,7 @@ export async function generateSummary(
   messages: AgentMessage[],
   llmConfig: AgentLLMConfig,
   signal: AbortSignal,
+  attrib?: { sessionId?: string; projectId?: string; workspaceId?: string },
 ): Promise<string> {
   const conversationText = serializeMessages(messages);
   if (!conversationText.trim()) return "";
@@ -126,11 +128,10 @@ export async function generateSummary(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const response = await fetch(buildApiUrl(baseUrl, "chat/completions"), {
-    method: "POST",
+  const response = await postChatCompletions(
+    buildApiUrl(baseUrl, "chat/completions"),
     headers,
-    signal,
-    body: JSON.stringify({
+    {
       model,
       // System prompt as a `role: "system"` message (not a top-level `system:`
       // field) so strict OpenAI-compatible providers don't reject the request
@@ -143,8 +144,10 @@ export async function generateSummary(
       temperature: 0.1, // deterministic summary
       // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
       stream: true,
-    }),
-  });
+    },
+    true,
+    signal,
+  );
 
   if (!response.ok) {
     throw new Error(`Compaction LLM call failed: ${response.status} ${response.statusText}`);
@@ -155,6 +158,7 @@ export async function generateSummary(
 
   const decoder = new TextDecoder();
   let content = "";
+  let usage: { pt?: number; ct?: number; rt?: number; chunkCost?: unknown; raw?: unknown } | undefined;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -165,10 +169,35 @@ export async function generateSummary(
       if (jsonStr === "[DONE]") break;
       try {
         const obj = JSON.parse(jsonStr);
+        if (obj.usage) {
+          usage = {
+            pt: obj.usage.prompt_tokens ?? 0,
+            ct: obj.usage.completion_tokens ?? 0,
+            rt: obj.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+            chunkCost: obj.cost,
+            raw: obj.usage,
+          };
+        }
         const delta = obj.choices?.[0]?.delta?.content ?? "";
         if (delta) content += delta;
       } catch { /* skip malformed lines */ }
     }
+  }
+
+  if (usage) {
+    recordLlmUsage({
+      source: "summary",
+      sessionId: attrib?.sessionId,
+      projectId: attrib?.projectId,
+      workspaceId: attrib?.workspaceId,
+      provider: llmConfig.provider,
+      model,
+      baseUrl,
+      promptTokens: usage.pt ?? 0,
+      completionTokens: usage.ct ?? 0,
+      reasoningTokens: usage.rt ?? 0,
+      costUsd: extractCost(usage.chunkCost, usage.raw),
+    });
   }
 
   if (!content) throw new Error("Compaction returned empty summary");

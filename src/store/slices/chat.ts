@@ -268,6 +268,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       try {
         const summaryObj = await e.chat.compactThread({
           messages: history,
+          threadId,
           config: {
             provider: aiConfig.provider,
             baseUrl: aiConfig.baseUrl,

@@ -941,6 +941,39 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_client_id_required INTEGER NOT NULL DEFAULT 0");
     }
   },
+
+  // v38: LLM usage log — append-only per-request token/cost record backing the
+  // Usage view. Written at every LLM capture point (chat tool loop, pi agent,
+  // subagents, automations, one-shot AI features) via electron/lib/usage-recorder.ts.
+  // `created_at` is epoch ms (INTEGER) so the per-day bucketing can use the
+  // user's local timezone in SQL. `workspace_id`/`project_id` are nullable —
+  // one-shot features (commit message, explain, tool builder) may not belong to
+  // a workspace; NULL rows are treated as global when scoping the view.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS llm_usage (
+        id                TEXT PRIMARY KEY,
+        workspace_id      TEXT,
+        project_id        TEXT,
+        source            TEXT NOT NULL,
+        session_id        TEXT,
+        provider          TEXT,
+        model             TEXT NOT NULL,
+        base_url          TEXT,
+        prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        reasoning_tokens  INTEGER NOT NULL DEFAULT 0,
+        cost_usd          REAL,
+        cost_estimated    INTEGER NOT NULL DEFAULT 0,
+        finish_reason     TEXT,
+        created_at        INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_llm_usage_created   ON llm_usage(created_at);
+      CREATE INDEX IF NOT EXISTS idx_llm_usage_source    ON llm_usage(source);
+      CREATE INDEX IF NOT EXISTS idx_llm_usage_model     ON llm_usage(model);
+      CREATE INDEX IF NOT EXISTS idx_llm_usage_workspace ON llm_usage(workspace_id, created_at);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -990,6 +1023,9 @@ function ensureColumns(db: Database.Database): void {
   ensure("mcp_servers", "oauth_client_id", "oauth_client_id TEXT");
   ensure("mcp_servers", "oauth_redirect_uri", "oauth_redirect_uri TEXT");
   ensure("mcp_servers", "oauth_client_id_required", "oauth_client_id_required INTEGER NOT NULL DEFAULT 0");
+  // v38 llm_usage — cost_estimated added after the initial table shipped in an
+  // interim build; existing dev DBs get the column here, fresh ones from v38.
+  ensure("llm_usage", "cost_estimated", "cost_estimated INTEGER NOT NULL DEFAULT 0");
 }
 
 function runMigrations(db: Database.Database): void {

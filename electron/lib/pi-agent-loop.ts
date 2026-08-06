@@ -17,6 +17,8 @@
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
 import { isLocalEndpoint, calculatePromptBreakdown, scaleBreakdown, buildApiUrl, type TokenBreakdown } from "./llm";
+import { recordLlmUsage, extractCost } from "./usage-recorder";
+import type { UsageSource } from "../db/usage-queries";
 import {
   buildChatCompletionsBody,
   consumeAssistantStream,
@@ -156,7 +158,7 @@ export interface AgentLoopCallbacks {
   /** callId links back to the same chip created by onToolPending / updated by onToolStart. */
   onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string, args?: ToolArgs) => void;
   onStepStart:     () => void;
-  onUsage:         (promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown) => void;
+  onUsage:         (promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, costUsd?: number) => void;
   onDone:          () => void;
   onError:         (message: string) => void;
   /** Fired when a tool call needs user confirmation before execution. */
@@ -508,6 +510,8 @@ export async function runAgentLoop(
   callbacks: AgentLoopCallbacks,
   toolCtx: AgentToolContext,
   mode: "plan" | "execute" = "execute",
+  /** Usage-log source for this loop's rows — "pi-subagent" for spawned children. */
+  usageSource: UsageSource = "pi-agent",
 ): Promise<void> {
   const { signal } = session.abortCtrl;
   // Assemble external tool defs (MCP servers + custom services) in scope for the
@@ -686,6 +690,20 @@ export async function runAgentLoop(
         const pt = usage.promptTokens;
         const ct = usage.completionTokens;
         const rt = usage.reasoningTokens;
+        // Persist one usage row per agent round for the Usage view.
+        recordLlmUsage({
+          source: usageSource,
+          sessionId: toolCtx.sessionId,
+          projectId: toolCtx.req.projectId,
+          workspaceId: toolCtx.req.workspaceId,
+          provider: llmConfig.provider,
+          model,
+          baseUrl,
+          promptTokens: pt,
+          completionTokens: ct,
+          reasoningTokens: rt,
+          costUsd: extractCost(usage.chunkCost, usage.raw),
+        });
         session.lastPromptTokens = pt;
         // Accumulate completion + reasoning across rounds (total output for the turn).
         // Prompt tokens are last-round only (= current context window usage).
@@ -698,7 +716,7 @@ export async function runAgentLoop(
         } catch (err) {
           console.error("[pi-agent] failed to calculate breakdown:", err);
         }
-        callbacks.onUsage(pt, session.totalCompletionTokens ?? 0, session.totalReasoningTokens ?? 0, breakdown);
+        callbacks.onUsage(pt, session.totalCompletionTokens ?? 0, session.totalReasoningTokens ?? 0, breakdown, extractCost(usage.chunkCost, usage.raw));
       },
     });
 

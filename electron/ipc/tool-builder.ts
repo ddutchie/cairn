@@ -28,6 +28,7 @@ import * as secrets from "../lib/secure-store";
 import { buildBuilderSystemPrompt, BUILDER_TOOL_DEFS } from "../lib/tool-builder-prompt";
 import { parseToolArgs } from "../lib/parse-tool-args";
 import { resolveMaxOutputTokens } from "../../shared/models/model-catalog";
+import { recordLlmUsage, extractCost } from "../lib/usage-recorder";
 
 interface OpenAIMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -81,7 +82,8 @@ function resolveConfig(): AIConfig {
 async function callModel(
   config: AIConfig,
   messages: OpenAIMessage[],
-  signal: AbortSignal
+  signal: AbortSignal,
+  attrib?: { sessionId?: string; workspaceId?: string },
 ): Promise<OpenAIMessage> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
@@ -103,9 +105,22 @@ async function callModel(
   if (!res.ok) {
     throw new Error(`AI endpoint error ${res.status}: ${(await res.text().catch(() => res.statusText)).slice(0, 300)}`);
   }
-  const json = (await res.json()) as { choices?: Array<{ message?: OpenAIMessage }> };
+  const json = (await res.json()) as { choices?: Array<{ message?: OpenAIMessage }>; usage?: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } }; cost?: unknown };
   const msg = json.choices?.[0]?.message;
   if (!msg) throw new Error("No response from AI endpoint");
+
+  recordLlmUsage({
+    source: "tool-builder",
+    sessionId: attrib?.sessionId,
+    workspaceId: attrib?.workspaceId,
+    provider: config.provider,
+    model: config.model,
+    baseUrl: config.baseUrl,
+    promptTokens: json.usage?.prompt_tokens ?? 0,
+    completionTokens: json.usage?.completion_tokens ?? 0,
+    reasoningTokens: json.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+    costUsd: extractCost(json.cost, json.usage),
+  });
   return msg;
 }
 
@@ -302,7 +317,7 @@ async function runBuilderLoop(
         send("tool-builder:done", { sessionId: session.id, aborted: true });
         return;
       }
-      const assistant = await callModel(config, session.messages, signal);
+      const assistant = await callModel(config, session.messages, signal, { sessionId: session.id, workspaceId: session.workspaceId });
       session.messages.push(assistant);
 
       if (assistant.content) {

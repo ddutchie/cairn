@@ -16,6 +16,7 @@ import { getNoteProjections } from "../db/queries";
 import * as client from "../embeddings/client";
 import * as manifest from "../embeddings/manifest";
 import { EMBED_MODEL_ID } from "../embeddings/types";
+import { reclaimFreeSpace } from "../lib/db-hygiene";
 
 interface LockSlot {
   current: Promise<unknown> | null;
@@ -172,6 +173,9 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
         console.warn("[embeddings] semantic recompute after reindex failed:", e instanceof Error ? e.message : e);
       }
     }
+    // Reindexing DELETEs + re-inserts vector rows — drain the resulting free
+    // pages so the file doesn't balloon (incremental vacuum, cheap).
+    reclaimFreeSpace(ctx.db);
     return result;
   }));
 
@@ -203,11 +207,13 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     model?: string;
   }) => handle(async () => {
     const model = resolveModelId(args.model);
-    return withLock(
+    const result = await withLock(
       recomputeSlot,
       ctx.getWin(),
       (onProgress) => recomputeProjections(ctx.db, args.workspaceId, model, undefined, onProgress),
-    ) as Promise<ProjectionResult>;
+    ) as ProjectionResult;
+    reclaimFreeSpace(ctx.db);
+    return result;
   }));
 
   registerIpcHandle("embeddings:status", () => handle(() => client.getStatus()));
