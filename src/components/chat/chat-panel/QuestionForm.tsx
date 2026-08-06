@@ -41,6 +41,9 @@ export function QuestionForm({ questions, onSubmit, disabled = false }: Question
         {questions.map((q) => (
           <div key={q.id} className="flex flex-col gap-1">
             <label className="text-[0.786rem] font-semibold text-[var(--text-primary)]">{q.label}</label>
+            {/* The question is rendered as persistent text — NOT as the textarea
+                placeholder — so it stays visible while the user types. */}
+            <p className="text-[0.714rem] text-[var(--text-tertiary)] leading-relaxed">{q.prompt}</p>
             <textarea
               value={answers[q.id] ?? ""}
               onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
@@ -48,10 +51,9 @@ export function QuestionForm({ questions, onSubmit, disabled = false }: Question
                 // Ctrl/Cmd+Enter submits the form
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleSubmit(); }
               }}
-              placeholder={q.prompt}
               disabled={disabled || submitted}
               rows={2}
-              className="w-full px-2.5 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none disabled:opacity-50 transition-colors leading-relaxed"
+              className="w-full px-2.5 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] resize-none disabled:opacity-50 transition-colors leading-relaxed"
             />
           </div>
         ))}

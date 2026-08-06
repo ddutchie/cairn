@@ -466,7 +466,7 @@ export const TOOL_SCHEMAS = {
       questions: z.array(z.object({
         id:     z.string().describe("Short unique identifier, e.g. \"target_users\""),
         label:  z.string().describe("Short bold label shown above the input, e.g. \"Target users\""),
-        prompt: z.string().describe("One-sentence question shown as placeholder text"),
+        prompt: z.string().describe("One-sentence question shown above the answer field, e.g. \"Who is this for?\""),
       })).describe("2–4 targeted questions"),
     }),
   },
