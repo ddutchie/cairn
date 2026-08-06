@@ -225,19 +225,19 @@ function SubagentMessageRow({ msg, sessionId }: { msg: PiAgentMessage; sessionId
     <div className="flex gap-1.5 items-start">
       <MessageAvatar role="bot" size="sm" />
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        {hasReasoning && (
-          <ThinkingPanel
-            text={msg.reasoning!}
-            streaming={!!msg.isStreaming}
-            companionContent={msg.content}
-          />
-        )}
         {hasTools && (
           <div className="flex flex-col gap-0.5">
             {msg.toolCalls!.map((tc, i) => (
               <ToolChip key={i} tc={tc} sessionId={sessionId} />
             ))}
           </div>
+        )}
+        {hasReasoning && (
+          <ThinkingPanel
+            text={msg.reasoning!}
+            streaming={!!msg.isStreaming}
+            companionContent={msg.content}
+          />
         )}
         {!hasContent && msg.isStreaming && !hasTools && !hasReasoning && (
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit">
@@ -317,6 +317,21 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
       <MessageAvatar role="bot" size="md" />
       <div className="flex-1 min-w-0 flex flex-col gap-1">
 
+        {/* Subagent inline blocks */}
+        {hasSubagents && message.subagents!.map((sub) => (
+          <SubagentBlock key={sub.childSessionId} sub={sub} />
+        ))}
+
+        {/* Tool call chips — expandable. Rendered ABOVE the message content to
+            match chat: the user sees the tool activity first, then the reply. */}
+        {hasTools && (
+          <div className="flex flex-col gap-0.5">
+            {message.toolCalls!.map((tc, i) => (
+              <ToolChip key={i} tc={tc} sessionId={sessionId} connectors={connectors} />
+            ))}
+          </div>
+        )}
+
         {/* Reasoning / thinking panel — collapsible */}
         {hasReasoning && (
           <ThinkingPanel
@@ -337,21 +352,6 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
             {message.isStreaming && <StreamingCursor size="md" />}
           </div>
         )}
-
-        {/* Tool call chips — expandable */}
-        {hasTools && (
-          <div className="flex flex-col gap-0.5">
-            {message.toolCalls!.map((tc, i) => (
-              <ToolChip key={i} tc={tc} sessionId={sessionId} connectors={connectors} />
-            ))}
-          </div>
-        )}
-
-        {/* Subagent inline blocks */}
-        {hasSubagents && message.subagents!.map((sub) => (
-          <SubagentBlock key={sub.childSessionId} sub={sub} />
-        ))}
-
 
         {/* "Thinking…" spinner — only when streaming with no content/tools/reasoning yet */}
         {!hasContent && message.isStreaming && !hasTools && !hasSubagents && !hasReasoning && (
