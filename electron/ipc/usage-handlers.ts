@@ -23,8 +23,10 @@ export function registerUsageHandlers(ctx: DbContext): void {
   // models.dev per-1M pricing map pushed by the renderer once its catalog loads,
   // so the recorder can estimate cost for providers that don't report it.
   registerIpcHandle("app:modelPricing", (_e, map: Record<string, { input: number | null; output: number | null }> | null) => {
-    setModelPricing(map);
-    return { ok: true };
+    return handle(() => {
+      setModelPricing(map);
+      return { ok: true };
+    });
   });
 
   // Everything the view needs for a range: headline totals, previous window
