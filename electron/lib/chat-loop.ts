@@ -305,7 +305,17 @@ export async function runToolLoop(
     }
 
     messages.push(assistantMsg);
-    for (const call of assistantMsg.tool_calls) {
+
+    // ── Execute tool calls ───────────────────────────────────────────────
+    // Run parallel tool calls like the agent loop does. The per-tool
+    // concurrency guards (file mutex, note locks, atomic writes) live in the
+    // shared tool implementations, so parallel execution is equally safe here.
+    // Results are appended back in source order so the model sees a stable
+    // sequence. When an approval gate is present (heartbeat runner), execution
+    // stays sequential so human prompts never stack and the abort-while-waiting
+    // break is preserved.
+    type ToolCallMsg = { id: string; function: { name: string; arguments: string } };
+    const runOne = async (call: ToolCallMsg): Promise<{ call: ToolCallMsg; content: string; abort?: boolean }> => {
       let args: Record<string, unknown>;
       let parseError: string | null = null;
       const parsed = parseToolArgs(call.function.arguments);
@@ -329,15 +339,9 @@ export async function runToolLoop(
       if (parseError) {
         emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args: {}, callId: call.id });
         emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: parseError });
-        messages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: JSON.stringify({ error: parseError }),
-        });
-        continue;
+        return { call, content: JSON.stringify({ error: parseError }) };
       }
 
-      let result: unknown;
       try {
         if (argMutator) args = argMutator(call.function.name, args);
         if (approvalGate) {
@@ -346,12 +350,7 @@ export async function runToolLoop(
             const reason = gate.reason ?? "Blocked by user";
             emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args, callId: call.id });
             emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: reason });
-            messages.push({
-              role: "tool",
-              tool_call_id: call.id,
-              content: JSON.stringify({ error: reason }),
-            });
-            continue;
+            return { call, content: JSON.stringify({ error: reason }) };
           }
           // The gate can block for a long time (human decision) — if the run was
           // aborted while waiting, don't execute this or any remaining tool call.
@@ -359,12 +358,7 @@ export async function runToolLoop(
             const reason = "Aborted while waiting for approval";
             emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args, callId: call.id });
             emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: reason });
-            messages.push({
-              role: "tool",
-              tool_call_id: call.id,
-              content: JSON.stringify({ error: reason }),
-            });
-            break;
+            return { call, content: JSON.stringify({ error: reason }), abort: true };
           }
         }
         if (isExternalToolName(call.function.name)) {
@@ -376,20 +370,36 @@ export async function runToolLoop(
           const externalRef = extractExternalRef(output);
           const externalError = externalOutputError(output);
           emitToolCallDone?.({ tool: call.function.name, externalRef, output, callId: call.id, ok: externalError === undefined, error: externalError });
-          result = output;
-        } else {
-          result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone, call.id);
+          return { call, content: typeof output === "string" ? output : JSON.stringify(output) };
         }
+        const result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone, call.id);
+        return { call, content: typeof result === "string" ? result : JSON.stringify(result) };
       } catch (toolErr) {
         const message = `Tool "${call.function.name}" failed: ${String(toolErr)}`;
-        result = { error: message };
         // executeTool fires its own emitDone only on the success return path; a
         // thrown exception skips it, so emit a failure done here (keyed by callId
         // so the renderer updates the same chip) — otherwise the chip would hang
         // in its running state with no failure signal.
         emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: message });
+        return { call, content: JSON.stringify({ error: message }) };
       }
-      messages.push({ role: "tool", tool_call_id: call.id, content: typeof result === "string" ? result : JSON.stringify(result) });
+    };
+
+    const appendResult = (r: { call: ToolCallMsg; content: string }) => {
+      messages.push({ role: "tool", tool_call_id: r.call.id, content: r.content });
+    };
+
+    if (approvalGate) {
+      // Sequential: approval gates prompt a human — never stack them.
+      for (const call of assistantMsg.tool_calls) {
+        const r = await runOne(call);
+        appendResult(r);
+        if (r.abort) break;
+      }
+    } else {
+      // Parallel (agent parity), reordered back into source order.
+      const results = await Promise.all(assistantMsg.tool_calls.map((call) => runOne(call)));
+      for (const r of results) appendResult(r);
     }
   }
 
