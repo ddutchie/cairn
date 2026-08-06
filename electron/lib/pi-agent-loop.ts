@@ -18,6 +18,14 @@ import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
 import { isLocalEndpoint, calculatePromptBreakdown, scaleBreakdown, buildApiUrl, type TokenBreakdown } from "./llm";
 import {
+  buildChatCompletionsBody,
+  consumeAssistantStream,
+  failToolCallsFromTruncatedMessage,
+  interruptedStreamToolCallError,
+  prepareContextMessages,
+  resolveSystemRole,
+} from "./llm-stream";
+import {
   readTool,  readToolDefinition,
   writeTool, writeToolDefinition,
   editTool,  editToolDefinition,
@@ -31,7 +39,6 @@ import {
 import { executeTool } from "../ipc/chat-executor";
 import type { ChatRequest, ToolArgs } from "./tools";
 import type { SkillMeta } from "./skills";
-import { iterSseData } from "./sse";
 import { traceTool } from "./tool-trace";
 import { parseToolArgs } from "./parse-tool-args";
 import { resultContentError } from "./tool-result";
@@ -64,12 +71,14 @@ export interface AgentLLMConfig {
    * value is the user's deliberate cap.
    */
   maxTokens?: number;
+  /** Whether the selected model is a reasoning/thinking model (from the models.dev catalog). */
+  isReasoningModel?: boolean;
 }
 
 // ── Message types ─────────────────────────────────────────────────────────────
 
 export interface AgentUserMessage    { role: "user";      content: string }
-export interface AgentAssistantMsg   { role: "assistant"; content: string | null; reasoning?: string; tool_calls?: ToolCallSpec[] }
+export interface AgentAssistantMsg   { role: "assistant"; content: string | null; reasoning?: string; reasoningField?: string; reasoningModel?: string; tool_calls?: ToolCallSpec[] }
 export interface AgentToolResultMsg  { role: "tool";      tool_call_id: string; content: string }
 
 export type AgentMessage =
@@ -528,6 +537,10 @@ export async function runAgentLoop(
   // Undefined/0 → omit max_tokens (let the model finish naturally).
   const maxTokens = llmConfig.maxTokens && llmConfig.maxTokens > 0 ? llmConfig.maxTokens : undefined;
 
+  // Identity of this request's model — reasoning is round-tripped (pi behaviour)
+  // under its native field, but only to the SAME model that produced it.
+  const currentModelKey = `${baseUrl}::${model}`;
+
   // Plan mode always uses 0.1 for deterministic analysis regardless of user setting
   const temperature = mode === "plan" ? 0.1 : (configTemp ?? 0.3);
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
@@ -551,23 +564,22 @@ export async function runAgentLoop(
     // assistant message and start a fresh one for this turn's tokens.
     if (steps > 1) callbacks.onStepStart();
 
-    // Build messages array — apply context pruning.
-    // systemPrompt passes as `system:` in the request body (not as a user message).
-    // Strip reasoning before the pruner so custom context transforms cannot
-    // access thinking text. The post-pruner map is a safety net.
-    const stripped = session.messages.map((m) => {
-      if (m.role === "assistant" && "reasoning" in m) {
-        const { reasoning: _r, ...rest } = m;
-        return rest;
-      }
-      return m;
-    });
-    const contextMessages = (await pruner(stripped)).map((m) => {
-      if (m.role === "assistant" && "reasoning" in m) {
-        const { reasoning: _r, ...rest } = m;
-        return rest;
-      }
-      return m;
+    // Build messages array — apply context pruning, reasoning round-trip, and
+    // empty-turn filtering via the shared helper (identical to chat's stream
+    // semantics). The system prompt travels as a `role: "system"` message (never
+    // a top-level `system:` field), reasoning round-trips to the SAME model
+    // under its native field, and reasoning is kept out of the pruner so
+    // compaction summaries can never see chain-of-thought.
+    const contextMessages = await prepareContextMessages({
+      systemPrompt,
+      messages: session.messages,
+      currentModelKey,
+      systemRole: resolveSystemRole({
+        isReasoningModel: llmConfig.isReasoningModel,
+        baseUrl,
+        modelId: model,
+      }),
+      pruner,
     });
 
     // ── Stream assistant response ─────────────────────────────────────────
@@ -587,18 +599,13 @@ export async function runAgentLoop(
           method: "POST",
           headers,
           signal,
-          body: JSON.stringify({
+          body: JSON.stringify(buildChatCompletionsBody({
             model,
-            system: systemPrompt,
             messages: contextMessages,
             tools: allTools,
-            tool_choice: "auto",
-            // Only send max_tokens when the user set an explicit cap (see maxTokens above).
-            ...(maxTokens ? { max_tokens: maxTokens } : {}),
+            maxTokens,
             temperature,
-            stream: true,
-            stream_options: { include_usage: true },
-          }),
+          })),
         });
       } catch (e) {
         if (signal.aborted) { callbacks.onDone(); return; }
@@ -656,120 +663,110 @@ export async function runAgentLoop(
     const reader = response.body?.getReader();
     if (!reader) { callbacks.onError("No response stream"); return; }
 
-    let contentBuffer = "";
-    let reasoningBuffer = "";
-    const toolCallBuffers: Map<number, { id: string; name: string; args: string; thought_signature?: string }> = new Map();
-    // callId assigned per tool during streaming — reused at execution time
-    const streamCallIds: Map<number, string> = new Map();
+    // Shared SSE parse (identical to the chat loop) — reasoning-field capture,
+    // finish_reason tracking, tool-call buffering, and pending-chip callIds all
+    // live in `consumeAssistantStream` so the two loops cannot drift again.
     let toolsReadyFired = false;
-
-    for await (const jsonStr of iterSseData(reader, signal)) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const chunk = JSON.parse(jsonStr) as any;
-
-        // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
-        if (chunk.usage) {
-          const pt = chunk.usage.prompt_tokens ?? 0;
-          const ct = chunk.usage.completion_tokens ?? 0;
-          const rt = chunk.usage.completion_tokens_details?.reasoning_tokens ?? 0;
-          session.lastPromptTokens = pt;
-          // Accumulate completion + reasoning across rounds (total output for the turn).
-          // Prompt tokens are last-round only (= current context window usage).
-          session.totalCompletionTokens = (session.totalCompletionTokens ?? 0) + ct;
-          session.totalReasoningTokens = (session.totalReasoningTokens ?? 0) + rt;
-          let breakdown: TokenBreakdown | undefined;
-          try {
-            const rawBreakdown = calculatePromptBreakdown(systemPrompt, contextMessages, allTools);
-            breakdown = scaleBreakdown(rawBreakdown, pt);
-          } catch (err) {
-            console.error("[pi-agent] failed to calculate breakdown:", err);
-          }
-          callbacks.onUsage(pt, session.totalCompletionTokens ?? 0, session.totalReasoningTokens ?? 0, breakdown);
+    const turn = await consumeAssistantStream(reader, {
+      signal,
+      onToken: (delta) => callbacks.onToken(delta),
+      onThought: (delta) => callbacks.onThought?.(delta),
+      onToolPending: (name, callId) => {
+        if (!toolsReadyFired) {
+          callbacks.onToolsReady();
+          toolsReadyFired = true;
         }
-
-        const delta = chunk.choices?.[0]?.delta;
-        if (!delta) continue;
-
-        if (delta.content) {
-          contentBuffer += delta.content;
-          callbacks.onToken(delta.content);
+        callbacks.onToolPending(name, callId);
+      },
+      onUsage: (usage) => {
+        const pt = usage.promptTokens;
+        const ct = usage.completionTokens;
+        const rt = usage.reasoningTokens;
+        session.lastPromptTokens = pt;
+        // Accumulate completion + reasoning across rounds (total output for the turn).
+        // Prompt tokens are last-round only (= current context window usage).
+        session.totalCompletionTokens = (session.totalCompletionTokens ?? 0) + ct;
+        session.totalReasoningTokens = (session.totalReasoningTokens ?? 0) + rt;
+        let breakdown: TokenBreakdown | undefined;
+        try {
+          const rawBreakdown = calculatePromptBreakdown(systemPrompt, contextMessages, allTools);
+          breakdown = scaleBreakdown(rawBreakdown, pt);
+        } catch (err) {
+          console.error("[pi-agent] failed to calculate breakdown:", err);
         }
+        callbacks.onUsage(pt, session.totalCompletionTokens ?? 0, session.totalReasoningTokens ?? 0, breakdown);
+      },
+    });
 
-        // Reasoning / thinking stream (Claude thinking_delta, OpenAI delta.reasoning,
-        // DeepSeek/Qwen-style delta.reasoning_content).
-        // Not merged into content or tool-call JSON; surfaced as a separate panel.
-        const thought = delta.reasoning_content ?? delta.reasoning;
-        if (thought) {
-          reasoningBuffer += thought;
-          callbacks.onThought?.(thought);
-        }
-
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const idx: number = tc.index ?? 0;
-            const isNew = !toolCallBuffers.has(idx);
-            if (isNew) {
-              toolCallBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
-            }
-            const buf = toolCallBuffers.get(idx)!;
-            if (tc.id) buf.id = tc.id;
-            if (tc.function?.name) buf.name = tc.function.name;
-            if (tc.function?.arguments) buf.args += tc.function.arguments;
-            // Gemini 3.x thought signature — opaque blob to round-trip back.
-            if (tc.thought_signature) buf.thought_signature = tc.thought_signature;
-
-            // Fire pending chip as soon as we see the tool name during streaming
-            if (buf.name && !streamCallIds.has(idx)) {
-              if (!toolsReadyFired) {
-                callbacks.onToolsReady();
-                toolsReadyFired = true;
-              }
-              const callId = `${buf.name}:${Date.now()}:${idx}`;
-              streamCallIds.set(idx, callId);
-              callbacks.onToolPending(buf.name, callId);
-            }
-          }
-        }
-      } catch { /* skip malformed SSE JSON line */ }
-    }
+    const contentBuffer = turn.content;
+    const reasoningBuffer = turn.reasoning;
+    const streamCallIds = turn.streamCallIds;
+    const turnFinishReason = turn.finishReason;
 
     // Dev trace: per-tool assembled arguments.
-    for (const [idx, buf] of toolCallBuffers.entries()) {
+    for (let i = 0; i < turn.toolCalls.length; i++) {
+      const tc = turn.toolCalls[i];
       traceTool("sse-args", {
-        toolIndex: idx,
-        toolName: buf.name,
-        arguments: buf.args,
+        toolIndex: turn.toolCallIndexes[i],
+        toolName: tc.function.name,
+        arguments: tc.function.arguments,
       });
     }
 
     // ── No tool calls → turn complete ─────────────────────────────────────
-    if (toolCallBuffers.size === 0) {
-      session.messages.push({ role: "assistant", content: contentBuffer, reasoning: reasoningBuffer || undefined });
+    if (turn.toolCalls.length === 0) {
+      // Reasoning is never baked into `content` (pi behaviour): it is streamed
+      // to the ThinkingPanel live and stored in its own field, then
+      // round-tripped to the SAME model under its native field (or converted to
+      // text cross-model) on the next request.
+      session.messages.push({
+        role: "assistant",
+        content: contentBuffer,
+        reasoning: reasoningBuffer || undefined,
+        reasoningField: turn.reasoningField ?? undefined,
+        reasoningModel: currentModelKey,
+      });
       callbacks.onDone();
       return;
     }
 
     // ── Build tool call list from accumulated buffers ─────────────────────
-    const toolCalls: ToolCallSpec[] = Array.from(toolCallBuffers.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([, buf]) => ({
-        id: buf.id,
-        type: "function" as const,
-        function: { name: buf.name, arguments: buf.args },
-        ...(buf.thought_signature ? { thought_signature: buf.thought_signature } : {}),
-      }));
+    const toolCalls: ToolCallSpec[] = turn.toolCalls;
 
     session.messages.push({
       role: "assistant",
       content: contentBuffer || null,
       reasoning: reasoningBuffer || undefined,
+      reasoningField: turn.reasoningField ?? undefined,
+      reasoningModel: currentModelKey,
       tool_calls: toolCalls,
     });
 
     if (!toolsReadyFired) callbacks.onToolsReady();
 
+    // ── Output-token-limit / interrupted-stream truncation guard ──────────
+    // Shared with the chat loop. A "length" finish (or a stream that ended
+    // without ANY finish_reason — connection cut mid-call) means the tool calls
+    // may carry truncated arguments. Refuse to execute them: emit the chip + a
+    // structured error so the model re-issues with complete arguments.
+    const streamInterrupted = turnFinishReason === null;
+    if (turnFinishReason === "length" || streamInterrupted) {
+      const toolResults = failToolCallsFromTruncatedMessage(toolCalls, {
+        maxTokens,
+        error: streamInterrupted ? interruptedStreamToolCallError() : undefined,
+        labelFor: (name) => isExternalToolName(name)
+          ? externalToolLabel(name, toolCtx.db)
+          : (CODING_LABELS[name]?.({}) ?? name),
+        callIdFor: (_tc, i) => streamCallIds.get(turn.toolCallIndexes[i] ?? i),
+        emitStart: (name, label, callId, args) => callbacks.onToolStart(name, label, callId, args),
+        emitEnd: (name, label, ok, output, callId, args) => callbacks.onToolEnd(name, label, ok, output, callId, args),
+      });
+      for (const tr of toolResults) session.messages.push(tr);
+      continue;
+    }
+
     // ── Execute tools in parallel ─────────────────────────────────────────
+    if (signal.aborted) { callbacks.onDone(); return; }
     // All tools in a turn fire concurrently. Results are appended to
     // session.messages in original source order regardless of completion order.
     // onToolEnd fires as each tool finishes (may be out of order for UI updates).
@@ -782,7 +779,6 @@ export async function runAgentLoop(
     //     mcp_active_writes lock (lockNote/unlockNote) plus the file-watcher's
     //     in-flight / disk-existence checks, so a relocation's old-path unlink
     //     is never mistaken for a delete.
-    if (signal.aborted) { callbacks.onDone(); return; }
 
     type ToolOutcome = { tcIdx: number; tc: ToolCallSpec; ok: boolean; resultContent: string; pendingCallId?: string };
 

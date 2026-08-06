@@ -28,6 +28,8 @@ export interface ModelInfo {  /** Context window in tokens (limit.context). */
   modes: string[];
   /** Whether the model supports tool calls, when known. */
   toolCall: boolean | null;
+  /** Whether the model is a reasoning/thinking model (models.dev `reasoning`). */
+  reasoning: boolean | null;
   /** models.dev provider slug that owns the catalog entry (drives the logo). */
   provider: string | null;
 }
@@ -292,6 +294,7 @@ export function normalizeModelInfo(info: ModelInfo | null | undefined): ModelInf
     output: typeof info.output === "number" ? info.output : null,
     modes,
     toolCall: typeof info.toolCall === "boolean" ? info.toolCall : null,
+    reasoning: typeof info.reasoning === "boolean" ? info.reasoning : null,
     provider: typeof info.provider === "string" ? info.provider : null,
   };
 }
@@ -312,6 +315,7 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
         cost?: { input?: unknown; output?: unknown };
         modalities?: { input?: unknown };
         tool_call?: unknown;
+        reasoning?: unknown;
       };
       const readNum = (v: unknown): number | null =>
         typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -325,6 +329,7 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
         output: readNum(m.cost?.output),
         modes: inModes,
         toolCall: typeof m.tool_call === "boolean" ? m.tool_call : null,
+        reasoning: typeof m.reasoning === "boolean" ? m.reasoning : null,
         provider: slug,
       };
     }

@@ -56,6 +56,7 @@ interface PiAgentPromptRequest {
     temperature?: number;
     maxTokens?: number;
     autoApprove?: boolean;
+    isReasoningModel?: boolean;
   };
 }
 
@@ -75,6 +76,7 @@ interface PiAgentApprovePlanRequest {
     temperature?: number;
     maxTokens?: number;
     autoApprove?: boolean;
+    isReasoningModel?: boolean;
   };
 }
 
@@ -235,6 +237,7 @@ export function registerPiAgentHandler(
       temperature: reqConfig?.temperature ?? 0.3,
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
+      isReasoningModel: reqConfig?.isReasoningModel,
     };
 
     let session = sessions.get(sessionId);
@@ -330,6 +333,7 @@ export function registerPiAgentHandler(
       temperature: reqConfig?.temperature ?? 0.3,
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
+      isReasoningModel: reqConfig?.isReasoningModel,
     };
 
     let session = sessions.get(sessionId);

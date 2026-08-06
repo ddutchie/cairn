@@ -25,6 +25,7 @@ import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
+import { getModelInfo } from "@/lib/models-dev";
 import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
@@ -521,9 +522,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
          maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
-         // Auto (default) → undefined → omit max_tokens so the model finishes naturally.
-         maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
+          // Auto (default) → undefined → omit max_tokens so the model finishes naturally.
+          maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
           autoApprove: session.autoApprove ?? agentConfig.autoApprove ?? true,
+          // Reasoning models get the `developer` system role (OpenAI convention).
+          isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
        },
     };
     window.electron?.piAgent.prompt(promptPayload);

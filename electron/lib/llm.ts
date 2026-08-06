@@ -77,7 +77,7 @@ export interface LLMConfig {
 }
 
 export type OpenAIMessage = {
-  role: "system" | "user" | "assistant" | "tool";
+  role: "system" | "developer" | "user" | "assistant" | "tool";
   content: string | null;
   name?: string;
   tool_call_id?: string;

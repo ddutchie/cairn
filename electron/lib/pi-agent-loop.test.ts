@@ -68,18 +68,29 @@ function makeToolCtx(db: Database.Database): AgentToolContext {
 /**
  * Build a server that serves a fixed sequence of SSE response bodies.
  * Each call to POST /v1/chat/completions consumes the next body in the queue.
+ * Also records every request body so tests can assert what was actually sent.
  */
-function makeServer(responses: string[]): Promise<{ url: string; close: () => Promise<void> }> {
+function makeServer(responses: string[]): Promise<{ url: string; close: () => Promise<void>; bodies: Record<string, unknown>[] }> {
   let callIndex = 0;
-  const server = http.createServer((_req, res) => {
-    const body = responses[callIndex] ?? "";
-    callIndex++;
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
+  const bodies: Record<string, unknown>[] = [];
+  const server = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c as Buffer));
+    req.on("end", () => {
+      try {
+        bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>);
+      } catch {
+        bodies.push({});
+      }
+      const body = responses[callIndex] ?? "";
+      callIndex++;
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+      res.end(body);
     });
-    res.end(body);
   });
 
   return new Promise((resolve) => {
@@ -88,6 +99,7 @@ function makeServer(responses: string[]): Promise<{ url: string; close: () => Pr
       resolve({
         url: `http://127.0.0.1:${port}`,
         close: () => new Promise((r) => server.close(() => r())),
+        bodies,
       });
     });
   });
@@ -179,7 +191,7 @@ function textThenToolSSE(text: string, toolName: string, toolArgs: string): stri
 
 describe("runAgentLoop — SSE streaming", () => {
   let db: Database.Database;
-  let server: { url: string; close: () => Promise<void> };
+  let server: { url: string; close: () => Promise<void>; bodies: Record<string, unknown>[] };
 
   beforeEach(() => { db = makeDb(); });
   afterEach(async () => { await server?.close(); db.close(); });
@@ -446,6 +458,211 @@ describe("runAgentLoop — SSE streaming", () => {
     // So at minimum start A comes before end A
     expect(log.findIndex(e => e === starts[0])).toBeLessThan(firstEndIdx);
     expect(lastStartIdx).toBeLessThan(log.lastIndexOf(ends[ends.length - 1]));
+  });
+
+  // ── 9. Output-token-limit truncation guard ─────────────────────────────────
+
+  it("finish_reason length: tool call is NOT executed, chip fails, loop continues", async () => {
+    // Turn 1: tool call truncated by the output-token cap (finish_reason "length")
+    const lines: string[] = [];
+    lines.push(`data: ${JSON.stringify({
+      choices: [{ delta: { tool_calls: [{ index: 0, id: "call_trunc", function: { name: "ls", arguments: "" } }] } }],
+    })}\n\n`);
+    lines.push(`data: ${JSON.stringify({
+      choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ path: "." }).slice(0, 3) } }] } }],
+      finish_reason: "length",
+    })}\n\n`);
+    lines.push("data: [DONE]\n\n");
+
+    server = await makeServer([
+      lines.join(""),
+      textOnlySSE(["Re-issued successfully."]),
+    ]);
+
+    const session = makeSession();
+    const { log, callbacks } = makeCallbacks();
+
+    await runAgentLoop(
+      session, "You are a test assistant.",
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+      callbacks, makeToolCtx(db),
+    );
+
+    // The truncated tool call must be failed, never executed
+    expect(log.some((e) => e.startsWith("tool-end:ls:false"))).toBe(true);
+    expect(log.some((e) => e.startsWith("tool-end:ls:true"))).toBe(false);
+    // Loop continues so the model can re-issue, then finishes normally
+    expect(log).toContain("step-start");
+    expect(log).toContain("token:Re-issued successfully.");
+    expect(log[log.length - 1]).toBe("done");
+    expect(log).not.toContain(expect.stringContaining("error:"));
+  });
+
+  // ── 10. Reasoning-only turn (length) is stored for round-trip, not surfaced ─
+
+  it("finish_reason length with only reasoning: reasoning stays out of content (pi behaviour)", async () => {
+    // A "thinking" model emits only chain-of-thought then hits the output cap.
+    const lines: string[] = [];
+    for (const char of "Let me think carefully about the answer.") {
+      lines.push(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: char } }] })}\n\n`);
+    }
+    lines.push(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "length" }] })}\n\n`);
+    lines.push("data: [DONE]\n\n");
+
+    server = await makeServer([lines.join("")]);
+
+    const session = makeSession();
+    const { log, callbacks } = makeCallbacks();
+
+    await runAgentLoop(
+      session, "You are a test assistant.",
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+      callbacks, makeToolCtx(db),
+    );
+
+    // Reasoning is never baked into content (pi behaviour) — no surfaced token bubble
+    expect(log.some((e) => e.startsWith("token:*[This model hit its output-token limit"))).toBe(false);
+    expect(log[log.length - 1]).toBe("done");
+    expect(log).not.toContain(expect.stringContaining("error:"));
+
+    // The message stored on the session keeps an EMPTY content; the reasoning
+    // stays in its own field (with round-trip metadata) so it can be sent back
+    // to the SAME model under its native field — never baked into content.
+    expect(session.messages).toHaveLength(1);
+    const stored = session.messages[0] as { content: string; reasoning?: string; reasoningField?: string; reasoningModel?: string };
+    expect(stored.content).toBe("");
+    expect(stored.reasoning).toBe("Let me think carefully about the answer.");
+    expect(stored.reasoningField).toBe("reasoning_content");
+    expect(stored.reasoningModel).toBe(`${server.url}::test`);
+  });
+
+  // ── 11. Bare reasoning without round-trip metadata is never leaked ─────────
+
+  it("a prior reasoning-only turn (no round-trip metadata) is dropped from the request body", async () => {
+    server = await makeServer([textOnlySSE(["ok"])]);
+
+    const session = makeSession();
+    session.messages.push({ role: "user", content: "Continue." });
+    // Prior turn produced only reasoning, but with NO reasoningField/Model (e.g.
+    // persisted before round-trip metadata existed) — must never reach the provider.
+    session.messages.push({ role: "assistant", content: "", reasoning: "SECRET_CHAIN_OF_THOUGHT" });
+
+    const { log, callbacks } = makeCallbacks();
+
+    await runAgentLoop(
+      session, "You are a test assistant.",
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+      callbacks, makeToolCtx(db),
+    );
+
+    expect(log[log.length - 1]).toBe("done");
+    expect(server.bodies).toHaveLength(1);
+    const sentMessages = server.bodies[0].messages as Array<Record<string, unknown>>;
+    const serialized = JSON.stringify(sentMessages);
+    expect(serialized).not.toContain("SECRET_CHAIN_OF_THOUGHT");
+    // The user message is still sent
+    expect(serialized).toContain("Continue.");
+  });
+
+  // ── 12. Reasoning round-trips to the same model under its native field ─────
+
+  it("reasoning round-trips to the SAME model under its native field (pi behaviour)", async () => {
+    server = await makeServer([textOnlySSE(["ok"])]);
+
+    const session = makeSession();
+    session.messages.push({ role: "user", content: "Continue." });
+    session.messages.push({
+      role: "assistant",
+      content: "",
+      reasoning: "SECRET_CHAIN_OF_THOUGHT",
+      reasoningField: "reasoning_content",
+      reasoningModel: `${server.url}::test`,
+    });
+
+    const { log, callbacks } = makeCallbacks();
+
+    await runAgentLoop(
+      session, "You are a test assistant.",
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+      callbacks, makeToolCtx(db),
+    );
+
+    expect(log[log.length - 1]).toBe("done");
+    const sentMessages = server.bodies[0].messages as Array<Record<string, unknown>>;
+    const serialized = JSON.stringify(sentMessages);
+    // Reasoning is sent back under the recorded field name (reasoning_content)
+    expect(serialized).toContain("reasoning_content");
+    expect(serialized).toContain("SECRET_CHAIN_OF_THOUGHT");
+  });
+
+  // ── 13. Cross-model reasoning is converted to text ─────────────────────────
+
+  it("reasoning from a DIFFERENT model is sent as text, not as a foreign field", async () => {
+    server = await makeServer([textOnlySSE(["ok"])]);
+
+    const session = makeSession();
+    session.messages.push({ role: "user", content: "Continue." });
+    // Produced by a different model — must not round-trip as a reasoning field,
+    // but pi converts it to plain text so the new model still sees the context.
+    session.messages.push({
+      role: "assistant",
+      content: "",
+      reasoning: "OTHER_MODEL_THOUGHTS",
+      reasoningField: "reasoning",
+      reasoningModel: "https://other.example/v1::other-model",
+    });
+
+    const { log, callbacks } = makeCallbacks();
+
+    await runAgentLoop(
+      session, "You are a test assistant.",
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+      callbacks, makeToolCtx(db),
+    );
+
+    expect(log[log.length - 1]).toBe("done");
+    const sentMessages = server.bodies[0].messages as Array<Record<string, unknown>>;
+    const serialized = JSON.stringify(sentMessages);
+    // Not a reasoning field — appears as text content instead
+    expect(serialized).not.toContain("\"reasoning\":\"OTHER_MODEL_THOUGHTS\"");
+    expect(serialized).not.toContain("reasoningModel");
+    expect(serialized).toContain("OTHER_MODEL_THOUGHTS");
+  });
+
+  // ── 14. Interrupted stream (no finish_reason) with tool calls ──────────────
+
+  it("stream that ends without finish_reason refuses to execute buffered tool calls", async () => {
+    // Tool call streamed, then the connection just ends — no finish_reason chunk.
+    const lines: string[] = [];
+    lines.push(`data: ${JSON.stringify({
+      choices: [{ delta: { tool_calls: [{ index: 0, id: "call_int", function: { name: "ls", arguments: "" } }] } }],
+    })}\n\n`);
+    lines.push(`data: ${JSON.stringify({
+      choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ path: "." }) } }] } }],
+    })}\n\n`);
+    lines.push("data: [DONE]\n\n");
+
+    server = await makeServer([
+      lines.join(""),
+      textOnlySSE(["Re-issued successfully."]),
+    ]);
+
+    const session = makeSession();
+    const { log, callbacks } = makeCallbacks();
+
+    await runAgentLoop(
+      session, "You are a test assistant.",
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+      callbacks, makeToolCtx(db),
+    );
+
+    // The buffered tool call must be failed, never executed
+    expect(log.some((e) => e.startsWith("tool-end:ls:false"))).toBe(true);
+    expect(log.some((e) => e.startsWith("tool-end:ls:true"))).toBe(false);
+    // Loop continues so the model can re-issue, then finishes normally
+    expect(log).toContain("step-start");
+    expect(log).toContain("token:Re-issued successfully.");
+    expect(log[log.length - 1]).toBe("done");
   });
 });
 

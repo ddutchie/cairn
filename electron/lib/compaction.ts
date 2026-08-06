@@ -132,8 +132,13 @@ export async function generateSummary(
     signal,
     body: JSON.stringify({
       model,
-      system: SUMMARIZATION_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: SUMMARIZATION_USER_PROMPT(conversationText) }],
+      // System prompt as a `role: "system"` message (not a top-level `system:`
+      // field) so strict OpenAI-compatible providers don't reject the request
+      // with "unknown parameter system".
+      messages: [
+        { role: "system", content: SUMMARIZATION_SYSTEM_PROMPT },
+        { role: "user", content: SUMMARIZATION_USER_PROMPT(conversationText) },
+      ],
       max_tokens: SUMMARY_MAX_TOKENS,
       temperature: 0.1, // deterministic summary
       // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
