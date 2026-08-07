@@ -7,6 +7,7 @@
 import fs from "fs";
 import path from "path";
 import { truncateOutput } from "../truncation";
+import { resolveContainedPath } from "./workspace-path";
 
 const MAX_RESULTS = 50;
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".next", "out", "build", ".turbo"]);
@@ -51,9 +52,8 @@ async function findFiles(
 }
 
 export async function findTool(args: FindArgs, cwd: string): Promise<string> {
-  const searchPath = args.path
-    ? (path.isAbsolute(args.path) ? args.path : path.join(cwd, args.path))
-    : cwd;
+  const searchPath = resolveContainedPath(cwd, args.path);
+  if (!searchPath) throw new Error(`Path is outside the workspace: ${args.path ?? "."}`);
 
   try {
     await fs.promises.stat(searchPath);

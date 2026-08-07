@@ -465,6 +465,22 @@ export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 export const AUTO_OUTPUT_TOKEN_CAP = 32_000;
 
 /**
+ * Context-window limit used by the agent's sliding-window pruner and the
+ * context rings. Accepts only finite values of at least 1, floors them, and
+ * falls back to a 128K default otherwise — so runtime and UI always agree on
+ * the same limit, and a hostile/garbage value (NaN, Infinity, a fraction, a
+ * negative) can never disable pruning or zero a ring.
+ */
+export const DEFAULT_CONTEXT_LIMIT = 128_000;
+
+export function normalizeContextLimit(value?: number | null): number {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
+    return Math.floor(value);
+  }
+  return DEFAULT_CONTEXT_LIMIT;
+}
+
+/**
  * Resolve the `max_tokens` to send for a chat request.
  *
  * Older Cairn OMITTED `max_tokens` on Auto so the model "finished naturally".

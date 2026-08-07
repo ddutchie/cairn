@@ -18,7 +18,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import { getCommandsForScope } from "@/lib/slash-commands";
-import { resolveMaxOutputTokens, supportsImageInput } from "../../../shared/models/model-catalog";
+import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanApprovalCard } from "./PlanApprovalCard";
@@ -687,7 +687,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         {session.lastUsage && (
           <ContextRing
             promptTokens={session.lastUsage.promptTokens}
-            contextLimit={agentConfig.contextLimit ?? 128000}
+            contextLimit={normalizeContextLimit(agentConfig.contextLimit)}
             breakdown={session.lastUsage.breakdown}
             completionTokens={session.lastUsage.completionTokens}
             reasoningTokens={session.lastUsage.reasoningTokens}

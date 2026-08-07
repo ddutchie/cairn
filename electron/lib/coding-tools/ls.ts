@@ -5,17 +5,16 @@
  */
 
 import fs from "fs";
-import path from "path";
 import { truncateOutput } from "../truncation";
+import { resolveContainedPath } from "./workspace-path";
 
 export interface LsArgs {
   path?: string; // directory to list (default: cwd)
 }
 
 export async function lsTool(args: LsArgs, cwd: string): Promise<string> {
-  const dirPath = args.path
-    ? (path.isAbsolute(args.path) ? args.path : path.join(cwd, args.path))
-    : cwd;
+  const dirPath = resolveContainedPath(cwd, args.path);
+  if (!dirPath) throw new Error(`Path is outside the workspace: ${args.path ?? "."}`);
 
   let entries: fs.Dirent[];
   try {

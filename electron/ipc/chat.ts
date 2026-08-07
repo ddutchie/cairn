@@ -349,18 +349,34 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     const thoughts = createDeltaBatcher((delta) => send("chat:thought", { delta }));
     const flushStream = () => { tokens.flush(); thoughts.flush(); };
 
-    const loopResult = await runToolLoop(
-      db, req, workspacePath, baseUrl, model, apiKey, messages,
-      emitToolCall, abortCtrl.signal, getWin, provider, addUsage,
-      emitToolCallDone,
-      (delta) => {
-        tokens.push(delta);
-      },
-      (delta) => {
-        thoughts.push(delta);
-      },
-      externalDefs,
-    );
+    let loopResult: Awaited<ReturnType<typeof runToolLoop>>;
+    try {
+      loopResult = await runToolLoop(
+        db, req, workspacePath, baseUrl, model, apiKey, messages,
+        emitToolCall, abortCtrl.signal, getWin, provider, addUsage,
+        emitToolCallDone,
+        (delta) => {
+          tokens.push(delta);
+        },
+        (delta) => {
+          thoughts.push(delta);
+        },
+        externalDefs,
+      );
+    } catch (err) {
+      // A crashed loop must still resolve the turn: flush any buffered tokens,
+      // release the abort controller, and send a terminal error chat:done so
+      // the renderer never stays stuck in its loading state.
+      flushStream();
+      abortControllers.delete(event.sender.id);
+      if (!abortCtrl.signal.aborted) {
+        console.error("[chat] tool loop failed:", err);
+        send("chat:done", { content: `Chat loop failed: ${(err as Error)?.message ?? String(err)}`, contextRefs: [] });
+      } else {
+        send("chat:done", { content: "", contextRefs: [] });
+      }
+      return;
+    }
 
     abortControllers.delete(event.sender.id);
 

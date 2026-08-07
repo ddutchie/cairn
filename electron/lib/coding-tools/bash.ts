@@ -203,6 +203,12 @@ export async function bashTool(
 
     const abortHandler = () => {
       clearTimeout(timer);
+      // Flush throttled output BEFORE rejecting so the live chip label shows
+      // the final bytes when the tool ends as aborted. (Not in the close
+      // handler's aborted branch — reject() resolves the loop's await first and
+      // fires onToolEnd, so flushing there would emit an out-of-order label
+      // update that re-adds a running chip.)
+      flushUpdate();
       doKill();
       reject(new Error(`Command aborted\n\n${output}`));
     };

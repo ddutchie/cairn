@@ -13,6 +13,7 @@ import type { PiAgentMessage, PiSubagentMessage } from "@/types";
 import { humanizeTool } from "@/lib/humanize-tool";
 import { approvalPreview, riskForTool, approvalGrantScope, approvalScopeLabel } from "@/lib/tool-risk";
 import { ConnectorToolCard, type ConnectorMeta } from "@/components/shared/ConnectorToolCard";
+import { normalizeContextLimit } from "../../../shared/models/model-catalog";
 
 export type AgentConnectorMeta = ConnectorMeta;
 
@@ -164,7 +165,8 @@ function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
   // so its context ring must use the agent's context limit — NOT the chat AI
   // config (a different model's limit, e.g. a 200K chat model would otherwise
   // cap every agent subagent ring at 200K regardless of the agent model).
-  const contextLimit = useCairnStore((s) => s.agentConfig.contextLimit ?? 128000);
+  // Shared normalization with the pruner so ring and runtime enforce the same limit.
+  const contextLimit = useCairnStore((s) => normalizeContextLimit(s.agentConfig.contextLimit));
 
   return (
     <div className="mt-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">

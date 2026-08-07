@@ -204,7 +204,15 @@ async function runSession(
     },
     toolCtx,
     mode,
-  );
+  ).catch((err) => {
+    // A crashed loop must still resolve the turn: flush buffered tokens,
+    // persist the (exited) session, and send a terminal error so the renderer
+    // never stays stuck in its loading state.
+    tokens.flush();
+    thoughts.flush();
+    scheduleHistorySave(ctx.db, sessionId, session.messages, "exited");
+    send("pi-agent:error", { sessionId, error: (err as Error)?.message ?? String(err) });
+  });
 }
 
 // ── Registration ───────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@
 import fs from "fs";
 import path from "path";
 import { truncateOutput } from "../truncation";
+import { resolveContainedPath } from "./workspace-path";
 
 const MAX_RESULTS = 100;
 
@@ -78,9 +79,8 @@ export async function grepTool(args: GrepArgs, cwd: string): Promise<string> {
     throw new Error(`Invalid regex pattern: ${args.pattern}`);
   }
 
-  const searchPath = args.path
-    ? (path.isAbsolute(args.path) ? args.path : path.join(cwd, args.path))
-    : cwd;
+  const searchPath = resolveContainedPath(cwd, args.path);
+  if (!searchPath) throw new Error(`Path is outside the workspace: ${args.path ?? "."}`);
 
   const results: GrepMatch[] = [];
 
