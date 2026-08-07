@@ -29,6 +29,8 @@ import {
   previewVaultImport,
   saveImportExclusions,
   isImportPathExcluded,
+  readImportConfig,
+  setImportUnmanaged,
 } from "./notes-files";
 import type { NoteData } from "./notes-files";
 
@@ -1052,5 +1054,117 @@ describe("filename stability (Obsidian wikilink safety)", () => {
     const moved = path.join(projectDir, "kernel", "EP.md");      // filename preserved
     expect(fs.existsSync(moved)).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "kernel", "electron-process.md"))).toBe(false);
+  });
+});
+
+describe("re-import 3-way conflict handling (v2.6.8)", () => {
+  let db: Database.Database;
+
+  beforeEach(() => { db = makeDb(); });
+
+  function seedWorkspaceOnly(wsId = "ws1") {
+    createWorkspace(db, { id: wsId, name: "Test Workspace" });
+    return wsId;
+  }
+
+  /** Rewrite an adopted .md's body, preserving its Cairn frontmatter. */
+  function rewriteBody(fp: string, newBody: string): void {
+    const parsed = matter(fs.readFileSync(fp, "utf-8"));
+    fs.writeFileSync(fp, matter.stringify(newBody, parsed.data), "utf-8");
+  }
+
+  function conflictRows(): Array<{ id: string; title: string; content: string }> {
+    return db.prepare(
+      "SELECT id, title, content FROM notes WHERE id LIKE '%\\_conflict\\_%' ESCAPE '\\'",
+    ).all() as Array<{ id: string; title: string; content: string }>;
+  }
+
+  it("records an adoption baseline in the workspace ledger", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+
+    const rows = db.prepare("SELECT id FROM notes").all() as Array<{ id: string }>;
+    expect(rows).toHaveLength(1);
+    const cfg = readImportConfig(tmpDir);
+    expect(cfg.adopted[rows[0].id]).toBeDefined();
+    expect(cfg.adopted[rows[0].id].path).toContain("Entry.md");
+
+    // A second scan doesn't duplicate/drop the entry, and setting exclusions
+    // afterwards preserves the ledger (merged write, not a rewrite).
+    saveImportExclusions(tmpDir, ["Private"]);
+    syncNotesFromDisk(db, tmpDir);
+    const cfg2 = readImportConfig(tmpDir);
+    expect(cfg2.excludedFolders).toEqual(["Private"]);
+    expect(cfg2.adopted[rows[0].id].bodyHash).toBe(cfg.adopted[rows[0].id].bodyHash);
+  });
+
+  it("adopts an external-only edit with no conflict copy", () => {
+    seedWorkspaceOnly();
+    const fp = writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    const id = (db.prepare("SELECT id FROM notes LIMIT 1").get() as { id: string }).id;
+
+    rewriteBody(fp, "# Entry\n\nBeta (edited in Obsidian).");
+    syncNotesFromDisk(db, tmpDir);
+
+    const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(id) as { content: string };
+    expect(row.content).toContain("Beta (edited in Obsidian)");
+    expect(conflictRows()).toHaveLength(0);
+  });
+
+  it("mints a conflict copy when both the vault file and Cairn changed", () => {
+    seedWorkspaceOnly();
+    const fp = writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    const id = (db.prepare("SELECT id FROM notes LIMIT 1").get() as { id: string }).id;
+
+    // Cairn edits the row…
+    db.prepare("UPDATE notes SET content = ?, updated_at = ? WHERE id = ?")
+      .run("# Entry\n\nCairn edit.", new Date().toISOString(), id);
+    // …and the vault file is edited externally (frontmatter preserved).
+    rewriteBody(fp, "# Entry\n\nObsidian edit.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    // The vault file wins as current…
+    const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(id) as { content: string };
+    expect(row.content).toContain("Obsidian edit");
+    // …and Cairn's version is preserved as exactly one conflict copy.
+    const copies = conflictRows();
+    expect(copies).toHaveLength(1);
+    expect(copies[0].id.startsWith(`${id}_conflict_import_`)).toBe(true);
+    expect(copies[0].title).toContain("conflicted copy");
+    expect(copies[0].content).toContain("Cairn edit");
+  });
+
+  it("leaves an unchanged note alone on re-scan", () => {
+    seedWorkspaceOnly();
+    const fp = writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    const id = (db.prepare("SELECT id FROM notes LIMIT 1").get() as { id: string }).id;
+    const before = fs.readFileSync(fp, "utf-8");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(id) as { content: string };
+    expect(row.content).toContain("Alpha");
+    expect(fs.readFileSync(fp, "utf-8")).toBe(before);
+    expect(conflictRows()).toHaveLength(0);
+  });
+
+  it("an un-managed vault is never re-adopted and re-creates no projects", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 1 });
+
+    setImportUnmanaged(tmpDir, true);
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Second.md", "# Second\n\nBeta.");
+    syncNotesFromDisk(db, tmpDir);
+
+    // Nothing new adopted; the existing note's file is not re-adopted either.
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 1 });
+    expect(isImportPathExcluded(tmpDir, path.join(tmpDir, "Journal", "Second.md"))).toBe(true);
   });
 });

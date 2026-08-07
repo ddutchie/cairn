@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import { createHash } from "crypto";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import * as q from "./db/queries";
@@ -66,19 +67,43 @@ function isSkippedDirectory(name: string): boolean {
   return name.startsWith(".") || DEFAULT_SKIP_DIRS.has(name.toLowerCase());
 }
 
-// Last successfully-parsed exclusion set per workspace. The config file is
-// written atomically (temp + rename, see saveImportExclusions), but a cloud-sync
-// conflict copy or an interrupted external edit can still leave it truncated or
-// conflict-marked. Falling back to the last valid set — instead of failing open
-// to "import everything" — keeps folders the user excluded excluded through the
-// hiccup.
-const lastValidExclusions = new Map<string, Set<string>>();
+// ── Import configuration (exclusions + adoption ledger + unmanaged flag) ─────
+//
+// `.cairn-import.json` holds the workspace's import state:
+//   { excludedFolders: string[], adopted: { [noteId]: { path, bodyHash } }, unmanaged?: boolean }
+// - `excludedFolders` — top-level folder names never imported (v2.6.1).
+// - `adopted` — the adoption ledger: every note Cairn adopted from disk, keyed by
+//   note id, with the workspace-relative path and the sha256 of its body at
+//   adoption. This is the baseline for the re-import 3-way conflict check.
+// - `unmanaged` — set by import rollback: the vault was un-adopted, so scans and
+//   the watcher leave its files as plain markdown (never re-adopt them).
+//
+// Resilience (unchanged from v2.6.1): the file is written atomically; a
+// malformed/truncated config falls back to the last known-good copy, and a
+// never-valid config HALTS imports until repaired — never failing open.
+
+export interface ImportAdoptedEntry {
+  /** Workspace-relative path of the file (diagnostics / rollback). */
+  path: string;
+  /** sha256 of the note body at adoption — the 3-way conflict baseline. */
+  bodyHash: string;
+}
+
+export interface ImportConfig {
+  excludedFolders: string[];
+  adopted: Record<string, ImportAdoptedEntry>;
+  unmanaged: boolean;
+}
+
+const EMPTY_CONFIG: ImportConfig = { excludedFolders: [], adopted: {}, unmanaged: false };
+
+const lastValidConfigs = new Map<string, ImportConfig>();
 // Workspaces whose config file exists but is currently unreadable/malformed AND
 // was never parsed successfully. Imports HALT for these until the file is
 // repaired — no silent adoption of previously-excluded folders.
 const haltedWorkspaces = new Set<string>();
 
-function readImportExclusions(workspacePath: string): Set<string> {
+export function readImportConfig(workspacePath: string): ImportConfig {
   const configPath = path.join(workspacePath, IMPORT_CONFIG_FILE);
   let raw: string;
   try {
@@ -88,13 +113,13 @@ function readImportExclusions(workspacePath: string): Set<string> {
     // cached state. Any OTHER read failure means the file exists but is
     // currently unreadable: fall back to the last valid set, else halt.
     if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
-      lastValidExclusions.delete(workspacePath);
+      lastValidConfigs.delete(workspacePath);
       haltedWorkspaces.delete(workspacePath);
-      return new Set();
+      return { ...EMPTY_CONFIG };
     }
-    if (lastValidExclusions.has(workspacePath)) return new Set(lastValidExclusions.get(workspacePath)!);
+    if (lastValidConfigs.has(workspacePath)) return { ...lastValidConfigs.get(workspacePath)! };
     haltedWorkspaces.add(workspacePath);
-    return new Set();
+    return { ...EMPTY_CONFIG };
   }
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -110,23 +135,45 @@ function readImportExclusions(workspacePath: string): Set<string> {
     ) {
       throw new Error("invalid shape");
     }
-    const set = new Set((parsed as { excludedFolders: string[] }).excludedFolders);
-    lastValidExclusions.set(workspacePath, set);
+    const p = parsed as { excludedFolders: string[]; adopted?: unknown; unmanaged?: unknown };
+    // The ledger is tolerant: a missing/malformed `adopted` just means "no
+    // baselines" (re-import falls back to timestamp logic), never a halt.
+    const adopted: Record<string, ImportAdoptedEntry> = {};
+    if (p.adopted && typeof p.adopted === "object" && !Array.isArray(p.adopted)) {
+      for (const [id, entry] of Object.entries(p.adopted as Record<string, unknown>)) {
+        if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+          const e = entry as { path?: unknown; bodyHash?: unknown };
+          if (typeof e.path === "string" && typeof e.bodyHash === "string") {
+            adopted[id] = { path: e.path, bodyHash: e.bodyHash };
+          }
+        }
+      }
+    }
+    const cfg: ImportConfig = {
+      excludedFolders: [...new Set(p.excludedFolders)].sort(),
+      adopted,
+      unmanaged: p.unmanaged === true,
+    };
+    lastValidConfigs.set(workspacePath, cfg);
     haltedWorkspaces.delete(workspacePath);
-    return set;
+    return cfg;
   } catch {
     // Present but malformed/truncated. Never fail open: fall back to the last
-    // valid exclusions we parsed. If we never parsed a valid file, halt imports
+    // valid config we parsed. If we never parsed a valid file, halt imports
     // for this workspace until the file is repaired.
-    if (lastValidExclusions.has(workspacePath)) return new Set(lastValidExclusions.get(workspacePath)!);
+    if (lastValidConfigs.has(workspacePath)) return { ...lastValidConfigs.get(workspacePath)! };
     haltedWorkspaces.add(workspacePath);
-    return new Set();
+    return { ...EMPTY_CONFIG };
   }
 }
 
 /** True when the workspace's import config is present but broken beyond the last-known-good copy. */
 export function isImportConfigHalted(workspacePath: string): boolean {
   return haltedWorkspaces.has(workspacePath);
+}
+
+function readImportExclusions(workspacePath: string): Set<string> {
+  return new Set(readImportConfig(workspacePath).excludedFolders);
 }
 
 /** Shared watcher/scanner boundary: true when a path must never be imported. */
@@ -140,17 +187,24 @@ export function isImportPathExcluded(workspacePath: string, filePath: string): b
   // newly-encountered file) after the cheap lexical checks, then evaluate the
   // refreshed halt state. Checking halt before reading would miss a config that
   // just turned malformed, letting root notes and nested files through.
-  const excludedFolders = readImportExclusions(workspacePath);
+  const config = readImportConfig(workspacePath);
   if (isImportConfigHalted(workspacePath)) return true;
-  return segments.length > 1 && excludedFolders.has(segments[0]);
+  // A rolled-back (un-managed) vault is never re-adopted.
+  if (config.unmanaged) return true;
+  return segments.length > 1 && config.excludedFolders.includes(segments[0]);
 }
 
-export function saveImportExclusions(workspacePath: string, excludedFolders: string[]): void {
-  const clean = [...new Set(excludedFolders.filter((name) => name && !name.startsWith(".")))].sort();
+/** Atomically persist the workspace's import config (never a truncated file). */
+function writeImportConfig(workspacePath: string, cfg: ImportConfig): void {
+  const clean = [...new Set(cfg.excludedFolders.filter((name) => name && !name.startsWith(".")))].sort();
+  const body = JSON.stringify({
+    excludedFolders: clean,
+    ...(Object.keys(cfg.adopted).length > 0 ? { adopted: cfg.adopted } : {}),
+    ...(cfg.unmanaged ? { unmanaged: true } : {}),
+  }, null, 2) + "\n";
   const target = path.join(workspacePath, IMPORT_CONFIG_FILE);
-  const body = JSON.stringify({ excludedFolders: clean }, null, 2) + "\n";
   // Write via a temp file + atomic rename so a crash mid-write can never leave a
-  // truncated config that readImportExclusions would then reject.
+  // truncated config that readImportConfig would then reject.
   const tmp = path.join(workspacePath, `${IMPORT_CONFIG_FILE}.${process.pid}.${Date.now()}.tmp`);
   fs.writeFileSync(tmp, body, "utf-8");
   try {
@@ -160,6 +214,76 @@ export function saveImportExclusions(workspacePath: string, excludedFolders: str
     fs.writeFileSync(target, body, "utf-8");
     try { fs.unlinkSync(tmp); } catch { /* best effort */ }
   }
+  // Refresh the cached copy so a subsequent read in the same process sees it.
+  lastValidConfigs.set(workspacePath, { excludedFolders: clean, adopted: cfg.adopted, unmanaged: cfg.unmanaged });
+  haltedWorkspaces.delete(workspacePath);
+}
+
+export function saveImportExclusions(workspacePath: string, excludedFolders: string[]): void {
+  const current = readImportConfig(workspacePath);
+  writeImportConfig(workspacePath, { ...current, excludedFolders });
+}
+
+// ── Adoption ledger (3-way re-import baseline) ────────────────────────────────
+
+function bodyHash(content: string): string {
+  // Normalise trailing whitespace so the same note hashes identically whether
+  // it came from the DB row (raw body) or a file (matter.stringify adds a
+  // trailing newline) — otherwise every re-scan looks like an "external edit".
+  return createHash("sha256").update((content ?? "").replace(/\s+$/, "")).digest("hex");
+}
+
+/** Pending ledger entries, merged into the config file once per scan (avoids a
+ *  config rewrite for every adopted note during a bulk vault import). */
+const pendingAdopted = new Map<string, Record<string, ImportAdoptedEntry>>();
+
+function recordAdoption(workspacePath: string, id: string, relPath: string, content: string): void {
+  let map = pendingAdopted.get(workspacePath);
+  if (!map) { map = {}; pendingAdopted.set(workspacePath, map); }
+  map[id] = { path: relPath, bodyHash: bodyHash(content) };
+}
+
+/** Refresh an adopted note's baseline to its current content — the row and file
+ *  are now in sync (a Cairn/MCP write echoed by the watcher, or an external
+ *  edit just adopted). Keeps the 3-way check measuring "since the last time
+ *  both sides agreed", so a later external edit isn't mistaken for a
+ *  both-changed conflict. Pending-flushed like recordAdoption. */
+export function touchAdoptedBaseline(workspacePath: string, id: string, content: string): void {
+  let map = pendingAdopted.get(workspacePath);
+  if (!map) { map = {}; pendingAdopted.set(workspacePath, map); }
+  const existing = map[id] ?? readImportConfig(workspacePath).adopted[id];
+  if (!existing) return; // not an adopted note (e.g. a Cairn-created note)
+  map[id] = { path: existing.path ?? "", bodyHash: bodyHash(content) };
+}
+
+/** Merge pending adoption entries into the config file. Idempotent; no-op when
+ *  nothing was recorded. Exported so the file watcher flushes single-note
+ *  adoptions too. */
+export function flushAdoptedLedger(workspacePath: string): void {
+  const pending = pendingAdopted.get(workspacePath);
+  if (!pending || Object.keys(pending).length === 0) return;
+  pendingAdopted.delete(workspacePath);
+  const cfg = readImportConfig(workspacePath);
+  writeImportConfig(workspacePath, { ...cfg, adopted: { ...cfg.adopted, ...pending } });
+}
+
+/** Drop ledger entries for note ids no longer managed (rollback / delete). */
+export function removeAdoptedEntries(workspacePath: string, ids: string[]): void {
+  if (ids.length === 0) return;
+  const cfg = readImportConfig(workspacePath);
+  let changed = false;
+  for (const id of ids) {
+    if (id in cfg.adopted) { delete cfg.adopted[id]; changed = true; }
+  }
+  if (changed) writeImportConfig(workspacePath, cfg);
+}
+
+/** Mark the vault un-managed (import rollback): scans and the watcher then leave
+ *  its files as plain markdown — never re-adopt them. */
+export function setImportUnmanaged(workspacePath: string, unmanaged: boolean): void {
+  const cfg = readImportConfig(workspacePath);
+  if (cfg.unmanaged === unmanaged) return;
+  writeImportConfig(workspacePath, { ...cfg, unmanaged });
 }
 
 function countImportableMarkdown(dir: string): { included: number; skipped: number } {
@@ -263,7 +387,10 @@ export function syncNotesFromDisk(db: Database.Database, workspacePath: string, 
   // A malformed import config with no known-good value halts the scan rather
   // than adopting folders the user may have excluded. Reading the exclusions
   // first is what registers the halted state for a never-valid config.
-  const excludedFolders = readImportExclusions(workspacePath);
+  // A malformed import config with no known-good value halts the scan rather
+  // than adopting folders the user may have excluded. Reading the exclusions
+  // first is what registers the halted state for a never-valid config.
+  readImportExclusions(workspacePath);
   if (isImportConfigHalted(workspacePath)) return;
   // Auto-create projects for any top-level folders (and loose root .md files)
   // that don't yet have a matching project in the DB. This is what lets a user
@@ -277,7 +404,10 @@ export function syncNotesFromDisk(db: Database.Database, workspacePath: string, 
   } catch (err) {
     console.error("[sync] importVaultProjects failed:", err);
   }
-  syncDir(db, root, workspacePath, excludedFolders);
+  syncDir(db, root, workspacePath, readImportConfig(workspacePath));
+  // Persist the adoption ledger entries recorded during this scan (one config
+  // write for the whole scan, not one per adopted note).
+  flushAdoptedLedger(workspacePath);
 }
 
 /**
@@ -341,6 +471,8 @@ export function importVaultProjects(
 ): number {
   const root = notesDir(workspacePath);
   if (!fs.existsSync(root)) return 0;
+  // A rolled-back (un-managed) vault never re-creates projects from its folders.
+  if (readImportConfig(workspacePath).unmanaged) return 0;
 
   // Resolve the workspace to attach new projects to. Prefer the caller-supplied
   // id; otherwise fall back to the oldest (primary) workspace. If none exists yet
@@ -620,11 +752,11 @@ function cleanStaleTmpFiles(dir: string): void {
   } catch { /* root unreadable */ }
 }
 
-function syncDir(db: Database.Database, dir: string, workspacePath: string, excludedFolders: Set<string>): void {
+function syncDir(db: Database.Database, dir: string, workspacePath: string, config: ImportConfig): void {
   for (const entry of fs.readdirSync(dir)) {
     // Skip dot-prefixed directories (.obsidian, .trash, .git, etc.)
     if (isSkippedDirectory(entry)) continue;
-    if (dir === workspacePath && excludedFolders.has(entry)) continue;
+    if (dir === workspacePath && config.excludedFolders.includes(entry)) continue;
 
     if (entry === "notes" && dir === workspacePath) {
       // If it's already an Obsidian vault (contains a .obsidian folder at root), do NOT skip notes/
@@ -648,37 +780,112 @@ function syncDir(db: Database.Database, dir: string, workspacePath: string, excl
     const fp = path.join(dir, entry);
     const stat = fs.lstatSync(fp);
     if (stat.isDirectory()) {
-      syncDir(db, fp, workspacePath, excludedFolders);
+      syncDir(db, fp, workspacePath, config);
     } else if (!isSkippedMarkdown(entry)) {
       let note = parseNoteFile(fp);
       // Plain .md without Cairn frontmatter — adopt it in-place
       if (!note) note = adoptExternalNoteFile(db, workspacePath, fp);
       if (!note) continue;
-
-      const row = db.prepare("SELECT updated_at FROM notes WHERE id = ?")
-        .get(note.id) as { updated_at: string } | undefined;
-
-      if (!row) {
-        // Missing from SQLite — always import
-        upsertNoteFromFile(db, note);
-      } else {
-        // Compare timestamps: import if file is demonstrably newer than DB row.
-        // Primary: frontmatter updatedAt (written by Cairn on every save).
-        const fileTs = new Date(note.updatedAt ?? note.createdAt).getTime();
-        const dbTs   = new Date(row.updated_at).getTime();
-        if (fileTs > dbTs) {
-          upsertNoteFromFile(db, note);
-        } else {
-          // Fallback: if frontmatter timestamp didn't change (external editor
-          // edited the body without touching frontmatter), use file mtime.
-          // 2-second buffer avoids spurious overwrites from FS precision drift.
-          const fileMtime = stat.mtimeMs;
-          if (fileMtime > dbTs + 2000) {
-            upsertNoteFromFile(db, note);
-          }
-        }
-      }
+      reconcileOwnedNote(db, workspacePath, fp, note, config);
     }
+  }
+}
+
+/**
+ * Reconcile an owned note file against its DB row.
+ *
+ * Re-import 3-way check (when the ledger has a baseline for this note): the
+ * adopted body hash is the "last time both sides agreed" baseline. File-only
+ * changed → adopt the file. BOTH sides changed since then and disagree → keep
+ * the on-disk (vault) file as current and preserve Cairn's version as a
+ * conflict copy. External unchanged → keep the row (never clobber the file).
+ * No baseline (a note adopted before the ledger existed, or a Cairn-created
+ * note) → fall back to the timestamp heuristic.
+ *
+ * Shared by the scan (`syncDir`) and the file watcher so live external edits
+ * get the same treatment as a re-scan.
+ */
+export function reconcileOwnedNote(
+  db: Database.Database,
+  workspacePath: string,
+  filePath: string,
+  note: NoteData,
+  config: ImportConfig,
+): void {
+  const row = db.prepare("SELECT id, title, content, updated_at FROM notes WHERE id = ?")
+    .get(note.id) as { id: string; title: string; content: string | null; updated_at: string } | undefined;
+
+  if (!row) {
+    // Missing from SQLite — always import
+    upsertNoteFromFile(db, note);
+    return;
+  }
+
+  const adoptedHash = config.adopted[note.id]?.bodyHash;
+  if (!adoptedHash) {
+    // Compare timestamps: import if file is demonstrably newer than DB row.
+    // Primary: frontmatter updatedAt (written by Cairn on every save).
+    const fileTs = new Date(note.updatedAt ?? note.createdAt).getTime();
+    const dbTs   = new Date(row.updated_at).getTime();
+    if (fileTs > dbTs) {
+      upsertNoteFromFile(db, note);
+      return;
+    }
+    // Fallback: if frontmatter timestamp didn't change (external editor edited
+    // the body without touching frontmatter), use file mtime. 2-second buffer
+    // avoids spurious overwrites from FS precision drift.
+    let fileMtime = 0;
+    try { fileMtime = fs.lstatSync(filePath).mtimeMs; } catch { return; }
+    if (fileMtime > dbTs + 2000) {
+      upsertNoteFromFile(db, note);
+    }
+    return;
+  }
+
+  const fileHash = bodyHash(note.content ?? "");
+  const rowHash = bodyHash(row.content ?? "");
+  const externalChanged = fileHash !== adoptedHash;
+  const cairnChanged = rowHash !== adoptedHash;
+  if (externalChanged && cairnChanged && fileHash !== rowHash) {
+    // Edited in BOTH the vault file and Cairn since they last agreed → keep the
+    // vault file as current, preserve Cairn's version as a conflict copy.
+    mintImportConflictCopy(db, row);
+    upsertNoteFromFile(db, note);
+    touchAdoptedBaseline(workspacePath, note.id, note.content ?? "");
+  } else if (externalChanged) {
+    // Only the external file changed → the vault is the source of truth.
+    upsertNoteFromFile(db, note);
+    touchAdoptedBaseline(workspacePath, note.id, note.content ?? "");
+  }
+  // else: external unchanged → row stands; the file is not rewritten.
+}
+
+/**
+ * Mint a conflict copy of a note whose body was edited BOTH in Cairn and in the
+ * vault file since adoption. Mirrors the sync engine's conflict-copy convention
+ * (`_conflict_<origin>_<ts>` id + " (conflicted copy — …)" title suffix) so the
+ * copy surfaces automatically in the existing conflict-resolution UI.
+ *
+ * The copy is a DB-only clone (no `.md` projected until the user resolves it):
+ * resolution writes the file for "keep copy", and "keep original" deletes a
+ * missing file as a no-op. The on-disk (vault) file remains the note's current
+ * source.
+ */
+function mintImportConflictCopy(
+  db: Database.Database,
+  row: { id: string; title: string },
+): void {
+  const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const copyId = `${row.id}_conflict_import_${suffix}`;
+  const copyTitle = `${row.title} (conflicted copy — import)`;
+  try {
+    db.prepare(
+      `INSERT INTO notes (id, project_id, workspace_id, title, content, content_text, tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at, archived_at, hlc, deleted_at, version)
+       SELECT ?, project_id, workspace_id, ?, content, content_text, tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at, NULL, NULL, NULL, 0
+       FROM notes WHERE id = ? AND deleted_at IS NULL`,
+    ).run(copyId, copyTitle, row.id);
+  } catch (err) {
+    console.error("[import] failed to mint conflict copy:", err);
   }
 }
 // ── Upsert a parsed note into SQLite ──────────
@@ -795,6 +1002,15 @@ export function adoptExternalNoteFile(
     // Non-Cairn keys first, then Cairn keys on top (Cairn always wins on conflict)
     const mergedFrontmatter = { ...existingExtra, ...cairnFields };
     fs.writeFileSync(filePath, matter.stringify(content, mergedFrontmatter), "utf-8");
+
+    // Record the adoption in the workspace ledger (flushed once per scan by
+    // flushAdoptedLedger) so a later re-scan has the body baseline for the
+    // 3-way conflict check. Hash the body AS ROUND-TRIPPED through the file
+    // (matter.stringify normalises it — trailing newline, etc.), so a re-scan
+    // of the freshly-written file sees an unchanged baseline instead of a
+    // spurious "external edit".
+    const canonical = parseNoteFile(filePath);
+    recordAdoption(workspacePath, id, rel, canonical?.content ?? content);
 
     return note;
   } catch {
