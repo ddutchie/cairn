@@ -60,6 +60,8 @@ interface PiAgentPromptRequest {
     maxTokens?: number;
     autoApprove?: boolean;
     isReasoningModel?: boolean;
+    /** The agent's context-window size — drives the sliding-window pruner. */
+    contextWindow?: number;
   };
 }
 
@@ -80,6 +82,8 @@ interface PiAgentApprovePlanRequest {
     maxTokens?: number;
     autoApprove?: boolean;
     isReasoningModel?: boolean;
+    /** The agent's context-window size — drives the sliding-window pruner. */
+    contextWindow?: number;
   };
 }
 
@@ -258,6 +262,7 @@ export function registerPiAgentHandler(
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
       isReasoningModel: reqConfig?.isReasoningModel,
       provider: reqConfig?.provider ?? (isLocalEndpoint(reqConfig?.baseUrl ?? "") ? "localllm" : undefined),
+      contextWindow: reqConfig?.contextWindow,
     };
 
     let session = sessions.get(sessionId);
@@ -360,6 +365,7 @@ export function registerPiAgentHandler(
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
       isReasoningModel: reqConfig?.isReasoningModel,
       provider: reqConfig?.provider ?? (isLocalEndpoint(reqConfig?.baseUrl ?? "") ? "localllm" : undefined),
+      contextWindow: reqConfig?.contextWindow,
     };
 
     let session = sessions.get(sessionId);
@@ -397,7 +403,7 @@ export function registerPiAgentHandler(
   // ── pi-agent:compact-now ─────────────────────────────────────────────────
   // Triggered by the /compact slash command. Immediately summarises the session
   // history and returns the result. The renderer shows a status message.
-  registerIpcOn("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string } }) => {
+  registerIpcOn("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number } }) => {
     const { sessionId } = req;
     const session = sessions.get(sessionId);
     if (!session || session.messages.length === 0) return;
@@ -432,6 +438,7 @@ export function registerPiAgentHandler(
       apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    20,
       temperature: 0.1,
+      contextWindow: reqConfig?.contextWindow,
     };
 
     send("pi-agent:compact", { sessionId, status: "start" });

@@ -492,6 +492,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           baseUrl:  agentConfig.baseUrl  || undefined,
           model:    agentConfig.model    || undefined,
           apiKey:   agentConfig.apiKey   || undefined,
+          // Keep compaction's context-window threshold in sync with the agent's
+          // real model limit (it would otherwise default to 128K).
+          contextWindow: agentConfig.contextLimit,
         },
       });
       return;
@@ -544,6 +547,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
          maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
+          // The agent's real context limit — drives the sliding-window pruner
+          // (and compaction) so long contexts are trimmed at the model's window,
+          // not a hardcoded 128K default.
+          contextWindow: agentConfig.contextLimit,
           // Auto → send a generous 32K cap (bounded by the model's declared
           // output limit) so the model can finish naturally.
           maxTokens:   resolveMaxOutputTokens(
@@ -622,6 +629,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
         maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
+         contextWindow: agentConfig.contextLimit,
          maxTokens:   resolveMaxOutputTokens(
            agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,
            getModelInfo(agentConfig.model)?.maxOutput,

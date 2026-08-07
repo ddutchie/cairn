@@ -539,8 +539,14 @@ export async function runAgentLoop(
     baseUrl, model, apiKey, maxSteps, temperature: configTemp,
     maxRetries    = 3,
     baseRetryDelayMs = 2000,
-    contextWindow = 128_000,
   } = llmConfig;
+
+  // The renderer sends the agent's real context limit (auto-detected from
+  // models.dev, or the user's manual value) so the sliding-window pruner trims
+  // at the model's window instead of a hardcoded default. Guard a non-positive
+  // or absent value (legacy/hostile payload) back to the 128K default.
+  const rawContextWindow = llmConfig.contextWindow;
+  const contextWindow = rawContextWindow && rawContextWindow > 0 ? Math.floor(rawContextWindow) : 128_000;
 
   // Undefined/0 → output tokens left on Auto. Old behaviour OMITTED max_tokens,
   // but endpoints then apply a tiny server-side default (often 4096) that
