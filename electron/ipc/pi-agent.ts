@@ -30,10 +30,43 @@ import { ts } from "../db/utils";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts, validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
+import { createDeltaBatcher } from "../lib/delta-batcher";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
 const sessions = new Map<string, PiAgentSession>();
+
+// ── Debounced history persistence ─────────────────────────────────────────────
+// saveLlmHistory is a synchronous (better-sqlite3) transaction that
+// JSON-serialises every message in the session — on a long turn that's a
+// non-trivial main-thread block. Defer it off the done/error delivery path and
+// coalesce rapid saves (a done immediately followed by an error) so the renderer
+// gets its turn-complete event without waiting on the DB write. The message
+// snapshot is taken at schedule time, so a new turn can never be half-saved.
+const pendingHistorySaves = new Map<string, { timer: NodeJS.Timeout; msgs: PiAgentSession["messages"] }>();
+
+function scheduleHistorySave(
+  db: Parameters<typeof q.saveLlmHistory>[0],
+  sessionId: string,
+  msgs: PiAgentSession["messages"],
+  status?: "exited",
+): void {
+  const existing = pendingHistorySaves.get(sessionId);
+  if (existing) clearTimeout(existing.timer);
+  const snapshot = [...msgs];
+  pendingHistorySaves.set(sessionId, {
+    msgs: snapshot,
+    timer: setTimeout(() => {
+      pendingHistorySaves.delete(sessionId);
+      try {
+        q.saveLlmHistory(db, sessionId, snapshot);
+        q.updatePiSession(db, sessionId, { ...(status ? { status } : {}), updatedAt: ts() });
+      } catch (e) {
+        console.warn("[pi-agent] failed to persist session:", e);
+      }
+    }, 50),
+  });
+}
 
 // ── Note-writing tool names ────────────────────────────────────────────────────
 const NOTE_WRITE_TOOLS = new Set(["ensure_note", "patch_note", "append_to_note"]);
@@ -115,13 +148,20 @@ async function runSession(
     () => send("pi-agent:compact", { sessionId, status: "end", auto: true }),
   );
 
+  // Coalesce streamed deltas into ~20 IPC events/sec instead of one per token.
+  const tokens = createDeltaBatcher((delta) => send("pi-agent:token", { sessionId, delta }));
+  const thoughts = createDeltaBatcher((delta) => send("pi-agent:thought", { sessionId, delta }));
+
   await runAgentLoop(
     session,
     systemPrompt,
     llmConfig,
     {
-      onToken:        (delta) => send("pi-agent:token",      { sessionId, delta }),
-      onThought:      (delta) => send("pi-agent:thought",    { sessionId, delta }),
+      // Batch streamed deltas — one IPC event per flush instead of per token,
+      // so a dense stream (reasoning models, long replies) can't flood the
+      // renderer. Flushed on done/error below.
+      onToken:        (delta) => tokens.push(delta),
+      onThought:      (delta) => thoughts.push(delta),
       onToolsReady:   ()      => send("pi-agent:tools-ready", { sessionId }),
       onToolPending:  (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
        onToolStart:    (name, label, callId, args) => send("pi-agent:tool", { sessionId, name, label, args, callId, status: "start" }),
@@ -145,21 +185,16 @@ async function runSession(
       onRetry:        (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
       transformContext: session.compactionTransformer,
       onDone: () => {
-        try {
-          q.saveLlmHistory(ctx.db, sessionId, session.messages);
-          q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
-        } catch (e) {
-          console.warn("[pi-agent] failed to persist session after done:", e);
-        }
+        tokens.flush();
+        thoughts.flush();
+        // Persist off the done-delivery path (see scheduleHistorySave).
+        scheduleHistorySave(ctx.db, sessionId, session.messages);
         send("pi-agent:done", { sessionId });
       },
       onError: (error) => {
-        try {
-          q.saveLlmHistory(ctx.db, sessionId, session.messages);
-          q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
-        } catch (e) {
-          console.warn("[pi-agent] failed to persist session after error:", e);
-        }
+        tokens.flush();
+        thoughts.flush();
+        scheduleHistorySave(ctx.db, sessionId, session.messages, "exited");
         send("pi-agent:error", { sessionId, error });
       },
       onPlanNoteFound: (noteId) => {

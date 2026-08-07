@@ -23,6 +23,7 @@ import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
 import { fetchProvidersManifest } from "../lib/community-registry";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { applyRecoveredTurnCost } from "../db/usage-queries";
+import { createDeltaBatcher } from "../lib/delta-batcher";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -342,15 +343,21 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       } catch { /* best-effort — no snapshot */ }
     }
 
+    // Batch streamed deltas — one IPC event per flush instead of per token, so a
+    // dense stream can't flood the renderer. Flushed before every chat:done below.
+    const tokens = createDeltaBatcher((delta) => send("chat:token", { delta }));
+    const thoughts = createDeltaBatcher((delta) => send("chat:thought", { delta }));
+    const flushStream = () => { tokens.flush(); thoughts.flush(); };
+
     const loopResult = await runToolLoop(
       db, req, workspacePath, baseUrl, model, apiKey, messages,
       emitToolCall, abortCtrl.signal, getWin, provider, addUsage,
       emitToolCallDone,
       (delta) => {
-        send("chat:token", { delta });
+        tokens.push(delta);
       },
       (delta) => {
-        send("chat:thought", { delta });
+        thoughts.push(delta);
       },
       externalDefs,
     );
@@ -398,10 +405,12 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     }
 
     if (abortCtrl.signal.aborted) {
+      flushStream();
       send("chat:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
       return;
     }
 
+    flushStream();
     send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
   });
 }

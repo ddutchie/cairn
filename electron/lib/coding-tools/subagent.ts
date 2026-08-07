@@ -11,6 +11,7 @@
 
 import { randomBytes } from "crypto";
 import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../pi-agent-loop";
+import { createDeltaBatcher } from "../delta-batcher";
 
 export interface SpawnSubagentArgs {
   prompt: string;
@@ -92,12 +93,18 @@ export async function spawnSubagentTool(
 
   let errorMessage = "";
 
+  // Coalesce the child's streamed deltas like the parent loop (one IPC event
+  // per flush instead of per token). Flushed after the loop below.
+  const tokens = createDeltaBatcher((delta) => childToolCtx.send("pi-agent:token", { sessionId: childSessionId, delta }));
+  const thoughts = createDeltaBatcher((delta) => childToolCtx.send("pi-agent:thought", { sessionId: childSessionId, delta }));
+
   await runAgentLoop(
     session,
     systemPrompt,
     llmConfig,
     {
-      onToken:       (delta) => childToolCtx.send("pi-agent:token",      { sessionId: childSessionId, delta }),
+      onToken:       (delta) => tokens.push(delta),
+      onThought:     (delta) => thoughts.push(delta),
       onToolsReady:  ()     => childToolCtx.send("pi-agent:tools-ready", { sessionId: childSessionId }),
       onToolPending: (name, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label: name, callId, status: "pending" }),
       onToolStart:   (name, label, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "start" }),
@@ -124,6 +131,10 @@ export async function spawnSubagentTool(
     "execute",
     "pi-subagent",
   );
+
+  // Flush any remaining buffered deltas (covers done, error, max-steps, abort).
+  tokens.flush();
+  thoughts.flush();
 
   // Extract the final assistant message from history
   const lastAssistant = [...session.messages]
