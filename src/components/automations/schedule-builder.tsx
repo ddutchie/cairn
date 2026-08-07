@@ -242,6 +242,7 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, 
               value={intervalUnit}
               onChange={setIntervalUnit}
               size="md"
+              ariaLabel="Interval unit"
               options={INTERVAL_UNITS.map((u) => ({ value: u, label: u }))}
             />
             <span className="text-[var(--text-secondary)]">— repeats on that interval</span>
@@ -293,6 +294,7 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, 
               value={dayOfMonth}
               onChange={setDayOfMonth}
               size="md"
+              ariaLabel="Day of month"
               options={MONTH_DAYS.map((d) => ({ value: d, label: d }))}
             />
             <span className="text-[var(--text-secondary)]">at</span>

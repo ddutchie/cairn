@@ -142,14 +142,17 @@ describe("usage-queries", () => {
     expect(recent[1].cacheCreationTokens).toBe(0);
   });
 
-  it("excludes rows with estimated cost when the filter is set", () => {
+  it("excludes rows with estimated or missing cost when the filter is set", () => {
     insertLlmUsage(db, rec({ source: "chat", promptTokens: 100, costUsd: 0.01, costEstimated: false, createdAt: NOW - 1000 }));
     insertLlmUsage(db, rec({ source: "chat", promptTokens: 200, costUsd: 0.02, costEstimated: true, createdAt: NOW }));
     insertLlmUsage(db, rec({ source: "pi-agent", promptTokens: 300, costUsd: 0.03, costEstimated: false, createdAt: NOW }));
+    // Not an estimate, but the provider reported no cost AND no model price is
+    // known — no real cost either, so it must be dropped alongside estimates.
+    insertLlmUsage(db, rec({ source: "chat", promptTokens: 400, costUsd: undefined, costEstimated: false, createdAt: NOW }));
 
     const all = queryUsageOverview(db, {});
-    expect(all.totals.requests).toBe(3);
-    expect(all.totals.promptTokens).toBe(600);
+    expect(all.totals.requests).toBe(4);
+    expect(all.totals.promptTokens).toBe(1000);
     expect(all.totals.costUsd).toBeCloseTo(0.06, 6);
 
     const real = queryUsageOverview(db, { excludeEstimated: true });
@@ -160,6 +163,7 @@ describe("usage-queries", () => {
     const recent = queryRecentUsage(db, { excludeEstimated: true }, 10);
     expect(recent).toHaveLength(2);
     expect(recent.every((r) => r.costEstimated === false)).toBe(true);
+    expect(recent.every((r) => r.costUsd != null)).toBe(true);
   });
 
   it("writes a recovered turn cost back onto estimated rows proportionally", () => {

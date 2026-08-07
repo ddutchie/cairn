@@ -169,6 +169,7 @@ export function UsageView() {
           />
           <button
             onClick={() => setExcludeEstimated((v) => !v)}
+            aria-pressed={excludeEstimated}
             title={
               excludeEstimated
                 ? "Estimates hidden — only calls with a provider-reported cost are shown"
@@ -182,7 +183,7 @@ export function UsageView() {
             )}
           >
             <span className={cn("w-7 h-3.5 rounded-full transition-colors relative", excludeEstimated ? "bg-[var(--accent)]" : "bg-[var(--border)]")}>
-              <span className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", excludeEstimated ? "left-4" : "left-0.5")} />
+              <span className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--surface)] transition-all", excludeEstimated ? "left-4" : "left-0.5")} />
             </span>
             Estimates
           </button>

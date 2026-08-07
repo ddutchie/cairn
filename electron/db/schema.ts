@@ -974,6 +974,21 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_llm_usage_workspace ON llm_usage(workspace_id, created_at);
     `);
   },
+
+  // v39: Prompt-cache token counts on llm_usage (cache_read_tokens /
+  // cache_creation_tokens) — the columns backing cache-hit tracking in the Usage
+  // view. Added transactionally here so every DB (fresh or upgraded) gets them
+  // before the schema version advances; the ensureColumns guards below remain as
+  // a compatibility fallback for DBs whose user_version was already advanced.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(llm_usage)").all() as { name: string }[];
+    if (cols.length > 0 && !cols.some((c) => c.name === "cache_read_tokens")) {
+      db.exec("ALTER TABLE llm_usage ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0");
+    }
+    if (cols.length > 0 && !cols.some((c) => c.name === "cache_creation_tokens")) {
+      db.exec("ALTER TABLE llm_usage ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

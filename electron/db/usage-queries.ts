@@ -130,7 +130,11 @@ function whereClause(f: UsageQueryFilter): { sql: string; params: unknown[] } {
     params.push(f.to);
   }
   if (f.excludeEstimated) {
-    conds.push("cost_estimated = 0");
+    // Only calls with a provider-reported cost survive: a row is never an
+    // estimate when cost_estimated is 0, but it may still carry no cost at all
+    // (provider reported none and pricing is unknown) — those have no real cost
+    // either and are dropped so the view reflects actual billed spend.
+    conds.push("cost_estimated = 0 AND cost_usd IS NOT NULL");
   }
   return { sql: conds.length > 0 ? ` WHERE ${conds.join(" AND ")}` : "", params };
 }

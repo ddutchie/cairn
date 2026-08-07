@@ -75,7 +75,7 @@ export function Select<V extends string | number>({
           disabled={disabled}
           aria-label={ariaLabel}
           className={cn(
-            "flex items-center justify-between gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-primary)] transition-colors hover:border-[var(--muted)] focus:outline-none disabled:opacity-50",
+            "flex items-center justify-between gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-primary)] transition-colors hover:border-[var(--muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:border-[var(--accent)] disabled:opacity-50",
             SIZE_CLASSES[size],
             className
           )}
