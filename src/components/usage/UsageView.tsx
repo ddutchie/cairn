@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useSyncExternalStore } from "react";
 import { RefreshCw, Percent } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUsage, USAGE_RANGES } from "@/hooks/useUsage";
@@ -10,6 +10,8 @@ import { cacheHitColor } from "@/lib/cache-metrics";
 import { fmtCompact, fmtFull, fmtDateTime } from "./usage-format";
 import { formatUsd } from "../../../shared/chat/provider-credits";
 import { USAGE_SOURCE_LABELS, type UsageSource, type UsageTotals } from "@/types/usage";
+import { modelLogoUrl, prewarmModelCatalog, getModelCatalogVersion, subscribeModelCatalog } from "@/lib/models-dev";
+import { providerLogoUrl, endpointLogoSlug } from "../../../shared/models/model-catalog";
 
 const MODEL_PALETTE = [
   "var(--accent)",
@@ -53,6 +55,37 @@ function modelColor(model: string): string {
     h = Math.imul(h, 0x01000193);
   }
   return MODEL_PALETTE[(h >>> 0) % MODEL_PALETTE.length];
+}
+
+/** The model's provider logo (models.dev), falling back to the colour dot when
+ *  the catalog hasn't resolved it. Dropped silently on a 404 like the model
+ *  picker does. */
+function ModelLogo({ model, color }: { model: string; color: string }) {
+  const url = modelLogoUrl(model);
+  if (!url) return <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />;
+  return (
+    <img
+      src={url}
+      alt=""
+      className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+    />
+  );
+}
+
+/** The provider logo for an endpoint (models.dev logo slug from the base URL). */
+function ProviderLogo({ baseUrl }: { baseUrl: string | null }) {
+  const slug = endpointLogoSlug(baseUrl ?? "");
+  const url = slug ? providerLogoUrl(slug) : null;
+  if (!url) return null;
+  return (
+    <img
+      src={url}
+      alt=""
+      className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+    />
+  );
 }
 
 const SOURCE_TAG_STYLE: Record<string, string> = {
@@ -125,6 +158,11 @@ export function UsageView() {
 
   const range = USAGE_RANGES[rangeIdx];
   const { overview, recent, loading, refresh } = useUsage(range.days, source, !includeEstimated);
+
+  // Load the models.dev catalog (for model/provider logos) and re-render when it
+  // arrives or refreshes, so the icons appear once resolution is possible.
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+  useEffect(() => { prewarmModelCatalog(); }, []);
 
   const totals = overview?.totals;
   const rangeLabel = range.days == null ? "period" : `${range.days}d`;
@@ -260,7 +298,7 @@ export function UsageView() {
                       <div key={m.model}>
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-primary)] truncate">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                            <ModelLogo model={m.model} color={color} />
                             <span className="font-mono truncate">{m.model}</span>
                           </span>
                           <span className="inline-flex items-center gap-1.5 text-[0.643rem] text-[var(--text-tertiary)] shrink-0">
@@ -313,11 +351,15 @@ export function UsageView() {
                   </thead>
                   <tbody>
                     {recent.map((r) => (
-                      <tr key={r.id} className="border-b border-[var(--border-subtle)] last:border-0 hover:bg-[var(--surface-2)]">
+                      <tr
+                        key={r.id}
+                        style={{ borderLeftColor: modelColor(r.model) }}
+                        className="border-b border-l-2 border-[var(--border-subtle)] last:border-b-0 hover:bg-[var(--surface-2)]"
+                      >
                         <td className="px-4 py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]">{fmtDateTime(r.createdAt)}</td>
                         <td className="px-4 py-2 whitespace-nowrap">
                           <span className="inline-flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: modelColor(r.model) }} />
+                            <ModelLogo model={r.model} color={modelColor(r.model)} />
                             <span className="font-mono font-medium">{r.model}</span>
                           </span>
                         </td>
@@ -338,7 +380,12 @@ export function UsageView() {
                           )}
                         </td>
                         <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--text-tertiary)]">{r.reasoningTokens > 0 ? fmtFull(r.reasoningTokens) : "—"}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]">{r.provider ?? "—"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 text-[0.714rem] text-[var(--text-secondary)]">
+                            <ProviderLogo baseUrl={r.baseUrl} />
+                            {r.provider ?? "—"}
+                          </span>
+                        </td>
                         <td className="px-4 py-2 whitespace-nowrap">
                           <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[0.643rem] font-medium ${SOURCE_TAG_STYLE[r.source] ?? "bg-[var(--surface-2)] text-[var(--text-secondary)]"}`}>
                             {USAGE_SOURCE_LABELS[r.source] ?? r.source}
