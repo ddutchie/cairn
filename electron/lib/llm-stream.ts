@@ -194,7 +194,7 @@ export async function consumeAssistantStream(
   }
 
   const entries = Array.from(toolBuffers.entries()).sort(([a], [b]) => a - b);
-  const toolCalls: StreamToolCall[] = entries.map(([, buf], i) => ({
+  const toolCalls: StreamToolCall[] = entries.map(([, buf]) => ({
     // An interrupted stream can cut before the id chunk arrives — synthesize a
     // UNIQUE id (per-call random suffix) so the assistant message's tool_calls
     // and its tool results reference it consistently, and so two truncation

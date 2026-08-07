@@ -575,9 +575,11 @@ describe("runAgentLoop — SSE streaming", () => {
     expect(log.some((e) => e.startsWith("tool-end:ls:true"))).toBe(true);
     expect(log.some((e) => e.startsWith("tool-end:ls:false"))).toBe(false);
     // History holds the canonical (repaired) arguments, so the turn round-trips.
-    const asst = session.messages.find((m) => m.role === "assistant" && m.tool_calls);
+    const asst = session.messages.find((m) => m.role === "assistant" && m.tool_calls) as
+      | { tool_calls: Array<{ function: { arguments: string } }> }
+      | undefined;
     expect(asst).toBeDefined();
-    expect(JSON.parse((asst as any).tool_calls[0].function.arguments)).toEqual({ path: "/tmp" });
+    expect(JSON.parse(asst!.tool_calls[0].function.arguments)).toEqual({ path: "/tmp" });
     expect(log[log.length - 1]).toBe("done");
     expect(log.some((e) => e.startsWith("error:"))).toBe(false);
   });
