@@ -22,6 +22,8 @@ export interface UseUsageResult {
   recent: UsageRecentRow[];
   loading: boolean;
   refresh: () => void;
+  /** Wipe the recorded usage for the current workspace, then reload. */
+  clear: () => Promise<void>;
 }
 
 /**
@@ -39,6 +41,14 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
   const [nonce, setNonce] = useState(0);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
+
+  /** Delete the recorded usage rows for the current workspace (see usage:clear). */
+  const clear = useCallback(async () => {
+    const api = window.electron?.usage;
+    if (!api?.clear) return;
+    await api.clear({ workspaceId: activeWorkspaceId ?? undefined });
+    setNonce((n) => n + 1);
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,5 +93,5 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
     };
   }, [days, source, activeWorkspaceId, nonce, excludeEstimated]);
 
-  return { overview, recent, loading, refresh };
+  return { overview, recent, loading, refresh, clear };
 }

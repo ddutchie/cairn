@@ -139,12 +139,22 @@ describe("supportsImageInput", () => {
 });
 
 describe("resolveMaxOutputTokens", () => {
-  it("omits (returns undefined) by default so the model finishes naturally", () => {
-    // The correct default: send no cap → provider runs to finish_reason:"stop"
-    // with full reasoning + answer. A cap only ever truncates the tail case.
+  it("Auto + unknown model → undefined (main process falls back to the 32K cap)", () => {
+    // The main-process loops substitute AUTO_OUTPUT_TOKEN_CAP when the renderer
+    // can't resolve a model limit, so a cap is always sent (never omitted).
     expect(resolveMaxOutputTokens()).toBeUndefined();
     expect(resolveMaxOutputTokens(undefined)).toBeUndefined();
     expect(resolveMaxOutputTokens(null)).toBeUndefined();
+    expect(resolveMaxOutputTokens(undefined, null)).toBeUndefined();
+    expect(resolveMaxOutputTokens(undefined, 0)).toBeUndefined();
+  });
+
+  it("Auto + a known model output limit sends min(limit, 32K)", () => {
+    // Small model → its own (smaller) limit, so we never 400 the provider.
+    expect(resolveMaxOutputTokens(undefined, 8192)).toBe(8192);
+    // Large model → clamped to the opencode-parity 32K ceiling.
+    expect(resolveMaxOutputTokens(undefined, 1_000_000)).toBe(32000);
+    expect(resolveMaxOutputTokens(undefined, 128_000)).toBe(32000);
   });
 
   it("sends a user override >= 1 verbatim (deliberate cost/latency cap), floored", () => {
@@ -152,6 +162,11 @@ describe("resolveMaxOutputTokens", () => {
     expect(resolveMaxOutputTokens(200.9)).toBe(200); // floored
     expect(resolveMaxOutputTokens(1)).toBe(1);
     expect(resolveMaxOutputTokens(384000)).toBe(384000);
+  });
+
+  it("a user override always wins over the model-derived cap", () => {
+    expect(resolveMaxOutputTokens(5000, 8192)).toBe(5000);
+    expect(resolveMaxOutputTokens(16384, 8192)).toBe(16384);
   });
 
   it("ignores non-positive / non-finite overrides and omits the field", () => {

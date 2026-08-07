@@ -245,13 +245,27 @@ describe("Case 5 — quote / escape torture string", () => {
 
 // ── Case 6: truncation (mid-stream cutoff) ────────────────────────────────────
 
-describe("Case 6 — truncated payload must be rejected, never partially persisted", () => {
-  const truncated = '{ "projectId": "qMM4mUBTnZGz", "title": "Trunc", "content": "line one\\nline two\\nline th';
-
-  it("fails at the parse stage (structured error) and writes nothing", async () => {
+describe("Case 6 — truncation handling", () => {
+  it("recovers a tail-truncated payload (dropped closing `\"}`) — content is complete as emitted", async () => {
+    // The note body streamed fully; only the closing delimiter never arrived.
+    // Tail repair appends it, so the note is written with the intended content
+    // instead of being discarded and re-issued (which hits the same cap again).
+    const tailCut = '{ "projectId": "qMM4mUBTnZGz", "title": "Recovered", "content": "line one\\nline two\\nline three"';
     const ctx = makeCtx();
     const db = ctx.db;
-    const out = await runRaw(ctx, "ensure_note", truncated);
+    const out = await runRaw(ctx, "ensure_note", tailCut);
+    expect(out.stage).toBe("execute");
+    const note = db.prepare("SELECT content FROM notes WHERE title = 'Recovered'").get() as { content: string } | undefined;
+    expect(note?.content).toBe("line one\nline two\nline three");
+  });
+
+  it("refuses a mid-structure truncation (cut inside a key) and writes nothing", async () => {
+    // A cut that lands inside a KEY can't be repaired by closing delimiters —
+    // the JSON is ambiguous, so it must fail loudly rather than guess.
+    const midCut = '{ "projectId": "qMM4mUBTnZGz", "title": "Trunc", "content": "line one", "tag';
+    const ctx = makeCtx();
+    const db = ctx.db;
+    const out = await runRaw(ctx, "ensure_note", midCut);
     expect(out.stage).toBe("parse");
     if (out.stage === "parse") {
       expect(out.error).toMatch(/malformed tool-call arguments/i);

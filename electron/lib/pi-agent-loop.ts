@@ -17,13 +17,16 @@
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
 import { isLocalEndpoint, calculatePromptBreakdown, scaleBreakdown, buildApiUrl, type TokenBreakdown } from "./llm";
+import type { ContentPart } from "../../shared/models/pdf-attach";
 import { recordLlmUsage, extractCost } from "./usage-recorder";
 import type { UsageSource } from "../db/usage-queries";
 import {
+  AUTO_OUTPUT_TOKEN_CAP,
   buildChatCompletionsBody,
   consumeAssistantStream,
   failToolCallsFromTruncatedMessage,
   interruptedStreamToolCallError,
+  truncationRetryNotice,
   prepareContextMessages,
   resolveSystemRole,
 } from "./llm-stream";
@@ -67,10 +70,9 @@ export interface AgentLLMConfig {
   /** Whether to automatically approve tool calls or prompt the user. */
   autoApprove?: boolean;
   /**
-   * Max output tokens per turn. Undefined/0 → OMIT max_tokens so the model
-   * finishes naturally — the old hardcoded cap could stall a "thinking" agent
-   * model mid-reasoning (empty content → a 400 on the next turn). A positive
-   * value is the user's deliberate cap.
+   * Max output tokens per turn. Undefined/0 → Auto: the loop sends a generous
+   * 32K cap (bounded by the model's declared output limit) so the model can
+   * finish naturally. A positive value is the user's deliberate cap.
    */
   maxTokens?: number;
   /** Whether the selected model is a reasoning/thinking model (from the models.dev catalog). */
@@ -81,7 +83,7 @@ export interface AgentLLMConfig {
 
 // ── Message types ─────────────────────────────────────────────────────────────
 
-export interface AgentUserMessage    { role: "user";      content: string }
+export interface AgentUserMessage    { role: "user";      content: string | ContentPart[] }
 export interface AgentAssistantMsg   { role: "assistant"; content: string | null; reasoning?: string; reasoningField?: string; reasoningModel?: string; tool_calls?: ToolCallSpec[] }
 export interface AgentToolResultMsg  { role: "tool";      tool_call_id: string; content: string }
 
@@ -540,8 +542,11 @@ export async function runAgentLoop(
     contextWindow = 128_000,
   } = llmConfig;
 
-  // Undefined/0 → omit max_tokens (let the model finish naturally).
-  const maxTokens = llmConfig.maxTokens && llmConfig.maxTokens > 0 ? llmConfig.maxTokens : undefined;
+  // Undefined/0 → output tokens left on Auto. Old behaviour OMITTED max_tokens,
+  // but endpoints then apply a tiny server-side default (often 4096) that
+  // reasoning models burn through and get cut mid-tool-call. Mirror opencode:
+  // always send a generous cap (32K) so the model can finish naturally.
+  const maxTokens = llmConfig.maxTokens && llmConfig.maxTokens > 0 ? llmConfig.maxTokens : AUTO_OUTPUT_TOKEN_CAP;
 
   // Identity of this request's model — reasoning is round-tripped (pi behaviour)
   // under its native field, but only to the SAME model that produced it.
@@ -706,6 +711,7 @@ export async function runAgentLoop(
           cacheReadTokens: usage.cacheReadTokens,
           cacheCreationTokens: usage.cacheCreationTokens,
           costUsd: cost,
+          finishReason: usage.finishReason ?? undefined,
         });
         session.lastPromptTokens = pt;
         // Accumulate completion + reasoning across rounds (total output for the turn).
@@ -758,6 +764,59 @@ export async function runAgentLoop(
     // ── Build tool call list from accumulated buffers ─────────────────────
     const toolCalls: ToolCallSpec[] = turn.toolCalls;
 
+    if (!toolsReadyFired) callbacks.onToolsReady();
+
+    // ── Output-token-limit / interrupted-stream truncation guard ──────────
+    // Shared with the chat loop. A "length" finish (or a stream that ended
+    // without ANY finish_reason — connection cut mid-call) means the tool calls
+    // may carry truncated arguments. Refuse to execute them: emit the chip + a
+    // structured error so the model re-issues with complete arguments.
+    //
+    // The truncated turn is NOT pushed to session.messages. Replaying it (the
+    // assistant tool_calls + synthesized tool results) poisons the next request:
+    // truncated tool-call JSON, reasoning attached to tool_calls, and
+    // duplicate/orphaned tool_call_ids are all things strict OpenAI-compatible
+    // endpoints reject with a 400. A synthetic user notice guides the model to
+    // re-issue while keeping the history valid.
+    const streamInterrupted = turnFinishReason === null;
+    if (turnFinishReason === "length" || streamInterrupted) {
+      // Recover, don't refuse, when EVERY tool call in the turn is "tail-complete":
+      // its arguments are valid JSON except missing closing delimiters (the stream
+      // or gateway dropped the final `"}` after otherwise-complete arguments — the
+      // note body streamed fully but the closing brace never arrived). A cut that
+      // lands exactly at the tail means the emitted data IS the intended data, so
+      // executing is the right recovery. Anything else is still refused: a
+      // strict-valid call could be a boundary cut with silently missing fields,
+      // and an unparseable call is cut mid-structure.
+      const parsedCalls = toolCalls.map((tc) => ({ tc, parsed: parseToolArgs(tc.function.arguments) }));
+      const tailComplete =
+        parsedCalls.length > 0 &&
+        parsedCalls.every(({ parsed }) => parsed.ok && parsed.tailRepaired === true);
+      if (!tailComplete) {
+        failToolCallsFromTruncatedMessage(toolCalls, {
+          maxTokens,
+          error: streamInterrupted ? interruptedStreamToolCallError() : undefined,
+          labelFor: (name) => isExternalToolName(name)
+            ? externalToolLabel(name, toolCtx.db)
+            : (CODING_LABELS[name]?.({}) ?? name),
+          callIdFor: (_tc, i) => streamCallIds.get(turn.toolCallIndexes[i] ?? i),
+          emitStart: (name, label, callId, args) => callbacks.onToolStart(name, label, callId, args),
+          emitEnd: (name, label, ok, output, callId, args) => callbacks.onToolEnd(name, label, ok, output, callId, args),
+        });
+        session.messages.push({
+          role: "user",
+          content: truncationRetryNotice(toolCalls.length, maxTokens),
+        });
+        continue;
+      }
+      // Tail-complete → fall through and execute. Rewrite each repaired call's
+      // arguments to its canonical JSON (reusing the parse above) so history
+      // holds what actually ran.
+      for (const { tc, parsed } of parsedCalls) {
+        if (parsed.ok && parsed.tailRepaired) tc.function.arguments = JSON.stringify(parsed.value);
+      }
+    }
+
     session.messages.push({
       role: "assistant",
       content: contentBuffer || null,
@@ -766,29 +825,6 @@ export async function runAgentLoop(
       reasoningModel: currentModelKey,
       tool_calls: toolCalls,
     });
-
-    if (!toolsReadyFired) callbacks.onToolsReady();
-
-    // ── Output-token-limit / interrupted-stream truncation guard ──────────
-    // Shared with the chat loop. A "length" finish (or a stream that ended
-    // without ANY finish_reason — connection cut mid-call) means the tool calls
-    // may carry truncated arguments. Refuse to execute them: emit the chip + a
-    // structured error so the model re-issues with complete arguments.
-    const streamInterrupted = turnFinishReason === null;
-    if (turnFinishReason === "length" || streamInterrupted) {
-      const toolResults = failToolCallsFromTruncatedMessage(toolCalls, {
-        maxTokens,
-        error: streamInterrupted ? interruptedStreamToolCallError() : undefined,
-        labelFor: (name) => isExternalToolName(name)
-          ? externalToolLabel(name, toolCtx.db)
-          : (CODING_LABELS[name]?.({}) ?? name),
-        callIdFor: (_tc, i) => streamCallIds.get(turn.toolCallIndexes[i] ?? i),
-        emitStart: (name, label, callId, args) => callbacks.onToolStart(name, label, callId, args),
-        emitEnd: (name, label, ok, output, callId, args) => callbacks.onToolEnd(name, label, ok, output, callId, args),
-      });
-      for (const tr of toolResults) session.messages.push(tr);
-      continue;
-    }
 
     // ── Execute tools in parallel ─────────────────────────────────────────
     if (signal.aborted) { callbacks.onDone(); return; }
@@ -809,11 +845,14 @@ export async function runAgentLoop(
 
     const toolPromises: Promise<ToolOutcome>[] = toolCalls.map(async (tc, tcIdx): Promise<ToolOutcome> => {
       // Parse tool arguments. Never run a tool with destructured args — surface
-      // the parse error so the model can re-issue the call.
+      // the parse error so the model can re-issue the call. A tail-repaired
+      // result (valid only after appending missing closing delimiters) is also
+      // refused here on the NORMAL path: only the explicit length/interrupted
+      // recovery gate above may execute those.
       let args: ToolArgs;
       let parseError: string | null = null;
       const parsed = parseToolArgs(tc.function.arguments);
-      if (parsed.ok) {
+      if (parsed.ok && parsed.tailRepaired !== true) {
         args = parsed.value as ToolArgs;
         traceTool("parse", {
           toolName: tc.function.name,
@@ -823,7 +862,9 @@ export async function runAgentLoop(
           repaired: parsed.repaired ? 1 : 0,
         });
       } else {
-        parseError = parsed.error;
+        parseError = parsed.ok
+          ? "tool-call arguments missing closing delimiters — re-issue with complete JSON"
+          : parsed.error;
         args = {};
       }
 

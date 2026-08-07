@@ -25,9 +25,10 @@ export interface CachedConfig {
     contextLimit?: number;
     aiEnabled?: boolean;
     subagentsEnabled?: boolean;
-    // Max output tokens: Auto (default) sends NO max_tokens; a manual value is a
-    // deliberate cap. Persisted so main-process consumers (e.g. the tool builder)
-    // honour the same Auto semantics as the chat loop.
+    // Max output tokens: Auto (default) sends a generous 32K cap (bounded by the
+    // model's declared output limit) so the model can finish naturally; a manual
+    // value is a deliberate cap. Persisted so main-process consumers (e.g. the
+    // tool builder) honour the same Auto semantics as the chat/agent loops.
     maxOutputAuto?: boolean;
     maxOutputTokens?: number;
     // Saved cloud/local API connections the user can switch between, plus the

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle, XCircle, Loader2, ChevronDown, ChevronRight, GitBranch, ShieldAlert, Globe2 } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, ChevronDown, ChevronRight, GitBranch, ShieldAlert, Globe2, FileText } from "lucide-react";
 import { cn, prettifyToolLabel } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
@@ -282,9 +282,33 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
 
   // USER bubble — right-aligned, accent background, User icon
   if (isUser) {
+    const hasImages = (message.images?.length ?? 0) > 0;
     return (
       <div className="flex gap-2 items-start justify-end">
         <div className="flex-1 min-w-0 flex flex-col items-end gap-1">
+          {hasImages && (
+            <div className="flex flex-wrap gap-2 justify-end">
+              {message.images!.map((img, i) =>
+                img.kind === "pdf" ? (
+                  <div
+                    key={i}
+                    className="max-w-[200px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] flex items-center gap-2 px-3 py-2"
+                    title={img.name}
+                  >
+                    <FileText size={14} className="text-[var(--danger)] shrink-0" />
+                    <span className="text-[0.714rem] text-[var(--text-secondary)] truncate">{img.name}</span>
+                  </div>
+                ) : (
+                  <img
+                    key={i}
+                    src={img.url}
+                    alt={img.name}
+                    className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--border)] object-cover"
+                  />
+                )
+              )}
+            </div>
+          )}
           <div className="px-3 py-2 rounded-xl rounded-tr-sm text-xs leading-relaxed bg-[var(--accent)] text-[var(--accent-fg)] max-w-[85%]">
             <MarkdownContent content={message.content} isUser />
           </div>

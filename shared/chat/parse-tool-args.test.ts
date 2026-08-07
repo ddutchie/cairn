@@ -241,6 +241,90 @@ describe("parseToolArgs", () => {
     });
   });
 
+  describe("repair: dropped closing delimiter (tail repair)", () => {
+    it("closes an unterminated trailing string + object (the dropped `\"}` case)", () => {
+      const raw = '{"projectId":"p","title":"Doc","content":"full note body that ends here"';
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.repaired).toBe(true);
+        expect(r.tailRepaired).toBe(true);
+        expect(r.value).toEqual({ projectId: "p", title: "Doc", content: "full note body that ends here" });
+      }
+    });
+
+    it("preserves content bytes exactly when only the closing delimiter is missing", () => {
+      // Mirrors the real incident: the whole note body streamed, the `"}` never arrived.
+      const content = "# ADSK OpenAI Router\n\nFor Claude Code, see `docs/claude-code.md`";
+      const raw = `{"projectId":"rVAJTw0nH-bX","title":"Project Overview","content":"${content}`;
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.tailRepaired).toBe(true);
+        expect(r.value.content).toBe(content);
+        expect(r.value.title).toBe("Project Overview");
+      }
+    });
+
+    it("closes an unterminated trailing string AND nested containers", () => {
+      const raw = '{"meta":{"tags":["a","b"],"seen":true,"nested":{"x":"y"}';
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.tailRepaired).toBe(true);
+        expect(r.value).toEqual({ meta: { tags: ["a", "b"], seen: true, nested: { x: "y" } } });
+      }
+    });
+
+    it("closes a simple object missing only its closing brace", () => {
+      const r = parseToolArgs('{"a":"b"');
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.tailRepaired).toBe(true);
+        expect(r.value).toEqual({ a: "b" });
+      }
+    });
+
+    it("marks tail-repaired output so callers can apply finish_reason policy", () => {
+      const ok = parseToolArgs('{"a":"b"');
+      expect(ok.ok && ok.tailRepaired).toBe(true);
+      const strict = parseToolArgs('{"a":1}');
+      expect(strict.ok && strict.tailRepaired === undefined).toBe(true);
+      const lossless = parseToolArgs('{"a":1,}');
+      expect(lossless.ok && lossless.tailRepaired === undefined).toBe(true);
+    });
+
+    it("does NOT tail-repair a trailing numeric literal (the number may be truncated)", () => {
+      // `{"a":1` could be the start of `{"a":123}` — appending `}` would silently
+      // drop digits the model still intended to emit. Refuse so the structural
+      // safety net fails loudly and the model re-issues.
+      const r = parseToolArgs('{"a":1');
+      expect(r.ok).toBe(false);
+      const nested = parseToolArgs('{"meta":{"tags":["a","b"],"seen":true,"depth":{"level":1');
+      expect(nested.ok).toBe(false);
+    });
+
+    it("does NOT tail-repair mid-structure damage (unterminated key)", () => {
+      const r = parseToolArgs('{"t');
+      expect(r.ok).toBe(false);
+    });
+
+    it("does NOT tail-repair a bare unterminated key after a colon", () => {
+      const r = parseToolArgs('{"a":');
+      expect(r.ok).toBe(false);
+    });
+
+    it("does NOT tail-repair a complete object followed by garbage", () => {
+      const r = parseToolArgs('{"a":1} and then some');
+      expect(r.ok).toBe(false);
+    });
+
+    it("does NOT corrupt content that legitimately ends with a backslash (refuses instead)", () => {
+      const r = parseToolArgs('{"a":"path\\');
+      expect(r.ok).toBe(false);
+    });
+  });
+
   describe("unrecoverable input", () => {
     it("returns an error (never a silent {}) for structurally broken JSON", () => {
       const r = parseToolArgs('{"title": ');

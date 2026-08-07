@@ -50,6 +50,8 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   // non-empty we show a "found these projects" summary instead of prompting the
   // user to create their first project.
   const [importedProjects, setImportedProjects] = useState<ImportedProject[]>([]);
+  // Visible on the imported-projects summary when a rollback/undo fails.
+  const [rollbackError, setRollbackError] = useState<string | null>(null);
 
   // ── View visibility (local copy; committed when user hits Next on StepViews) ─
   const [localHidden, setLocalHidden] = useState<Set<ToggleableView>>(new Set(hiddenViews));
@@ -174,6 +176,32 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         setImportedProjects([]);
       }
       setStep("appearance");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /** Undo the import: remove the created projects/notes, strip Cairn frontmatter
+   *  from the vault files, and stop managing the folder — then let the user pick
+   *  a different folder. Best-effort; a failure stays on the summary and is
+   *  reported there. Guarded against concurrent clicks via `submitting`. */
+  async function handleRollbackImport() {
+    const ids = importedProjects.map((p) => p.id);
+    if (ids.length === 0 || submitting) return;
+    setSubmitting(true);
+    setRollbackError(null);
+    try {
+      await window.electron?.rollbackImport(ids);
+      // Reset the wizard state so a fresh choose-folder → create-workspace flow
+      // starts clean — no stale folder/name/icon or imported-project leftovers.
+      setImportedProjects([]);
+      setChosenFolder(null);
+      setWsName("");
+      setWsIcon(DEFAULT_WORKSPACE_ICON);
+      setStep("choose-folder");
+    } catch (err) {
+      console.error("[onboarding] rollback import failed:", err);
+      setRollbackError("Rollback failed — the imported projects were not removed. You can retry the undo or continue with them.");
     } finally {
       setSubmitting(false);
     }
@@ -329,8 +357,11 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     return (
       <StepImportedProjects
         projects={importedProjects}
+        busy={submitting}
+        error={rollbackError}
         onBack={() => setStep("views")}
         onContinue={() => setStep("done")}
+        onUndo={handleRollbackImport}
       />
     );
   }

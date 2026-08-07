@@ -27,7 +27,7 @@ import { parse as parsePartialJson } from "partial-json";
  *   2. Trailing commas before a closing `}`/`]`, detected OUTSIDE string context
  *      so a literal comma inside content (e.g. "a,}") is never touched.
  *   3. MISSING commas between a completed value and the next token — the model
- *      dropped the `,` between two properties/elements (e.g. `{"title":"X"
+ *      dropped the `,` between two properties/elements (e.g. `{"title":"X"`
  *      "spaceId":"S"}`). A comma is the ONLY legal separator between two JSON
  *      values, so a value directly followed by a new key/element can only mean a
  *      dropped comma. We track the last significant token and, when a completed
@@ -35,6 +35,14 @@ import { parse as parsePartialJson } from "partial-json";
  *      or `true`/`false`/`null`), we insert the missing `,` — purely structural,
  *      never merging adjacent text into one string, so decoded values are
  *      untouched. This is the fix for `Expected "," or "}" after property value`.
+ *   4. DROPPED CLOSING DELIMITERS (tail repair) — a stream/gateway that ends the
+ *      emission one token early leaves a structurally complete payload missing
+ *      its final `"}`/`]`. We append the missing closers (unterminated trailing
+ *      string first, then unclosed containers) and require the result to parse.
+ *      String bytes are never altered. See `tailRepairJson` for the safety
+ *      boundary: whether a tail-repaired payload may be EXECUTED is the CALLER's
+ *      decision, driven by finish_reason (natural finish = safe; `length` =
+ *      only the truncation guards may recover, flagged via `tailRepaired`).
  *
  * If the lossless repair pass still can't produce strict JSON, we delegate to the
  * `partial-json` library — the tolerant LLM-JSON parser used by the Vercel AI SDK
@@ -57,7 +65,7 @@ import { parse as parsePartialJson } from "partial-json";
  */
 
 export type ParseToolArgsResult =
-  | { ok: true; value: Record<string, unknown>; repaired: boolean }
+  | { ok: true; value: Record<string, unknown>; repaired: boolean; tailRepaired?: boolean }
   | { ok: false; error: string };
 
 /**
@@ -218,6 +226,82 @@ function repairJson(src: string): string {
   return out;
 }
 
+/**
+ * ── Tail repair — recovering a dropped closing delimiter ─────────────────────
+ * Models (and stream-translating gateways) occasionally emit tool-call
+ * arguments whose content is COMPLETE but whose trailing JSON delimiters never
+ * arrive — e.g. `{"projectId":"…","title":"…","content":"…full note…` with the
+ * closing `"}` missing. Strict parse fails, the lossless pass above has nothing
+ * to fix (no missing comma/control char), and `partial-json` correctly refuses.
+ *
+ * This tier recovers exactly that case: it appends a closing `"` for an
+ * unterminated trailing string and a `}`/`]` per unclosed container, then
+ * requires the result to parse as a plain object. It NEVER touches bytes inside
+ * the emitted text — string values round-trip byte-identically — so the ONLY
+ * thing it can change is adding the delimiters the emitter left off.
+ *
+ * Safety boundary (the caller decides, not this function): a structurally
+ * complete-but-unterminated payload is *indistinguishable* from a payload the
+ * model was cut mid-string on — both end in an open string. `finish_reason`
+ * tells them apart:
+ *   - natural finish (`stop`/`tool_calls`) → the model ended; the content IS
+ *     everything it emitted → repairing is provably lossless.
+ *   - `length`/interrupted → the model was cut; the tail *may* be chopped →
+ *     only callers that accept that risk (the truncation guards) may execute,
+ *     and they flag it via `tailRepaired`.
+ */
+function tailRepairJson(src: string): string | null {
+  let inString = false;
+  let escaped = false;
+  const stack: Array<"{" | "["> = [];
+  // Last non-whitespace character seen OUTSIDE a string — used to refuse
+  // repairing a (possibly truncated) trailing numeric literal.
+  let lastSignificant: string | null = null;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inString) {
+      if (escaped) { escaped = false; continue; }
+      if (ch === "\\") { escaped = true; continue; }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; lastSignificant = '"'; continue; }
+    if (ch === "{" || ch === "[") stack.push(ch);
+    else if (ch === "}" || ch === "]") {
+      const open = ch === "}" ? "{" : "[";
+      if (stack.length > 0 && stack[stack.length - 1] === open) stack.pop();
+      // A mismatched closer is left on the stack; the final JSON.parse fails → null.
+    }
+    if (!/\s/.test(ch)) lastSignificant = ch;
+  }
+  // Nothing open and nothing unterminated → not a tail case; leave to other tiers.
+  if (!inString && stack.length === 0) return null;
+  // A trailing digit/`-`/`+`/`.` outside a string is a (possibly truncated)
+  // numeric literal — appending closers could silently drop digits the model
+  // still intended to emit (e.g. `{"count": 12` → `{"count": 12}`). Refuse and
+  // let the structural safety net fail loudly on the truncated number instead.
+  if (
+    !inString &&
+    lastSignificant !== null &&
+    (lastSignificant === "-" || lastSignificant === "+" || lastSignificant === "."
+      || (lastSignificant >= "0" && lastSignificant <= "9"))
+  ) {
+    return null;
+  }
+
+  let out = src;
+  if (inString) out += '"';
+  for (let i = stack.length - 1; i >= 0; i--) out += stack[i] === "{" ? "}" : "]";
+
+  try {
+    const value = JSON.parse(out);
+    if (value && typeof value === "object" && !Array.isArray(value)) return out;
+  } catch {
+    /* mid-structure damage (e.g. an unterminated key) — not tail-repairable */
+  }
+  return null;
+}
+
 /** Kinds of the last significant token emitted outside a string. */
 type TokenKind =
   | "none"
@@ -274,7 +358,23 @@ export function parseToolArgs(raw: string | null | undefined): ParseToolArgsResu
         return { ok: true, value: value as Record<string, unknown>, repaired: true };
       }
     } catch {
-      /* fall through to the structural safety net */
+      /* fall through to the tail repair */
+    }
+
+    // 2b. Tail repair — recover arguments that are structurally complete except
+    // a missing closing `"}` / `]` (a dropped final delimiter). The emitted
+    // string values are untouched; the caller (the truncation guards) decides
+    // from finish_reason whether executing a tail-repaired payload is safe.
+    const tail = tailRepairJson(repaired);
+    if (tail !== null) {
+      try {
+        const value = JSON.parse(tail);
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          return { ok: true, value: value as Record<string, unknown>, repaired: true, tailRepaired: true };
+        }
+      } catch {
+        /* fall through to the structural safety net */
+      }
     }
 
     // 3. Structural safety net: `partial-json` (used by the Vercel AI SDK and pi).

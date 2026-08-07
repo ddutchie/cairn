@@ -29,6 +29,9 @@ import {
   previewVaultImport,
   saveImportExclusions,
   isImportPathExcluded,
+  readImportConfig,
+  setImportUnmanaged,
+  rollbackImport,
 } from "./notes-files";
 import type { NoteData } from "./notes-files";
 
@@ -1052,5 +1055,184 @@ describe("filename stability (Obsidian wikilink safety)", () => {
     const moved = path.join(projectDir, "kernel", "EP.md");      // filename preserved
     expect(fs.existsSync(moved)).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "kernel", "electron-process.md"))).toBe(false);
+  });
+});
+
+describe("re-import 3-way conflict handling (v2.6.8)", () => {
+  let db: Database.Database;
+
+  beforeEach(() => { db = makeDb(); });
+
+  function seedWorkspaceOnly(wsId = "ws1") {
+    createWorkspace(db, { id: wsId, name: "Test Workspace" });
+    return wsId;
+  }
+
+  /** Rewrite an adopted .md's body, preserving its Cairn frontmatter. */
+  function rewriteBody(fp: string, newBody: string): void {
+    const parsed = matter(fs.readFileSync(fp, "utf-8"));
+    fs.writeFileSync(fp, matter.stringify(newBody, parsed.data), "utf-8");
+  }
+
+  function conflictRows(): Array<{ id: string; title: string; content: string }> {
+    return db.prepare(
+      "SELECT id, title, content FROM notes WHERE id LIKE '%\\_conflict\\_%' ESCAPE '\\'",
+    ).all() as Array<{ id: string; title: string; content: string }>;
+  }
+
+  it("records an adoption baseline in the workspace ledger", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+
+    const rows = db.prepare("SELECT id FROM notes").all() as Array<{ id: string }>;
+    expect(rows).toHaveLength(1);
+    const cfg = readImportConfig(tmpDir);
+    expect(cfg.adopted[rows[0].id]).toBeDefined();
+    expect(cfg.adopted[rows[0].id].path).toContain("Entry.md");
+
+    // A second scan doesn't duplicate/drop the entry, and setting exclusions
+    // afterwards preserves the ledger (merged write, not a rewrite).
+    saveImportExclusions(tmpDir, ["Private"]);
+    syncNotesFromDisk(db, tmpDir);
+    const cfg2 = readImportConfig(tmpDir);
+    expect(cfg2.excludedFolders).toEqual(["Private"]);
+    expect(cfg2.adopted[rows[0].id].bodyHash).toBe(cfg.adopted[rows[0].id].bodyHash);
+  });
+
+  it("adopts an external-only edit with no conflict copy", () => {
+    seedWorkspaceOnly();
+    const fp = writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    const id = (db.prepare("SELECT id FROM notes LIMIT 1").get() as { id: string }).id;
+
+    rewriteBody(fp, "# Entry\n\nBeta (edited in Obsidian).");
+    syncNotesFromDisk(db, tmpDir);
+
+    const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(id) as { content: string };
+    expect(row.content).toContain("Beta (edited in Obsidian)");
+    expect(conflictRows()).toHaveLength(0);
+  });
+
+  it("mints a conflict copy when both the vault file and Cairn changed", () => {
+    seedWorkspaceOnly();
+    const fp = writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    const id = (db.prepare("SELECT id FROM notes LIMIT 1").get() as { id: string }).id;
+
+    // Cairn edits the row…
+    db.prepare("UPDATE notes SET content = ?, updated_at = ? WHERE id = ?")
+      .run("# Entry\n\nCairn edit.", new Date().toISOString(), id);
+    // …and the vault file is edited externally (frontmatter preserved).
+    rewriteBody(fp, "# Entry\n\nObsidian edit.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    // The vault file wins as current…
+    const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(id) as { content: string };
+    expect(row.content).toContain("Obsidian edit");
+    // …and Cairn's version is preserved as exactly one conflict copy.
+    const copies = conflictRows();
+    expect(copies).toHaveLength(1);
+    expect(copies[0].id.startsWith(`${id}_conflict_import_`)).toBe(true);
+    expect(copies[0].title).toContain("conflicted copy");
+    expect(copies[0].content).toContain("Cairn edit");
+  });
+
+  it("leaves an unchanged note alone on re-scan", () => {
+    seedWorkspaceOnly();
+    const fp = writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    const id = (db.prepare("SELECT id FROM notes LIMIT 1").get() as { id: string }).id;
+    const before = fs.readFileSync(fp, "utf-8");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(id) as { content: string };
+    expect(row.content).toContain("Alpha");
+    expect(fs.readFileSync(fp, "utf-8")).toBe(before);
+    expect(conflictRows()).toHaveLength(0);
+  });
+
+  it("an un-managed vault is never re-adopted and re-creates no projects", () => {
+    seedWorkspaceOnly();
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Entry.md", "# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 1 });
+
+    setImportUnmanaged(tmpDir, true);
+    writePlainMdFile(path.join(tmpDir, "Journal"), "Second.md", "# Second\n\nBeta.");
+    syncNotesFromDisk(db, tmpDir);
+
+    // Nothing new adopted; the existing note's file is not re-adopted either.
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 1 });
+    expect(isImportPathExcluded(tmpDir, path.join(tmpDir, "Journal", "Second.md"))).toBe(true);
+  });
+
+  it("rolls back an import: removes projects/notes, strips frontmatter, un-manages", () => {
+    seedWorkspaceOnly();
+    // Obsidian files with user frontmatter (tags) — must survive rollback.
+    writeObsidianFile(path.join(tmpDir, "Journal"), "Entry.md", { tags: ["personal"] }, "\n# Entry\n\nAlpha.");
+    writeObsidianFile(path.join(tmpDir, "Ideas"), "Idea.md", { tags: ["ideas"] }, "\n# Idea\n\nBeta.");
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT id, name FROM projects").all() as Array<{ id: string; name: string }>;
+    expect(projects.map((p) => p.name).sort()).toEqual(["Ideas", "Journal"]);
+    const adoptedIds = (db.prepare("SELECT id FROM notes").all() as Array<{ id: string }>).map((r) => r.id);
+    expect(adoptedIds).toHaveLength(2);
+
+    const removed = rollbackImport(db, tmpDir, projects.map((p) => p.id));
+    expect(removed).toBe(2);
+
+    // Projects and notes are PHYSICALLY gone (not tombstoned).
+    expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes WHERE deleted_at IS NOT NULL").get()).toEqual({ n: 0 });
+
+    // Files survive; Cairn frontmatter stripped; Obsidian tags preserved.
+    const entryRaw = fs.readFileSync(path.join(tmpDir, "Journal", "Entry.md"), "utf-8");
+    expect(entryRaw).toContain("tags:");
+    expect(entryRaw).toContain("personal");
+    expect(entryRaw).not.toContain("id:");
+    expect(entryRaw).not.toContain("projectId:");
+    expect(entryRaw).toContain("Alpha");
+
+    // Vault is un-managed; ledger cleared; a re-scan re-adopts nothing.
+    const cfg = readImportConfig(tmpDir);
+    expect(cfg.unmanaged).toBe(true);
+    for (const id of adoptedIds) expect(cfg.adopted[id]).toBeUndefined();
+    syncNotesFromDisk(db, tmpDir);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 0 });
+  });
+
+  it("partial rollback keeps the vault managed until every adopted project is removed", () => {
+    seedWorkspaceOnly();
+    writeObsidianFile(path.join(tmpDir, "Journal"), "Entry.md", { tags: ["personal"] }, "\n# Entry\n\nAlpha.");
+    writeObsidianFile(path.join(tmpDir, "Ideas"), "Idea.md", { tags: ["ideas"] }, "\n# Idea\n\nBeta.");
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT id, name FROM projects").all() as Array<{ id: string; name: string }>;
+    expect(projects.map((p) => p.name).sort()).toEqual(["Ideas", "Journal"]);
+    const journal = projects.find((p) => p.name === "Journal")!;
+
+    // Roll back ONE project only — the vault must stay managed (the remaining
+    // adopted project keeps its Cairn files, and can be rolled back later).
+    const removed = rollbackImport(db, tmpDir, [journal.id]);
+    expect(removed).toBe(1);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 1 });
+    const cfg = readImportConfig(tmpDir);
+    expect(cfg.unmanaged).toBe(false);
+    // The remaining project's note is still adopted (retryable).
+    const remaining = db.prepare("SELECT id FROM notes WHERE type = 'note'").get() as { id: string } | undefined;
+    expect(remaining).toBeTruthy();
+    expect(cfg.adopted[remaining!.id]).toBeDefined();
+
+    // Rolling back the rest now un-manages the vault.
+    const rest = db.prepare("SELECT id, name FROM projects").all() as Array<{ id: string; name: string }>;
+    const removed2 = rollbackImport(db, tmpDir, rest.map((p) => p.id));
+    expect(removed2).toBe(1);
+    expect(readImportConfig(tmpDir).unmanaged).toBe(true);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 0 });
   });
 });

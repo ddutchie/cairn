@@ -62,10 +62,10 @@ export function AISettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, provider, contextAuto]);
 
-  // Max output tokens. Auto (default) sends NO cap so the model finishes
-  // naturally — capping only ever truncates a long reasoning+answer. A manual
-  // value is a deliberate cost/latency ceiling. We surface the model's
-  // advertised limit.output (when known) as guidance next to the field.
+  // Max output tokens. Auto (default) sends a generous 32K cap (bounded by the
+  // model's advertised limit.output) so the model finishes naturally without
+  // hitting a tiny endpoint default; a manual value is a deliberate ceiling.
+  // We surface the model's limit.output (when known) as guidance next to the field.
   const maxOutputAuto = aiConfig.maxOutputAuto ?? true;
   const [advertisedMaxOutput, setAdvertisedMaxOutput] = useState<number | null>(null);
   useEffect(() => {
@@ -224,19 +224,19 @@ export function AISettings() {
               }
             />
 
-            {/* Max output tokens — Auto (default) sends no cap so the model
-                finishes naturally; a manual value is a deliberate ceiling.
-                Capping is what broke "thinking" models (empty reply → 400). */}
+            {/* Max output tokens — Auto (default) sends a bounded 32K cap (clamped to
+                the model's limit.output) so the model finishes naturally; a
+                manual value is a deliberate cost/latency ceiling. */}
             <StepperSettingsRow
               label="Max output tokens"
               description={
                 maxOutputAuto
                   ? advertisedMaxOutput
-                    ? `Auto: no limit — the model finishes on its own (it supports up to ${advertisedMaxOutput.toLocaleString()} output tokens, per models.dev). Recommended, especially for reasoning models. Set a value only to cap cost.`
-                    : "Auto: no limit — the model finishes on its own. Recommended, especially for reasoning models, which need room to think before answering. Set a value only to cap cost per reply."
+                    ? `Auto: a 32K cap, clamped to "${model}"'s ${advertisedMaxOutput.toLocaleString()} output tokens (per models.dev). The model finishes on its own unless its limit is lower. Recommended, especially for reasoning models. Set a value only to cap cost.`
+                    : "Auto: a 32K cap so the model finishes on its own (clamped to the model's output limit when models.dev knows it). Recommended, especially for reasoning models, which need room to think before answering. Set a value only to cap cost per reply."
                   : advertisedMaxOutput
-                    ? `Manual cap on a single reply. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. "${model}" supports up to ${advertisedMaxOutput.toLocaleString()} tokens (models.dev). Tap Auto to remove the cap.`
-                    : "Manual cap on a single reply's length. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. Tap Auto to remove the cap."
+                    ? `Manual cap on a single reply. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. "${model}" supports up to ${advertisedMaxOutput.toLocaleString()} tokens (models.dev). Tap Auto for the bounded 32K cap.`
+                    : "Manual cap on a single reply's length. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. Tap Auto for the bounded 32K cap."
               }
               icon="gauge"
               value={aiConfig.maxOutputTokens ?? 8192}
@@ -250,7 +250,7 @@ export function AISettings() {
               autoState={maxOutputAuto ? "detected" : "idle"}
               autoActive={maxOutputAuto}
               autoSuppressesValue
-              suppressedPlaceholder="No limit"
+              suppressedPlaceholder="Auto (32K)"
               onAuto={() => updateAIConfig({ maxOutputAuto: true })}
             />
 

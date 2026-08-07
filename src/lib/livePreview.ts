@@ -29,6 +29,7 @@ import { makeCalloutWidget, parseCalloutSource } from "./callout-widget";
 import { makeCodeBlockWidget, parseFencedCode } from "./code-block-widget";
 import { makeMathBlockWidget } from "./math-block-widget";
 import { makeTableBlockWidget, isTableSource } from "./table-block-widget";
+import { makeTaskCheckboxWidget } from "./task-checkbox-widget";
 import { blockWidgetTheme } from "./block-preview-widget";
 
 // Master kill-switch for Tier 2 inline block widgets (callouts + fenced code
@@ -385,6 +386,26 @@ function buildDecorations(view: EditorView): DecorationSet {
       },
     });
 
+    // Task-list checkboxes: `- [ ]` / `- [x]` items render a real inline
+    // checkbox that toggles the source marker. Skipped on the active line (raw
+    // `[ ]` shows for editing) and inside folded block widgets.
+    syntaxTree(view.state).iterate({
+      from,
+      to,
+      enter: (node) => {
+        if (node.name !== "TaskMarker") return;
+        const line = doc.lineAt(node.from).number;
+        if (active.has(line)) return;
+        if (blockWidgetLines.has(line)) return;
+        // TaskMarker covers exactly the 3 chars "[ ]" / "[x]" / "[X]".
+        const marker = doc.sliceString(node.from, node.to);
+        const checked = marker[1] === "x" || marker[1] === "X";
+        replaceDecos.push(
+          Decoration.replace({ widget: makeTaskCheckboxWidget(node.from, node.to, checked) }).range(node.from, node.to),
+        );
+      },
+    });
+
     // Highlight (`==text==`) and wikilinks (`[[Title]]`) — scanned via regex on
     // the visible text since neither is a distinct node in the base grammar.
     scanInlinePatterns(view, from, to, active, blockWidgetLines, replaceDecos, otherDecos);
@@ -515,6 +536,17 @@ const livePreviewTheme = EditorView.theme({
     borderLeft: "2px solid var(--border)",
     paddingLeft: "1rem",
     color: "var(--text-secondary)",
+  },
+  // Task-list checkbox — matches the Read-mode input
+  // (accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px]).
+  ".cm-lp-taskbox": {
+    accentColor: "var(--accent)",
+    width: "14px",
+    height: "14px",
+    margin: "0 0.25em",
+    cursor: "pointer",
+    verticalAlign: "middle",
+    flexShrink: "0",
   },
 });
 

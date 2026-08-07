@@ -302,12 +302,13 @@ export interface AgentConfig {
   contextAuto?: boolean;
   /**
    * Max output tokens per turn. When `maxOutputAuto` is true (default) this is
-   * ignored and no cap is sent, so the model finishes naturally — capping only
-   * ever truncates a long reasoning+answer and can stall "thinking" models. A
-   * manual value is a deliberate cost/latency ceiling.
+   * ignored and a generous Auto cap is sent — bounded by the model's declared
+   * output limit, defaulting to 32K — so the model can finish naturally without
+   * hitting a tiny endpoint default. A manual value is a deliberate
+   * cost/latency ceiling.
    */
   maxOutputTokens?: number;
-  /** When true, no max-output cap is sent. Defaults to true. */
+  /** When true, the Auto cap is used. Defaults to true. */
   maxOutputAuto?: boolean;
   /** Automatically approve tool execution without prompt. */
   autoApprove: boolean;

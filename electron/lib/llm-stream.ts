@@ -27,9 +27,19 @@
 import { iterSseData } from "./sse";
 import { isSendableMessage, type OpenAIMessage } from "./llm";
 import { extractCacheTokens } from "./usage-recorder";
+import { randomUUID } from "node:crypto";
+import type { ContentPart } from "../../shared/models/pdf-attach";
+import { AUTO_OUTPUT_TOKEN_CAP } from "../../shared/models/model-catalog";
+
+export { AUTO_OUTPUT_TOKEN_CAP };
 
 /** Reasoning field names used by OpenAI-compatible providers, in priority order. */
 export const REASONING_FIELDS = ["reasoning_content", "reasoning", "reasoning_text"] as const;
+
+// `AUTO_OUTPUT_TOKEN_CAP` (32K) lives in shared/models/model-catalog.ts — the
+// renderer's resolver and the main-process loops share the same ceiling. When
+// the model's declared output limit is smaller, the renderer sends that instead;
+// when the model is unknown, these loops fall back to AUTO_OUTPUT_TOKEN_CAP.
 
 // ── Streaming ────────────────────────────────────────────────────────────────
 
@@ -53,6 +63,8 @@ export interface StreamUsage {
   raw: unknown;
   /** Raw top-level `cost` field on the chunk, if the provider reports it there. */
   chunkCost?: unknown;
+  /** finish_reason of the turn at the time the usage chunk arrived (diagnostics). */
+  finishReason?: string | null;
 }
 
 export interface StreamOptions {
@@ -113,6 +125,13 @@ export async function consumeAssistantStream(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const c = chunk as any;
 
+    const choice = c.choices?.[0];
+    // Capture the finish reason BEFORE the usage callback so a usage chunk that
+    // carries both fields (the common stream_options.include_usage case) reports
+    // the current chunk's finish reason, not the stale value from a previous
+    // chunk. "length" means the model hit max_tokens.
+    if (choice?.finish_reason) finishReason = choice.finish_reason;
+
     // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
     if (c.usage) {
       const cache = extractCacheTokens(c.usage);
@@ -124,13 +143,9 @@ export async function consumeAssistantStream(
         cacheCreationTokens: cache.cacheCreationTokens,
         raw: c.usage,
         chunkCost: c.cost,
+        finishReason,
       });
     }
-
-    const choice = c.choices?.[0];
-    // Capture the finish reason — "length" means the model hit max_tokens.
-    // A reasoning model can hit it having emitted only chain-of-thought.
-    if (choice?.finish_reason) finishReason = choice.finish_reason;
 
     const delta = choice?.delta;
     if (!delta) continue;
@@ -181,11 +196,12 @@ export async function consumeAssistantStream(
   }
 
   const entries = Array.from(toolBuffers.entries()).sort(([a], [b]) => a - b);
-  const toolCalls: StreamToolCall[] = entries.map(([, buf], i) => ({
+  const toolCalls: StreamToolCall[] = entries.map(([, buf]) => ({
     // An interrupted stream can cut before the id chunk arrives — synthesize a
-    // stable id so the assistant message's tool_calls and its tool results can
-    // reference it consistently (empty ids would collide across tools).
-    id: buf.id || `${buf.name || "tool"}:stream:${i}`,
+    // UNIQUE id (per-call random suffix) so the assistant message's tool_calls
+    // and its tool results reference it consistently, and so two truncation
+    // turns can never collide on the same id (duplicate tool_call_id → 400).
+    id: buf.id || `${buf.name || "tool"}:${randomUUID().slice(0, 8)}`,
     type: "function",
     function: { name: buf.name, arguments: buf.args },
     ...(buf.thought_signature ? { thought_signature: buf.thought_signature } : {}),
@@ -209,8 +225,9 @@ export function buildChatCompletionsBody(opts: {
     messages: opts.messages,
     tools: opts.tools,
     tool_choice: "auto",
-    // Only send max_tokens when an explicit cap is set — omitting it lets the
-    // model finish naturally.
+    // Always send max_tokens. Callers pass AUTO_OUTPUT_TOKEN_CAP (32K) when the
+    // user leaves output tokens on Auto; omitting the field lets the endpoint
+    // apply a tiny server-side default (often 4096) that truncates tool calls.
     ...(opts.maxTokens && opts.maxTokens > 0 ? { max_tokens: opts.maxTokens } : {}),
     temperature: opts.temperature,
     stream: true,
@@ -222,10 +239,10 @@ export function buildChatCompletionsBody(opts: {
 
 /** Error text used when a `finish_reason: "length"` turn's tool calls are refused. */
 export function truncatedToolCallError(maxTokens?: number): string {
-  // Tailor the guidance to the config: on Auto we send NO max_tokens, so a
-  // "length" cut comes from the provider's own output cap, not our setting.
+  // maxTokens is the cap that WAS sent (the user's manual value or the 32K
+  // Auto default) — the model hit it. Guide the fix accordingly.
   const capHint = maxTokens
-    ? "Try raising the Max output tokens setting."
+    ? `Try raising the Max output tokens setting (currently ${maxTokens}).`
     : "Max output tokens is set to Auto (no cap is sent), so this is the provider's own output limit — try a manual Max output tokens value or a model with a larger output cap.";
   return (
     `Tool call not executed: the model hit its output-token limit, so the arguments may be truncated. ` +
@@ -238,6 +255,24 @@ export function interruptedStreamToolCallError(): string {
   return (
     `Tool call not executed: the response stream ended before the model finished (no finish_reason received), ` +
     `so the arguments may be truncated. Re-issue the tool call with complete arguments.`
+  );
+}
+
+/**
+ * Synthetic user-role notice fed back to the model after a truncated turn so it
+ * re-issues the tool call(s) with complete arguments. Used INSTEAD of replaying
+ * the truncated assistant message + synthesized tool results — replaying that
+ * turn poisons the next request with invalid JSON arguments, reasoning attached
+ * to tool_calls, and duplicate/orphaned tool_call_ids (→ provider 400).
+ */
+export function truncationRetryNotice(toolCallCount: number, maxTokens?: number): string {
+  const plural = toolCallCount !== 1;
+  const hint = maxTokens
+    ? `or raise the Max output tokens setting (currently ${maxTokens})`
+    : "or set a manual Max output tokens value (Auto relies on the endpoint's default)";
+  return (
+    `[System: your last tool call${plural ? "s" : ""} hit the output-token limit and ${plural ? "were" : "was"} ` +
+    `NOT executed — the arguments may be truncated. Re-issue ${plural ? "them" : "it"} with complete arguments (${hint}).]`
   );
 }
 
@@ -285,57 +320,35 @@ export function failToolCallsFromTruncatedMessage(
 // ── Message preparation ──────────────────────────────────────────────────────
 
 /**
- * Providers with quirky system-role handling (pi's `detectCompat` denylist):
- * their URLs are excluded from the `developer` role even for reasoning models.
+ * Base-URL fragments known to accept the OpenAI `developer` system role for
+ * reasoning models. Every OTHER provider gets `system`: an unknown or custom
+ * endpoint (a gateway, opencode's Console Go, LM Studio, …) may reject the
+ * `developer` role outright with a 400 — "unknown variant developer, expected
+ * one of system/user/assistant" — and `system` is universally accepted, so the
+ * safe default is `system` unless we know the target supports `developer`.
  */
-const NON_STANDARD_PROVIDERS = new Set([
-  "nvidia",
-  "cerebras",
-  "xai",
-  "together",
-  "zai",
-  "moonshotai",
-  "moonshotai-cn",
-  "ant-ling",
-  // Cairn-specific: the on-device Llama server wraps small models (Qwen/DeepSeek
-  // based) that don't understand the developer role.
-  "localllm",
-]);
-
-/** Base-URL fragments that identify the same non-standard providers. */
-const NON_STANDARD_URL_FRAGMENTS = [
-  "integrate.api.nvidia.com",
-  "cerebras.ai",
-  "api.x.ai",
-  "api.together.ai",
-  "api.together.xyz",
-  "chutes.ai",
-  "deepseek.com",
-  "api.z.ai",
-  "open.bigmodel.cn",
-  "api.moonshot.",
-  "api.cloudflare.com",
-  "gateway.ai.cloudflare.com",
-  "api.ant-ling.com",
+const DEVELOPER_ROLE_URL_FRAGMENTS = [
+  "api.openai.com",
+  "openai.azure.com",
+  "api.azure.com",
 ];
 
 /**
- * Whether a provider/baseUrl is a known-good `developer`-role target, mirroring
- * pi's `detectCompat().supportsDeveloperRole` denylist (`openai-completions.ts`).
- * Every standard OpenAI-compatible provider qualifies EXCEPT the denylisted
- * "non-standard" ones (quirky system-role handling) and OpenRouter (which only
- * maps the `developer` role for Anthropic/OpenAI models).
+ * Whether a provider/baseUrl is a known-good `developer`-role target. An
+ * allowlist (not a denylist): only OpenAI / Azure OpenAI and OpenRouter
+ * Anthropic/OpenAI models opt in to `developer`; everything else conservatively
+ * uses `system` so a provider that doesn't understand the role can't 400 the
+ * whole request. Reasoning still works under `system` — the `developer` role is
+ * only an instruction-hierarchy nicety, not a requirement.
  */
 export function supportsDeveloperRole(opts: { baseUrl?: string; provider?: string; modelId?: string }): boolean {
   const baseUrl = opts.baseUrl ?? "";
   const provider = opts.provider ?? "";
-  const isNonStandard =
-    NON_STANDARD_PROVIDERS.has(provider) ||
-    NON_STANDARD_URL_FRAGMENTS.some((frag) => baseUrl.includes(frag));
-  const isOpenRouter = provider === "openrouter" || baseUrl.includes("openrouter.ai");
-  const isOpenRouterDevModel =
-    isOpenRouter && (opts.modelId?.startsWith("anthropic/") || opts.modelId?.startsWith("openai/"));
-  return isOpenRouterDevModel || (!isNonStandard && !isOpenRouter);
+  // OpenRouter maps the `developer` role only for Anthropic/OpenAI models.
+  if (provider === "openrouter" || baseUrl.includes("openrouter.ai")) {
+    return (opts.modelId?.startsWith("anthropic/") ?? false) || (opts.modelId?.startsWith("openai/") ?? false);
+  }
+  return DEVELOPER_ROLE_URL_FRAGMENTS.some((frag) => baseUrl.includes(frag));
 }
 
 /**
@@ -352,7 +365,7 @@ export function resolveSystemRole(opts: { isReasoningModel?: boolean; baseUrl?: 
 /** A message that may carry reasoning metadata for round-tripping. */
 export interface OutgoingMessage {
   role: string;
-  content: string | null;
+  content: string | null | ContentPart[];
   tool_calls?: unknown[];
   tool_call_id?: string;
   /** Chain-of-thought text recorded from the provider's reasoning field. */
@@ -364,6 +377,21 @@ export interface OutgoingMessage {
 }
 
 const REASONING_KEY_SET = new Set<string>(REASONING_FIELDS);
+
+/** Internal message metadata persisted for reasoning round-trip — never sent to the provider. */
+const INTERNAL_MESSAGE_KEYS = ["reasoning", "reasoningField", "reasoningModel"] as const;
+
+/**
+ * Drop internal round-trip metadata from a message before it leaves the process.
+ * These fields are meaningful only to Cairn (which model produced the reasoning);
+ * a stray `reasoningModel` etc. on an outgoing message can 400 on strict
+ * OpenAI-compatible endpoints that reject unknown fields.
+ */
+function stripInternalMessageFields(m: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...m };
+  for (const key of INTERNAL_MESSAGE_KEYS) delete out[key];
+  return out;
+}
 
 /** True when an assistant message is safe to send: content, tool calls, or round-tripped reasoning. */
 function isOutgoingSendable(m: Record<string, unknown>): boolean {
@@ -446,7 +474,7 @@ export async function prepareContextMessages<M extends OutgoingMessage>(opts: {
         outgoing = { ...raw, content: [existing, ri.reasoning].filter(Boolean).join("\n\n") };
       }
     } else {
-      outgoing = raw;
+      outgoing = stripInternalMessageFields(raw);
     }
     if (!isOutgoingSendable(outgoing)) continue;
     out.push(outgoing as unknown as OpenAIMessage);

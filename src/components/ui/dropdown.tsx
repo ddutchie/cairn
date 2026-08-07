@@ -23,8 +23,8 @@ export function DropdownMenuContent({
     <RadixDropdown.Portal>
       <RadixDropdown.Content
         className={cn(
-          "z-50 min-w-[160px] rounded-lg p-1",
-          "bg-[var(--surface-2)] border border-[var(--border)] shadow-2xl",
+          "z-50 min-w-[160px] rounded-lg py-1",
+          "bg-[var(--surface)] border border-[var(--border)] shadow-lg",
           "animate-fade-in",
           className
         )}
@@ -48,10 +48,9 @@ export function DropdownMenuItem({
   return (
     <RadixDropdown.Item
       className={cn(
-        "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm cursor-pointer",
-        "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
-        "hover:bg-[var(--surface-3)] focus:outline-none",
-        "transition-colors duration-100",
+        "flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer",
+        "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] data-[highlighted]:bg-[var(--surface-2)] data-[highlighted]:text-[var(--text-primary)]",
+        "focus:outline-none transition-colors duration-100",
         className
       )}
       {...props}
@@ -82,9 +81,9 @@ export function DropdownMenuCheckboxItem({
   return (
     <RadixDropdown.CheckboxItem
       className={cn(
-        "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm cursor-pointer",
-        "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
-        "hover:bg-[var(--surface-3)] focus:outline-none",
+        "flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer",
+        "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] data-[highlighted]:bg-[var(--surface-2)] data-[highlighted]:text-[var(--text-primary)]",
+        "focus:outline-none transition-colors duration-100",
         className
       )}
       checked={checked}

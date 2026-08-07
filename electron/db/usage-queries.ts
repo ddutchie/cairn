@@ -334,3 +334,13 @@ export function queryRecentUsage(db: Database.Database, filter: UsageQueryFilter
     createdAt: Number(r.created_at) || 0,
   }));
 }
+
+/**
+ * Delete usage-log rows, optionally scoped like the view (a workspace plus its
+ * global one-shot rows). Returns the number of rows removed. Destructive —
+ * callers confirm in the UI before invoking.
+ */
+export function clearLlmUsage(db: Database.Database, filter?: UsageQueryFilter): number {
+  const where = filter ? whereClause(filter) : { sql: "", params: [] };
+  return db.prepare(`DELETE FROM llm_usage${where.sql}`).run(...where.params).changes;
+}

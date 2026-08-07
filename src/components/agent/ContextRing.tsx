@@ -8,6 +8,7 @@ import { useShallow } from "zustand/react/shallow";
 import { formatBalance, formatUsd } from "../../../shared/chat/provider-credits";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TokenBreakdown } from "@/types";
+import { cacheHitColor } from "@/lib/cache-metrics";
 
 /** Provider remaining-balance (account-level), the desktop CreditInfo shape. */
 interface ProviderBalance {
@@ -336,7 +337,7 @@ export function ContextRing({
               {cacheRead > 0 && promptTokens > 0 && (
                 <div className="flex items-center justify-between text-[0.714rem]">
                   <span className="text-[var(--text-tertiary)]">% of input cached</span>
-                  <span className="font-mono text-[var(--text-tertiary)]">
+                  <span className="font-mono font-medium" style={{ color: cacheHitColor(cacheRead / promptTokens) }}>
                     {Math.round((cacheRead / promptTokens) * 100)}%
                   </span>
                 </div>

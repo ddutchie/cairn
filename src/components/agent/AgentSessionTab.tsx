@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { ChevronDown, History, MessageSquare, Trash2 } from "lucide-react";
+import { ChevronDown, History, Code2, Trash2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatDateCompact } from "@/lib/utils";
 import { useAgentSessionActions } from "./useAgentSessionActions";
@@ -74,7 +74,7 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
             : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
         )}
       >
-        <MessageSquare size={11} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
+        <Code2 size={11} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
         <span className="max-w-[100px] truncate">Cairn Agent</span>
       </button>
       <button

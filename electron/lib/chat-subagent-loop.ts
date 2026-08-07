@@ -20,7 +20,8 @@
 
 import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
-import { buildApiUrl, type OpenAIMessage, isSendableMessage } from "./llm";
+import { buildApiUrl, type OpenAIMessage, isSendableMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "./llm";
+import { AUTO_OUTPUT_TOKEN_CAP } from "./llm-stream";
 import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
 import { parseToolArgs } from "./parse-tool-args";
@@ -216,7 +217,7 @@ export interface SubagentEvents {
   /** A tool call finished inside a subagent. */
   onSubagentToolCallDone?: (e: { childId: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void;
   /** Latest token usage for a subagent (its OWN context window) — drives its ring. */
-  onSubagentUsage?: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number }) => void;
+  onSubagentUsage?: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: TokenBreakdown }) => void;
 }
 
 const DISPATCH_SYSTEM_PROMPT = (date: string) =>
@@ -279,6 +280,10 @@ async function runSubagent(
     }
   };
 
+  // The subagent's advertised tool set (used both for the request and for its
+  // own prompt breakdown — mirrors how the main chat ring computes its split).
+  const subTools = filterTools(allowedTools) as unknown as typeof TOOLS;
+
   const result = await runToolLoop(
     db,
     req,
@@ -318,7 +323,15 @@ async function runSubagent(
       // so the renderer can give it a dedicated ring. prompt_tokens is the size
       // of the context this turn, not a running sum — take the latest value.
       addCost(cost);
-      if (childId) events?.onSubagentUsage?.({ childId, promptTokens: pt, completionTokens: ct, reasoningTokens: rt, costUsd: costAcc.usd, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreate });
+      // Per-category prompt split for this subagent's ring (pi parity) — the
+      // system prompt + the subagent's own messages + its restricted tool set.
+      let breakdown: TokenBreakdown | undefined;
+      try {
+        breakdown = scaleBreakdown(calculatePromptBreakdown(systemPrompt, messages, subTools), pt);
+      } catch (err) {
+        console.error("[chat-subagent] failed to calculate breakdown:", err);
+      }
+      if (childId) events?.onSubagentUsage?.({ childId, promptTokens: pt, completionTokens: ct, reasoningTokens: rt, costUsd: costAcc.usd, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreate, breakdown });
     },
     (e) => {
       // Count tool errors by sniffing the JSON output for an error field.
@@ -330,7 +343,7 @@ async function runSubagent(
     childId ? (delta) => events?.onSubagentToken?.({ childId, delta }) : undefined,
     childId ? (delta) => events?.onSubagentThought?.({ childId, delta }) : undefined,
     [],
-    filterTools(allowedTools) as unknown as typeof TOOLS,
+    subTools,
     argMutator,
   );
 
@@ -345,7 +358,7 @@ async function runSubagent(
   if (metrics.toolCalls > 0 || messages.some((m) => m.role === "tool")) {
     const forced = await forceFinalAnswer(
       cfg, messages, metrics, addCost, signal,
-      req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined,
+      req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : AUTO_OUTPUT_TOKEN_CAP,
       { sessionId: childId, projectId: req.projectId, workspaceId: req.workspaceId },
     );
     if (forced.trim()) {
@@ -464,8 +477,8 @@ export async function runDispatchLoop(
   const argMutator = opts?.argMutator;
   const events = opts?.events;
   const signal = opts?.signal;
-  // Undefined/0 → omit max_tokens (let the model finish naturally).
-  const maxTokens = req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined;
+  // Undefined/0 → Auto: send the generous 32K cap so the model finishes naturally.
+  const maxTokens = req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : AUTO_OUTPUT_TOKEN_CAP;
   let subSeq = 0;
   const date = new Date().toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",

@@ -117,6 +117,11 @@ export interface ChatUsage {
   /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost),
    *  when present. Shown in the context ring breakdown. */
   costUsd?: number;
+  /** Prompt tokens served from the provider's cache this turn (0 when the
+   *  provider doesn't cache/report). */
+  cacheReadTokens?: number;
+  /** Prompt tokens written to the provider's cache this turn (0 when not split out). */
+  cacheCreationTokens?: number;
 }
 
 /** A provider streams normalised events for a turn. */

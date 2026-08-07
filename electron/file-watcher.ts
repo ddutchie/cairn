@@ -20,7 +20,7 @@ import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
-import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile, importVaultProjects, isImportPathExcluded } from "./notes-files";
+import { parseNoteFile, adoptExternalNoteFile, importVaultProjects, isImportPathExcluded, reconcileOwnedNote, touchAdoptedBaseline, flushAdoptedLedger, readImportConfig } from "./notes-files";
 import { findNoteFilePath, noteDir } from "./shared/notes-io";
 import * as q from "./db/queries";
 
@@ -221,8 +221,15 @@ function handleFileAdd(filePath: string, workspacePath: string, db: Database.Dat
   if (!note) return;
   if (skipIfOrphan(filePath, note.id, hadCairnId, db)) return;
   pathToNoteId.set(filePath, note.id);
-  if (suppressedNoteIds.has(note.id)) return;
-  upsertNoteFromFile(db, note);
+  if (suppressedNoteIds.has(note.id)) {
+    // Cairn's own write echoed back — the row and file are now in sync; refresh
+    // the adoption baseline so a later external edit isn't seen as both-changed.
+    touchAdoptedBaseline(workspacePath, note.id, note.content ?? "");
+    flushAdoptedLedger(workspacePath);
+    return;
+  }
+  reconcileOwnedNote(db, workspacePath, filePath, note, readImportConfig(workspacePath));
+  flushAdoptedLedger(workspacePath);
   onChanged();
 }
 
@@ -235,8 +242,14 @@ function handleFileChange(filePath: string, workspacePath: string, db: Database.
   if (!note) return;
   if (skipIfOrphan(filePath, note.id, hadCairnId, db)) return;
   pathToNoteId.set(filePath, note.id);
-  if (suppressedNoteIds.has(note.id)) return;
-  upsertNoteFromFile(db, note);
+  if (suppressedNoteIds.has(note.id)) {
+    // Cairn's own write echoed back — keep the adoption baseline in sync.
+    touchAdoptedBaseline(workspacePath, note.id, note.content ?? "");
+    flushAdoptedLedger(workspacePath);
+    return;
+  }
+  reconcileOwnedNote(db, workspacePath, filePath, note, readImportConfig(workspacePath));
+  flushAdoptedLedger(workspacePath);
   onChanged();
 }
 

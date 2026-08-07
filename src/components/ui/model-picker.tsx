@@ -205,7 +205,7 @@ export function ModelPicker({
           >
             {value ? (
               <>
-                <div className="flex items-center gap-1.5 min-w-0 pr-4">
+                <div className="flex items-center gap-1 min-w-0 pr-4">
                   {triggerLogo && (
                     <img
                       src={triggerLogo}
@@ -223,7 +223,7 @@ export function ModelPicker({
                     </Tooltip>
                   )}
                 </div>
-                <div className="flex items-center gap-2 pl-4 text-[0.607rem] text-[var(--text-tertiary)]">
+                <div className="flex items-center justify-between gap-2 text-[0.607rem] text-[var(--text-tertiary)]">
                   <CapabilityChips info={triggerInfo} />
                   {triggerCost && <span className="tabular-nums">{triggerCost}</span>}
                 </div>
@@ -402,7 +402,7 @@ function ModelRow({
             </Tooltip>
           )}
         </div>
-        <div className="flex items-center gap-2 pl-5 text-[0.607rem] text-[var(--text-tertiary)]">
+        <div className="flex items-center justify-between gap-2 pl-5 text-[0.607rem] text-[var(--text-tertiary)]">
           <CapabilityChips info={info} />
           {cost && <span className="tabular-nums">{cost}</span>}
         </div>

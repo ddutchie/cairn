@@ -76,6 +76,24 @@ describe("consumeAssistantStream", () => {
     expect(turn.content).toBe("x");
     expect(turn.finishReason).toBeNull();
   });
+
+  it("synthesizes UNIQUE ids for truncated tool calls across turns (no duplicate tool_call_id)", async () => {
+    const sseForTruncatedCall = () =>
+      sseReader(
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "ls", arguments: "" } }] } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "{\"pat" } }] } }], finish_reason: "length" })}\n\n`,
+        "data: [DONE]\n\n",
+      );
+
+    const first = await consumeAssistantStream(sseForTruncatedCall(), {});
+    const second = await consumeAssistantStream(sseForTruncatedCall(), {});
+
+    expect(first.toolCalls).toHaveLength(1);
+    expect(second.toolCalls).toHaveLength(1);
+    // Both calls lost their id chunk → both must be synthesized, never colliding.
+    expect(first.toolCalls[0].id).not.toBe(second.toolCalls[0].id);
+    expect(first.toolCalls[0].id.length).toBeGreaterThan(0);
+  });
 });
 
 describe("prepareContextMessages", () => {
@@ -167,6 +185,38 @@ describe("prepareContextMessages", () => {
     expect(out[1]).toMatchObject({ role: "assistant", content: "kept" });
   });
 
+  it("never leaks internal round-trip metadata to the provider", async () => {
+    const out = await prepareContextMessages({
+      systemPrompt: "sys",
+      currentModelKey: "a::m",
+      messages: [
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "call_1", type: "function", function: { name: "ls", arguments: "{}" } }],
+          reasoning: undefined,
+          reasoningField: undefined,
+          reasoningModel: "a::m",
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_1",
+          content: "ran",
+        },
+      ],
+    });
+
+    const serialized = JSON.stringify(out);
+    expect(serialized).not.toContain("reasoningModel");
+    expect(serialized).not.toContain("reasoningField");
+    expect(out[1]).toMatchObject({
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "call_1", type: "function", function: { name: "ls", arguments: "{}" } }],
+    });
+    expect(out[2]).toMatchObject({ role: "tool", tool_call_id: "call_1", content: "ran" });
+  });
+
   it("uses the requested system role for the prepended message", async () => {
     const out = await prepareContextMessages({
       systemPrompt: "sys",
@@ -177,24 +227,35 @@ describe("prepareContextMessages", () => {
 
     expect(out[0]).toEqual({ role: "developer", content: "sys" });
   });
+
+  it("passes attachment content parts through on user messages (agent image support)", async () => {
+    const parts = [
+      { type: "text" as const, text: "What's in this image?" },
+      { type: "image_url" as const, image_url: { url: "data:image/png;base64,AAAA" } },
+    ];
+    const out = await prepareContextMessages({
+      systemPrompt: "sys",
+      currentModelKey: "a::m",
+      messages: [{ role: "user", content: parts }],
+    });
+
+    expect(out).toHaveLength(2); // system + user
+    expect(out[1]).toMatchObject({ role: "user", content: parts });
+    expect(JSON.stringify(out)).toContain("image_url");
+  });
 });
 
 describe("resolveSystemRole (pi parity)", () => {
-  it("uses developer for reasoning models on standard OpenAI-compatible providers", () => {
+  it("uses developer for reasoning models on known-good OpenAI/Azure endpoints", () => {
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://api.openai.com/v1", provider: "openai", modelId: "gpt-5" }))
       .toBe("developer");
-    expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://example.com/v1", modelId: "o3" }))
+    expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://myres.openai.azure.com/openai/deployments/gpt-5", provider: "azure", modelId: "gpt-5" }))
       .toBe("developer");
   });
 
-  it("stays system for non-reasoning models", () => {
-    expect(resolveSystemRole({ isReasoningModel: false, baseUrl: "https://api.openai.com/v1" }))
+  it("stays system on unknown/custom endpoints (they may 400 on the developer role)", () => {
+    expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://example.com/v1", modelId: "o3" }))
       .toBe("system");
-    expect(resolveSystemRole({ baseUrl: "https://api.openai.com/v1" }))
-      .toBe("system");
-  });
-
-  it("stays system on the denylisted providers (pi detectCompat)", () => {
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://api.deepseek.com/v1", modelId: "deepseek-r1" }))
       .toBe("system");
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://integrate.api.nvidia.com/v1" }))
@@ -202,6 +263,13 @@ describe("resolveSystemRole (pi parity)", () => {
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://api.together.ai/v1" }))
       .toBe("system");
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "http://127.0.0.1:8080/v1", provider: "localllm" }))
+      .toBe("system");
+  });
+
+  it("stays system for non-reasoning models", () => {
+    expect(resolveSystemRole({ isReasoningModel: false, baseUrl: "https://api.openai.com/v1" }))
+      .toBe("system");
+    expect(resolveSystemRole({ baseUrl: "https://api.openai.com/v1" }))
       .toBe("system");
   });
 
@@ -214,9 +282,11 @@ describe("resolveSystemRole (pi parity)", () => {
       .toBe("system");
   });
 
-  it("exposes the denylist predicate for consumers", () => {
+  it("exposes the allowlist predicate for consumers", () => {
     expect(supportsDeveloperRole({ baseUrl: "https://api.openai.com/v1" })).toBe(true);
+    expect(supportsDeveloperRole({ baseUrl: "https://myres.openai.azure.com" })).toBe(true);
     expect(supportsDeveloperRole({ baseUrl: "https://api.deepseek.com/v1" })).toBe(false);
+    expect(supportsDeveloperRole({ baseUrl: "https://gateway.console.go/v1" })).toBe(false);
   });
 });
 

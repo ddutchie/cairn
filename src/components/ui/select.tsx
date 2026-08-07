@@ -47,8 +47,8 @@ export interface SelectProps<V extends string | number> {
 }
 
 const SIZE_CLASSES = {
-  sm: "px-2 py-1 text-[0.714rem]",
-  md: "px-2 py-2 text-sm",
+  sm: "px-2.5 py-1.5 text-xs",
+  md: "px-2.5 py-2 text-sm",
 } as const;
 
 export function Select<V extends string | number>({
@@ -75,7 +75,7 @@ export function Select<V extends string | number>({
           disabled={disabled}
           aria-label={ariaLabel}
           className={cn(
-            "flex items-center justify-between gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-primary)] transition-colors hover:border-[var(--muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:border-[var(--accent)] disabled:opacity-50",
+            "flex items-center justify-between gap-1.5 rounded-md border border-[var(--border)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:border-[var(--accent)] disabled:opacity-50",
             SIZE_CLASSES[size],
             className
           )}
@@ -92,7 +92,7 @@ export function Select<V extends string | number>({
               key={String(o.value)}
               disabled={o.disabled}
               onSelect={() => onChange(o.value)}
-              className={cn(active && "text-[var(--text-primary)]")}
+              className={cn(active && "text-[var(--accent)] bg-[var(--accent-dim)]")}
             >
               <span className="w-4 flex-shrink-0 flex items-center justify-center">
                 {active && <Check size={12} className="text-[var(--accent)]" />}

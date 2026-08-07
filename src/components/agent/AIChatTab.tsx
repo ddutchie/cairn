@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, ChevronDown, Sparkles, History, Pencil } from "lucide-react";
+import { X, ChevronDown, MessageSquare, History, Pencil } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 
@@ -79,7 +79,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
             : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
         )}
       >
-        <Sparkles size={11} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
+        <MessageSquare size={11} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
         <span>AI Chat</span>
         {projectThreads.length > 1 && (
           <span

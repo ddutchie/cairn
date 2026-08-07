@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Settings2, GitBranch, ExternalLink } from "lucide-react";
 import { useCairnStore } from "@/store";
@@ -8,61 +8,34 @@ import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Toggle } from "@/components/ui/toggle";
-import { ModelPicker } from "@/components/ui/model-picker";
-import { Select } from "@/components/ui/select";
-import { useEndpointConfig, isLocalBaseUrl } from "@/components/settings/endpoint-components";
 
 const MAX_STEPS_PRESETS = [10, 20, 30, 50, 1000] as const;
 
 /**
  * In-chat quick-settings popover. Surfaces the handful of AI settings people
- * change *while chatting* — model, max steps, temperature, subagents — editing
- * the SAME global aiConfig as Settings → AI & Chat (no per-thread overrides).
- * The full endpoint / API-key / MCP surface stays in Settings behind the
- * "More settings…" link. Replaces the old inline Subagents pill.
+ * change *while chatting* — max steps, temperature, subagents — editing the
+ * SAME global aiConfig as Settings → AI & Chat (no per-thread overrides).
+ * Provider & model moved out: the ProviderModelPicker row below the input is
+ * the always-in-reach way to switch those. The full endpoint / API-key / MCP
+ * surface stays in Settings behind the "More settings…" link.
  *
  * `disabled` mirrors the toolbar's isLoading guard so settings can't be changed
  * mid-stream.
  */
 export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
-  const { aiConfig, setAIConfig, selectSavedProvider, setSettingsSection, setView } = useCairnStore(
+  const { aiConfig, setAIConfig, setSettingsSection, setView } = useCairnStore(
     useShallow((s) => ({
       aiConfig: s.aiConfig,
       setAIConfig: s.setAIConfig,
-      selectSavedProvider: s.selectSavedProvider,
       setSettingsSection: s.setSettingsSection,
       setView: s.setView,
     })),
   );
 
   const [open, setOpen] = useState(false);
-  const { availableModels, fetchModels, ensureModels, modelsLoading, testState } = useEndpointConfig();
 
   const provider = aiConfig.provider ?? "openai";
-  const isLocal = isLocalBaseUrl(aiConfig.baseUrl);
   const subagentsSupported = provider !== "localllm";
-
-  const savedProviders = aiConfig.savedProviders ?? [];
-  const activeProviderId = aiConfig.activeProviderId;
-
-  // Populate the endpoint's model list when the popover opens (cloud only) —
-  // from the per-endpoint cache if present, else fetch once. No hardcoded
-  // fallbacks: the picker shows only real models. Refresh re-queries anytime.
-  useEffect(() => {
-    if (open && provider !== "localllm") {
-      ensureModels(aiConfig.baseUrl, aiConfig.apiKey);
-    }
-    // Re-resolve when a provider switch changes the endpoint.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, aiConfig.baseUrl]);
-
-  const handleProviderChange = useCallback((value: string) => {
-    if (value === "__localllm__") {
-      setAIConfig({ provider: "localllm", activeProviderId: undefined });
-    } else {
-      selectSavedProvider(value);
-    }
-  }, [selectSavedProvider, setAIConfig]);
 
   const openFullSettings = useCallback(() => {
     setSettingsSection("ai");
@@ -73,11 +46,9 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
   const maxSteps = aiConfig.maxSteps ?? 30;
   const temperature = aiConfig.temperature ?? 0.3;
 
-  const providerSelectValue = provider === "localllm" ? "__localllm__" : (activeProviderId ?? "");
-
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Tooltip content="Chat settings — model, steps, temperature, subagents" side="left">
+      <Tooltip content="Chat settings — steps, temperature, subagents" side="left">
         <Popover.Trigger asChild>
           <button
             aria-label="Chat settings"
@@ -98,48 +69,10 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
           side="bottom"
           align="end"
           sideOffset={6}
-          onInteractOutside={(e) => {
-            // The model picker's dropdown is PORTALED outside this content —
-            // clicking an option must not close the whole quick-settings.
-            const target = e.target as Element | null;
-            if (target?.closest("[data-radix-popper-content-wrapper]")) e.preventDefault();
-          }}
           className="z-50 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl p-3 space-y-3 animate-fade-in focus:outline-none"
         >
           <div className="text-[0.643rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
             Chat settings
-          </div>
-
-          {/* Provider */}
-          <div className="space-y-1">
-            <span className="text-[0.714rem] text-[var(--text-secondary)]">Provider</span>
-            <Select
-              value={providerSelectValue}
-              onChange={handleProviderChange}
-              disabled={disabled}
-              placeholder="Select provider"
-              ariaLabel="Provider"
-              className="w-full"
-              options={[
-                { value: "__localllm__", label: "On-device (Llama)" },
-                ...savedProviders.map((p) => ({ value: p.id, label: p.name })),
-              ]}
-            />
-          </div>
-
-          {/* Model */}
-          <div className="space-y-1">
-            <span className="text-[0.714rem] text-[var(--text-secondary)]">Model</span>
-            <ModelPicker
-              value={aiConfig.model ?? ""}
-              options={availableModels}
-              loading={modelsLoading}
-              errored={testState === "error"}
-              disabled={disabled}
-              placeholder={isLocal ? "local model" : "gpt-5.6-luna"}
-              onChange={(m) => setAIConfig({ model: m })}
-              onRefresh={() => fetchModels(aiConfig.baseUrl, aiConfig.apiKey)}
-            />
           </div>
 
           {/* Max steps */}

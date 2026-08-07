@@ -380,7 +380,7 @@ const api = {
       ipcRenderer.on("chat:subagent-tool-call-done", handler);
       return () => ipcRenderer.off("chat:subagent-tool-call-done", handler);
     },
-    onSubagentUsage: (cb: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; threadId?: string }) => void) => {
+    onSubagentUsage: (cb: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: unknown; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: any) => cb(e);
       ipcRenderer.on("chat:subagent-usage", handler);
@@ -472,6 +472,9 @@ const api = {
       invoke<UsageOverviewData>("usage:overview", args),
     recent: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number; excludeEstimated?: boolean }) =>
       invoke<UsageRecentRow[]>("usage:recent", args),
+    /** Destructive — delete recorded usage rows scoped to the workspace filter. */
+    clear: (args: { workspaceId?: string }) =>
+      invoke<{ deleted: number; ok: boolean }>("usage:clear", args),
     /** Push the models.dev per-1M pricing map (used for cost estimation). */
     setPricing: (map: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }>) =>
       invoke<{ ok: boolean }>("app:modelPricing", map),
@@ -512,6 +515,7 @@ const api = {
   setAccent: (accent: string) => invoke("app:setAccent", accent),
   initWorkspace: (workspacePath: string, excludedFolders?: string[]) => invoke<{ ok: true }>("app:initWorkspace", { workspacePath, excludedFolders }),
   rescanWorkspace: (workspaceId?: string, excludedFolders?: string[]) => invoke<{ projectsCreated: number; createdProjects: { id: string; name: string; noteCount: number }[] }>("app:rescanWorkspace", { workspaceId, excludedFolders }),
+  rollbackImport: (projectIds: string[]) => invoke<{ removedNotes: number; ok: boolean }>("app:rollbackImport", { projectIds }),
   probeWorkspaceFolder: (folder: string) => invoke<{ isObsidianVault: boolean; vaultName: string; noteCount: number; skippedCount: number; projects: { name: string; noteCount: number; root: boolean; projectKey: string }[]; excludedFolders: string[] }>("app:probeWorkspaceFolder", { folder }),
   relaunch: () => invoke("app:relaunch"),
   resetAllData: () => invoke("app:reset"),

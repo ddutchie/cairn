@@ -1,14 +1,18 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import React, { useMemo, useState, useEffect, useSyncExternalStore } from "react";
+import { RefreshCw, Percent, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUsage, USAGE_RANGES } from "@/hooks/useUsage";
 import { UsageChart, type UsageMetric } from "./UsageChart";
 import { Select } from "@/components/ui/select";
+import { Tooltip } from "@/components/ui/tooltip";
+import { cacheHitColor } from "@/lib/cache-metrics";
 import { fmtCompact, fmtFull, fmtDateTime } from "./usage-format";
 import { formatUsd } from "../../../shared/chat/provider-credits";
 import { USAGE_SOURCE_LABELS, type UsageSource, type UsageTotals } from "@/types/usage";
+import { modelLogoUrl, prewarmModelCatalog, getModelCatalogVersion, subscribeModelCatalog } from "@/lib/models-dev";
+import { providerLogoUrl, endpointLogoSlug } from "../../../shared/models/model-catalog";
 
 const MODEL_PALETTE = [
   "var(--accent)",
@@ -54,6 +58,37 @@ function modelColor(model: string): string {
   return MODEL_PALETTE[(h >>> 0) % MODEL_PALETTE.length];
 }
 
+/** The model's provider logo (models.dev), falling back to the colour dot when
+ *  the catalog hasn't resolved it. Dropped silently on a 404 like the model
+ *  picker does. */
+function ModelLogo({ model, color }: { model: string; color: string }) {
+  const url = modelLogoUrl(model);
+  if (!url) return <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />;
+  return (
+    <img
+      src={url}
+      alt=""
+      className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+    />
+  );
+}
+
+/** The provider logo for an endpoint (models.dev logo slug from the base URL). */
+function ProviderLogo({ baseUrl }: { baseUrl: string | null }) {
+  const slug = endpointLogoSlug(baseUrl ?? "");
+  const url = slug ? providerLogoUrl(slug) : null;
+  if (!url) return null;
+  return (
+    <img
+      src={url}
+      alt=""
+      className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+    />
+  );
+}
+
 const SOURCE_TAG_STYLE: Record<string, string> = {
   chat: "bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[var(--accent-hover)]",
   "pi-agent": "bg-[color-mix(in_srgb,var(--info)_14%,transparent)] text-[var(--info)]",
@@ -93,13 +128,13 @@ function Segmented<T extends string | number>({ options, value, onChange }: {
   );
 }
 
-function StatCard({ label, value, valueClass, delta }: { label: string; value: string; valueClass?: string; delta?: string }) {
+function StatCard({ label, value, valueClass, valueStyle, delta, deltaStyle }: { label: string; value: string; valueClass?: string; valueStyle?: React.CSSProperties; delta?: string; deltaStyle?: React.CSSProperties }) {
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 flex flex-col gap-0.5">
       <div className="text-[0.643rem] uppercase tracking-[0.07em] text-[var(--text-tertiary)]">{label}</div>
-      <div className={`font-mono text-xl font-semibold tabular-nums tracking-tight ${valueClass ?? "text-[var(--text-primary)]"}`}>{value}</div>
+      <div className={`font-mono text-xl font-semibold tabular-nums tracking-tight ${valueClass ?? "text-[var(--text-primary)]"}`} style={valueStyle}>{value}</div>
       {delta ? (
-        <div className={cn("text-[0.643rem]", delta.startsWith("↑") ? "text-[var(--success)]" : delta.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")}>{delta}</div>
+        <div className={cn("text-[0.643rem]", delta.startsWith("↑") ? "text-[var(--success)]" : delta.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")} style={deltaStyle}>{delta}</div>
       ) : (
         <div className="text-[0.643rem] text-[var(--text-tertiary)]">—</div>
       )}
@@ -119,14 +154,30 @@ export function UsageView() {
   const [metric, setMetric] = useState<UsageMetric>("tokens");
   const [source, setSource] = useState<UsageSource | "">("");
   // Estimated rows (models.dev price guess, no provider-reported cost) shown by
-  // default; off → they're dropped from every aggregate and the history.
-  const [excludeEstimated, setExcludeEstimated] = useState(false);
+  // default (toggle on); off → they're dropped from every aggregate + history.
+  const [includeEstimated, setIncludeEstimated] = useState(true);
 
   const range = USAGE_RANGES[rangeIdx];
-  const { overview, recent, loading, refresh } = useUsage(range.days, source, excludeEstimated);
+  const { overview, recent, loading, refresh, clear } = useUsage(range.days, source, !includeEstimated);
+  // Two-step destructive confirm for the clear action; auto-disarms after 4s.
+  const [confirmClear, setConfirmClear] = useState(false);
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
+
+  // Load the models.dev catalog (for model/provider logos) and re-render when it
+  // arrives or refreshes, so the icons appear once resolution is possible.
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+  useEffect(() => { prewarmModelCatalog(); }, []);
 
   const totals = overview?.totals;
   const rangeLabel = range.days == null ? "period" : `${range.days}d`;
+
+  // Overall cache-read share of input, for the "Cached input" stat colour.
+  const cachePct = totals && totals.promptTokens > 0 ? totals.cacheReadTokens / totals.promptTokens : 0;
+  const cacheColor = totals && cachePct > 0 ? cacheHitColor(cachePct) : undefined;
 
   const byModel = useMemo(() => {
     if (!overview) return [];
@@ -168,32 +219,55 @@ export function UsageView() {
             onChange={setRangeIdx}
           />
           <button
-            onClick={() => setExcludeEstimated((v) => !v)}
-            aria-pressed={excludeEstimated}
+            onClick={() => setIncludeEstimated((v) => !v)}
+            aria-pressed={includeEstimated}
             title={
-              excludeEstimated
-                ? "Estimates hidden — only calls with a provider-reported cost are shown"
-                : "Estimates shown — calls whose cost is estimated from models.dev pricing are included"
+              includeEstimated
+                ? "Estimates shown — calls whose cost is estimated from models.dev pricing are included"
+                : "Estimates hidden — only calls with a provider-reported cost are shown"
             }
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs transition-colors",
-              excludeEstimated
-                ? "border-[var(--accent)] bg-[var(--accent-dim)] text-[var(--accent)]"
-                : "border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition-colors",
+              includeEstimated
+                ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]"
+                : "border-[var(--border)] text-[var(--text-tertiary)]"
             )}
           >
-            <span className={cn("w-7 h-3.5 rounded-full transition-colors relative", excludeEstimated ? "bg-[var(--accent)]" : "bg-[var(--border)]")}>
-              <span className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--surface)] transition-all", excludeEstimated ? "left-4" : "left-0.5")} />
-            </span>
+            <Percent size={12} />
             Estimates
           </button>
-          <button
-            onClick={refresh}
-            title="Reload data"
-            className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
+          <Tooltip
+            content={confirmClear ? "Click again to delete all recorded usage" : "Clear recorded usage data"}
+            side="bottom"
           >
-            <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
-          </button>
+            <button
+              onClick={() => {
+                if (confirmClear) {
+                  setConfirmClear(false);
+                  void clear();
+                } else {
+                  setConfirmClear(true);
+                }
+              }}
+              className={cn(
+                "flex items-center gap-1 px-1.5 py-1 rounded border transition-colors",
+                confirmClear
+                  ? "border-[var(--danger)] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-2)]"
+              )}
+            >
+              <Trash2 size={11} className={confirmClear ? "text-[var(--danger)]" : ""} />
+              {confirmClear && <span className="text-[0.643rem] font-medium">Confirm</span>}
+            </button>
+          </Tooltip>
+          <Tooltip content="Reload data" side="bottom">
+            <button
+              onClick={refresh}
+              className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -204,7 +278,7 @@ export function UsageView() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <StatCard label="Input tokens" value={totals ? fmtCompact(totals.promptTokens) : "—"} valueClass="text-[var(--accent)]" delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "promptTokens", rangeLabel) : undefined} />
             <StatCard label="Output tokens" value={totals ? fmtCompact(totals.completionTokens) : "—"} />
-            <StatCard label="Cached input" value={totals ? fmtCompact(totals.cacheReadTokens) : "—"} valueClass="text-[var(--warning)]" delta={totals && totals.promptTokens > 0 && totals.cacheReadTokens > 0 ? `${Math.round((totals.cacheReadTokens / totals.promptTokens) * 100)}% of input` : ""} />
+            <StatCard label="Cached input" value={totals ? fmtCompact(totals.cacheReadTokens) : "—"} valueStyle={cacheColor ? { color: cacheColor } : undefined} delta={cacheColor ? `${Math.round(cachePct * 100)}% of input` : ""} deltaStyle={cacheColor ? { color: cacheColor } : undefined} />
             <StatCard label="Total cost" value={totals ? formatUsd(totals.costUsd) : "—"} delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "costUsd", rangeLabel) : undefined} />
             <StatCard label="Requests" value={totals ? fmtFull(totals.requests) : "—"} />
           </div>
@@ -257,7 +331,7 @@ export function UsageView() {
                       <div key={m.model}>
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-primary)] truncate">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                            <ModelLogo model={m.model} color={color} />
                             <span className="font-mono truncate">{m.model}</span>
                           </span>
                           <span className="inline-flex items-center gap-1.5 text-[0.643rem] text-[var(--text-tertiary)] shrink-0">
@@ -283,13 +357,13 @@ export function UsageView() {
               <div className="text-xs font-semibold text-[var(--text-primary)]">Usage history</div>
               <div className="text-[0.643rem] text-[var(--text-tertiary)]">{recent.length === 0 ? "" : `latest ${recent.length} calls`}</div>
             </div>
-            {recent.length > 0 && !excludeEstimated && (
+            {recent.length > 0 && includeEstimated && (
               <div className="px-4 pb-1 text-[0.643rem] text-[var(--text-tertiary)]">~ = estimated from models.dev pricing</div>
             )}
             {recent.length === 0 ? (
               <div className="px-4 py-8 text-xs text-[var(--text-tertiary)]">
-                {excludeEstimated
-                  ? "No calls with a provider-reported cost in this range — toggle the Estimates switch to include models.dev estimates."
+                {!includeEstimated
+                  ? "No calls with a provider-reported cost in this range — toggle the Estimates button to include models.dev estimates."
                   : "No LLM calls recorded yet — send a chat message or run an agent and it will appear here."}
               </div>
             ) : (
@@ -310,11 +384,15 @@ export function UsageView() {
                   </thead>
                   <tbody>
                     {recent.map((r) => (
-                      <tr key={r.id} className="border-b border-[var(--border-subtle)] last:border-0 hover:bg-[var(--surface-2)]">
+                      <tr
+                        key={r.id}
+                        style={{ borderLeftColor: modelColor(r.model) }}
+                        className="border-b border-l-2 border-[var(--border-subtle)] last:border-b-0 hover:bg-[var(--surface-2)]"
+                      >
                         <td className="px-4 py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]">{fmtDateTime(r.createdAt)}</td>
                         <td className="px-4 py-2 whitespace-nowrap">
                           <span className="inline-flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: modelColor(r.model) }} />
+                            <ModelLogo model={r.model} color={modelColor(r.model)} />
                             <span className="font-mono font-medium">{r.model}</span>
                           </span>
                         </td>
@@ -325,7 +403,7 @@ export function UsageView() {
                             <span className="inline-flex flex-col items-end leading-tight">
                               <span className="font-mono tabular-nums text-[var(--warning)]">{fmtFull(r.cacheReadTokens)}</span>
                               {r.promptTokens > 0 && (
-                                <span className="text-[0.571rem] text-[var(--text-tertiary)]">
+                                <span className="text-[0.571rem]" style={{ color: cacheHitColor(r.cacheReadTokens / r.promptTokens) }}>
                                   {Math.round((r.cacheReadTokens / r.promptTokens) * 100)}% of input
                                 </span>
                               )}
@@ -335,7 +413,12 @@ export function UsageView() {
                           )}
                         </td>
                         <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--text-tertiary)]">{r.reasoningTokens > 0 ? fmtFull(r.reasoningTokens) : "—"}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]">{r.provider ?? "—"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 text-[0.714rem] text-[var(--text-secondary)]">
+                            <ProviderLogo baseUrl={r.baseUrl} />
+                            {r.provider ?? "—"}
+                          </span>
+                        </td>
                         <td className="px-4 py-2 whitespace-nowrap">
                           <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[0.643rem] font-medium ${SOURCE_TAG_STYLE[r.source] ?? "bg-[var(--surface-2)] text-[var(--text-secondary)]"}`}>
                             {USAGE_SOURCE_LABELS[r.source] ?? r.source}

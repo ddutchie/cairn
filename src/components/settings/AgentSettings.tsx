@@ -446,9 +446,9 @@ export function AgentSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelAgent, contextAutoAgent]);
 
-  // Max output tokens — Auto (default) sends no cap so the model finishes
-  // naturally; a manual value is a deliberate ceiling. Same rationale as the
-  // AI Chat setting: capping stalls "thinking" models mid-reasoning.
+  // Max output tokens — Auto (default) sends a generous 32K cap (bounded by the
+  // model's advertised limit.output) so the model finishes naturally; a manual
+  // value is a deliberate cost/latency ceiling. Same rationale as AI Chat.
   const maxOutputAutoAgent = agentConfig.maxOutputAuto ?? true;
   const [advertisedMaxOutputAgent, setAdvertisedMaxOutputAgent] = useState<number | null>(null);
   useEffect(() => {
@@ -557,19 +557,19 @@ export function AgentSettings() {
           }
         />
 
-        {/* Max output tokens — Auto (default) sends no cap so the model finishes
-            naturally; a manual value is a deliberate ceiling. Capping stalls
-            reasoning models mid-thought. */}
+        {/* Max output tokens — Auto (default) sends a bounded 32K cap (clamped to
+            the model's limit.output) so the model finishes naturally; a manual
+            value is a deliberate cost/latency ceiling. */}
         <StepperSettingsRow
           label="Max output tokens"
           description={
             maxOutputAutoAgent
               ? advertisedMaxOutputAgent
-                ? `Auto: no limit — the agent's model finishes on its own (up to ${advertisedMaxOutputAgent.toLocaleString()} tokens, per models.dev). Recommended, especially for reasoning models. Set a value only to cap cost.`
-                : "Auto: no limit — the agent's model finishes on its own. Recommended, especially for reasoning models, which need room to think before acting. Set a value only to cap cost per turn."
+                ? `Auto: a 32K cap, clamped to "${modelAgent}"'s ${advertisedMaxOutputAgent.toLocaleString()} output tokens (models.dev). The model finishes on its own unless its limit is lower. Recommended, especially for reasoning models. Set a value only to cap cost.`
+                : "Auto: a 32K cap so the model finishes on its own (the cap is clamped to the model's output limit when models.dev knows it). Recommended, especially for reasoning models, which need room to think before acting. Set a value only to cap cost per turn."
               : advertisedMaxOutputAgent
-                ? `Manual cap per turn. Reasoning models count their thinking against this, so too low a value can stall them before they act. "${modelAgent}" supports up to ${advertisedMaxOutputAgent.toLocaleString()} tokens (models.dev). Tap Auto to remove the cap.`
-                : "Manual cap on output tokens per turn. Reasoning models count their thinking against this, so too low a value can stall them. Tap Auto to remove the cap."
+                ? `Manual cap per turn. Reasoning models count their thinking against this, so too low a value can stall them before they act. "${modelAgent}" supports up to ${advertisedMaxOutputAgent.toLocaleString()} tokens (models.dev). Tap Auto for the bounded 32K cap.`
+                : "Manual cap on output tokens per turn. Reasoning models count their thinking against this, so too low a value can stall them. Tap Auto for the bounded 32K cap."
           }
           icon="gauge"
           value={agentConfig.maxOutputTokens ?? 8192}
@@ -583,7 +583,7 @@ export function AgentSettings() {
           autoState={maxOutputAutoAgent ? "detected" : "idle"}
           autoActive={maxOutputAutoAgent}
           autoSuppressesValue
-          suppressedPlaceholder="No limit"
+          suppressedPlaceholder="Auto (32K)"
           onAuto={() => updateAgent({ maxOutputAuto: true })}
         />
 

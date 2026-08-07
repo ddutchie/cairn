@@ -49,6 +49,8 @@ export function ContextRing({
   completionTokens,
   reasoningTokens,
   costUsd,
+  cacheReadTokens,
+  cacheCreationTokens,
   size = 22,
   stroke = 3.5,
 }: {
@@ -61,6 +63,10 @@ export function ContextRing({
   reasoningTokens?: number;
   /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost). */
   costUsd?: number;
+  /** Prompt tokens served from the provider's cache this turn. */
+  cacheReadTokens?: number;
+  /** Prompt tokens written to the provider's cache this turn. */
+  cacheCreationTokens?: number;
   size?: number;
   stroke?: number;
 }) {
@@ -129,6 +135,16 @@ export function ContextRing({
   const answerTokens = Math.max(0, (completionTokens ?? 0) - thinkingTokens);
   const hasOutput = typeof completionTokens === "number" && completionTokens > 0;
 
+  // Prompt-cache row — mirror the desktop ContextRing. Higher cache-read % is
+  // better: green ≥50%, accent 25–50%, amber >0, grey none.
+  const cacheRead = cacheReadTokens ?? 0;
+  const cacheCreation = cacheCreationTokens ?? 0;
+  const hasCache = cacheRead > 0 || cacheCreation > 0;
+  const cachePct = promptTokens > 0 ? cacheRead / promptTokens : 0;
+  const cacheColor =
+    cachePct >= 0.5 ? t.success : cachePct >= 0.25 ? t.accent : cachePct > 0 ? t.warning : t.textSecondary;
+  const cacheValue = `${formatTokenCount(cacheRead)} read${cacheCreation > 0 ? ` · ${formatTokenCount(cacheCreation)} written` : ""}`;
+
   const a11yLabel = `Context ${pctLabel} used${estimated ? " (estimated)" : ""}. Tap for details.`;
   const summaryTitle = `${pctLabel} full · ${formatTokenCount(promptTokens)} / ${formatTokenCount(contextLimit)} tokens${estimated ? " (est.)" : ""}`;
 
@@ -163,6 +179,10 @@ export function ContextRing({
       lines.push("", "Output", `• Answer: ${formatTokenCount(answerTokens)}`);
       if (thinkingTokens > 0) lines.push(`• Thinking: ${formatTokenCount(thinkingTokens)}`);
       lines.push(`• Total: ${formatTokenCount(completionTokens as number)}`);
+    }
+    if (hasCache) {
+      lines.push("", "Prompt cache", `• ${cacheValue}`);
+      if (cachePct > 0) lines.push(`• ${Math.round(cachePct * 100)}% of input cached`);
     }
     if (typeof costUsd === "number" && costUsd > 0) {
       lines.push("", `Cost: ${formatUsd(costUsd)}`);
@@ -275,6 +295,17 @@ export function ContextRing({
                   {row("Answer", formatTokenCount(answerTokens))}
                   {thinkingTokens > 0 ? row("Thinking", formatTokenCount(thinkingTokens)) : null}
                   {row("Total", formatTokenCount(completionTokens as number))}
+                </VStack>
+              </>
+            ) : null}
+
+            {hasCache ? (
+              <>
+                <Divider />
+                <Text modifiers={[font({ textStyle: "caption", weight: "semibold" })]}>Prompt cache</Text>
+                <VStack alignment="leading" spacing={8}>
+                  {row("Cached", cacheValue, cacheColor)}
+                  {cachePct > 0 ? row("% of input", `${Math.round(cachePct * 100)}%`, cacheColor) : null}
                 </VStack>
               </>
             ) : null}

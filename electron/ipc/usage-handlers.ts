@@ -8,7 +8,7 @@
 
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
-import { queryUsageOverview, queryRecentUsage, type UsageQueryFilter, type UsageSource } from "../db/usage-queries";
+import { queryUsageOverview, queryRecentUsage, clearLlmUsage, type UsageQueryFilter, type UsageSource } from "../db/usage-queries";
 import { setModelPricing } from "../lib/model-pricing";
 
 export interface UsageRangeArgs {
@@ -51,6 +51,15 @@ export function registerUsageHandlers(ctx: DbContext): void {
   registerIpcHandle("usage:recent", async (_e, args: UsageRangeArgs & { limit?: number }) => {
     return handle(() => {
       return queryRecentUsage(ctx.db, toFilter(args), args?.limit ?? 50);
+    });
+  });
+
+  // Destructive: delete recorded usage rows (scoped to the workspace filter, so
+  // it clears what the view shows — the workspace's rows plus global one-shots).
+  registerIpcHandle("usage:clear", async (_e, args: UsageRangeArgs) => {
+    return handle(() => {
+      const deleted = clearLlmUsage(ctx.db, toFilter(args ?? {}));
+      return { deleted, ok: true };
     });
   });
 }
