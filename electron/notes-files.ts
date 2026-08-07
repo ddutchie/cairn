@@ -115,11 +115,12 @@ export function readImportConfig(workspacePath: string): ImportConfig {
     if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
       lastValidConfigs.delete(workspacePath);
       haltedWorkspaces.delete(workspacePath);
-      return { ...EMPTY_CONFIG };
+      return { ...EMPTY_CONFIG, adopted: { ...EMPTY_CONFIG.adopted } };
     }
-    if (lastValidConfigs.has(workspacePath)) return { ...lastValidConfigs.get(workspacePath)! };
+    const cached = lastValidConfigs.get(workspacePath);
+    if (cached) return { ...cached, adopted: { ...cached.adopted } };
     haltedWorkspaces.add(workspacePath);
-    return { ...EMPTY_CONFIG };
+    return { ...EMPTY_CONFIG, adopted: { ...EMPTY_CONFIG.adopted } };
   }
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -156,14 +157,18 @@ export function readImportConfig(workspacePath: string): ImportConfig {
     };
     lastValidConfigs.set(workspacePath, cfg);
     haltedWorkspaces.delete(workspacePath);
-    return cfg;
+    // Clone `adopted` so a caller mutating the returned config can never change
+    // the module-level cache entry (which rollbackImport/saveImportExclusions
+    // rely on staying stable across calls).
+    return { ...cfg, adopted: { ...cfg.adopted } };
   } catch {
     // Present but malformed/truncated. Never fail open: fall back to the last
     // valid config we parsed. If we never parsed a valid file, halt imports
     // for this workspace until the file is repaired.
-    if (lastValidConfigs.has(workspacePath)) return { ...lastValidConfigs.get(workspacePath)! };
+    const cached = lastValidConfigs.get(workspacePath);
+    if (cached) return { ...cached, adopted: { ...cached.adopted } };
     haltedWorkspaces.add(workspacePath);
-    return { ...EMPTY_CONFIG };
+    return { ...EMPTY_CONFIG, adopted: { ...EMPTY_CONFIG.adopted } };
   }
 }
 
@@ -215,7 +220,7 @@ function writeImportConfig(workspacePath: string, cfg: ImportConfig): void {
     try { fs.unlinkSync(tmp); } catch { /* best effort */ }
   }
   // Refresh the cached copy so a subsequent read in the same process sees it.
-  lastValidConfigs.set(workspacePath, { excludedFolders: clean, adopted: cfg.adopted, unmanaged: cfg.unmanaged });
+  lastValidConfigs.set(workspacePath, { excludedFolders: clean, adopted: { ...cfg.adopted }, unmanaged: cfg.unmanaged });
   haltedWorkspaces.delete(workspacePath);
 }
 
@@ -321,9 +326,11 @@ function stripCairnFrontmatterFromFile(filePath: string): void {
 /**
  * Roll back an import: remove the given projects and their notes WITHOUT
  * publishing sync tombstones to peers, strip Cairn frontmatter from the adopted
- * files (preserving the user's own frontmatter), drop their ledger entries, and
- * mark the vault un-managed so the next scan leaves the files as plain markdown
- * instead of re-adopting them.
+ * files (preserving the user's own frontmatter), and drop their ledger entries.
+ * The vault is only marked un-managed once EVERY adopted note is gone — i.e.
+ * the caller passed the full adopted-project set. A partial rollback (subset of
+ * projectIds) keeps the vault managed so the remaining adopted projects keep
+ * their Cairn files and stay retryable (a later rollback of the rest un-manages).
  *
  * Intended for "immediately after import, before edits" — the rescan result's
  * createdProjects. Returns the number of notes removed.
@@ -363,10 +370,12 @@ export function rollbackImport(
     setSyncSuppressed(db, false);
   }
 
-  // Drop the ledger entries and mark the vault un-managed in one config write.
+  // Drop the ledger entries. Un-manage the vault ONLY when no adopted note
+  // remains — a partial rollback must not un-manage a vault that still has
+  // adopted projects (their Cairn frontmatter would be left orphaned).
   const adopted = { ...cfg.adopted };
   for (const n of notes) delete adopted[n.id];
-  writeImportConfig(workspacePath, { ...cfg, adopted, unmanaged: true });
+  writeImportConfig(workspacePath, { ...cfg, adopted, unmanaged: Object.keys(adopted).length === 0 });
 
   return notes.length;
 }
@@ -469,9 +478,6 @@ export function syncNotesFromDisk(db: Database.Database, workspacePath: string, 
   const root = notesDir(workspacePath);
   if (!fs.existsSync(root)) return;
   cleanStaleTmpFiles(root);
-  // A malformed import config with no known-good value halts the scan rather
-  // than adopting folders the user may have excluded. Reading the exclusions
-  // first is what registers the halted state for a never-valid config.
   // A malformed import config with no known-good value halts the scan rather
   // than adopting folders the user may have excluded. Reading the exclusions
   // first is what registers the halted state for a never-valid config.

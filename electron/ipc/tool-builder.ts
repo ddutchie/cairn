@@ -74,9 +74,11 @@ function resolveConfig(): AIConfig {
     // Same Auto semantics as the chat/agent loops: Auto sends a generous 32K
     // cap (AUTO_OUTPUT_TOKEN_CAP) instead of omitting the field — omitting lets
     // the endpoint apply a tiny server-side default that truncates long tool
-    // definitions. Only a deliberate manual value is sent verbatim.
+    // definitions. Only a deliberate manual value is sent verbatim; a manual
+    // value that fails to resolve (undefined/invalid) also falls back to the
+    // 32K cap rather than silently omitting max_tokens.
     maxTokens: cached?.maxOutputAuto === false
-      ? resolveMaxOutputTokens(cached?.maxOutputTokens)
+      ? (resolveMaxOutputTokens(cached?.maxOutputTokens) ?? AUTO_OUTPUT_TOKEN_CAP)
       : AUTO_OUTPUT_TOKEN_CAP,
   };
 }
@@ -338,11 +340,13 @@ async function runBuilderLoop(
 
       for (const call of toolCalls) {
         const parsed = parseToolArgs(call.function.arguments);
-        if (!parsed.ok) {
+        if (!parsed.ok || parsed.tailRepaired === true) {
           // Never dispatch a builder tool with empty/guessed args — surface the
-          // structured parse error to the model so it can re-issue the call.
+          // structured parse error (including a tail-repaired result, whose
+          // closing delimiters only parsed after appending missing ones) to the
+          // model so it can re-issue the call with complete JSON.
           send("tool-builder:step", { sessionId: session.id, name: call.function.name, args: {} });
-          session.messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: parsed.error }) });
+          session.messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: parsed.ok ? "tool-call arguments missing closing delimiters" : parsed.error }) });
           continue;
         }
         const args: Record<string, unknown> = parsed.value;

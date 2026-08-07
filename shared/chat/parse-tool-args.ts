@@ -254,6 +254,9 @@ function tailRepairJson(src: string): string | null {
   let inString = false;
   let escaped = false;
   const stack: Array<"{" | "["> = [];
+  // Last non-whitespace character seen OUTSIDE a string — used to refuse
+  // repairing a (possibly truncated) trailing numeric literal.
+  let lastSignificant: string | null = null;
   for (let i = 0; i < src.length; i++) {
     const ch = src[i];
     if (inString) {
@@ -262,16 +265,29 @@ function tailRepairJson(src: string): string | null {
       if (ch === '"') inString = false;
       continue;
     }
-    if (ch === '"') { inString = true; continue; }
+    if (ch === '"') { inString = true; lastSignificant = '"'; continue; }
     if (ch === "{" || ch === "[") stack.push(ch);
     else if (ch === "}" || ch === "]") {
       const open = ch === "}" ? "{" : "[";
       if (stack.length > 0 && stack[stack.length - 1] === open) stack.pop();
       // A mismatched closer is left on the stack; the final JSON.parse fails → null.
     }
+    if (!/\s/.test(ch)) lastSignificant = ch;
   }
   // Nothing open and nothing unterminated → not a tail case; leave to other tiers.
   if (!inString && stack.length === 0) return null;
+  // A trailing digit/`-`/`+`/`.` outside a string is a (possibly truncated)
+  // numeric literal — appending closers could silently drop digits the model
+  // still intended to emit (e.g. `{"count": 12` → `{"count": 12}`). Refuse and
+  // let the structural safety net fail loudly on the truncated number instead.
+  if (
+    !inString &&
+    lastSignificant !== null &&
+    (lastSignificant === "-" || lastSignificant === "+" || lastSignificant === "."
+      || (lastSignificant >= "0" && lastSignificant <= "9"))
+  ) {
+    return null;
+  }
 
   let out = src;
   if (inString) out += '"';

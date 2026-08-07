@@ -506,50 +506,58 @@ describe("runAgentLoop — SSE streaming", () => {
     lines.push(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"pat' } }] } }], finish_reason: "length" })}\n\n`);
     lines.push("data: [DONE]\n\n");
 
+    // Closed in the finally below (and never again via the shared afterEach,
+    // which only closes the outer `server` variable).
     const server = await makeServer([
       lines.join(""),
       textOnlySSE(["Re-issued successfully."]),
       textOnlySSE(["Final reply."]),
     ]);
+    try {
+      const session = makeSession();
+      const { log, callbacks } = makeCallbacks();
+      await runAgentLoop(
+        session, "You are a test assistant.",
+        { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+        callbacks, makeToolCtx(db),
+      );
 
-    const session = makeSession();
-    const { log, callbacks } = makeCallbacks();
-    await runAgentLoop(
-      session, "You are a test assistant.",
-      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      callbacks, makeToolCtx(db),
-    );
+      // Request #2 (the retry round) must be a clean, valid OpenAI-compatible body:
+      expect(log.some((e) => e.startsWith("tool-end:ls:false"))).toBe(true);
 
-    // Request #2 (the retry round) must be a clean, valid OpenAI-compatible body:
-    expect(log.some((e) => e.startsWith("tool-end:ls:false"))).toBe(true);
+      const sent = server.bodies[1].messages as Array<Record<string, unknown>>;
+      const serialized = JSON.stringify(sent);
 
-    const sent = server.bodies[1].messages as Array<Record<string, unknown>>;
-    const serialized = JSON.stringify(sent);
+      // No truncated assistant turn replayed, no tool round-trip for the refused call.
+      expect(sent.some((m) => m.role === "assistant" && Array.isArray(m.tool_calls))).toBe(false);
+      expect(sent.some((m) => m.role === "tool")).toBe(false);
+      // Internal round-trip metadata must never leak.
+      expect(serialized).not.toContain("reasoningModel");
+      expect(serialized).not.toContain("reasoningField");
+      // The model got the re-issue notice instead.
+      expect(sent.some((m) => m.role === "user" && String(m.content).includes("NOT executed"))).toBe(true);
 
-    // No truncated assistant turn replayed, no tool round-trip for the refused call.
-    expect(sent.some((m) => m.role === "assistant" && Array.isArray(m.tool_calls))).toBe(false);
-    expect(sent.some((m) => m.role === "tool")).toBe(false);
-    // Internal round-trip metadata must never leak.
-    expect(serialized).not.toContain("reasoningModel");
-    expect(serialized).not.toContain("reasoningField");
-    // The model got the re-issue notice instead.
-    expect(sent.some((m) => m.role === "user" && String(m.content).includes("NOT executed"))).toBe(true);
+      // Simulate "continue the conversation": the loop ran twice more, and the
+      // third request still carries no dangling tool_call_id and no duplicates.
+      session.messages.push({ role: "user", content: "continue please" });
+      const continueServer = await makeServer([textOnlySSE(["Final reply."])]);
+      try {
+        await runAgentLoop(
+          session, "You are a test assistant.",
+          { baseUrl: continueServer.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+          callbacks, makeToolCtx(db),
+        );
 
-    // Simulate "continue the conversation": the loop ran twice more, and the
-    // third request still carries no dangling tool_call_id and no duplicates.
-    session.messages.push({ role: "user", content: "continue please" });
-    const continueServer = await makeServer([textOnlySSE(["Final reply."])]);
-    await runAgentLoop(
-      session, "You are a test assistant.",
-      { baseUrl: continueServer.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      callbacks, makeToolCtx(db),
-    );
-
-    const sent3 = continueServer.bodies[0].messages as Array<Record<string, unknown>>;
-    const ids = sent3.filter((m) => m.role === "tool").map((m) => m.tool_call_id);
-    expect(new Set(ids).size).toBe(ids.length); // no duplicate tool_call_id
-    expect(JSON.stringify(sent3)).not.toContain("reasoningModel");
-    await continueServer.close();
+        const sent3 = continueServer.bodies[0].messages as Array<Record<string, unknown>>;
+        const ids = sent3.filter((m) => m.role === "tool").map((m) => m.tool_call_id);
+        expect(new Set(ids).size).toBe(ids.length); // no duplicate tool_call_id
+        expect(JSON.stringify(sent3)).not.toContain("reasoningModel");
+      } finally {
+        await continueServer.close();
+      }
+    } finally {
+      await server.close();
+    }
   });
 
   it("length-truncated turn with tail-complete args EXECUTES the tool (dropped closing delimiter)", async () => {

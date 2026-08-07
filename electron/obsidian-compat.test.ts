@@ -1205,4 +1205,34 @@ describe("re-import 3-way conflict handling (v2.6.8)", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 0 });
     expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 0 });
   });
+
+  it("partial rollback keeps the vault managed until every adopted project is removed", () => {
+    seedWorkspaceOnly();
+    writeObsidianFile(path.join(tmpDir, "Journal"), "Entry.md", { tags: ["personal"] }, "\n# Entry\n\nAlpha.");
+    writeObsidianFile(path.join(tmpDir, "Ideas"), "Idea.md", { tags: ["ideas"] }, "\n# Idea\n\nBeta.");
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT id, name FROM projects").all() as Array<{ id: string; name: string }>;
+    expect(projects.map((p) => p.name).sort()).toEqual(["Ideas", "Journal"]);
+    const journal = projects.find((p) => p.name === "Journal")!;
+
+    // Roll back ONE project only — the vault must stay managed (the remaining
+    // adopted project keeps its Cairn files, and can be rolled back later).
+    const removed = rollbackImport(db, tmpDir, [journal.id]);
+    expect(removed).toBe(1);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 1 });
+    const cfg = readImportConfig(tmpDir);
+    expect(cfg.unmanaged).toBe(false);
+    // The remaining project's note is still adopted (retryable).
+    const remaining = db.prepare("SELECT id FROM notes WHERE type = 'note'").get() as { id: string } | undefined;
+    expect(remaining).toBeTruthy();
+    expect(cfg.adopted[remaining!.id]).toBeDefined();
+
+    // Rolling back the rest now un-manages the vault.
+    const rest = db.prepare("SELECT id, name FROM projects").all() as Array<{ id: string; name: string }>;
+    const removed2 = rollbackImport(db, tmpDir, rest.map((p) => p.id));
+    expect(removed2).toBe(1);
+    expect(readImportConfig(tmpDir).unmanaged).toBe(true);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 0 });
+  });
 });

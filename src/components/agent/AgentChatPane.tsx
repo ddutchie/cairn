@@ -8,7 +8,7 @@
  * Multi-turn: each new message continues the same session's history.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
 import { Trash2, FileText, Zap, Map as MapIcon, Loader2 } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
@@ -27,7 +27,7 @@ import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
-import { getModelInfo, prewarmModelCatalog } from "@/lib/models-dev";
+import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion } from "@/lib/models-dev";
 import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
@@ -164,7 +164,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const [isCompacting, setIsCompacting]           = useState(false);
   const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
 
-  // Attachment support follows the agent's selected model (same as chat).
+  // Attachment support follows the agent's selected model (same as chat). The
+  // models.dev catalog loads in the background, so subscribe to it — without
+  // this, allowImages/allowPdf stay false until an unrelated re-render happens.
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
   const agentModelInfo = getModelInfo(agentConfig.model);
   const allowImages = supportsImageInput(agentModelInfo);
   const allowPdf = supportsPdfInput(agentModelInfo);
@@ -476,7 +479,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   const sendPrompt = useCallback(async (text: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = []) => {
     const trimmed = text.trim();
-    if (!trimmed || isLoading || !session.cwd) return;
+    // Attachment-only submissions are valid (an image/PDF with no caption), so
+    // only block when there is NEITHER text NOR attachments.
+    if ((!trimmed && attachments.length === 0) || isLoading || !session.cwd) return;
 
     // ── Slash commands ─────────────────────────────────────────────────────
     if (trimmed === "/compact") {

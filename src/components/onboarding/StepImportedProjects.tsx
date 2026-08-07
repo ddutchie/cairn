@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ArrowLeft, FolderCheck, FileText, Undo2 } from "lucide-react";
 import { Shell } from "./shared";
+import { cn } from "@/lib/utils";
 
 export interface ImportedProject {
   id: string;
@@ -12,6 +13,10 @@ export interface ImportedProject {
 
 interface Props {
   projects: ImportedProject[];
+  /** In-flight rollback — disables the actions while the IPC runs. */
+  busy?: boolean;
+  /** Rollback failure message to surface on the summary, if any. */
+  error?: string | null;
   onBack: () => void;
   onContinue: () => void;
   /** Undo the import: remove these projects/notes, strip Cairn frontmatter,
@@ -19,7 +24,7 @@ interface Props {
   onUndo: () => void;
 }
 
-export function StepImportedProjects({ projects, onBack, onContinue, onUndo }: Props) {
+export function StepImportedProjects({ projects, busy = false, error = null, onBack, onContinue, onUndo }: Props) {
   const totalNotes = projects.reduce((sum, p) => sum + p.noteCount, 0);
   // Two-step destructive confirm: first click arms it, second click fires it.
   const [confirming, setConfirming] = useState(false);
@@ -70,13 +75,21 @@ export function StepImportedProjects({ projects, onBack, onContinue, onUndo }: P
         <button
           type="button"
           onClick={onContinue}
-          className="w-full py-2 rounded-lg text-sm font-medium bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[var(--accent-hover)] transition-all"
+          disabled={busy}
+          className="w-full py-2 rounded-lg text-sm font-medium bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[var(--accent-hover)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Looks good — continue
         </button>
 
+        {error && (
+          <p className="text-xs text-[var(--danger)] leading-snug" role="alert">
+            {error}
+          </p>
+        )}
+
         <button
           type="button"
+          disabled={busy}
           onClick={() => {
             if (confirming) {
               onUndo();
@@ -84,18 +97,23 @@ export function StepImportedProjects({ projects, onBack, onContinue, onUndo }: P
               setConfirming(true);
             }
           }}
-          className={confirming
-            ? "w-full py-2 rounded-lg text-sm font-medium border border-[var(--danger)] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-all"
-            : "w-full py-2 rounded-lg text-sm font-medium border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-all"}
+          className={cn(
+            "w-full py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed",
+            confirming
+              ? "border border-[var(--danger)] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
+              : "border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
+          )}
         >
-          {confirming
-            ? `Confirm — undo removes ${projects.length === 1 ? "this project" : `${projects.length} projects`} and strips Cairn frontmatter`
-            : (
-              <span className="inline-flex items-center justify-center gap-1.5">
-                <Undo2 size={12} />
-                Undo import — pick a different folder
-              </span>
-            )}
+          {busy
+            ? "Removing imported projects…"
+            : confirming
+              ? `Confirm — undo removes ${projects.length === 1 ? "this project" : `${projects.length} projects`} and strips Cairn frontmatter`
+              : (
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <Undo2 size={12} />
+                  Undo import — pick a different folder
+                </span>
+              )}
         </button>
       </div>
     </Shell>

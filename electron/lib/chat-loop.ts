@@ -342,12 +342,10 @@ export async function runToolLoop(
       // else (strict-valid = possible boundary cut with silently missing fields;
       // unparseable = mid-structure cut) is still refused.
       const calls = assistantMsg.tool_calls ?? [];
+      const parsedCalls = calls.map((call) => ({ call, parsed: parseToolArgs(call.function.arguments) }));
       const tailComplete =
-        calls.length > 0 &&
-        calls.every((call) => {
-          const p = parseToolArgs(call.function.arguments);
-          return p.ok && p.tailRepaired === true;
-        });
+        parsedCalls.length > 0 &&
+        parsedCalls.every(({ parsed }) => parsed.ok && parsed.tailRepaired === true);
       if (!tailComplete) {
         // Do NOT push the truncated assistant message or its synthesized tool
         // results into history — replaying that turn poisons the next request
@@ -368,10 +366,10 @@ export async function runToolLoop(
         continue;
       }
       // Tail-complete → fall through and execute. Rewrite each repaired call's
-      // arguments to its canonical JSON so history holds what actually ran.
-      for (const call of calls) {
-        const p = parseToolArgs(call.function.arguments);
-        if (p.ok && p.tailRepaired) call.function.arguments = JSON.stringify(p.value);
+      // arguments to its canonical JSON (reusing the parse above) so history
+      // holds what actually ran.
+      for (const { call, parsed } of parsedCalls) {
+        if (parsed.ok && parsed.tailRepaired) call.function.arguments = JSON.stringify(parsed.value);
       }
     }
 
@@ -390,7 +388,7 @@ export async function runToolLoop(
       let args: Record<string, unknown>;
       let parseError: string | null = null;
       const parsed = parseToolArgs(call.function.arguments);
-      if (parsed.ok) {
+      if (parsed.ok && parsed.tailRepaired !== true) {
         args = parsed.value;
         traceTool("parse", {
           toolName: call.function.name,
@@ -400,7 +398,13 @@ export async function runToolLoop(
           repaired: parsed.repaired ? 1 : 0,
         });
       } else {
-        parseError = parsed.error;
+        // A tail-repaired parse (valid only after appending missing closing
+        // delimiters) is refused on the NORMAL path — only the explicit
+        // length/interrupted recovery gate above may execute those. On a natural
+        // finish the model simply re-issues with complete JSON.
+        parseError = parsed.ok
+          ? "tool-call arguments missing closing delimiters — re-issue with complete JSON"
+          : parsed.error;
         args = {};
       }
 

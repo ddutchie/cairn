@@ -49,7 +49,7 @@ export function DropdownMenuItem({
     <RadixDropdown.Item
       className={cn(
         "flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer",
-        "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
+        "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] data-[highlighted]:bg-[var(--surface-2)] data-[highlighted]:text-[var(--text-primary)]",
         "focus:outline-none transition-colors duration-100",
         className
       )}
@@ -82,7 +82,7 @@ export function DropdownMenuCheckboxItem({
     <RadixDropdown.CheckboxItem
       className={cn(
         "flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer",
-        "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
+        "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] data-[highlighted]:bg-[var(--surface-2)] data-[highlighted]:text-[var(--text-primary)]",
         "focus:outline-none transition-colors duration-100",
         className
       )}

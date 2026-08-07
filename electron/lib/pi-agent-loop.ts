@@ -788,12 +788,10 @@ export async function runAgentLoop(
       // executing is the right recovery. Anything else is still refused: a
       // strict-valid call could be a boundary cut with silently missing fields,
       // and an unparseable call is cut mid-structure.
+      const parsedCalls = toolCalls.map((tc) => ({ tc, parsed: parseToolArgs(tc.function.arguments) }));
       const tailComplete =
-        toolCalls.length > 0 &&
-        toolCalls.every((tc) => {
-          const p = parseToolArgs(tc.function.arguments);
-          return p.ok && p.tailRepaired === true;
-        });
+        parsedCalls.length > 0 &&
+        parsedCalls.every(({ parsed }) => parsed.ok && parsed.tailRepaired === true);
       if (!tailComplete) {
         failToolCallsFromTruncatedMessage(toolCalls, {
           maxTokens,
@@ -812,10 +810,10 @@ export async function runAgentLoop(
         continue;
       }
       // Tail-complete → fall through and execute. Rewrite each repaired call's
-      // arguments to its canonical JSON so history holds what actually ran.
-      for (const tc of toolCalls) {
-        const p = parseToolArgs(tc.function.arguments);
-        if (p.ok && p.tailRepaired) tc.function.arguments = JSON.stringify(p.value);
+      // arguments to its canonical JSON (reusing the parse above) so history
+      // holds what actually ran.
+      for (const { tc, parsed } of parsedCalls) {
+        if (parsed.ok && parsed.tailRepaired) tc.function.arguments = JSON.stringify(parsed.value);
       }
     }
 
@@ -847,11 +845,14 @@ export async function runAgentLoop(
 
     const toolPromises: Promise<ToolOutcome>[] = toolCalls.map(async (tc, tcIdx): Promise<ToolOutcome> => {
       // Parse tool arguments. Never run a tool with destructured args — surface
-      // the parse error so the model can re-issue the call.
+      // the parse error so the model can re-issue the call. A tail-repaired
+      // result (valid only after appending missing closing delimiters) is also
+      // refused here on the NORMAL path: only the explicit length/interrupted
+      // recovery gate above may execute those.
       let args: ToolArgs;
       let parseError: string | null = null;
       const parsed = parseToolArgs(tc.function.arguments);
-      if (parsed.ok) {
+      if (parsed.ok && parsed.tailRepaired !== true) {
         args = parsed.value as ToolArgs;
         traceTool("parse", {
           toolName: tc.function.name,
@@ -861,7 +862,9 @@ export async function runAgentLoop(
           repaired: parsed.repaired ? 1 : 0,
         });
       } else {
-        parseError = parsed.error;
+        parseError = parsed.ok
+          ? "tool-call arguments missing closing delimiters — re-issue with complete JSON"
+          : parsed.error;
         args = {};
       }
 

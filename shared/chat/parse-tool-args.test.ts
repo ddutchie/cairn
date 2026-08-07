@@ -267,31 +267,41 @@ describe("parseToolArgs", () => {
     });
 
     it("closes an unterminated trailing string AND nested containers", () => {
-      const raw = '{"meta":{"tags":["a","b"],"seen":true,"depth":{"level":1}';
+      const raw = '{"meta":{"tags":["a","b"],"seen":true,"nested":{"x":"y"}';
       const r = parseToolArgs(raw);
       expect(r.ok).toBe(true);
       if (r.ok) {
         expect(r.tailRepaired).toBe(true);
-        expect(r.value).toEqual({ meta: { tags: ["a", "b"], seen: true, depth: { level: 1 } } });
+        expect(r.value).toEqual({ meta: { tags: ["a", "b"], seen: true, nested: { x: "y" } } });
       }
     });
 
     it("closes a simple object missing only its closing brace", () => {
-      const r = parseToolArgs('{"a":1');
+      const r = parseToolArgs('{"a":"b"');
       expect(r.ok).toBe(true);
       if (r.ok) {
         expect(r.tailRepaired).toBe(true);
-        expect(r.value).toEqual({ a: 1 });
+        expect(r.value).toEqual({ a: "b" });
       }
     });
 
     it("marks tail-repaired output so callers can apply finish_reason policy", () => {
-      const ok = parseToolArgs('{"a":1');
+      const ok = parseToolArgs('{"a":"b"');
       expect(ok.ok && ok.tailRepaired).toBe(true);
       const strict = parseToolArgs('{"a":1}');
       expect(strict.ok && strict.tailRepaired === undefined).toBe(true);
       const lossless = parseToolArgs('{"a":1,}');
       expect(lossless.ok && lossless.tailRepaired === undefined).toBe(true);
+    });
+
+    it("does NOT tail-repair a trailing numeric literal (the number may be truncated)", () => {
+      // `{"a":1` could be the start of `{"a":123}` — appending `}` would silently
+      // drop digits the model still intended to emit. Refuse so the structural
+      // safety net fails loudly and the model re-issues.
+      const r = parseToolArgs('{"a":1');
+      expect(r.ok).toBe(false);
+      const nested = parseToolArgs('{"meta":{"tags":["a","b"],"seen":true,"depth":{"level":1');
+      expect(nested.ok).toBe(false);
     });
 
     it("does NOT tail-repair mid-structure damage (unterminated key)", () => {

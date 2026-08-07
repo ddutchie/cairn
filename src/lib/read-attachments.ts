@@ -10,6 +10,7 @@
  */
 
 import { rasterizePdfToImages } from "@/lib/pdf-rasterize";
+import { MAX_ATTACHMENT_BYTES } from "../../shared/models/pdf-attach";
 
 export interface AttachmentItem {
   kind: "image" | "pdf";
@@ -28,6 +29,13 @@ export async function readAttachments(
     if (!isPdf && !isImage) continue;
     if (isPdf && !opts.allowPdf && !opts.allowImages) continue;
     if (isImage && !opts.allowImages) continue;
+    // Reject oversized files BEFORE reading them into memory — a multi-GB file
+    // would otherwise blow up the renderer. The main process enforces the same
+    // cap on the IPC boundary.
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      console.warn(`[attachments] Skipping "${file.name}" — ${file.size} bytes exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB attachment limit`);
+      continue;
+    }
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();

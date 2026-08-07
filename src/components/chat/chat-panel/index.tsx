@@ -657,7 +657,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           showSparkles={activeView === "chat"}
           statusText={isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
           footerTrailing={aiConfig.provider === "localllm" ? (
-            <span className="text-[0.625rem] font-bold text-white bg-gradient-to-r from-purple-500 to-indigo-500 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
+            <span className="text-[0.625rem] font-bold text-[var(--accent-fg)] bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_srgb,var(--accent)_60%,var(--background))] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
               {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}
             </span>
           ) : undefined}

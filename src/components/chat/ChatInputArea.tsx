@@ -76,9 +76,12 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
   }, []);
 
   const handleSubmit = useCallback(() => {
-    const attachments = pendingImages.length > 0 ? pendingImages : [];
+    // Nothing to send (no text, no staged attachments) → keep the staged
+    // attachments: clearing them here would drop them even though nothing was
+    // actually submitted.
+    if (!value.trim() && pendingImages.length === 0) return;
     setPendingImages([]);
-    onSubmit(value, attachments);
+    onSubmit(value, pendingImages);
   }, [onSubmit, value, pendingImages]);
 
   return (

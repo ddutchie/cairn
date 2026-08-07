@@ -125,6 +125,13 @@ export async function consumeAssistantStream(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const c = chunk as any;
 
+    const choice = c.choices?.[0];
+    // Capture the finish reason BEFORE the usage callback so a usage chunk that
+    // carries both fields (the common stream_options.include_usage case) reports
+    // the current chunk's finish reason, not the stale value from a previous
+    // chunk. "length" means the model hit max_tokens.
+    if (choice?.finish_reason) finishReason = choice.finish_reason;
+
     // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
     if (c.usage) {
       const cache = extractCacheTokens(c.usage);
@@ -139,11 +146,6 @@ export async function consumeAssistantStream(
         finishReason,
       });
     }
-
-    const choice = c.choices?.[0];
-    // Capture the finish reason — "length" means the model hit max_tokens.
-    // A reasoning model can hit it having emitted only chain-of-thought.
-    if (choice?.finish_reason) finishReason = choice.finish_reason;
 
     const delta = choice?.delta;
     if (!delta) continue;

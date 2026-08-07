@@ -25,6 +25,35 @@ export interface ChatAttachment {
 /** A single content part inside an OpenAI-style message `content` array. */
 export type ContentPart = { type: string } & Record<string, unknown>;
 
+/** Maximum size (bytes) of a single image/PDF attachment (desktop + mobile). */
+export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Runtime validation of an attachment data URL before it is turned into a
+ * content part or persisted. Rejects anything that isn't a `data:` URL with a
+ * supported image/PDF MIME type whose base64 payload decodes within
+ * MAX_ATTACHMENT_BYTES. Returns an error message, or null when the URL is valid.
+ */
+export function validateAttachmentDataUrl(dataUrl: unknown): string | null {
+  if (typeof dataUrl !== "string" || dataUrl.length === 0) {
+    return "attachment is missing a data URL";
+  }
+  if (!dataUrl.startsWith("data:")) {
+    return "attachment must be a data: URL";
+  }
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) return "malformed data: URL (missing payload)";
+  const mime = dataUrl.slice(5, comma).split(";")[0].toLowerCase();
+  if (mime !== "application/pdf" && !mime.startsWith("image/")) {
+    return `unsupported attachment MIME type: ${mime}`;
+  }
+  const bytes = Math.floor((dataUrl.slice(comma + 1).length / 4) * 3);
+  if (bytes > MAX_ATTACHMENT_BYTES) {
+    return `attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`;
+  }
+  return null;
+}
+
 /** Whether a model (or the catalog) says it accepts PDF input. Unknown models
  *  are NOT assumed pdf-capable — PDF attach stays a known capability. */
 export function supportsPdfInput(info: ModelInfo | null): boolean {

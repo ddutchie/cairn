@@ -301,6 +301,57 @@ describe("runToolLoop — finish_reason length truncation guard", () => {
     fs.rmSync(workspacePath, { recursive: true, force: true });
   });
 
+  it("refuses a tail-repaired tool call on a NATURAL tool_calls finish (recovery is length-only)", async () => {
+    // Args missing only their closing delimiter arrive on a natural finish — the
+    // normal execution path must refuse (only the explicit length/interrupted
+    // gate may recover tail-repaired args) and let the model re-issue.
+    const db = makeDb();
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-chatloop-"));
+    const server = await makeServer([
+      [
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_x", function: { name: "ensure_note", arguments: "" } }] } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"projectId":"proj1","title":"Tail Note","content":"body"' } }] } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+        "data: [DONE]\n\n",
+      ].join(""),
+      textOnlySSE(["Retry done."]),
+    ]);
+    servers.push(server);
+
+    const doneEvents: { ok?: boolean; error?: string }[] = [];
+    const messages = [
+      { role: "system" as const, content: "test" },
+      { role: "user" as const, content: "create a note" },
+    ];
+
+    const result = await runToolLoop(
+      db,
+      chatReq,
+      workspacePath,
+      server.url,
+      "test-model",
+      "test-key",
+      messages,
+      () => {},
+      undefined,
+      undefined,
+      "openai",
+      undefined,
+      (e) => doneEvents.push({ ok: e.ok, error: e.error }),
+    );
+
+    // NOT executed: the call was refused with the tail-repaired parse error, and
+    // no note was persisted.
+    expect(doneEvents[0]?.ok).toBe(false);
+    expect(doneEvents[0]?.error).toMatch(/closing delimiter/i);
+    const count = (db.prepare("SELECT COUNT(*) c FROM notes").get() as { c: number }).c;
+    expect(count).toBe(0);
+    expect(result.content).toBe("Retry done.");
+
+    db.close();
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  });
+
   it("executes multiple tool calls in one turn in parallel and persists all results", async () => {
     const db = makeDb();
     const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-chatloop-"));

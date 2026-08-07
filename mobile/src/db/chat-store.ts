@@ -175,13 +175,19 @@ export function loadLastChatUsage(): ChatUsage | null {
   const fromMeta = parseUsage(getMeta(USAGE_KEY));
   if (fromMeta) return fromMeta;
   // One-time lazy migration from the old per-workspace app_settings location.
-  const legacy = getDb().getFirstSync<{ value: string }>("SELECT value FROM app_settings WHERE key = ?", USAGE_KEY);
-  if (legacy?.value) {
-    const migrated = parseUsage(legacy.value);
-    if (migrated) {
-      setMeta(USAGE_KEY, legacy.value);
-      return migrated;
+  // Guarded: a fresh/migrated DB may not even have the app_settings table yet,
+  // in which case there's nothing to migrate.
+  try {
+    const legacy = getDb().getFirstSync<{ value: string }>("SELECT value FROM app_settings WHERE key = ?", USAGE_KEY);
+    if (legacy?.value) {
+      const migrated = parseUsage(legacy.value);
+      if (migrated) {
+        setMeta(USAGE_KEY, legacy.value);
+        return migrated;
+      }
     }
+  } catch {
+    /* app_settings unavailable (pre-migration DB) — no legacy value to migrate */
   }
   return null;
 }
