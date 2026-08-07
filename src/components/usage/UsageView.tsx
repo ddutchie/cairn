@@ -153,8 +153,9 @@ export function UsageView() {
   const [rangeIdx, setRangeIdx] = useState(1); // 30D default
   const [metric, setMetric] = useState<UsageMetric>("tokens");
   const [source, setSource] = useState<UsageSource | "">("");
-  // Estimated rows (models.dev price guess, no provider-reported cost) shown by
-  // default (toggle on); off → they're dropped from every aggregate + history.
+  // Estimated rows (models.dev price guess, no provider-reported cost) show a ~
+  // figure by default (toggle on); off → estimated costs are hidden (shown as —)
+  // everywhere, but the rows and token/request stats stay visible.
   const [includeEstimated, setIncludeEstimated] = useState(true);
 
   const range = USAGE_RANGES[rangeIdx];
@@ -223,8 +224,8 @@ export function UsageView() {
             aria-pressed={includeEstimated}
             title={
               includeEstimated
-                ? "Estimates shown — calls whose cost is estimated from models.dev pricing are included"
-                : "Estimates hidden — only calls with a provider-reported cost are shown"
+                ? "Estimates shown — calls whose cost is estimated from models.dev pricing show a ~ figure"
+                : "Estimates hidden — estimated costs are shown as —; all calls and token stats stay visible"
             }
             className={cn(
               "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition-colors",
@@ -291,7 +292,7 @@ export function UsageView() {
                   {metric === "tokens" ? "Token usage" : metric === "cost" ? "Cost" : "Requests"}
                 </div>
                 <div className="text-[0.643rem] text-[var(--text-tertiary)]">
-                  {metric === "tokens" ? "daily totals" : metric === "cost" ? "provider-reported + models.dev estimates" : "LLM calls"}
+                  {metric === "tokens" ? "daily totals" : metric === "cost" ? (includeEstimated ? "provider-reported + models.dev estimates" : "provider-reported costs") : "LLM calls"}
                 </div>
               </div>
               <div className="flex items-center gap-4 px-4 pb-1 text-[0.643rem] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
@@ -362,9 +363,7 @@ export function UsageView() {
             )}
             {recent.length === 0 ? (
               <div className="px-4 py-8 text-xs text-[var(--text-tertiary)]">
-                {!includeEstimated
-                  ? "No calls with a provider-reported cost in this range — toggle the Estimates button to include models.dev estimates."
-                  : "No LLM calls recorded yet — send a chat message or run an agent and it will appear here."}
+                No LLM calls recorded yet — send a chat message or run an agent and it will appear here.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -424,7 +423,9 @@ export function UsageView() {
                             {USAGE_SOURCE_LABELS[r.source] ?? r.source}
                           </span>
                         </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums font-semibold text-[var(--text-secondary)]">{r.costUsd != null ? `${r.costEstimated ? "~" : ""}${formatUsd(r.costUsd)}` : "—"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums font-semibold text-[var(--text-secondary)]">
+                          {r.costUsd != null && (includeEstimated || !r.costEstimated) ? `${r.costEstimated ? "~" : ""}${formatUsd(r.costUsd)}` : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

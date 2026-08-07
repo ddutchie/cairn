@@ -30,8 +30,9 @@ export interface UseUsageResult {
  * Fetches the usage overview + recent calls for the current workspace and range.
  * Re-fetches when the workspace, range, source filter, or estimate toggle
  * changes; `refresh` forces a reload (e.g. after the user sends a chat turn).
- * When `excludeEstimated` is true, rows whose cost is a models.dev estimate
- * (provider reported none) are dropped from every aggregate and the history.
+ * When `excludeEstimated` is true, aggregate cost sums count only provider-
+ * reported costs — the rows themselves are never dropped, so token/request
+ * stats stay complete.
  */
 export function useUsage(days: number | null, source: UsageSource | "", excludeEstimated: boolean): UseUsageResult {
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);

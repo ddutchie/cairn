@@ -101,7 +101,8 @@ export interface UsageQueryFilter {
   from?: number;
   /** Epoch ms, inclusive. */
   to?: number;
-  /** Drop rows whose cost is a models.dev estimate (provider reported none). */
+  /** When set, aggregate cost sums count only provider-reported costs (the
+   *  rows themselves are never dropped — token/request stats stay complete). */
   excludeEstimated?: boolean;
 }
 
@@ -128,13 +129,6 @@ function whereClause(f: UsageQueryFilter): { sql: string; params: unknown[] } {
   if (f.to != null) {
     conds.push("created_at <= ?");
     params.push(f.to);
-  }
-  if (f.excludeEstimated) {
-    // Only calls with a provider-reported cost survive: a row is never an
-    // estimate when cost_estimated is 0, but it may still carry no cost at all
-    // (provider reported none and pricing is unknown) — those have no real cost
-    // either and are dropped so the view reflects actual billed spend.
-    conds.push("cost_estimated = 0 AND cost_usd IS NOT NULL");
   }
   return { sql: conds.length > 0 ? ` WHERE ${conds.join(" AND ")}` : "", params };
 }
@@ -171,12 +165,23 @@ export interface UsageOverview {
   byModel: UsageModelBucket[];
 }
 
-const TOTAL_COLS = `COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+/**
+ * Aggregate columns for one bucket. Token/request/cache sums always include
+ * every row in the window; when `excludeEstimated` is set, the cost sum counts
+ * only provider-reported costs (models.dev estimates contribute 0) so the
+ * "hide estimates" toggle can't drop rows or shrink the usage stats.
+ */
+function totalCols(excludeEstimated: boolean): string {
+  const costSum = excludeEstimated
+    ? "SUM(CASE WHEN cost_estimated = 0 AND cost_usd IS NOT NULL THEN cost_usd ELSE 0 END)"
+    : "SUM(cost_usd)";
+  return `COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
   COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
   COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
   COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
-  COALESCE(SUM(cost_usd), 0) AS cost_usd,
+  COALESCE(${costSum}, 0) AS cost_usd,
   COUNT(*) AS requests`;
+}
 
 function toTotals(row: Record<string, number>): UsageTotals {
   return {
@@ -195,8 +200,9 @@ function toTotals(row: Record<string, number>): UsageTotals {
  */
 export function queryUsageOverview(db: Database.Database, filter: UsageQueryFilter): UsageOverview {
   const where = whereClause(filter);
+  const cols = totalCols(!!filter.excludeEstimated);
 
-  const totalsRow = db.prepare(`SELECT ${TOTAL_COLS} FROM llm_usage${where.sql}`).get(...where.params) as Record<string, number>;
+  const totalsRow = db.prepare(`SELECT ${cols} FROM llm_usage${where.sql}`).get(...where.params) as Record<string, number>;
   const totals = toTotals(totalsRow);
 
   let previous: UsageTotals | null = null;
@@ -208,7 +214,7 @@ export function queryUsageOverview(db: Database.Database, filter: UsageQueryFilt
         from: filter.from - windowMs,
         to: filter.from - 1,
       });
-      const prevRow = db.prepare(`SELECT ${TOTAL_COLS} FROM llm_usage${prevWhere.sql}`).get(...prevWhere.params) as Record<string, number>;
+      const prevRow = db.prepare(`SELECT ${cols} FROM llm_usage${prevWhere.sql}`).get(...prevWhere.params) as Record<string, number>;
       previous = toTotals(prevRow);
     }
   }
@@ -217,7 +223,7 @@ export function queryUsageOverview(db: Database.Database, filter: UsageQueryFilt
     db
       .prepare(
         `SELECT date(created_at / 1000, 'unixepoch', 'localtime') AS day,
-           ${TOTAL_COLS}
+           ${cols}
          FROM llm_usage${where.sql}
          GROUP BY day ORDER BY day ASC`
       )
@@ -227,7 +233,7 @@ export function queryUsageOverview(db: Database.Database, filter: UsageQueryFilt
   const bySource = (
     db
       .prepare(
-        `SELECT source, ${TOTAL_COLS}
+        `SELECT source, ${cols}
          FROM llm_usage${where.sql}
          GROUP BY source
          ORDER BY SUM(prompt_tokens) + SUM(completion_tokens) DESC`
@@ -238,7 +244,7 @@ export function queryUsageOverview(db: Database.Database, filter: UsageQueryFilt
   const byModel = (
     db
       .prepare(
-        `SELECT model, ${TOTAL_COLS}
+        `SELECT model, ${cols}
          FROM llm_usage${where.sql}
          GROUP BY model
          ORDER BY SUM(prompt_tokens) + SUM(completion_tokens) DESC`
