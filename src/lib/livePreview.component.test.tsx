@@ -326,3 +326,56 @@ describe("isTableSource", () => {
     expect(isTableSource("| a | b |\nno delimiter here")).toBe(false);
   });
 });
+
+describe("task-list checkbox widget", () => {
+  it("renders an unchecked checkbox for an inactive `- [ ]` item", () => {
+    const view = mount("intro\n\n- [ ] Todo item\n\nafter", 0); // cursor on line 1
+    const input = view.contentDOM.querySelector<HTMLInputElement>(".cm-lp-taskbox");
+    expect(input).toBeTruthy();
+    expect(input!.type).toBe("checkbox");
+    expect(input!.checked).toBe(false);
+    view.destroy();
+  });
+
+  it("renders a checked checkbox for `- [x]` / `- [X]` items", () => {
+    // Cursor on the "intro" line, so both task lines are inactive → both render.
+    const view = mount("intro\n\n- [x] done\n- [X] also done", 0);
+    const boxes = view.contentDOM.querySelectorAll<HTMLInputElement>(".cm-lp-taskbox");
+    expect(boxes.length).toBe(2);
+    expect(boxes[0].checked).toBe(true);
+    expect(boxes[1].checked).toBe(true);
+    view.destroy();
+  });
+
+  it("shows the raw `[ ]` source (no checkbox) when the cursor is on the task line", () => {
+    const view = mount("intro\n\n- [ ] Todo item\n\nafter", "intro\n\n- ".length);
+    expect(view.contentDOM.querySelector(".cm-lp-taskbox")).toBeNull();
+    expect(view.contentDOM.textContent).toContain("[ ] Todo");
+    view.destroy();
+  });
+
+  it("toggles the checkbox by writing the flipped marker back to source", () => {
+    const view = mount("intro\n\n- [ ] Todo item\n\nafter", 0);
+    const input = view.contentDOM.querySelector<HTMLInputElement>(".cm-lp-taskbox");
+    expect(input).toBeTruthy();
+    expect(view.state.doc.toString()).toContain("- [ ] Todo item");
+
+    input!.checked = true;
+    input!.dispatchEvent(new Event("change"));
+    expect(view.state.doc.toString()).toContain("- [x] Todo item");
+
+    view.destroy();
+  });
+
+  it("renders checkboxes for ordered task lists too", () => {
+    // Cursor on "intro", both ordered task lines inactive → both render.
+    const view = mount("intro\n\n1. [ ] first\n2. [x] second", 0);
+    const boxes = view.contentDOM.querySelectorAll<HTMLInputElement>(".cm-lp-taskbox");
+    expect(boxes.length).toBe(2);
+    expect(boxes[0].checked).toBe(false);
+    expect(boxes[1].checked).toBe(true);
+    // The ordered marker stays visible (not replaced by a bullet).
+    expect(view.contentDOM.textContent).toContain("1.");
+    view.destroy();
+  });
+});
