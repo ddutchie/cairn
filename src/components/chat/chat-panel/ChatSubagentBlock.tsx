@@ -66,6 +66,7 @@ export function ChatSubagentBlock({ sub }: { sub: ChatSubagent }) {
           <ContextRing
             promptTokens={sub.lastUsage.promptTokens}
             contextLimit={contextLimit}
+            breakdown={sub.lastUsage.breakdown}
             completionTokens={sub.lastUsage.completionTokens}
             reasoningTokens={sub.lastUsage.reasoningTokens}
             cacheReadTokens={sub.lastUsage.cacheReadTokens}

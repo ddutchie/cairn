@@ -7,7 +7,7 @@
  * relaunches while remaining private to the device.
  */
 
-import { getDb } from "./index";
+import { getMeta, setMeta, getDb } from "./index";
 
 import type { ChatUsage } from "@/chat/providers/types";
 
@@ -128,26 +128,22 @@ export function clearChatHistory(): void {
 
 // ── Last context-window usage ────────────────────────────────────────────────
 // The context ring is per-conversation session state; persist the latest value
-// (local-only, in app_settings — no capture trigger) so reopening the Chat tab
-// restores the ring instead of showing nothing until the next turn.
+// so reopening the Chat tab restores the ring instead of showing nothing until
+// the next turn.
+//
+// Stored in the DEVICE-GLOBAL meta DB (like AI config), NOT the per-workspace
+// source DB's `app_settings` — that table is deleted on the legacy→multi-source
+// upgrade and differs per workspace, so the ring used to reset to empty after an
+// upgrade or a workspace switch. Meta survives both. A one-time lazy migration
+// picks up a value previously written to `app_settings`.
 
 const USAGE_KEY = "chat.lastUsage";
 
-/** Persist the most recent context-window usage for the ring. */
-export function saveLastChatUsage(usage: ChatUsage): void {
-  getDb().runSync(
-    "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    USAGE_KEY,
-    JSON.stringify(usage),
-  );
-}
-
-/** Load the last persisted context-window usage, or null. */
-export function loadLastChatUsage(): ChatUsage | null {
-  const row = getDb().getFirstSync<{ value: string }>("SELECT value FROM app_settings WHERE key = ?", USAGE_KEY);
-  if (!row?.value) return null;
+/** Parse a persisted JSON blob into a ChatUsage, or null when invalid. */
+function parseUsage(raw: string | null | undefined): ChatUsage | null {
+  if (!raw) return null;
   try {
-    const u = JSON.parse(row.value) as Partial<ChatUsage>;
+    const u = JSON.parse(raw) as Partial<ChatUsage>;
     if (typeof u.promptTokens === "number" && typeof u.contextLimit === "number" && u.contextLimit > 0) {
       return {
         promptTokens: u.promptTokens,
@@ -157,6 +153,8 @@ export function loadLastChatUsage(): ChatUsage | null {
         completionTokens: u.completionTokens,
         reasoningTokens: u.reasoningTokens,
         costUsd: typeof u.costUsd === "number" ? u.costUsd : undefined,
+        cacheReadTokens: typeof u.cacheReadTokens === "number" ? u.cacheReadTokens : undefined,
+        cacheCreationTokens: typeof u.cacheCreationTokens === "number" ? u.cacheCreationTokens : undefined,
       };
     }
   } catch {
@@ -165,7 +163,36 @@ export function loadLastChatUsage(): ChatUsage | null {
   return null;
 }
 
+/** Persist the most recent context-window usage for the ring. */
+export function saveLastChatUsage(usage: ChatUsage): void {
+  setMeta(USAGE_KEY, JSON.stringify(usage));
+}
+
+/** Load the last persisted context-window usage, or null. */
+export function loadLastChatUsage(): ChatUsage | null {
+  // Device-global meta is the source of truth (survives workspace switches and
+  // the upgrade that wipes per-workspace app_settings).
+  const fromMeta = parseUsage(getMeta(USAGE_KEY));
+  if (fromMeta) return fromMeta;
+  // One-time lazy migration from the old per-workspace app_settings location.
+  const legacy = getDb().getFirstSync<{ value: string }>("SELECT value FROM app_settings WHERE key = ?", USAGE_KEY);
+  if (legacy?.value) {
+    const migrated = parseUsage(legacy.value);
+    if (migrated) {
+      setMeta(USAGE_KEY, legacy.value);
+      return migrated;
+    }
+  }
+  return null;
+}
+
 /** Clear the persisted usage (on chat clear). */
 export function clearLastChatUsage(): void {
-  getDb().runSync("DELETE FROM app_settings WHERE key = ?", USAGE_KEY);
+  setMeta(USAGE_KEY, "");
+  // Best-effort cleanup of the legacy location.
+  try {
+    getDb().runSync("DELETE FROM app_settings WHERE key = ?", USAGE_KEY);
+  } catch {
+    /* ignore */
+  }
 }

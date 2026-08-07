@@ -612,7 +612,7 @@ export interface ChatSubagent {
   /** Final result returned to the dispatcher (usually == content) */
   result?: string;
   /** This subagent's OWN latest context-window usage — drives its dedicated ring. */
-  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
 }
 
 export type SuggestedAction =

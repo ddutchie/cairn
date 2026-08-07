@@ -186,6 +186,8 @@ function makeStreamer(config: OpenAIConfig) {
     let completionTokens: number | undefined;
     let reasoningTokens: number | undefined;
     let costUsd: number | undefined;
+    let cacheReadTokens: number | undefined;
+    let cacheCreationTokens: number | undefined;
 
     // Build the ring usage from the server's prompt_tokens + the model's context
     // window (models.dev, cached). Undefined when the endpoint reported no usage.
@@ -193,7 +195,7 @@ function makeStreamer(config: OpenAIConfig) {
       if (promptTokens == null) return undefined;
       // Manual override wins; else look up the model in models.dev; else default.
       const contextLimit = config.contextLimit ?? (await contextLimitForModel(config.model));
-      return { promptTokens, contextLimit, completionTokens, reasoningTokens, costUsd };
+      return { promptTokens, contextLimit, completionTokens, reasoningTokens, costUsd, cacheReadTokens, cacheCreationTokens };
     };
 
     const flushTools = function* (): Generator<StreamEvent> {
@@ -251,6 +253,12 @@ function makeStreamer(config: OpenAIConfig) {
               // Some OpenAI-compatible providers (e.g. Neuralwatt) report the
               // USD cost of the call here.
               cost?: number;
+              // Prompt-cache tokens: OpenAI-style (cached_tokens is a subset of
+              // prompt_tokens) or Anthropic-style via a gateway (separate
+              // cache_read/creation input counts).
+              prompt_tokens_details?: { cached_tokens?: number };
+              cache_read_input_tokens?: number;
+              cache_creation_input_tokens?: number;
             };
           };
           try {
@@ -270,6 +278,13 @@ function makeStreamer(config: OpenAIConfig) {
           }
           if (typeof chunk.usage?.cost === "number") {
             costUsd = chunk.usage.cost;
+          }
+          const cacheRead =
+            (chunk.usage?.cache_read_input_tokens ?? 0) +
+            (chunk.usage?.prompt_tokens_details?.cached_tokens ?? 0);
+          if (cacheRead > 0) cacheReadTokens = cacheRead;
+          if (typeof chunk.usage?.cache_creation_input_tokens === "number") {
+            cacheCreationTokens = chunk.usage.cache_creation_input_tokens;
           }
           const choice = chunk.choices?.[0];
           if (!choice) continue;

@@ -318,6 +318,8 @@ export default function ChatScreen() {
                   completionTokens={usage.completionTokens}
                   reasoningTokens={usage.reasoningTokens}
                   costUsd={usage.costUsd}
+                  cacheReadTokens={usage.cacheReadTokens}
+                  cacheCreationTokens={usage.cacheCreationTokens}
                 />
               )
               : undefined,
