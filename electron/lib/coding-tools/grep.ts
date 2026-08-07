@@ -32,30 +32,32 @@ function matchesInclude(filePath: string, include?: string): boolean {
   return new RegExp(pattern + "$").test(filePath);
 }
 
-function searchDir(
+async function searchDir(
   dirPath: string,
   regex: RegExp,
   include: string | undefined,
   results: GrepMatch[]
-): void {
+): Promise<void> {
   if (results.length >= MAX_RESULTS) return;
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
   } catch { return; }
 
   for (const entry of entries) {
     if (results.length >= MAX_RESULTS) break;
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
-      searchDir(path.join(dirPath, entry.name), regex, include, results);
+      await searchDir(path.join(dirPath, entry.name), regex, include, results);
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
       if (SKIP_EXTS.has(ext)) continue;
       const filePath = path.join(dirPath, entry.name);
       if (!matchesInclude(filePath, include)) continue;
       try {
-        const content = fs.readFileSync(filePath, "utf8");
+        // Async read — the main process yields between files so IPC to the
+        // renderer (chips, token stream) keeps flowing during large searches.
+        const content = await fs.promises.readFile(filePath, "utf8");
         const lines = content.split("\n");
         lines.forEach((line, i) => {
           if (results.length >= MAX_RESULTS) return;
@@ -84,7 +86,7 @@ export async function grepTool(args: GrepArgs, cwd: string): Promise<string> {
 
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(searchPath);
+    stat = await fs.promises.stat(searchPath);
   } catch {
     throw new Error(`Path not found: ${args.path ?? "."}`);
   }
@@ -92,12 +94,12 @@ export async function grepTool(args: GrepArgs, cwd: string): Promise<string> {
   if (stat.isFile()) {
     const ext = path.extname(searchPath).toLowerCase();
     if (SKIP_EXTS.has(ext)) return "Cannot search binary files.";
-    const content = fs.readFileSync(searchPath, "utf8");
+    const content = await fs.promises.readFile(searchPath, "utf8");
     content.split("\n").forEach((line, i) => {
       if (regex.test(line)) results.push({ file: searchPath, line: i + 1, content: line.trim() });
     });
   } else {
-    searchDir(searchPath, regex, args.include, results);
+    await searchDir(searchPath, regex, args.include, results);
   }
 
   if (results.length === 0) return "No matches found.";

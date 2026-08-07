@@ -23,7 +23,7 @@ export async function readTool(args: ReadArgs, cwd: string): Promise<string> {
 
   let content: string;
   try {
-    content = fs.readFileSync(filePath, "utf8");
+    content = await fs.promises.readFile(filePath, "utf8");
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     if (err.code === "ENOENT") throw new Error(`File not found: ${args.path}`);

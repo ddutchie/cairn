@@ -19,7 +19,7 @@ export async function lsTool(args: LsArgs, cwd: string): Promise<string> {
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     if (err.code === "ENOENT") throw new Error(`Directory not found: ${args.path ?? "."}`);
