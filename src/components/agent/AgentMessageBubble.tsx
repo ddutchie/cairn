@@ -160,7 +160,11 @@ function ToolChip({ tc, sessionId, connectors }: ToolChipProps) {
 
 function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
   const [expanded, setExpanded] = useState(false);
-  const contextLimit = useCairnStore((s) => s.aiConfig.contextLimit ?? 128000);
+  // The subagent runs the CODING AGENT's model (inherits the parent's llmConfig),
+  // so its context ring must use the agent's context limit — NOT the chat AI
+  // config (a different model's limit, e.g. a 200K chat model would otherwise
+  // cap every agent subagent ring at 200K regardless of the agent model).
+  const contextLimit = useCairnStore((s) => s.agentConfig.contextLimit ?? 128000);
 
   return (
     <div className="mt-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
