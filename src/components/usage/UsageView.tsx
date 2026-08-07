@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useMemo, useState, useEffect, useSyncExternalStore } from "react";
-import { RefreshCw, Percent } from "lucide-react";
+import { RefreshCw, Percent, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUsage, USAGE_RANGES } from "@/hooks/useUsage";
 import { UsageChart, type UsageMetric } from "./UsageChart";
 import { Select } from "@/components/ui/select";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cacheHitColor } from "@/lib/cache-metrics";
 import { fmtCompact, fmtFull, fmtDateTime } from "./usage-format";
 import { formatUsd } from "../../../shared/chat/provider-credits";
@@ -157,7 +158,14 @@ export function UsageView() {
   const [includeEstimated, setIncludeEstimated] = useState(true);
 
   const range = USAGE_RANGES[rangeIdx];
-  const { overview, recent, loading, refresh } = useUsage(range.days, source, !includeEstimated);
+  const { overview, recent, loading, refresh, clear } = useUsage(range.days, source, !includeEstimated);
+  // Two-step destructive confirm for the clear action; auto-disarms after 4s.
+  const [confirmClear, setConfirmClear] = useState(false);
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
 
   // Load the models.dev catalog (for model/provider logos) and re-render when it
   // arrives or refreshes, so the icons appear once resolution is possible.
@@ -228,13 +236,38 @@ export function UsageView() {
             <Percent size={12} />
             Estimates
           </button>
-          <button
-            onClick={refresh}
-            title="Reload data"
-            className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
+          <Tooltip
+            content={confirmClear ? "Click again to delete all recorded usage" : "Clear recorded usage data"}
+            side="bottom"
           >
-            <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
-          </button>
+            <button
+              onClick={() => {
+                if (confirmClear) {
+                  setConfirmClear(false);
+                  void clear();
+                } else {
+                  setConfirmClear(true);
+                }
+              }}
+              className={cn(
+                "flex items-center gap-1 px-1.5 py-1 rounded border transition-colors",
+                confirmClear
+                  ? "border-[var(--danger)] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-2)]"
+              )}
+            >
+              <Trash2 size={11} className={confirmClear ? "text-[var(--danger)]" : ""} />
+              {confirmClear && <span className="text-[0.643rem] font-medium">Confirm</span>}
+            </button>
+          </Tooltip>
+          <Tooltip content="Reload data" side="bottom">
+            <button
+              onClick={refresh}
+              className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 

@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "./schema";
-import { insertLlmUsage, queryUsageOverview, queryRecentUsage, applyRecoveredTurnCost, type LlmUsageRecord } from "./usage-queries";
+import { insertLlmUsage, queryUsageOverview, queryRecentUsage, applyRecoveredTurnCost, clearLlmUsage, type LlmUsageRecord } from "./usage-queries";
 
 // The per-day series buckets via SQLite's `localtime` modifier, which honours
 // the process TZ. Pin it to UTC so the "2026-08-05 / 2026-08-06" date
@@ -164,6 +164,24 @@ describe("usage-queries", () => {
     expect(recent).toHaveLength(2);
     expect(recent.every((r) => r.costEstimated === false)).toBe(true);
     expect(recent.every((r) => r.costUsd != null)).toBe(true);
+  });
+
+  it("clears usage rows, optionally scoped to a workspace", () => {
+    insertLlmUsage(db, rec({ source: "chat", workspaceId: "ws-1", promptTokens: 100 }));
+    insertLlmUsage(db, rec({ source: "chat", workspaceId: "ws-2", promptTokens: 200 }));
+    insertLlmUsage(db, rec({ source: "commit-message", workspaceId: undefined, promptTokens: 300 }));
+
+    // Workspace-scoped clear removes that workspace's rows PLUS the global
+    // one-shot rows (the same scope the view shows).
+    const deleted = clearLlmUsage(db, { workspaceId: "ws-1" });
+    expect(deleted).toBe(2);
+    expect(queryRecentUsage(db, {}, 10)).toHaveLength(1);
+    expect(queryRecentUsage(db, {}, 10)[0].workspaceId).toBe("ws-2");
+
+    // No filter → clear everything.
+    const all = clearLlmUsage(db);
+    expect(all).toBe(1);
+    expect(queryRecentUsage(db, {}, 10)).toHaveLength(0);
   });
 
   it("writes a recovered turn cost back onto estimated rows proportionally", () => {

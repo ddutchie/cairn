@@ -472,6 +472,9 @@ const api = {
       invoke<UsageOverviewData>("usage:overview", args),
     recent: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number; excludeEstimated?: boolean }) =>
       invoke<UsageRecentRow[]>("usage:recent", args),
+    /** Destructive — delete recorded usage rows scoped to the workspace filter. */
+    clear: (args: { workspaceId?: string }) =>
+      invoke<{ deleted: number; ok: boolean }>("usage:clear", args),
     /** Push the models.dev per-1M pricing map (used for cost estimation). */
     setPricing: (map: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }>) =>
       invoke<{ ok: boolean }>("app:modelPricing", map),
