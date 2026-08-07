@@ -125,7 +125,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     <aside
       ref={panelRef}
       className={cn(
-        "fixed top-[var(--chrome-top,41px)] bottom-0 z-30 flex overflow-hidden",
+        "fixed top-[var(--chrome-top,40px)] bottom-0 z-30 flex overflow-hidden",
         !chatPanelResizing && "transition-all duration-300 ease-in-out",
         positioningClasses
       )}

@@ -394,17 +394,18 @@ export default function Home() {
 
   // Main app
   // Top offset for fixed-position chrome (the chat panel): the title bar
-  // occupies 41px (40px + 1px bottom border, both font-scale-independent), plus
-  // the update banner when visible. The banner is `h-9` (2.25rem) in
-  // app-chrome.tsx, so we add the SAME rem-based height here — a hard-coded px
-  // value would drift from the banner's real size under applyFontScale() /
-  // --font-scale root sizing. The chat panel anchors to this so it never
-  // overlaps the banner's download button and aligns with the Topbar.
+  // occupies 40px (height:40 with box-sizing:border-box — the 1px bottom border
+  // is INSIDE that box, not added), plus the update banner when visible. The
+  // banner is `h-9` (2.25rem) in app-chrome.tsx, so we add the SAME rem-based
+  // height here — a hard-coded px value would drift from the banner's real size
+  // under applyFontScale() / --font-scale root sizing. The chat panel anchors to
+  // this so it never overlaps the banner's download button and aligns with the
+  // Topbar (which sits right below the title bar in normal flow).
   const updateBannerVisible = !!(updateVersion || updateDownloaded);
   const conflictBannerVisible = syncConflicts > 0;
-  // Each banner is h-9 (2.25rem). Stack their heights onto the 41px title bar.
+  // Each banner is h-9 (2.25rem). Stack their heights onto the 40px title bar.
   const bannerRems = (updateBannerVisible ? 2.25 : 0) + (conflictBannerVisible ? 2.25 : 0);
-  const chromeTop = bannerRems > 0 ? `calc(41px + ${bannerRems}rem)` : "41px";
+  const chromeTop = bannerRems > 0 ? `calc(40px + ${bannerRems}rem)` : "40px";
   return (
     <main
       className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]"
