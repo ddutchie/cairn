@@ -180,21 +180,16 @@ describe("prepareContextMessages", () => {
 });
 
 describe("resolveSystemRole (pi parity)", () => {
-  it("uses developer for reasoning models on standard OpenAI-compatible providers", () => {
+  it("uses developer for reasoning models on known-good OpenAI/Azure endpoints", () => {
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://api.openai.com/v1", provider: "openai", modelId: "gpt-5" }))
       .toBe("developer");
-    expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://example.com/v1", modelId: "o3" }))
+    expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://myres.openai.azure.com/openai/deployments/gpt-5", provider: "azure", modelId: "gpt-5" }))
       .toBe("developer");
   });
 
-  it("stays system for non-reasoning models", () => {
-    expect(resolveSystemRole({ isReasoningModel: false, baseUrl: "https://api.openai.com/v1" }))
+  it("stays system on unknown/custom endpoints (they may 400 on the developer role)", () => {
+    expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://example.com/v1", modelId: "o3" }))
       .toBe("system");
-    expect(resolveSystemRole({ baseUrl: "https://api.openai.com/v1" }))
-      .toBe("system");
-  });
-
-  it("stays system on the denylisted providers (pi detectCompat)", () => {
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://api.deepseek.com/v1", modelId: "deepseek-r1" }))
       .toBe("system");
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://integrate.api.nvidia.com/v1" }))
@@ -202,6 +197,13 @@ describe("resolveSystemRole (pi parity)", () => {
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://api.together.ai/v1" }))
       .toBe("system");
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "http://127.0.0.1:8080/v1", provider: "localllm" }))
+      .toBe("system");
+  });
+
+  it("stays system for non-reasoning models", () => {
+    expect(resolveSystemRole({ isReasoningModel: false, baseUrl: "https://api.openai.com/v1" }))
+      .toBe("system");
+    expect(resolveSystemRole({ baseUrl: "https://api.openai.com/v1" }))
       .toBe("system");
   });
 
@@ -214,9 +216,11 @@ describe("resolveSystemRole (pi parity)", () => {
       .toBe("system");
   });
 
-  it("exposes the denylist predicate for consumers", () => {
+  it("exposes the allowlist predicate for consumers", () => {
     expect(supportsDeveloperRole({ baseUrl: "https://api.openai.com/v1" })).toBe(true);
+    expect(supportsDeveloperRole({ baseUrl: "https://myres.openai.azure.com" })).toBe(true);
     expect(supportsDeveloperRole({ baseUrl: "https://api.deepseek.com/v1" })).toBe(false);
+    expect(supportsDeveloperRole({ baseUrl: "https://gateway.console.go/v1" })).toBe(false);
   });
 });
 

@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Percent } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUsage, USAGE_RANGES } from "@/hooks/useUsage";
 import { UsageChart, type UsageMetric } from "./UsageChart";
 import { Select } from "@/components/ui/select";
+import { cacheHitColor } from "@/lib/cache-metrics";
 import { fmtCompact, fmtFull, fmtDateTime } from "./usage-format";
 import { formatUsd } from "../../../shared/chat/provider-credits";
 import { USAGE_SOURCE_LABELS, type UsageSource, type UsageTotals } from "@/types/usage";
@@ -93,13 +94,13 @@ function Segmented<T extends string | number>({ options, value, onChange }: {
   );
 }
 
-function StatCard({ label, value, valueClass, delta }: { label: string; value: string; valueClass?: string; delta?: string }) {
+function StatCard({ label, value, valueClass, valueStyle, delta, deltaStyle }: { label: string; value: string; valueClass?: string; valueStyle?: React.CSSProperties; delta?: string; deltaStyle?: React.CSSProperties }) {
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 flex flex-col gap-0.5">
       <div className="text-[0.643rem] uppercase tracking-[0.07em] text-[var(--text-tertiary)]">{label}</div>
-      <div className={`font-mono text-xl font-semibold tabular-nums tracking-tight ${valueClass ?? "text-[var(--text-primary)]"}`}>{value}</div>
+      <div className={`font-mono text-xl font-semibold tabular-nums tracking-tight ${valueClass ?? "text-[var(--text-primary)]"}`} style={valueStyle}>{value}</div>
       {delta ? (
-        <div className={cn("text-[0.643rem]", delta.startsWith("↑") ? "text-[var(--success)]" : delta.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")}>{delta}</div>
+        <div className={cn("text-[0.643rem]", delta.startsWith("↑") ? "text-[var(--success)]" : delta.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")} style={deltaStyle}>{delta}</div>
       ) : (
         <div className="text-[0.643rem] text-[var(--text-tertiary)]">—</div>
       )}
@@ -119,14 +120,18 @@ export function UsageView() {
   const [metric, setMetric] = useState<UsageMetric>("tokens");
   const [source, setSource] = useState<UsageSource | "">("");
   // Estimated rows (models.dev price guess, no provider-reported cost) shown by
-  // default; off → they're dropped from every aggregate and the history.
-  const [excludeEstimated, setExcludeEstimated] = useState(false);
+  // default (toggle on); off → they're dropped from every aggregate + history.
+  const [includeEstimated, setIncludeEstimated] = useState(true);
 
   const range = USAGE_RANGES[rangeIdx];
-  const { overview, recent, loading, refresh } = useUsage(range.days, source, excludeEstimated);
+  const { overview, recent, loading, refresh } = useUsage(range.days, source, !includeEstimated);
 
   const totals = overview?.totals;
   const rangeLabel = range.days == null ? "period" : `${range.days}d`;
+
+  // Overall cache-read share of input, for the "Cached input" stat colour.
+  const cachePct = totals && totals.promptTokens > 0 ? totals.cacheReadTokens / totals.promptTokens : 0;
+  const cacheColor = totals && cachePct > 0 ? cacheHitColor(cachePct) : undefined;
 
   const byModel = useMemo(() => {
     if (!overview) return [];
@@ -168,23 +173,21 @@ export function UsageView() {
             onChange={setRangeIdx}
           />
           <button
-            onClick={() => setExcludeEstimated((v) => !v)}
-            aria-pressed={excludeEstimated}
+            onClick={() => setIncludeEstimated((v) => !v)}
+            aria-pressed={includeEstimated}
             title={
-              excludeEstimated
-                ? "Estimates hidden — only calls with a provider-reported cost are shown"
-                : "Estimates shown — calls whose cost is estimated from models.dev pricing are included"
+              includeEstimated
+                ? "Estimates shown — calls whose cost is estimated from models.dev pricing are included"
+                : "Estimates hidden — only calls with a provider-reported cost are shown"
             }
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs transition-colors",
-              excludeEstimated
-                ? "border-[var(--accent)] bg-[var(--accent-dim)] text-[var(--accent)]"
-                : "border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition-colors",
+              includeEstimated
+                ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]"
+                : "border-[var(--border)] text-[var(--text-tertiary)]"
             )}
           >
-            <span className={cn("w-7 h-3.5 rounded-full transition-colors relative", excludeEstimated ? "bg-[var(--accent)]" : "bg-[var(--border)]")}>
-              <span className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--surface)] transition-all", excludeEstimated ? "left-4" : "left-0.5")} />
-            </span>
+            <Percent size={12} />
             Estimates
           </button>
           <button
@@ -204,7 +207,7 @@ export function UsageView() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <StatCard label="Input tokens" value={totals ? fmtCompact(totals.promptTokens) : "—"} valueClass="text-[var(--accent)]" delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "promptTokens", rangeLabel) : undefined} />
             <StatCard label="Output tokens" value={totals ? fmtCompact(totals.completionTokens) : "—"} />
-            <StatCard label="Cached input" value={totals ? fmtCompact(totals.cacheReadTokens) : "—"} valueClass="text-[var(--warning)]" delta={totals && totals.promptTokens > 0 && totals.cacheReadTokens > 0 ? `${Math.round((totals.cacheReadTokens / totals.promptTokens) * 100)}% of input` : ""} />
+            <StatCard label="Cached input" value={totals ? fmtCompact(totals.cacheReadTokens) : "—"} valueStyle={cacheColor ? { color: cacheColor } : undefined} delta={cacheColor ? `${Math.round(cachePct * 100)}% of input` : ""} deltaStyle={cacheColor ? { color: cacheColor } : undefined} />
             <StatCard label="Total cost" value={totals ? formatUsd(totals.costUsd) : "—"} delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "costUsd", rangeLabel) : undefined} />
             <StatCard label="Requests" value={totals ? fmtFull(totals.requests) : "—"} />
           </div>
@@ -283,13 +286,13 @@ export function UsageView() {
               <div className="text-xs font-semibold text-[var(--text-primary)]">Usage history</div>
               <div className="text-[0.643rem] text-[var(--text-tertiary)]">{recent.length === 0 ? "" : `latest ${recent.length} calls`}</div>
             </div>
-            {recent.length > 0 && !excludeEstimated && (
+            {recent.length > 0 && includeEstimated && (
               <div className="px-4 pb-1 text-[0.643rem] text-[var(--text-tertiary)]">~ = estimated from models.dev pricing</div>
             )}
             {recent.length === 0 ? (
               <div className="px-4 py-8 text-xs text-[var(--text-tertiary)]">
-                {excludeEstimated
-                  ? "No calls with a provider-reported cost in this range — toggle the Estimates switch to include models.dev estimates."
+                {!includeEstimated
+                  ? "No calls with a provider-reported cost in this range — toggle the Estimates button to include models.dev estimates."
                   : "No LLM calls recorded yet — send a chat message or run an agent and it will appear here."}
               </div>
             ) : (
@@ -325,7 +328,7 @@ export function UsageView() {
                             <span className="inline-flex flex-col items-end leading-tight">
                               <span className="font-mono tabular-nums text-[var(--warning)]">{fmtFull(r.cacheReadTokens)}</span>
                               {r.promptTokens > 0 && (
-                                <span className="text-[0.571rem] text-[var(--text-tertiary)]">
+                                <span className="text-[0.571rem]" style={{ color: cacheHitColor(r.cacheReadTokens / r.promptTokens) }}>
                                   {Math.round((r.cacheReadTokens / r.promptTokens) * 100)}% of input
                                 </span>
                               )}

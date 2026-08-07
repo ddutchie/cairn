@@ -285,57 +285,35 @@ export function failToolCallsFromTruncatedMessage(
 // ── Message preparation ──────────────────────────────────────────────────────
 
 /**
- * Providers with quirky system-role handling (pi's `detectCompat` denylist):
- * their URLs are excluded from the `developer` role even for reasoning models.
+ * Base-URL fragments known to accept the OpenAI `developer` system role for
+ * reasoning models. Every OTHER provider gets `system`: an unknown or custom
+ * endpoint (a gateway, opencode's Console Go, LM Studio, …) may reject the
+ * `developer` role outright with a 400 — "unknown variant developer, expected
+ * one of system/user/assistant" — and `system` is universally accepted, so the
+ * safe default is `system` unless we know the target supports `developer`.
  */
-const NON_STANDARD_PROVIDERS = new Set([
-  "nvidia",
-  "cerebras",
-  "xai",
-  "together",
-  "zai",
-  "moonshotai",
-  "moonshotai-cn",
-  "ant-ling",
-  // Cairn-specific: the on-device Llama server wraps small models (Qwen/DeepSeek
-  // based) that don't understand the developer role.
-  "localllm",
-]);
-
-/** Base-URL fragments that identify the same non-standard providers. */
-const NON_STANDARD_URL_FRAGMENTS = [
-  "integrate.api.nvidia.com",
-  "cerebras.ai",
-  "api.x.ai",
-  "api.together.ai",
-  "api.together.xyz",
-  "chutes.ai",
-  "deepseek.com",
-  "api.z.ai",
-  "open.bigmodel.cn",
-  "api.moonshot.",
-  "api.cloudflare.com",
-  "gateway.ai.cloudflare.com",
-  "api.ant-ling.com",
+const DEVELOPER_ROLE_URL_FRAGMENTS = [
+  "api.openai.com",
+  "openai.azure.com",
+  "api.azure.com",
 ];
 
 /**
- * Whether a provider/baseUrl is a known-good `developer`-role target, mirroring
- * pi's `detectCompat().supportsDeveloperRole` denylist (`openai-completions.ts`).
- * Every standard OpenAI-compatible provider qualifies EXCEPT the denylisted
- * "non-standard" ones (quirky system-role handling) and OpenRouter (which only
- * maps the `developer` role for Anthropic/OpenAI models).
+ * Whether a provider/baseUrl is a known-good `developer`-role target. An
+ * allowlist (not a denylist): only OpenAI / Azure OpenAI and OpenRouter
+ * Anthropic/OpenAI models opt in to `developer`; everything else conservatively
+ * uses `system` so a provider that doesn't understand the role can't 400 the
+ * whole request. Reasoning still works under `system` — the `developer` role is
+ * only an instruction-hierarchy nicety, not a requirement.
  */
 export function supportsDeveloperRole(opts: { baseUrl?: string; provider?: string; modelId?: string }): boolean {
   const baseUrl = opts.baseUrl ?? "";
   const provider = opts.provider ?? "";
-  const isNonStandard =
-    NON_STANDARD_PROVIDERS.has(provider) ||
-    NON_STANDARD_URL_FRAGMENTS.some((frag) => baseUrl.includes(frag));
-  const isOpenRouter = provider === "openrouter" || baseUrl.includes("openrouter.ai");
-  const isOpenRouterDevModel =
-    isOpenRouter && (opts.modelId?.startsWith("anthropic/") || opts.modelId?.startsWith("openai/"));
-  return isOpenRouterDevModel || (!isNonStandard && !isOpenRouter);
+  // OpenRouter maps the `developer` role only for Anthropic/OpenAI models.
+  if (provider === "openrouter" || baseUrl.includes("openrouter.ai")) {
+    return (opts.modelId?.startsWith("anthropic/") ?? false) || (opts.modelId?.startsWith("openai/") ?? false);
+  }
+  return DEVELOPER_ROLE_URL_FRAGMENTS.some((frag) => baseUrl.includes(frag));
 }
 
 /**
