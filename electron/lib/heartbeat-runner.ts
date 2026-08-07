@@ -239,7 +239,7 @@ export async function runAutomation(
     provider,
     // Persist one usage row per automation round for the Usage view (previously
     // usage was never captured for background runs).
-    (pt, ct, rt, costUsd) => {
+    (pt, ct, rt, costUsd, cacheRead, cacheCreate) => {
       recordLlmUsage({
         source: "automation",
         sessionId: run.id,
@@ -251,6 +251,8 @@ export async function runAutomation(
         promptTokens: pt,
         completionTokens: ct,
         reasoningTokens: rt ?? 0,
+        cacheReadTokens: cacheRead,
+        cacheCreationTokens: cacheCreate,
         costUsd,
       });
     },

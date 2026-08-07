@@ -974,6 +974,21 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_llm_usage_workspace ON llm_usage(workspace_id, created_at);
     `);
   },
+
+  // v39: Prompt-cache token counts on llm_usage (cache_read_tokens /
+  // cache_creation_tokens) — the columns backing cache-hit tracking in the Usage
+  // view. Added transactionally here so every DB (fresh or upgraded) gets them
+  // before the schema version advances; the ensureColumns guards below remain as
+  // a compatibility fallback for DBs whose user_version was already advanced.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(llm_usage)").all() as { name: string }[];
+    if (cols.length > 0 && !cols.some((c) => c.name === "cache_read_tokens")) {
+      db.exec("ALTER TABLE llm_usage ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0");
+    }
+    if (cols.length > 0 && !cols.some((c) => c.name === "cache_creation_tokens")) {
+      db.exec("ALTER TABLE llm_usage ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1026,6 +1041,10 @@ function ensureColumns(db: Database.Database): void {
   // v38 llm_usage — cost_estimated added after the initial table shipped in an
   // interim build; existing dev DBs get the column here, fresh ones from v38.
   ensure("llm_usage", "cost_estimated", "cost_estimated INTEGER NOT NULL DEFAULT 0");
+  // Prompt-cache token counts (cache_read/cache_creation) added for cache-hit
+  // tracking — additive, so a guard rather than a new migration is enough.
+  ensure("llm_usage", "cache_read_tokens", "cache_read_tokens INTEGER NOT NULL DEFAULT 0");
+  ensure("llm_usage", "cache_creation_tokens", "cache_creation_tokens INTEGER NOT NULL DEFAULT 0");
 }
 
 function runMigrations(db: Database.Database): void {

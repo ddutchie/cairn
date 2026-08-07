@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
+import { Select } from "@/components/ui/select";
 import { cn, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
 import type { TaskCard, BoardColumn, Project, Priority } from "@/types";
 
@@ -85,16 +86,14 @@ export function CardDetailSidebar({
         <label htmlFor="card-detail-column" className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
           <ArrowRight size={10} className="inline mr-0.5" aria-hidden="true" />Column
         </label>
-        <select
-          id="card-detail-column"
+        <Select
           value={card.columnId}
-          onChange={(e) => onUpdateCard(card.id, { columnId: e.target.value })}
-          className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]"
-        >
-          {projectColumns.map((col) => (
-            <option key={col.id} value={col.id}>{col.name}</option>
-          ))}
-        </select>
+          options={projectColumns.map((col) => ({ value: col.id, label: col.name }))}
+          onChange={(v) => onUpdateCard(card.id, { columnId: v })}
+          id="card-detail-column"
+          ariaLabel="Move to column"
+          className="w-full"
+        />
       </div>
 
       {/* Assignee */}
@@ -151,28 +150,22 @@ export function CardDetailSidebar({
           </div>
         )}
         {candidateBlockers.length > 0 && (
-          <select
+          <Select
             value=""
-            onChange={async (e) => {
-              const blockerCardId = e.target.value;
-              if (!blockerCardId) return;
-              setBlockerError(null);
-              const result = await onAddBlocker(card.id, blockerCardId);
-              if (result.error) setBlockerError(result.error);
-              e.target.value = "";
-            }}
-            className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[0.714rem] text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
-          >
-            <option value="">+ Add blocker…</option>
-            {candidateBlockers.map((c) => {
+            options={candidateBlockers.map((c) => {
               const col = columns.find((col) => col.id === c.columnId);
-              return (
-                <option key={c.id} value={c.id}>
-                  {c.title}{col ? ` (${col.name})` : ""}
-                </option>
-              );
+              return { value: c.id, label: col ? `${c.title} (${col.name})` : c.title };
             })}
-          </select>
+            onChange={async (v) => {
+              if (!v) return;
+              setBlockerError(null);
+              const result = await onAddBlocker(card.id, v);
+              if (result.error) setBlockerError(result.error);
+            }}
+            placeholder="+ Add blocker…"
+            ariaLabel="Add blocker"
+            className="w-full text-[var(--text-tertiary)]"
+          />
         )}
         {blockerError && (
           <p className="text-[0.714rem] text-[var(--danger)] mt-1">{blockerError}</p>

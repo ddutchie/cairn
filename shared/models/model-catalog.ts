@@ -24,6 +24,10 @@ export interface ModelInfo {  /** Context window in tokens (limit.context). */
   input: number | null;
   /** USD per 1M output tokens (cost.output). */
   output: number | null;
+  /** USD per 1M prompt-cache-read tokens (cost.cache_read), when the model prices cache hits. */
+  cacheRead: number | null;
+  /** USD per 1M prompt-cache-write tokens (cost.cache_write), when the model prices cache writes. */
+  cacheWrite: number | null;
   /** Input modalities (modalities.input): text, image, pdf, video, audio… */
   modes: string[];
   /** Whether the model supports tool calls, when known. */
@@ -292,6 +296,8 @@ export function normalizeModelInfo(info: ModelInfo | null | undefined): ModelInf
     maxOutput: positiveTokenLimit(info.maxOutput),
     input: typeof info.input === "number" ? info.input : null,
     output: typeof info.output === "number" ? info.output : null,
+    cacheRead: typeof info.cacheRead === "number" ? info.cacheRead : null,
+    cacheWrite: typeof info.cacheWrite === "number" ? info.cacheWrite : null,
     modes,
     toolCall: typeof info.toolCall === "boolean" ? info.toolCall : null,
     reasoning: typeof info.reasoning === "boolean" ? info.reasoning : null,
@@ -312,7 +318,7 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
     for (const [id, model] of Object.entries(models as Record<string, unknown>)) {
       const m = model as {
         limit?: { context?: unknown; output?: unknown };
-        cost?: { input?: unknown; output?: unknown };
+        cost?: { input?: unknown; output?: unknown; cache_read?: unknown; cache_write?: unknown };
         modalities?: { input?: unknown };
         tool_call?: unknown;
         reasoning?: unknown;
@@ -327,6 +333,8 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
         maxOutput: positiveTokenLimit(m.limit?.output),
         input: readNum(m.cost?.input),
         output: readNum(m.cost?.output),
+        cacheRead: readNum(m.cost?.cache_read),
+        cacheWrite: readNum(m.cost?.cache_write),
         modes: inModes,
         toolCall: typeof m.tool_call === "boolean" ? m.tool_call : null,
         reasoning: typeof m.reasoning === "boolean" ? m.reasoning : null,

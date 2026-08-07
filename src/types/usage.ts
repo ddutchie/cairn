@@ -37,6 +37,8 @@ export interface UsageTotals {
   promptTokens: number;
   completionTokens: number;
   reasoningTokens: number;
+  /** Prompt tokens served from the provider's cache across the window. */
+  cacheReadTokens: number;
   costUsd: number;
   requests: number;
 }
@@ -66,6 +68,10 @@ export interface UsageRecentRow {
   promptTokens: number;
   completionTokens: number;
   reasoningTokens: number;
+  /** Prompt tokens served from the provider's cache. */
+  cacheReadTokens: number;
+  /** Prompt tokens written to the provider's cache. */
+  cacheCreationTokens: number;
   costUsd: number | null;
   costEstimated: boolean;
   finishReason: string | null;

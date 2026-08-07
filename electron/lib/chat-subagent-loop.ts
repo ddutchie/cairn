@@ -25,7 +25,7 @@ import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
 import { parseToolArgs } from "./parse-tool-args";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
-import { recordLlmUsage, extractCost } from "./usage-recorder";
+import { recordLlmUsage, extractCost, extractCacheTokens } from "./usage-recorder";
 
 /** Loosely-typed OpenAI function tool — the synthetic dispatch tools ("research",
  *  "write") aren't in the schema-derived `typeof TOOLS` union, so we widen. */
@@ -167,6 +167,12 @@ export interface SubagentMetrics {
   dispatcherPromptTokens: number;
   dispatcherCompletionTokens: number;
   dispatcherReasoningTokens: number;
+  /** Cache tokens (read/creation) across the dispatcher + every subagent turn. */
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  /** The DISPATCHER's own cache tokens on its last turn (context semantics). */
+  dispatcherCacheReadTokens: number;
+  dispatcherCacheCreationTokens: number;
   toolCalls: number;
   toolErrors: number;
   subagentRuns: number;
@@ -210,7 +216,7 @@ export interface SubagentEvents {
   /** A tool call finished inside a subagent. */
   onSubagentToolCallDone?: (e: { childId: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void;
   /** Latest token usage for a subagent (its OWN context window) — drives its ring. */
-  onSubagentUsage?: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number }) => void;
+  onSubagentUsage?: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number }) => void;
 }
 
 const DISPATCH_SYSTEM_PROMPT = (date: string) =>
@@ -288,7 +294,7 @@ async function runSubagent(
     signal,
     getWin,
     cfg.provider,
-    (pt, ct, rt, cost) => {
+    (pt, ct, rt, cost, cacheRead, cacheCreate) => {
       // Persist one usage row per subagent round for the Usage view.
       recordLlmUsage({
         source: "chat-subagent",
@@ -301,15 +307,18 @@ async function runSubagent(
         promptTokens: pt,
         completionTokens: ct,
         reasoningTokens: rt ?? 0,
+        cacheReadTokens: cacheRead,
+        cacheCreationTokens: cacheCreate,
         costUsd: cost,
       });
       // Accumulate into the total-cost figures…
       metrics.promptTokens += pt; metrics.completionTokens += ct; if (rt) metrics.reasoningTokens += rt;
+      metrics.cacheReadTokens += cacheRead ?? 0; metrics.cacheCreationTokens += cacheCreate ?? 0;
       // …and report THIS subagent's own context window (its latest prompt size)
       // so the renderer can give it a dedicated ring. prompt_tokens is the size
       // of the context this turn, not a running sum — take the latest value.
       addCost(cost);
-      if (childId) events?.onSubagentUsage?.({ childId, promptTokens: pt, completionTokens: ct, reasoningTokens: rt, costUsd: costAcc.usd });
+      if (childId) events?.onSubagentUsage?.({ childId, promptTokens: pt, completionTokens: ct, reasoningTokens: rt, costUsd: costAcc.usd, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreate });
     },
     (e) => {
       // Count tool errors by sniffing the JSON output for an error field.
@@ -394,9 +403,12 @@ async function forceFinalAnswer(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await response.json() as any;
     if (data.usage) {
+      const cache = extractCacheTokens(data.usage);
       metrics.promptTokens += data.usage.prompt_tokens ?? 0;
       metrics.completionTokens += data.usage.completion_tokens ?? 0;
       metrics.reasoningTokens += data.usage.completion_tokens_details?.reasoning_tokens ?? 0;
+      metrics.cacheReadTokens += cache.cacheReadTokens;
+      metrics.cacheCreationTokens += cache.cacheCreationTokens;
       addCost?.(data.cost ?? data.usage?.cost);
       recordLlmUsage({
         source: "chat-subagent",
@@ -409,6 +421,8 @@ async function forceFinalAnswer(
         promptTokens: data.usage.prompt_tokens ?? 0,
         completionTokens: data.usage.completion_tokens ?? 0,
         reasoningTokens: data.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+        cacheReadTokens: cache.cacheReadTokens,
+        cacheCreationTokens: cache.cacheCreationTokens,
         costUsd: extractCost(data.cost, data.usage),
       });
     }
@@ -460,6 +474,8 @@ export async function runDispatchLoop(
   const metrics: SubagentMetrics = {
     promptTokens: 0, completionTokens: 0, reasoningTokens: 0,
     dispatcherPromptTokens: 0, dispatcherCompletionTokens: 0, dispatcherReasoningTokens: 0,
+    cacheReadTokens: 0, cacheCreationTokens: 0,
+    dispatcherCacheReadTokens: 0, dispatcherCacheCreationTokens: 0,
     toolCalls: 0, toolErrors: 0, subagentRuns: 0,
     writeInvocations: 0, researchInvocations: 0,
   };
@@ -532,6 +548,7 @@ export async function runDispatchLoop(
       const pt = data.usage.prompt_tokens ?? 0;
       const ct = data.usage.completion_tokens ?? 0;
       const rt = data.usage.completion_tokens_details?.reasoning_tokens ?? 0;
+      const cache = extractCacheTokens(data.usage);
       // Persist one usage row per dispatcher round for the Usage view.
       recordLlmUsage({
         source: "chat-subagent",
@@ -544,12 +561,16 @@ export async function runDispatchLoop(
         promptTokens: pt,
         completionTokens: ct,
         reasoningTokens: rt,
+        cacheReadTokens: cache.cacheReadTokens,
+        cacheCreationTokens: cache.cacheCreationTokens,
         costUsd: extractCost(data.cost, data.usage),
       });
       // Total-cost figures accumulate across all turns…
       metrics.promptTokens += pt;
       metrics.completionTokens += ct;
       metrics.reasoningTokens += rt;
+      metrics.cacheReadTokens += cache.cacheReadTokens;
+      metrics.cacheCreationTokens += cache.cacheCreationTokens;
       // …but the dispatcher's CONTEXT is the latest turn's prompt size (system
       // prompt + subagent briefs fed back), NOT a running sum. This is what the
       // main/total ContextRing should reflect — the dispatcher never holds the
@@ -557,6 +578,8 @@ export async function runDispatchLoop(
       metrics.dispatcherPromptTokens = pt;
       metrics.dispatcherCompletionTokens += ct;
       metrics.dispatcherReasoningTokens += rt;
+      metrics.dispatcherCacheReadTokens = cache.cacheReadTokens;
+      metrics.dispatcherCacheCreationTokens = cache.cacheCreationTokens;
     }
     const costVal = typeof (data.cost as { request_cost_usd?: unknown } | undefined)?.request_cost_usd === "number"
       ? (data.cost as { request_cost_usd: number }).request_cost_usd

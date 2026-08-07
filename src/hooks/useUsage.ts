@@ -26,10 +26,12 @@ export interface UseUsageResult {
 
 /**
  * Fetches the usage overview + recent calls for the current workspace and range.
- * Re-fetches when the workspace, range, or source filter changes; `refresh`
- * forces a reload (e.g. after the user sends a chat turn).
+ * Re-fetches when the workspace, range, source filter, or estimate toggle
+ * changes; `refresh` forces a reload (e.g. after the user sends a chat turn).
+ * When `excludeEstimated` is true, rows whose cost is a models.dev estimate
+ * (provider reported none) are dropped from every aggregate and the history.
  */
-export function useUsage(days: number | null, source: UsageSource | ""): UseUsageResult {
+export function useUsage(days: number | null, source: UsageSource | "", excludeEstimated: boolean): UseUsageResult {
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
   const [overview, setOverview] = useState<UsageOverview | null>(null);
   const [recent, setRecent] = useState<UsageRecentRow[]>([]);
@@ -55,6 +57,7 @@ export function useUsage(days: number | null, source: UsageSource | ""): UseUsag
         source: source || undefined,
         from,
         to: Date.now(),
+        excludeEstimated,
       };
       try {
         const [o, r] = await Promise.all([
@@ -78,7 +81,7 @@ export function useUsage(days: number | null, source: UsageSource | ""): UseUsag
     return () => {
       cancelled = true;
     };
-  }, [days, source, activeWorkspaceId, nonce]);
+  }, [days, source, activeWorkspaceId, nonce, excludeEstimated]);
 
   return { overview, recent, loading, refresh };
 }

@@ -134,7 +134,7 @@ async function runSession(
         }
       },
       onStepStart:    () => send("pi-agent:step",  { sessionId }),
-      onUsage:        (promptTokens, completionTokens, reasoningTokens, breakdown) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens, reasoningTokens, breakdown }),
+      onUsage:        (promptTokens, completionTokens, reasoningTokens, breakdown, _cost, cacheRead, cacheCreate) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens, reasoningTokens, breakdown, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreate }),
       onRetry:        (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
       transformContext: session.compactionTransformer,
       onDone: () => {

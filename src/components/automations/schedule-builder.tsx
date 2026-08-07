@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { TimePicker } from "@/components/ui/time-picker";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -237,13 +238,13 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, 
               onChange={(e) => setIntervalN(Math.max(1, parseInt(e.target.value, 10) || 1))}
               className="w-20"
             />
-            <select
+            <Select
               value={intervalUnit}
-              onChange={(e) => setIntervalUnit(e.target.value)}
-              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-            >
-              {INTERVAL_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
+              onChange={setIntervalUnit}
+              size="md"
+              ariaLabel="Interval unit"
+              options={INTERVAL_UNITS.map((u) => ({ value: u, label: u }))}
+            />
             <span className="text-[var(--text-secondary)]">— repeats on that interval</span>
           </div>
         )}
@@ -289,13 +290,13 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, 
         {mode === "monthly" && (
           <div className="flex items-center gap-2">
             <span className="text-[var(--text-secondary)]">On day</span>
-            <select
+            <Select
               value={dayOfMonth}
-              onChange={(e) => setDayOfMonth(parseInt(e.target.value, 10))}
-              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-            >
-              {MONTH_DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
+              onChange={setDayOfMonth}
+              size="md"
+              ariaLabel="Day of month"
+              options={MONTH_DAYS.map((d) => ({ value: d, label: d }))}
+            />
             <span className="text-[var(--text-secondary)]">at</span>
             <TimeInput value={timeStr} onChange={setTimeStr} />
           </div>

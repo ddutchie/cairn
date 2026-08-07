@@ -2,19 +2,28 @@
  * Cairn — models.dev pricing cache (main process).
  *
  * The renderer owns the models.dev catalog (fetched once per run, cached in
- * localStorage). It pushes a compact `modelId → { input, output }` pricing map
- * (USD per 1M tokens) over IPC once the catalog loads; this module holds it and
- * lets the usage recorder estimate cost for providers that don't report it.
+ * localStorage). It pushes a compact `modelId → pricing` map (USD per 1M
+ * tokens) over IPC once the catalog loads; this module holds it and lets the
+ * usage recorder estimate cost for providers that don't report it.
  */
 
-let pricing: Record<string, { input: number | null; output: number | null }> | null = null;
+export interface ModelPrice {
+  input: number | null;
+  output: number | null;
+  /** USD per 1M prompt-cache-read tokens (models.dev cost.cache_read). */
+  cacheRead?: number | null;
+  /** USD per 1M prompt-cache-write tokens (models.dev cost.cache_write). */
+  cacheWrite?: number | null;
+}
 
-export function setModelPricing(map: Record<string, { input: number | null; output: number | null }> | null): void {
+let pricing: Record<string, ModelPrice> | null = null;
+
+export function setModelPricing(map: Record<string, ModelPrice> | null): void {
   pricing = map && Object.keys(map).length > 0 ? map : null;
 }
 
 /** USD per 1M tokens for a model id, or null when unknown. */
-export function pricePerMillion(model: string): { input: number | null; output: number | null } | null {
+export function pricePerMillion(model: string): ModelPrice | null {
   if (!pricing || !model) return null;
   const exact = pricing[model];
   if (exact) return exact;
@@ -34,13 +43,36 @@ export function pricePerMillion(model: string): { input: number | null; output: 
 /**
  * Estimate the USD cost of a request from models.dev per-1M pricing.
  * Returns undefined when pricing is unknown for the model or there are no tokens.
+ *
+ * Cache-aware: when the provider reports cache-read/creation token counts, the
+ * cached portions are priced at the model's cache rates (falling back to the
+ * full input rate when the catalog doesn't price them) instead of the full
+ * input rate — mirroring how providers actually bill prompt caching. The
+ * provider's own `usage.cost` (when present) already accounts for this.
  */
-export function estimateCostUsd(model: string, promptTokens: number, completionTokens: number): number | undefined {
+export function estimateCostUsd(
+  model: string,
+  promptTokens: number,
+  completionTokens: number,
+  cacheReadTokens = 0,
+  cacheCreationTokens = 0,
+): number | undefined {
   const price = pricePerMillion(model);
   if (!price) return undefined;
   const input = price.input ?? 0;
   const output = price.output ?? 0;
+  const cacheReadPrice = price.cacheRead ?? input;
+  const cacheWritePrice = price.cacheWrite ?? input;
   if (input <= 0 && output <= 0) return undefined;
   if (promptTokens <= 0 && completionTokens <= 0) return undefined;
-  return (promptTokens / 1e6) * input + (completionTokens / 1e6) * output;
+
+  const read = Math.max(0, Math.min(cacheReadTokens, promptTokens));
+  const write = Math.max(0, Math.min(cacheCreationTokens, promptTokens - read));
+  const fresh = Math.max(0, promptTokens - read - write);
+
+  const promptCost =
+    (fresh / 1e6) * input +
+    (read / 1e6) * cacheReadPrice +
+    (write / 1e6) * cacheWritePrice;
+  return promptCost + (completionTokens / 1e6) * output;
 }

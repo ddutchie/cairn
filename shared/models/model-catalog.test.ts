@@ -47,6 +47,8 @@ describe("parseModelCatalog", () => {
       maxOutput: 128000,
       input: 1.25,
       output: 10,
+      cacheRead: null,
+      cacheWrite: null,
       modes: ["text", "image", "pdf"],
       toolCall: true,
       reasoning: true,
@@ -57,6 +59,8 @@ describe("parseModelCatalog", () => {
       maxOutput: null,
       input: null,
       output: null,
+      cacheRead: null,
+      cacheWrite: null,
       modes: [],
       toolCall: null,
       reasoning: null,
@@ -73,6 +77,8 @@ describe("parseModelCatalog", () => {
       maxOutput: null,
       input: null,
       output: null,
+      cacheRead: null,
+      cacheWrite: null,
       modes: [],
       toolCall: null,
       reasoning: null,
@@ -163,8 +169,15 @@ describe("resolveMaxOutputTokens", () => {
 
 describe("normalizeModelInfo", () => {
   it("passes well-formed entries through unchanged", () => {
-    const info = { context: 1000, maxOutput: 8000, input: 1, output: 2, modes: ["text"], toolCall: true, reasoning: true, provider: "x" };
+    const info = { context: 1000, maxOutput: 8000, input: 1, output: 2, cacheRead: 3, cacheWrite: 4, modes: ["text"], toolCall: true, reasoning: true, provider: "x" };
     expect(normalizeModelInfo(info as never)).toEqual(info);
+  });
+
+  it("defaults cacheRead/cacheWrite to null when a legacy cache entry lacks them", () => {
+    const legacy = { context: 1000, input: 1, output: 2, modes: ["text"], toolCall: true, provider: "x" };
+    const norm = normalizeModelInfo(legacy as never);
+    expect(norm?.cacheRead).toBeNull();
+    expect(norm?.cacheWrite).toBeNull();
   });
 
   it("defaults maxOutput to null when a legacy cache entry lacks it", () => {

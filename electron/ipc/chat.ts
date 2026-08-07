@@ -188,6 +188,8 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     let promptTokens = 0;
     let completionTokens = 0;
     let reasoningTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheCreationTokens = 0;
     let costUsd: number | undefined = undefined;
     let lastBreakdown: TokenBreakdown | undefined = undefined;
 
@@ -201,7 +203,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     }
     const allTools = externalDefs.length > 0 ? [...TOOLS, ...externalDefs] : TOOLS;
 
-    const addUsage = (pt: number, ct: number, rt?: number, cost?: number) => {
+    const addUsage = (pt: number, ct: number, rt?: number, cost?: number, cacheRead?: number, cacheCreate?: number) => {
       // Persist one usage row per tool-loop round (source = chat) for the Usage view.
       recordLlmUsage({
         source: "chat",
@@ -214,11 +216,17 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         promptTokens: pt,
         completionTokens: ct,
         reasoningTokens: typeof rt === "number" ? rt : 0,
+        cacheReadTokens: cacheRead,
+        cacheCreationTokens: cacheCreate,
         costUsd: cost,
       });
       promptTokens = pt;
       completionTokens += ct;
       if (typeof rt === "number") reasoningTokens += rt;
+      // Cache tokens are last-round only, mirroring promptTokens (the context
+      // window shown is the current round's, not a running sum).
+      if (typeof cacheRead === "number") cacheReadTokens = cacheRead;
+      if (typeof cacheCreate === "number") cacheCreationTokens = cacheCreate;
       // Provider-reported USD cost of this call (e.g. Neuralwatt usage.cost);
       // accumulated across tool-loop rounds like completion tokens. Only
       // non-negative finite values are accepted; an explicitly reported 0 is
@@ -232,7 +240,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       } catch (err) {
         console.error("[chat] failed to calculate breakdown:", err);
       }
-      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd });
+      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens });
     };
 
     // Final usage object attached to chat:done (or undefined when nothing ran —
@@ -245,6 +253,8 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
             reasoningTokens,
             breakdown: lastBreakdown,
             costUsd: costUsd != null ? costUsd : undefined,
+            cacheReadTokens,
+            cacheCreationTokens,
           }
         : undefined;
 
@@ -281,8 +291,10 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         promptTokens = m.dispatcherPromptTokens;
         completionTokens = m.dispatcherCompletionTokens;
         reasoningTokens = m.dispatcherReasoningTokens;
+        cacheReadTokens = m.dispatcherCacheReadTokens;
+        cacheCreationTokens = m.dispatcherCacheCreationTokens;
         if (typeof m.costUsd === "number") costUsd = m.costUsd;
-        send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd });
+        send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens });
 
         // Stream the dispatcher's final reply as content tokens so it renders like
         // a normal assistant message.
@@ -364,7 +376,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
               if (Number.isFinite(diff) && diff >= 0) {
                 costUsd = diff;
                 if (promptTokens > 0) {
-                  send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd });
+                  send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens });
                 }
                 // Write the recovered provider-reported cost back onto this
                 // turn's recorded usage rows (they were persisted during the

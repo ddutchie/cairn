@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { CustomServiceConfig } from "@/types";
 import { type HeaderRow, headersToRows, inputCls, labelCls } from "./helpers";
@@ -56,11 +57,12 @@ export function ServiceForm({
       <div className="flex gap-2">
         <div className="w-28">
           <label className={labelCls}>Method</label>
-          <select value={method} onChange={(e) => setMethod(e.target.value as CustomServiceConfig["method"])} className={inputCls}>
-            {(["GET", "POST", "PUT", "DELETE"] as const).map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
+          <Select
+            value={method ?? "GET"}
+            onChange={setMethod}
+            className="w-full"
+            options={(["GET", "POST", "PUT", "DELETE"] as const).map((m) => ({ value: m, label: m }))}
+          />
         </div>
         <div className="flex-1">
           <label className={labelCls}>API URL *</label>

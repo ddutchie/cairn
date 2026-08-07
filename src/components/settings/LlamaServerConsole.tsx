@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { CheckCircle, RefreshCw, Cpu, Trash2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/select";
 
 /**
  * On-Device Llama server console — the entire `provider === "localllm"` surface
@@ -343,19 +344,20 @@ export function LlamaServerConsole({
                 <span className="text-[0.65rem] text-[var(--text-tertiary)] mt-0.5">Context window per query. Clamps for memory stability.</span>
               </div>
               <div>
-                <select
+                <Select
                   value={contextLimit || 16384}
-                  onChange={(e) => onContextLimitChange(parseInt(e.target.value, 10))}
-                  className="px-2.5 py-1 text-[0.714rem] rounded-md bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
-                >
-                  <option value={4096}>4,096 tokens (Fast / Low RAM)</option>
-                  <option value={8192}>8,192 tokens (Standard)</option>
-                  <option value={16384}>16,384 tokens (Recommended)</option>
-                  <option value={32768}>32,768 tokens (Heavy VRAM)</option>
-                  {contextLimit && ![4096, 8192, 16384, 32768].includes(contextLimit) && (
-                    <option value={contextLimit}>Custom: {contextLimit.toLocaleString()} tokens</option>
-                  )}
-                </select>
+                  onChange={onContextLimitChange}
+                  ariaLabel="Local context limit"
+                  options={[
+                    { value: 4096, label: "4,096 tokens (Fast / Low RAM)" },
+                    { value: 8192, label: "8,192 tokens (Standard)" },
+                    { value: 16384, label: "16,384 tokens (Recommended)" },
+                    { value: 32768, label: "32,768 tokens (Heavy VRAM)" },
+                    ...(contextLimit && ![4096, 8192, 16384, 32768].includes(contextLimit)
+                      ? [{ value: contextLimit, label: `Custom: ${contextLimit.toLocaleString()} tokens` }]
+                      : []),
+                  ]}
+                />
               </div>
             </div>
           )}

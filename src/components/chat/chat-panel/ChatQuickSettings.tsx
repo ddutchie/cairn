@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Toggle } from "@/components/ui/toggle";
 import { ModelPicker } from "@/components/ui/model-picker";
+import { Select } from "@/components/ui/select";
 import { useEndpointConfig, isLocalBaseUrl } from "@/components/settings/endpoint-components";
 
 const MAX_STEPS_PRESETS = [10, 20, 30, 50, 1000] as const;
@@ -112,19 +113,18 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
           {/* Provider */}
           <div className="space-y-1">
             <span className="text-[0.714rem] text-[var(--text-secondary)]">Provider</span>
-            <select
+            <Select
               value={providerSelectValue}
-              onChange={(e) => handleProviderChange(e.target.value)}
+              onChange={handleProviderChange}
               disabled={disabled}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text-primary)] outline-none disabled:opacity-50"
-            >
-              <option value="__localllm__">On-device (Llama)</option>
-              {savedProviders.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Select provider"
+              ariaLabel="Provider"
+              className="w-full"
+              options={[
+                { value: "__localllm__", label: "On-device (Llama)" },
+                ...savedProviders.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
           </div>
 
           {/* Model */}

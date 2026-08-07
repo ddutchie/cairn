@@ -26,6 +26,7 @@
 
 import { iterSseData } from "./sse";
 import { isSendableMessage, type OpenAIMessage } from "./llm";
+import { extractCacheTokens } from "./usage-recorder";
 
 /** Reasoning field names used by OpenAI-compatible providers, in priority order. */
 export const REASONING_FIELDS = ["reasoning_content", "reasoning", "reasoning_text"] as const;
@@ -44,6 +45,10 @@ export interface StreamUsage {
   promptTokens: number;
   completionTokens: number;
   reasoningTokens: number;
+  /** Prompt tokens served from the provider's cache (Anthropic-style / OpenAI cached_tokens). */
+  cacheReadTokens: number;
+  /** Prompt tokens written to the provider's cache (Anthropic-style). 0 when not split out. */
+  cacheCreationTokens: number;
   /** Raw provider `usage` object (may carry provider-specific fields like cost). */
   raw: unknown;
   /** Raw top-level `cost` field on the chunk, if the provider reports it there. */
@@ -110,10 +115,13 @@ export async function consumeAssistantStream(
 
     // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
     if (c.usage) {
+      const cache = extractCacheTokens(c.usage);
       opts.onUsage?.({
         promptTokens: c.usage.prompt_tokens ?? 0,
         completionTokens: c.usage.completion_tokens ?? 0,
         reasoningTokens: c.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+        cacheReadTokens: cache.cacheReadTokens,
+        cacheCreationTokens: cache.cacheCreationTokens,
         raw: c.usage,
         chunkCost: c.cost,
       });

@@ -613,6 +613,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             breakdown={activeThread.lastUsage.breakdown}
             completionTokens={activeThread.lastUsage.completionTokens}
             reasoningTokens={activeThread.lastUsage.reasoningTokens}
+            cacheReadTokens={activeThread.lastUsage.cacheReadTokens}
+            cacheCreationTokens={activeThread.lastUsage.cacheCreationTokens}
             costUsd={activeThread.lastUsage.costUsd}
           />
         )}
