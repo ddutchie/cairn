@@ -14,7 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PendingApprovals } from "@/components/automations/pending-approvals";
 import { useProjectMetrics } from "./useProjectMetrics";
-import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
+import { ChatInputArea } from "@/components/chat/ChatInputArea";
+import type { SuggestionItem } from "@/components/chat/ChatInput";
 import { ProgressRing, CollapsibleSection } from "./primitives";
 import { ToolsAttachPanel } from "./ToolsAttachPanel";
 import { ProjectSettingsButton } from "./project-settings";
@@ -319,15 +320,17 @@ export function ProjectOverview() {
       {!chatOpen && (
         <div ref={bottomBarRef} className="absolute bottom-0 left-0 right-0 p-6 overview-chat-overlay pointer-events-none z-10">
           <div className="max-w-3xl mx-auto pointer-events-auto">
-            <ChatInput
+            <ChatInputArea
               ref={chatInputRef}
               value={chatInput}
               onChange={setChatInput}
-              onSubmit={handleSendChat}
+              onSubmit={() => handleSendChat()}
               placeholder="What would you like to do today?"
               variant="overview"
               showSparkles
               suggestions={mentionSuggestions}
+              providerModelTarget="ai"
+              statusText="Shift+Enter for new line · Enter to send"
             />
           </div>
         </div>

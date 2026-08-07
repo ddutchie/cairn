@@ -21,6 +21,7 @@
 import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
 import { buildApiUrl, type OpenAIMessage, isSendableMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "./llm";
+import { AUTO_OUTPUT_TOKEN_CAP } from "./llm-stream";
 import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
 import { parseToolArgs } from "./parse-tool-args";
@@ -357,7 +358,7 @@ async function runSubagent(
   if (metrics.toolCalls > 0 || messages.some((m) => m.role === "tool")) {
     const forced = await forceFinalAnswer(
       cfg, messages, metrics, addCost, signal,
-      req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined,
+      req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : AUTO_OUTPUT_TOKEN_CAP,
       { sessionId: childId, projectId: req.projectId, workspaceId: req.workspaceId },
     );
     if (forced.trim()) {
@@ -476,8 +477,8 @@ export async function runDispatchLoop(
   const argMutator = opts?.argMutator;
   const events = opts?.events;
   const signal = opts?.signal;
-  // Undefined/0 → omit max_tokens (let the model finish naturally).
-  const maxTokens = req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined;
+  // Undefined/0 → Auto: send the generous 32K cap so the model finishes naturally.
+  const maxTokens = req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : AUTO_OUTPUT_TOKEN_CAP;
   let subSeq = 0;
   const date = new Date().toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",

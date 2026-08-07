@@ -12,6 +12,8 @@ import { resolvePromptContext } from "@/lib/context-resolver";
 import type { ChatHistoryEntry } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
+import { ChatInputArea } from "../ChatInputArea";
+import type { SuggestionItem } from "../ChatInput";
 import { ChatMessageBubble } from "./ChatMessageBubble";
 import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { ChatQuickSettings } from "./ChatQuickSettings";
@@ -19,7 +21,6 @@ import { SuggestedPrompts } from "./SuggestedPrompts";
 import { ToolCallIndicator } from "./ToolCallIndicator";
 import { useCommunityConnectorMap } from "./connector-context";
 import { QuestionForm } from "./QuestionForm";
-import { ChatInput, SuggestionItem } from "../ChatInput";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { cn } from "@/lib/utils";
@@ -31,7 +32,6 @@ import {
 } from "@/lib/models-dev";
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
-import { rasterizePdfToImages } from "@/lib/pdf-rasterize";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -118,9 +118,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     () => getCommandsForScope("chat", customCommands),
     [customCommands]
   );
-  const [pendingAttachments, setPendingAttachments] = useState<
-    Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>
-  >([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
   const projectRef     = useRef<HTMLDivElement>(null);
@@ -350,54 +347,13 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive, pendingQuestionCount]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
-  const handleAttachImages = useCallback(async (files: File[]) => {
-    const items: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = [];
-    for (const file of files) {
-      const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
-      const isImage = file.type.startsWith("image/");
-      if (!isPdf && !isImage) continue;
-      if (isPdf && !allowPdf && !allowImages) continue;
-      if (isImage && !allowImages) continue;
-      try {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
-          reader.onabort = () => reject(new Error(`Read aborted for ${file.name}`));
-          reader.readAsDataURL(file);
-        });
-        if (isPdf && allowPdf) {
-          items.push({ kind: "pdf", name: file.name, dataUrl });
-        } else if (isImage && allowImages) {
-          items.push({ kind: "image", name: file.name, dataUrl });
-        } else if (isPdf) {
-          // Not pdf-capable, but image-capable → rasterize pages as images.
-          try {
-            const pages = await rasterizePdfToImages(dataUrl);
-            pages.forEach((page, p) =>
-              items.push({ kind: "image", name: `${file.name} — page ${p + 1}`, dataUrl: page }));
-          } catch (err) {
-            console.error(`[chat] PDF rasterization failed for ${file.name}:`, err);
-          }
-        }
-      } catch (err) {
-        console.error("[chat] Skipping unreadable attachment:", err);
-      }
-    }
-    setPendingAttachments((prev) => [...prev, ...items]);
-  }, [allowImages, allowPdf]);
-
-  const handleRemoveImage = useCallback((index: number) => {
-    setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const handleSend = useCallback(async (text?: string) => {
+  const handleSend = useCallback(async (text?: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = []) => {
     const content = text ?? input.trim();
-    if ((!content || !content.trim()) && pendingAttachments.length === 0) return;
+    if ((!content || !content.trim()) && attachments.length === 0) return;
     if (!threadId) return;
 
     const trimmed = content.trim();
-    if (!pendingAttachments.length) {
+    if (!attachments.length) {
       if (trimmed === "/compact" || trimmed === "/ compact") {
         setInput("");
         useCairnStore.getState().compactChatThread(threadId);
@@ -413,9 +369,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
     setInput("");
 
-    const attachmentsToSend = pendingAttachments.length > 0 ? pendingAttachments : undefined;
-    const attachmentUrls = pendingAttachments.map((a) => ({ url: a.dataUrl, name: a.name, kind: a.kind }));
-    setPendingAttachments([]);
+    const attachmentsToSend = attachments.length > 0 ? attachments : undefined;
+    const attachmentUrls = attachments.map((a) => ({ url: a.dataUrl, name: a.name, kind: a.kind }));
 
     addMessage(threadId, "user", content, undefined, undefined, undefined, undefined, attachmentUrls);
 
@@ -499,12 +454,12 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         apiKey:      aiConfig.apiKey      || undefined,
         maxSteps:    aiConfig.maxSteps    ?? 30,
         temperature: aiConfig.temperature ?? 0.3,
-        // Max output tokens: Auto (default) sends nothing so the model finishes
-        // naturally — capping only ever truncates a long reasoning+answer and
-        // can leave "thinking" models with empty content (a 400 next turn). A
+        // Max output tokens: Auto sends a generous 32K cap (bounded by the
+        // model's declared output limit) so the model can finish naturally — a
         // manual value is a deliberate user cost/latency ceiling.
         maxTokens: resolveMaxOutputTokens(
           aiConfig.maxOutputAuto === false ? aiConfig.maxOutputTokens : undefined,
+          getModelInfo(aiConfig.model)?.maxOutput,
         ),
         // Reasoning models get the `developer` system role (OpenAI convention).
         isReasoningModel: getModelInfo(aiConfig.model)?.reasoning === true,
@@ -515,7 +470,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       // per-thread flag. Ignored server-side / here for the localllm provider.
       useSubagents: aiConfig.provider !== "localllm" && (aiConfig.subagentsEnabled ?? false),
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, pendingAttachments]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project]);
 
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
@@ -685,35 +640,28 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
       {/* Input */}
       <div className={cn("border-t border-[var(--border)] p-3 flex-shrink-0", activeView === "chat" && "border-t-0 bg-transparent p-6 max-w-3xl mx-auto w-full")}>
-        <ChatInput
+        <ChatInputArea
           ref={inputRef}
           value={input}
           onChange={setInput}
-          onSubmit={() => handleSend()}
+          onSubmit={(text, attachments) => handleSend(text, attachments)}
           onStop={stopStream}
           isLoading={isLoading}
-          disabled={isLoading}
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
           commands={chatCommands}
           suggestions={mentionSuggestions}
-          pendingImages={pendingAttachments}
-          onRemoveImage={handleRemoveImage}
-          onAttachImages={handleAttachImages}
           allowImages={allowImages}
           allowPdf={allowPdf}
+          providerModelTarget="ai"
           variant={activeView === "chat" ? "overview" : "default"}
           showSparkles={activeView === "chat"}
-        />
-        <div className="flex items-center justify-between mt-1.5 px-0.5">
-          <p className="text-[0.714rem] text-[var(--text-tertiary)]">
-            {isLoading ? "Generating… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
-          </p>
-          {aiConfig.provider === "localllm" && (
+          statusText={isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
+          footerTrailing={aiConfig.provider === "localllm" ? (
             <span className="text-[0.625rem] font-bold text-white bg-gradient-to-r from-purple-500 to-indigo-500 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
               {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}
             </span>
-          )}
-        </div>
+          ) : undefined}
+        />
       </div>
     </div>
   );

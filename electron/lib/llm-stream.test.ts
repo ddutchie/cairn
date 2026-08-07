@@ -76,6 +76,24 @@ describe("consumeAssistantStream", () => {
     expect(turn.content).toBe("x");
     expect(turn.finishReason).toBeNull();
   });
+
+  it("synthesizes UNIQUE ids for truncated tool calls across turns (no duplicate tool_call_id)", async () => {
+    const sseForTruncatedCall = () =>
+      sseReader(
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "ls", arguments: "" } }] } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "{\"pat" } }] } }], finish_reason: "length" })}\n\n`,
+        "data: [DONE]\n\n",
+      );
+
+    const first = await consumeAssistantStream(sseForTruncatedCall(), {});
+    const second = await consumeAssistantStream(sseForTruncatedCall(), {});
+
+    expect(first.toolCalls).toHaveLength(1);
+    expect(second.toolCalls).toHaveLength(1);
+    // Both calls lost their id chunk → both must be synthesized, never colliding.
+    expect(first.toolCalls[0].id).not.toBe(second.toolCalls[0].id);
+    expect(first.toolCalls[0].id.length).toBeGreaterThan(0);
+  });
 });
 
 describe("prepareContextMessages", () => {
@@ -167,6 +185,38 @@ describe("prepareContextMessages", () => {
     expect(out[1]).toMatchObject({ role: "assistant", content: "kept" });
   });
 
+  it("never leaks internal round-trip metadata to the provider", async () => {
+    const out = await prepareContextMessages({
+      systemPrompt: "sys",
+      currentModelKey: "a::m",
+      messages: [
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "call_1", type: "function", function: { name: "ls", arguments: "{}" } }],
+          reasoning: undefined,
+          reasoningField: undefined,
+          reasoningModel: "a::m",
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_1",
+          content: "ran",
+        },
+      ],
+    });
+
+    const serialized = JSON.stringify(out);
+    expect(serialized).not.toContain("reasoningModel");
+    expect(serialized).not.toContain("reasoningField");
+    expect(out[1]).toMatchObject({
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "call_1", type: "function", function: { name: "ls", arguments: "{}" } }],
+    });
+    expect(out[2]).toMatchObject({ role: "tool", tool_call_id: "call_1", content: "ran" });
+  });
+
   it("uses the requested system role for the prepended message", async () => {
     const out = await prepareContextMessages({
       systemPrompt: "sys",
@@ -176,6 +226,22 @@ describe("prepareContextMessages", () => {
     });
 
     expect(out[0]).toEqual({ role: "developer", content: "sys" });
+  });
+
+  it("passes attachment content parts through on user messages (agent image support)", async () => {
+    const parts = [
+      { type: "text" as const, text: "What's in this image?" },
+      { type: "image_url" as const, image_url: { url: "data:image/png;base64,AAAA" } },
+    ];
+    const out = await prepareContextMessages({
+      systemPrompt: "sys",
+      currentModelKey: "a::m",
+      messages: [{ role: "user", content: parts }],
+    });
+
+    expect(out).toHaveLength(2); // system + user
+    expect(out[1]).toMatchObject({ role: "user", content: parts });
+    expect(JSON.stringify(out)).toContain("image_url");
   });
 });
 

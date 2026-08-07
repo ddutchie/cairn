@@ -498,6 +498,116 @@ describe("runAgentLoop — SSE streaming", () => {
     expect(log.some((e) => e.startsWith("error:"))).toBe(false);
   });
 
+  it("truncation does NOT poison the next request: no truncated tool_calls, no internal metadata, no duplicate ids", async () => {
+    // Turn 1: tool call truncated (finish_reason "length") with NO id chunk —
+    // the case that previously synthesized a colliding position-based id.
+    const lines: string[] = [];
+    lines.push(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "ls", arguments: "" } }] } }] })}\n\n`);
+    lines.push(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"pat' } }] } }], finish_reason: "length" })}\n\n`);
+    lines.push("data: [DONE]\n\n");
+
+    const server = await makeServer([
+      lines.join(""),
+      textOnlySSE(["Re-issued successfully."]),
+      textOnlySSE(["Final reply."]),
+    ]);
+
+    const session = makeSession();
+    const { log, callbacks } = makeCallbacks();
+    await runAgentLoop(
+      session, "You are a test assistant.",
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+      callbacks, makeToolCtx(db),
+    );
+
+    // Request #2 (the retry round) must be a clean, valid OpenAI-compatible body:
+    expect(log.some((e) => e.startsWith("tool-end:ls:false"))).toBe(true);
+
+    const sent = server.bodies[1].messages as Array<Record<string, unknown>>;
+    const serialized = JSON.stringify(sent);
+
+    // No truncated assistant turn replayed, no tool round-trip for the refused call.
+    expect(sent.some((m) => m.role === "assistant" && Array.isArray(m.tool_calls))).toBe(false);
+    expect(sent.some((m) => m.role === "tool")).toBe(false);
+    // Internal round-trip metadata must never leak.
+    expect(serialized).not.toContain("reasoningModel");
+    expect(serialized).not.toContain("reasoningField");
+    // The model got the re-issue notice instead.
+    expect(sent.some((m) => m.role === "user" && String(m.content).includes("NOT executed"))).toBe(true);
+
+    // Simulate "continue the conversation": the loop ran twice more, and the
+    // third request still carries no dangling tool_call_id and no duplicates.
+    session.messages.push({ role: "user", content: "continue please" });
+    const continueServer = await makeServer([textOnlySSE(["Final reply."])]);
+    await runAgentLoop(
+      session, "You are a test assistant.",
+      { baseUrl: continueServer.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+      callbacks, makeToolCtx(db),
+    );
+
+    const sent3 = continueServer.bodies[0].messages as Array<Record<string, unknown>>;
+    const ids = sent3.filter((m) => m.role === "tool").map((m) => m.tool_call_id);
+    expect(new Set(ids).size).toBe(ids.length); // no duplicate tool_call_id
+    expect(JSON.stringify(sent3)).not.toContain("reasoningModel");
+    await continueServer.close();
+  });
+
+  it("length-truncated turn with tail-complete args EXECUTES the tool (dropped closing delimiter)", async () => {
+    // The stream/gateway dropped the final `"}` after otherwise-complete
+    // arguments — the data emitted IS the intended data, so tail repair must
+    // recover and execute it rather than refuse + re-issue.
+    const lines: string[] = [];
+    lines.push(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_xyz", function: { name: "ls", arguments: "" } }] } }] })}\n\n`);
+    lines.push(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"path": "/tmp"' } }] } }], finish_reason: "length" })}\n\n`);
+    lines.push("data: [DONE]\n\n");
+
+    server = await makeServer([lines.join(""), textOnlySSE(["Done."])]);
+
+    const session = makeSession();
+    const { log, callbacks } = makeCallbacks();
+    await runAgentLoop(
+      session, "You are a test assistant.",
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
+      callbacks, makeToolCtx(db),
+    );
+
+    // The tool EXECUTED (recovered) rather than failing / re-issuing.
+    expect(log.some((e) => e.startsWith("tool-end:ls:true"))).toBe(true);
+    expect(log.some((e) => e.startsWith("tool-end:ls:false"))).toBe(false);
+    // History holds the canonical (repaired) arguments, so the turn round-trips.
+    const asst = session.messages.find((m) => m.role === "assistant" && m.tool_calls);
+    expect(asst).toBeDefined();
+    expect(JSON.parse((asst as any).tool_calls[0].function.arguments)).toEqual({ path: "/tmp" });
+    expect(log[log.length - 1]).toBe("done");
+    expect(log.some((e) => e.startsWith("error:"))).toBe(false);
+  });
+
+  it("sends the 32K Auto cap when maxTokens is unset, and the manual value when set", async () => {
+    // Auto (unset) → a generous max_tokens is SENT (never omitted), otherwise
+    // the endpoint applies a tiny server-side default (often 4096) that
+    // truncates mid-tool-call.
+    const auto = await makeServer([textOnlySSE(["hi"])]);
+    await runAgentLoop(
+      makeSession(), "You are a test assistant.",
+      { baseUrl: auto.url, model: "test", apiKey: "test", maxSteps: 5, temperature: 0.3 },
+      { onToken: () => {}, onToolsReady: () => {}, onToolPending: () => {}, onToolStart: () => {}, onToolEnd: () => {}, onStepStart: () => {}, onUsage: () => {}, onDone: () => {}, onError: () => {} },
+      makeToolCtx(db),
+    );
+    expect((auto.bodies[0].max_tokens as number)).toBe(32000);
+    await auto.close();
+
+    // Explicit manual value is respected.
+    const manual = await makeServer([textOnlySSE(["hi"])]);
+    await runAgentLoop(
+      makeSession(), "You are a test assistant.",
+      { baseUrl: manual.url, model: "test", apiKey: "test", maxSteps: 5, temperature: 0.3, maxTokens: 8192 },
+      { onToken: () => {}, onToolsReady: () => {}, onToolPending: () => {}, onToolStart: () => {}, onToolEnd: () => {}, onStepStart: () => {}, onUsage: () => {}, onDone: () => {}, onError: () => {} },
+      makeToolCtx(db),
+    );
+    expect((manual.bodies[0].max_tokens as number)).toBe(8192);
+    await manual.close();
+  });
+
   // ── 10. Reasoning-only turn (length) is stored for round-trip, not surfaced ─
 
   it("finish_reason length with only reasoning: reasoning stays out of content (pi behaviour)", async () => {

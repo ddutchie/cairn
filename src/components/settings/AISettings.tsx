@@ -62,10 +62,10 @@ export function AISettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, provider, contextAuto]);
 
-  // Max output tokens. Auto (default) sends NO cap so the model finishes
-  // naturally — capping only ever truncates a long reasoning+answer. A manual
-  // value is a deliberate cost/latency ceiling. We surface the model's
-  // advertised limit.output (when known) as guidance next to the field.
+  // Max output tokens. Auto (default) sends a generous 32K cap (bounded by the
+  // model's advertised limit.output) so the model finishes naturally without
+  // hitting a tiny endpoint default; a manual value is a deliberate ceiling.
+  // We surface the model's limit.output (when known) as guidance next to the field.
   const maxOutputAuto = aiConfig.maxOutputAuto ?? true;
   const [advertisedMaxOutput, setAdvertisedMaxOutput] = useState<number | null>(null);
   useEffect(() => {
@@ -224,9 +224,9 @@ export function AISettings() {
               }
             />
 
-            {/* Max output tokens — Auto (default) sends no cap so the model
-                finishes naturally; a manual value is a deliberate ceiling.
-                Capping is what broke "thinking" models (empty reply → 400). */}
+            {/* Max output tokens — Auto (default) sends a generous 32K cap (bounded by
+                the model's limit.output) so the model finishes naturally; a
+                manual value is a deliberate cost/latency ceiling. */}
             <StepperSettingsRow
               label="Max output tokens"
               description={

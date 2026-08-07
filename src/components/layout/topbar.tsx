@@ -7,7 +7,7 @@ import {
   Kanban,
   CalendarDays,
   Workflow,
-  Terminal,
+  Code2,
   MessageSquare,
   ChevronRight,
   Menu,
@@ -30,7 +30,7 @@ const VIEW_TABS = [
   { id: "board" as const, label: "Board", icon: Kanban },
   { id: "calendar" as const, label: "Calendar", icon: CalendarDays },
   { id: "flow" as const, label: "Flow", icon: Workflow },
-  { id: "agent" as const, label: "Agent", icon: Terminal },
+  { id: "agent" as const, label: "Agent", icon: Code2 },
 ] as const;
 
 /** Tab id type derived from VIEW_TABS so it can't drift from the entries. */

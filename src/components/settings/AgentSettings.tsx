@@ -446,9 +446,9 @@ export function AgentSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelAgent, contextAutoAgent]);
 
-  // Max output tokens — Auto (default) sends no cap so the model finishes
-  // naturally; a manual value is a deliberate ceiling. Same rationale as the
-  // AI Chat setting: capping stalls "thinking" models mid-reasoning.
+  // Max output tokens — Auto (default) sends a generous 32K cap (bounded by the
+  // model's advertised limit.output) so the model finishes naturally; a manual
+  // value is a deliberate cost/latency ceiling. Same rationale as AI Chat.
   const maxOutputAutoAgent = agentConfig.maxOutputAuto ?? true;
   const [advertisedMaxOutputAgent, setAdvertisedMaxOutputAgent] = useState<number | null>(null);
   useEffect(() => {
@@ -557,9 +557,9 @@ export function AgentSettings() {
           }
         />
 
-        {/* Max output tokens — Auto (default) sends no cap so the model finishes
-            naturally; a manual value is a deliberate ceiling. Capping stalls
-            reasoning models mid-thought. */}
+        {/* Max output tokens — Auto (default) sends a generous 32K cap (bounded by
+            the model's limit.output) so the model finishes naturally; a manual
+            value is a deliberate cost/latency ceiling. */}
         <StepperSettingsRow
           label="Max output tokens"
           description={

@@ -41,17 +41,23 @@ const chatReq: ChatRequest = {
   threadId: "test",
 };
 
-function makeServer(responses: string[]): Promise<{ url: string; close: () => Promise<void> }> {
+function makeServer(responses: string[]): Promise<{ url: string; close: () => Promise<void>; bodies: Record<string, unknown>[] }> {
   let callIndex = 0;
-  const server = http.createServer((_req, res) => {
-    const body = responses[callIndex] ?? "";
-    callIndex++;
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
+  const bodies: Record<string, unknown>[] = [];
+  const server = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c as Buffer));
+    req.on("end", () => {
+      try { bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>); } catch { bodies.push({}); }
+      const body = responses[callIndex] ?? "";
+      callIndex++;
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+      res.end(body);
     });
-    res.end(body);
   });
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
@@ -59,6 +65,7 @@ function makeServer(responses: string[]): Promise<{ url: string; close: () => Pr
       resolve({
         url: `http://127.0.0.1:${port}`,
         close: () => new Promise((r) => server.close(() => r())),
+        bodies,
       });
     });
   });
@@ -135,6 +142,114 @@ describe("runToolLoop — finish_reason length truncation guard", () => {
     // 3. The loop continued (round 2) and returned the final text reply.
     expect(result.exhausted).toBe(false);
     expect(result.content).toBe("Done.");
+
+    // 4. The retry request (round 2) is a clean, valid body: the truncated
+    //    assistant turn and its refused tool round-trip are NOT replayed, so a
+    //    later "continue" can never 400 on duplicate/dangling tool_call_ids.
+    const sent = (server.bodies[1].messages ?? []) as Array<Record<string, unknown>>;
+    expect(sent.some((m) => m.role === "assistant" && Array.isArray(m.tool_calls))).toBe(false);
+    expect(sent.some((m) => m.role === "tool")).toBe(false);
+    expect(sent.some((m) => m.role === "user" && String(m.content).includes("NOT executed"))).toBe(true);
+    expect(JSON.stringify(sent)).not.toContain("reasoningModel");
+
+    db.close();
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  });
+
+  it("recovers a length-truncated tool call whose args are complete except the closing delimiter", async () => {
+    const db = makeDb();
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-chatloop-"));
+    // Args are INVALID JSON only because the final `"}` never arrived — the
+    // content body is fully emitted, so tail repair must recover and execute.
+    const recoveredArgs = '{"projectId":"proj1","title":"Recovered Note","content":"Full body with trailing text here"';
+    const server = await makeServer([
+      truncatedToolCallSSE(recoveredArgs),
+      textOnlySSE(["Done."]),
+    ]);
+    servers.push(server);
+
+    const doneEvents: { ok?: boolean; error?: string }[] = [];
+    const messages = [
+      { role: "system" as const, content: "test" },
+      { role: "user" as const, content: "create a note" },
+    ];
+
+    const result = await runToolLoop(
+      db,
+      chatReq,
+      workspacePath,
+      server.url,
+      "test-model",
+      "test-key",
+      messages,
+      () => {},
+      undefined,
+      undefined,
+      "openai",
+      undefined,
+      (e) => doneEvents.push({ ok: e.ok, error: e.error }),
+    );
+
+    // The tool EXECUTED (recovered), with the complete content.
+    expect(doneEvents[0]?.ok).toBe(true);
+    const note = (db.prepare("SELECT title, content FROM notes WHERE title = 'Recovered Note'").get() as
+      | { title: string; content: string }
+      | undefined);
+    expect(note).toBeTruthy();
+    expect(note?.content).toBe("Full body with trailing text here");
+    expect(result.content).toBe("Done.");
+
+    db.close();
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  });
+
+  it("round-trips streamed reasoning back to the SAME model under its native field", async () => {
+    const db = makeDb();
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-chatloop-"));
+    // Turn 1: reasoning_content + a tool call (normal tool_calls finish).
+    const turn1 = [
+      `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "Let me think carefully." } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_x", function: { name: "ensure_note", arguments: "" } }] } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ projectId: "proj1", title: "Round Trip", content: "body" }) } }] } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join("");
+    const server = await makeServer([turn1, textOnlySSE(["Done."])]);
+    servers.push(server);
+
+    const messages = [
+      { role: "system" as const, content: "test" },
+      { role: "user" as const, content: "create a note" },
+    ];
+
+    const result = await runToolLoop(
+      db,
+      chatReq,
+      workspacePath,
+      server.url,
+      "test-model",
+      "test-key",
+      messages,
+      () => {},
+      undefined,
+      undefined,
+      "openai",
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    expect(result.content).toBe("Done.");
+
+    // Request #2 must carry the reasoning under its native field for the SAME
+    // model, and must NOT leak internal metadata.
+    const sent = (server.bodies[1].messages ?? []) as Array<Record<string, unknown>>;
+    const asst = sent.find((m) => m.role === "assistant" && Array.isArray(m.tool_calls)) as Record<string, unknown> | undefined;
+    expect(asst).toBeTruthy();
+    expect(asst?.reasoning_content).toBe("Let me think carefully.");
+    expect(asst?.reasoningModel).toBeUndefined();
+    expect(asst?.reasoning).toBeUndefined();
+    expect(asst?.reasoningField).toBeUndefined();
 
     db.close();
     fs.rmSync(workspacePath, { recursive: true, force: true });

@@ -29,6 +29,7 @@ import * as q from "../db/queries";
 import { ts } from "../db/utils";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
+import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -47,6 +48,8 @@ interface PiAgentPromptRequest {
   cwd: string;
   taskTitle?: string;
   mode?: "plan" | "execute";
+  /** Image/PDF attachments staged in the input — serialized to content parts. */
+  attachments?: Array<{ kind?: "image" | "pdf"; dataUrl: string; name?: string }>;
   config?: {
     provider?: string;
     baseUrl?: string;
@@ -249,7 +252,12 @@ export function registerPiAgentHandler(
       session.abortCtrl = new AbortController();
     }
 
-    session.messages.push({ role: "user", content: prompt });
+    session.messages.push({
+      role: "user",
+      content: req.attachments?.length
+        ? buildAttachmentParts(prompt, req.attachments)
+        : prompt,
+    });
 
     const projectName = projectId
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"

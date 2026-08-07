@@ -453,34 +453,46 @@ export function formatModelCost(input: number | null, output: number | null): st
 /**
  * Default max output tokens used only as a floor when a user's manual value is
  * missing/invalid but they've turned Auto off. Comfortably above a "thinking"
- * model's reasoning budget. NOT used in Auto mode (Auto omits the field).
+ * model's reasoning budget.
  */
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
 /**
- * Resolve the `max_tokens` to send for a chat request, or `undefined` to OMIT
- * the field entirely.
+ * `max_tokens` ceiling used when the user leaves output tokens on Auto, and the
+ * fallback when the model's output limit is unknown. Mirrors opencode's
+ * OUTPUT_TOKEN_MAX. See `resolveMaxOutputTokens`.
+ */
+export const AUTO_OUTPUT_TOKEN_CAP = 32_000;
+
+/**
+ * Resolve the `max_tokens` to send for a chat request.
  *
- * The correct default is to send NOTHING: given no cap, providers run the model
- * to its natural `finish_reason:"stop"` — emitting full reasoning AND a complete
- * answer, typically using far fewer tokens than any cap we'd pick. A fixed cap
- * only ever truncates the tail case: a "thinking" model can spend the whole
- * budget on reasoning and stop with empty content (`finish_reason:"length"`),
- * which then trips a "content or tool_calls must be set" 400 on the next
- * message. (That regression is what the old hardcoded 4096 caused.)
+ * Older Cairn OMITTED `max_tokens` on Auto so the model "finished naturally".
+ * The incident that killed that: most endpoints then apply a tiny server-side
+ * default (often 4096), which reasoning models burn through and get cut
+ * mid-tool-call ("tool call not executed: output-token limit"). So Auto now
+ * always sends a cap — but it is bounded by the model's own declared output
+ * limit (`modelMaxOutput`, from the models.dev catalog) so we never 400 a
+ * provider by asking for more than the model supports:
  *
- * So:
  *  - `userOverride` (>= 1) → send it, floored. A user's explicit cap is a
  *    deliberate cost/latency ceiling; honour it.
- *  - otherwise (Auto, or a fractional/zero/negative value) → return `undefined`:
- *    omit `max_tokens` and let the model finish naturally, bounded only by the
- *    provider's own server-side limit.
+ *  - Auto + a known `modelMaxOutput` → `min(modelMaxOutput, AUTO_OUTPUT_TOKEN_CAP)`.
+ *    A small model (e.g. 8K output) gets 8K; a large one gets capped at 32K.
+ *  - Auto + unknown model → `undefined`; the main process falls back to
+ *    `AUTO_OUTPUT_TOKEN_CAP`.
  */
-export function resolveMaxOutputTokens(userOverride?: number | null): number | undefined {
+export function resolveMaxOutputTokens(
+  userOverride?: number | null,
+  modelMaxOutput?: number | null,
+): number | undefined {
   // Require >= 1 before flooring: a fractional cap in (0,1) would floor to 0 and
   // send `max_tokens: 0` (a broken cap), which is worse than omitting the field.
   if (typeof userOverride === "number" && Number.isFinite(userOverride) && userOverride >= 1) {
     return Math.floor(userOverride);
+  }
+  if (typeof modelMaxOutput === "number" && modelMaxOutput > 0) {
+    return Math.min(modelMaxOutput, AUTO_OUTPUT_TOKEN_CAP);
   }
   return undefined;
 }

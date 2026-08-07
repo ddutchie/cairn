@@ -906,6 +906,8 @@ export interface PiAgentMessage {
   id: string;
   role: "user" | "assistant" | "error" | "system";
   content: string;
+  /** Inline base64 attachment thumbnails (user messages), same shape as ChatMessage.images. */
+  images?: Array<{ url: string; name: string; kind?: "image" | "pdf" }>;
   /** Same semantics as {@link ChatMessage.reasoning}. */
   reasoning?: string;
   /** Tool calls that occurred before or during this assistant message */

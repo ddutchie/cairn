@@ -9,15 +9,17 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Trash2, FileText, Zap, Map as MapIcon } from "lucide-react";
+import { Trash2, FileText, Zap, Map as MapIcon, Loader2 } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
-import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
+import { ChatInputArea } from "@/components/chat/ChatInputArea";
+import type { SuggestionItem } from "@/components/chat/ChatInput";
 import type { PendingQuestion } from "@/hooks/useChatStream";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import { getCommandsForScope } from "@/lib/slash-commands";
-import { resolveMaxOutputTokens } from "../../../shared/models/model-catalog";
+import { resolveMaxOutputTokens, supportsImageInput } from "../../../shared/models/model-catalog";
+import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanTaskList } from "./PlanTaskList";
@@ -89,6 +91,7 @@ function persistPiTranscript(sessionId: string): void {
     id: m.id,
     role: m.role,
     content: m.content,
+    images: m.images ?? null,
     reasoning: m.reasoning ?? null,
     toolCalls: m.toolCalls?.map(redactAgentToolCall) ?? null,
     subagents: m.subagents?.map((sub) => ({
@@ -160,6 +163,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Compaction state — shown in status bar while an LLM summary call is in flight
   const [isCompacting, setIsCompacting]           = useState(false);
   const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
+
+  // Attachment support follows the agent's selected model (same as chat).
+  const agentModelInfo = getModelInfo(agentConfig.model);
+  const allowImages = supportsImageInput(agentModelInfo);
+  const allowPdf = supportsPdfInput(agentModelInfo);
 
   const messagesEndRef  = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
@@ -466,7 +474,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
 
-  const sendPrompt = useCallback(async (text: string) => {
+  const sendPrompt = useCallback(async (text: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = []) => {
     const trimmed = text.trim();
     if (!trimmed || isLoading || !session.cwd) return;
 
@@ -488,11 +496,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     setIsLoading(true);
     setPendingQuestions(null);
 
-    // Add user message to store
+    // Add user message to store (attachments rendered as thumbnails in transcript)
     addPiMessage(session.sessionId, {
       id:        id(),
       role:      "user",
       content:   trimmed,
+      images:    attachments.length > 0 ? attachments.map((a) => ({ url: a.dataUrl, name: a.name, kind: a.kind })) : undefined,
       timestamp: new Date().toISOString(),
     });
 
@@ -523,14 +532,19 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       cwd:         session.cwd,
       taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
       mode:        session.mode ?? "execute",
+      attachments: attachments.length > 0 ? attachments : undefined,
       config: {
         baseUrl:     agentConfig.baseUrl     || undefined,
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,
          maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
-          // Auto (default) → undefined → omit max_tokens so the model finishes naturally.
-          maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
+          // Auto → send a generous 32K cap (bounded by the model's declared
+          // output limit) so the model can finish naturally.
+          maxTokens:   resolveMaxOutputTokens(
+            agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,
+            getModelInfo(agentConfig.model)?.maxOutput,
+          ),
           autoApprove: session.autoApprove ?? agentConfig.autoApprove ?? true,
           // Reasoning models get the `developer` system role (OpenAI convention).
           isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
@@ -603,7 +617,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
         maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
-         maxTokens:   resolveMaxOutputTokens(agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined),
+         maxTokens:   resolveMaxOutputTokens(
+           agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,
+           getModelInfo(agentConfig.model)?.maxOutput,
+         ),
          autoApprove,
          isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
       },
@@ -611,7 +628,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[var(--background)]">
+    <div className="flex flex-col h-full bg-[var(--surface)]">
 
       {/* Header */}
       <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
@@ -705,6 +722,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             disabled={isLoading}
           />
         )}
+        {isLoading && !pendingQuestions && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+            <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
+            <span className="text-[0.786rem] text-[var(--text-tertiary)]">Working…</span>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -722,28 +745,27 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           <PlanTaskList content={planNoteContent} />
         )}
       <div className="p-3">
-        <ChatInput
+        <ChatInputArea
           ref={textareaRef}
           value={input}
           onChange={setInput}
-          onSubmit={() => sendPrompt(input)}
+          onSubmit={sendPrompt}
           onStop={handleStop}
           isLoading={isLoading}
-          disabled={isLoading}
           placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
           commands={agentCommands}
           onSearchSuggestions={handleSearchFiles}
-        />
-        <p className="text-[0.643rem] text-[var(--text-tertiary)] mt-1 text-center">
-          {retryInfo
+          allowImages={allowImages}
+          allowPdf={allowPdf}
+          providerModelTarget="agent"
+          statusText={retryInfo
             ? `Transient error — retrying (${retryInfo.attempt}/${retryInfo.maxRetries}) in ${Math.round(retryInfo.delayMs / 1000)}s…`
             : isCompacting
               ? "Compacting context…"
               : isLoading
                 ? "Working… click ◼ to stop"
-                : "Shift+Enter for new line · Enter to send"
-          }
-        </p>
+                : "Shift+Enter for new line · Enter to send"}
+        />
       </div>
       </div>
     </div>

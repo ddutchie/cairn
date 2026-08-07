@@ -27,7 +27,7 @@ import * as builder from "../lib/tool-builder";
 import * as secrets from "../lib/secure-store";
 import { buildBuilderSystemPrompt, BUILDER_TOOL_DEFS } from "../lib/tool-builder-prompt";
 import { parseToolArgs } from "../lib/parse-tool-args";
-import { resolveMaxOutputTokens } from "../../shared/models/model-catalog";
+import { AUTO_OUTPUT_TOKEN_CAP, resolveMaxOutputTokens } from "../../shared/models/model-catalog";
 import { recordLlmUsage, extractCost, extractCacheTokens } from "../lib/usage-recorder";
 
 interface OpenAIMessage {
@@ -57,7 +57,7 @@ interface AIConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
-  /** Max output tokens; undefined on Auto (omit max_tokens so the model finishes naturally). */
+  /** Max output tokens; on Auto the 32K AUTO_OUTPUT_TOKEN_CAP is sent. */
   maxTokens?: number;
 }
 
@@ -71,10 +71,13 @@ function resolveConfig(): AIConfig {
     // v2.5.9 keychain migration — resolve it to the real key here (same as chat.ts /
     // pi-agent.ts). Sending the raw ref as a bearer token 401s the provider.
     apiKey: secrets.resolveLlmApiKey(cached?.apiKey),
-    // Same Auto semantics as the chat loop: Auto (default) sends NO cap — the
-    // old hardcoded 2048 truncated long tool definitions. Only a deliberate
-    // manual value is sent.
-    maxTokens: cached?.maxOutputAuto === false ? resolveMaxOutputTokens(cached?.maxOutputTokens) : undefined,
+    // Same Auto semantics as the chat/agent loops: Auto sends a generous 32K
+    // cap (AUTO_OUTPUT_TOKEN_CAP) instead of omitting the field — omitting lets
+    // the endpoint apply a tiny server-side default that truncates long tool
+    // definitions. Only a deliberate manual value is sent verbatim.
+    maxTokens: cached?.maxOutputAuto === false
+      ? resolveMaxOutputTokens(cached?.maxOutputTokens)
+      : AUTO_OUTPUT_TOKEN_CAP,
   };
 }
 
@@ -97,8 +100,8 @@ async function callModel(
       tools: BUILDER_TOOL_DEFS,
       tool_choice: "auto",
       temperature: 0.2,
-      // Auto → omit max_tokens so the model finishes naturally; a manual cap is
-      // a deliberate ceiling. The old hardcoded 2048 truncated long definitions.
+      // Auto → the 32K cap from resolveConfig (never omit — endpoints apply a
+      // tiny default that truncates long definitions); a manual cap is honoured.
       ...(config.maxTokens ? { max_tokens: config.maxTokens } : {}),
     }),
   });

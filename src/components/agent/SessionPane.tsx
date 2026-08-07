@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, Plus, MessageSquarePlus, Terminal, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2 } from "lucide-react";
+import { X, Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import type { ChatThread, ChatMessage } from "@/types";
 import { cn } from "@/lib/utils";
@@ -284,7 +284,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
                   onClick={handleNewAgentSession}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[0.714rem] text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-t border-[var(--border)]"
                 >
-                  <Terminal size={13} className="text-[var(--accent)] flex-shrink-0" />
+                  <Code2 size={13} className="text-[var(--accent)] flex-shrink-0" />
                   <div className="text-left">
                     <p className="font-medium">New agent session</p>
                     <p className="text-[0.643rem] text-[var(--text-tertiary)]">Cairn Agent coding session</p>

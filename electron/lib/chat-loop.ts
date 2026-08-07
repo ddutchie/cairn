@@ -16,7 +16,7 @@ import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
 import type { OpenAIMessage } from "./llm";
 import { buildApiUrl } from "./llm";
-import { buildChatCompletionsBody, consumeAssistantStream, failToolCallsFromTruncatedMessage, interruptedStreamToolCallError } from "./llm-stream";
+import { AUTO_OUTPUT_TOKEN_CAP, buildChatCompletionsBody, consumeAssistantStream, failToolCallsFromTruncatedMessage, interruptedStreamToolCallError, truncationRetryNotice } from "./llm-stream";
 import { TOOLS, type ChatRequest } from "./tools";
 import { extractCacheTokens } from "./usage-recorder";
 import { executeTool } from "../ipc/chat-executor";
@@ -71,17 +71,44 @@ export async function runToolLoop(
 ): Promise<RunToolLoopResult> {
   const maxSteps    = req.config?.maxSteps    ?? 30;
   const temperature = req.config?.temperature ?? 0.3;
-  // Max output tokens. Undefined/0 → OMIT max_tokens so the model finishes
-  // naturally (full reasoning + answer, bounded by the provider's own limit).
-  // A positive value is the user's deliberate cap. The old hardcoded 4096 was
-  // the bug: it guillotined "thinking" models mid-reasoning, yielding empty
-  // content that then tripped a 400 on the next message.
-  const maxTokens   = req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : undefined;
+  // Max output tokens. Undefined/0 → Auto: send a generous 32K cap (mirroring
+  // opencode) so reasoning models can finish naturally. A positive value is the
+  // user's deliberate cap. Two failure modes are avoided by never omitting the
+  // field: omitting lets the endpoint apply a tiny server-side default (often
+  // 4096) that truncates mid-tool-call, and the old hardcoded 4096 guillotined
+  // "thinking" models mid-reasoning, yielding empty content that tripped a 400.
+  const maxTokens   = req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : AUTO_OUTPUT_TOKEN_CAP;
   // Built-in tools (or a caller-supplied override) + any external tools in scope.
   const baseTools = toolsOverride ?? TOOLS;
   const combinedTools = extraTools.length > 0 ? [...baseTools, ...extraTools] : baseTools;
   let accumulatedContent = "";
   let accumulatedReasoning = "";
+
+  // Reasoning round-trip (pi parity): the streamed chain-of-thought is captured
+  // for the ThinkingPanel AND re-sent to the SAME model under its native field
+  // on the next round (or folded into text when the model changes). Held in a
+  // side map keyed by the assistant message object so the caller-owned `messages`
+  // array is never mutated with internal metadata. NOTE: this matches
+  // `prepareContextMessages` in llm-stream.ts (the agent loop's behaviour); chat
+  // previously stripped reasoning entirely, which starved "thinking" models of
+  // their own prior chain-of-thought on tool-call rounds.
+  const currentModelKey = `${baseUrl}::${model}`;
+  const reasoningByMsg = new Map<OpenAIMessage, { reasoning: string; field: string; modelKey: string }>();
+
+  // Build the outgoing request messages: round-trip reasoning for the same
+  // model under its native field, fold it into `content` for a different model,
+  // and never send the internal metadata. Mirrors prepareContextMessages.
+  const prepareForSend = (): OpenAIMessage[] => {
+    return messages.map((m) => {
+      const ri = reasoningByMsg.get(m);
+      if (!ri || m.role !== "assistant") return m;
+      if (ri.modelKey === currentModelKey) {
+        return { ...m, [ri.field]: ri.reasoning } as unknown as OpenAIMessage;
+      }
+      const existing = typeof m.content === "string" && m.content.trim() ? m.content.trim() : "";
+      return { ...m, content: [existing, ri.reasoning].filter(Boolean).join("\n\n") } as unknown as OpenAIMessage;
+    });
+  };
 
   for (let round = 0; round < maxSteps; round++) {
     if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
@@ -126,10 +153,9 @@ export async function runToolLoop(
           accumulatedReasoning += rawThought;
           if (onThought) onThought(rawThought);
         }
-        // Strip reasoning before assigning — it must not enter the messages
-        // array that gets re-sent to the API on subsequent rounds. Both
-        // `reasoning` and `reasoning_content` must be stripped (DeepSeek docs:
-        // re-sending reasoning_content on assistant messages causes 400s).
+        // Strip reasoning before assigning — the ON-DEVICE path must not send a
+        // reasoning field back (local Llama-family models reject it with a 400).
+        // The STREAMED path round-trips reasoning instead (see reasoningByMsg).
         const { reasoning: _r, reasoning_content: _rc, ...msgWithoutReasoning } = rawMsg;
         assistantMsg = msgWithoutReasoning;
 
@@ -213,7 +239,7 @@ export async function runToolLoop(
           signal,
           body: JSON.stringify(buildChatCompletionsBody({
             model,
-            messages,
+            messages: prepareForSend(),
             tools: combinedTools,
             maxTokens,
             temperature,
@@ -278,12 +304,18 @@ export async function runToolLoop(
       assistantMsg = {
         role: "assistant" as const,
         content: turn.content || null,
-        // Note: reasoning is intentionally NOT included here. It is
-        // accumulated separately in `accumulatedReasoning` and returned
-        // to the caller for UI/persistence (the ThinkingPanel renders it).
-        // Reasoning is never baked into `content` — matching pi.
         tool_calls: toolCalls,
       };
+      // Round-trip reasoning to the same model (pi parity) — never baked into
+      // `content`. Only the STREAMED path round-trips; the on-device path below
+      // still strips reasoning (local models reject a reasoning field).
+      if (typeof turn.reasoning === "string" && turn.reasoning.length > 0 && typeof turn.reasoningField === "string") {
+        reasoningByMsg.set(assistantMsg, {
+          reasoning: turn.reasoning,
+          field: turn.reasoningField,
+          modelKey: currentModelKey,
+        });
+      }
     }
 
     // No tool calls — model is ready to produce its final reply
@@ -303,16 +335,44 @@ export async function runToolLoop(
     // arguments (or the user raises the output-token cap).
     const streamInterrupted = streamingTurn && turnFinishReason === null && (assistantMsg.tool_calls?.length ?? 0) > 0;
     if (turnFinishReason === "length" || streamInterrupted) {
-      messages.push(assistantMsg);
-      const toolResults = failToolCallsFromTruncatedMessage(assistantMsg.tool_calls, {
-        maxTokens,
-        error: streamInterrupted ? interruptedStreamToolCallError() : undefined,
-        labelFor: (name) => externalToolLabel(name, db),
-        emitStart: (tool, label, callId, args) => emitToolCall({ tool, label, args, callId }),
-        emitEnd: (tool, label, ok, output, callId, _args) => emitToolCallDone?.({ tool, callId, ok, error: output }),
-      });
-      for (const tr of toolResults) messages.push(tr);
-      continue;
+      // Recover, don't refuse, when EVERY tool call in the turn is "tail-complete":
+      // arguments valid except missing closing delimiters (the stream/gateway
+      // dropped the final `"}` after otherwise-complete arguments). A cut landing
+      // exactly at the tail means the emitted data IS the intended data. Anything
+      // else (strict-valid = possible boundary cut with silently missing fields;
+      // unparseable = mid-structure cut) is still refused.
+      const calls = assistantMsg.tool_calls ?? [];
+      const tailComplete =
+        calls.length > 0 &&
+        calls.every((call) => {
+          const p = parseToolArgs(call.function.arguments);
+          return p.ok && p.tailRepaired === true;
+        });
+      if (!tailComplete) {
+        // Do NOT push the truncated assistant message or its synthesized tool
+        // results into history — replaying that turn poisons the next request
+        // with truncated tool-call JSON and duplicate/orphaned tool_call_ids
+        // (→ provider 400). Emit the failed chips for the UI, then hand the model
+        // a synthetic notice so it re-issues with complete arguments.
+        failToolCallsFromTruncatedMessage(calls, {
+          maxTokens,
+          error: streamInterrupted ? interruptedStreamToolCallError() : undefined,
+          labelFor: (name) => externalToolLabel(name, db),
+          emitStart: (tool, label, callId, args) => emitToolCall({ tool, label, args, callId }),
+          emitEnd: (tool, label, ok, output, callId, _args) => emitToolCallDone?.({ tool, callId, ok, error: output }),
+        });
+        messages.push({
+          role: "user",
+          content: truncationRetryNotice(calls.length, maxTokens),
+        });
+        continue;
+      }
+      // Tail-complete → fall through and execute. Rewrite each repaired call's
+      // arguments to its canonical JSON so history holds what actually ran.
+      for (const call of calls) {
+        const p = parseToolArgs(call.function.arguments);
+        if (p.ok && p.tailRepaired) call.function.arguments = JSON.stringify(p.value);
+      }
     }
 
     messages.push(assistantMsg);
