@@ -490,13 +490,28 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             const last = subMsgs[subMsgs.length - 1];
             const newSubagents = [...msg.subagents!];
             if (last?.isStreaming) {
-              newSubagents[subIdx] = {
-                ...sub,
-                messages: [
-                  ...subMsgs.slice(0, -1),
-                  { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
-                ],
-              };
+              // Same dedupe as the parent's addPiToolCall: onToolPending (streaming),
+              // onToolStart (execution) and bash onUpdate label updates all fire with
+              // the SAME callId. Update the existing chip in place — appending
+              // duplicates leaves extra chips permanently "running", because
+              // updatePiSubagentToolCall only resolves the first match.
+              const existing = (last.toolCalls ?? []).findIndex((tc) => tc.callId === toolCall.callId);
+              if (existing !== -1) {
+                const updated = [...(last.toolCalls ?? [])];
+                updated[existing] = { ...updated[existing], ...toolCall };
+                newSubagents[subIdx] = {
+                  ...sub,
+                  messages: [...subMsgs.slice(0, -1), { ...last, toolCalls: updated }],
+                };
+              } else {
+                newSubagents[subIdx] = {
+                  ...sub,
+                  messages: [
+                    ...subMsgs.slice(0, -1),
+                    { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
+                  ],
+                };
+              }
             } else {
               // Same race as parent: create streaming message and attach chip atomically
               const newMsg = {

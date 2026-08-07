@@ -11,6 +11,7 @@
 
 import { randomBytes } from "crypto";
 import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../pi-agent-loop";
+import { createDeltaBatcher } from "../delta-batcher";
 
 export interface SpawnSubagentArgs {
   prompt: string;
@@ -92,38 +93,56 @@ export async function spawnSubagentTool(
 
   let errorMessage = "";
 
-  await runAgentLoop(
-    session,
-    systemPrompt,
-    llmConfig,
-    {
-      onToken:       (delta) => childToolCtx.send("pi-agent:token",      { sessionId: childSessionId, delta }),
-      onToolsReady:  ()     => childToolCtx.send("pi-agent:tools-ready", { sessionId: childSessionId }),
-      onToolPending: (name, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label: name, callId, status: "pending" }),
-      onToolStart:   (name, label, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "start" }),
-      onToolEnd:     (name, label, ok, output, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "end", ok, output }),
-      onStepStart:  () => childToolCtx.send("pi-agent:step", { sessionId: childSessionId }),
-      // Usage recording for the child happens inside runAgentLoop with source
-      // "pi-subagent"; this callback only relays the renderer event. Args are in
-      // AgentLoopCallbacks.onUsage order — every value forwarded under its own
-      // field (a mis-shift here would silently mislabel the subagent's ring).
-      onUsage:      (promptTokens, completionTokens, reasoningTokens, breakdown, costUsd, cacheReadTokens, cacheCreationTokens) => childToolCtx.send("pi-agent:usage", {
-        sessionId: childSessionId,
-        promptTokens,
-        completionTokens,
-        reasoningTokens,
-        breakdown,
-        costUsd,
-        cacheReadTokens,
-        cacheCreationTokens,
-      }),
-      onDone:       () => { /* handled below via session.messages */ },
-      onError:      (msg) => { errorMessage = msg; },
-    },
-    childToolCtx,
-    "execute",
-    "pi-subagent",
-  );
+  // Coalesce the child's streamed deltas like the parent loop (one IPC event
+  // per flush instead of per token). Flushed after the loop below.
+  const tokens = createDeltaBatcher((delta) => childToolCtx.send("pi-agent:token", { sessionId: childSessionId, delta }));
+  const thoughts = createDeltaBatcher((delta) => childToolCtx.send("pi-agent:thought", { sessionId: childSessionId, delta }));
+
+  try {
+    await runAgentLoop(
+      session,
+      systemPrompt,
+      llmConfig,
+      {
+        onToken:       (delta) => tokens.push(delta),
+        onThought:     (delta) => thoughts.push(delta),
+        onToolsReady:  ()     => childToolCtx.send("pi-agent:tools-ready", { sessionId: childSessionId }),
+        onToolPending: (name, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label: name, callId, status: "pending" }),
+        onToolStart:   (name, label, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "start" }),
+        onToolEnd:     (name, label, ok, output, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "end", ok, output }),
+        onStepStart:  () => childToolCtx.send("pi-agent:step", { sessionId: childSessionId }),
+        // Usage recording for the child happens inside runAgentLoop with source
+        // "pi-subagent"; this callback only relays the renderer event. Args are in
+        // AgentLoopCallbacks.onUsage order — every value forwarded under its own
+        // field (a mis-shift here would silently mislabel the subagent's ring).
+        onUsage:      (promptTokens, completionTokens, reasoningTokens, breakdown, costUsd, cacheReadTokens, cacheCreationTokens) => childToolCtx.send("pi-agent:usage", {
+          sessionId: childSessionId,
+          promptTokens,
+          completionTokens,
+          reasoningTokens,
+          breakdown,
+          costUsd,
+          cacheReadTokens,
+          cacheCreationTokens,
+        }),
+        onDone:       () => { /* handled below via session.messages */ },
+        onError:      (msg) => { errorMessage = msg; },
+      },
+      childToolCtx,
+      "execute",
+      "pi-subagent",
+    );
+  } catch (err) {
+    // A crashed child loop must not leave the subagent block stuck "running" in
+    // the transcript — report it as an error result so the parent sees it and
+    // the renderer completes the subagent.
+    errorMessage = `Sub-agent loop crashed: ${(err as Error)?.message ?? String(err)}`;
+  } finally {
+    // Flush any remaining buffered deltas (covers done, error, max-steps, abort,
+    // and a crashed loop).
+    tokens.flush();
+    thoughts.flush();
+  }
 
   // Extract the final assistant message from history
   const lastAssistant = [...session.messages]

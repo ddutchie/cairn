@@ -151,6 +151,13 @@ export async function bashTool(
 
     let output = "";
     let truncated = false;
+    // Throttle live label updates: one IPC event per stdout/stderr chunk would
+    // flood the renderer (each becomes a full pi-agent:tool event + React
+    // re-render). Coalesce to a bounded cadence; a final update is flushed when
+    // the process closes so the chip still ends on the final output.
+    let lastUpdateMs = 0;
+    const UPDATE_THROTTLE_MS = 150;
+    const flushUpdate = () => { lastUpdateMs = Date.now(); onUpdate?.(output); };
 
     const bashExe = getBashExecutable();
     const child = spawn(bashExe, ["-c", args.command], {
@@ -179,7 +186,7 @@ export async function bashTool(
           }
         }
       }
-      onUpdate?.(output);
+      if (Date.now() - lastUpdateMs >= UPDATE_THROTTLE_MS) flushUpdate();
     };
 
     child.stdout.on("data", onData);
@@ -196,6 +203,12 @@ export async function bashTool(
 
     const abortHandler = () => {
       clearTimeout(timer);
+      // Flush throttled output BEFORE rejecting so the live chip label shows
+      // the final bytes when the tool ends as aborted. (Not in the close
+      // handler's aborted branch — reject() resolves the loop's await first and
+      // fires onToolEnd, so flushing there would emit an out-of-order label
+      // update that re-adds a running chip.)
+      flushUpdate();
       doKill();
       reject(new Error(`Command aborted\n\n${output}`));
     };
@@ -206,6 +219,8 @@ export async function bashTool(
       signal?.removeEventListener("abort", abortHandler);
       if (child.pid) untrackPid(child.pid);
       if (signal?.aborted) return; // already rejected above
+      // Flush the final output so the live chip label ends on the last bytes.
+      flushUpdate();
       if (code !== 0 && code !== null) {
         reject(new Error(`Command exited with code ${code}\n\n${output}`));
       } else {

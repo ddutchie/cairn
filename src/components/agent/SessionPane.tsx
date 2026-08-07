@@ -137,18 +137,20 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     }
   }, [hasCodeDirectory, activeSessionId, persistentPiSessionId, setActiveSession]);
 
-  const prevViewRef = useRef(activeView);
   const prevChatOpenRef = useRef(chatOpen);
 
   useEffect(() => {
-    const viewChangedToNonAgent = prevViewRef.current === "agent" && activeView !== "agent";
+    // Default the active session to "chat" when the chat panel is OPENED while
+    // not in the agent view (you clicked Chat, you see Chat). We deliberately do
+    // NOT reset the session when merely navigating AWAY from the agent view —
+    // that would yank the user off a live agent conversation every time they hop
+    // into Settings or another view; the agent tab is restored on return.
     const chatOpenedOutsideAgent = !prevChatOpenRef.current && chatOpen && activeView !== "agent";
 
-    if (viewChangedToNonAgent || chatOpenedOutsideAgent) {
+    if (chatOpenedOutsideAgent) {
       setActiveSession("chat");
     }
 
-    prevViewRef.current = activeView;
     prevChatOpenRef.current = chatOpen;
   }, [activeView, chatOpen, setActiveSession]);
 

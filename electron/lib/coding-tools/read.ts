@@ -6,8 +6,8 @@
  */
 
 import fs from "fs";
-import path from "path";
 import { truncateOutput, DEFAULT_MAX_LINES } from "../truncation";
+import { resolveContainedPath } from "./workspace-path";
 
 const MAX_LINES = DEFAULT_MAX_LINES;
 const MAX_BYTES = 200_000;
@@ -19,11 +19,12 @@ export interface ReadArgs {
 }
 
 export async function readTool(args: ReadArgs, cwd: string): Promise<string> {
-  const filePath = path.isAbsolute(args.path) ? args.path : path.join(cwd, args.path);
+  const filePath = resolveContainedPath(cwd, args.path);
+  if (!filePath) throw new Error(`Path is outside the workspace: ${args.path}`);
 
   let content: string;
   try {
-    content = fs.readFileSync(filePath, "utf8");
+    content = await fs.promises.readFile(filePath, "utf8");
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     if (err.code === "ENOENT") throw new Error(`File not found: ${args.path}`);

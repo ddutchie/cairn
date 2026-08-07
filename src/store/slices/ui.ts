@@ -331,7 +331,7 @@ export const THEME_KEY = "theme";
 
 export const DEFAULT_CHAT_PANEL_WIDTH = 320; // px  (≈ w-80 at default font scale)
 export const MIN_CHAT_PANEL_WIDTH     = 240; // px
-export const MAX_CHAT_PANEL_WIDTH     = 600; // px
+export const MAX_CHAT_PANEL_WIDTH     = 1000; // px
 
 // ── Notes sidebar width ───────────────────────────────────────────────────────
 

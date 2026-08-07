@@ -20,6 +20,7 @@ import {
   supportsImageInput,
   resolveMaxOutputTokens,
   positiveTokenLimit,
+  normalizeContextLimit,
 } from "./model-catalog";
 
 describe("parseModelCatalog", () => {
@@ -164,8 +165,7 @@ describe("resolveMaxOutputTokens", () => {
     expect(resolveMaxOutputTokens(384000)).toBe(384000);
   });
 
-  it("a user override always wins over the model-derived cap", () => {
-    expect(resolveMaxOutputTokens(5000, 8192)).toBe(5000);
+  it("a user override always wins over the model-derived cap", () => {    expect(resolveMaxOutputTokens(5000, 8192)).toBe(5000);
     expect(resolveMaxOutputTokens(16384, 8192)).toBe(16384);
   });
 
@@ -179,6 +179,28 @@ describe("resolveMaxOutputTokens", () => {
     // Regression: `> 0` then Math.floor turned 0.1 / 0.999 into 0 — a broken cap.
     expect(resolveMaxOutputTokens(0.1)).toBeUndefined();
     expect(resolveMaxOutputTokens(0.999)).toBeUndefined();
+  });
+});
+
+describe("normalizeContextLimit", () => {
+  it("floors finite values of at least 1", () => {
+    expect(normalizeContextLimit(128_000)).toBe(128_000);
+    expect(normalizeContextLimit(200_000.9)).toBe(200_000);
+    expect(normalizeContextLimit(1)).toBe(1);
+  });
+
+  it("falls back to 128K for undefined/null/absent", () => {
+    expect(normalizeContextLimit()).toBe(128_000);
+    expect(normalizeContextLimit(undefined)).toBe(128_000);
+    expect(normalizeContextLimit(null)).toBe(128_000);
+  });
+
+  it("falls back to 128K for hostile/non-finite values so pruning can't break", () => {
+    expect(normalizeContextLimit(0)).toBe(128_000);
+    expect(normalizeContextLimit(-5)).toBe(128_000);
+    expect(normalizeContextLimit(0.5)).toBe(128_000);
+    expect(normalizeContextLimit(Number.NaN)).toBe(128_000);
+    expect(normalizeContextLimit(Infinity)).toBe(128_000);
   });
 });
 

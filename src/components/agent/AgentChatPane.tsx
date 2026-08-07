@@ -18,7 +18,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import { getCommandsForScope } from "@/lib/slash-commands";
-import { resolveMaxOutputTokens, supportsImageInput } from "../../../shared/models/model-catalog";
+import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanApprovalCard } from "./PlanApprovalCard";
@@ -492,6 +492,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           baseUrl:  agentConfig.baseUrl  || undefined,
           model:    agentConfig.model    || undefined,
           apiKey:   agentConfig.apiKey   || undefined,
+          // Keep compaction's context-window threshold in sync with the agent's
+          // real model limit (it would otherwise default to 128K).
+          contextWindow: agentConfig.contextLimit,
         },
       });
       return;
@@ -544,6 +547,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
          maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
+          // The agent's real context limit — drives the sliding-window pruner
+          // (and compaction) so long contexts are trimmed at the model's window,
+          // not a hardcoded 128K default.
+          contextWindow: agentConfig.contextLimit,
           // Auto → send a generous 32K cap (bounded by the model's declared
           // output limit) so the model can finish naturally.
           maxTokens:   resolveMaxOutputTokens(
@@ -622,6 +629,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         apiKey:      agentConfig.apiKey      || undefined,
         maxSteps:    agentConfig.maxSteps    ?? 30,
          temperature: agentConfig.temperature ?? 0.3,
+         contextWindow: agentConfig.contextLimit,
          maxTokens:   resolveMaxOutputTokens(
            agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,
            getModelInfo(agentConfig.model)?.maxOutput,
@@ -679,7 +687,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         {session.lastUsage && (
           <ContextRing
             promptTokens={session.lastUsage.promptTokens}
-            contextLimit={agentConfig.contextLimit ?? 128000}
+            contextLimit={normalizeContextLimit(agentConfig.contextLimit)}
             breakdown={session.lastUsage.breakdown}
             completionTokens={session.lastUsage.completionTokens}
             reasoningTokens={session.lastUsage.reasoningTokens}

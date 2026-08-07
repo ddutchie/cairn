@@ -7,6 +7,7 @@
 import fs from "fs";
 import path from "path";
 import { truncateOutput } from "../truncation";
+import { resolveContainedPath } from "./workspace-path";
 
 const MAX_RESULTS = 50;
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".next", "out", "build", ".turbo"]);
@@ -25,23 +26,23 @@ function matchesPattern(name: string, pattern: string): boolean {
   return name.toLowerCase().includes(pattern.toLowerCase());
 }
 
-function findFiles(
+async function findFiles(
   dirPath: string,
   pattern: string,
   results: string[],
   cwd: string
-): void {
+): Promise<void> {
   if (results.length >= MAX_RESULTS) return;
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
   } catch { return; }
 
   for (const entry of entries) {
     if (results.length >= MAX_RESULTS) break;
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
-      findFiles(path.join(dirPath, entry.name), pattern, results, cwd);
+      await findFiles(path.join(dirPath, entry.name), pattern, results, cwd);
     } else if (entry.isFile()) {
       if (matchesPattern(entry.name, pattern)) {
         results.push(path.relative(cwd, path.join(dirPath, entry.name)));
@@ -51,18 +52,17 @@ function findFiles(
 }
 
 export async function findTool(args: FindArgs, cwd: string): Promise<string> {
-  const searchPath = args.path
-    ? (path.isAbsolute(args.path) ? args.path : path.join(cwd, args.path))
-    : cwd;
+  const searchPath = resolveContainedPath(cwd, args.path);
+  if (!searchPath) throw new Error(`Path is outside the workspace: ${args.path ?? "."}`);
 
   try {
-    fs.statSync(searchPath);
+    await fs.promises.stat(searchPath);
   } catch {
     throw new Error(`Directory not found: ${args.path ?? "."}`);
   }
 
   const results: string[] = [];
-  findFiles(searchPath, args.pattern, results, cwd);
+  await findFiles(searchPath, args.pattern, results, cwd);
 
   if (results.length === 0) return `No files matching "${args.pattern}" found.`;
 
