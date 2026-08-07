@@ -512,6 +512,7 @@ const api = {
   setAccent: (accent: string) => invoke("app:setAccent", accent),
   initWorkspace: (workspacePath: string, excludedFolders?: string[]) => invoke<{ ok: true }>("app:initWorkspace", { workspacePath, excludedFolders }),
   rescanWorkspace: (workspaceId?: string, excludedFolders?: string[]) => invoke<{ projectsCreated: number; createdProjects: { id: string; name: string; noteCount: number }[] }>("app:rescanWorkspace", { workspaceId, excludedFolders }),
+  rollbackImport: (projectIds: string[]) => invoke<{ removedNotes: number; ok: boolean }>("app:rollbackImport", { projectIds }),
   probeWorkspaceFolder: (folder: string) => invoke<{ isObsidianVault: boolean; vaultName: string; noteCount: number; skippedCount: number; projects: { name: string; noteCount: number; root: boolean; projectKey: string }[]; excludedFolders: string[] }>("app:probeWorkspaceFolder", { folder }),
   relaunch: () => invoke("app:relaunch"),
   resetAllData: () => invoke("app:reset"),

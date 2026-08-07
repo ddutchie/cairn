@@ -51,7 +51,7 @@ import { runStartupHygiene } from "../lib/db-hygiene";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
 import * as q from "../db/queries";
-import { writeNoteFile, deleteNoteFile, importVaultProjects, previewVaultImport, saveImportExclusions, syncNotesFromDisk } from "../notes-files";
+import { writeNoteFile, deleteNoteFile, importVaultProjects, previewVaultImport, saveImportExclusions, syncNotesFromDisk, rollbackImport } from "../notes-files";
 import { suppressNextChange } from "../file-watcher";
 import { getProjectName } from "./result-helpers";
 import { broadcastEvent } from "./registry";
@@ -210,6 +210,19 @@ export function registerAppHandlers(
       activeWin.webContents.send("db:changed");
     }
     return { projectsCreated: created, createdProjects };
+  }));
+
+  // Undo an import: remove the projects it created (and their notes) WITHOUT
+  // tombstoning them to sync peers, strip Cairn frontmatter from the adopted
+  // files (preserving the user's own), and mark the vault un-managed so nothing
+  // is re-adopted. Offered on the rescan result, immediately after import.
+  registerIpcHandle("app:rollbackImport", (_e, { projectIds }: { projectIds?: string[] } = {}) => handle(() => {
+    const removedNotes = rollbackImport(ctx.db, ctx.workspacePath, projectIds ?? []);
+    const activeWin = ctx.getWin();
+    if (activeWin && !activeWin.isDestroyed()) {
+      activeWin.webContents.send("db:changed");
+    }
+    return { removedNotes, ok: true };
   }));
 
   // Read-only recursive preview of a folder before onboarding adopts it. No

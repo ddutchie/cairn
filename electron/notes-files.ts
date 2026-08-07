@@ -286,6 +286,91 @@ export function setImportUnmanaged(workspacePath: string, unmanaged: boolean): v
   writeImportConfig(workspacePath, { ...cfg, unmanaged });
 }
 
+/** Set/unset the sync capture-trigger suppression flag (see migration v26).
+ *  Wrapped in try/catch so a sync-less setup can never break a rollback. */
+function setSyncSuppressed(db: Database.Database, on: boolean): void {
+  try {
+    db.prepare(
+      "INSERT INTO sync_state (key, value) VALUES ('suppress', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    ).run(on ? "1" : "0");
+  } catch (err) {
+    console.warn("[import] sync suppress toggle failed:", err);
+  }
+}
+
+/** Strip Cairn's frontmatter keys from a file, preserving the user's own keys
+ *  (Obsidian tags, aliases, dates, custom properties, …). If only Cairn
+ *  frontmatter remains, the file is rewritten as plain markdown. */
+function stripCairnFrontmatterFromFile(filePath: string): void {
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { data, content } = matter(raw);
+    const clean: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (!CAIRN_FRONTMATTER_KEYS.has(key)) clean[key] = value;
+    }
+    const body = Object.keys(clean).length > 0
+      ? matter.stringify(content, clean)
+      : (content ?? "").trimStart();
+    fs.writeFileSync(filePath, body, "utf-8");
+  } catch {
+    /* best-effort — an unreadable/unwritable file is left untouched */
+  }
+}
+
+/**
+ * Roll back an import: remove the given projects and their notes WITHOUT
+ * publishing sync tombstones to peers, strip Cairn frontmatter from the adopted
+ * files (preserving the user's own frontmatter), drop their ledger entries, and
+ * mark the vault un-managed so the next scan leaves the files as plain markdown
+ * instead of re-adopting them.
+ *
+ * Intended for "immediately after import, before edits" — the rescan result's
+ * createdProjects. Returns the number of notes removed.
+ */
+export function rollbackImport(
+  db: Database.Database,
+  workspacePath: string,
+  projectIds: string[],
+): number {
+  const ids = [...new Set(projectIds.filter((id) => typeof id === "string" && id.length > 0))];
+  if (ids.length === 0) return 0;
+  const cfg = readImportConfig(workspacePath);
+  if (cfg.unmanaged) return 0; // already rolled back
+
+  const placeholders = ids.map(() => "?").join(",");
+  // Notes under the target projects — for file stripping + ledger cleanup.
+  const notes = db.prepare(
+    `SELECT n.id, p.name AS project_name
+     FROM notes n JOIN projects p ON n.project_id = p.id
+     WHERE n.project_id IN (${placeholders}) AND n.type = 'note'`,
+  ).all(...ids) as Array<{ id: string; project_name: string }>;
+
+  // Strip Cairn frontmatter from each adopted file (best-effort), leaving the
+  // user's own frontmatter and the note body intact.
+  for (const n of notes) {
+    const fp = findNoteFilePath(workspacePath, n.project_name, n.id);
+    if (fp) stripCairnFrontmatterFromFile(fp);
+  }
+
+  // Delete the projects (cascades to their note rows) under sync-capture
+  // suppression so no tombstones propagate to synced peers — rollback is an
+  // un-adopt, not a delete.
+  setSyncSuppressed(db, true);
+  try {
+    db.prepare(`DELETE FROM projects WHERE id IN (${placeholders})`).run(...ids);
+  } finally {
+    setSyncSuppressed(db, false);
+  }
+
+  // Drop the ledger entries and mark the vault un-managed in one config write.
+  const adopted = { ...cfg.adopted };
+  for (const n of notes) delete adopted[n.id];
+  writeImportConfig(workspacePath, { ...cfg, adopted, unmanaged: true });
+
+  return notes.length;
+}
+
 function countImportableMarkdown(dir: string): { included: number; skipped: number } {
   let included = 0;
   let skipped = 0;

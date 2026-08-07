@@ -31,6 +31,7 @@ import {
   isImportPathExcluded,
   readImportConfig,
   setImportUnmanaged,
+  rollbackImport,
 } from "./notes-files";
 import type { NoteData } from "./notes-files";
 
@@ -1166,5 +1167,42 @@ describe("re-import 3-way conflict handling (v2.6.8)", () => {
     // Nothing new adopted; the existing note's file is not re-adopted either.
     expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 1 });
     expect(isImportPathExcluded(tmpDir, path.join(tmpDir, "Journal", "Second.md"))).toBe(true);
+  });
+
+  it("rolls back an import: removes projects/notes, strips frontmatter, un-manages", () => {
+    seedWorkspaceOnly();
+    // Obsidian files with user frontmatter (tags) — must survive rollback.
+    writeObsidianFile(path.join(tmpDir, "Journal"), "Entry.md", { tags: ["personal"] }, "\n# Entry\n\nAlpha.");
+    writeObsidianFile(path.join(tmpDir, "Ideas"), "Idea.md", { tags: ["ideas"] }, "\n# Idea\n\nBeta.");
+    syncNotesFromDisk(db, tmpDir);
+
+    const projects = db.prepare("SELECT id, name FROM projects").all() as Array<{ id: string; name: string }>;
+    expect(projects.map((p) => p.name).sort()).toEqual(["Ideas", "Journal"]);
+    const adoptedIds = (db.prepare("SELECT id FROM notes").all() as Array<{ id: string }>).map((r) => r.id);
+    expect(adoptedIds).toHaveLength(2);
+
+    const removed = rollbackImport(db, tmpDir, projects.map((p) => p.id));
+    expect(removed).toBe(2);
+
+    // Projects and notes are PHYSICALLY gone (not tombstoned).
+    expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes WHERE deleted_at IS NOT NULL").get()).toEqual({ n: 0 });
+
+    // Files survive; Cairn frontmatter stripped; Obsidian tags preserved.
+    const entryRaw = fs.readFileSync(path.join(tmpDir, "Journal", "Entry.md"), "utf-8");
+    expect(entryRaw).toContain("tags:");
+    expect(entryRaw).toContain("personal");
+    expect(entryRaw).not.toContain("id:");
+    expect(entryRaw).not.toContain("projectId:");
+    expect(entryRaw).toContain("Alpha");
+
+    // Vault is un-managed; ledger cleared; a re-scan re-adopts nothing.
+    const cfg = readImportConfig(tmpDir);
+    expect(cfg.unmanaged).toBe(true);
+    for (const id of adoptedIds) expect(cfg.adopted[id]).toBeUndefined();
+    syncNotesFromDisk(db, tmpDir);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 0 });
   });
 });

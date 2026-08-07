@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowLeft, FolderCheck, FileText } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, FolderCheck, FileText, Undo2 } from "lucide-react";
 import { Shell } from "./shared";
 
 export interface ImportedProject {
@@ -13,10 +14,15 @@ interface Props {
   projects: ImportedProject[];
   onBack: () => void;
   onContinue: () => void;
+  /** Undo the import: remove these projects/notes, strip Cairn frontmatter,
+   *  and stop managing the vault. Only offered here, immediately after import. */
+  onUndo: () => void;
 }
 
-export function StepImportedProjects({ projects, onBack, onContinue }: Props) {
+export function StepImportedProjects({ projects, onBack, onContinue, onUndo }: Props) {
   const totalNotes = projects.reduce((sum, p) => sum + p.noteCount, 0);
+  // Two-step destructive confirm: first click arms it, second click fires it.
+  const [confirming, setConfirming] = useState(false);
 
   return (
     <Shell step="imported-projects">
@@ -67,6 +73,29 @@ export function StepImportedProjects({ projects, onBack, onContinue }: Props) {
           className="w-full py-2 rounded-lg text-sm font-medium bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[var(--accent-hover)] transition-all"
         >
           Looks good — continue
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (confirming) {
+              onUndo();
+            } else {
+              setConfirming(true);
+            }
+          }}
+          className={confirming
+            ? "w-full py-2 rounded-lg text-sm font-medium border border-[var(--danger)] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-all"
+            : "w-full py-2 rounded-lg text-sm font-medium border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-all"}
+        >
+          {confirming
+            ? `Confirm — undo removes ${projects.length === 1 ? "this project" : `${projects.length} projects`} and strips Cairn frontmatter`
+            : (
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <Undo2 size={12} />
+                Undo import — pick a different folder
+              </span>
+            )}
         </button>
       </div>
     </Shell>

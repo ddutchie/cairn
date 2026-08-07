@@ -179,6 +179,21 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     }
   }
 
+  /** Undo the import: remove the created projects/notes, strip Cairn frontmatter
+   *  from the vault files, and stop managing the folder — then let the user pick
+   *  a different folder. Best-effort; a failure just stays on the summary. */
+  async function handleRollbackImport() {
+    const ids = importedProjects.map((p) => p.id);
+    if (ids.length === 0) return;
+    try {
+      await window.electron?.rollbackImport(ids);
+      setImportedProjects([]);
+      setStep("choose-folder");
+    } catch (err) {
+      console.error("[onboarding] rollback import failed:", err);
+    }
+  }
+
   function handleSaveAI() {
     setAIConfig({ aiEnabled, provider: provider as "openai" | "localllm", baseUrl, apiKey, model });
     if (provider !== "localllm") {
@@ -331,6 +346,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         projects={importedProjects}
         onBack={() => setStep("views")}
         onContinue={() => setStep("done")}
+        onUndo={handleRollbackImport}
       />
     );
   }
