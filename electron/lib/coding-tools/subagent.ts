@@ -105,7 +105,7 @@ export async function spawnSubagentTool(
       onStepStart:  () => childToolCtx.send("pi-agent:step", { sessionId: childSessionId }),
       // Usage recording for the child happens inside runAgentLoop with source
       // "pi-subagent"; this callback only relays the renderer event.
-      onUsage:      (pt, ct, breakdown) => childToolCtx.send("pi-agent:usage", { sessionId: childSessionId, promptTokens: pt, completionTokens: ct, breakdown }),
+      onUsage:      (pt, ct, breakdown, _cost, cacheRead, cacheCreate) => childToolCtx.send("pi-agent:usage", { sessionId: childSessionId, promptTokens: pt, completionTokens: ct, breakdown, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreate }),
       onDone:       () => { /* handled below via session.messages */ },
       onError:      (msg) => { errorMessage = msg; },
     },

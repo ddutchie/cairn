@@ -158,7 +158,7 @@ export interface AgentLoopCallbacks {
   /** callId links back to the same chip created by onToolPending / updated by onToolStart. */
   onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string, args?: ToolArgs) => void;
   onStepStart:     () => void;
-  onUsage:         (promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, costUsd?: number) => void;
+  onUsage:         (promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, costUsd?: number, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
   onDone:          () => void;
   onError:         (message: string) => void;
   /** Fired when a tool call needs user confirmation before execution. */
@@ -690,6 +690,7 @@ export async function runAgentLoop(
         const pt = usage.promptTokens;
         const ct = usage.completionTokens;
         const rt = usage.reasoningTokens;
+        const cost = extractCost(usage.chunkCost, usage.raw);
         // Persist one usage row per agent round for the Usage view.
         recordLlmUsage({
           source: usageSource,
@@ -702,7 +703,9 @@ export async function runAgentLoop(
           promptTokens: pt,
           completionTokens: ct,
           reasoningTokens: rt,
-          costUsd: extractCost(usage.chunkCost, usage.raw),
+          cacheReadTokens: usage.cacheReadTokens,
+          cacheCreationTokens: usage.cacheCreationTokens,
+          costUsd: cost,
         });
         session.lastPromptTokens = pt;
         // Accumulate completion + reasoning across rounds (total output for the turn).
@@ -716,7 +719,7 @@ export async function runAgentLoop(
         } catch (err) {
           console.error("[pi-agent] failed to calculate breakdown:", err);
         }
-        callbacks.onUsage(pt, session.totalCompletionTokens ?? 0, session.totalReasoningTokens ?? 0, breakdown, extractCost(usage.chunkCost, usage.raw));
+        callbacks.onUsage(pt, session.totalCompletionTokens ?? 0, session.totalReasoningTokens ?? 0, breakdown, cost, usage.cacheReadTokens, usage.cacheCreationTokens);
       },
     });
 

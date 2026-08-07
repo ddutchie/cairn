@@ -198,42 +198,42 @@ export function ModelPicker({
         <DropdownMenuTrigger asChild disabled={disabled}>
           <button
             className={cn(
-              "flex-1 min-w-0 flex items-center justify-between gap-1 rounded-md border bg-[var(--surface-2)] text-[var(--text-primary)] transition-colors disabled:opacity-50",
+              "flex-1 min-w-0 relative flex flex-col gap-0.5 rounded-md border bg-[var(--surface-2)] text-[var(--text-primary)] transition-colors disabled:opacity-50",
               triggerPad,
               errored ? "border-[var(--danger)]" : "border-[var(--border)] hover:border-[var(--muted)]",
             )}
           >
             {value ? (
               <>
-                {triggerLogo && (
-                  <img
-                    src={triggerLogo}
-                    alt=""
-                    className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                  />
-                )}
-                <TruncatedModel text={value} className="font-mono" />
-                <CapabilityChips info={triggerInfo} />
-                {triggerNoToolCall && (
-                  <Tooltip content="This model doesn't support tool calling">
-                    <span className="flex-shrink-0 text-[var(--warning)]">
-                      <TriangleAlert size={11} />
-                    </span>
-                  </Tooltip>
-                )}
-                {triggerCost && (
-                  <span className="text-[0.607rem] tabular-nums text-[var(--text-tertiary)] flex-shrink-0">
-                    {triggerCost}
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5 min-w-0 pr-4">
+                  {triggerLogo && (
+                    <img
+                      src={triggerLogo}
+                      alt=""
+                      className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                    />
+                  )}
+                  <TruncatedModel text={value} className="font-mono" />
+                  {triggerNoToolCall && (
+                    <Tooltip content="This model doesn't support tool calling">
+                      <span className="flex-shrink-0 text-[var(--warning)]">
+                        <TriangleAlert size={11} />
+                      </span>
+                    </Tooltip>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 pl-4 text-[0.607rem] text-[var(--text-tertiary)]">
+                  <CapabilityChips info={triggerInfo} />
+                  {triggerCost && <span className="tabular-nums">{triggerCost}</span>}
+                </div>
               </>
             ) : (
               <span className="truncate font-sans text-[var(--text-tertiary)]">
                 {placeholder || "Select model"}
               </span>
             )}
-            <ChevronDown size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
+            <ChevronDown size={11} className="text-[var(--text-tertiary)] flex-shrink-0 absolute right-2 top-1/2 -translate-y-1/2" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -329,6 +329,10 @@ export function ModelPicker({
  * the menu), the active-check gutter, and the truncated model id. Selecting the
  * row picks the model; clicking the star only toggles the favorite.
  *
+ * Two-line layout: the model name (with logo / star / markers) sits on the first
+ * line, and the input-capability icons + per-1M cost on the second — so long
+ * model ids don't crowd out the capability/cost metadata.
+ *
  * When the models.dev catalog is loaded, the row is enriched with the provider
  * logo, a compact per-1M cost (`$in/$out`), and a warning marker when the model
  * is known not to support tool calls. Catalog data is best-effort — rows render
@@ -355,52 +359,54 @@ function ModelRow({
   return (
     <DropdownMenuItem
       onSelect={onSelect}
-      className={cn("group gap-1.5 font-mono text-xs", active && "text-[var(--accent)]")}
+      className={cn("group gap-2 font-mono text-xs items-start", active && "text-[var(--accent)]")}
     >
-      <button
-        type="button"
-        aria-label={favorite ? "Unfavorite model" : "Favorite model"}
-        title={favorite ? "Unfavorite" : "Favorite"}
-        // Radix Menu.Item triggers selection on pointerup / click. Stop those
-        // events at the star so tapping it only toggles the favorite instead of
-        // selecting the model and closing the menu. (Don't preventDefault on
-        // pointerdown — that would suppress the follow-up click in some engines.)
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(); }}
-        className={cn(
-          "flex-shrink-0 flex items-center justify-center rounded p-0.5 -ml-0.5 transition-colors",
-          favorite
-            ? "text-[var(--accent)] hover:text-[var(--text-tertiary)]"
-            : "text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 hover:text-[var(--accent)]",
-        )}
-      >
-        <Star size={12} className={favorite ? "fill-current" : ""} />
-      </button>
-      {active && <Check size={12} className="flex-shrink-0" />}
-      {logo && (
-        <img
-          src={logo}
-          alt=""
-          className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
-          // Some provider slugs 404 — drop the broken glyph rather than showing it.
-          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-        />
-      )}
-      <TruncatedModel text={model} />
-      <CapabilityChips info={info} />
-      {noToolCall && (
-        <Tooltip content="This model doesn't support tool calling">
-          <span className="flex-shrink-0 text-[var(--warning)]">
-            <TriangleAlert size={12} />
-          </span>
-        </Tooltip>
-      )}
-      {cost && (
-        <span className="ml-auto pl-2 text-[0.607rem] tabular-nums text-[var(--text-tertiary)] flex-shrink-0">
-          {cost}
-        </span>
-      )}
+      <div className="flex flex-col min-w-0 flex-1 gap-0.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <button
+            type="button"
+            aria-label={favorite ? "Unfavorite model" : "Favorite model"}
+            title={favorite ? "Unfavorite" : "Favorite"}
+            // Radix Menu.Item triggers selection on pointerup / click. Stop those
+            // events at the star so tapping it only toggles the favorite instead of
+            // selecting the model and closing the menu. (Don't preventDefault on
+            // pointerdown — that would suppress the follow-up click in some engines.)
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(); }}
+            className={cn(
+              "flex-shrink-0 flex items-center justify-center rounded p-0.5 -ml-0.5 transition-colors",
+              favorite
+                ? "text-[var(--accent)] hover:text-[var(--text-tertiary)]"
+                : "text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 hover:text-[var(--accent)]",
+            )}
+          >
+            <Star size={12} className={favorite ? "fill-current" : ""} />
+          </button>
+          {active && <Check size={12} className="flex-shrink-0" />}
+          {logo && (
+            <img
+              src={logo}
+              alt=""
+              className="provider-logo h-3 w-3 rounded-[2px] object-contain flex-shrink-0"
+              // Some provider slugs 404 — drop the broken glyph rather than showing it.
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+          )}
+          <TruncatedModel text={model} />
+          {noToolCall && (
+            <Tooltip content="This model doesn't support tool calling">
+              <span className="flex-shrink-0 text-[var(--warning)]">
+                <TriangleAlert size={12} />
+              </span>
+            </Tooltip>
+          )}
+        </div>
+        <div className="flex items-center gap-2 pl-5 text-[0.607rem] text-[var(--text-tertiary)]">
+          <CapabilityChips info={info} />
+          {cost && <span className="tabular-nums">{cost}</span>}
+        </div>
+      </div>
     </DropdownMenuItem>
   );
 }

@@ -68,6 +68,8 @@ export function ChatSubagentBlock({ sub }: { sub: ChatSubagent }) {
             contextLimit={contextLimit}
             completionTokens={sub.lastUsage.completionTokens}
             reasoningTokens={sub.lastUsage.reasoningTokens}
+            cacheReadTokens={sub.lastUsage.cacheReadTokens}
+            cacheCreationTokens={sub.lastUsage.cacheCreationTokens}
             costUsd={sub.lastUsage.costUsd}
             showBalance={false}
             size={12}

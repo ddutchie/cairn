@@ -17,42 +17,40 @@ export interface UsageRangeArgs {
   /** Epoch ms, inclusive. Omit for all time. */
   from?: number;
   to?: number;
+  /** Drop rows whose cost is a models.dev estimate (provider reported none). */
+  excludeEstimated?: boolean;
 }
 
 export function registerUsageHandlers(ctx: DbContext): void {
   // models.dev per-1M pricing map pushed by the renderer once its catalog loads,
   // so the recorder can estimate cost for providers that don't report it.
-  registerIpcHandle("app:modelPricing", (_e, map: Record<string, { input: number | null; output: number | null }> | null) => {
+  registerIpcHandle("app:modelPricing", (_e, map: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }> | null) => {
     return handle(() => {
       setModelPricing(map);
       return { ok: true };
     });
   });
 
+  const toFilter = (args: UsageRangeArgs): UsageQueryFilter => ({
+    workspaceId: args?.workspaceId,
+    source: args?.source,
+    from: args?.from,
+    to: args?.to,
+    excludeEstimated: args?.excludeEstimated,
+  });
+
   // Everything the view needs for a range: headline totals, previous window
   // (delta chips), per-day series, and source + model breakdowns.
   registerIpcHandle("usage:overview", async (_e, args: UsageRangeArgs) => {
     return handle(() => {
-      const filter: UsageQueryFilter = {
-        workspaceId: args?.workspaceId,
-        source: args?.source,
-        from: args?.from,
-        to: args?.to,
-      };
-      return queryUsageOverview(ctx.db, filter);
+      return queryUsageOverview(ctx.db, toFilter(args));
     });
   });
 
   // Most recent per-call rows for the history table.
   registerIpcHandle("usage:recent", async (_e, args: UsageRangeArgs & { limit?: number }) => {
     return handle(() => {
-      const filter: UsageQueryFilter = {
-        workspaceId: args?.workspaceId,
-        source: args?.source,
-        from: args?.from,
-        to: args?.to,
-      };
-      return queryRecentUsage(ctx.db, filter, args?.limit ?? 50);
+      return queryRecentUsage(ctx.db, toFilter(args), args?.limit ?? 50);
     });
   });
 }

@@ -1026,6 +1026,10 @@ function ensureColumns(db: Database.Database): void {
   // v38 llm_usage — cost_estimated added after the initial table shipped in an
   // interim build; existing dev DBs get the column here, fresh ones from v38.
   ensure("llm_usage", "cost_estimated", "cost_estimated INTEGER NOT NULL DEFAULT 0");
+  // Prompt-cache token counts (cache_read/cache_creation) added for cache-hit
+  // tracking — additive, so a guard rather than a new migration is enough.
+  ensure("llm_usage", "cache_read_tokens", "cache_read_tokens INTEGER NOT NULL DEFAULT 0");
+  ensure("llm_usage", "cache_creation_tokens", "cache_creation_tokens INTEGER NOT NULL DEFAULT 0");
 }
 
 function runMigrations(db: Database.Database): void {

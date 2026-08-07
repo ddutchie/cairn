@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { resolveProviderName, extractCost } from "./usage-recorder";
+import { resolveProviderName, extractCost, extractCacheTokens } from "./usage-recorder";
 
 describe("resolveProviderName", () => {
   it("resolves well-known providers from the base URL hostname", () => {
@@ -48,5 +48,35 @@ describe("extractCost", () => {
   });
   it("returns undefined when the provider reports nothing", () => {
     expect(extractCost(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("extractCacheTokens", () => {
+  it("reads Anthropic-style top-level cache fields", () => {
+    expect(extractCacheTokens({ cache_read_input_tokens: 1200, cache_creation_input_tokens: 300 }))
+      .toEqual({ cacheReadTokens: 1200, cacheCreationTokens: 300 });
+  });
+
+  it("reads OpenAI-style prompt_tokens_details.cached_tokens", () => {
+    expect(extractCacheTokens({ prompt_tokens_details: { cached_tokens: 800 } }))
+      .toEqual({ cacheReadTokens: 800, cacheCreationTokens: 0 });
+  });
+
+  it("sums compatible gateway variants", () => {
+    expect(extractCacheTokens({
+      cache_read_input_tokens: 100,
+      prompt_tokens_details: { cached_tokens: 50, cache_creation_tokens: 20 },
+    })).toEqual({ cacheReadTokens: 150, cacheCreationTokens: 20 });
+  });
+
+  it("returns zeros when the provider reports no cache fields", () => {
+    expect(extractCacheTokens({ prompt_tokens: 1000 })).toEqual({ cacheReadTokens: 0, cacheCreationTokens: 0 });
+    expect(extractCacheTokens(undefined)).toEqual({ cacheReadTokens: 0, cacheCreationTokens: 0 });
+    expect(extractCacheTokens("nope")).toEqual({ cacheReadTokens: 0, cacheCreationTokens: 0 });
+  });
+
+  it("ignores negative / non-numeric values", () => {
+    expect(extractCacheTokens({ cache_read_input_tokens: -5, cache_creation_input_tokens: "x" }))
+      .toEqual({ cacheReadTokens: 0, cacheCreationTokens: 0 });
   });
 });

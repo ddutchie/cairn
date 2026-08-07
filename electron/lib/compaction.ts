@@ -19,7 +19,7 @@
 
 import type { AgentLLMConfig, AgentMessage, AgentToolResultMsg, PiAgentSession } from "./pi-agent-loop";
 import { buildApiUrl, postChatCompletions } from "./llm";
-import { recordLlmUsage, extractCost } from "./usage-recorder";
+import { recordLlmUsage, extractCost, extractCacheTokens } from "./usage-recorder";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -158,7 +158,7 @@ export async function generateSummary(
 
   const decoder = new TextDecoder();
   let content = "";
-  let usage: { pt?: number; ct?: number; rt?: number; chunkCost?: unknown; raw?: unknown } | undefined;
+  let usage: { pt?: number; ct?: number; rt?: number; cacheRead?: number; cacheCreate?: number; chunkCost?: unknown; raw?: unknown } | undefined;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -170,10 +170,13 @@ export async function generateSummary(
       try {
         const obj = JSON.parse(jsonStr);
         if (obj.usage) {
+          const cache = extractCacheTokens(obj.usage);
           usage = {
             pt: obj.usage.prompt_tokens ?? 0,
             ct: obj.usage.completion_tokens ?? 0,
             rt: obj.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+            cacheRead: cache.cacheReadTokens,
+            cacheCreate: cache.cacheCreationTokens,
             chunkCost: obj.cost,
             raw: obj.usage,
           };
@@ -196,6 +199,8 @@ export async function generateSummary(
       promptTokens: usage.pt ?? 0,
       completionTokens: usage.ct ?? 0,
       reasoningTokens: usage.rt ?? 0,
+      cacheReadTokens: usage.cacheRead,
+      cacheCreationTokens: usage.cacheCreate,
       costUsd: extractCost(usage.chunkCost, usage.raw),
     });
   }

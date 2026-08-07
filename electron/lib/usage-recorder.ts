@@ -162,6 +162,38 @@ export function resolveProviderName(baseUrl?: string, providerSlug?: string): st
   return "OpenAI";
 }
 
+/** Tokens served from / written to the provider's prompt cache. */
+export interface CacheTokens {
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
+/**
+ * Normalise provider-reported prompt-cache token counts from the various
+ * shapes seen across OpenAI-compatible endpoints. Handles the Anthropic-style
+ * top-level fields (`cache_read_input_tokens`, `cache_creation_input_tokens`)
+ * and the OpenAI-style nested `prompt_tokens_details.cached_tokens` (plus a
+ * couple of compatible variants some gateways use). Returns zeros when the
+ * provider reported none — callers treat that as "no caching".
+ */
+export function extractCacheTokens(raw: unknown): CacheTokens {
+  if (!raw || typeof raw !== "object") return { cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const u = raw as Record<string, unknown>;
+  const details = (u.prompt_tokens_details ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
+  return {
+    cacheReadTokens:
+      num(u.cache_read_input_tokens) +
+      num(details.cached_tokens) +
+      num(details.cache_read_input_tokens),
+    cacheCreationTokens:
+      num(u.cache_creation_input_tokens) +
+      num(details.cache_creation_input_tokens) +
+      num(details.cache_creation_tokens),
+  };
+}
+
 /**
  * Normalise provider-reported cost from the various shapes seen across
  * OpenAI-compatible endpoints. Accepts a top-level `cost` on the chunk
@@ -202,6 +234,10 @@ export interface RecordUsageArgs {
   promptTokens?: number;
   completionTokens?: number;
   reasoningTokens?: number;
+  /** Prompt tokens served from the provider's cache (billed at the cache_read rate). */
+  cacheReadTokens?: number;
+  /** Prompt tokens written to the provider's cache (billed at the cache_write rate). */
+  cacheCreationTokens?: number;
   costUsd?: number;
   /** True when the caller already knows the cost is a models.dev estimate. */
   costEstimated?: boolean;
@@ -222,11 +258,19 @@ export function recordLlmUsage(entry: RecordUsageArgs): void {
       resolveProviderName(entry.baseUrl, entry.provider);
 
     // When the provider doesn't report cost, estimate it from models.dev
-    // per-1M pricing (flagged so the UI can mark it as an estimate).
+    // per-1M pricing (flagged so the UI can mark it as an estimate). The
+    // estimate is cache-aware — cached input is priced at the model's cache
+    // rates instead of full input, so cache hits don't over-bill.
     let costUsd = entry.costUsd;
     let costEstimated = entry.costEstimated ?? false;
     if (costUsd == null) {
-      const estimate = estimateCostUsd(entry.model, entry.promptTokens ?? 0, entry.completionTokens ?? 0);
+      const estimate = estimateCostUsd(
+        entry.model,
+        entry.promptTokens ?? 0,
+        entry.completionTokens ?? 0,
+        entry.cacheReadTokens ?? 0,
+        entry.cacheCreationTokens ?? 0,
+      );
       if (estimate != null) {
         costUsd = estimate;
         costEstimated = true;

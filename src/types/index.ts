@@ -527,6 +527,10 @@ export interface ChatThread {
     completionTokens: number;
     /** Subset of completion_tokens produced by the model's reasoning/thinking step. 0 if the model didn't split. */
     reasoningTokens?: number;
+    /** Prompt tokens served from the provider's cache this turn (0 when the provider doesn't cache/report). */
+    cacheReadTokens?: number;
+    /** Prompt tokens written to the provider's cache this turn (0 when not split out). */
+    cacheCreationTokens?: number;
     breakdown?: TokenBreakdown;
     /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost), when present. */
     costUsd?: number;
@@ -545,6 +549,10 @@ export interface CompletionUsage {
   completionTokens: number;
   totalTokens?: number;
   reasoningTokens?: number;
+  /** Prompt tokens served from the provider's cache (billed at the cache_read rate). */
+  cacheReadTokens?: number;
+  /** Prompt tokens written to the provider's cache (billed at the cache_write rate). */
+  cacheCreationTokens?: number;
   breakdown?: TokenBreakdown;
   /** Provider-reported USD cost of the call (e.g. Neuralwatt usage.cost), when present. */
   costUsd?: number;
@@ -604,7 +612,7 @@ export interface ChatSubagent {
   /** Final result returned to the dispatcher (usually == content) */
   result?: string;
   /** This subagent's OWN latest context-window usage — drives its dedicated ring. */
-  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number };
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
 }
 
 export type SuggestedAction =
@@ -891,7 +899,7 @@ export interface PiSubagentMessage {
   /** Final result returned to the parent */
   result?: string;
   /** Latest token usage from the subagent's LLM steps */
-  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number };
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
 }
 
 export interface PiAgentMessage {
@@ -931,7 +939,7 @@ export interface TerminalSession {
   sessionType: "pty" | "pi";
   piMessages?: PiAgentMessage[];
   initialPrompt?: string;
-  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number };
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
   mode?: "plan" | "execute";
   planNoteId?: string;
   /** Explicit plan approval choice for this session, if one was made. */

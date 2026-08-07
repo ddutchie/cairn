@@ -124,6 +124,44 @@ describe("usage-queries", () => {
     expect(recent[0].model).toBe("m0");
   });
 
+  it("persists and aggregates prompt-cache tokens", () => {
+    insertLlmUsage(db, rec({ source: "chat", promptTokens: 1000, cacheReadTokens: 700, cacheCreationTokens: 0, createdAt: NOW - DAY }));
+    insertLlmUsage(db, rec({ source: "pi-agent", promptTokens: 500, cacheReadTokens: 100, cacheCreationTokens: 50, createdAt: NOW }));
+
+    const overview = queryUsageOverview(db, {});
+    expect(overview.totals.cacheReadTokens).toBe(800);
+    expect(overview.totals.promptTokens).toBe(1500);
+    // Cached input rides along in the day series too.
+    expect(overview.series).toHaveLength(2);
+
+    const recent = queryRecentUsage(db, {}, 10);
+    expect(recent[0].source).toBe("pi-agent");
+    expect(recent[0].cacheReadTokens).toBe(100);
+    expect(recent[0].cacheCreationTokens).toBe(50);
+    expect(recent[1].cacheReadTokens).toBe(700);
+    expect(recent[1].cacheCreationTokens).toBe(0);
+  });
+
+  it("excludes rows with estimated cost when the filter is set", () => {
+    insertLlmUsage(db, rec({ source: "chat", promptTokens: 100, costUsd: 0.01, costEstimated: false, createdAt: NOW - 1000 }));
+    insertLlmUsage(db, rec({ source: "chat", promptTokens: 200, costUsd: 0.02, costEstimated: true, createdAt: NOW }));
+    insertLlmUsage(db, rec({ source: "pi-agent", promptTokens: 300, costUsd: 0.03, costEstimated: false, createdAt: NOW }));
+
+    const all = queryUsageOverview(db, {});
+    expect(all.totals.requests).toBe(3);
+    expect(all.totals.promptTokens).toBe(600);
+    expect(all.totals.costUsd).toBeCloseTo(0.06, 6);
+
+    const real = queryUsageOverview(db, { excludeEstimated: true });
+    expect(real.totals.requests).toBe(2);
+    expect(real.totals.promptTokens).toBe(400);
+    expect(real.totals.costUsd).toBeCloseTo(0.04, 6);
+
+    const recent = queryRecentUsage(db, { excludeEstimated: true }, 10);
+    expect(recent).toHaveLength(2);
+    expect(recent.every((r) => r.costEstimated === false)).toBe(true);
+  });
+
   it("writes a recovered turn cost back onto estimated rows proportionally", () => {
     insertLlmUsage(db, rec({ source: "chat", sessionId: "t1", completionTokens: 100, costUsd: 0.01, costEstimated: true, createdAt: NOW }));
     insertLlmUsage(db, rec({ source: "chat", sessionId: "t1", completionTokens: 300, costUsd: 0.03, costEstimated: true, createdAt: NOW + 1 }));

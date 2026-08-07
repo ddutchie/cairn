@@ -115,6 +115,10 @@ interface ContextRingProps {
   completionTokens?: number;
   /** Subset of completionTokens spent on reasoning/thinking. 0/undefined if the model didn't split. */
   reasoningTokens?: number;
+  /** Prompt tokens served from the provider's cache this turn (0 when the provider doesn't cache/report). */
+  cacheReadTokens?: number;
+  /** Prompt tokens written to the provider's cache this turn (0 when not split out). */
+  cacheCreationTokens?: number;
   /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost), when present. */
   costUsd?: number;
   /** Show the account-level provider balance row (default true; off for subagent rings). */
@@ -131,6 +135,8 @@ export function ContextRing({
   breakdown,
   completionTokens,
   reasoningTokens,
+  cacheReadTokens,
+  cacheCreationTokens,
   costUsd,
   showBalance = true,
   size = 16,
@@ -138,6 +144,10 @@ export function ContextRing({
 }: ContextRingProps) {
   const [isOpen, setIsOpen] = useState(false);
   const balance = useProviderBalance(showBalance);
+
+  const cacheRead = cacheReadTokens ?? 0;
+  const cacheCreation = cacheCreationTokens ?? 0;
+  const hasCache = cacheRead > 0 || cacheCreation > 0;
 
   const pct  = Math.min(promptTokens / contextLimit, 1);
   const r    = (size - stroke) / 2;
@@ -215,7 +225,11 @@ export function ContextRing({
         trigger
       ) : (
         <Tooltip
-          content={`Context: ${promptTokens.toLocaleString()} / ${contextLimit.toLocaleString()} tokens (${pctLabel})`}
+          content={
+            hasCache
+              ? `Context: ${promptTokens.toLocaleString()} / ${contextLimit.toLocaleString()} tokens (${pctLabel}) · ${formatTokenCount(cacheRead)} cached`
+              : `Context: ${promptTokens.toLocaleString()} / ${contextLimit.toLocaleString()} tokens (${pctLabel})`
+          }
           side="bottom"
         >
           {trigger}
@@ -301,6 +315,32 @@ export function ContextRing({
                 <span className="text-[var(--text-tertiary)]">Total</span>
                 <span className="font-mono text-[var(--text-tertiary)]">{formatTokenCount(completionTokens)}</span>
               </div>
+            </div>
+          )}
+
+          {/* Prompt cache — tokens served from / written to the provider's cache
+              (Anthropic cache_read_input_tokens / OpenAI cached_tokens). Shown
+              whenever the provider reported any cached tokens this turn. */}
+          {hasCache && (
+            <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1.5">
+              <div className="flex items-center justify-between text-[0.714rem]">
+                <span className="flex items-center gap-1.5 text-[var(--text-secondary)]">
+                  <div className="w-2.5 h-2.5 rounded-sm opacity-90" style={{ backgroundColor: "var(--warning)" }} />
+                  Prompt cache
+                </span>
+                <span className="font-mono text-[var(--text-primary)] font-medium">
+                  {formatTokenCount(cacheRead)} read
+                  {cacheCreation > 0 && <span className="text-[var(--text-tertiary)]"> · {formatTokenCount(cacheCreation)} written</span>}
+                </span>
+              </div>
+              {cacheRead > 0 && promptTokens > 0 && (
+                <div className="flex items-center justify-between text-[0.714rem]">
+                  <span className="text-[var(--text-tertiary)]">% of input cached</span>
+                  <span className="font-mono text-[var(--text-tertiary)]">
+                    {Math.round((cacheRead / promptTokens) * 100)}%
+                  </span>
+                </div>
+              )}
             </div>
           )}
 

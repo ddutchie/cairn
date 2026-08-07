@@ -17,6 +17,7 @@ import { Terminal, MessageSquare, AlertTriangle, Zap, Map as MapIcon } from "luc
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Select } from "@/components/ui/select";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
@@ -271,15 +272,13 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
                   <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
                     Agent binary
                   </label>
-                  <select
+                  <Select
                     value={selectedAgentId}
-                    onChange={(e) => setSelectedAgentId(e.target.value)}
-                    className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none"
-                  >
-                    {agents.map((a) => (
-                      <option key={a.id} value={a.id}>{a.name}{a.isDefault ? " (default)" : ""}</option>
-                    ))}
-                  </select>
+                    onChange={setSelectedAgentId}
+                    size="md"
+                    className="w-full"
+                    options={agents.map((a) => ({ value: a.id, label: a.isDefault ? `${a.name} (default)` : a.name }))}
+                  />
                 </div>
               )}
             </>

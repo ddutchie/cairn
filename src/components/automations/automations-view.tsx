@@ -9,6 +9,7 @@ import { revealNote, revealCard } from "@/lib/events";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   DialogClose,
 } from "@/components/ui/dialog";
@@ -541,16 +542,16 @@ function AutomationDialog({
         </div>
         <label className="block space-y-1">
           <span className="text-xs text-[var(--text-secondary)]">Project scope</span>
-          <select
+          <Select
             value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-          >
-            <option value="">Workspace (all projects)</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+            onChange={setProjectId}
+            size="md"
+            className="w-full"
+            options={[
+              { value: "", label: "Workspace (all projects)" },
+              ...projects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="block space-y-1">
@@ -564,14 +565,16 @@ function AutomationDialog({
         </div>
         <label className="block space-y-1">
           <span className="text-xs text-[var(--text-secondary)]">Approval mode</span>
-          <select
+          <Select
             value={approvalMode}
-            onChange={(e) => setApprovalMode(e.target.value as "auto" | "ask")}
-            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-          >
-            <option value="auto">Auto — run freely (writes happen automatically)</option>
-            <option value="ask">Ask — approve or deny each write</option>
-          </select>
+            onChange={setApprovalMode}
+            size="md"
+            className="w-full"
+            options={[
+              { value: "auto", label: "Auto — run freely (writes happen automatically)" },
+              { value: "ask", label: "Ask — approve or deny each write" },
+            ]}
+          />
           <span className="text-[0.714rem] text-[var(--text-tertiary)]">
             {approvalMode === "ask"
               ? "Write actions park in the approval inbox and the run waits for your decision."

@@ -18,6 +18,7 @@ import type { OpenAIMessage } from "./llm";
 import { buildApiUrl } from "./llm";
 import { buildChatCompletionsBody, consumeAssistantStream, failToolCallsFromTruncatedMessage, interruptedStreamToolCallError } from "./llm-stream";
 import { TOOLS, type ChatRequest } from "./tools";
+import { extractCacheTokens } from "./usage-recorder";
 import { executeTool } from "../ipc/chat-executor";
 import { executeExternalTool, isExternalToolName, externalToolLabel } from "./external-tools";
 import { extractExternalRef } from "./external-ref";
@@ -48,7 +49,7 @@ export async function runToolLoop(
   signal?: AbortSignal,
   getWin?: () => BrowserWindow | null,
   provider?: string,
-  onUsage?: (pt: number, ct: number, rt?: number, costUsd?: number) => void,
+  onUsage?: (pt: number, ct: number, rt?: number, costUsd?: number, cacheReadTokens?: number, cacheCreationTokens?: number) => void,
   emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void,
   onToken?: (delta: string) => void,
   onThought?: (delta: string) => void,
@@ -109,11 +110,14 @@ export async function runToolLoop(
             : typeof topCost?.request_cost_usd === "number"
               ? topCost.request_cost_usd
               : undefined;
+          const cache = extractCacheTokens(res.usage);
           onUsage(
             res.usage.prompt_tokens ?? 0,
             res.usage.completion_tokens ?? 0,
             res.usage.completion_tokens_details?.reasoning_tokens ?? 0,
             costVal,
+            cache.cacheReadTokens,
+            cache.cacheCreationTokens,
           );
         }
         const rawMsg = choice.message as OpenAIMessage & { reasoning?: string; reasoning_content?: string };
@@ -247,6 +251,8 @@ export async function runToolLoop(
               : typeof topCost?.request_cost_usd === "number"
                 ? topCost.request_cost_usd
                 : undefined,
+            usage.cacheReadTokens,
+            usage.cacheCreationTokens,
           );
         },
       });

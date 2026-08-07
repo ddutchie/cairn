@@ -156,7 +156,7 @@ type UsageSource =
   | "summary" | "tool-builder";
 interface UsageTotals {
   promptTokens: number; completionTokens: number; reasoningTokens: number;
-  costUsd: number; requests: number;
+  cacheReadTokens: number; costUsd: number; requests: number;
 }
 interface UsageOverviewData {
   totals: UsageTotals;
@@ -169,6 +169,7 @@ interface UsageRecentRow {
   id: string; workspaceId: string | null; projectId: string | null; source: UsageSource;
   sessionId: string | null; provider: string | null; model: string; baseUrl: string | null;
   promptTokens: number; completionTokens: number; reasoningTokens: number;
+  cacheReadTokens: number; cacheCreationTokens: number;
   costUsd: number | null; costEstimated: boolean; finishReason: string | null; createdAt: number;
 }
 
@@ -324,7 +325,7 @@ const api = {
       ipcRenderer.on("chat:thought", handler);
       return () => ipcRenderer.off("chat:thought", handler);
     },
-    onDone: (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number } }) => void) => {
+    onDone: (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number } }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:done", handler);
@@ -342,9 +343,9 @@ const api = {
       ipcRenderer.on("chat:tool-call-done", handler);
       return () => ipcRenderer.off("chat:tool-call-done", handler);
     },
-    onUsage: (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; threadId?: string }) => void) => {
+    onUsage: (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; threadId?: string }) => cb(e);
+      const handler = (_: any, e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:usage", handler);
       return () => ipcRenderer.off("chat:usage", handler);
     },
@@ -379,7 +380,7 @@ const api = {
       ipcRenderer.on("chat:subagent-tool-call-done", handler);
       return () => ipcRenderer.off("chat:subagent-tool-call-done", handler);
     },
-    onSubagentUsage: (cb: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; threadId?: string }) => void) => {
+    onSubagentUsage: (cb: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: any) => cb(e);
       ipcRenderer.on("chat:subagent-usage", handler);
@@ -467,12 +468,12 @@ const api = {
 
   // ── Usage statistics (LLM/agent usage log) ─────
   usage: {
-    overview: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number }) =>
+    overview: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; excludeEstimated?: boolean }) =>
       invoke<UsageOverviewData>("usage:overview", args),
-    recent: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number }) =>
+    recent: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number; excludeEstimated?: boolean }) =>
       invoke<UsageRecentRow[]>("usage:recent", args),
     /** Push the models.dev per-1M pricing map (used for cost estimation). */
-    setPricing: (map: Record<string, { input: number | null; output: number | null }>) =>
+    setPricing: (map: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }>) =>
       invoke<{ ok: boolean }>("app:modelPricing", map),
   },
 
@@ -927,9 +928,9 @@ const api = {
       ipcRenderer.on("pi-agent:step", handler);
       return () => ipcRenderer.off("pi-agent:step", handler);
     },
-    onUsage: (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown }) => void) => {
+    onUsage: (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; cacheReadTokens?: number; cacheCreationTokens?: number }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown }) => cb(e);
+      const handler = (_: any, e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; cacheReadTokens?: number; cacheCreationTokens?: number }) => cb(e);
       ipcRenderer.on("pi-agent:usage", handler);
       return () => ipcRenderer.off("pi-agent:usage", handler);
     },

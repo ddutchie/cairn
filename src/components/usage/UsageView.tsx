@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUsage, USAGE_RANGES } from "@/hooks/useUsage";
 import { UsageChart, type UsageMetric } from "./UsageChart";
+import { Select } from "@/components/ui/select";
 import { fmtCompact, fmtFull, fmtDateTime } from "./usage-format";
 import { formatUsd } from "../../../shared/chat/provider-credits";
 import { USAGE_SOURCE_LABELS, type UsageSource, type UsageTotals } from "@/types/usage";
@@ -117,9 +118,12 @@ export function UsageView() {
   const [rangeIdx, setRangeIdx] = useState(1); // 30D default
   const [metric, setMetric] = useState<UsageMetric>("tokens");
   const [source, setSource] = useState<UsageSource | "">("");
+  // Estimated rows (models.dev price guess, no provider-reported cost) shown by
+  // default; off → they're dropped from every aggregate and the history.
+  const [excludeEstimated, setExcludeEstimated] = useState(false);
 
   const range = USAGE_RANGES[rangeIdx];
-  const { overview, recent, loading, refresh } = useUsage(range.days, source);
+  const { overview, recent, loading, refresh } = useUsage(range.days, source, excludeEstimated);
 
   const totals = overview?.totals;
   const rangeLabel = range.days == null ? "period" : `${range.days}d`;
@@ -146,23 +150,42 @@ export function UsageView() {
             value={metric}
             onChange={setMetric}
           />
-          <select
+          <Select
             value={source}
-            onChange={(e) => setSource(e.target.value as UsageSource | "")}
-            className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text-secondary)] outline-none"
-          >
-            <option value="">All sources</option>
-            {(Object.keys(USAGE_SOURCE_LABELS) as UsageSource[]).map((k) => (
-              <option key={k} value={k}>
-                {USAGE_SOURCE_LABELS[k]}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "" as const, label: "All sources" },
+              ...(Object.keys(USAGE_SOURCE_LABELS) as UsageSource[]).map((k) => ({
+                value: k,
+                label: USAGE_SOURCE_LABELS[k],
+              })),
+            ]}
+            onChange={setSource}
+            ariaLabel="Source filter"
+          />
           <Segmented<number>
             options={USAGE_RANGES.map((r, i) => ({ value: i, label: r.label }))}
             value={rangeIdx}
             onChange={setRangeIdx}
           />
+          <button
+            onClick={() => setExcludeEstimated((v) => !v)}
+            title={
+              excludeEstimated
+                ? "Estimates hidden — only calls with a provider-reported cost are shown"
+                : "Estimates shown — calls whose cost is estimated from models.dev pricing are included"
+            }
+            className={cn(
+              "flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs transition-colors",
+              excludeEstimated
+                ? "border-[var(--accent)] bg-[var(--accent-dim)] text-[var(--accent)]"
+                : "border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+            )}
+          >
+            <span className={cn("w-7 h-3.5 rounded-full transition-colors relative", excludeEstimated ? "bg-[var(--accent)]" : "bg-[var(--border)]")}>
+              <span className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", excludeEstimated ? "left-4" : "left-0.5")} />
+            </span>
+            Estimates
+          </button>
           <button
             onClick={refresh}
             title="Reload data"
@@ -177,9 +200,10 @@ export function UsageView() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="p-4 flex flex-col gap-4">
           {/* Stat cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <StatCard label="Input tokens" value={totals ? fmtCompact(totals.promptTokens) : "—"} valueClass="text-[var(--accent)]" delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "promptTokens", rangeLabel) : undefined} />
             <StatCard label="Output tokens" value={totals ? fmtCompact(totals.completionTokens) : "—"} />
+            <StatCard label="Cached input" value={totals ? fmtCompact(totals.cacheReadTokens) : "—"} valueClass="text-[var(--warning)]" delta={totals && totals.promptTokens > 0 && totals.cacheReadTokens > 0 ? `${Math.round((totals.cacheReadTokens / totals.promptTokens) * 100)}% of input` : ""} />
             <StatCard label="Total cost" value={totals ? formatUsd(totals.costUsd) : "—"} delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "costUsd", rangeLabel) : undefined} />
             <StatCard label="Requests" value={totals ? fmtFull(totals.requests) : "—"} />
           </div>
@@ -258,12 +282,14 @@ export function UsageView() {
               <div className="text-xs font-semibold text-[var(--text-primary)]">Usage history</div>
               <div className="text-[0.643rem] text-[var(--text-tertiary)]">{recent.length === 0 ? "" : `latest ${recent.length} calls`}</div>
             </div>
-            {recent.length > 0 && (
+            {recent.length > 0 && !excludeEstimated && (
               <div className="px-4 pb-1 text-[0.643rem] text-[var(--text-tertiary)]">~ = estimated from models.dev pricing</div>
             )}
             {recent.length === 0 ? (
               <div className="px-4 py-8 text-xs text-[var(--text-tertiary)]">
-                No LLM calls recorded yet — send a chat message or run an agent and it will appear here.
+                {excludeEstimated
+                  ? "No calls with a provider-reported cost in this range — toggle the Estimates switch to include models.dev estimates."
+                  : "No LLM calls recorded yet — send a chat message or run an agent and it will appear here."}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -274,6 +300,7 @@ export function UsageView() {
                       <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Model</th>
                       <th className="text-right font-medium px-4 py-2 whitespace-nowrap">Input</th>
                       <th className="text-right font-medium px-4 py-2 whitespace-nowrap">Output</th>
+                      <th className="text-right font-medium px-4 py-2 whitespace-nowrap">Cached</th>
                       <th className="text-right font-medium px-4 py-2 whitespace-nowrap">Reasoning</th>
                       <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Provider</th>
                       <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Source</th>
@@ -292,6 +319,20 @@ export function UsageView() {
                         </td>
                         <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--accent)]">{fmtFull(r.promptTokens)}</td>
                         <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--info)]">{fmtFull(r.completionTokens)}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-right">
+                          {r.cacheReadTokens > 0 ? (
+                            <span className="inline-flex flex-col items-end leading-tight">
+                              <span className="font-mono tabular-nums text-[var(--warning)]">{fmtFull(r.cacheReadTokens)}</span>
+                              {r.promptTokens > 0 && (
+                                <span className="text-[0.571rem] text-[var(--text-tertiary)]">
+                                  {Math.round((r.cacheReadTokens / r.promptTokens) * 100)}% of input
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="font-mono tabular-nums text-[var(--text-tertiary)]">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--text-tertiary)]">{r.reasoningTokens > 0 ? fmtFull(r.reasoningTokens) : "—"}</td>
                         <td className="px-4 py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]">{r.provider ?? "—"}</td>
                         <td className="px-4 py-2 whitespace-nowrap">

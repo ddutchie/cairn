@@ -28,7 +28,7 @@ import * as secrets from "../lib/secure-store";
 import { buildBuilderSystemPrompt, BUILDER_TOOL_DEFS } from "../lib/tool-builder-prompt";
 import { parseToolArgs } from "../lib/parse-tool-args";
 import { resolveMaxOutputTokens } from "../../shared/models/model-catalog";
-import { recordLlmUsage, extractCost } from "../lib/usage-recorder";
+import { recordLlmUsage, extractCost, extractCacheTokens } from "../lib/usage-recorder";
 
 interface OpenAIMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -109,6 +109,7 @@ async function callModel(
   const msg = json.choices?.[0]?.message;
   if (!msg) throw new Error("No response from AI endpoint");
 
+  const cache = extractCacheTokens(json.usage);
   recordLlmUsage({
     source: "tool-builder",
     sessionId: attrib?.sessionId,
@@ -119,6 +120,8 @@ async function callModel(
     promptTokens: json.usage?.prompt_tokens ?? 0,
     completionTokens: json.usage?.completion_tokens ?? 0,
     reasoningTokens: json.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+    cacheReadTokens: cache.cacheReadTokens,
+    cacheCreationTokens: cache.cacheCreationTokens,
     costUsd: extractCost(json.cost, json.usage),
   });
   return msg;

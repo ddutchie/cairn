@@ -33,11 +33,11 @@ import {
 } from "../../shared/models/model-catalog";
 
 const API_URL = "https://models.dev/api.json";
-// v2: bumped when the parsed ModelInfo shape gains a field (maxOutput) so
-// existing caches re-fetch immediately instead of waiting out the weekly TTL
+// v3: bumped when the parsed ModelInfo shape gains a field (cacheRead/cacheWrite)
+// so existing caches re-fetch immediately instead of waiting out the weekly TTL
 // with the old field-poor entries.
-const CACHE_KEY = "ai.modelInfo.cache.v2"; // JSON { [modelId]: ModelInfo }
-const CACHE_AT_KEY = "ai.modelInfo.cachedAt.v2";
+const CACHE_KEY = "ai.modelInfo.cache.v3"; // JSON { [modelId]: ModelInfo }
+const CACHE_AT_KEY = "ai.modelInfo.cachedAt.v3";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // refresh weekly
 // Canonical owner map (models.json): id → provider slug for logo resolution.
 // Tiny (282 entries) and keyed by canonical "<provider>/<model>" ids, so it's
@@ -257,17 +257,29 @@ export function prewarmModelCatalog(): void {
 }
 
 /**
- * The compact `modelId → { input, output }` per-1M pricing map (USD), sent to
- * the main process so the usage recorder can estimate cost for providers that
- * don't report it. Best-effort — no-op when the catalog isn't loaded yet or no
- * Electron bridge exists.
+ * The compact `modelId → pricing` per-1M map (USD), sent to the main process so
+ * the usage recorder can estimate cost for providers that don't report it.
+ * Best-effort — no-op when the catalog isn't loaded yet or no Electron bridge
+ * exists. Cache prices are optional (absent when the model doesn't price cache
+ * reads/writes separately).
  */
-export function getModelPricingMap(): Record<string, { input: number | null; output: number | null }> {
+export function getModelPricingMap(): Record<string, {
+  input: number | null;
+  output: number | null;
+  cacheRead?: number | null;
+  cacheWrite?: number | null;
+}> {
   const src = memoryCache ?? loadCache() ?? {};
-  const out: Record<string, { input: number | null; output: number | null }> = {};
+  const out: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }> = {};
   for (const [id, info] of Object.entries(src)) {
     if (info.input == null && info.output == null) continue;
-    out[id] = { input: info.input ?? null, output: info.output ?? null };
+    const entry: { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null } = {
+      input: info.input ?? null,
+      output: info.output ?? null,
+    };
+    if (info.cacheRead != null) entry.cacheRead = info.cacheRead;
+    if (info.cacheWrite != null) entry.cacheWrite = info.cacheWrite;
+    out[id] = entry;
   }
   return out;
 }

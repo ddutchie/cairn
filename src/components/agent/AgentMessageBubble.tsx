@@ -183,6 +183,8 @@ function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
             breakdown={sub.lastUsage.breakdown}
             completionTokens={sub.lastUsage.completionTokens}
             reasoningTokens={sub.lastUsage.reasoningTokens}
+            cacheReadTokens={sub.lastUsage.cacheReadTokens}
+            cacheCreationTokens={sub.lastUsage.cacheCreationTokens}
             costUsd={sub.lastUsage.costUsd}
             showBalance={false}
             size={12}

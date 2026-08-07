@@ -246,10 +246,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     const unsubUsage = electron.piAgent.onUsage((e) => {
       if (e.sessionId === sessionId) {
         // Parent step — update the parent ring
-        updatePiUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined);
+        updatePiUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
       } else if (e.sessionId.startsWith(`${sessionId}:sub:`)) {
         // Subagent step — update usage on the subagent inline block, not the parent ring
-        updatePiSubagentUsage(sessionId, e.sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined);
+        updatePiSubagentUsage(sessionId, e.sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
       }
     });
 
@@ -661,6 +661,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             breakdown={session.lastUsage.breakdown}
             completionTokens={session.lastUsage.completionTokens}
             reasoningTokens={session.lastUsage.reasoningTokens}
+            cacheReadTokens={session.lastUsage.cacheReadTokens}
+            cacheCreationTokens={session.lastUsage.cacheCreationTokens}
             costUsd={session.lastUsage.costUsd}
           />
         )}

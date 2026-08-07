@@ -19,6 +19,7 @@ import { useShallow } from "zustand/react/shallow";
 import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { Select } from "@/components/ui/select";
 import { STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
 import { QuickSettings } from "./QuickSettings";
 import { modKey } from "./sidebar-utils";
@@ -145,23 +146,16 @@ export function Topbar() {
       {project && (
         <>
           {/* Mobile dropdown view selector */}
-          <div className="flex sm:hidden items-center relative ml-2">
-            <select
+          <div className="flex sm:hidden items-center ml-2">
+            <Select
               value={activeView}
-              onChange={(e) => setView(e.target.value as ViewTabId)}
-              className="appearance-none bg-[var(--surface-2)] border border-[var(--border)] rounded-md pl-3 pr-8 py-1 text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
-            >
-              {VIEW_TABS.filter((tab) => !isHidden(hiddenViews, tab.id)).map((tab) => (
-                <option key={tab.id} value={tab.id} className="bg-[var(--surface-2)] text-[var(--text-primary)]">
-                  {tab.label}
-                </option>
-              ))}
-            </select>
-            <div className="absolute right-2.5 pointer-events-none text-[var(--text-tertiary)] flex items-center">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 9l6 6 6-6"/>
-              </svg>
-            </div>
+              onChange={(v) => setView(v as ViewTabId)}
+              ariaLabel="View"
+              options={VIEW_TABS.filter((tab) => !isHidden(hiddenViews, tab.id)).map((tab) => ({
+                value: tab.id,
+                label: tab.label,
+              }))}
+            />
           </div>
 
           {/* Desktop tabs view selector */}

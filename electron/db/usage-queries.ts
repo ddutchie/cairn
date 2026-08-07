@@ -54,6 +54,10 @@ export interface LlmUsageRecord {
   promptTokens?: number;
   completionTokens?: number;
   reasoningTokens?: number;
+  /** Prompt tokens served from the provider's cache (billed at the cache_read rate). */
+  cacheReadTokens?: number;
+  /** Prompt tokens written to the provider's cache (billed at the cache_write rate). */
+  cacheCreationTokens?: number;
   costUsd?: number;
   /** True when cost_usd is a models.dev estimate (provider reported none). */
   costEstimated?: boolean;
@@ -66,8 +70,9 @@ export function insertLlmUsage(db: Database.Database, record: LlmUsageRecord): v
   db.prepare(
     `INSERT INTO llm_usage (
        id, workspace_id, project_id, source, session_id, provider, model, base_url,
-       prompt_tokens, completion_tokens, reasoning_tokens, cost_usd, cost_estimated, finish_reason, created_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       prompt_tokens, completion_tokens, reasoning_tokens, cache_read_tokens, cache_creation_tokens,
+       cost_usd, cost_estimated, finish_reason, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     record.id || newId(),
     record.workspaceId ?? null,
@@ -80,6 +85,8 @@ export function insertLlmUsage(db: Database.Database, record: LlmUsageRecord): v
     Math.max(0, Math.round(record.promptTokens ?? 0)),
     Math.max(0, Math.round(record.completionTokens ?? 0)),
     Math.max(0, Math.round(record.reasoningTokens ?? 0)),
+    Math.max(0, Math.round(record.cacheReadTokens ?? 0)),
+    Math.max(0, Math.round(record.cacheCreationTokens ?? 0)),
     typeof record.costUsd === "number" && Number.isFinite(record.costUsd) ? record.costUsd : null,
     record.costEstimated ? 1 : 0,
     record.finishReason ?? null,
@@ -94,6 +101,8 @@ export interface UsageQueryFilter {
   from?: number;
   /** Epoch ms, inclusive. */
   to?: number;
+  /** Drop rows whose cost is a models.dev estimate (provider reported none). */
+  excludeEstimated?: boolean;
 }
 
 /**
@@ -120,6 +129,9 @@ function whereClause(f: UsageQueryFilter): { sql: string; params: unknown[] } {
     conds.push("created_at <= ?");
     params.push(f.to);
   }
+  if (f.excludeEstimated) {
+    conds.push("cost_estimated = 0");
+  }
   return { sql: conds.length > 0 ? ` WHERE ${conds.join(" AND ")}` : "", params };
 }
 
@@ -127,6 +139,8 @@ export interface UsageTotals {
   promptTokens: number;
   completionTokens: number;
   reasoningTokens: number;
+  /** Prompt tokens served from the provider's cache across the window. */
+  cacheReadTokens: number;
   costUsd: number;
   requests: number;
 }
@@ -156,6 +170,7 @@ export interface UsageOverview {
 const TOTAL_COLS = `COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
   COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
   COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
+  COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
   COALESCE(SUM(cost_usd), 0) AS cost_usd,
   COUNT(*) AS requests`;
 
@@ -164,6 +179,7 @@ function toTotals(row: Record<string, number>): UsageTotals {
     promptTokens: Number(row.prompt_tokens) || 0,
     completionTokens: Number(row.completion_tokens) || 0,
     reasoningTokens: Number(row.reasoning_tokens) || 0,
+    cacheReadTokens: Number(row.cache_read_tokens) || 0,
     costUsd: Number(row.cost_usd) || 0,
     requests: Number(row.requests) || 0,
   };
@@ -241,6 +257,10 @@ export interface UsageRecentRow {
   promptTokens: number;
   completionTokens: number;
   reasoningTokens: number;
+  /** Prompt tokens served from the provider's cache. */
+  cacheReadTokens: number;
+  /** Prompt tokens written to the provider's cache. */
+  cacheCreationTokens: number;
   costUsd: number | null;
   costEstimated: boolean;
   finishReason: string | null;
@@ -283,7 +303,8 @@ export function queryRecentUsage(db: Database.Database, filter: UsageQueryFilter
   const rows = db
     .prepare(
       `SELECT id, workspace_id, project_id, source, session_id, provider, model, base_url,
-         prompt_tokens, completion_tokens, reasoning_tokens, cost_usd, cost_estimated, finish_reason, created_at
+         prompt_tokens, completion_tokens, reasoning_tokens, cache_read_tokens, cache_creation_tokens,
+         cost_usd, cost_estimated, finish_reason, created_at
        FROM llm_usage${where.sql}
        ORDER BY created_at DESC LIMIT ?`
     )
@@ -301,6 +322,8 @@ export function queryRecentUsage(db: Database.Database, filter: UsageQueryFilter
     promptTokens: Number(r.prompt_tokens) || 0,
     completionTokens: Number(r.completion_tokens) || 0,
     reasoningTokens: Number(r.reasoning_tokens) || 0,
+    cacheReadTokens: Number(r.cache_read_tokens) || 0,
+    cacheCreationTokens: Number(r.cache_creation_tokens) || 0,
     costUsd: r.cost_usd == null ? null : Number(r.cost_usd),
     costEstimated: Number(r.cost_estimated) === 1,
     finishReason: (r.finish_reason as string | null) ?? null,
