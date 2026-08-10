@@ -19,7 +19,7 @@
 
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 
-import { runAgentLoop, pendingApprovals, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
+import { runAgentLoop, pendingApprovals, pendingDoomLoop, pendingQuestionAnswers, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
 import { buildCompactionTransformer, compactNow } from "../lib/compaction";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { discoverSkills, renderSkillsXml } from "../lib/skills";
@@ -166,6 +166,7 @@ async function runSession(
       onToolPending:  (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
        onToolStart:    (name, label, callId, args) => send("pi-agent:tool", { sessionId, name, label, args, callId, status: "start" }),
        onToolConfirmRequired: (name, label, callId, args) => send("pi-agent:tool-confirm-required", { sessionId, name, label, args, callId }),
+       onDoomLoop: (info) => send("pi-agent:doom-loop", { sessionId, ...info }),
        onToolEnd:      (name, label, ok, output, callId, args) => {
          send("pi-agent:tool", { sessionId, name, label, args, callId, status: "end", ok, output });
         // After any note-write tool, push fresh note content to the renderer
@@ -528,6 +529,31 @@ export function registerPiAgentHandler(
     }
   });
 
+  // ── pi-agent:respond-doom-loop ─────────────────────────────────────────────
+  // User decision on a repeated-identical-call pause. Allow → the call runs and
+  // the session stops re-pausing; deny → the loop halts with an error.
+  registerIpcOn("pi-agent:respond-doom-loop", (_event, { sessionId, callId, allow }: { sessionId: string; callId: string; allow: boolean }) => {
+    void sessionId;
+    const pending = pendingDoomLoop.get(callId);
+    if (pending) {
+      pending.resolve(allow);
+      pendingDoomLoop.delete(callId);
+    }
+  });
+
+  // ── pi-agent:respond-questions ─────────────────────────────────────────────
+  // Answers to a blocked ask_questions call. The formatted answer text is fed
+  // back to the model as the tool result so it reasons over the answers in the
+  // same turn.
+  registerIpcOn("pi-agent:respond-questions", (_event, { sessionId, callId, answers }: { sessionId: string; callId: string; answers: string }) => {
+    void sessionId;
+    const pending = pendingQuestionAnswers.get(callId);
+    if (pending) {
+      pending.resolve(answers);
+      pendingQuestionAnswers.delete(callId);
+    }
+  });
+
   // ── pi-agent:clear ────────────────────────────────────────────────────────
   // Clears a session's message history (new conversation within same session).
   // Also resets the compaction transformer so the new conversation starts
@@ -539,6 +565,8 @@ export function registerPiAgentHandler(
       session.compactionTransformer = undefined;
       session.lastPromptTokens = undefined;
       session.approvedTools = new Set();
+      session.recentToolCalls = [];
+      session.doomLoopApproved = false;
     }
   });
 
