@@ -476,7 +476,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
           </p>
           {secretPrompt.names.map((n) => (
             <div key={n} className="mb-2">
-              <label className="text-[0.65rem] uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
+              <label className="text-[0.643rem] uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
                 {n}
               </label>
               <input

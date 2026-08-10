@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Plus, Bot, History, ArrowRight } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatDateCompact } from "@/lib/utils";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useAgentSessionActions } from "./useAgentSessionActions";
 
 export function AgentEmptyState() {
@@ -62,6 +63,13 @@ export function AgentEmptyState() {
               <ArrowRight size={10} className="text-[var(--text-tertiary)] shrink-0 opacity-0 group-hover:opacity-100" />
             </button>
           ))}
+          {piSessionHistory.length > recentSessions.length && (
+            <OverflowPill
+              count={piSessionHistory.length - recentSessions.length}
+              names={piSessionHistory.slice(recentSessions.length).map((s) => s.taskTitle)}
+              className="self-center mt-1"
+            />
+          )}
         </div>
       )}
     </div>

@@ -348,7 +348,7 @@ function KanbanColumnImpl({
               <div className="pt-1">
                 <button
                   onClick={() => setShowArchived((v) => !v)}
-                  className="flex items-center gap-1.5 w-full px-1 py-1 text-[10.5px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                  className="flex items-center gap-1.5 w-full px-1 py-1 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                 >
                   {showArchived ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                   {archivedCards.length} archived

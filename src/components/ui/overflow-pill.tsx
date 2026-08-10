@@ -4,7 +4,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 
-interface TagOverflowProps {
+interface OverflowPillProps {
   count: number;
   names: string[];
   /** When provided, the pill becomes a button (used to expand/collapse). */
@@ -16,22 +16,22 @@ interface TagOverflowProps {
   className?: string;
 }
 
-/** Preview this many hidden tag names before trailing "+N more". */
+/** Preview this many hidden item names before trailing "+N more". */
 const TOOLTIP_NAME_PREVIEW = 5;
 
 function previewNames(names: string[]): string {
-  if (names.length === 0) return "More tags";
+  if (names.length === 0) return "More";
   if (names.length <= TOOLTIP_NAME_PREVIEW) return names.join(", ");
   const rest = names.length - TOOLTIP_NAME_PREVIEW;
   return `${names.slice(0, TOOLTIP_NAME_PREVIEW).join(", ")}… +${rest} more`;
 }
 
 /**
- * Compact "+N" pill shown when tags are capped, styled to sit beside
- * `<Badge size="xs">`. Hover reveals the hidden tag names; passing onClick
- * turns it into an expand/collapse toggle.
+ * Compact "+N" pill shown when a list is capped (tags, artifact chips, etc.),
+ * styled to sit beside `<Badge size="xs">`. Hover reveals the hidden names;
+ * passing onClick turns it into an expand/collapse toggle.
  */
-export function TagOverflow({ count, names, onClick, label, tooltip, className }: TagOverflowProps) {
+export function OverflowPill({ count, names, onClick, label, tooltip, className }: OverflowPillProps) {
   return (
     <Tooltip content={tooltip ?? previewNames(names)}>
       <span

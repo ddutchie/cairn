@@ -139,7 +139,7 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
               title="Copy"
               className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
             >
-              {copied ? <Check size={10} className="text-green-400" /> : <Copy size={10} />}
+              {copied ? <Check size={10} className="text-[var(--success)]" /> : <Copy size={10} />}
             </button>
             {isUser && onRetry && (
               <button

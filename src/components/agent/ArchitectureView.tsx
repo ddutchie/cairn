@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { SectionLabel } from "@/components/ui/labels";
 import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
 import { ArchitectureGraphCanvas } from "./ArchitectureGraphCanvas";
@@ -474,9 +475,9 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             {/* Symbol-kind breakdown */}
             {overview.kinds.length > 0 && (
               <div className="px-4 py-3 border-b border-[var(--border)] flex-shrink-0">
-                <div className="text-[0.7rem] uppercase tracking-wide text-[var(--text-tertiary)] mb-2">
+                <SectionLabel className="mb-2 block">
                   Symbols by kind
-                </div>
+                </SectionLabel>
                 <div className="flex flex-col gap-1.5">
                   {overview.kinds.map((k) => (
                     <div key={k.kind} className="flex items-center gap-2">
@@ -714,11 +715,11 @@ function RelationList({
 
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-[0.7rem] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+      <SectionLabel className="flex items-center gap-1.5 mb-1.5">
         {icon}
         {title}
         <span className="tabular-nums">({items.length})</span>
-      </div>
+      </SectionLabel>
       {items.length === 0 ? (
         <div className="text-[0.7rem] text-[var(--text-tertiary)]">{empty}</div>
       ) : (

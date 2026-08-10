@@ -27,6 +27,7 @@ import {
   Layers,
 } from "lucide-react";
 import { CairnEvents } from "@/lib/events";
+import { MicroLabel, SectionLabel } from "@/components/ui/labels";
 
 interface CodebaseSymbol {
   id: string; file_id: string; name: string; kind: string; line: number;
@@ -135,9 +136,9 @@ export function ArchitectureSidebar() {
       {/* Header */}
       <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] flex-shrink-0">
         <Boxes size={13} className="text-[var(--accent)]" />
-        <span className="text-[0.7rem] uppercase tracking-wide text-[var(--text-tertiary)] flex-1 truncate">
+        <SectionLabel className="flex-1 truncate">
           Architecture
-        </span>
+        </SectionLabel>
         <button
           onClick={() => setCollapsed(true)}
           className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
@@ -238,9 +239,9 @@ function RelBlock({
   }
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-1 text-[0.65rem] uppercase tracking-wide text-[var(--text-tertiary)]">
+      <MicroLabel className="flex items-center gap-1">
         {icon} {label} ({names.length})
-      </div>
+      </MicroLabel>
       {names.map((n) => (
         <div key={n} className="text-[0.7rem] font-mono text-[var(--text-secondary)] truncate pl-3">
           {n}

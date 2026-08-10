@@ -9,7 +9,7 @@ import { cn, formatRelative, getDueDateStatus, parseIsoLocal } from "@/lib/utils
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { revealColumn, revealNote, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
-import { TagOverflow } from "@/components/ui/tag-overflow";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useCairnStore } from "@/store";
 import type { TaskCard, Note, BoardColumn, AppUIState } from "@/types";
 import type { ActivityGroup } from "./useProjectMetrics";
@@ -74,10 +74,13 @@ export function TaskFlowCard({
                 <div className="flex h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
                   <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
                 </div>
-                <div className="flex gap-x-3 mt-1">
+                <div className="flex gap-x-3 mt-1 items-center">
                   {cards.slice(0, 2).map((c) => (
                     <span key={c.id} className="text-[0.714rem] text-[var(--text-tertiary)] truncate">{c.title}</span>
                   ))}
+                  {cards.length > 2 && (
+                    <OverflowPill count={cards.length - 2} names={cards.slice(2).map((c) => c.title)} />
+                  )}
                   {cards.length === 0 && <span className="text-[0.714rem] text-[var(--text-tertiary)]">—</span>}
                 </div>
               </div>
@@ -230,7 +233,7 @@ export function PinnedNoteCard({ note, onClick }: { note: Note; onClick: () => v
         <div className="flex gap-1 items-center flex-shrink-0">
           {noteTags.map((tag) => <Badge key={tag.id} color={tag.color} size="xs">{tag.name}</Badge>)}
           {hiddenNoteTags.length > 0 && (
-            <TagOverflow count={hiddenNoteTags.length} names={hiddenNoteTags.map((t) => t.name)} />
+            <OverflowPill count={hiddenNoteTags.length} names={hiddenNoteTags.map((t) => t.name)} />
           )}
         </div>
       )}
@@ -337,7 +340,7 @@ export function RecentAutomationRunsFeed({
                   </button>
                 ))}
                 {artifacts.length > 2 && (
-                  <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-shrink-0">+{artifacts.length - 2}</span>
+                  <OverflowPill count={artifacts.length - 2} names={artifacts.slice(2).map((a) => a.title)} />
                 )}
               </div>
             )}

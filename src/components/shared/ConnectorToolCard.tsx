@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
+import { MicroLabel } from "@/components/ui/labels";
 import { ExternalRefChip } from "@/components/shared/cairn-ref-chip";
 import { humanizeTool } from "@/lib/humanize-tool";
 import { prettyToolOutput, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
@@ -95,7 +96,7 @@ function ToolPayload({ label, value }: { label: string; value: string }) {
   }
   return (
     <div className="mt-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5">
-      <p className="mb-1 text-[0.607rem] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">{label}</p>
+      <MicroLabel className="mb-1 block">{label}</MicroLabel>
       {parsed !== undefined ? <JsonTree value={parsed} /> : <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-[0.643rem] leading-5 text-[var(--text-tertiary)]">{value}</pre>}
     </div>
   );

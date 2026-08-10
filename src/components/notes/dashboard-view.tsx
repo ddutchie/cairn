@@ -293,7 +293,7 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
       {errors.length > 0 && (
         <div className="flex-shrink-0 border-b border-[var(--danger)]/30 bg-[var(--danger)]/[0.06] px-4 py-3 space-y-1.5">
           <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-1.5 text-[0.786rem] font-semibold text-[var(--danger)] uppercase tracking-wider">
+            <div className="flex items-center gap-1.5 text-[0.714rem] font-semibold text-[var(--danger)] uppercase tracking-wider">
               <AlertTriangle size={11} />
               Dashboard error{errors.length > 1 ? `s (${errors.length})` : ""}
             </div>

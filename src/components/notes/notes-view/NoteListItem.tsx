@@ -8,7 +8,7 @@ import {
 import { cn, formatRelative } from "@/lib/utils";
 import type { Note } from "@/types";
 import { Badge } from "@/components/ui/badge";
-import { TagOverflow } from "@/components/ui/tag-overflow";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import {
@@ -105,7 +105,7 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
               <Badge key={tag.id} color={tag.color} size="xs">{tag.name}</Badge>
             ))}
             {hiddenTags.length > 0 && (
-              <TagOverflow count={hiddenTags.length} names={hiddenTags.map((t) => t!.name)} />
+              <OverflowPill count={hiddenTags.length} names={hiddenTags.map((t) => t!.name)} />
             )}
           </div>
         )}

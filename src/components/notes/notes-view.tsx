@@ -24,7 +24,7 @@ import { ArchivedNoteListItem } from "./notes-view/ArchivedNoteListItem";
 import { FolderTreeNode } from "./notes-view/FolderTreeNode";
 import { setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
 import { sortTagsByUsage } from "@/lib/tag-utils";
-import { TagOverflow } from "@/components/ui/tag-overflow";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import { FolderPickerDialog } from "./notes-view/FolderPickerDialog";
 import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
 import { STARTER_TEMPLATES } from "../../../shared/notes/starter-templates";
@@ -639,7 +639,7 @@ export function NotesView() {
                   </button>
                 ))}
                 {hiddenProjectTags.length > 0 && (
-                  <TagOverflow
+                  <OverflowPill
                     count={hiddenProjectTags.length}
                     names={hiddenProjectTags.map((t) => t.name)}
                     onClick={() => setTagsExpanded(true)}

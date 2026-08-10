@@ -6,7 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Archive, Calendar, ChevronDown, ChevronUp, FileText, Lock, Pencil, Trash2, User } from "lucide-react";
 import { cn, formatDate, getDueDateStatus } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { TagOverflow } from "@/components/ui/tag-overflow";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -162,7 +162,7 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
                 )
             )}
             {extraTagCount > 0 && (
-              <TagOverflow count={extraTagCount} names={extraTags.map((t) => t?.name ?? "")} />
+              <OverflowPill count={extraTagCount} names={extraTags.map((t) => t?.name ?? "")} />
             )}
           </div>
         )}

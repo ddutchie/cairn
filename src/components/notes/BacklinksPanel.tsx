@@ -6,7 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { TagOverflow } from "@/components/ui/tag-overflow";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { Note, Tag } from "@/types";
@@ -354,7 +354,7 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
         </button>
       ))}
       {assignedTags.length > 5 && (
-        <TagOverflow
+        <OverflowPill
           count={hiddenAssigned.length}
           names={hiddenAssigned.map((t) => t.name)}
           label={tagsExpanded ? "−" : `+${hiddenAssigned.length}`}

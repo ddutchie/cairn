@@ -11,7 +11,7 @@ import { ProjectIcon } from "@/lib/workspace-icons";
 import { cn, formatDate, STATUS_COLORS } from "@/lib/utils";
 import { CairnEvents, revealNote, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
-import { TagOverflow } from "@/components/ui/tag-overflow";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import { sortTagsByUsage, capTags } from "@/lib/tag-utils";
 import { Button } from "@/components/ui/button";
 import { PendingApprovals } from "@/components/automations/pending-approvals";
@@ -155,7 +155,7 @@ export function ProjectOverview() {
               )}
               {headerTags.shown.map((tag) => tag && <Badge key={tag.id} color={tag.color} size="xs">{tag.name}</Badge>)}
               {headerTags.hidden.length > 0 && (
-                <TagOverflow count={headerTags.hidden.length} names={headerTags.hidden.map((t) => t.name)} />
+                <OverflowPill count={headerTags.hidden.length} names={headerTags.hidden.map((t) => t.name)} />
               )}
             </div>
           </div>

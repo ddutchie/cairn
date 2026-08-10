@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Tooltip } from "@/components/ui/tooltip";
+import { MicroLabel } from "@/components/ui/labels";
 import {
   getModelInfo,
   getModelCatalogVersion,
@@ -292,9 +293,9 @@ export function ModelPicker({
           )}
           {favs.length > 0 && (
             <>
-              <div className="px-2.5 pt-1 pb-0.5 text-[0.607rem] uppercase tracking-wide text-[var(--text-tertiary)]">
+              <MicroLabel className="px-2.5 pt-1 pb-0.5 block">
                 Favorites
-              </div>
+              </MicroLabel>
               {favs.map((m) => (
                 <ModelRow
                   key={m}

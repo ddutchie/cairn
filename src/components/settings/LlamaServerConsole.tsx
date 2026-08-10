@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { CheckCircle, RefreshCw, Cpu, Trash2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select } from "@/components/ui/select";
+import { MicroLabel } from "@/components/ui/labels";
 
 /**
  * On-Device Llama server console — the entire `provider === "localllm"` surface
@@ -430,9 +431,9 @@ export function LlamaServerConsole({
               )}
 
               <div className="border-t border-[var(--border)] pt-3 space-y-2">
-                <p className="text-[0.65rem] text-[var(--text-tertiary)] uppercase tracking-wider font-semibold">
+                <MicroLabel className="block">
                   Alternative manual installation
-                </p>
+                </MicroLabel>
                 <div className="bg-[var(--surface-1)] border border-[var(--border)] p-2.5 rounded font-mono text-[0.714rem] text-[var(--text-primary)] flex items-center justify-between">
                   <span>brew install llama.cpp</span>
                   <button
