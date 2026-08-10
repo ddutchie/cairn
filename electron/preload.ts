@@ -979,6 +979,13 @@ const api = {
       ipcRenderer.on("pi-agent:note-updated", handler);
       return () => ipcRenderer.off("pi-agent:note-updated", handler);
     },
+    /** Fired after the todowrite tool persists a new list — live todo-dock updates */
+    onTodos: (cb: (e: { sessionId: string; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }> }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }> }) => cb(e);
+      ipcRenderer.on("pi-agent:todos", handler);
+      return () => ipcRenderer.off("pi-agent:todos", handler);
+    },
     /** Fired when the session mode switches (plan → execute after approval) */
     onModeChange: (cb: (e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1003,6 +1010,8 @@ const api = {
     deleteSession:  (id: string) => invoke("db:piSession:delete", { id }),
     /** Fetch the full message transcript for a session */
     getMessages:    (sessionId: string) => invoke("db:piSession:messages", { sessionId }),
+    /** Fetch the persisted todo list for a session */
+    getTodos:       (sessionId: string) => invoke<Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }>>("db:piSession:todos", { sessionId }),
     /** Bulk-save the full message array for a session (replaces existing rows) */
     saveMessages:   (sessionId: string, messages: unknown[]) => invoke("db:piSession:saveMessages", { sessionId, messages }),
     /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */

@@ -989,6 +989,24 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE llm_usage ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0");
     }
   },
+
+  // v40: Per-session todo list for the coding agent (todowrite tool). Mirrors
+  // pi_agent_messages: scoped to a pi_agent_sessions row with ON DELETE CASCADE,
+  // replace-wholesale (the model sends the full list each call — delete all +
+  // insert by position in a single transaction).
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pi_session_todos (
+        session_id TEXT NOT NULL REFERENCES pi_agent_sessions(id) ON DELETE CASCADE,
+        content    TEXT NOT NULL,
+        status     TEXT NOT NULL,
+        priority   TEXT NOT NULL,
+        position   INTEGER NOT NULL,
+        PRIMARY KEY (session_id, position)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pi_todos_session ON pi_session_todos(session_id);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

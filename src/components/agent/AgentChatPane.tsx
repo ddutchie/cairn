@@ -23,6 +23,7 @@ import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanTaskList } from "./PlanTaskList";
+import { AgentTodoDock } from "./AgentTodoDock";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
@@ -134,6 +135,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const setPiMode                = useCairnStore((s) => s.setPiMode);
   const setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
   const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
+  const setPiSessionTodos        = useCairnStore((s) => s.setPiSessionTodos);
   const setView                  = useCairnStore((s) => s.setView);
 
   // Reactive state — only values that actually drive re-renders
@@ -144,8 +146,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     mcpServers:        s.mcpServers,
     customServices:    s.customServices,
   })));
-  const customCommands = useCairnStore((s) => s.customCommands);
-  const agentCommands = useMemo(
+    const sessionTodos = useCairnStore((s) => s.piSessionTodos[session.sessionId]);
+  const customCommands = useCairnStore((s) => s.customCommands);  const agentCommands = useMemo(
     () => getCommandsForScope("agent", customCommands),
     [customCommands]
   );
@@ -163,6 +165,17 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Compaction state — shown in status bar while an LLM summary call is in flight
   const [isCompacting, setIsCompacting]           = useState(false);
   const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
+
+  // Mirror opencode's todoState: when the session stops being live (turn done,
+  // nothing pending), clear the todo store so a finished list never lingers to
+  // reopen on the next turn if the model doesn't rewrite it. DB rows persist —
+  // the next todowrite call replaces them wholesale.
+  const sessionLive = isLoading || !!pendingQuestions;
+  useEffect(() => {
+    if (!sessionLive && (sessionTodos?.length ?? 0) > 0) {
+      setPiSessionTodos(session.sessionId, []);
+    }
+  }, [sessionLive, session.sessionId, sessionTodos, setPiSessionTodos]);
 
   // Attachment support follows the agent's selected model (same as chat). The
   // models.dev catalog loads in the background, so subscribe to it — without
@@ -420,6 +433,18 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setPlanNoteContent(e.content);
     });
 
+    // Todo list updates — live dock as the agent runs the todowrite tool
+    const unsubTodos = electron.piAgent.onTodos((e) => {
+      if (e.sessionId !== sessionId) return;
+      setPiSessionTodos(sessionId, e.todos);
+    });
+
+    // Initial hydrate — load persisted todos when the pane mounts so a restored
+    // session shows its list before the agent touches it again.
+    electron.piAgent.getTodos?.(sessionId).then((result) => {
+      if (result?.length) setPiSessionTodos(sessionId, result);
+    }).catch(() => { /* no persisted todos — dock stays hidden */ });
+
     // Retry events — show backoff countdown in the status bar
     const unsubRetry = electron.piAgent.onRetry((e) => {
       if (e.sessionId !== sessionId) return;
@@ -470,6 +495,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       unsubAskQuestions();
       unsubToolConfirmRequired();
       unsubNoteUpdated();
+      unsubTodos();
       unsubRetry();
       unsubCompact();
       unsubCompactResult();
@@ -756,6 +782,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         )}
         {session.mode === "execute" && planNoteContent && (
           <PlanTaskList content={planNoteContent} />
+        )}
+        {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && (
+          <AgentTodoDock todos={sessionTodos ?? []} live={isLoading} />
         )}
       <div className="p-3">
         <ChatInputArea

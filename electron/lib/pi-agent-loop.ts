@@ -41,6 +41,7 @@ import {
   lsTool,    lsToolDefinition,
   spawnSubagentDefinition, spawnSubagentTool,
   skillTool, makeSkillToolDefinition,
+  todowriteTool, todowriteToolDefinition,
 } from "./coding-tools/index";
 import { executeTool } from "../ipc/chat-executor";
 import type { ChatRequest, ToolArgs } from "./tools";
@@ -144,6 +145,7 @@ const CODING_LABELS: Record<string, (args: ToolArgs) => string> = {
   grep:  (a) => `Searching for "${a.pattern as string}"`,
   find:  (a) => `Finding "${a.pattern as string}"`,
   ls:    (a) => `Listing ${(a.path as string) ?? "."}`,
+  todowrite: () => `Updating todos`,
 };
 
 // ── Events interface ──────────────────────────────────────────────────────────
@@ -229,6 +231,7 @@ const CODING_TOOL_DEFS = [
   findToolDefinition,
   lsToolDefinition,
   spawnSubagentDefinition,
+  todowriteToolDefinition,
 ];
 
 // Cairn data tool names exposed to the coding agent.
@@ -313,6 +316,7 @@ function getAllToolDefs(
   mode: "plan" | "execute" = "execute",
   skills: SkillMeta[] = [],
   externalDefs: typeof ALL_CAIRN_TOOLS = [],
+  isSubagent = false,
 ) {
   const cairnSubset = ALL_CAIRN_TOOLS.filter((t) => CAIRN_TOOL_NAMES.has(t.function.name));
   // Only include the skill tool when at least one skill is available
@@ -320,7 +324,13 @@ function getAllToolDefs(
   // External tools (MCP servers / custom services) are side-effecting, so they
   // are excluded from plan mode entirely (plan mode is read-only analysis).
   const external = mode === "plan" ? [] : externalDefs;
-  const all = [...CODING_TOOL_DEFS, ...skillDef, ...cairnSubset, ...external];
+  // The todo list belongs to the parent agent session — subagents run on a child
+  // session id with no pi_agent_sessions row, so todowrite is excluded there
+  // (its write would fail a foreign-key check).
+  const codingDefs = isSubagent
+    ? CODING_TOOL_DEFS.filter((t) => t.function.name !== "todowrite")
+    : CODING_TOOL_DEFS;
+  const all = [...codingDefs, ...skillDef, ...cairnSubset, ...external];
   if (mode === "plan") {
     return all.filter((t) => PLAN_MODE_ALLOWED.has(t.function.name));
   }
@@ -452,6 +462,10 @@ async function executeSingleTool(
       args as Parameters<typeof skillTool>[0],
       toolCtx.skills ?? [],
     );
+    case "todowrite": return todowriteTool(
+      args as Parameters<typeof todowriteTool>[0],
+      { db, sessionId },
+    );
     case "spawn_subagent": return spawnSubagentTool(
       args as Parameters<typeof spawnSubagentTool>[0],
       toolCtx,
@@ -531,7 +545,7 @@ export async function runAgentLoop(
       console.error("[agent] failed to assemble external tools:", err);
     }
   }
-  const allTools = getAllToolDefs(mode, toolCtx.skills ?? [], externalDefs);
+  const allTools = getAllToolDefs(mode, toolCtx.skills ?? [], externalDefs, usageSource === "pi-subagent");
   // The exact set of tool names offered to the model this turn — used to reject
   // hallucinated / out-of-mode tool calls before execution.
   const allowedToolNames = new Set(allTools.map((t) => t.function.name));

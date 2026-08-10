@@ -179,6 +179,11 @@ async function runSession(
             }
           } catch { /* non-JSON output — ignore */ }
         }
+        // After the todowrite tool succeeds, broadcast the persisted list so the
+        // todo dock updates live as the agent works.
+        if (ok && name === "todowrite") {
+          send("pi-agent:todos", { sessionId, todos: q.getSessionTodos(ctx.db, sessionId) });
+        }
       },
       onStepStart:    () => send("pi-agent:step",  { sessionId }),
       onUsage:        (promptTokens, completionTokens, reasoningTokens, breakdown, _cost, cacheRead, cacheCreate) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens, reasoningTokens, breakdown, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreate }),

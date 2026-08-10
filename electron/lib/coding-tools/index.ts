@@ -15,6 +15,7 @@ export { findTool,  findToolDefinition  } from "./find";
 export { lsTool,    lsToolDefinition    } from "./ls";
 export { spawnSubagentDefinition, spawnSubagentTool } from "./subagent";
 export { skillTool, makeSkillToolDefinition } from "./skill";
+export { todowriteTool, todowriteToolDefinition, TODO_WRITE_DESCRIPTION } from "./todowrite";
 
 export type { ReadArgs  } from "./read";
 export type { WriteArgs } from "./write";
@@ -25,6 +26,7 @@ export type { FindArgs  } from "./find";
 export type { LsArgs    } from "./ls";
 export type { SpawnSubagentArgs } from "./subagent";
 export type { SkillArgs } from "./skill";
+export type { TodoWriteArgs } from "./todowrite";
 
 import { readToolDefinition  } from "./read";
 import { writeToolDefinition } from "./write";
@@ -34,6 +36,7 @@ import { grepToolDefinition  } from "./grep";
 import { findToolDefinition  } from "./find";
 import { lsToolDefinition    } from "./ls";
 import { spawnSubagentDefinition } from "./subagent";
+import { todowriteToolDefinition } from "./todowrite";
 
 /** All coding tool definitions in OpenAI function-calling format. */
 export const CODING_TOOL_DEFINITIONS = [
@@ -45,4 +48,5 @@ export const CODING_TOOL_DEFINITIONS = [
   findToolDefinition,
   lsToolDefinition,
   spawnSubagentDefinition,
+  todowriteToolDefinition,
 ] as const;

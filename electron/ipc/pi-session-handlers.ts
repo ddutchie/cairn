@@ -18,4 +18,5 @@ export function registerPiSessionHandlers(ctx: DbContext): void {
   registerIpcHandle("db:piSession:delete", (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
   registerIpcHandle("db:piSession:messages", (_e, { sessionId }) => handle(() => q.getPiMessages(ctx.db, sessionId)));
   registerIpcHandle("db:piSession:saveMessages", (_e, { sessionId, messages }) => handle(() => q.savePiMessages(ctx.db, sessionId, messages)));
+  registerIpcHandle("db:piSession:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 }

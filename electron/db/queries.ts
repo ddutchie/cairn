@@ -1723,6 +1723,48 @@ export function getPiMessages(db: Database.Database, sessionId: string): PiMessa
     .map(toPiMessage);
 }
 
+// ── Pi Agent Session Todos ─────────────────────────────────────────────────────
+
+export interface PiSessionTodo {
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  priority: "high" | "medium" | "low";
+}
+
+interface PiTodoRow {
+  content: string;
+  status: string;
+  priority: string;
+}
+
+function toPiTodo(row: PiTodoRow): PiSessionTodo {
+  return {
+    content: row.content,
+    status: row.status as PiSessionTodo["status"],
+    priority: row.priority as PiSessionTodo["priority"],
+  };
+}
+
+/**
+ * Replace-wholesale save for a session's todo list (the model sends the entire
+ * list each `todowrite` call). Delete + insert by position in one transaction.
+ */
+export function saveSessionTodos(db: Database.Database, sessionId: string, todos: PiSessionTodo[]) {
+  const save = db.transaction(() => {
+    db.prepare("DELETE FROM pi_session_todos WHERE session_id = ?").run(sessionId);
+    todos.forEach((todo, position) => {
+      db.prepare("INSERT INTO pi_session_todos (session_id, content, status, priority, position) VALUES (?, ?, ?, ?, ?)")
+        .run(sessionId, todo.content, todo.status, todo.priority, position);
+    });
+  });
+  save();
+}
+
+export function getSessionTodos(db: Database.Database, sessionId: string): PiSessionTodo[] {
+  return (db.prepare("SELECT content, status, priority FROM pi_session_todos WHERE session_id = ? ORDER BY position ASC").all(sessionId) as PiTodoRow[])
+    .map(toPiTodo);
+}
+
 // ── Pi Agent LLM History ──────────────────────────────────────────────────────────────────
 
 export interface LlmHistoryRow {
