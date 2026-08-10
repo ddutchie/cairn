@@ -860,6 +860,10 @@ export async function runAgentLoop(
       const parsed = parseToolArgs(tc.function.arguments);
       if (parsed.ok && parsed.tailRepaired !== true) {
         args = parsed.value as ToolArgs;
+        // A repaired parse (e.g. a `<arg_value>` placeholder, dropped comma) is
+        // canonicalised back into `arguments` so history holds valid JSON —
+        // replaying the raw malformed string makes the next request 400.
+        if (parsed.repaired) tc.function.arguments = JSON.stringify(parsed.value);
         traceTool("parse", {
           toolName: tc.function.name,
           title: typeof (args as Record<string, unknown>).title === "string" ? (args as Record<string, unknown>).title as string : "",

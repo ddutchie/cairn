@@ -640,6 +640,11 @@ export async function runDispatchLoop(
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: parsed.error }) });
         continue;
       }
+      // A repaired parse is canonicalised back into `arguments` so history holds
+      // valid JSON — replaying the raw malformed string makes the next request
+      // 400. (The dispatch message was already pushed above; `call` is the same
+      // object reference stored in it.)
+      if (parsed.repaired) call.function.arguments = JSON.stringify(parsed.value);
       const args = parsed.value as { instruction?: string };
       const instruction = args.instruction ?? "";
 

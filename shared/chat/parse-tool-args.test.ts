@@ -357,4 +357,107 @@ describe("parseToolArgs", () => {
       if (r.ok) expect(r.value).toEqual({ a: 1 });
     });
   });
+
+  describe("repair: value-start placeholder tokens (<arg_value> et al.)", () => {
+    it("recovers a placeholder where the model dropped the opening quote of a string value", () => {
+      const raw =
+        '{"path": "src/app.py", "edits": [{"oldText":<arg_value>from x import (\n    a,\n    b,\n)", "newText": "from x import (\n    a,\n    c,\n)"}]}';
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.repaired).toBe(true);
+        const edits = r.value.edits as { oldText: string; newText: string }[];
+        expect(edits).toHaveLength(1);
+        expect(edits[0].oldText).toBe("from x import (\n    a,\n    b,\n)");
+        expect(edits[0].newText).toBe("from x import (\n    a,\n    c,\n)");
+      }
+    });
+
+    it("recovers the exact <arg_value> edit call captured from an intercepted request", () => {
+      const raw =
+        '{"path": "src/app/proxy/app.py", "edits": [{"oldText":<arg_value>from app.proxy.routes import (\n    alf,\n    chat,\n    embeddings,\n    images,\n    messages,\n    models,\n    realtime,\n    responses,\n    settings_api,\n    settings_ui,\n    usage_api,\n    usage_ui,\n    log_ui,\n)", "newText": "from app.proxy.routes import (\n    alf,\n    chat,\n    embeddings,\n    images,\n    legacy_completions,\n    messages,\n    models,\n    realtime,\n    responses,\n    settings_api,\n    settings_ui,\n    usage_api,\n    usage_ui,\n    log_ui,\n)"}, {"oldText": "    app.include_router(chat.router)\n    app.include_router(messages.router)", "newText": "    app.include_router(chat.router)\n    app.include_router(legacy_completions.router)\n    app.include_router(messages.router)"}]}';
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.path).toBe("src/app/proxy/app.py");
+        const edits = r.value.edits as { oldText: string; newText: string }[];
+        expect(edits).toHaveLength(2);
+        expect(edits[0].oldText).toContain("from app.proxy.routes import (");
+        expect(edits[0].newText).toContain("legacy_completions,");
+        expect(edits[1].oldText).toBe(
+          "    app.include_router(chat.router)\n    app.include_router(messages.router)",
+        );
+        expect(edits[1].newText).toBe(
+          "    app.include_router(chat.router)\n    app.include_router(legacy_completions.router)\n    app.include_router(messages.router)",
+        );
+      }
+    });
+
+    it("recovers a placeholder as the first property value of an object", () => {
+      const r = parseToolArgs('{"title":<arg_value>hello world", "a": 1}');
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value).toEqual({ title: "hello world", a: 1 });
+      }
+    });
+
+    it("closes a placeholder-opened string with the same token in slash form (</arg_value>)", () => {
+      const raw =
+        '{"path": "src/app.py", "oldText":<arg_value>from x import (\n    a,\n)</arg_value>, "newText": "y"}';
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.oldText).toBe("from x import (\n    a,\n)");
+        expect(r.value.newText).toBe("y");
+      }
+    });
+
+    it("closes a placeholder-opened string with the same token in bare form (<arg_value>)", () => {
+      const raw =
+        '{"path": "src/app.py", "oldText":<arg_value>from x import (\n    a,\n)<arg_value>, "newText": "y"}';
+      const r = parseToolArgs(raw);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.oldText).toBe("from x import (\n    a,\n)");
+        expect(r.value.newText).toBe("y");
+      }
+    });
+
+    it("a placeholder token inside a normally-quoted string is literal content", () => {
+      const r = parseToolArgs('{"content":"see <arg_value> here", "a": 1}');
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.repaired).toBe(false);
+        expect(r.value.content).toBe("see <arg_value> here");
+      }
+    });
+
+    it("does NOT substitute the token inside a string (it is literal content there)", () => {
+      const r = parseToolArgs('{"content":"docs say <arg_value> here","title":"x"}');
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.repaired).toBe(false);
+        expect(r.value.content).toBe("docs say <arg_value> here");
+      }
+    });
+
+    it("does NOT fire at a key position", () => {
+      const r = parseToolArgs('{<arg_value>:"v"}');
+      expect(r.ok).toBe(false);
+    });
+
+    it("does NOT fire for an unrecognised bare token", () => {
+      const r = parseToolArgs('{"a":<bogus>1}');
+      expect(r.ok).toBe(false);
+    });
+
+    it("does NOT repair a standalone placeholder with no content after it (silent wrong value)", () => {
+      // `<arg_value>` standing in for the WHOLE value, nothing after → substituting
+      // `"` would tail-repair into `""` and silently drop the intended value.
+      const r = parseToolArgs('{"a":<arg_value>, "b": 1}');
+      expect(r.ok).toBe(false);
+      const r2 = parseToolArgs('{"a":<arg_value>}');
+      expect(r2.ok).toBe(false);
+    });
+  });
 });
