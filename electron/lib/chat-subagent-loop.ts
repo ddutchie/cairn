@@ -633,11 +633,13 @@ export async function runDispatchLoop(
     for (const call of msgClean.tool_calls) {
       metrics.toolCalls += 1;
       const parsed = parseToolArgs(call.function.arguments);
-      if (!parsed.ok) {
+      if (!parsed.ok || parsed.tailRepaired === true) {
         // Don't dispatch a subagent with a blank instruction from unparseable
-        // args — return the structured error so the dispatcher can re-issue.
+        // args, or from a tail-repaired parse (valid only after appending
+        // missing closing delimiters) — return the structured error so the
+        // dispatcher can re-issue with complete JSON, matching the chat loop.
         metrics.toolErrors += 1;
-        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: parsed.error }) });
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: parsed.ok ? "tool-call arguments missing closing delimiters — re-issue with complete JSON" : parsed.error }) });
         continue;
       }
       // A repaired parse is canonicalised back into `arguments` so history holds

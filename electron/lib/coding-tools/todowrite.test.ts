@@ -58,6 +58,29 @@ describe("todowriteTool", () => {
     expect(getSessionTodos(db, "pi1")).toEqual([]);
   });
 
+  it("rejects more than one in_progress todo without persisting", async () => {
+    const out = await todowriteTool(
+      {
+        todos: [
+          { content: "A", status: "in_progress", priority: "high" },
+          { content: "B", status: "in_progress", priority: "medium" },
+        ],
+      },
+      ctx,
+    );
+    expect(JSON.parse(out).error).toContain("exactly one may be active");
+    expect(getSessionTodos(db, "pi1")).toEqual([]);
+  });
+
+  it("accepts a single in_progress todo", async () => {
+    const out = await todowriteTool(
+      { todos: [{ content: "A", status: "in_progress", priority: "high" }] },
+      ctx,
+    );
+    expect(JSON.parse(out).error).toBeUndefined();
+    expect(getSessionTodos(db, "pi1")).toHaveLength(1);
+  });
+
   it("defines a schema with the required todos array", () => {
     expect(todowriteToolDefinition.function.name).toBe("todowrite");
     expect(todowriteToolDefinition.function.parameters.required).toContain("todos");

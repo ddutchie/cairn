@@ -232,8 +232,8 @@ export interface PiAgentSession {
 
 export type ApprovalDecision = { approved: boolean; grant?: "session" | "command" };
 export const pendingApprovals = new Map<string, { resolve: (decision: ApprovalDecision) => void }>();
-/** Resolvers for doom-loop pauses — keyed by tool callId, resolved by pi-agent:respond-doom-loop. */
-export const pendingDoomLoop = new Map<string, { resolve: (allow: boolean) => void }>();
+/** Resolvers for doom-loop pauses — keyed by `${sessionId}:${signature}`, resolved by pi-agent:respond-doom-loop. */
+export const pendingDoomLoop = new Map<string, { resolve: (allow: boolean) => void; promise: Promise<boolean> }>();
 /**
  * Resolvers for blocked `ask_questions` calls — keyed by tool callId, resolved
  * by pi-agent:respond-questions. The answer text becomes the tool result so the
@@ -1007,31 +1007,39 @@ export async function runAgentLoop(
       // steps. Once the user approves, the session stops pausing (mirrors
       // opencode's doom_loop permission). Skips tools whose args failed to parse
       // (handled above) so a parse error never counts as a repeated call.
+      //
+      // The pending decision is keyed by session + tool-call signature so
+      // multiple identical calls in the SAME response share one onDoomLoop event
+      // and one resolver — a second matching call awaits the same decision
+      // instead of re-prompting. `doomKey` doubles as the callId the renderer
+      // echoes back to pi-agent:respond-doom-loop.
       let doomBlocked = false;
+      const sig = toolCallSignature(tc.function.name, args);
+      const doomKey = `${toolCtx.sessionId}:${sig}`;
       if (!session.doomLoopApproved) {
-        const sig = toolCallSignature(tc.function.name, args);
         const recent = session.recentToolCalls ?? [];
         const window = recent.slice(-(DOOM_LOOP_THRESHOLD - 1));
         if (window.length === DOOM_LOOP_THRESHOLD - 1 && window.every((s) => s === sig)) {
-          const callKey = pendingCallId || tc.id;
-          callbacks.onDoomLoop?.({ toolName: tc.function.name, count: DOOM_LOOP_THRESHOLD, args, callId: callKey });
-          const allow = await new Promise<boolean>((resolve) => {
+          let pending = pendingDoomLoop.get(doomKey);
+          if (!pending) {
+            let resolveDecision: (allow: boolean) => void = () => {};
+            const promise = new Promise<boolean>((resolve) => { resolveDecision = resolve; });
             const onAbort = () => {
-              pendingDoomLoop.delete(callKey);
-              resolve(false);
+              pendingDoomLoop.delete(doomKey);
+              resolveDecision(false);
             };
-            if (signal.aborted) {
-              resolve(false);
-              return;
-            }
-            signal.addEventListener("abort", onAbort);
-            pendingDoomLoop.set(callKey, {
+            if (!signal.aborted) signal.addEventListener("abort", onAbort);
+            pending = {
+              promise,
               resolve: (value) => {
                 signal.removeEventListener("abort", onAbort);
-                resolve(value);
+                resolveDecision(value);
               },
-            });
-          });
+            };
+            pendingDoomLoop.set(doomKey, pending);
+            callbacks.onDoomLoop?.({ toolName: tc.function.name, count: DOOM_LOOP_THRESHOLD, args, callId: doomKey });
+          }
+          const allow = signal.aborted ? false : await pending.promise;
           if (!allow) {
             session.doomLoopApproved = false;
             doomBlocked = true;
@@ -1042,10 +1050,7 @@ export async function runAgentLoop(
       }
       // Track the executed signature regardless — a blocked call still counts so
       // the tracker reflects what the model attempted.
-      session.recentToolCalls = [
-        ...(session.recentToolCalls ?? []),
-        toolCallSignature(tc.function.name, args),
-      ].slice(-DOOM_LOOP_THRESHOLD);
+      session.recentToolCalls = [...(session.recentToolCalls ?? []), sig].slice(-DOOM_LOOP_THRESHOLD);
 
       if (doomBlocked) {
         ok = false;

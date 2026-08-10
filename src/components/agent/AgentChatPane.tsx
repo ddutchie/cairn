@@ -170,17 +170,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const [isCompacting, setIsCompacting]           = useState(false);
   const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
 
-  // Mirror opencode's todoState: when the session stops being live (turn done,
-  // nothing pending), clear the todo store so a finished list never lingers to
-  // reopen on the next turn if the model doesn't rewrite it. DB rows persist —
-  // the next todowrite call replaces them wholesale.
-  const sessionLive = isLoading || !!pendingQuestions;
-  useEffect(() => {
-    if (!sessionLive && (sessionTodos?.length ?? 0) > 0) {
-      setPiSessionTodos(session.sessionId, []);
-    }
-  }, [sessionLive, session.sessionId, sessionTodos, setPiSessionTodos]);
-
   // Attachment support follows the agent's selected model (same as chat). The
   // models.dev catalog loads in the background, so subscribe to it — without
   // this, allowImages/allowPdf stay false until an unrelated re-render happens.
@@ -335,6 +324,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setIsLoading(false);
       setRetryInfo(null);
       setIsCompacting(false);
+      setPendingQuestions(null);
+      setPendingQuestionCallId(null);
+      setDoomLoop(null);
       // Persist the full message transcript after the turn completes
       persistPiTranscript(sessionId);
     });
@@ -344,6 +336,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       finalisePiMessage(sessionId);
       setRetryInfo(null);
       setIsCompacting(false);
+      setPendingQuestions(null);
+      setPendingQuestionCallId(null);
+      setDoomLoop(null);
       addPiMessage(sessionId, {
         id:        id(),
         role:      "error",
@@ -652,11 +647,15 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     window.electron?.piAgent.abort(session.sessionId);
     finalisePiMessage(session.sessionId);
     setIsLoading(false);
+    setPendingQuestions(null);
+    setPendingQuestionCallId(null);
+    setDoomLoop(null);
   }
 
   function handleClear() {
     if (isLoading) handleStop();
     clearPiMessages(session.sessionId);
+    setPiSessionTodos(session.sessionId, []);
     window.electron?.piAgent.clear(session.sessionId);
   }
 
@@ -800,10 +799,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         {doomLoop && (
           <div
             data-testid="doom-loop-card"
-            className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning,#f59e0b)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning,#f59e0b)_6%,var(--surface))] px-3 py-2.5"
+            className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5"
           >
             <div className="flex items-start gap-2">
-              <Loader2 size={14} className="mt-0.5 text-[var(--warning,#f59e0b)] animate-spin shrink-0" />
+              <Loader2 size={14} className="mt-0.5 text-[var(--warning)] animate-spin shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">
                   The agent is repeating the same action
@@ -825,7 +824,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
               <button
                 data-testid="doom-loop-allow"
                 onClick={() => resolveDoomLoop(true)}
-                className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded transition-opacity"
+                className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded transition-opacity"
               >
                 Continue anyway
               </button>
@@ -855,7 +854,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           <PlanTaskList content={planNoteContent} />
         )}
         {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && (
-          <AgentTodoDock todos={sessionTodos ?? []} live={isLoading} />
+          <AgentTodoDock todos={sessionTodos ?? []} live={false} />
         )}
       <div className="p-3">
         <ChatInputArea

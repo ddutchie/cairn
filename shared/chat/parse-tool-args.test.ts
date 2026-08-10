@@ -446,6 +446,12 @@ describe("parseToolArgs", () => {
       expect(r.ok).toBe(false);
     });
 
+    it("does NOT fire at an object-comma key position (only array commas are value starts)", () => {
+      const r = parseToolArgs('{"a":1, <arg_value>key: "v"}');
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/malformed tool-call arguments/i);
+    });
+
     it("does NOT fire for an unrecognised bare token", () => {
       const r = parseToolArgs('{"a":<bogus>1}');
       expect(r.ok).toBe(false);

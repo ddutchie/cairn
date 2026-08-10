@@ -207,6 +207,20 @@ const FEATURES = [
     ],
   },
   {
+    id: "v2.6.6-usage-view",
+    version: "v2.6.6",
+    title: "Usage View",
+    category: "Analytics",
+    description:
+      "A new Usage tab records every LLM and agent call locally — tokens, cost, and volume across chat, the agent, subagents, automations, and one-shot AI features — with a daily input/output chart, a by-model spend list, and a per-call history table.",
+    highlights: [
+      "Everything Tracked: Chat, the Cairn Agent, subagents, automations, PRDs, commit messages, PR descriptions, explain-code, Idea Flow summaries, compaction, and the tool builder all report their tokens.",
+      "Input / Output Chart: Daily token totals overlaid on one chart — hover for a breakdown, and switch between Tokens, Cost, and Requests. Reasoning tokens are tracked separately.",
+      "By Model Spend: See which model is consuming the most tokens and cost over the selected range (7D / 30D / 90D / all time).",
+      "Per-Call History: A list of recent requests with time, model, input/output/reasoning tokens, your saved provider's name, and cost — provider-reported or estimated from models.dev pricing. Switch providers right from the chat quick-settings.",
+    ],
+  },
+  {
     id: "v2.6.10-agent-todos",
     version: "v2.6.10",
     title: "Agent Todo List",

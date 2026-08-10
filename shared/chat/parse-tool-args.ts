@@ -269,12 +269,15 @@ function repairJson(src: string): string {
     // place, with the real content following. Substitute `"` and enter string
     // mode so the following content is consumed as that string value (raw
     // control chars inside it get escaped by the in-string branch above) and
-    // the closing quote the model DID emit closes it. Only fires at a
-    // value-start position outside a string; inside a string the token is
+    // the closing quote the model DID emit closes it. Only fires at a true
+    // VALUE-start position outside a string: after `:` (an object value), after
+    // `[`, or after an ARRAY comma. Object key positions — right after `{` or an
+    // OBJECT comma — are never values, so a placeholder there is left untouched
+    // (it will surface as a loud parse failure). Inside a string the token is
     // literal content and passes through untouched.
     if (
       ch === "<" &&
-      isValueStart(lastSig)
+      isValueStart(lastSig, stack[stack.length - 1])
     ) {
       let hit = -1;
       for (let k = 0; k < VALUE_PLACEHOLDER_TOKENS.length; k++) {
@@ -312,10 +315,19 @@ function repairJson(src: string): string {
   return out;
 }
 
-/** True when a value (not a key) is expected next — the only place a value-start
- * placeholder token may be repaired. */
-function isValueStart(k: TokenKind): boolean {
-  return k === "none" || k === "colon" || k === "comma" || k === "openObject" || k === "openArray";
+/**
+ * True when a VALUE (not a key) is expected next — the only place a value-start
+ * placeholder token may be repaired. `container` is the enclosing container's
+ * open bracket (the top of the repair stack). Object key positions — right
+ * after `{` or after an object comma — are NOT value starts, so a placeholder
+ * there is never repaired as a value. Array comma, `[`, and `:` are value
+ * starts.
+ */
+function isValueStart(k: TokenKind, container: "{" | "[" | undefined): boolean {
+  if (k === "none" || k === "colon" || k === "openArray") return true;
+  if (k === "openObject") return false;
+  if (k === "comma") return container === "[";
+  return false;
 }
 
 /**

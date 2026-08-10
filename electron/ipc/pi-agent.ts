@@ -568,6 +568,9 @@ export function registerPiAgentHandler(
       session.recentToolCalls = [];
       session.doomLoopApproved = false;
     }
+    // Explicit session clearing wipes persisted todos too (the todowrite
+    // replacement contract otherwise leaves them until the next write).
+    q.saveSessionTodos(ctx.db, sessionId, []);
   });
 
   // ── pi-agent:destroy ──────────────────────────────────────────────────────

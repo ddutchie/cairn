@@ -96,6 +96,13 @@ export async function todowriteTool(args: TodoWriteArgs, ctx: TodoWriteToolConte
     status: (TODO_STATUSES.includes(t.status as never) ? t.status : "pending") as PiSessionTodo["status"],
     priority: (TODO_PRIORITIES.includes(t.priority as never) ? t.priority : "medium") as PiSessionTodo["priority"],
   }));
+  // The tool contract allows exactly ONE in_progress todo at a time — reject a
+  // list that violates it so the model re-issues with a single active item
+  // rather than silently persisting an ambiguous state.
+  const active = todos.filter((t) => t.status === "in_progress").length;
+  if (active > 1) {
+    return JSON.stringify({ error: `todowrite rejected: ${active} todos are in_progress — exactly one may be active at a time. Re-issue with a single in_progress todo.` });
+  }
   saveSessionTodos(ctx.db, ctx.sessionId, todos);
   return JSON.stringify({ todos });
 }
