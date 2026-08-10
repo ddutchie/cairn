@@ -6,6 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { TagOverflow } from "@/components/ui/tag-overflow";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { Note, Tag } from "@/types";
@@ -299,6 +300,7 @@ export interface NoteTagBarProps {
 export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById }: NoteTagBarProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [newTagName, setNewTagName] = useState("");
+  const [tagsExpanded, setTagsExpanded] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -327,6 +329,9 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
     ? unassignedTags.filter((t) => t.name.toLowerCase().includes(newTagName.toLowerCase()))
     : unassignedTags;
 
+  const shownAssigned = tagsExpanded ? assignedTags : assignedTags.slice(0, 5);
+  const hiddenAssigned = assignedTags.slice(shownAssigned.length);
+
   function handleCreateTag() {
     const trimmed = newTagName.trim();
     if (!trimmed) return;
@@ -337,17 +342,26 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
 
   return (
     <div className="flex items-center gap-1.5 mt-2.5 max-w-4xl mx-auto flex-wrap relative">
-      {assignedTags.map((tag) => (
+      {shownAssigned.map((tag) => (
         <button
           key={tag.id}
           onClick={() => onToggleTag(tag.id)}
           className="group flex items-center gap-0.5"
           title={`Remove tag "${tag.name}"`}
         >
-          <Badge color={tag.color}>{tag.name}</Badge>
+          <Badge color={tag.color} size="xs">{tag.name}</Badge>
           <X size={9} className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] transition-opacity -ml-1" />
         </button>
       ))}
+      {assignedTags.length > 5 && (
+        <TagOverflow
+          count={hiddenAssigned.length}
+          names={hiddenAssigned.map((t) => t.name)}
+          label={tagsExpanded ? "−" : `+${hiddenAssigned.length}`}
+          tooltip={tagsExpanded ? "Show fewer tags" : undefined}
+          onClick={() => setTagsExpanded((v) => !v)}
+        />
+      )}
 
       <div className="relative" ref={pickerRef}>
         <button

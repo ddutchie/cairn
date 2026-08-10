@@ -11,6 +11,8 @@ import { ProjectIcon } from "@/lib/workspace-icons";
 import { cn, formatDate, STATUS_COLORS } from "@/lib/utils";
 import { CairnEvents, revealNote, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
+import { TagOverflow } from "@/components/ui/tag-overflow";
+import { sortTagsByUsage, capTags } from "@/lib/tag-utils";
 import { Button } from "@/components/ui/button";
 import { PendingApprovals } from "@/components/automations/pending-approvals";
 import { useProjectMetrics } from "./useProjectMetrics";
@@ -117,6 +119,10 @@ export function ProjectOverview() {
   const toggleSection = (section: string) => toggleOverviewSection(project.id, section);
   const recentActivityCount = activityByDay.reduce((n, g) => n + g.items.length, 0);
 
+  // Header tags — sorted by usage and capped so a heavily-tagged project
+  // doesn't blow up the header row; the rest collapse behind a "+N" pill.
+  const headerTags = capTags(sortTagsByUsage(projectTags, notes, allCards), 4);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 relative w-full min-w-0 overflow-x-hidden">
       <div className="flex-1 overflow-y-auto overflow-x-hidden w-full min-w-0">
@@ -147,7 +153,10 @@ export function ProjectOverview() {
                   <Calendar size={10} />{formatDate(project.dueDate)}
                 </span>
               )}
-              {projectTags.map((tag) => tag && <Badge key={tag.id} color={tag.color}>{tag.name}</Badge>)}
+              {headerTags.shown.map((tag) => tag && <Badge key={tag.id} color={tag.color} size="xs">{tag.name}</Badge>)}
+              {headerTags.hidden.length > 0 && (
+                <TagOverflow count={headerTags.hidden.length} names={headerTags.hidden.map((t) => t.name)} />
+              )}
             </div>
           </div>
           <div className="flex-shrink-0 flex flex-col items-center gap-1.5">

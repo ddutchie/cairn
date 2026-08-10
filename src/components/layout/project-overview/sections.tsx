@@ -9,6 +9,7 @@ import { cn, formatRelative, getDueDateStatus, parseIsoLocal } from "@/lib/utils
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { revealColumn, revealNote, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
+import { TagOverflow } from "@/components/ui/tag-overflow";
 import { useCairnStore } from "@/store";
 import type { TaskCard, Note, BoardColumn, AppUIState } from "@/types";
 import type { ActivityGroup } from "./useProjectMetrics";
@@ -211,7 +212,9 @@ export function DueCard({ card, columns, today, onClick }: { card: TaskCard; col
  */
 export function PinnedNoteCard({ note, onClick }: { note: Note; onClick: () => void }) {
   const getTagById = useCairnStore((s) => s.getTagById);
-  const noteTags = note.tagIds.slice(0, 2).map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
+  const allNoteTags = note.tagIds.map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
+  const noteTags = allNoteTags.slice(0, 2);
+  const hiddenNoteTags = allNoteTags.slice(2);
   return (
     <button onClick={onClick}
       className="flex items-center gap-3 w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--accent)]/40 hover:bg-[var(--surface-2)] transition-colors group text-left">
@@ -224,8 +227,11 @@ export function PinnedNoteCard({ note, onClick }: { note: Note; onClick: () => v
         </div>
       </div>
       {noteTags.length > 0 && (
-        <div className="flex gap-1 flex-shrink-0">
-          {noteTags.map((tag) => <Badge key={tag.id} color={tag.color}>{tag.name}</Badge>)}
+        <div className="flex gap-1 items-center flex-shrink-0">
+          {noteTags.map((tag) => <Badge key={tag.id} color={tag.color} size="xs">{tag.name}</Badge>)}
+          {hiddenNoteTags.length > 0 && (
+            <TagOverflow count={hiddenNoteTags.length} names={hiddenNoteTags.map((t) => t.name)} />
+          )}
         </div>
       )}
       <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(note.updatedAt)}</span>

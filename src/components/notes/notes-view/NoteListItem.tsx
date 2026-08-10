@@ -8,6 +8,7 @@ import {
 import { cn, formatRelative } from "@/lib/utils";
 import type { Note } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { TagOverflow } from "@/components/ui/tag-overflow";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import {
@@ -38,7 +39,9 @@ function revealLabel(): string {
 
 export const NoteListItem = memo(function NoteListItem({ note, isActive, indent = 0, onClick, onPin, onDelete, onArchive, onMove, onMoveToFolder, onReveal, onDragStart, onDragEnd }: NoteListItemProps) {
   const getTagById = useCairnStore((s) => s.getTagById);
-  const tags = note.tagIds.slice(0, 3).map((id) => getTagById(id)).filter(Boolean);
+  const allTags = note.tagIds.map((id) => getTagById(id)).filter(Boolean);
+  const tags = allTags.slice(0, 3);
+  const hiddenTags = allTags.slice(3);
 
   return (
     <ContextMenu>
@@ -95,10 +98,17 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
         <span className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || (note.type === "dashboard" ? "Dashboard" : "Empty note")}</span>
         <div className="flex items-center gap-1.5">
           <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
-          {tags.length > 0 && tags.map((tag) => tag && (
-            <Badge key={tag.id} color={tag.color} size="xs">{tag.name}</Badge>
-          ))}
         </div>
+        {tags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1">
+            {tags.map((tag) => tag && (
+              <Badge key={tag.id} color={tag.color} size="xs">{tag.name}</Badge>
+            ))}
+            {hiddenTags.length > 0 && (
+              <TagOverflow count={hiddenTags.length} names={hiddenTags.map((t) => t!.name)} />
+            )}
+          </div>
+        )}
       </div>
       </ContextMenuTrigger>
 
