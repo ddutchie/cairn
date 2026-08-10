@@ -41,6 +41,7 @@ import {
   lsTool,    lsToolDefinition,
   spawnSubagentDefinition, spawnSubagentTool,
   skillTool, makeSkillToolDefinition,
+  todowriteTool, todowriteToolDefinition,
 } from "./coding-tools/index";
 import { executeTool } from "../ipc/chat-executor";
 import type { ChatRequest, ToolArgs } from "./tools";
@@ -144,6 +145,7 @@ const CODING_LABELS: Record<string, (args: ToolArgs) => string> = {
   grep:  (a) => `Searching for "${a.pattern as string}"`,
   find:  (a) => `Finding "${a.pattern as string}"`,
   ls:    (a) => `Listing ${(a.path as string) ?? "."}`,
+  todowrite: () => `Updating todos`,
 };
 
 // ── Events interface ──────────────────────────────────────────────────────────
@@ -166,6 +168,15 @@ export interface AgentLoopCallbacks {
   onError:         (message: string) => void;
   /** Fired when a tool call needs user confirmation before execution. */
   onToolConfirmRequired?: (name: string, label: string, callId: string, args?: ToolArgs) => void;
+  /**
+   * Fired when the model repeats the SAME tool with IDENTICAL arguments
+   * DOOM_LOOP_THRESHOLD times in a row. The loop blocks until the renderer
+   * responds (via pendingDoomLoop / pi-agent:respond-doom-loop). Allow → the
+   * call runs and the tracker resets; deny → the call is blocked and the loop
+   * halts with an error. `callId` is what the renderer must echo back to
+   * pi-agent:respond-doom-loop.
+   */
+  onDoomLoop?: (info: { toolName: string; count: number; args?: ToolArgs; callId: string }) => void;
   /** Fired when the agent writes a note in plan mode — carries the note ID */
   onPlanNoteFound?: (noteId: string) => void;
   /**
@@ -206,10 +217,55 @@ export interface PiAgentSession {
   compactionTransformer?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
   /** Grants made during the current session, never persisted. */
   approvedTools?: Set<string>;
+  /**
+   * Rolling window of recent tool-call signatures (name + canonical args JSON).
+   * Used for doom-loop detection — see DOOM_LOOP_THRESHOLD.
+   */
+  recentToolCalls?: string[];
+  /**
+   * Set when the user has already approved continuing past a doom loop THIS
+   * session — so we don't re-pause on every subsequent identical call after the
+   * first denial decision.
+   */
+  doomLoopApproved?: boolean;
 }
 
 export type ApprovalDecision = { approved: boolean; grant?: "session" | "command" };
 export const pendingApprovals = new Map<string, { resolve: (decision: ApprovalDecision) => void }>();
+/** Resolvers for doom-loop pauses — keyed by `${sessionId}:${signature}`, resolved by pi-agent:respond-doom-loop. */
+export const pendingDoomLoop = new Map<string, { resolve: (allow: boolean) => void; promise: Promise<boolean> }>();
+/**
+ * Resolvers for blocked `ask_questions` calls — keyed by tool callId, resolved
+ * by pi-agent:respond-questions. The answer text becomes the tool result so the
+ * model reasons over it within the same turn (mirrors opencode's `question`).
+ */
+export const pendingQuestionAnswers = new Map<string, { resolve: (answers: string) => void }>();
+
+/**
+ * Doom-loop detection (mirrors opencode's DOOM_LOOP_THRESHOLD): when the model
+ * issues the SAME tool with IDENTICAL arguments this many times in a row, we
+ * pause and ask the user to continue — otherwise a model stuck retrying a
+ * failing call silently burns the whole maxSteps budget.
+ */
+export const DOOM_LOOP_THRESHOLD = 3;
+
+/** Recursively sort object keys so semantically-identical args canonicalise equal. */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      out[key] = canonicalize((value as Record<string, unknown>)[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** Canonical signature for a tool call — name + stable JSON of its args. */
+export function toolCallSignature(name: string, args: ToolArgs): string {
+  return `${name}:${JSON.stringify(canonicalize(args))}`;
+}
 
 function approvalGrantKey(toolName: string, args: ToolArgs): string {
   if (toolName === "bash") return `${toolName}:${typeof args.command === "string" ? args.command : ""}`;
@@ -229,6 +285,7 @@ const CODING_TOOL_DEFS = [
   findToolDefinition,
   lsToolDefinition,
   spawnSubagentDefinition,
+  todowriteToolDefinition,
 ];
 
 // Cairn data tool names exposed to the coding agent.
@@ -313,6 +370,7 @@ function getAllToolDefs(
   mode: "plan" | "execute" = "execute",
   skills: SkillMeta[] = [],
   externalDefs: typeof ALL_CAIRN_TOOLS = [],
+  isSubagent = false,
 ) {
   const cairnSubset = ALL_CAIRN_TOOLS.filter((t) => CAIRN_TOOL_NAMES.has(t.function.name));
   // Only include the skill tool when at least one skill is available
@@ -320,7 +378,13 @@ function getAllToolDefs(
   // External tools (MCP servers / custom services) are side-effecting, so they
   // are excluded from plan mode entirely (plan mode is read-only analysis).
   const external = mode === "plan" ? [] : externalDefs;
-  const all = [...CODING_TOOL_DEFS, ...skillDef, ...cairnSubset, ...external];
+  // The todo list belongs to the parent agent session — subagents run on a child
+  // session id with no pi_agent_sessions row, so todowrite is excluded there
+  // (its write would fail a foreign-key check).
+  const codingDefs = isSubagent
+    ? CODING_TOOL_DEFS.filter((t) => t.function.name !== "todowrite")
+    : CODING_TOOL_DEFS;
+  const all = [...codingDefs, ...skillDef, ...cairnSubset, ...external];
   if (mode === "plan") {
     return all.filter((t) => PLAN_MODE_ALLOWED.has(t.function.name));
   }
@@ -427,6 +491,7 @@ async function executeSingleTool(
   llmConfig: AgentLLMConfig,
   mode: "plan" | "execute",
   allowedToolNames: Set<string>,
+  callId?: string,
 ): Promise<string> {
   const { cwd, db, req, workspacePath, sessionId, send, getWin: _getWin } = toolCtx;
 
@@ -452,6 +517,10 @@ async function executeSingleTool(
       args as Parameters<typeof skillTool>[0],
       toolCtx.skills ?? [],
     );
+    case "todowrite": return todowriteTool(
+      args as Parameters<typeof todowriteTool>[0],
+      { db, sessionId },
+    );
     case "spawn_subagent": return spawnSubagentTool(
       args as Parameters<typeof spawnSubagentTool>[0],
       toolCtx,
@@ -475,11 +544,36 @@ async function executeSingleTool(
       }
       // Delegate to Cairn chat executor
       if (CAIRN_TOOL_NAMES.has(name)) {
-        // ask_questions is a renderer-side tool — emit the questions as an IPC event
-        // so PiAgentPane can render an inline QuestionForm. The tool result is a no-op
-        // acknowledgement; the user's answers arrive as the next sendPrompt call.
-        if (name === "ask_questions" && Array.isArray((args as { questions?: unknown }).questions)) {
-          send("pi-agent:ask-questions", { sessionId, questions: (args as { questions: unknown[] }).questions });
+        // ask_questions is a BLOCKING renderer-side tool: emit the questions as
+        // an IPC event so the agent pane renders an inline QuestionForm, then
+        // wait for the answers (pi-agent:respond-questions). The answer text is
+        // returned as the TOOL RESULT, so the model reasons over the answers in
+        // the same turn — mirroring opencode's `question` tool. Aborts resolve
+        // with a cancellation notice so the loop can't hang.
+        if (name === "ask_questions") {
+          const questions = (args as { questions?: unknown }).questions;
+          if (Array.isArray(questions)) {
+            send("pi-agent:ask-questions", { sessionId, callId: callId ?? "", questions });
+            const answers = await new Promise<string>((resolve) => {
+              const onAbort = () => {
+                pendingQuestionAnswers.delete(callId ?? "");
+                resolve('{"cancelled":true,"answers":[]}');
+              };
+              if (signal.aborted) {
+                resolve('{"cancelled":true,"answers":[]}');
+                return;
+              }
+              signal.addEventListener("abort", onAbort);
+              pendingQuestionAnswers.set(callId ?? "", {
+                resolve: (text) => {
+                  signal.removeEventListener("abort", onAbort);
+                  resolve(text);
+                },
+              });
+            });
+            return answers;
+          }
+          return JSON.stringify({ error: "ask_questions requires a questions array" });
         }
         const result = await executeTool(
           db, req, workspacePath,
@@ -531,7 +625,7 @@ export async function runAgentLoop(
       console.error("[agent] failed to assemble external tools:", err);
     }
   }
-  const allTools = getAllToolDefs(mode, toolCtx.skills ?? [], externalDefs);
+  const allTools = getAllToolDefs(mode, toolCtx.skills ?? [], externalDefs, usageSource === "pi-subagent");
   // The exact set of tool names offered to the model this turn — used to reject
   // hallucinated / out-of-mode tool calls before execution.
   const allowedToolNames = new Set(allTools.map((t) => t.function.name));
@@ -570,6 +664,9 @@ export async function runAgentLoop(
     ?? buildSlidingWindowPruner(session, contextWindow);
 
   let steps = 0;
+  // Set when a doom-loop denial halts the run — checked after each turn's
+  // outcomes are appended so the current turn's results are still persisted.
+  let haltLoop = false;
   // Reset per-turn accumulators
   session.totalCompletionTokens = 0;
   session.totalReasoningTokens = 0;
@@ -860,6 +957,10 @@ export async function runAgentLoop(
       const parsed = parseToolArgs(tc.function.arguments);
       if (parsed.ok && parsed.tailRepaired !== true) {
         args = parsed.value as ToolArgs;
+        // A repaired parse (e.g. a `<arg_value>` placeholder, dropped comma) is
+        // canonicalised back into `arguments` so history holds valid JSON —
+        // replaying the raw malformed string makes the next request 400.
+        if (parsed.repaired) tc.function.arguments = JSON.stringify(parsed.value);
         traceTool("parse", {
           toolName: tc.function.name,
           title: typeof (args as Record<string, unknown>).title === "string" ? (args as Record<string, unknown>).title as string : "",
@@ -897,6 +998,67 @@ export async function runAgentLoop(
         ok = false;
         resultContent = `Error: ${parseError}`;
          callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId, args);
+        return { tcIdx, tc, ok, resultContent, pendingCallId };
+      }
+
+      // ── Doom-loop guard ──────────────────────────────────────────────────
+      // The model repeating the SAME tool with IDENTICAL arguments several times
+      // in a row is a stuck loop — pause and ask the user before burning more
+      // steps. Once the user approves, the session stops pausing (mirrors
+      // opencode's doom_loop permission). Skips tools whose args failed to parse
+      // (handled above) so a parse error never counts as a repeated call.
+      //
+      // The pending decision is keyed by session + tool-call signature so
+      // multiple identical calls in the SAME response share one onDoomLoop event
+      // and one resolver — a second matching call awaits the same decision
+      // instead of re-prompting. `doomKey` doubles as the callId the renderer
+      // echoes back to pi-agent:respond-doom-loop.
+      let doomBlocked = false;
+      const sig = toolCallSignature(tc.function.name, args);
+      const doomKey = `${toolCtx.sessionId}:${sig}`;
+      if (!session.doomLoopApproved) {
+        const recent = session.recentToolCalls ?? [];
+        const window = recent.slice(-(DOOM_LOOP_THRESHOLD - 1));
+        if (window.length === DOOM_LOOP_THRESHOLD - 1 && window.every((s) => s === sig)) {
+          let pending = pendingDoomLoop.get(doomKey);
+          if (!pending) {
+            let resolveDecision: (allow: boolean) => void = () => {};
+            const promise = new Promise<boolean>((resolve) => { resolveDecision = resolve; });
+            const onAbort = () => {
+              pendingDoomLoop.delete(doomKey);
+              resolveDecision(false);
+            };
+            if (!signal.aborted) signal.addEventListener("abort", onAbort);
+            pending = {
+              promise,
+              resolve: (value) => {
+                signal.removeEventListener("abort", onAbort);
+                resolveDecision(value);
+              },
+            };
+            pendingDoomLoop.set(doomKey, pending);
+            callbacks.onDoomLoop?.({ toolName: tc.function.name, count: DOOM_LOOP_THRESHOLD, args, callId: doomKey });
+          }
+          const allow = signal.aborted ? false : await pending.promise;
+          if (!allow) {
+            session.doomLoopApproved = false;
+            doomBlocked = true;
+          } else {
+            session.doomLoopApproved = true;
+          }
+        }
+      }
+      // Track the executed signature regardless — a blocked call still counts so
+      // the tracker reflects what the model attempted.
+      session.recentToolCalls = [...(session.recentToolCalls ?? []), sig].slice(-DOOM_LOOP_THRESHOLD);
+
+      if (doomBlocked) {
+        ok = false;
+        resultContent =
+          "Stopped: the agent repeated the same tool call with identical arguments — " +
+          "this looks like a loop, so I halted. Try rephrasing the task or ask the user.";
+         callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId, args);
+        haltLoop = true;
         return { tcIdx, tc, ok, resultContent, pendingCallId };
       }
 
@@ -944,6 +1106,7 @@ export async function runAgentLoop(
           llmConfig,
           mode,
           allowedToolNames,
+          pendingCallId || tc.id,
         );
         // A Cairn tool signals failure by RETURNING { error: … } without throwing
         // (the dominant pattern). Detect it so `ok` — which drives the red/failed
@@ -978,6 +1141,14 @@ export async function runAgentLoop(
         tool_call_id: tc.id,
         content: resultContent,
       });
+    }
+
+    // A doom-loop denial halts the run after the turn's results are persisted.
+    if (haltLoop) {
+      callbacks.onError(
+        "The agent repeated the same tool call with identical arguments several times in a row. I've halted to avoid a loop — review the transcript and try again."
+      );
+      return;
     }
 
     // Check semantic stop condition before starting the next LLM call.

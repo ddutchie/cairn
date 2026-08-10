@@ -349,6 +349,11 @@ async function runBuilderLoop(
           session.messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: parsed.ok ? "tool-call arguments missing closing delimiters" : parsed.error }) });
           continue;
         }
+        // A repaired parse is canonicalised back into `arguments` so history
+        // holds valid JSON — replaying the raw malformed string makes the next
+        // request 400. (The assistant message was already pushed above; `call`
+        // is the same object reference stored in it.)
+        if (parsed.repaired) call.function.arguments = JSON.stringify(parsed.value);
         const args: Record<string, unknown> = parsed.value;
         send("tool-builder:step", {
           sessionId: session.id,

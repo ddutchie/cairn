@@ -979,6 +979,22 @@ const api = {
       ipcRenderer.on("pi-agent:note-updated", handler);
       return () => ipcRenderer.off("pi-agent:note-updated", handler);
     },
+    /** Fired after the todowrite tool persists a new list — live todo-dock updates */
+    onTodos: (cb: (e: { sessionId: string; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }> }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }> }) => cb(e);
+      ipcRenderer.on("pi-agent:todos", handler);
+      return () => ipcRenderer.off("pi-agent:todos", handler);
+    },
+    /** Fired when the model repeats the same tool call with identical args (doom loop) — blocks until the user responds */
+    onDoomLoop: (cb: (e: { sessionId: string; toolName: string; count: number; args?: Record<string, unknown>; callId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; toolName: string; count: number; args?: Record<string, unknown>; callId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:doom-loop", handler);
+      return () => ipcRenderer.off("pi-agent:doom-loop", handler);
+    },
+    /** Resolve a doom-loop pause: allow → continue the repeated call; deny → halt the loop */
+    respondDoomLoop: (sessionId: string, callId: string, allow: boolean) => ipcRenderer.send("pi-agent:respond-doom-loop", { sessionId, callId, allow }),
     /** Fired when the session mode switches (plan → execute after approval) */
     onModeChange: (cb: (e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -989,12 +1005,14 @@ const api = {
     /** Approve the plan — switches session to execute mode and starts implementation */
     approvePlan: (req: unknown) => ipcRenderer.send("pi-agent:approve-plan", req),
     /** Fired when the agent calls ask_questions — renderer should render an inline form */
-    onAskQuestions: (cb: (e: { sessionId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => void) => {
+    onAskQuestions: (cb: (e: { sessionId: string; callId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => cb(e);
+      const handler = (_: any, e: { sessionId: string; callId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => cb(e);
       ipcRenderer.on("pi-agent:ask-questions", handler);
       return () => ipcRenderer.off("pi-agent:ask-questions", handler);
     },
+    /** Answer a blocked ask_questions call — the text is fed back to the model as the tool result */
+    respondQuestions: (sessionId: string, callId: string, answers: string) => ipcRenderer.send("pi-agent:respond-questions", { sessionId, callId, answers }),
     /** List all persisted pi sessions for a project (project-scoped history) */
     listSessions:   (projectId: string) => invoke("db:piSession:list", { projectId }),
     /** Persist a new pi session row to SQLite */
@@ -1003,6 +1021,8 @@ const api = {
     deleteSession:  (id: string) => invoke("db:piSession:delete", { id }),
     /** Fetch the full message transcript for a session */
     getMessages:    (sessionId: string) => invoke("db:piSession:messages", { sessionId }),
+    /** Fetch the persisted todo list for a session */
+    getTodos:       (sessionId: string) => invoke<Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }>>("db:piSession:todos", { sessionId }),
     /** Bulk-save the full message array for a session (replaces existing rows) */
     saveMessages:   (sessionId: string, messages: unknown[]) => invoke("db:piSession:saveMessages", { sessionId, messages }),
     /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */

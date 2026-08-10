@@ -63,6 +63,10 @@ import {
   insertMcpNotification,
   pruneMcpNotifications,
   clearMcpNotifications,
+  createPiSession,
+  saveSessionTodos,
+  getSessionTodos,
+  deletePiSession,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -1272,5 +1276,53 @@ describe("clearMcpNotifications", () => {
     expect(clearMcpNotifications(db)).toBe(2);
     expect(listMcpNotifications(db)).toHaveLength(0);
     expect(countUnreadMcpNotifications(db)).toBe(0);
+  });
+});
+
+describe("session todos (todowrite)", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+    seedProject(db);
+    createPiSession(db, {
+      id: "pi1", projectId: "proj1", taskTitle: "Sweep", cwd: "/tmp", mode: "execute", spawnedAt: "2026-08-10T00:00:00.000Z",
+    });
+  });
+
+  it("round-trips a saved list in position order", () => {
+    saveSessionTodos(db, "pi1", [
+      { content: "First", status: "completed", priority: "high" },
+      { content: "Second", status: "in_progress", priority: "medium" },
+      { content: "Third", status: "pending", priority: "low" },
+    ]);
+    expect(getSessionTodos(db, "pi1")).toEqual([
+      { content: "First", status: "completed", priority: "high" },
+      { content: "Second", status: "in_progress", priority: "medium" },
+      { content: "Third", status: "pending", priority: "low" },
+    ]);
+  });
+
+  it("replace-wholesale: saving a shorter list drops the stale entries", () => {
+    saveSessionTodos(db, "pi1", [
+      { content: "A", status: "pending", priority: "high" },
+      { content: "B", status: "pending", priority: "low" },
+      { content: "C", status: "pending", priority: "medium" },
+    ]);
+    saveSessionTodos(db, "pi1", [{ content: "D", status: "in_progress", priority: "high" }]);
+    const todos = getSessionTodos(db, "pi1");
+    expect(todos).toHaveLength(1);
+    expect(todos[0].content).toBe("D");
+  });
+
+  it("returns an empty list for a session with no todos", () => {
+    expect(getSessionTodos(db, "pi1")).toEqual([]);
+  });
+
+  it("deleting a session cascades to its todos", () => {
+    saveSessionTodos(db, "pi1", [{ content: "A", status: "pending", priority: "medium" }]);
+    deletePiSession(db, "pi1");
+    expect(getSessionTodos(db, "pi1")).toEqual([]);
   });
 });

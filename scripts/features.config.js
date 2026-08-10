@@ -220,6 +220,19 @@ const FEATURES = [
       "Per-Call History: A list of recent requests with time, model, input/output/reasoning tokens, your saved provider's name, and cost — provider-reported or estimated from models.dev pricing. Switch providers right from the chat quick-settings.",
     ],
   },
+  {
+    id: "v2.6.10-agent-todos",
+    version: "v2.6.10",
+    title: "Agent Todo List",
+    category: "Agent",
+    description:
+      "The Cairn Agent now plans multi-step work with a live, collapsible todo list. When a task needs 3+ steps the agent breaks it down, ticks items off as it goes, and a dock above the input keeps you in the loop — compact as a `[2/5 todos · current task]` line, expandable to the full checklist. Todos persist per session, so a resumed session picks up exactly where it left off.",
+    highlights: [
+      "Plans Multi-Step Work: The agent uses a `todowrite` tool to capture tasks, track one `in_progress` at a time, and mark items completed only when actually done.",
+      "Live Dock: Progress updates as the agent works — a compact summary line above the input expands to the full checklist with strikethrough for completed and cancelled items.",
+      "Persists Per Session: Todos are stored with the session and restored when you resume it, so long-running work survives restarts.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

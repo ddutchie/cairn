@@ -43,6 +43,19 @@ import { parse as parsePartialJson } from "partial-json";
  *      boundary: whether a tail-repaired payload may be EXECUTED is the CALLER's
  *      decision, driven by finish_reason (natural finish = safe; `length` =
  *      only the truncation guards may recover, flagged via `tailRepaired`).
+ *   5. VALUE-START PLACEHOLDER TOKENS (`<arg_value>` et al.) — some models
+ *      (e.g. served through gateways trained on templated tool-call data) emit a
+ *      literal placeholder token where the opening quote of a string value
+ *      should go, then dump the real content right after it:
+ *      `"oldText":<arg_value>from adsk_openairouter…`. `<arg_value>` is not
+ *      JSON at all (bare `<`), so no parse can recover it. We substitute a `"`
+ *      for a known placeholder token ONLY when it appears at a value-start
+ *      position OUTSIDE a string (the token is otherwise unrecognisable JSON —
+ *      if it were inside a string it would be literal user/model content and
+ *      MUST be preserved, exactly like the code-fence rule below). The string
+ *      so opened is closed by the SAME placeholder token if the model also used
+ *      one as the closing quote (`<arg_value>…content…</arg_value>`); a plain
+ *      `"` closes it as usual.
  *
  * If the lossless repair pass still can't produce strict JSON, we delegate to the
  * `partial-json` library — the tolerant LLM-JSON parser used by the Vercel AI SDK
@@ -78,6 +91,16 @@ export type ParseToolArgsResult =
  *   - outside a string: when a completed VALUE is immediately followed by the
  *     start of a new token (`"`, `{`, `[`, a digit, or `true`/`false`/`null`),
  *     insert the missing `,` separator.
+ *   - outside a string, at a VALUE-START position (`:`, `,`, `{`, `[`, or start
+ *     of input): a known placeholder token (`<arg_value>`, `<value>`, `<content>`)
+ *     is substituted with `"`. The model dropped the opening quote of the string
+ *     value and wrote a template placeholder in its place; the real content
+ *     follows. Substituting `"` re-enters string mode so the content is consumed
+ *     as a string value and the closing quote (which the model did emit) closes
+ *     it. If the model instead closed the value with the same placeholder token
+ *     (`…</arg_value>` or `…<arg_value>`), that closing occurrence is likewise
+ *     turned into a `"`. Never substituted inside a string — there `<arg_value>`
+ *     is literal content and must round-trip byte-identically.
  *
  * The last-significant-token state is what makes the comma repair safe: it only
  * fires after a genuinely completed value (string, number, literal, or nested
@@ -85,12 +108,18 @@ export type ParseToolArgsResult =
  * the decoded text of any string value, `JSON.parse` of the result yields
  * byte-identical string values to what the model intended.
  */
+const VALUE_PLACEHOLDER_TOKENS = ["<arg_value>", "<value>", "<content>", "<text>"];
+
 function repairJson(src: string): string {
   let out = "";
   let inString = false;
   let escaped = false;
   let stringIsKey = false;
   let lastSig: TokenKind = "none";
+  // Set to the token text (e.g. `<arg_value>`) when a string value was opened by
+  // a placeholder substitution — a subsequent occurrence of that same token
+  // (with or without a leading `/`) closes the string instead of being content.
+  let placeholderOpen: string | null = null;
   const stack: ("{" | "[")[] = [];
 
   for (let i = 0; i < src.length; i++) {
@@ -108,9 +137,26 @@ function repairJson(src: string): string {
         escaped = true;
         continue;
       }
+      // A string opened by a placeholder substitution is closed by the SAME
+      // placeholder token (or its `/`-prefixed form) — the model used the token
+      // as both the opening and closing quote of the value.
+      if (placeholderOpen !== null) {
+        const tok = placeholderOpen;
+        const closeTok = `</${tok.slice(1)}`;
+        if (src.startsWith(closeTok, i) || src.startsWith(tok, i)) {
+          const hit = src.startsWith(closeTok, i) ? closeTok : tok;
+          out += '"';
+          inString = false;
+          placeholderOpen = null;
+          lastSig = "stringValue";
+          i += hit.length - 1;
+          continue;
+        }
+      }
       if (ch === '"') {
         out += ch;
         inString = false;
+        placeholderOpen = null;
         lastSig = stringIsKey ? "stringKey" : "stringValue";
         continue;
       }
@@ -218,12 +264,70 @@ function repairJson(src: string): string {
       continue;
     }
 
+    // Value-start placeholder tokens: the model dropped the opening quote of a
+    // string value and wrote a template placeholder (`<arg_value>`) in its
+    // place, with the real content following. Substitute `"` and enter string
+    // mode so the following content is consumed as that string value (raw
+    // control chars inside it get escaped by the in-string branch above) and
+    // the closing quote the model DID emit closes it. Only fires at a true
+    // VALUE-start position outside a string: after `:` (an object value), after
+    // `[`, or after an ARRAY comma. Object key positions — right after `{` or an
+    // OBJECT comma — are never values, so a placeholder there is left untouched
+    // (it will surface as a loud parse failure). Inside a string the token is
+    // literal content and passes through untouched.
+    if (
+      ch === "<" &&
+      isValueStart(lastSig, stack[stack.length - 1])
+    ) {
+      let hit = -1;
+      for (let k = 0; k < VALUE_PLACEHOLDER_TOKENS.length; k++) {
+        const tok = VALUE_PLACEHOLDER_TOKENS[k];
+        if (src.startsWith(tok, i)) { hit = k; break; }
+      }
+      if (hit >= 0) {
+        // Require real content after the placeholder — a bare `<arg_value>`
+        // with nothing following (only `"`, `,`, `}` or `]` ahead) means the
+        // model replaced the whole value, not just the opening quote; turning
+        // that into `""` via the tail repair would be a silent wrong value.
+        // Leave it to fail loudly instead.
+        let j = i + VALUE_PLACEHOLDER_TOKENS[hit].length;
+        while (j < src.length && (src[j] === " " || src[j] === "\t" || src[j] === "\n" || src[j] === "\r")) j++;
+        if (j >= src.length || src[j] === '"' || src[j] === "," || src[j] === "}" || src[j] === "]") {
+          // fall through to the unrecognised-token path below
+        } else {
+          const tok = VALUE_PLACEHOLDER_TOKENS[hit];
+          out += '"';
+          inString = true;
+          stringIsKey = false;
+          placeholderOpen = tok;
+          i += tok.length - 1;
+          lastSig = "stringValue";
+          continue;
+        }
+      }
+    }
+
     // Whitespace and anything unrecognised pass through untouched; invalid
     // tokens still surface as a loud JSON.parse failure further down.
     out += ch;
   }
 
   return out;
+}
+
+/**
+ * True when a VALUE (not a key) is expected next — the only place a value-start
+ * placeholder token may be repaired. `container` is the enclosing container's
+ * open bracket (the top of the repair stack). Object key positions — right
+ * after `{` or after an object comma — are NOT value starts, so a placeholder
+ * there is never repaired as a value. Array comma, `[`, and `:` are value
+ * starts.
+ */
+function isValueStart(k: TokenKind, container: "{" | "[" | undefined): boolean {
+  if (k === "none" || k === "colon" || k === "openArray") return true;
+  if (k === "openObject") return false;
+  if (k === "comma") return container === "[";
+  return false;
 }
 
 /**

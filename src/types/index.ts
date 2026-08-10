@@ -902,6 +902,13 @@ export interface PiSubagentMessage {
   lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
 }
 
+/** One item in the agent session's todo list (todowrite tool). */
+export interface PiTodo {
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  priority: "high" | "medium" | "low";
+}
+
 export interface PiAgentMessage {
   id: string;
   role: "user" | "assistant" | "error" | "system";

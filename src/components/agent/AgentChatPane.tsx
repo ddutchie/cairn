@@ -23,6 +23,7 @@ import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanTaskList } from "./PlanTaskList";
+import { AgentTodoDock } from "./AgentTodoDock";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
@@ -134,6 +135,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const setPiMode                = useCairnStore((s) => s.setPiMode);
   const setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
   const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
+  const setPiSessionTodos        = useCairnStore((s) => s.setPiSessionTodos);
   const setView                  = useCairnStore((s) => s.setView);
 
   // Reactive state — only values that actually drive re-renders
@@ -144,8 +146,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     mcpServers:        s.mcpServers,
     customServices:    s.customServices,
   })));
-  const customCommands = useCairnStore((s) => s.customCommands);
-  const agentCommands = useMemo(
+    const sessionTodos = useCairnStore((s) => s.piSessionTodos[session.sessionId]);
+  const customCommands = useCairnStore((s) => s.customCommands);  const agentCommands = useMemo(
     () => getCommandsForScope("agent", customCommands),
     [customCommands]
   );
@@ -156,6 +158,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const [input, setInput]                         = useState("");
   const [isLoading, setIsLoading]                 = useState(false);
   const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
+  /** callId of the blocked ask_questions call — echoed back on answer. */
+  const [pendingQuestionCallId, setPendingQuestionCallId] = useState<string | null>(null);
+  /** Active doom-loop pause — the agent repeated a tool call with identical args. */
+  const [doomLoop, setDoomLoop]                   = useState<{ toolName: string; count: number; callId: string; args?: Record<string, unknown> } | null>(null);
   // Live PRD note content — updated whenever the agent writes to the plan note
   const [planNoteContent, setPlanNoteContent]     = useState<string | null>(null);
   // Retry state — shown in status bar when the loop is backing off after a transient error
@@ -318,6 +324,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setIsLoading(false);
       setRetryInfo(null);
       setIsCompacting(false);
+      setPendingQuestions(null);
+      setPendingQuestionCallId(null);
+      setDoomLoop(null);
       // Persist the full message transcript after the turn completes
       persistPiTranscript(sessionId);
     });
@@ -327,6 +336,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       finalisePiMessage(sessionId);
       setRetryInfo(null);
       setIsCompacting(false);
+      setPendingQuestions(null);
+      setPendingQuestionCallId(null);
+      setDoomLoop(null);
       addPiMessage(sessionId, {
         id:        id(),
         role:      "error",
@@ -402,6 +414,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     const unsubAskQuestions = electron.piAgent.onAskQuestions((e) => {
       if (e.sessionId !== sessionId) return;
       setPendingQuestions(e.questions);
+      setPendingQuestionCallId(e.callId);
     });
 
     const unsubToolConfirmRequired = electron.piAgent.onToolConfirmRequired((e) => {
@@ -419,6 +432,24 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       if (!currentPlanNoteId || e.noteId !== currentPlanNoteId) return;
       setPlanNoteContent(e.content);
     });
+
+    // Todo list updates — live dock as the agent runs the todowrite tool
+    const unsubTodos = electron.piAgent.onTodos((e) => {
+      if (e.sessionId !== sessionId) return;
+      setPiSessionTodos(sessionId, e.todos);
+    });
+
+    // Doom-loop pause — the agent repeated a tool call with identical args.
+    const unsubDoomLoop = electron.piAgent.onDoomLoop((e) => {
+      if (e.sessionId !== sessionId) return;
+      setDoomLoop({ toolName: e.toolName, count: e.count, callId: e.callId, args: e.args });
+    });
+
+    // Initial hydrate — load persisted todos when the pane mounts so a restored
+    // session shows its list before the agent touches it again.
+    electron.piAgent.getTodos?.(sessionId).then((result) => {
+      if (result?.length) setPiSessionTodos(sessionId, result);
+    }).catch(() => { /* no persisted todos — dock stays hidden */ });
 
     // Retry events — show backoff countdown in the status bar
     const unsubRetry = electron.piAgent.onRetry((e) => {
@@ -470,6 +501,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       unsubAskQuestions();
       unsubToolConfirmRequired();
       unsubNoteUpdated();
+      unsubTodos();
+      unsubDoomLoop();
       unsubRetry();
       unsubCompact();
       unsubCompactResult();
@@ -503,6 +536,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     setInput("");
     setIsLoading(true);
     setPendingQuestions(null);
+    setPendingQuestionCallId(null);
+    setDoomLoop(null);
 
     // Add user message to store (attachments rendered as thumbnails in transcript)
     addPiMessage(session.sessionId, {
@@ -570,6 +605,28 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // before any async callbacks fire without triggering the react-hooks/refs lint rule.
   useLayoutEffect(() => { sendPromptRef.current = sendPrompt; });
 
+  // Doom-loop decision: allow → the repeated call runs and the session stops
+  // re-pausing; deny → the main loop halts with an error.
+  const resolveDoomLoop = useCallback((allow: boolean) => {
+    if (!doomLoop) return;
+    const { sessionId } = session;
+    window.electron?.piAgent.respondDoomLoop(sessionId, doomLoop.callId, allow);
+    setDoomLoop(null);
+  }, [doomLoop, session]);
+
+  // Answers to a blocked ask_questions call. The formatted text is returned to
+  // the loop as the tool result (opencode-style) rather than starting a new turn.
+  const submitQuestions = useCallback((answersText: string) => {
+    if (!pendingQuestionCallId) {
+      // No blocked call (stale form) — fall back to a plain user message.
+      void sendPrompt(answersText);
+      return;
+    }
+    window.electron?.piAgent.respondQuestions(session.sessionId, pendingQuestionCallId, answersText);
+    setPendingQuestions(null);
+    setPendingQuestionCallId(null);
+  }, [pendingQuestionCallId, session, sendPrompt]);
+
   const handleSearchFiles = useCallback(async (query: string): Promise<SuggestionItem[]> => {
     if (!window.electron || !session.cwd) return [];
     try {
@@ -590,11 +647,15 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     window.electron?.piAgent.abort(session.sessionId);
     finalisePiMessage(session.sessionId);
     setIsLoading(false);
+    setPendingQuestions(null);
+    setPendingQuestionCallId(null);
+    setDoomLoop(null);
   }
 
   function handleClear() {
     if (isLoading) handleStop();
     clearPiMessages(session.sessionId);
+    setPiSessionTodos(session.sessionId, []);
     window.electron?.piAgent.clear(session.sessionId);
   }
 
@@ -731,9 +792,44 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         {pendingQuestions && (
           <QuestionForm
             questions={pendingQuestions}
-            onSubmit={(text) => sendPrompt(text)}
-            disabled={isLoading}
+            onSubmit={submitQuestions}
+            disabled={false}
           />
+        )}
+        {doomLoop && (
+          <div
+            data-testid="doom-loop-card"
+            className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5"
+          >
+            <div className="flex items-start gap-2">
+              <Loader2 size={14} className="mt-0.5 text-[var(--warning)] animate-spin shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">
+                  The agent is repeating the same action
+                </p>
+                <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">
+                  <span className="font-mono text-[var(--text-secondary)]">{doomLoop.toolName}</span> has been
+                  called {doomLoop.count} times in a row with identical arguments — this looks like a loop.
+                </p>
+              </div>
+            </div>
+            <div className="mt-2 flex items-center justify-end gap-1.5">
+              <button
+                data-testid="doom-loop-deny"
+                onClick={() => resolveDoomLoop(false)}
+                className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors"
+              >
+                Stop
+              </button>
+              <button
+                data-testid="doom-loop-allow"
+                onClick={() => resolveDoomLoop(true)}
+                className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded transition-opacity"
+              >
+                Continue anyway
+              </button>
+            </div>
+          </div>
         )}
         {isLoading && !pendingQuestions && (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
@@ -757,6 +853,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         {session.mode === "execute" && planNoteContent && (
           <PlanTaskList content={planNoteContent} />
         )}
+        {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && (
+          <AgentTodoDock todos={sessionTodos ?? []} live={false} />
+        )}
       <div className="p-3">
         <ChatInputArea
           ref={textareaRef}
@@ -773,11 +872,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           providerModelTarget="agent"
           statusText={retryInfo
             ? `Transient error — retrying (${retryInfo.attempt}/${retryInfo.maxRetries}) in ${Math.round(retryInfo.delayMs / 1000)}s…`
-            : isCompacting
-              ? "Compacting context…"
-              : isLoading
-                ? "Working… click ◼ to stop"
-                : "Shift+Enter for new line · Enter to send"}
+            : pendingQuestions
+              ? "Waiting for your answers…"
+              : isCompacting
+                ? "Compacting context…"
+                : isLoading
+                  ? "Working… click ◼ to stop"
+                  : "Shift+Enter for new line · Enter to send"}
         />
       </div>
       </div>
