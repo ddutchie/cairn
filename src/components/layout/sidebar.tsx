@@ -57,8 +57,9 @@ export function Sidebar() {
      cards, chatOpen, searchOpen,
      hiddenViews,
      pendingApprovalCount,
-     notificationUnreadCount,
-     setNotificationOpen,
+    notificationUnreadCount,
+    notificationOpen,
+    setNotificationOpen,
      moveFolderToProject, moveCardToProject, moveNoteToProject,
    } = useCairnStore(useShallow((s) => ({    sidebarCollapsed:    s.sidebarCollapsed,
      toggleSidebar:       s.toggleSidebar,
@@ -81,8 +82,9 @@ export function Sidebar() {
      searchOpen:          s.searchOpen,
      hiddenViews:         s.hiddenViews,
      pendingApprovalCount: s.pendingApprovalCount,
-     notificationUnreadCount: s.notificationUnreadCount,
-     setNotificationOpen: s.setNotificationOpen,
+    notificationUnreadCount: s.notificationUnreadCount,
+    notificationOpen: s.notificationOpen,
+    setNotificationOpen: s.setNotificationOpen,
      moveFolderToProject: s.moveFolderToProject,
      moveCardToProject:   s.moveCardToProject,
      moveNoteToProject:   s.moveNoteToProject,
@@ -342,7 +344,8 @@ export function Sidebar() {
               </button>
             ))}
             {/* Notifications */}
-            <button onClick={() => { setNotificationOpen(true); closeSidebarOnMobile(); }}
+            <button onClick={() => { setNotificationOpen(!notificationOpen); closeSidebarOnMobile(); }}
+              data-notification-toggle
               className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
                 "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Bell size={13} /><span>Notifications</span>
