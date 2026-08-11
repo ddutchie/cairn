@@ -230,6 +230,32 @@ export function getModelInfo(modelId: string): ModelInfo | null {
   return lookupModelInfo(memoryCache, modelId);
 }
 
+/**
+ * Resolve PRICED model info: the exact/normalized lookup first, then the same
+ * fuzzy match desktop's pricePerMillion uses (a gateway/proxy id that embeds a
+ * catalog id as a whole token, e.g. "opencode-go/deepseek-v4-flash"). Catalog
+ * entries with NO pricing (models.dev lists some bare ids and `:free` variants
+ * with an empty/zero cost) are skipped, so the fuzzy pass lands on a PRICED
+ * variant (e.g. `deepseek-v4-flash` → `deepseek/deepseek-v4-flash`) instead of
+ * reporting nothing.
+ */
+export function getPricedModelInfo(modelId: string): ModelInfo | null {
+  const hasPricing = (info: ModelInfo) => (info.input ?? 0) > 0 || (info.output ?? 0) > 0;
+  const direct = getModelInfo(modelId);
+  if (direct && hasPricing(direct)) return direct;
+  const map = memoryCache;
+  if (!map) return null;
+  const base = modelId.toLowerCase();
+  const boundary = (s: string, start: number) => start === 0 || /[-/:._]/.test(s[start - 1] ?? "");
+  for (const [id, info] of Object.entries(map)) {
+    if (!hasPricing(info)) continue;
+    const nid = id.toLowerCase();
+    if (nid && base.endsWith(nid) && boundary(base, base.length - nid.length)) return info;
+    if (nid.endsWith(base) && boundary(nid, nid.length - base.length)) return info;
+  }
+  return null;
+}
+
 /** The raw in-memory catalog map (null until loaded once). */
 export function getModelCatalogMap(): Record<string, ModelInfo> | null {
   return memoryCache;

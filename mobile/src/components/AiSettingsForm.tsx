@@ -63,6 +63,7 @@ import {
   contextLimitForModel,
   getLogoProvider,
   getModelInfo,
+  getPricedModelInfo,
   getModelCatalogVersion,
   prewarmModelCatalog,
   subscribeModelCatalog,
@@ -538,10 +539,12 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   }, [models, modelQuery, model]);
 
   // Enrichment for the collapsed trigger (logo/cost/tool marker), same as the
-  // list rows — mirrors the desktop picker's closed-trigger label.
-  const triggerInfo = getModelInfo(model);
+  // list rows — mirrors the desktop picker's closed-trigger label. Cost uses the
+  // priced fuzzy lookup so gateway/bare ids still show a price (deepseek-v4-flash
+  // has no pricing of its own but deepseek/deepseek-v4-flash does).
+  const triggerInfo = getPricedModelInfo(model);
   const triggerCost = formatModelCost(triggerInfo?.input ?? null, triggerInfo?.output ?? null);
-  const triggerNoToolCall = triggerInfo?.toolCall === false;
+  const triggerNoToolCall = (getModelInfo(model) ?? triggerInfo)?.toolCall === false;
   // Brand-resolved logo slug: prefers the canonical owner from models.json, then
   // the model's own brand from its id (shared with desktop).
   const triggerLogoProvider = getLogoProvider(model.trim() || DEFAULT_OPENAI_MODEL);
@@ -560,9 +563,12 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // selecting the model (the outer row's onPress never fires).
   const renderModelRow = (id: string) => {
     const active = model === id;
-    const info = getModelInfo(id);
+    // Priced lookup so a bare/gateway id still shows a price (e.g.
+    // deepseek-v4-flash → deepseek/deepseek-v4-flash); genuinely free models
+    // still render "free" via formatModelCost(0, 0).
+    const info = getPricedModelInfo(id);
     const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
-    const noToolCall = info?.toolCall === false;
+    const noToolCall = (getModelInfo(id) ?? info)?.toolCall === false;
     const isFavorite = favorites.has(id);
     const rowLogoProvider = getLogoProvider(id);
     return (
