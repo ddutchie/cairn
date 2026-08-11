@@ -1386,3 +1386,49 @@ function isTombstoned(id: string): boolean {
 // The note_embeddings / task_embeddings queries live in embeddings-queries.ts;
 // re-exported here so existing `@/db/queries` imports keep working unchanged.
 export * from "./embeddings-queries";
+
+// ── Writing style (synced from desktop) ─────────────────────────────────────
+// The single-row user_style table replicates from desktop so mobile chat can
+// draft in the user's voice (get_user_writing_style tool). Read-only here —
+// desktop is the writer; sync applies inbound puts/deletes.
+
+export interface UserStyleRow {
+  id: string;
+  persona: { name?: string; role?: string; context?: string; audiences?: string } | null;
+  fullGuide: string;
+  cheatsheet: string;
+  source: string;
+  updatedAt: string;
+}
+
+export function getUserStyle(): UserStyleRow | null {
+  const row = getDb().getFirstSync<{
+    id: string;
+    persona_json: string | null;
+    full_guide: string | null;
+    cheatsheet: string | null;
+    source: string;
+    updated_at: string;
+    deleted_at: string | null;
+  }>(
+    `SELECT id, persona_json, full_guide, cheatsheet, source, updated_at, deleted_at
+     FROM user_style WHERE id = 'global' AND deleted_at IS NULL`,
+  );
+  if (!row) return null;
+  let persona: UserStyleRow["persona"] = null;
+  if (row.persona_json) {
+    try {
+      persona = JSON.parse(row.persona_json) as UserStyleRow["persona"];
+    } catch {
+      persona = null;
+    }
+  }
+  return {
+    id: row.id,
+    persona,
+    fullGuide: row.full_guide ?? "",
+    cheatsheet: row.cheatsheet ?? "",
+    source: row.source ?? "none",
+    updatedAt: row.updated_at,
+  };
+}

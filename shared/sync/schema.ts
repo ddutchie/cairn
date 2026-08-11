@@ -24,6 +24,7 @@ export const SYNCABLE_TABLES = [
   "tags",
   "notes",
   "task_cards",
+  "user_style",
 ] as const;
 
 export type SyncableTable = (typeof SYNCABLE_TABLES)[number];

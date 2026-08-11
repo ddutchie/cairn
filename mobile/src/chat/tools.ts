@@ -280,6 +280,36 @@ export const TOOLS: ToolDef[] = [
     run: (a) => q.getCard(str(a.id)),
   },
   {
+    name: "get_user_writing_style",
+    description:
+      "Get the user's saved writing style (persona + full guide or condensed cheat sheet). Call BEFORE drafting prose in the user's voice (emails, replies, notes, PRDs). mode 'cheatsheet' (default) returns the condensed reference; 'full' returns the complete guide. Returns configured:false when no style is set up — then write in a natural, clear voice instead.",
+    params: '{ "mode"?: "cheatsheet" | "full" }',
+    jsonSchema: obj({ mode: { type: "string", enum: ["cheatsheet", "full"] } }),
+    run: (a) => {
+      const mode = a.mode === "full" ? "full" : "cheatsheet";
+      const style = q.getUserStyle();
+      const configured = !!style && style.source !== "none" && !!(style.fullGuide || style.cheatsheet);
+      if (!configured) {
+        return {
+          configured: false,
+          message:
+            "No writing style set up yet — the user hasn't configured one in Settings → Writing Style on the desktop app. Draft in the user's natural, clear voice; do not invent a style guide.",
+          mode,
+          markdown: null,
+          persona: null,
+          updatedAt: null,
+        };
+      }
+      return {
+        configured: true,
+        mode,
+        markdown: mode === "full" ? style.fullGuide || style.cheatsheet : style.cheatsheet || style.fullGuide,
+        persona: style.persona,
+        updatedAt: style.updatedAt,
+      };
+    },
+  },
+  {
     name: "update_task",
     description:
       "Update a task card. Any provided field is changed; pass column_id to move it to another column. priority = low|medium|high|urgent. Set due_date to \"\" to clear it.",

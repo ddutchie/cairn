@@ -18,15 +18,17 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
-import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, type ToolCall } from "@/db/chat-store";
+import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, recordChatUsage, type ToolCall } from "@/db/chat-store";
 import { redactValue } from "@cairn/shared/chat/redaction";
 import { hasProvider, resolveProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
-import { getOpenAIModel } from "@/chat/ai-config";
+import { getOpenAIModel, getProviderPref, getActiveProvider } from "@/chat/ai-config";
+import { isRorkAvailable } from "@/chat/providers/rork";
 import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/chat/models-dev";
 import { supportsImageInput } from "@cairn/shared/models/model-catalog";
 import type { UIMessage, ChatUsage } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
+import { ProviderModelSwitcher } from "@/components/chat/ProviderModelSwitcher";
 import { toolRef } from "@cairn/shared/chat/tool-ref";
 import { extractExternalRef } from "@cairn/shared/chat/external-ref";
 import { loadInitialChat, type UiMessage } from "@/chat/history";
@@ -35,6 +37,18 @@ import { MessageBubble } from "@/components/chat/MessageBubble";
 import { Composer } from "@/components/chat/Composer";
 import { safeToolOutput } from "@/chat/tool-output";
 import { fetchManifest } from "@/chat/registry";
+
+// Resolve the provider/model label for the chat-usage history (Usage screen).
+function usageProviderLabel(): string {
+  const pref = getProviderPref(isRorkAvailable());
+  if (pref === "apple") return "Apple";
+  if (pref === "rork") return "Rork";
+  return getActiveProvider()?.name ?? "OpenAI";
+}
+function usageModelLabel(): string {
+  const pref = getProviderPref(isRorkAvailable());
+  return pref === "openai" ? getOpenAIModel() || "—" : pref;
+}
 
 export default function ChatScreen() {
   const t = useTheme();
@@ -209,6 +223,7 @@ export default function ChatScreen() {
           if (u.promptTokens >= 0 && u.contextLimit > 0) {
             setUsage(u);
             saveLastChatUsage(u); // persist so the ring survives tab close/reopen
+            recordChatUsage(u, usageProviderLabel(), usageModelLabel());
           }
         }
         setTimeout(() => scrollToEndSoon(true), 20);
@@ -411,6 +426,8 @@ export default function ChatScreen() {
             ) : null}
           </EmptyState>
         ) : null}
+
+        <ProviderModelSwitcher />
 
         <Composer
           input={input}

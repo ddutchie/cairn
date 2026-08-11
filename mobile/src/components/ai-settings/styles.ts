@@ -305,6 +305,21 @@ export function makeAiSettingsStyles(t: Theme) {
     navRowMain: { flex: 1, gap: 2 },
     navRowTitle: { ...typeScale.control, color: t.textPrimary },
     navRowSub: { ...typeScale.caption, color: t.textSecondary },
+    // Chat-personality picker sheet rows (inside the BottomSheet).
+    sheetBody: { paddingHorizontal: 18, paddingVertical: 8, gap: 6 },
+    personalityRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+    },
+    personalityRowActive: { borderColor: t.accent },
+    personalityRowMain: { flex: 1, gap: 2 },
   });
 }
 

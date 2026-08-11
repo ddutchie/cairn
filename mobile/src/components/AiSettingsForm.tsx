@@ -7,12 +7,14 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { Stack, useRouter, useFocusEffect } from "expo-router";
+import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
 import { ProviderLogo } from "@/components/ProviderLogo";
+import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
+import { getCachedPersonalitiesManifest, fetchPersonalitiesManifest } from "@/chat/personalities-registry";
 import { formatModelCost, modelInputChips, endpointLogoSlug } from "@cairn/shared/models/model-catalog";
 import {
   DEFAULT_OPENAI_BASE_URL,
@@ -38,6 +40,8 @@ import {
   writeModelsCache,
   getFavoriteModels,
   toggleFavoriteModel,
+  getChatPersonalityId,
+  setChatPersonalityId,
   type ProviderPref,
   type SavedProvider,
 } from "@/chat/ai-config";
@@ -212,6 +216,13 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [hadKey, setHadKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Chat personality picker — community registry list, selected id persisted in
+  // ai-config meta (local-only). The manifest is cached on-device so the picker
+  // works offline; opening the sheet triggers a background refresh.
+  const [personalityOpen, setPersonalityOpen] = useState(false);
+  const [personalityId, setPersonalityId] = useState(() => getChatPersonalityId());
+  const [personalityManifest, setPersonalityManifest] = useState(() => getCachedPersonalitiesManifest());
+  const [personalityRefreshing, setPersonalityRefreshing] = useState(false);
   // Model discovery via GET {base}/models.
   const [models, setModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
@@ -458,6 +469,28 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       clearTimeout(t);
     };
   }, [baseUrl, apiKey, fetchModels]);
+
+  const refreshPersonalities = async () => {
+    setPersonalityRefreshing(true);
+    try {
+      const { manifest } = await fetchPersonalitiesManifest();
+      if (manifest) setPersonalityManifest(manifest);
+    } finally {
+      setPersonalityRefreshing(false);
+    }
+  };
+
+  const openPersonalities = () => {
+    setPersonalityOpen(true);
+    void refreshPersonalities();
+  };
+
+  const selectPersonality = (id: string) => {
+    setChatPersonalityId(id);
+    setPersonalityId(id);
+    haptics.selection();
+    setPersonalityOpen(false);
+  };
 
   const save = async () => {
     setSaving(true);
@@ -1017,6 +1050,27 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               style={styles.navRow}
               onPress={() => {
                 haptics.selection();
+                openPersonalities();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Choose a chat personality"
+            >
+              <Brain size={16} color={t.textSecondary} />
+              <View style={styles.navRowMain}>
+                <Text style={styles.navRowTitle}>Chat personality</Text>
+                <Text style={styles.navRowSub}>
+                  {personalityId
+                    ? personalityManifest?.personalities.find((p) => p.id === personalityId)?.definition.name ?? "Selected"
+                    : "Layer behavioral rules onto the assistant — e.g. Caveman, Grill Me. Off by default."}
+                </Text>
+              </View>
+              <ChevronRight size={18} color={t.textTertiary} />
+            </Pressable>
+
+            <Pressable
+              style={styles.navRow}
+              onPress={() => {
+                haptics.selection();
                 router.push("/settings/tools");
               }}
               accessibilityRole="button"
@@ -1029,8 +1083,73 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               </View>
               <ChevronRight size={18} color={t.textTertiary} />
             </Pressable>
+
+            <Pressable
+              style={styles.navRow}
+              onPress={() => {
+                haptics.selection();
+                router.push("/settings/usage" as Href);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Open chat usage"
+            >
+              <Wallet size={16} color={t.textSecondary} />
+              <View style={styles.navRowMain}>
+                <Text style={styles.navRowTitle}>Usage</Text>
+                <Text style={styles.navRowSub}>Tokens and cost for your chat messages on this device.</Text>
+              </View>
+              <ChevronRight size={18} color={t.textTertiary} />
+            </Pressable>
           </ScrollView>
         )}
+
+        <BottomSheet
+          visible={personalityOpen}
+          onClose={() => setPersonalityOpen(false)}
+          maxHeight="80%"
+          avoidKeyboard
+        >
+          <BottomSheetHeader
+            title="Chat personality"
+            onCancel={() => setPersonalityOpen(false)}
+            onDone={personalityRefreshing ? undefined : () => void refreshPersonalities()}
+          />
+          <ScrollView style={{ maxHeight: "70%" }} contentContainerStyle={styles.sheetBody}>
+            <Pressable
+              style={[styles.personalityRow, !personalityId && styles.personalityRowActive]}
+              onPress={() => selectPersonality("")}
+              accessibilityRole="button"
+            >
+              <View style={styles.personalityRowMain}>
+                <Text style={styles.navRowTitle}>No personality</Text>
+                <Text style={styles.navRowSub}>Default behavior — no style layer added.</Text>
+              </View>
+              {!personalityId && <Check size={16} color={t.accent} />}
+            </Pressable>
+            {personalityManifest?.personalities.map((p) => {
+              const active = p.id === personalityId;
+              return (
+                <Pressable
+                  key={p.id}
+                  style={[styles.personalityRow, active && styles.personalityRowActive]}
+                  onPress={() => selectPersonality(p.id)}
+                  accessibilityRole="button"
+                >
+                  <View style={styles.personalityRowMain}>
+                    <Text style={styles.navRowTitle}>{p.definition.name}</Text>
+                    <Text style={styles.navRowSub}>{p.definition.description ?? "Community personality."}</Text>
+                  </View>
+                  {active && <Check size={16} color={t.accent} />}
+                </Pressable>
+              );
+            })}
+            {!personalityManifest && !personalityRefreshing && (
+              <Text style={styles.compatHint}>
+                No personalities loaded yet — pull to refresh, or check your connection.
+              </Text>
+            )}
+          </ScrollView>
+        </BottomSheet>
     </View>
   );
 }

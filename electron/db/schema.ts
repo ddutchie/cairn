@@ -1025,6 +1025,39 @@ const MIGRATIONS: Migration[] = [
       );
     `);
   },
+
+  // v42: Sync the writing style to paired devices (mobile chat drafts in the
+  // user's voice). user_style becomes a syncable table: it gains the engine's
+  // hlc/deleted_at columns plus the standard capture triggers so save/clear
+  // stage rows in sync_pending like every other replicated table. The runtime
+  // table list is in shared/sync/schema.ts (SYNCABLE_TABLES); this migration is
+  // only the per-connection DDL.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(user_style)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "hlc")) db.exec("ALTER TABLE user_style ADD COLUMN hlc TEXT");
+    if (!cols.some((c) => c.name === "deleted_at")) db.exec("ALTER TABLE user_style ADD COLUMN deleted_at TEXT");
+    const suppressGuard = `(SELECT COALESCE((SELECT value FROM sync_state WHERE key='suppress'),'0')) = '0'`;
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_sync_user_style_ins AFTER INSERT ON user_style
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op) VALUES ('user_style', NEW.id, 'put');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_sync_user_style_upd AFTER UPDATE ON user_style
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op)
+        VALUES ('user_style', NEW.id, CASE WHEN NEW.deleted_at IS NOT NULL THEN 'delete' ELSE 'put' END);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_sync_user_style_del AFTER DELETE ON user_style
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op) VALUES ('user_style', OLD.id, 'delete');
+      END;
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
