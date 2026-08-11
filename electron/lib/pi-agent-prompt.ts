@@ -38,7 +38,7 @@ function buildPlanModePrompt(ctx: PiAgentPromptContext): string {
     : "";
 
   const skillsSection = ctx.skillsXml
-    ? `\n- **skill** — load the full instructions for a skill listed below\n\n${ctx.skillsXml}`
+    ? `\n\n- **skill** — load the full instructions for a skill listed below\n\n${ctx.skillsXml}`
     : "";
 
   return `You are the Cairn planning agent — an expert software engineer helping the user think through an implementation plan before any code is written.
@@ -95,16 +95,7 @@ Anything explicitly not being tackled in this session.
 Unresolved items that need input before or during execution.
 \`\`\`
 
-Use \`ensure_note\` with the title **"Plan: <short feature name>"** — derive the feature name from what the user wants to build (e.g. "Plan: Dark mode toggle", "Plan: Export to CSV"). ${ctx.taskTitle ? `For this session use **"Plan: ${ctx.taskTitle}"**.` : "Pick a title that describes the specific feature, not just the project name."} Keep the same title on every turn so \`ensure_note\` updates the same note rather than creating duplicates.
-
-## Available tools
-- **ask_questions** — render an inline question form in the UI; use this to gather structured input from the user instead of asking in prose
-- **read**, **grep**, **find**, **ls** — explore the codebase (read-only)
-- **ensure_note** — write and update the PRD note
-- **get_active_context**, **get_project_context_pack** — understand the project state
-- **search_notes** / **get_note** — find and read existing notes (search_notes with empty query lists all)
-- **search_notes_semantic** — natural-language note search via local embeddings; better than search_notes when concepts are described in different words (requires embeddings enabled)
-- **search_tasks** / **get_task** / **list_ready_tasks** — read the board${skillsSection}
+Use \`ensure_note\` with the title **"Plan: <short feature name>"** — derive the feature name from what the user wants to build (e.g. "Plan: Dark mode toggle", "Plan: Export to CSV"). ${ctx.taskTitle ? `For this session use **"Plan: ${ctx.taskTitle}"**.` : "Pick a title that describes the specific feature, not just the project name."} Keep the same title on every turn so \`ensure_note\` updates the same note rather than creating duplicates.${skillsSection}
 
 Tone: collaborative, curious, like a senior engineer helping clarify scope before diving in.`;
 }
@@ -136,27 +127,7 @@ You are not just a code executor. You are an active participant in the project: 
 ## Context
 **Project:** ${ctx.projectName}${taskLine}
 **Code directory:** ${ctx.cwd}
-**Date:** ${date}${taskSection}${planSection}
-
-## Coding tools
-- **read** — read file contents with line ranges
-- **write** — write or overwrite a file entirely
-- **edit** — make targeted string replacements (always read first to get exact content)
-- **bash** — execute shell commands (tests, builds, git, grep, etc.)
-- **grep** — search file contents with regex
-- **find** — find files by name pattern
-- **ls** — list directory contents
-- **spawn_subagent** — delegate a contained, deep sub-task to a fresh agent with its own context window; only the final answer is returned to you
-
-## Cairn tools
-- **get_active_context** — get IDs for the current workspace, project, and board columns
-- **get_project_context_pack** — get full project state: tasks, notes, recent activity
-- **ensure_note** — create-or-update a note by title (idempotent — use this for all note writes)
-- **patch_note** / **append_to_note** — targeted edit or append to an existing note
-- **search_notes** / **get_note** — find and read project notes
-- **search_notes_semantic** — natural-language search via local embeddings (better than search_notes when concepts are described in different words; requires embeddings enabled)
-- **create_task** / **update_task** — create tasks; update_task with \`columnId\` moves to a column
-- **search_tasks** / **list_ready_tasks** — find tasks; list_ready_tasks returns only unblocked work${skillsSection}
+**Date:** ${date}${taskSection}${planSection}${skillsSection}
 
 ## Mandatory Cairn workflow
 
