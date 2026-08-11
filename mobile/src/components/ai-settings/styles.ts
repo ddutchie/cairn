@@ -307,6 +307,9 @@ export function makeAiSettingsStyles(t: Theme) {
     navRowSub: { ...typeScale.caption, color: t.textSecondary },
     // Chat-personality picker sheet rows (inside the BottomSheet).
     sheetBody: { paddingHorizontal: 18, paddingVertical: 8, gap: 6 },
+    // Let the list fill the sheet card (capped by the sheet's maxHeight), so
+    // there's no empty gap below the rows and the backdrop stays tappable.
+    sheetScroll: { flexShrink: 1 },
     personalityRow: {
       flexDirection: "row",
       alignItems: "center",

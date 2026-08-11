@@ -1115,14 +1115,13 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           visible={personalityOpen}
           onClose={() => setPersonalityOpen(false)}
           maxHeight="80%"
-          avoidKeyboard
         >
           <BottomSheetHeader
             title="Chat personality"
             onCancel={() => setPersonalityOpen(false)}
             onDone={personalityRefreshing ? undefined : () => void refreshPersonalities()}
           />
-          <ScrollView style={{ maxHeight: "70%" }} contentContainerStyle={styles.sheetBody}>
+          <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetBody}>
             <Pressable
               style={[styles.personalityRow, !personalityId && styles.personalityRowActive]}
               onPress={() => selectPersonality("")}
