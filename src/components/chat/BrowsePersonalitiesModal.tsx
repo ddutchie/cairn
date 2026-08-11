@@ -31,10 +31,13 @@ const emptyResult: PersonalitiesFetchResult = {
 export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
   const { installedPersonalities, installCommunityPersonality } = useCairnStore(
     useShallow((s) => ({
-      installedPersonalities: s.aiConfig.installedPersonalities ?? [],
+      // NOTE: no `?? []` inside the selector — a fresh array reference would
+      // break useShallow's snapshot caching (React infinite-loop guard).
+      installedPersonalities: s.aiConfig.installedPersonalities,
       installCommunityPersonality: s.installCommunityPersonality,
     })),
   );
+  const installedList = installedPersonalities ?? [];
 
   const [result, setResult] = useState<PersonalitiesFetchResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -92,8 +95,8 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
   // Installed state, keyed by communityId (== the entry id).
   const isInstalled = useCallback(
     (entry: RegistryPersonalityEntry): boolean =>
-      (installedPersonalities ?? []).some((p) => p.communityId === entry.id),
-    [installedPersonalities],
+      installedList.some((p) => p.communityId === entry.id),
+    [installedList],
   );
 
   const runInstall = useCallback(

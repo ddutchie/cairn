@@ -41,13 +41,18 @@ export function PersonalityPicker({
   const { installedPersonalities, personalityId, setPersonality, removePersonality, createCustomPersonality } =
     useCairnStore(
       useShallow((s) => ({
-        installedPersonalities: s.aiConfig.installedPersonalities ?? [],
+        installedPersonalities: s.aiConfig.installedPersonalities,
         personalityId: s.aiConfig.personalityId,
         setPersonality: s.setPersonality,
         removePersonality: s.removePersonality,
         createCustomPersonality: s.createCustomPersonality,
       })),
     );
+
+  // NOTE: the `?? []` fallback lives OUTSIDE the selector — a fresh array
+  // reference inside the selector would break useShallow's snapshot caching
+  // (React's "getSnapshot should be cached" infinite-loop guard).
+  const personalityList = installedPersonalities ?? [];
 
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -56,7 +61,7 @@ export function PersonalityPicker({
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
 
-  const active = installedPersonalities.find((p) => p.id === personalityId) ?? null;
+  const active = personalityList.find((p) => p.id === personalityId) ?? null;
   const triggerPad = size === "xs" ? "px-1.5 py-0.5 text-[0.643rem]" : "px-2 py-1 text-[0.714rem]";
 
   const select = (id: string | null) => {
@@ -154,12 +159,12 @@ export function PersonalityPicker({
             <div className="space-y-1">
               <span className="text-[0.714rem] text-[var(--text-secondary)]">Installed</span>
               <div className="flex flex-col gap-0.5 max-h-52 overflow-y-auto pr-0.5">
-                {installedPersonalities.length === 0 ? (
+                {personalityList.length === 0 ? (
                   <p className="text-[0.643rem] text-[var(--text-tertiary)] px-1">
                     None yet — create your own below or browse the community catalog.
                   </p>
                 ) : (
-                  installedPersonalities.map((p) => {
+                  personalityList.map((p) => {
                     const isActive = p.id === personalityId;
                     return (
                       <div
