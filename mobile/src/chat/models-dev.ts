@@ -241,17 +241,33 @@ export function getModelInfo(modelId: string): ModelInfo | null {
  */
 export function getPricedModelInfo(modelId: string): ModelInfo | null {
   const hasPricing = (info: ModelInfo) => (info.input ?? 0) > 0 || (info.output ?? 0) > 0;
-  const direct = getModelInfo(modelId);
-  if (direct && hasPricing(direct)) return direct;
-  const map = memoryCache;
-  if (!map) return null;
-  const base = modelId.toLowerCase();
-  const boundary = (s: string, start: number) => start === 0 || /[-/:._]/.test(s[start - 1] ?? "");
-  for (const [id, info] of Object.entries(map)) {
-    if (!hasPricing(info)) continue;
-    const nid = id.toLowerCase();
-    if (nid && base.endsWith(nid) && boundary(base, base.length - nid.length)) return info;
-    if (nid.endsWith(base) && boundary(nid, nid.length - base.length)) return info;
+  const resolvePriced = (id: string): ModelInfo | null => {
+    const direct = getModelInfo(id);
+    if (direct && hasPricing(direct)) return direct;
+    const map = memoryCache;
+    if (!map) return null;
+    const base = id.toLowerCase();
+    const boundary = (s: string, start: number) => start === 0 || /[-/:._]/.test(s[start - 1] ?? "");
+    for (const [catId, info] of Object.entries(map)) {
+      if (!hasPricing(info)) continue;
+      const nid = catId.toLowerCase();
+      if (nid && base.endsWith(nid) && boundary(base, base.length - nid.length)) return info;
+      if (nid.endsWith(base) && boundary(nid, nid.length - base.length)) return info;
+    }
+    return null;
+  };
+  const priced = resolvePriced(modelId);
+  if (priced) return priced;
+  // Retry with trailing qualifier segments stripped — handles region / date /
+  // reasoning suffixes (deepseek-v4-flash-gcp, deepseek-v4-flash-0731-gcp,
+  // deepseek-v4-flash:thinking) that no catalog id carries verbatim.
+  let candidate = modelId;
+  for (let i = 0; i < 3; i++) {
+    const next = candidate.replace(/[-:.][a-z0-9]+$/i, "");
+    if (next === candidate || !next) break;
+    candidate = next;
+    const hit = resolvePriced(candidate);
+    if (hit) return hit;
   }
   return null;
 }

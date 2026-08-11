@@ -25,17 +25,33 @@ export function setModelPricing(map: Record<string, ModelPrice> | null): void {
 /** USD per 1M tokens for a model id, or null when unknown. */
 export function pricePerMillion(model: string): ModelPrice | null {
   if (!pricing || !model) return null;
-  const exact = pricing[model];
-  if (exact) return exact;
-  // Fuzzy match for gateway ids that embed the catalog id as a whole token —
-  // e.g. "playground-gpt-4o" → "gpt-4o". A match only counts when a separator
-  // (-, /, :, .) precedes it, so "chatgpt-4o" can never hit "gpt-4o" pricing.
-  const base = model.toLowerCase();
-  const boundary = (s: string, start: number) => start === 0 || /[-/:._]/.test(s[start - 1] ?? "");
-  for (const [id, price] of Object.entries(pricing)) {
-    const nid = id.toLowerCase();
-    if (nid && base.endsWith(nid) && boundary(base, base.length - nid.length)) return price;
-    if (nid.endsWith(base) && boundary(nid, nid.length - base.length)) return price;
+  const resolve = (id: string): ModelPrice | null => {
+    const exact = pricing![id];
+    if (exact) return exact;
+    // Fuzzy match for gateway ids that embed the catalog id as a whole token —
+    // e.g. "playground-gpt-4o" → "gpt-4o". A match only counts when a separator
+    // (-, /, :, .) precedes it, so "chatgpt-4o" can never hit "gpt-4o" pricing.
+    const base = id.toLowerCase();
+    const boundary = (s: string, start: number) => start === 0 || /[-/:._]/.test(s[start - 1] ?? "");
+    for (const [catId, price] of Object.entries(pricing!)) {
+      const nid = catId.toLowerCase();
+      if (nid && base.endsWith(nid) && boundary(base, base.length - nid.length)) return price;
+      if (nid.endsWith(base) && boundary(nid, nid.length - base.length)) return price;
+    }
+    return null;
+  };
+  const priced = resolve(model);
+  if (priced) return priced;
+  // Retry with trailing qualifier segments stripped — handles region / date /
+  // reasoning suffixes (deepseek-v4-flash-gcp, deepseek-v4-flash-0731-gcp,
+  // deepseek-v4-flash:thinking) that no catalog id carries verbatim.
+  let candidate = model;
+  for (let i = 0; i < 3; i++) {
+    const next = candidate.replace(/[-:.][a-z0-9]+$/i, "");
+    if (next === candidate || !next) break;
+    candidate = next;
+    const hit = resolve(candidate);
+    if (hit) return hit;
   }
   return null;
 }
