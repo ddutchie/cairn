@@ -16,6 +16,7 @@
 
 import { fetch as expoFetch } from "expo/fetch";
 import { countTextTokens } from "../tokens";
+import { estimatePromptTokens } from "../token-breakdown";
 import { newRunId, type AiTool, type ChatProvider, type ChatUsage, type StreamEvent, type UIMessage } from "./types";
 
 /** The build-time-injected Rork base URL, or null if not configured. */
@@ -34,19 +35,6 @@ export function isRorkAvailable(): boolean {
 // window for the ring (many modern models are >=200K; this errs toward showing
 // "full" sooner rather than underestimating and overflowing silently).
 const RORK_CONTEXT_LIMIT = 200_000;
-
-/** Plain text of all message parts, for a client-side token estimate. */
-function conversationText(messages: UIMessage[]): string {
-  const chunks: string[] = [];
-  for (const m of messages) {
-    for (const p of m.parts) {
-      if (p.type === "text" && typeof (p as { text?: string }).text === "string") {
-        chunks.push((p as { text: string }).text);
-      }
-    }
-  }
-  return chunks.join("\n");
-}
 
 async function* streamRork(
   messages: UIMessage[],
@@ -97,10 +85,9 @@ async function* streamRork(
     // ~270 reported for a ~6k request). The context ring and its breakdown are
     // rescaled to this number, so an under-count makes every segment tiny.
     // Trust the server value only when it's plausibly close to the client
-    // estimate (conversation text + tool definitions); otherwise use the
-    // estimate so the ring reflects the actual request.
-    const estimatedPrompt =
-      countTextTokens(conversationText(messages)) + countTextTokens(JSON.stringify(tools ?? {}));
+    // estimate (the desktop-parity breakdown total); otherwise use the estimate
+    // so the ring reflects the actual request.
+    const estimatedPrompt = estimatePromptTokens(messages, tools);
     const promptTokens =
       serverPromptTokens != null && serverPromptTokens >= estimatedPrompt * 0.8
         ? serverPromptTokens

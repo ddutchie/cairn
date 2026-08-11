@@ -17,6 +17,21 @@ import { countTextTokens } from "./tokens";
 import type { UIMessage } from "./providers/types";
 
 /**
+ * Client-side prompt-token estimate for a full request — the mobile analogue of
+ * desktop's `calculatePromptBreakdown` total (electron/lib/llm.ts). Sums every
+ * category (system + built-in tools + MCP/service tools + conversation +
+ * tool-output overhead) so providers that don't report usage count the SAME
+ * thing desktop does, instead of a rough text-only approximation.
+ */
+export function estimatePromptTokens(
+  messages: UIMessage[],
+  tools: Record<string, { description: string; jsonSchema: Record<string, unknown> }>,
+): number {
+  const b = computeBreakdown(messages, tools);
+  return b.systemPrompt + b.tools + b.mcp + b.conversation + b.toolOutputs + b.skills + b.rules + b.subagentDefinitions;
+}
+
+/**
  * Per-category prompt-token counts. Mirrors desktop's TokenBreakdown
  * (src/types/index.ts) field-for-field so the two ring UIs stay in lock-step.
  * `rules`, `skills`, and `subagentDefinitions` are always 0 on mobile today
