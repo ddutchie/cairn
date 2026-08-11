@@ -28,7 +28,6 @@ import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/c
 import { supportsImageInput } from "@cairn/shared/models/model-catalog";
 import type { UIMessage, ChatUsage } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
-import { ProviderModelSwitcher } from "@/components/chat/ProviderModelSwitcher";
 import { toolRef } from "@cairn/shared/chat/tool-ref";
 import { extractExternalRef } from "@cairn/shared/chat/external-ref";
 import { loadInitialChat, type UiMessage } from "@/chat/history";
@@ -426,8 +425,6 @@ export default function ChatScreen() {
             ) : null}
           </EmptyState>
         ) : null}
-
-        <ProviderModelSwitcher />
 
         <Composer
           input={input}

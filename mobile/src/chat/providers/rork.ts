@@ -81,20 +81,31 @@ async function* streamRork(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  // Prefer a server-reported prompt-token count if the stream carries one;
-  // otherwise fall back to a client estimate (marked estimated) at finish.
+  // Prefer a server-reported token count if the stream carries one; otherwise
+  // fall back to a client estimate (marked estimated) at finish. Completion
+  // tokens are likewise taken from the server when reported, else estimated
+  // from the text deltas actually streamed.
   let serverPromptTokens: number | undefined;
+  let serverCompletionTokens: number | undefined;
+  let streamedText = "";
   let sawFinish = false;
 
   const usageEvent = (): ChatUsage => {
     if (serverPromptTokens != null) {
-      return { promptTokens: serverPromptTokens, contextLimit: RORK_CONTEXT_LIMIT };
+      return {
+        promptTokens: serverPromptTokens,
+        contextLimit: RORK_CONTEXT_LIMIT,
+        // Server-reported output when available; otherwise count what we
+        // streamed so the Usage view shows input AND output, not input alone.
+        completionTokens: serverCompletionTokens ?? (streamedText ? countTextTokens(streamedText) : 0),
+      };
     }
     // Estimate from the outgoing conversation (o200k_base — approximate for
     // whatever model Rork serves, which is all a fill gauge needs).
     return {
       promptTokens: countTextTokens(conversationText(messages)),
       contextLimit: RORK_CONTEXT_LIMIT,
+      completionTokens: streamedText ? countTextTokens(streamedText) : 0,
       estimated: true,
     };
   };
@@ -125,10 +136,18 @@ async function* streamRork(
           continue; // ignore keep-alives / partial frames
         }
         // Capture any usage the server includes (AI SDK totalUsage/usage shapes).
-        const raw = ev as { usage?: { promptTokens?: number; inputTokens?: number }; totalUsage?: { promptTokens?: number; inputTokens?: number } };
+        const raw = ev as { usage?: { promptTokens?: number; inputTokens?: number; completionTokens?: number; outputTokens?: number }; totalUsage?: { promptTokens?: number; inputTokens?: number; completionTokens?: number; outputTokens?: number } };
         const u = raw.totalUsage ?? raw.usage;
         const pt = u?.promptTokens ?? u?.inputTokens;
+        const ct = u?.completionTokens ?? u?.outputTokens;
         if (typeof pt === "number") serverPromptTokens = pt;
+        if (typeof ct === "number") serverCompletionTokens = ct;
+        // Track streamed text so output tokens can be estimated when the server
+        // doesn't report them (keeps input vs output counting honest on Rork).
+        if (ev.type === "text-delta") {
+          const d = (ev as { delta?: string }).delta;
+          if (typeof d === "string") streamedText += d;
+        }
 
         if (ev.type === "finish") {
           sawFinish = true;
