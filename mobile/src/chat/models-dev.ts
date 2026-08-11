@@ -230,6 +230,11 @@ export function getModelInfo(modelId: string): ModelInfo | null {
   return lookupModelInfo(memoryCache, modelId);
 }
 
+/** The raw in-memory catalog map (null until loaded once). */
+export function getModelCatalogMap(): Record<string, ModelInfo> | null {
+  return memoryCache;
+}
+
 /**
  * Async lookup that loads/refreshes the catalog first. Results are cached in
  * memory + SQLite. Never throws.
