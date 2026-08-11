@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useEffect, useSyncExternalStore } from "react";
 import { RefreshCw, Percent, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useUsage, USAGE_RANGES } from "@/hooks/useUsage";
 import { UsageChart, type UsageMetric } from "./UsageChart";
 import { Select } from "@/components/ui/select";
@@ -347,6 +348,13 @@ export function UsageView() {
                       </div>
                     );
                   })
+                )}
+                {byModel.length > 6 && (
+                  <OverflowPill
+                    count={byModel.length - 6}
+                    names={byModel.slice(6).map((m) => m.model)}
+                    className="self-start"
+                  />
                 )}
               </div>
             </div>

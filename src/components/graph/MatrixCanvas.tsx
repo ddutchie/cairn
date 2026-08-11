@@ -290,11 +290,11 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
           {/* Legend */}
           <div className="flex items-center gap-4 mt-3 px-1">
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm opacity-50" style={{ background: tagColors[0] ?? "#6366f1" }} />
+              <div className="w-3 h-3 rounded-sm opacity-50" style={{ background: tagColors[0] ?? "var(--accent)" }} />
               <span className="text-[0.714rem] text-[var(--text-tertiary)]">co-occurrence</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-1.5 rounded-full" style={{ background: tagColors[0] ?? "#6366f1" }} />
+              <div className="w-3 h-1.5 rounded-full" style={{ background: tagColors[0] ?? "var(--accent)" }} />
               <span className="text-[0.714rem] text-[var(--text-tertiary)]">diagonal = total per tag</span>
             </div>
             <span className="text-[0.714rem] text-[var(--text-tertiary)] opacity-50 ml-2">click a cell to inspect</span>

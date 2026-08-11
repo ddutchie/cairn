@@ -34,7 +34,6 @@ export const NoteRowItem = memo(function NoteRowItem({
     const text = stripMarkdown(note.content ?? "").trim();
     return text ? text.slice(0, 80) : "Empty note";
   }, [note.content]);
-  const shownTags = useMemo(() => (tags ?? []).slice(0, 3), [tags]);
   const onPress = useCallback(() => onOpen(note.id), [onOpen, note.id]);
   const handleLongPress = useCallback(() => onLongPress(note), [onLongPress, note]);
   return (
@@ -65,7 +64,7 @@ export const NoteRowItem = memo(function NoteRowItem({
       </Text>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 21 }}>
         <Text style={{ color: t.textTertiary, ...typeScale.micro, fontWeight: "400" }}>{formatRelative(note.updated_at)}</Text>
-        {shownTags.length > 0 && <TagChips tags={shownTags} size="sm" />}
+        {(tags?.length ?? 0) > 0 && <TagChips tags={tags ?? []} size="sm" max={3} />}
       </View>
     </PressableScale>
   );

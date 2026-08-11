@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronRight, ChevronDown } from "lucide-react";
+import { MicroLabel } from "@/components/ui/labels";
 
 /** Collapsible section header (Staged / Modified / Untracked) wrapping its file rows. */
 export function FileSection({
@@ -25,7 +26,7 @@ export function FileSection({
         }}
       >
         {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-        <span className="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">{label}</span>
+        <MicroLabel>{label}</MicroLabel>
         <span className="text-[0.65rem] text-[var(--text-tertiary)] opacity-60">{count}</span>
         {action && (
           <div className="ml-auto flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>

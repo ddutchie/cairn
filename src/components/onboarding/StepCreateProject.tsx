@@ -3,6 +3,7 @@
 import { useRef, useEffect } from "react";
 import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MicroLabel } from "@/components/ui/labels";
 import { WORKSPACE_ICONS, ProjectIcon } from "@/lib/workspace-icons";
 import { Shell } from "./shared";
 
@@ -109,7 +110,7 @@ export function StepCreateProject({
 
         <div className="flex items-center gap-3">
           <div className="flex-1 h-px bg-[var(--border)]" />
-          <span className="text-[0.65rem] text-[var(--text-tertiary)] uppercase tracking-wider">or</span>
+          <MicroLabel>or</MicroLabel>
           <div className="flex-1 h-px bg-[var(--border)]" />
         </div>
 

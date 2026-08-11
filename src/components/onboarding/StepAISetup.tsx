@@ -105,7 +105,7 @@ export function StepAISetup({
                   className={cn(
                     "flex flex-col items-center justify-center p-4 rounded-xl border text-center transition-all gap-1.5 relative select-none",
                     provider === "localllm"
-                      ? "border-purple-500 bg-[color-mix(in_srgb,var(--purple-500)_10%,transparent)] shadow-sm"
+                      ? "border-[var(--accent)] bg-[var(--accent-dim)] shadow-sm"
                       : localLLMAvailable === false
                         ? "opacity-50 cursor-not-allowed border-[var(--border)]"
                         : "border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)] cursor-pointer"

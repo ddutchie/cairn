@@ -145,7 +145,7 @@ export function MobileSettings() {
                   <Shield size={13} className="text-[var(--success)]" />
                   PIN Code Authentication
                 </div>
-                <p className="text-[10px] text-[var(--text-tertiary)] mt-0.5 max-w-xs">
+                <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-0.5 max-w-xs">
                   Enforces validation using a unique PIN code upon first visiting from a new browser.
                 </p>
               </div>
@@ -185,7 +185,7 @@ export function MobileSettings() {
       {!status.running && (
         <div className="flex gap-2.5 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] opacity-80 mt-4">
           <AlertCircle size={14} className="text-[var(--text-tertiary)] mt-0.5 shrink-0" />
-          <p className="text-[10px] text-[var(--text-tertiary)] leading-normal">
+          <p className="text-[0.714rem] text-[var(--text-tertiary)] leading-normal">
             Exposing your workspace over the local network allows you to access notes, kanban boards, and chat with AI agents on other devices. Activate network access above to see connection links.
           </p>
         </div>

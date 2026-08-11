@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { View, Text } from "react-native";
 import { PressableScale } from "@/components/PressableScale";
 import { withAlpha, PRIORITY_COLOR, type Theme } from "@/theme";
@@ -25,7 +24,9 @@ export function DayDetailRow({
   t: Theme;
   styles: CalendarStyles;
 }) {
-  const shownTags = useMemo(() => (tags ?? []).slice(0, 3), [tags]);
+  const allTags = tags ?? [];
+  const shownTags = allTags.slice(0, 3);
+  const overflow = Math.max(0, allTags.length - shownTags.length);
   const status = getDueDateStatus(card.due_date);
   const priorityColor = PRIORITY_COLOR[card.priority] ?? t.textTertiary;
   return (
@@ -58,6 +59,11 @@ export function DayDetailRow({
               </Text>
             </View>
           ))}
+          {overflow > 0 && (
+            <View style={[styles.tagChip, { backgroundColor: "transparent", borderColor: t.border }]}>
+              <Text style={[styles.tagText, { color: t.textTertiary }]}>+{overflow}</Text>
+            </View>
+          )}
         </View>
       </View>
     </PressableScale>

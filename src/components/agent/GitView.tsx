@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tooltip } from "@/components/ui/tooltip";
+import { MicroLabel } from "@/components/ui/labels";
 import {
   type GitStatusData,
   type GitLogData,
@@ -857,9 +858,9 @@ export function GitView({ cwd }: GitViewProps) {
         {/* ── Recent commits ─────────────────────────────────────────────── */}
         {log.length > 0 && (
           <div className="border-t border-[var(--border)]">
-            <div className="px-4 py-2 text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] bg-[var(--surface-2)] border-b border-[var(--border-subtle)]">
+            <MicroLabel className="block px-4 py-2 bg-[var(--surface-2)] border-b border-[var(--border-subtle)]">
               Recent commits
-            </div>
+            </MicroLabel>
             <div className="divide-y divide-[var(--border-subtle)]">
               {log.map((entry) => (
                 <div key={entry.hash} className="flex items-start gap-3 px-4 py-2 hover:bg-[var(--surface-2)] transition-colors">

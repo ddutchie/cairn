@@ -23,6 +23,8 @@ import { NoteListItem } from "./notes-view/NoteListItem";
 import { ArchivedNoteListItem } from "./notes-view/ArchivedNoteListItem";
 import { FolderTreeNode } from "./notes-view/FolderTreeNode";
 import { setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
+import { sortTagsByUsage } from "@/lib/tag-utils";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import { FolderPickerDialog } from "./notes-view/FolderPickerDialog";
 import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
 import { STARTER_TEMPLATES } from "../../../shared/notes/starter-templates";
@@ -32,6 +34,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 
 // ── NotesView orchestrator ──────────────────────────────────────────────────
+
+/** How many tag-filter chips are shown before collapsing behind a "+N" pill. */
+const TAG_FILTER_CAP = 6;
 
 export function NotesView() {
   const {
@@ -313,6 +318,21 @@ export function NotesView() {
     const tagIds = [...new Set(notes.flatMap((n) => n.tagIds))];
     return tagIds.map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
   }, [notes, getTagById]);
+  const sortedProjectTags = useMemo(() => sortTagsByUsage(projectTags, notes), [projectTags, notes]);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+  // Show the most-used tags first, capped to a compact row. If the active filter
+  // tag falls outside the cap it is promoted into view so the selection stays visible.
+  const shownProjectTags = useMemo(() => {
+    if (tagsExpanded) return sortedProjectTags;
+    const base = sortedProjectTags.slice(0, TAG_FILTER_CAP);
+    if (activeTagId && !base.some((t) => t.id === activeTagId)) {
+      const active = sortedProjectTags.find((t) => t.id === activeTagId);
+      if (active) base.push(active);
+    }
+    return base;
+  }, [sortedProjectTags, tagsExpanded, activeTagId]);
+  const shownProjectTagIds = new Set(shownProjectTags.map((t) => t.id));
+  const hiddenProjectTags = sortedProjectTags.filter((t) => !shownProjectTagIds.has(t.id));
 
   const filtered   = useNoteFilter(notes, filter, activeTagId);
   // Resolve the active note across notes and templates (templates are excluded
@@ -596,17 +616,37 @@ export function NotesView() {
             )}
           </div>
           {projectTags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
-              {projectTags.map((tag) => (
-                <button key={tag.id} onClick={() => setActiveTagId(activeTagId === tag.id ? null : tag.id)}
-                  className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] border transition-colors",
-                    activeTagId === tag.id
-                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]")}>
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                  {tag.name}
-                </button>
-              ))}
+            <div className="mt-1.5">
+              <div className="flex items-center justify-between mb-1 px-0.5">
+                <span className="text-[0.643rem] uppercase tracking-wider text-[var(--text-tertiary)]">Tags</span>
+                {hiddenProjectTags.length > 0 && (
+                  <button
+                    onClick={() => setTagsExpanded((v) => !v)}
+                    className="text-[0.643rem] text-[var(--accent)] hover:underline transition-colors"
+                  >
+                    {tagsExpanded ? "Show less" : `Show all ${projectTags.length}`}
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {shownProjectTags.map((tag) => (
+                  <button key={tag.id} onClick={() => setActiveTagId(activeTagId === tag.id ? null : tag.id)}
+                    className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] border transition-colors",
+                      activeTagId === tag.id
+                        ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                        : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]")}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                    {tag.name}
+                  </button>
+                ))}
+                {hiddenProjectTags.length > 0 && (
+                  <OverflowPill
+                    count={hiddenProjectTags.length}
+                    names={hiddenProjectTags.map((t) => t.name)}
+                    onClick={() => setTagsExpanded(true)}
+                  />
+                )}
+              </div>
             </div>
           )}
         </div>

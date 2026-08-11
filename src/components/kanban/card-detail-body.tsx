@@ -7,6 +7,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
+import { sortTagsByUsage } from "@/lib/tag-utils";
 import { revealNote } from "@/lib/events";
 import { SpawnAgentModal } from "@/components/agent/SpawnAgentModal";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
@@ -67,6 +68,12 @@ export function CardDetailBody({
   const linkedNotes    = useMemo(() => card ? card.linkedNoteIds.map((nId) => notes.find((n) => n.id === nId)).filter(Boolean) : [], [card, notes]);
   const projectNotes   = useMemo(() => card ? getProjectNotes(card.projectId) : [], [card, getProjectNotes]);
   const projectTags    = useMemo(() => card ? tags.filter((t) => t.workspaceId === card.workspaceId) : [], [card, tags]);
+  const projectCards   = useMemo(() => card ? cards.filter((c) => c.projectId === card.projectId) : [], [card, cards]);
+  // Most-used tags float to the top of the toggle grid.
+  const sortedProjectTags = useMemo(
+    () => sortTagsByUsage(projectTags, projectNotes, projectCards),
+    [projectTags, projectNotes, projectCards],
+  );
   const otherProjects  = useMemo(() => card ? (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : projects).filter((p) => p.id !== card.projectId && !p.archivedAt) : [], [card, activeWorkspaceId, getWorkspaceProjects, projects]);
 
   if (!card) return null;
@@ -150,7 +157,7 @@ export function CardDetailBody({
             <TagIcon size={10} className="inline mr-1" />Tags
           </label>
           <div className="flex flex-wrap gap-1.5">
-            {projectTags.map((tag) => (
+            {sortedProjectTags.map((tag) => (
               <button
                 key={tag.id}
                 onClick={() => {

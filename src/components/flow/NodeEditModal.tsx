@@ -141,7 +141,7 @@ function NotePicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Search notes</label>
+      <label className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Search notes</label>
       <div className="relative">
         <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
         <input
@@ -155,7 +155,7 @@ function NotePicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
       </div>
       <div className="flex flex-col max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
         {filtered.length === 0 ? (
-          <p className="px-3 py-3 text-[0.786rem] text-[var(--text-tertiary)] text-center">No notes found</p>
+          <p className="px-3 py-3 text-[0.714rem] text-[var(--text-tertiary)] text-center">No notes found</p>
         ) : (
           filtered.map((n) => (
             <button
@@ -204,7 +204,7 @@ function TaskPicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Search tasks</label>
+      <label className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Search tasks</label>
       <div className="relative">
         <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
         <input
@@ -218,7 +218,7 @@ function TaskPicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
       </div>
       <div className="flex flex-col max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
         {filtered.length === 0 ? (
-          <p className="px-3 py-3 text-[0.786rem] text-[var(--text-tertiary)] text-center">No tasks found</p>
+          <p className="px-3 py-3 text-[0.714rem] text-[var(--text-tertiary)] text-center">No tasks found</p>
         ) : (
           filtered.map((c) => (
             <button
@@ -287,7 +287,7 @@ function UrlEditor({
     <div className="flex flex-col gap-3">
       {/* URL row with Fetch button */}
       <div className="flex flex-col gap-1">
-        <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">URL</label>
+        <label className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">URL</label>
         <div className="flex gap-1.5">
           <input
             type="text"
@@ -338,7 +338,7 @@ function GroupEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
-        <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide flex items-center gap-1.5">
+        <label className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide flex items-center gap-1.5">
           <Layers size={10} /> Label
         </label>
         <input
@@ -351,7 +351,7 @@ function GroupEditor({
         />
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Colour</label>
+        <label className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Colour</label>
         <div className="flex items-center gap-2">
           {GROUP_COLORS.map((c) => (
             <button
@@ -384,7 +384,7 @@ function Field({
   const base = "w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none resize-none";
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">{label}</label>
+      <label className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">{label}</label>
       {multiline ? (
         <textarea
           rows={3}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CheckCircle, MessageSquare, Play, Send } from "lucide-react";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
+import { MicroLabel } from "@/components/ui/labels";
 
 interface PlanApprovalCardProps {
   content: string;
@@ -28,7 +29,7 @@ export function PlanApprovalCard({ content, busy, onApprove, onRequestChanges }:
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)]">
         <CheckCircle size={13} className="text-[var(--warning,#f59e0b)]" />
         <span className="text-[0.714rem] font-semibold text-[var(--text-primary)] flex-1">Plan ready for your direction</span>
-        <span className="text-[0.607rem] uppercase tracking-wider text-[var(--text-tertiary)]">Choose autonomy</span>
+        <MicroLabel>Choose autonomy</MicroLabel>
       </div>
       <div className="max-h-52 overflow-y-auto px-3 py-2 text-[0.714rem] leading-relaxed text-[var(--text-secondary)]">
         <MarkdownContent content={content} />

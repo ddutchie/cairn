@@ -9,6 +9,7 @@ import { cn, formatRelative, getDueDateStatus, parseIsoLocal } from "@/lib/utils
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { revealColumn, revealNote, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useCairnStore } from "@/store";
 import type { TaskCard, Note, BoardColumn, AppUIState } from "@/types";
 import type { ActivityGroup } from "./useProjectMetrics";
@@ -73,10 +74,13 @@ export function TaskFlowCard({
                 <div className="flex h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
                   <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
                 </div>
-                <div className="flex gap-x-3 mt-1">
+                <div className="flex gap-x-3 mt-1 items-center">
                   {cards.slice(0, 2).map((c) => (
                     <span key={c.id} className="text-[0.714rem] text-[var(--text-tertiary)] truncate">{c.title}</span>
                   ))}
+                  {cards.length > 2 && (
+                    <OverflowPill count={cards.length - 2} names={cards.slice(2).map((c) => c.title)} />
+                  )}
                   {cards.length === 0 && <span className="text-[0.714rem] text-[var(--text-tertiary)]">—</span>}
                 </div>
               </div>
@@ -211,7 +215,9 @@ export function DueCard({ card, columns, today, onClick }: { card: TaskCard; col
  */
 export function PinnedNoteCard({ note, onClick }: { note: Note; onClick: () => void }) {
   const getTagById = useCairnStore((s) => s.getTagById);
-  const noteTags = note.tagIds.slice(0, 2).map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
+  const allNoteTags = note.tagIds.map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
+  const noteTags = allNoteTags.slice(0, 2);
+  const hiddenNoteTags = allNoteTags.slice(2);
   return (
     <button onClick={onClick}
       className="flex items-center gap-3 w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--accent)]/40 hover:bg-[var(--surface-2)] transition-colors group text-left">
@@ -224,8 +230,11 @@ export function PinnedNoteCard({ note, onClick }: { note: Note; onClick: () => v
         </div>
       </div>
       {noteTags.length > 0 && (
-        <div className="flex gap-1 flex-shrink-0">
-          {noteTags.map((tag) => <Badge key={tag.id} color={tag.color}>{tag.name}</Badge>)}
+        <div className="flex gap-1 items-center flex-shrink-0">
+          {noteTags.map((tag) => <Badge key={tag.id} color={tag.color} size="xs">{tag.name}</Badge>)}
+          {hiddenNoteTags.length > 0 && (
+            <OverflowPill count={hiddenNoteTags.length} names={hiddenNoteTags.map((t) => t.name)} />
+          )}
         </div>
       )}
       <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(note.updatedAt)}</span>
@@ -331,7 +340,7 @@ export function RecentAutomationRunsFeed({
                   </button>
                 ))}
                 {artifacts.length > 2 && (
-                  <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-shrink-0">+{artifacts.length - 2}</span>
+                  <OverflowPill count={artifacts.length - 2} names={artifacts.slice(2).map((a) => a.title)} />
                 )}
               </div>
             )}

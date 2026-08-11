@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Inbox } from "lucide-react";
 import { DraggableChip, DroppableTray } from "./CalendarDnd";
 import type { TaskCard } from "@/types";
+import { MicroLabel } from "@/components/ui/labels";
 
 interface UnscheduledTrayProps {
   cards: TaskCard[];
@@ -76,10 +77,10 @@ export function UnscheduledTray({ cards, onOpenCard, groupByProject, projectName
                 <div className="flex flex-col gap-2">
                   {groups.map((g) => (
                     <div key={g.name}>
-                      <div className="flex items-center gap-1 px-0.5 pb-1 text-[0.6rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+                      <MicroLabel className="flex items-center gap-1 px-0.5 pb-1">
                         <span className="truncate">{g.name}</span>
                         <span className="font-normal">{g.items.length}</span>
-                      </div>
+                      </MicroLabel>
                       <div className="flex flex-wrap gap-1">{g.items.map(renderChip)}</div>
                     </div>
                   ))}

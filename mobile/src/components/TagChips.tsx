@@ -5,14 +5,19 @@ import type { TagRow } from "@/db/queries";
 /**
  * Tag pills matching the desktop tag chips — a coloured dot + name on a tinted
  * background derived from the tag colour. Renders nothing when there are no tags.
+ * Pass `max` to cap the row; any tags beyond the cap collapse into a "+N" chip.
  */
-export function TagChips({ tags, size = "md" }: { tags: TagRow[]; size?: "sm" | "md" }) {
+export function TagChips({ tags, size = "md", max }: { tags: TagRow[]; size?: "sm" | "md"; max?: number }) {
   const t = useTheme();
   if (!tags.length) return null;
   const small = size === "sm";
+  const cap = typeof max === "number" && Number.isFinite(max) ? Math.max(0, Math.floor(max)) : Infinity;
+  const capped = tags.length > cap;
+  const shown = capped ? tags.slice(0, cap) : tags;
+  const overflow = capped ? tags.length - cap : 0;
   return (
     <View style={styles.row}>
-      {tags.map((tag) => (
+      {shown.map((tag) => (
         <View
           key={tag.id}
           style={[
@@ -27,6 +32,18 @@ export function TagChips({ tags, size = "md" }: { tags: TagRow[]; size?: "sm" | 
           </Text>
         </View>
       ))}
+      {overflow > 0 && (
+        <View
+          style={[
+            styles.chip,
+            small && styles.chipSm,
+            styles.overflowChip,
+            { borderColor: withAlpha(t.border, 1) },
+          ]}
+        >
+          <Text style={[styles.text, small && styles.textSm, { color: t.textTertiary }]}>+{overflow}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -42,4 +59,5 @@ const styles = StyleSheet.create({
   dotSm: { width: 6, height: 6, borderRadius: 3 },
   text: { ...typeScale.label },
   textSm: { fontSize: 11 },
+  overflowChip: { backgroundColor: "transparent" },
 });

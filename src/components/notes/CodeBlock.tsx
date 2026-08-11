@@ -176,7 +176,7 @@ export function CodeBlock({ code, language }: Props) {
   return (
     <div
       data-cairn-codeblock=""
-      className="my-4 rounded-lg overflow-hidden text-[12.5px] font-mono"
+      className="my-4 rounded-lg overflow-hidden text-sm font-mono"
       style={{ border: `1px solid ${borderColor}` }}
     >
       {/* Header bar */}

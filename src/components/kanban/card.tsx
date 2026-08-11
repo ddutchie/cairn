@@ -6,7 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Archive, Calendar, ChevronDown, ChevronUp, FileText, Lock, Pencil, Trash2, User } from "lucide-react";
 import { cn, formatDate, getDueDateStatus } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip } from "@/components/ui/tooltip";
+import { OverflowPill } from "@/components/ui/overflow-pill";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -53,9 +53,10 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
   const getTagById = useCairnStore((s) => s.getTagById);
   const isDone = useCairnStore((s) => s.columns.find((c) => c.id === card.columnId)?.type === "done");
   const isBlocked = (card.blockedByIds ?? []).length > 0;
-  const tags = card.tagIds.slice(0, 3).map((id) => getTagById(id)).filter(Boolean);
-  const extraTags = card.tagIds.slice(3).map((id) => getTagById(id)).filter(Boolean);
-  const extraTagCount = Math.max(0, card.tagIds.length - 3);
+  const allTags = card.tagIds.map((id) => getTagById(id)).filter(Boolean);
+  const tags = allTags.slice(0, 3);
+  const extraTags = allTags.slice(3);
+  const extraTagCount = extraTags.length;
   const description = card.description?.trim() || "";
 
   return (
@@ -162,11 +163,7 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
                 )
             )}
             {extraTagCount > 0 && (
-              <Tooltip content={extraTags.map((t) => t?.name).filter(Boolean).join(", ")}>
-                <span className="text-[0.643rem] text-[var(--text-tertiary)] self-center px-0.5 cursor-default">
-                  +{extraTagCount}
-                </span>
-              </Tooltip>
+              <OverflowPill count={extraTagCount} names={extraTags.map((t) => t?.name ?? "")} />
             )}
           </div>
         )}

@@ -15,7 +15,7 @@ export function SectionHeader({
 }) {
   return (
     <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-1.5 text-[0.786rem] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+      <div className="flex items-center gap-1.5 text-[0.714rem] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
         {icon}{title}
       </div>
       {action && (
@@ -56,7 +56,7 @@ export function CollapsibleSection({
           aria-expanded={!collapsed}
           aria-controls={bodyId}
           title={collapsed ? `Expand ${title}` : `Collapse ${title}`}
-          className="flex items-center gap-1 text-[0.786rem] font-semibold text-[var(--text-secondary)] uppercase tracking-wider hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+          className="flex items-center gap-1 text-[0.714rem] font-semibold text-[var(--text-secondary)] uppercase tracking-wider hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
         >
           <ChevronDown size={11} className={cn("text-[var(--text-tertiary)] transition-transform", collapsed && "-rotate-90")} />
           <span className="group-hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5">

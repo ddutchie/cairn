@@ -157,8 +157,8 @@ window.addEventListener('cairn:refresh', load);
   .group { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface); }
   .group-header { display: flex; align-items: center; margin-bottom: 10px; }
   .badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.04em; }
-  .urgent { background: rgba(239,68,68,0.15); color: var(--danger); }
-  .high { background: rgba(245,158,11,0.15); color: var(--warning); }
+  .urgent { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+  .high { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
   .medium { background: var(--accent-dim); color: var(--accent); }
   .low { background: var(--surface-3); color: var(--text-secondary); }
   .task { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
