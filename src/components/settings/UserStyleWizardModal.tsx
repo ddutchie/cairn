@@ -300,7 +300,17 @@ export function UserStyleWizardModal({
   };
 
   const savePasted = async () => {
-    if (!fullGuide.trim() && !cheatsheet.trim()) return;
+    const trimmedGuide = fullGuide.trim();
+    const trimmedSheet = cheatsheet.trim();
+    if (!trimmedGuide && !trimmedSheet) return;
+    // A paste/edit that changes the stored full guide makes any previously
+    // stored cheat sheet stale — clear it rather than persisting one that no
+    // longer matches (it can be regenerated after saving). A cheat sheet that
+    // changed in this session (freshly generated from the new guide) is kept.
+    const existingGuide = existing?.fullGuide;
+    const existingSheet = existing?.cheatsheet;
+    const fullGuideChanged = existingGuide !== undefined && existingGuide !== trimmedGuide;
+    const cheatsheetStale = fullGuideChanged && existingSheet !== undefined && existingSheet === trimmedSheet;
     setBusy(true);
     setError(null);
     try {
@@ -311,8 +321,11 @@ export function UserStyleWizardModal({
           context: persona.context?.trim() || undefined,
           audiences: persona.audiences?.trim() || undefined,
         },
-        fullGuide: fullGuide.trim() || undefined,
-        cheatsheet: cheatsheet.trim() || undefined,
+        // Explicit field values: send "" to clear a field the user emptied —
+        // undefined would retain the stored value, so never use it here. A
+        // stale cheat sheet is cleared by sending "".
+        fullGuide: trimmedGuide,
+        cheatsheet: cheatsheetStale ? "" : trimmedSheet,
         source: "manual",
       });
       onClose();

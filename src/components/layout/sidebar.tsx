@@ -346,6 +346,7 @@ export function Sidebar() {
             {/* Notifications */}
             <button onClick={() => { setNotificationOpen(!notificationOpen); closeSidebarOnMobile(); }}
               data-notification-toggle
+              aria-expanded={notificationOpen}
               className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
                 "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Bell size={13} /><span>Notifications</span>
