@@ -101,6 +101,40 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
     const oplogCols = db.getAllSync<{ name: string }>("PRAGMA table_info(sync_oplog)").map((c) => c.name);
     if (!oplogCols.includes("observed")) db.execSync("ALTER TABLE sync_oplog ADD COLUMN observed TEXT");
   },
+  // v6: writing-style row, synced from desktop (get_user_writing_style tool in
+  // mobile chat). Fresh installs have it from the base schema; this back-fills
+  // existing installs. Capture triggers come free from SYNCABLE_TABLES.
+  (db) =>
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS user_style (
+        id           TEXT PRIMARY KEY,
+        persona_json TEXT,
+        full_guide   TEXT,
+        cheatsheet   TEXT,
+        source       TEXT NOT NULL DEFAULT 'none',
+        updated_at   TEXT NOT NULL,
+        hlc          TEXT,
+        deleted_at   TEXT
+      );
+    `),
+  // v7: local-only chat token/cost history for the Usage screen (no capture
+  // trigger — never syncs). Fresh installs have it from the base schema.
+  (db) =>
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS chat_usage (
+        seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+        prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        reasoning_tokens  INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_usd          REAL,
+        estimated         INTEGER NOT NULL DEFAULT 0,
+        provider          TEXT NOT NULL DEFAULT '',
+        model             TEXT NOT NULL DEFAULT '',
+        created_at        TEXT NOT NULL
+      );
+    `),
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

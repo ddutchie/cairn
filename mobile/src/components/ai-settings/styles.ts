@@ -305,6 +305,35 @@ export function makeAiSettingsStyles(t: Theme) {
     navRowMain: { flex: 1, gap: 2 },
     navRowTitle: { ...typeScale.control, color: t.textPrimary },
     navRowSub: { ...typeScale.caption, color: t.textSecondary },
+    // Chat-personality picker sheet rows (inside the BottomSheet).
+    sheetBody: { paddingHorizontal: 18, paddingVertical: 8, gap: 6 },
+    // Let the list fill the sheet card (capped by the sheet's maxHeight), so
+    // there's no empty gap below the rows and the backdrop stays tappable.
+    sheetScroll: { flexShrink: 1 },
+    personalityRow: {
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 12,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      gap: 8,
+    },
+    personalityRowActive: { borderColor: t.accent },
+    personalityRowHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+    personalityRowMain: { flex: 1, gap: 2 },
+    personalityPrompt: {
+      maxHeight: 200,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.border,
+      paddingTop: 8,
+    },
+    personalityPromptText: {
+      ...typeScale.caption,
+      fontFamily: "monospace",
+      color: t.textSecondary,
+      lineHeight: 18,
+    },
   });
 }
 

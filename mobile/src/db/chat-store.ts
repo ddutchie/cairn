@@ -10,6 +10,7 @@
 import { getMeta, setMeta, getDb } from "./index";
 
 import type { ChatUsage } from "@/chat/providers/types";
+import { estimateChatCostUsd } from "@/chat/cost-estimate";
 
 export interface StoredMessage {
   role: "user" | "assistant";
@@ -201,4 +202,99 @@ export function clearLastChatUsage(): void {
   } catch {
     /* ignore */
   }
+}
+
+// ── Chat usage HISTORY (Usage screen) ────────────────────────────────────────
+
+export interface ChatUsageRow {
+  seq: number;
+  promptTokens: number;
+  completionTokens: number;
+  reasoningTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number | null;
+  estimated: boolean;
+  provider: string;
+  model: string;
+  createdAt: string;
+}
+
+/** Append one usage record for a chat turn (local-only; never synced). */
+export function recordChatUsage(usage: ChatUsage, provider: string, model: string): void {
+  const now = new Date().toISOString();
+  // Cost: provider-reported when available, else estimated from models.dev
+  // pricing (cache-aware) — mirroring desktop's usage-recorder.
+  let costUsd = usage.costUsd;
+  let estimated = usage.estimated === true;
+  if (costUsd == null) {
+    const est = estimateChatCostUsd(
+      model,
+      usage.promptTokens,
+      usage.completionTokens ?? 0,
+      usage.cacheReadTokens ?? 0,
+      usage.cacheCreationTokens ?? 0,
+    );
+    if (est != null) {
+      costUsd = est;
+      estimated = true;
+    }
+  }
+  getDb().runSync(
+    `INSERT INTO chat_usage
+       (prompt_tokens, completion_tokens, reasoning_tokens, cache_read_tokens,
+        cache_creation_tokens, cost_usd, estimated, provider, model, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    Math.max(0, Math.round(usage.promptTokens)),
+    Math.max(0, Math.round(usage.completionTokens ?? 0)),
+    Math.max(0, Math.round(usage.reasoningTokens ?? 0)),
+    Math.max(0, Math.round(usage.cacheReadTokens ?? 0)),
+    Math.max(0, Math.round(usage.cacheCreationTokens ?? 0)),
+    typeof costUsd === "number" && Number.isFinite(costUsd) ? costUsd : null,
+    estimated ? 1 : 0,
+    provider,
+    model,
+    now,
+  );
+}
+
+/** Most-recent-first chat usage history. */
+export function loadChatUsageHistory(limit = 200): ChatUsageRow[] {
+  return getDb()
+    .getAllSync<{
+      seq: number;
+      prompt_tokens: number;
+      completion_tokens: number;
+      reasoning_tokens: number;
+      cache_read_tokens: number;
+      cache_creation_tokens: number;
+      cost_usd: number | null;
+      estimated: number;
+      provider: string;
+      model: string;
+      created_at: string;
+    }>(
+      `SELECT seq, prompt_tokens, completion_tokens, reasoning_tokens, cache_read_tokens,
+              cache_creation_tokens, cost_usd, estimated, provider, model, created_at
+       FROM chat_usage ORDER BY seq DESC LIMIT ?`,
+      limit,
+    )
+    .map((r) => ({
+      seq: r.seq,
+      promptTokens: r.prompt_tokens,
+      completionTokens: r.completion_tokens,
+      reasoningTokens: r.reasoning_tokens,
+      cacheReadTokens: r.cache_read_tokens,
+      cacheCreationTokens: r.cache_creation_tokens,
+      costUsd: r.cost_usd,
+      estimated: r.estimated === 1,
+      provider: r.provider,
+      model: r.model,
+      createdAt: r.created_at,
+    }));
+}
+
+/** Wipe the chat usage history (fresh start / privacy). */
+export function clearChatUsageHistory(): void {
+  getDb().runSync("DELETE FROM chat_usage");
 }

@@ -13,6 +13,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { MicroLabel } from "@/components/ui/labels";
 import {
   getModelInfo,
+  getPricedModelInfo,
   getModelCatalogVersion,
   modelLogoUrl,
   prewarmModelCatalog,
@@ -157,9 +158,12 @@ export function ModelPicker({
   const noMatches = query.trim() !== "" && favs.length === 0 && rest.length === 0;
 
   // Enrichment for the closed trigger (logo + cost + tool marker), same as rows.
+  // Cost uses the priced fuzzy lookup so bare/gateway/region ids still show a
+  // price (deepseek-v4-flash → deepseek/deepseek-v4-flash pricing).
   const triggerInfo = getModelInfo(value);
+  const triggerCostInfo = getPricedModelInfo(value);
   const triggerLogo = modelLogoUrl(value);
-  const triggerCost = formatModelCost(triggerInfo?.input ?? null, triggerInfo?.output ?? null);
+  const triggerCost = formatModelCost(triggerCostInfo?.input ?? null, triggerCostInfo?.output ?? null);
   const triggerNoToolCall = triggerInfo?.toolCall === false;
 
   useEffect(() => { prewarmModelCatalog(); }, []);
@@ -353,8 +357,9 @@ function ModelRow({
   onToggleFavorite: () => void;
 }) {
   const info = getModelInfo(model);
+  const costInfo = getPricedModelInfo(model);
   const logo = modelLogoUrl(model);
-  const cost = formatModelCost(info?.input ?? null, info?.output ?? null);
+  const cost = formatModelCost(costInfo?.input ?? null, costInfo?.output ?? null);
   const noToolCall = info?.toolCall === false;
 
   return (

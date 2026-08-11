@@ -20,6 +20,9 @@ import {
 } from "./providers/types";
 import { toolsForAgent, allToolMap } from "./tools";
 import { computeBreakdown, scaleBreakdown } from "./token-breakdown";
+import { MAX_PERSONALITY_PROMPT_CHARS } from "@cairn/shared/chat/registry-schema";
+import { getChatPersonalityId } from "./ai-config";
+import { getCachedPersonalitiesManifest } from "./personalities-registry";
 
 // Max model round-trips per user turn. Each turn is one model call; a turn that
 // requests tools runs them all, then loops for the model's follow-up (which sees
@@ -29,7 +32,7 @@ import { computeBreakdown, scaleBreakdown } from "./token-breakdown";
 const MAX_TURNS = 30;
 
 export interface AgentEvent {
-  type: "text-delta" | "reasoning-delta" | "tool-start" | "tool" | "final" | "error";
+  type: "text-delta" | "reasoning-delta" | "tool-start" | "tool" | "usage" | "final" | "error";
   delta?: string; // for text-delta / reasoning-delta
   tool?: string;
   toolCallId?: string; // correlates a "tool-start" with its later "tool"
@@ -37,7 +40,7 @@ export interface AgentEvent {
   result?: unknown;
   text?: string; // full text for final / error
   reasoning?: string; // accumulated reasoning text, on "final"
-  usage?: ChatUsage; // context-window usage, on "final"
+  usage?: ChatUsage; // context-window usage — per-turn on "usage", final round on "final"
 }
 
 /** Build the system message (as a UIMessage part). */
@@ -68,10 +71,32 @@ function systemMessage(): UIMessage {
           "Call get_cairn_context first to get project ids, columns, and tags (there is no separate 'list projects' tool), then reuse them — never invent an id. Choose the tool whose description matches the request.",
           "For information beyond the user's notes/tasks — current events, external facts, docs — use any connected web/search tools available to you, and cite sources as markdown links.",
           "When you mention a specific note or task, link it as [[id]] using its exact id (it renders as the title and can't be confused with a same-titled item); if you don't have the id, [[Title]] also works. After a write, briefly confirm. Answer in concise markdown.",
+          "Writing in the user's voice: when the user asks you to draft or rewrite content that sounds like them (emails, replies, notes), call get_user_writing_style first and match it. If it reports configured:false, write in a natural, clear voice instead.",
+          ...personalityLayer(),
         ].join(" "),
       },
     ],
   };
+}
+
+/**
+ * The selected chat personality as an appended style LAYER, or [] when none is
+ * picked / the registry isn't cached. Mirrors the desktop withPersonality: the
+ * rules are added under their own header as session style guidance, truncated to
+ * the shared MAX_PERSONALITY_PROMPT_CHARS ceiling so a bad registry entry can't
+ * bloat the system prompt.
+ */
+function personalityLayer(): string[] {
+  const id = getChatPersonalityId();
+  if (!id) return [];
+  const entry = getCachedPersonalitiesManifest()?.personalities.find((p) => p.id === id);
+  if (!entry) return [];
+  const prompt =
+    entry.definition.prompt.length > MAX_PERSONALITY_PROMPT_CHARS
+      ? entry.definition.prompt.slice(0, MAX_PERSONALITY_PROMPT_CHARS)
+      : entry.definition.prompt;
+  const blurb = entry.definition.description ? ` (${entry.definition.description})` : "";
+  return [`Personality: ${entry.definition.name}${blurb}\n${prompt}`];
 }
 
 /** An image/file attachment for a user message (data URI). */
@@ -168,6 +193,9 @@ export async function runAgent(
     let text = "";
     const toolCalls: { id: string; name: string; input: unknown }[] = [];
     let finishReason: string | undefined;
+    // Reset per-turn usage so a finish WITHOUT a usage event can't leak the
+    // previous round's numbers into this turn's "usage" event.
+    usage = undefined;
 
     try {
       for await (const ev of provider.stream(conversation, tools, signal)) {
@@ -219,6 +247,12 @@ export async function runAgent(
     // Record the assistant text part.
     if (text) assistant.parts.push({ type: "text", text });
     finalText = text || finalText;
+
+    // Surface THIS turn's usage so the caller can accumulate the real spend
+    // across tool-calling rounds (each round re-sends the whole conversation,
+    // so only the last round's tokens would otherwise be counted). The final
+    // event still carries the last round's usage for the context ring.
+    if (usage) onEvent?.({ type: "usage", usage });
 
     // No tool calls → we're done.
     if (toolCalls.length === 0) {

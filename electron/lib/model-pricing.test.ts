@@ -59,6 +59,13 @@ describe("model-pricing", () => {
     expect(pricePerMillion("openai/gpt-4o")).toEqual({ input: 2.5, output: 10 });
   });
 
+  it("strips trailing region/date/reasoning suffixes to find a priced variant", () => {
+    // gpt-4o-gcp, gpt-4o:thinking → strip the qualifier → gpt-4o pricing.
+    expect(pricePerMillion("gpt-4o-gcp")).toEqual({ input: 2.5, output: 10 });
+    expect(pricePerMillion("gpt-4o:thinking")).toEqual({ input: 2.5, output: 10 });
+    expect(pricePerMillion("deepseek-v4-flash-0731")).toEqual({ input: 0.04, output: 0.12 });
+  });
+
   it("estimates cost from per-1M pricing", () => {
     // 1M input + 200K output @ deepseek rates
     expect(estimateCostUsd("deepseek-v4-flash", 1_000_000, 200_000)).toBeCloseTo(0.04 + 0.024, 6);

@@ -119,6 +119,20 @@ CREATE TABLE IF NOT EXISTS task_cards (
   deleted_at       TEXT
 );
 
+-- Single-row writing-style table, synced from desktop (id is the fixed
+-- constant 'global'). Columns match desktop's user_style exactly. Captured by
+-- the auto-generated trigger once listed in SYNCABLE_TABLES.
+CREATE TABLE IF NOT EXISTS user_style (
+  id           TEXT PRIMARY KEY,
+  persona_json TEXT,
+  full_guide   TEXT,
+  cheatsheet   TEXT,
+  source       TEXT NOT NULL DEFAULT 'none',
+  updated_at   TEXT NOT NULL,
+  hlc          TEXT,
+  deleted_at   TEXT
+);
+
 CREATE TABLE IF NOT EXISTS chat_threads (
   id           TEXT PRIMARY KEY,
   scope        TEXT NOT NULL DEFAULT 'workspace',
@@ -161,6 +175,23 @@ CREATE TABLE IF NOT EXISTS chat_local (
   images     TEXT,
   tools      TEXT,
   created_at TEXT NOT NULL
+);
+
+-- Local-only chat token/cost history for the Usage screen. NO capture trigger,
+-- so it never syncs. One row per chat turn that reported usage. estimated
+-- marks cost derived client-side (models.dev) when the provider reported none.
+CREATE TABLE IF NOT EXISTS chat_usage (
+  seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+  prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  reasoning_tokens  INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd          REAL,
+  estimated         INTEGER NOT NULL DEFAULT 0,
+  provider          TEXT NOT NULL DEFAULT '',
+  model             TEXT NOT NULL DEFAULT '',
+  created_at        TEXT NOT NULL
 );
 
 -- Local-only, on-device app settings (key/value). NO capture trigger, so it

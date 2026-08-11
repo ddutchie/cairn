@@ -16,6 +16,7 @@
 
 import { fetch as expoFetch } from "expo/fetch";
 import { countTextTokens } from "../tokens";
+import { estimatePromptTokens } from "../token-breakdown";
 import { newRunId, type AiTool, type ChatProvider, type ChatUsage, type StreamEvent, type UIMessage } from "./types";
 
 /** The build-time-injected Rork base URL, or null if not configured. */
@@ -34,19 +35,6 @@ export function isRorkAvailable(): boolean {
 // window for the ring (many modern models are >=200K; this errs toward showing
 // "full" sooner rather than underestimating and overflowing silently).
 const RORK_CONTEXT_LIMIT = 200_000;
-
-/** Plain text of all message parts, for a client-side token estimate. */
-function conversationText(messages: UIMessage[]): string {
-  const chunks: string[] = [];
-  for (const m of messages) {
-    for (const p of m.parts) {
-      if (p.type === "text" && typeof (p as { text?: string }).text === "string") {
-        chunks.push((p as { text: string }).text);
-      }
-    }
-  }
-  return chunks.join("\n");
-}
 
 async function* streamRork(
   messages: UIMessage[],
@@ -81,21 +69,46 @@ async function* streamRork(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  // Prefer a server-reported prompt-token count if the stream carries one;
-  // otherwise fall back to a client estimate (marked estimated) at finish.
+  // Prefer a server-reported token count if the stream carries one; otherwise
+  // fall back to a client estimate (marked estimated) at finish. Completion
+  // tokens are likewise taken from the server when reported, else estimated
+  // from the text deltas actually streamed.
   let serverPromptTokens: number | undefined;
+  let serverCompletionTokens: number | undefined;
+  let streamedText = "";
+  let streamedReasoning = "";
   let sawFinish = false;
 
   const usageEvent = (): ChatUsage => {
-    if (serverPromptTokens != null) {
-      return { promptTokens: serverPromptTokens, contextLimit: RORK_CONTEXT_LIMIT };
-    }
-    // Estimate from the outgoing conversation (o200k_base — approximate for
-    // whatever model Rork serves, which is all a fill gauge needs).
+    // The server's /agent/chat sometimes reports a prompt-token count far below
+    // the real request (it appears to omit system / tools / history — observed
+    // ~270 reported for a ~6k request). The context ring and its breakdown are
+    // rescaled to this number, so an under-count makes every segment tiny.
+    // Trust the server value only when it's plausibly close to the client
+    // estimate (the desktop-parity breakdown total); otherwise use the estimate
+    // so the ring reflects the actual request.
+    const estimatedPrompt = estimatePromptTokens(messages, tools);
+    const promptTokens =
+      serverPromptTokens != null && serverPromptTokens >= estimatedPrompt * 0.8
+        ? serverPromptTokens
+        : estimatedPrompt;
     return {
-      promptTokens: countTextTokens(conversationText(messages)),
+      promptTokens,
       contextLimit: RORK_CONTEXT_LIMIT,
-      estimated: true,
+      // Server-reported output when available; otherwise count what we streamed
+      // — answer AND reasoning deltas, matching ChatUsage's completion-token
+      // semantics (OpenAI-style completion includes reasoning). Zero when
+      // neither stream carried text (e.g. a bare tool-call turn).
+      completionTokens:
+        serverCompletionTokens ??
+        (streamedText || streamedReasoning
+          ? countTextTokens(streamedText) + countTextTokens(streamedReasoning)
+          : 0),
+      // Reasoning is streamed as reasoning-delta parts — count it so the
+      // Usage view's "thinking" column reflects Rork's chain-of-thought too.
+      reasoningTokens: streamedReasoning ? countTextTokens(streamedReasoning) : 0,
+      // Marked estimated when we fell back to the client-side prompt count.
+      estimated: promptTokens !== serverPromptTokens,
     };
   };
 
@@ -125,10 +138,26 @@ async function* streamRork(
           continue; // ignore keep-alives / partial frames
         }
         // Capture any usage the server includes (AI SDK totalUsage/usage shapes).
-        const raw = ev as { usage?: { promptTokens?: number; inputTokens?: number }; totalUsage?: { promptTokens?: number; inputTokens?: number } };
+        const raw = ev as { usage?: { promptTokens?: number; inputTokens?: number; completionTokens?: number; outputTokens?: number }; totalUsage?: { promptTokens?: number; inputTokens?: number; completionTokens?: number; outputTokens?: number } };
         const u = raw.totalUsage ?? raw.usage;
         const pt = u?.promptTokens ?? u?.inputTokens;
+        const ct = u?.completionTokens ?? u?.outputTokens;
         if (typeof pt === "number") serverPromptTokens = pt;
+        if (typeof ct === "number") serverCompletionTokens = ct;
+        // Track streamed text so output tokens can be estimated when the server
+        // doesn't report them (keeps input vs output counting honest on Rork).
+        if (ev.type === "text-delta") {
+          const d = (ev as { delta?: string }).delta;
+          if (typeof d === "string") streamedText += d;
+        }
+        // Reasoning (chain-of-thought) is also streamed — count it as reasoning
+        // tokens so the Usage view's "thinking" column is populated.
+        if (ev.type === "reasoning-delta") {
+          const d = (ev as { delta?: string }).delta;
+          if (typeof d === "string" && d.trim() && d.trim().toUpperCase() !== "[REDACTED]") {
+            streamedReasoning += d;
+          }
+        }
 
         if (ev.type === "finish") {
           sawFinish = true;

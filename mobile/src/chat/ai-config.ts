@@ -527,6 +527,22 @@ export function setAppleReasoningLevel(level: AppleReasoningLevel): void {
   setSetting(KEY_APPLE_REASONING, level);
 }
 
+const KEY_PERSONALITY = "ai.personalityId"; // community personality id, or "" = none
+
+/**
+ * The selected chat personality (id in the community personalities manifest),
+ * or "" when none is picked. Layered onto the chat system prompt by the agent
+ * loop (see systemMessage in agent.ts). Local-only, never synced.
+ */
+export function getChatPersonalityId(): string {
+  return getSetting(KEY_PERSONALITY) ?? "";
+}
+
+/** Persist the selected chat personality id ("" clears it). */
+export function setChatPersonalityId(id: string): void {
+  setSetting(KEY_PERSONALITY, id);
+}
+
 /** Read the API key from the keychain (null if none stored). */
 export async function getOpenAIApiKey(): Promise<string | null> {
   // When a provider is active, its key is authoritative — return it as-is

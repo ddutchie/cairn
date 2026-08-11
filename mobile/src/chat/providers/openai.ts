@@ -26,6 +26,8 @@ import { pdfDocumentPart } from "@cairn/shared/models/pdf-attach";
 import type { OpenAIConfig } from "../ai-config";
 import { fetchProvidersManifest, getRegistryProviders } from "../providers-registry";
 import { contextLimitForModel } from "../models-dev";
+import { estimatePromptTokens } from "../token-breakdown";
+import { countTextTokens } from "../tokens";
 import {
   type AiTool,
   type ChatProvider,
@@ -188,14 +190,38 @@ function makeStreamer(config: OpenAIConfig) {
     let costUsd: number | undefined;
     let cacheReadTokens: number | undefined;
     let cacheCreationTokens: number | undefined;
+    // Client-side fallbacks when the endpoint reports no usage chunk: text and
+    // reasoning streamed this turn are counted so the ring + Usage view always
+    // have numbers (desktop estimates the same way when a provider reports none).
+    let streamedText = "";
+    let streamedReasoning = "";
 
     // Build the ring usage from the server's prompt_tokens + the model's context
-    // window (models.dev, cached). Undefined when the endpoint reported no usage.
-    const buildUsage = async (): Promise<ChatUsage | undefined> => {
-      if (promptTokens == null) return undefined;
+    // window (models.dev, cached), falling back to the desktop-parity client
+    // estimate when the endpoint reported no usage. Never undefined.
+    const buildUsage = async (): Promise<ChatUsage> => {
       // Manual override wins; else look up the model in models.dev; else default.
       const contextLimit = config.contextLimit ?? (await contextLimitForModel(config.model));
-      return { promptTokens, contextLimit, completionTokens, reasoningTokens, costUsd, cacheReadTokens, cacheCreationTokens };
+      const estimate = estimatePromptTokens(messages, tools);
+      const prompt = promptTokens != null && promptTokens > 0 ? promptTokens : estimate;
+      const completion = completionTokens ?? (streamedText ? countTextTokens(streamedText) : 0);
+      const reasoning = reasoningTokens != null && reasoningTokens > 0
+        ? reasoningTokens
+        : streamedReasoning
+          ? countTextTokens(streamedReasoning)
+          : 0;
+      return {
+        promptTokens: prompt,
+        contextLimit,
+        completionTokens: completion,
+        reasoningTokens: reasoning,
+        costUsd,
+        cacheReadTokens,
+        cacheCreationTokens,
+        // Estimated when the prompt count (the ring's denominator) came from
+        // our on-device count rather than the server.
+        estimated: promptTokens == null || promptTokens <= 0,
+      };
     };
 
     const flushTools = function* (): Generator<StreamEvent> {
@@ -294,9 +320,11 @@ function makeStreamer(config: OpenAIConfig) {
           // empty deltas (some providers send a literal "[REDACTED]").
           const reasoning = delta?.reasoning_content ?? delta?.reasoning;
           if (reasoning && reasoning.trim() && reasoning.trim().toUpperCase() !== "[REDACTED]") {
+            streamedReasoning += reasoning;
             yield { type: "reasoning-delta", delta: reasoning };
           }
           if (delta?.content) {
+            streamedText += delta.content;
             yield { type: "text-delta", delta: delta.content };
           }
           for (const tc of delta?.tool_calls ?? []) {

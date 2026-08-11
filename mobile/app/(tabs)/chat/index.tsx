@@ -18,11 +18,12 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
-import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, type ToolCall } from "@/db/chat-store";
+import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, recordChatUsage, type ToolCall } from "@/db/chat-store";
 import { redactValue } from "@cairn/shared/chat/redaction";
 import { hasProvider, resolveProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
-import { getOpenAIModel } from "@/chat/ai-config";
+import { getOpenAIModel, getProviderPref, getActiveProvider } from "@/chat/ai-config";
+import { isRorkAvailable } from "@/chat/providers/rork";
 import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/chat/models-dev";
 import { supportsImageInput } from "@cairn/shared/models/model-catalog";
 import type { UIMessage, ChatUsage } from "@/chat/providers/types";
@@ -35,6 +36,32 @@ import { MessageBubble } from "@/components/chat/MessageBubble";
 import { Composer } from "@/components/chat/Composer";
 import { safeToolOutput } from "@/chat/tool-output";
 import { fetchManifest } from "@/chat/registry";
+
+// Resolve the provider/model label for the chat-usage history (Usage screen).
+function usageProviderLabel(): string {
+  const pref = getProviderPref(isRorkAvailable());
+  if (pref === "apple") return "Apple";
+  if (pref === "rork") return "Rork";
+  return getActiveProvider()?.name ?? "OpenAI";
+}
+function usageModelLabel(): string {
+  const pref = getProviderPref(isRorkAvailable());
+  return pref === "openai" ? getOpenAIModel() || "—" : pref;
+}
+
+/** Add two ChatUsage records (for accumulating spend across tool rounds). */
+function sumUsage(a: ChatUsage, b: ChatUsage): ChatUsage {
+  return {
+    promptTokens: a.promptTokens + b.promptTokens,
+    contextLimit: b.contextLimit,
+    completionTokens: (a.completionTokens ?? 0) + (b.completionTokens ?? 0),
+    reasoningTokens: (a.reasoningTokens ?? 0) + (b.reasoningTokens ?? 0),
+    cacheReadTokens: (a.cacheReadTokens ?? 0) + (b.cacheReadTokens ?? 0),
+    cacheCreationTokens: (a.cacheCreationTokens ?? 0) + (b.cacheCreationTokens ?? 0),
+    costUsd: (a.costUsd ?? 0) + (b.costUsd ?? 0) || undefined,
+    estimated: a.estimated === true || b.estimated === true,
+  };
+}
 
 export default function ChatScreen() {
   const t = useTheme();
@@ -149,6 +176,9 @@ export default function ChatScreen() {
     let acc = "";
     let reasoningAcc = "";
     const toolTrail: ToolCall[] = [];
+    // Sum of per-round usage across the run (tool-calling turns emit one usage
+    // event per round; the ring uses the final round, the history uses this sum).
+    let usageTotal: ChatUsage | undefined = undefined;
 
     const patchAssistant = (patch: Partial<UiMessage>) => {
       setMessages((prev) => {
@@ -202,13 +232,24 @@ export default function ChatScreen() {
           else toolTrail.push(finalized);
           patchAssistant({ tools: [...toolTrail] });
           haptics.impact(); // agent ran a tool
+        } else if (e.type === "usage" && e.usage) {
+          // Accumulate the real spend across tool-calling rounds — each round
+          // re-sends the whole conversation, so the last round alone under-
+          // counts a tool-heavy turn.
+          usageTotal = usageTotal ? sumUsage(usageTotal, e.usage) : e.usage;
         } else if (e.type === "final" && e.usage) {
-          // Only drive the ring with valid token counts — a negative prompt
-          // count or non-positive limit renders a broken/empty ring.
+          // Drive the ring with the FINAL round's context window (a negative
+          // prompt count or non-positive limit renders a broken/empty ring).
           const u = e.usage;
           if (u.promptTokens >= 0 && u.contextLimit > 0) {
             setUsage(u);
             saveLastChatUsage(u); // persist so the ring survives tab close/reopen
+          }
+          // Record the SUMMED spend (falls back to the final round's usage when
+          // only one usage event arrived — e.g. a plain single-turn reply).
+          const total = usageTotal ?? u;
+          if (total.promptTokens >= 0 && (total.completionTokens ?? 0) >= 0) {
+            recordChatUsage(total, usageProviderLabel(), usageModelLabel());
           }
         }
         setTimeout(() => scrollToEndSoon(true), 20);
