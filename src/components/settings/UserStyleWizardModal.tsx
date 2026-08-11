@@ -421,6 +421,7 @@ export function UserStyleWizardModal({
           </div>
         )}
 
+        {!pasteMode && (<>
         {step === 0 && (
           <div className="space-y-3">
             <input className={inputCls} placeholder="Your name (e.g. Gerard)" value={persona.name ?? ""} onChange={(e) => setPersona({ ...persona, name: e.target.value })} />
@@ -571,6 +572,7 @@ export function UserStyleWizardModal({
             )}
           </div>
         )}
+        </>)}
       </div>
 
       {/* Footer actions */}
