@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, ChevronUp, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
@@ -1152,7 +1152,11 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                       accessibilityRole="button"
                       accessibilityLabel={expanded ? "Hide personality prompt" : "Show personality prompt"}
                     >
-                      <ChevronDown size={16} color={t.textTertiary} style={expanded ? styles.chevUp : undefined} />
+                      {expanded ? (
+                        <ChevronUp size={16} color={t.textTertiary} />
+                      ) : (
+                        <ChevronDown size={16} color={t.textTertiary} />
+                      )}
                     </Pressable>
                   </View>
                   {expanded && (

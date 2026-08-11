@@ -322,7 +322,6 @@ export function makeAiSettingsStyles(t: Theme) {
     personalityRowActive: { borderColor: t.accent },
     personalityRowHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
     personalityRowMain: { flex: 1, gap: 2 },
-    chevUp: { transform: [{ rotate: "180deg" }] },
     personalityPrompt: {
       maxHeight: 200,
       borderTopWidth: StyleSheet.hairlineWidth,
