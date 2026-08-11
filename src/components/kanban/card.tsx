@@ -53,9 +53,10 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
   const getTagById = useCairnStore((s) => s.getTagById);
   const isDone = useCairnStore((s) => s.columns.find((c) => c.id === card.columnId)?.type === "done");
   const isBlocked = (card.blockedByIds ?? []).length > 0;
-  const tags = card.tagIds.slice(0, 3).map((id) => getTagById(id)).filter(Boolean);
-  const extraTags = card.tagIds.slice(3).map((id) => getTagById(id)).filter(Boolean);
-  const extraTagCount = Math.max(0, card.tagIds.length - 3);
+  const allTags = card.tagIds.map((id) => getTagById(id)).filter(Boolean);
+  const tags = allTags.slice(0, 3);
+  const extraTags = allTags.slice(3);
+  const extraTagCount = extraTags.length;
   const description = card.description?.trim() || "";
 
   return (

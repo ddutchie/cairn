@@ -11,9 +11,10 @@ export function TagChips({ tags, size = "md", max }: { tags: TagRow[]; size?: "s
   const t = useTheme();
   if (!tags.length) return null;
   const small = size === "sm";
-  const capped = typeof max === "number" && tags.length > max;
-  const shown = capped ? tags.slice(0, max) : tags;
-  const overflow = capped ? tags.length - max : 0;
+  const cap = typeof max === "number" && Number.isFinite(max) ? Math.max(0, Math.floor(max)) : Infinity;
+  const capped = tags.length > cap;
+  const shown = capped ? tags.slice(0, cap) : tags;
+  const overflow = capped ? tags.length - cap : 0;
   return (
     <View style={styles.row}>
       {shown.map((tag) => (

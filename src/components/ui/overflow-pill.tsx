@@ -32,21 +32,21 @@ function previewNames(names: string[]): string {
  * passing onClick turns it into an expand/collapse toggle.
  */
 export function OverflowPill({ count, names, onClick, label, tooltip, className }: OverflowPillProps) {
-  return (
-    <Tooltip content={tooltip ?? previewNames(names)}>
-      <span
-        role={onClick ? "button" : undefined}
-        tabIndex={onClick ? 0 : undefined}
-        onClick={onClick}
-        onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}
-        className={cn(
-          "inline-flex items-center rounded border border-[var(--border)] px-1 py-0.5 text-[0.643rem] font-medium text-[var(--text-tertiary)] cursor-default select-none",
-          onClick && "cursor-pointer transition-colors hover:text-[var(--text-secondary)] hover:border-[var(--text-tertiary)]",
-          className,
-        )}
-      >
-        {label ?? `+${count}`}
-      </span>
-    </Tooltip>
+  const pillClasses = cn(
+    "inline-flex items-center rounded border border-[var(--border)] px-1 py-0.5 text-[0.643rem] font-medium text-[var(--text-tertiary)] select-none",
+    onClick
+      ? "cursor-pointer bg-transparent transition-colors hover:text-[var(--text-secondary)] hover:border-[var(--text-tertiary)]"
+      : "cursor-default",
+    className,
   );
+  const content = onClick ? (
+    <button type="button" onClick={onClick} className={pillClasses}>
+      {label ?? `+${count}`}
+    </button>
+  ) : (
+    <span className={pillClasses}>
+      {label ?? `+${count}`}
+    </span>
+  );
+  return <Tooltip content={tooltip ?? previewNames(names)}>{content}</Tooltip>;
 }

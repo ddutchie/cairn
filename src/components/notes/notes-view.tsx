@@ -331,7 +331,8 @@ export function NotesView() {
     }
     return base;
   }, [sortedProjectTags, tagsExpanded, activeTagId]);
-  const hiddenProjectTags = sortedProjectTags.slice(shownProjectTags.length);
+  const shownProjectTagIds = new Set(shownProjectTags.map((t) => t.id));
+  const hiddenProjectTags = sortedProjectTags.filter((t) => !shownProjectTagIds.has(t.id));
 
   const filtered   = useNoteFilter(notes, filter, activeTagId);
   // Resolve the active note across notes and templates (templates are excluded
