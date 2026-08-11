@@ -1699,15 +1699,15 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
 
       // The version IS recorded internally as 1. Whether it surfaces in
       // listPeerProtocols depends on the current protocol: it only appears when
-      // it DIFFERS from this build. While SYNC_PROTOCOL_VERSION === 1 a v1 peer
-      // is in step, so the list is empty; after a future bump the same peer
-      // would surface as `behind`. Assert whichever the current version implies,
-      // so this test stays honest across a bump instead of hard-coding 1.
+      // it DIFFERS from this build. While SYNC_PROTOCOL_VERSION is 1 a v1 peer
+      // is in step, so the list is empty; after a bump the same peer surfaces
+      // as `behind`. Assert whichever the current version implies, so this test
+      // stays honest across a bump instead of hard-coding 1.
       const peers = B.engine.listPeerProtocols();
-      if (SYNC_PROTOCOL_VERSION === 1) {
-        expect(peers).toEqual([]);
-      } else {
+      if (SYNC_PROTOCOL_VERSION > 1) {
         expect(peers).toEqual([{ deviceId: "A", version: 1, behind: true }]);
+      } else {
+        expect(peers).toEqual([]);
       }
     });
 

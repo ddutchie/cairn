@@ -118,11 +118,19 @@ const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * that older peers can safely ignore (as `observed`/`tombstone` were) do NOT
  * need a bump.
  *
+ * Protocol 2 (v2.6.13/mobile 0.1.6): added `user_style` to the syncable
+ * entity set. An older peer is not *broken* by this — `applyRemote` skips
+ * unknown entities and convergence is unaffected — but an old desktop lacks
+ * the `user_style` capture triggers, so it cannot PUBLISH the writing style
+ * to a new mobile at all. Bumping stamps those peers as `behind`, surfacing
+ * the "device needs updating" hint so the user knows to update the desktop
+ * for writing-style sync to work.
+ *
  * The point of stamping it now, while only two historical shapes exist, is that
  * a peer can be *told* it is behind instead of us inferring capability from
  * which optional fields happen to be present.
  */
-export const SYNC_PROTOCOL_VERSION = 1;
+export const SYNC_PROTOCOL_VERSION = 2;
 
 /** sync_state key prefix for the highest protocol version seen from a peer. */
 const PEER_PROTOCOL_PREFIX = "peer_protocol:";
