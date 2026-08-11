@@ -126,6 +126,9 @@ export async function generateUserStyleMarkdown(
     // interleaves long reasoning_content deltas with content deltas (verified
     // against zen/go — same request is clean non-streamed, soup streamed).
     stream: false,
+    // reasoning_effort none: measured ~2x faster with 0 reasoning tokens while
+    // still producing a usable guide for this direct transform.
+    reasoningEffort: "none",
   });
   if (!isUsableGuide(markdown, step)) {
     markdown = await callLLM(cfg, systemPrompt, userPrompt, {
@@ -133,6 +136,7 @@ export async function generateUserStyleMarkdown(
       temperature: 0.1,
       maxTokens: 8192,
       stream: false,
+      reasoningEffort: "none",
     });
   }
   if (!isUsableGuide(markdown, step)) {
@@ -207,7 +211,7 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
           threadId: "user-style",
           workspaceId: req.workspaceId,
           projectId: req.projectId,
-          config: { maxSteps: 6, temperature: 0.3 },
+          config: { maxSteps: 6, temperature: 0.3, reasoningEffort: "none" as const },
         };
         const messages = [
           { role: "system" as const, content: systemPrompt },

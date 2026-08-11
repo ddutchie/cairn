@@ -243,6 +243,7 @@ export async function runToolLoop(
             tools: combinedTools,
             maxTokens,
             temperature,
+            reasoningEffort: req.config?.reasoningEffort,
           })),
         });
       } catch (_err) {

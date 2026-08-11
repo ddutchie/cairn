@@ -136,6 +136,12 @@ export interface LlmCallOpts {
    * stream:false and read the final message instead.
    */
   stream?: boolean;
+  /**
+   * reasoning_effort for one-shots (none | low | high | max). Default = omit
+   * (endpoint default). Measured on writing-style generation: "none" is ~2x
+   * faster with 0 reasoning tokens and still produces a usable guide.
+   */
+  reasoningEffort?: "none" | "low" | "high" | "max";
 }
 
 /**
@@ -246,6 +252,7 @@ export async function callLLM(
       // can pass stream:false — some gateways garble SSE when a reasoning model
       // interleaves huge reasoning_content deltas with content deltas.
       stream,
+      ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
     },
     stream,
   );

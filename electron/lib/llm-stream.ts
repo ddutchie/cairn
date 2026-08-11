@@ -219,6 +219,7 @@ export function buildChatCompletionsBody(opts: {
   tools: unknown[];
   maxTokens?: number;
   temperature?: number;
+  reasoningEffort?: "none" | "low" | "high" | "max";
 }): Record<string, unknown> {
   return {
     model: opts.model,
@@ -232,6 +233,9 @@ export function buildChatCompletionsBody(opts: {
     temperature: opts.temperature,
     stream: true,
     stream_options: { include_usage: true },
+    // One-shot generation can drop reasoning entirely (faster, cheaper, and the
+    // guide is a direct transform) — measured ~2x faster with 0 reasoning tokens.
+    ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
   };
 }
 

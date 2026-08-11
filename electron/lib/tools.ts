@@ -143,7 +143,7 @@ export interface ChatRequest {
   projectId?: string;
   workspaceId?: string;
   history?: ChatHistoryEntry[];
-  config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; maxTokens?: number; isReasoningModel?: boolean };
+  config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; maxTokens?: number; isReasoningModel?: boolean; reasoningEffort?: "none" | "low" | "high" | "max" };
   systemPrompt?: string;
   /**
    * Active chat personality for this turn — a style layer appended verbatim
