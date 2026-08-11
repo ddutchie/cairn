@@ -37,7 +37,6 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
       installCommunityPersonality: s.installCommunityPersonality,
     })),
   );
-  const installedList = installedPersonalities ?? [];
 
   const [result, setResult] = useState<PersonalitiesFetchResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,8 +94,8 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
   // Installed state, keyed by communityId (== the entry id).
   const isInstalled = useCallback(
     (entry: RegistryPersonalityEntry): boolean =>
-      installedList.some((p) => p.communityId === entry.id),
-    [installedList],
+      (installedPersonalities ?? []).some((p) => p.communityId === entry.id),
+    [installedPersonalities],
   );
 
   const runInstall = useCallback(
@@ -267,7 +266,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
 
       <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
         Added personalities join your installed list. Select one in the personality
-        picker next to the model selector in chat — "Default" means no personality.
+        picker next to the model selector in chat — &quot;None&quot; means no personality.
       </p>
     </ModalShell>
   );

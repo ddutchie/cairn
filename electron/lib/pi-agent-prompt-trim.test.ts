@@ -29,7 +29,7 @@ import {
   createWorkspace, createProject, createNote, createColumn, createCard,
 } from "../db/queries";
 import { buildPiAgentSystemPrompt, type PiAgentPromptContext } from "./pi-agent-prompt";
-import { TOOLS, type ChatRequest } from "./tools";
+import { type ChatRequest } from "./tools";
 import { BASE_URL, MODEL, API_KEY, endpointUp, LIVE_TESTS_ENABLED } from "./bench-endpoint";
 import { runToolLoop } from "./chat-loop";
 
