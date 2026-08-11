@@ -128,6 +128,14 @@ export interface LlmCallOpts {
   temperature?: number;
   /** Max output/completion token override (default 4096). */
   maxTokens?: number;
+  /**
+   * Stream the response (default true). Some gateways corrupt SSE output when a
+   * reasoning model emits long `reasoning_content` interleaved with `content`
+   * deltas (the accumulated text comes back garbled). One-shot callers that
+   * don't need incremental tokens (e.g. writing-style generation) should pass
+   * stream:false and read the final message instead.
+   */
+  stream?: boolean;
 }
 
 /**
@@ -220,6 +228,7 @@ export async function callLLM(
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
+  const stream = opts.stream ?? true;
   const response = await postChatCompletions(
     buildApiUrl(config.baseUrl, "chat/completions"),
     headers,
@@ -231,46 +240,71 @@ export async function callLLM(
       ],
       max_tokens: opts.maxTokens ?? 4096,
       temperature: opts.temperature ?? 0.4,
-      // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
-      stream: true,
+      // Stream by default to prevent proxy connection drop timeouts (e.g.
+      // gateway/reverse proxy limits on blocking sync calls returning 504
+      // Gateway Time-out). Callers that need a clean final message (one-shots)
+      // can pass stream:false — some gateways garble SSE when a reasoning model
+      // interleaves huge reasoning_content deltas with content deltas.
+      stream,
     },
-    true,
+    stream,
   );
   if (!response.ok) throw new Error(`LLM error ${response.status}: ${await response.text().catch(() => response.statusText)}`);
 
+  // Non-streaming: the response is a single JSON body — read message.content and
+  // usage directly. This is the reliable path for one-shot generation when the
+  // gateway's SSE is corrupted by long reasoning streams.
+  if (!stream) {
+    const body = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number }; cost?: unknown };
+    };
+    const content = body.choices?.[0]?.message?.content ?? "";
+    const usage = body.usage;
+    if (usage) {
+      const cache = extractCacheTokens(usage);
+      record(
+        usage.prompt_tokens ?? 0,
+        usage.completion_tokens ?? 0,
+        usage.completion_tokens_details?.reasoning_tokens ?? 0,
+        extractCost(usage.cost, usage),
+        undefined,
+        cache.cacheReadTokens,
+        cache.cacheCreationTokens,
+      );
+    } else {
+      record(tok(systemPrompt) + tok(userPrompt), tok(content), 0);
+    }
+    return content;
+  }
+
+  // Streaming: consume via the SAME buffered SSE parser the chat and agent
+  // loops use (consumeAssistantStream). callLLM's historical inline
+  // `split("\n")`-per-chunk loop mangled SSE events that split across TCP
+  // reads and ignored reasoning fields — which silently broke every one-shot
+  // tool (commit messages, PRD, explain, summaries, writing style) on
+  // reasoning models/gateways. Dynamic import avoids the llm ↔ llm-stream
+  // module cycle.
   const reader = response.body?.getReader();
   if (!reader) throw new Error("No readable stream");
 
-  const decoder = new TextDecoder();
-  let content = "";
   let usage: { pt?: number; ct?: number; rt?: number; cacheRead?: number; cacheCreate?: number; chunkCost?: unknown; raw?: unknown } | undefined;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const jsonStr = trimmed.slice(5).trim();
-      if (jsonStr === "[DONE]") break;
-      try {
-        const obj = JSON.parse(jsonStr);
-        if (obj.usage) {
-          const cache = extractCacheTokens(obj.usage);
-          usage = {
-            pt: obj.usage.prompt_tokens ?? 0,
-            ct: obj.usage.completion_tokens ?? 0,
-            rt: obj.usage.completion_tokens_details?.reasoning_tokens ?? 0,
-            cacheRead: cache.cacheReadTokens,
-            cacheCreate: cache.cacheCreationTokens,
-            chunkCost: obj.cost,
-            raw: obj.usage,
-          };
-        }
-        const delta = obj.choices?.[0]?.delta?.content ?? "";
-        if (delta) content += delta;
-      } catch { /* skip malformed lines */ }
-    }
-  }
+  const { consumeAssistantStream } = await import("./llm-stream");
+  const turn = await consumeAssistantStream(reader, {
+    signal: undefined,
+    onUsage: (u) => {
+      usage = {
+        pt: u.promptTokens ?? 0,
+        ct: u.completionTokens ?? 0,
+        rt: u.reasoningTokens ?? 0,
+        cacheRead: u.cacheReadTokens,
+        cacheCreate: u.cacheCreationTokens,
+        chunkCost: u.chunkCost,
+        raw: u.raw,
+      };
+    },
+  });
+  const content = turn.content;
 
   if (usage) {
     record(usage.pt ?? 0, usage.ct ?? 0, usage.rt ?? 0, extractCost(usage.chunkCost, usage.raw), undefined, usage.cacheRead, usage.cacheCreate);

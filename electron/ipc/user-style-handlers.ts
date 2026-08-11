@@ -82,12 +82,17 @@ export async function generateUserStyleMarkdown(
     source: "writing-style",
     temperature: 0.3,
     maxTokens: 8192,
+    // Non-streaming: some gateways garble SSE output when a reasoning model
+    // interleaves long reasoning_content deltas with content deltas (verified
+    // against zen/go — same request is clean non-streamed, soup streamed).
+    stream: false,
   });
   if (!isUsableGuide(markdown, step)) {
     markdown = await callLLM(cfg, systemPrompt, userPrompt, {
       source: "writing-style",
       temperature: 0.1,
       maxTokens: 8192,
+      stream: false,
     });
   }
   if (!isUsableGuide(markdown, step)) {
