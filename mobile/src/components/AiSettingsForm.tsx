@@ -223,6 +223,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [personalityId, setPersonalityId] = useState(() => getChatPersonalityId());
   const [personalityManifest, setPersonalityManifest] = useState(() => getCachedPersonalitiesManifest());
   const [personalityRefreshing, setPersonalityRefreshing] = useState(false);
+  // Which personality row is expanded to show its appended prompt.
+  const [expandedPersonality, setExpandedPersonality] = useState<string | null>(null);
   // Model discovery via GET {base}/models.
   const [models, setModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
@@ -1119,7 +1121,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           <BottomSheetHeader
             title="Chat personality"
             onCancel={() => setPersonalityOpen(false)}
-            onDone={personalityRefreshing ? undefined : () => void refreshPersonalities()}
+            onDone={() => setPersonalityOpen(false)}
           />
           <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetBody}>
             <Pressable
@@ -1135,24 +1137,35 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
             </Pressable>
             {personalityManifest?.personalities.map((p) => {
               const active = p.id === personalityId;
+              const expanded = expandedPersonality === p.id;
               return (
-                <Pressable
-                  key={p.id}
-                  style={[styles.personalityRow, active && styles.personalityRowActive]}
-                  onPress={() => selectPersonality(p.id)}
-                  accessibilityRole="button"
-                >
-                  <View style={styles.personalityRowMain}>
-                    <Text style={styles.navRowTitle}>{p.definition.name}</Text>
-                    <Text style={styles.navRowSub}>{p.definition.description ?? "Community personality."}</Text>
+                <View key={p.id} style={[styles.personalityRow, active && styles.personalityRowActive]}>
+                  <View style={styles.personalityRowHeader}>
+                    <Pressable style={styles.personalityRowMain} onPress={() => selectPersonality(p.id)} accessibilityRole="button">
+                      <Text style={styles.navRowTitle}>{p.definition.name}</Text>
+                      <Text style={styles.navRowSub}>{p.definition.description ?? "Community personality."}</Text>
+                    </Pressable>
+                    {active && <Check size={16} color={t.accent} />}
+                    <Pressable
+                      onPress={() => setExpandedPersonality(expanded ? null : p.id)}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={expanded ? "Hide personality prompt" : "Show personality prompt"}
+                    >
+                      <ChevronDown size={16} color={t.textTertiary} style={expanded ? styles.chevUp : undefined} />
+                    </Pressable>
                   </View>
-                  {active && <Check size={16} color={t.accent} />}
-                </Pressable>
+                  {expanded && (
+                    <ScrollView style={styles.personalityPrompt} nestedScrollEnabled>
+                      <Text style={styles.personalityPromptText}>{p.definition.prompt}</Text>
+                    </ScrollView>
+                  )}
+                </View>
               );
             })}
             {!personalityManifest && !personalityRefreshing && (
               <Text style={styles.compatHint}>
-                No personalities loaded yet — tap Done to retry, or check your connection.
+                No personalities loaded yet — check your connection.
               </Text>
             )}
           </ScrollView>

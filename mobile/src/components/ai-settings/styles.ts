@@ -311,18 +311,30 @@ export function makeAiSettingsStyles(t: Theme) {
     // there's no empty gap below the rows and the backdrop stays tappable.
     sheetScroll: { flexShrink: 1 },
     personalityRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
       backgroundColor: t.surface2,
       borderWidth: 1,
       borderColor: t.border,
       borderRadius: 12,
-      paddingVertical: 12,
+      paddingVertical: 10,
       paddingHorizontal: 12,
+      gap: 8,
     },
     personalityRowActive: { borderColor: t.accent },
+    personalityRowHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
     personalityRowMain: { flex: 1, gap: 2 },
+    chevUp: { transform: [{ rotate: "180deg" }] },
+    personalityPrompt: {
+      maxHeight: 200,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.border,
+      paddingTop: 8,
+    },
+    personalityPromptText: {
+      ...typeScale.caption,
+      fontFamily: "monospace",
+      color: t.textSecondary,
+      lineHeight: 18,
+    },
   });
 }
 
