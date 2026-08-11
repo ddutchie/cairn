@@ -13,6 +13,7 @@ import { useShallow } from "zustand/react/shallow";
 import { PenLine, Sparkles, Trash2, Loader2, RefreshCw } from "lucide-react";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { UserStyleWizardModal } from "./UserStyleWizardModal";
+import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 
 function formatDate(iso: string): string {
   try {
@@ -119,7 +120,7 @@ export function UserStyleSettings() {
             )}
             {cheatsheetOpen && userStyle?.cheatsheet && (
               <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 max-h-72 overflow-y-auto">
-                <p className="text-[0.65rem] text-[var(--text-tertiary)] whitespace-pre-wrap leading-relaxed">{userStyle.cheatsheet}</p>
+                <NoteMarkdownPreview content={userStyle.cheatsheet} inline />
               </div>
             )}
 
@@ -135,7 +136,7 @@ export function UserStyleSettings() {
             )}
             {fullOpen && userStyle?.fullGuide && (
               <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 max-h-96 overflow-y-auto">
-                <p className="text-[0.65rem] text-[var(--text-tertiary)] whitespace-pre-wrap leading-relaxed">{userStyle.fullGuide}</p>
+                <NoteMarkdownPreview content={userStyle.fullGuide} inline />
               </div>
             )}
 

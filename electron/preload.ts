@@ -553,8 +553,39 @@ const api = {
   getUserStyle: () => invoke<UserStyleRow | null>("user-style:get"),
   saveUserStyle: (input: UserStyleSaveInput) => invoke<UserStyleRow>("user-style:save", { input }),
   clearUserStyle: () => invoke<{ ok: true }>("user-style:clear"),
-  generateUserStyle: (step: "full" | "cheatsheet", input: UserStyleGenerationInput) =>
+  generateUserStyle: (step: "full" | "cheatsheet" | "optimize", input: UserStyleGenerationInput) =>
     invoke<{ markdown: string }>("user-style:generate", { step, input }),
+  // Streaming generation (wizard) — fire-and-forget; listen via onUserStyle*.
+  generateUserStyleStream: (req: {
+    config?: { baseUrl?: string; model?: string; apiKey?: string };
+    workspaceId?: string;
+    projectId?: string;
+    projectName?: string;
+    step: "full" | "cheatsheet" | "optimize";
+    analyseNotes: boolean;
+    input: UserStyleGenerationInput;
+  }) => ipcRenderer.send("user-style:generateStream", req),
+  abortUserStyleStream: () => ipcRenderer.send("user-style:abort"),
+  onUserStyleToken: (cb: (e: { delta: string }) => void) => {
+    const handler = (_: unknown, e: { delta: string }) => cb(e);
+    ipcRenderer.on("user-style:token", handler);
+    return () => ipcRenderer.off("user-style:token", handler);
+  },
+  onUserStyleToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown> }) => void) => {
+    const handler = (_: unknown, e: { tool: string; label: string; args: Record<string, unknown> }) => cb(e);
+    ipcRenderer.on("user-style:tool-call", handler);
+    return () => ipcRenderer.off("user-style:tool-call", handler);
+  },
+  onUserStyleToolCallDone: (cb: (e: { tool: string; ok?: boolean; error?: string }) => void) => {
+    const handler = (_: unknown, e: { tool: string; ok?: boolean; error?: string }) => cb(e);
+    ipcRenderer.on("user-style:tool-call-done", handler);
+    return () => ipcRenderer.off("user-style:tool-call-done", handler);
+  },
+  onUserStyleDone: (cb: (e: { content: string; usable: boolean; error?: string }) => void) => {
+    const handler = (_: unknown, e: { content: string; usable: boolean; error?: string }) => cb(e);
+    ipcRenderer.on("user-style:done", handler);
+    return () => ipcRenderer.off("user-style:done", handler);
+  },
   getAgentSettings: () => invoke<Record<string, unknown> | null>("app:getAgentSettings"),
   saveAgentSettings: (config: Record<string, unknown>) => invoke<{ ok: true }>("app:saveAgentSettings", { config }),
   getTheme: () => invoke<string | null>("app:getTheme"),

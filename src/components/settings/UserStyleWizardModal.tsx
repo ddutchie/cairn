@@ -16,13 +16,14 @@
  * source "guided" (or "analyzed" if samples were pulled from notes/tasks).
  */
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { Sparkles, Loader2, Plus, Trash2, X, FileText, PenLine } from "lucide-react";
+import { Sparkles, Loader2, Plus, Trash2, X, FileText, PenLine, Check, Wand2 } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { cn } from "@/lib/utils";
 import type { UserStylePersona, UserStyleRow } from "@/types";
 
@@ -54,17 +55,35 @@ export function UserStyleWizardModal({
   onClose: () => void;
   existing?: UserStyleRow | null;
 }) {
-  const { notes, cards, saveUserStyle } = useCairnStore(
+  const { notes, cards, saveUserStyle, aiConfig, activeWorkspaceId, activeProjectId, projects } = useCairnStore(
     useShallow((s) => ({
       notes: s.notes,
       cards: s.cards,
       saveUserStyle: s.saveUserStyle,
+      aiConfig: s.aiConfig,
+      activeWorkspaceId: s.activeWorkspaceId,
+      activeProjectId: s.activeProjectId,
+      projects: s.projects,
     })),
   );
 
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Live streaming generation state.
+  const [streaming, setStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [streamTools, setStreamTools] = useState<Array<{ tool: string; label: string; done: boolean }>>([]);
+  const unsubsRef = useRef<Array<() => void>>([]);
+
+  // Abort + clean up listeners when the wizard closes mid-generation.
+  useEffect(() => {
+    return () => {
+      window.electron?.abortUserStyleStream?.();
+      unsubsRef.current.forEach((u) => u());
+      unsubsRef.current = [];
+    };
+  }, []);
 
   // Step 1 — persona
   const [persona, setPersona] = useState<UserStylePersona>(
@@ -82,6 +101,8 @@ export function UserStyleWizardModal({
   // Step 4/5 — generated + editable previews
   const [fullGuide, setFullGuide] = useState(existing?.fullGuide ?? "");
   const [cheatsheet, setCheatsheet] = useState(existing?.cheatsheet ?? "");
+  // Toggle the editable textarea ↔ rendered markdown preview on steps 4/5.
+  const [previewMode, setPreviewMode] = useState(false);
 
   const addSample = useCallback(() => {
     if (!sampleText.trim()) return;
@@ -121,23 +142,85 @@ export function UserStyleWizardModal({
     [persona, samples, answersList, fullGuide],
   );
 
-  const generate = async (target: "full" | "cheatsheet") => {
-    if (!window.electron?.generateUserStyle) {
+  // Stream the generation so the guide (and any note-reading tool calls) appear
+  // live in the preview. Falls back to the one-shot IPC when streaming isn't
+  // available in this build.
+  const generate = (target: "full" | "cheatsheet" | "optimize") => {
+    const electron = window.electron;
+    if (electron?.generateUserStyleStream) {
+      const unsubs: Array<() => void> = [];
+      unsubsRef.current = unsubs;
+      setBusy(true);
+      setError(null);
+      setStreaming(true);
+      setStreamingText("");
+      setStreamTools([]);
+
+      unsubs.push(
+        electron.onUserStyleToken!(({ delta }) => setStreamingText((t) => t + delta)),
+        electron.onUserStyleToolCall!((e) =>
+          setStreamTools((prev) => [...prev, { tool: e.tool, label: e.label, done: false }]),
+        ),
+        electron.onUserStyleToolCallDone!((e) =>
+          setStreamTools((prev) => prev.map((t) => (t.tool === e.tool ? { ...t, done: true } : t))),
+        ),
+        electron.onUserStyleDone!(({ content, usable, error }) => {
+          unsubs.forEach((u) => u());
+          unsubsRef.current = [];
+          setStreaming(false);
+          setStreamingText("");
+          setStreamTools([]);
+          if (error || !usable) {
+            setBusy(false);
+            setError(error || "Generation produced unusable output — try again.");
+            return;
+          }
+          if (target === "full" || target === "optimize") {
+            setFullGuide(content);
+            setStep(3);
+          } else {
+            setCheatsheet(content);
+            setStep(4);
+          }
+          setBusy(false);
+        }),
+      );
+
+      const activeProject = projects.find((p) => p.id === activeProjectId);
+      electron.generateUserStyleStream({
+        config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
+        workspaceId: activeWorkspaceId ?? undefined,
+        projectId: activeProjectId ?? undefined,
+        projectName: activeProject?.name,
+        step: target,
+        analyseNotes: samples.some((s) => s.context.startsWith("From your")),
+        input: generationInput,
+      });
+      return;
+    }
+
+    if (!electron?.generateUserStyle) {
       setError("AI generation isn't available in this build.");
       return;
     }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await window.electron.generateUserStyle(target, generationInput);
-      if (target === "full") setFullGuide(res.markdown);
-      else setCheatsheet(res.markdown);
-      setStep((s) => Math.min(s + 1, 4));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Generation failed.");
-    } finally {
-      setBusy(false);
-    }
+    void (async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await electron.generateUserStyle(target, generationInput);
+        if (target === "full" || target === "optimize") {
+          setFullGuide(res.markdown);
+          setStep(3);
+        } else {
+          setCheatsheet(res.markdown);
+          setStep(4);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Generation failed.");
+      } finally {
+        setBusy(false);
+      }
+    })();
   };
 
   const save = async () => {
@@ -291,26 +374,82 @@ export function UserStyleWizardModal({
 
         {step === 3 && (
           <div className="space-y-3">
-            <p className="text-[0.714rem] text-[var(--text-tertiary)]">
-              The full writing style guide — generated from your answers. Edit freely, then generate the condensed cheat sheet.
-            </p>
-            <textarea className={cn(textareaCls, "min-h-[22rem] font-mono text-[0.714rem]")} value={fullGuide} onChange={(e) => setFullGuide(e.target.value)} />
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+                The full writing style guide — generated from your answers. Optimize to restructure, or generate the condensed cheat sheet.
+              </p>
+              <button
+                type="button"
+                onClick={() => setPreviewMode((v) => !v)}
+                className="shrink-0 text-[0.65rem] rounded-md border border-[var(--border)] px-2 py-1 text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              >
+                {previewMode ? "Edit" : "Preview"}
+              </button>
+            </div>
+            <GenerationStatus streaming={streaming} streamTools={streamTools} />
+            {streaming ? (
+              <textarea
+                className={cn(textareaCls, "min-h-[22rem] font-mono text-[0.714rem]")}
+                value={streamingText}
+                readOnly
+                placeholder="Generating…"
+              />
+            ) : previewMode ? (
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 min-h-[22rem] max-h-[24rem] overflow-y-auto">
+                <NoteMarkdownPreview content={fullGuide} inline />
+              </div>
+            ) : (
+              <textarea
+                className={cn(textareaCls, "min-h-[22rem] font-mono text-[0.714rem]")}
+                value={fullGuide}
+                onChange={(e) => setFullGuide(e.target.value)}
+                placeholder="Paste or edit your full guide here…"
+              />
+            )}
           </div>
         )}
 
         {step === 4 && (
           <div className="space-y-3">
-            <p className="text-[0.714rem] text-[var(--text-tertiary)]">
-              The condensed cheat sheet — a one-page reference. Edit, then save. Both are written to your writing style and exposed to chat &amp; the agent.
-            </p>
-            <textarea className={cn(textareaCls, "min-h-[18rem] font-mono text-[0.714rem]")} value={cheatsheet} onChange={(e) => setCheatsheet(e.target.value)} />
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+                The condensed cheat sheet — a one-page reference. Edit, then save. Both are written to your writing style and exposed to chat &amp; the agent.
+              </p>
+              <button
+                type="button"
+                onClick={() => setPreviewMode((v) => !v)}
+                className="shrink-0 text-[0.65rem] rounded-md border border-[var(--border)] px-2 py-1 text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              >
+                {previewMode ? "Edit" : "Preview"}
+              </button>
+            </div>
+            <GenerationStatus streaming={streaming} streamTools={streamTools} />
+            {streaming ? (
+              <textarea
+                className={cn(textareaCls, "min-h-[18rem] font-mono text-[0.714rem]")}
+                value={streamingText}
+                readOnly
+                placeholder="Generating…"
+              />
+            ) : previewMode ? (
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 min-h-[18rem] max-h-[20rem] overflow-y-auto">
+                <NoteMarkdownPreview content={cheatsheet} inline />
+              </div>
+            ) : (
+              <textarea
+                className={cn(textareaCls, "min-h-[18rem] font-mono text-[0.714rem]")}
+                value={cheatsheet}
+                onChange={(e) => setCheatsheet(e.target.value)}
+                placeholder="Paste or edit your cheat sheet here…"
+              />
+            )}
           </div>
         )}
       </div>
 
       {/* Footer actions */}
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-[var(--border)]">
-        <Button variant="ghost" size="sm" onClick={step === 0 ? onClose : () => setStep((s) => s - 1)}>
+        <Button variant="ghost" size="sm" disabled={busy} onClick={step === 0 ? onClose : () => setStep((s) => s - 1)}>
           {step === 0 ? "Cancel" : "Back"}
         </Button>
         <div className="flex items-center gap-2">
@@ -320,7 +459,7 @@ export function UserStyleWizardModal({
             </Button>
           )}
           {step === 1 && (
-            <Button size="sm" onClick={() => setStep(2)}>
+            <Button size="sm" disabled={busy} onClick={() => setStep(2)}>
               Next
             </Button>
           )}
@@ -340,6 +479,10 @@ export function UserStyleWizardModal({
               <Button variant="ghost" size="sm" disabled={busy} onClick={() => setStep(4)}>
                 Skip for now
               </Button>
+              <Button variant="ghost" size="sm" disabled={busy || !fullGuide.trim()} onClick={() => void generate("optimize")}>
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                Optimize
+              </Button>
               <Button size="sm" disabled={busy || !fullGuide.trim()} onClick={() => void generate("cheatsheet")}>
                 {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                 Generate cheat sheet
@@ -355,5 +498,40 @@ export function UserStyleWizardModal({
         </div>
       </div>
     </ModalShell>
+  );
+}
+
+/**
+ * Live generation status — a "Generating…" pulse plus chips for each tool the
+ * model called (e.g. searching/reading the user's notes on the analyse path).
+ */
+function GenerationStatus({ streaming, streamTools }: { streaming: boolean; streamTools: Array<{ tool: string; label: string; done: boolean }> }) {
+  if (!streaming && streamTools.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      {streaming && (
+        <div className="flex items-center gap-1.5 text-[0.65rem] text-[var(--text-tertiary)]">
+          <Loader2 size={11} className="animate-spin" /> Generating…
+        </div>
+      )}
+      {streamTools.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {streamTools.map((t, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1 text-[0.6rem] rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-secondary)]"
+              title={t.tool}
+            >
+              {t.done ? (
+                <Check size={10} className="text-[var(--success,var(--accent))]" />
+              ) : (
+                <Loader2 size={10} className="animate-spin" />
+              )}
+              {t.label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

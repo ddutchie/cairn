@@ -112,3 +112,33 @@ Requirements:
 ## Writing Style Guide
 ${fullGuide}`;
 }
+
+/** Build the system prompt for optimizing/restructuring an EXISTING full guide. */
+export function buildUserStyleOptimizePrompt(fullGuide: string): string {
+  return `You are an editor optimizing an existing writing style guide. Restructure the guide below into the canonical 12-section format so an AI can use it to draft in the user's voice. Produce ONLY the optimized guide, in clean Markdown with ## headings.
+
+## Canonical structure (use exactly these headings)
+## 1. Voice in one line
+## 2. Sentence Length & Rhythm
+## 3. Tone & Register
+## 4. Openings & Closings
+## 5. Punctuation Habits
+## 6. Vocabulary & Phrases
+## 7. How I Give Feedback or Disagree
+## 8. Emoji Use
+## 9. Formatting
+## 10. Other Distinctive Patterns
+## 11. Anti-Patterns — Does NOT Sound Like Me
+## 12. Preserve These Voice Tells
+
+Rules:
+- Preserve every concrete, evidence-based detail from the source; move each into its matching section.
+- Keep signature phrases, quoted examples, and the emoji lexicon verbatim.
+- Keep the Anti-Patterns section explicit and hard (e.g. "never use em-dashes — use a plain hyphen" if that's a rule).
+- Fill genuinely missing sections with a short "Uncertain — not covered in the source." line rather than inventing traits.
+- Do NOT invent style traits the source doesn't support.
+- Output ONLY the optimized guide. No preamble, no commentary, no code fence.
+
+## Existing guide to optimize
+${fullGuide}`;
+}

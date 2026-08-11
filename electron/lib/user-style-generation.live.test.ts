@@ -19,12 +19,23 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
+import Database from "better-sqlite3";
+import { applySchema } from "../db/schema";
+import { createWorkspace, createProject, createNote, createColumn } from "../db/queries";
+import { runToolLoop } from "./chat-loop";
+import { TOOLS } from "./tools";
 import { generateUserStyleMarkdown, isUsableGuide } from "../ipc/user-style-handlers";
 import type { UserStyleGenerationInput } from "./user-style-prompt";
+import { buildUserStyleFullGuidePrompt } from "./user-style-prompt";
 import { BASE_URL, MODEL, API_KEY, endpointUp, LIVE_TESTS_ENABLED } from "./bench-endpoint";
 import type { LLMConfig } from "./llm";
 
 const config: LLMConfig = { provider: "openai", baseUrl: BASE_URL, model: MODEL, apiKey: API_KEY };
+
+// Mirrors ipc/user-style-handlers.ts — read-only tools for the analyse path.
+const WRITING_STYLE_TOOLS = new Set([
+  "get_project_context_pack", "search_notes", "get_note", "search_tasks", "get_task",
+]);
 
 /** Realistic sample set — technical, DM, and a long pasted doc (caps exercise). */
 function realisticInput(): UserStyleGenerationInput {
@@ -72,5 +83,54 @@ describe.skipIf(!LIVE_TESTS_ENABLED)("Writing Style generation (live)", () => {
     console.log(`\n=== CHEAT SHEET (${MODEL}) — ${cheat.length} chars, ${(cheat.match(/^\s*#{1,2}\s+/gm) ?? []).length} headings ===\n${cheat.slice(0, 600)}…`);
     expect(isUsableGuide(cheat, "cheatsheet")).toBe(true);
     expect(cheat.length).toBeLessThan(full.length * 2); // condensed, not a rewrite
+  }, 300_000);
+
+  it("streams through runToolLoop with the read-only tools and produces a usable guide (analyse path)", async () => {
+    if (!up) {
+      console.log("[skip] endpoint not reachable.");
+      return;
+    }
+
+    // Seed a tiny workspace so search_notes/get_note have real content.
+    const db = new Database(":memory:");
+    applySchema(db);
+    createWorkspace(db, { id: "ws", name: "WS" });
+    createProject(db, { id: "proj", workspaceId: "ws", name: "Demo", description: "", priority: "medium" });
+    createColumn(db, { id: "col", projectId: "proj", workspaceId: "ws", name: "Todo", type: "todo", order: 0 });
+    createNote(db, { id: "n1", projectId: "proj", workspaceId: "ws", title: "Alpha", content: "We write terse, warm notes. Plain hyphens, never em-dashes. Praise first, then a concrete ask." });
+    createNote(db, { id: "n2", projectId: "proj", workspaceId: "ws", title: "Beta", content: "Squad chats are lowercase and quick. Sign off 'Keep me posted'." });
+
+    try {
+      const input = realisticInput();
+      const systemPrompt = "You are a writing-style analyst and editor. Produce a precise, evidence-based writing style guide from the user's real writing. Follow the structure in the user prompt exactly. Write in clean, well-formed Markdown with ## headings.";
+      const userPrompt = buildUserStyleFullGuidePrompt(input) +
+        "\n\n## Active context\nProject: Demo\nWorkspace ID: ws\nProject ID: proj\nRead the user's notes with search_notes/get_note (scope to project proj) to ground the guide.";
+      const req = { message: userPrompt, threadId: "us-test", workspaceId: "ws", projectId: "proj", config: { maxSteps: 4, temperature: 0.3 } };
+      const messages = [
+        { role: "system" as const, content: systemPrompt },
+        { role: "user" as const, content: userPrompt },
+      ];
+      const toolsOverride = TOOLS.filter((t) => WRITING_STYLE_TOOLS.has(t.function.name));
+
+      const tokens: string[] = [];
+      const toolCalls: string[] = [];
+      const result = await runToolLoop(
+        db, req as never, "/tmp", BASE_URL, MODEL, API_KEY, messages,
+        (e) => toolCalls.push(e.tool),
+        undefined, undefined, "openai",
+        undefined, undefined,
+        (d) => tokens.push(d),
+        undefined,
+        [],
+        toolsOverride,
+      );
+      const content = result.content;
+      console.log(`\n=== STREAMED (${MODEL}) — ${content.length} chars, ${(content.match(/^\s*#{1,2}\s+/gm) ?? []).length} headings, toolCalls=[${toolCalls.join(",") || "none"}] ===\n${content.slice(0, 400)}…`);
+      expect(tokens.length).toBeGreaterThan(0);        // actually streamed
+      expect(toolCalls).toContain("search_notes");     // used the read-only tools
+      expect(isUsableGuide(content, "full")).toBe(true);
+    } finally {
+      db.close();
+    }
   }, 300_000);
 });
