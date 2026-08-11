@@ -303,6 +303,23 @@ export function AISettings() {
             description="The active one applies to chat. Remove any entry freely — nothing is sent to the model until it's selected."
           >
             <div className="flex flex-col gap-1.5 w-full min-w-52">
+              {/* None — no personality layer */}
+              <div
+                className={cn(
+                  "flex items-center gap-2 rounded-md border px-2.5 py-2 cursor-pointer transition-colors",
+                  !aiConfig.personalityId
+                    ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
+                    : "border-[var(--border)] hover:bg-[var(--surface-2)]",
+                )}
+                onClick={() => setPersonality(null)}
+                title="No personality layer"
+              >
+                <Sparkles size={12} className="text-[var(--text-tertiary)] shrink-0" />
+                <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1">None</span>
+                <span className={cn("text-[0.65rem] shrink-0", !aiConfig.personalityId ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+                  {!aiConfig.personalityId ? "Active" : "Inactive"}
+                </span>
+              </div>
               {aiConfig.installedPersonalities.map((p) => {
                 const isActive = p.id === aiConfig.personalityId;
                 return (
@@ -315,7 +332,7 @@ export function AISettings() {
                         : "border-[var(--border)] hover:bg-[var(--surface-2)]",
                     )}
                     onClick={() => setPersonality(isActive ? null : p.id)}
-                    title={isActive ? "Click to switch back to Default" : "Set as active"}
+                    title={isActive ? "Click to switch to None" : "Set as active"}
                   >
                     <span
                       className="w-2 h-2 rounded-full shrink-0"
@@ -326,7 +343,7 @@ export function AISettings() {
                       <span className="text-[0.6rem] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
                     )}
                     <span className={cn("text-[0.65rem] shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
-                      {isActive ? "Active" : "Default"}
+                      {isActive ? "Active" : "Inactive"}
                     </span>
                     <button
                       type="button"

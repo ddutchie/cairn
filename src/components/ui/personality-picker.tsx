@@ -99,7 +99,7 @@ export function PersonalityPicker({
               type="button"
               disabled={disabled}
               aria-label="Chat personality"
-              title={active ? `${active.name} personality` : "Default personality"}
+              title={active ? `${active.name} personality` : "No personality selected"}
               className={cn(
                 "flex items-center gap-1 rounded-md border border-[var(--border)] text-[var(--text-secondary)] transition-colors",
                 "hover:bg-[var(--surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-50",
@@ -109,7 +109,7 @@ export function PersonalityPicker({
             >
               <Sparkles size={11} className={cn("shrink-0", active?.brandColor ? "" : "text-[var(--text-tertiary)]")} style={active?.brandColor ? { color: active.brandColor } : undefined} />
               <span className="max-w-[7rem] truncate">
-                {active ? active.name : "Personality"}
+                {active ? active.name : "None"}
               </span>
               <ChevronDown size={11} className="text-[var(--text-tertiary)] shrink-0" />
             </button>
@@ -136,7 +136,7 @@ export function PersonalityPicker({
               </button>
             </div>
 
-            {/* Default — the base Cairn assistant, no personality layer */}
+            {/* None — the base Cairn assistant, no personality layer */}
             <div className="space-y-1">
               <span className="text-[0.714rem] text-[var(--text-secondary)]">Active</span>
               <button
@@ -150,7 +150,7 @@ export function PersonalityPicker({
                 )}
               >
                 <Sparkles size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                <span className="truncate flex-1">Default</span>
+                <span className="truncate flex-1">None — no personality</span>
                 {!active && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />}
               </button>
             </div>

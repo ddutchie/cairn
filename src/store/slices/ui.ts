@@ -316,8 +316,10 @@ export interface AIConfig {
    * to.
    */
   installedPersonalities?: InstalledPersonality[];
-  /** Id of the AI Chat's active personality (matches an entry in `installedPersonalities`). */
-  personalityId?: string;
+  /** Id of the AI Chat's active personality (matches an entry in `installedPersonalities`).
+   *  `null` = explicitly "None" — must survive hydration, so it is persisted as
+   *  null (JSON + the backend cache) rather than dropped as undefined. */
+  personalityId?: string | null;
 }
 
 export interface AgentConfig {
@@ -775,7 +777,10 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   // ── Chat personalities ──────────────────────────
   setPersonality(id) {
     set((s) => {
-      const next = { ...s.aiConfig, personalityId: id ?? undefined };
+      // Preserve `null` (explicit "None") — persisting it as null (not
+      // undefined) lets the backend cache clear its value instead of keeping
+      // the previous selection and resurrecting it on the next hydrate.
+      const next = { ...s.aiConfig, personalityId: id };
       persistAi(next);
       return { aiConfig: next };
     });
@@ -819,7 +824,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       const nextAi: AIConfig = {
         ...s.aiConfig,
         installedPersonalities: list,
-        ...(s.aiConfig.personalityId === id ? { personalityId: undefined } : {}),
+        ...(s.aiConfig.personalityId === id ? { personalityId: null } : {}),
       };
       persistAi(nextAi);
       return { aiConfig: nextAi };

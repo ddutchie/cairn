@@ -120,6 +120,20 @@ describe("config-cache AI settings round-trip", () => {
     expect(getCachedConfig().aiConfig?.personalityId).toBe("p1");
     expect(getCachedConfig().aiConfig?.installedPersonalities).toHaveLength(2);
   });
+
+  it("an explicit null personalityId CLEARS the cached value (the renderer's 'None' choice)", async () => {
+    const { saveCachedConfig, getCachedConfig } = await import("./config-cache");
+    saveCachedConfig("ai", { personalityId: "p1" });
+    expect(getCachedConfig().aiConfig?.personalityId).toBe("p1");
+    // The renderer sets personalityId to null to mean "None" — the cache must
+    // drop the old selection, not keep it (which would resurrect the previous
+    // personality on the next hydrate).
+    saveCachedConfig("ai", { personalityId: null });
+    expect(getCachedConfig().aiConfig?.personalityId).toBeUndefined();
+    // And a later connection-only save must not resurrect it.
+    saveCachedConfig("ai", { model: "gpt-4o" });
+    expect(getCachedConfig().aiConfig?.personalityId).toBeUndefined();
+  });
 });
 
 describe("config-cache without Electron", () => {

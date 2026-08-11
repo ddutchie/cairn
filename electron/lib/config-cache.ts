@@ -50,7 +50,8 @@ export interface CachedConfig {
       brandColor?: string;
       homepage?: string;
     }>;
-    personalityId?: string;
+    /** Active personality id. `null` (explicit "None") is stored as absent. */
+    personalityId?: string | null;
   };
   agentConfig?: {
     baseUrl?: string;
@@ -174,7 +175,15 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         installedPersonalities: Array.isArray((config as { installedPersonalities?: unknown }).installedPersonalities)
           ? (config as { installedPersonalities: NonNullable<CachedConfig["aiConfig"]>["installedPersonalities"] }).installedPersonalities
           : current.aiConfig?.installedPersonalities,
-        personalityId: typeof configRecord.personalityId === "string" ? configRecord.personalityId : current.aiConfig?.personalityId,
+        // personalityId: a string is stored; an explicit null (the renderer's
+        // "None" choice) CLEARS the cached value instead of keeping the old one
+        // (which would resurrect the previous personality on the next hydrate).
+        // Absent (a connection-only save) preserves the current value.
+        personalityId: configRecord.personalityId === null
+          ? undefined
+          : typeof configRecord.personalityId === "string"
+            ? configRecord.personalityId
+            : current.aiConfig?.personalityId,
       };
     } else if (type === "agent" && configRecord) {
       current.agentConfig = {

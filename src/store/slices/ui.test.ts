@@ -404,12 +404,14 @@ describe("chat personalities", () => {
     expect(list[0].prompt).toBe("Updated rules.");
   });
 
-  it("setPersonality selects and clears (null = Default)", () => {
+  it("setPersonality selects and clears (null = None)", () => {
     const { get } = setup();
     get().setPersonality("p1");
     expect(get().aiConfig.personalityId).toBe("p1");
     get().setPersonality(null);
-    expect(get().aiConfig.personalityId).toBeUndefined();
+    // "None" is stored as null (not undefined) so the backend cache can clear
+    // its previous value and the choice survives a restart.
+    expect(get().aiConfig.personalityId).toBeNull();
   });
 
   it("createCustomPersonality adds a custom row and returns its id", () => {
@@ -428,6 +430,6 @@ describe("chat personalities", () => {
     expect(get().aiConfig.personalityId).toBe(id);
     get().removePersonality(id);
     expect(get().aiConfig.installedPersonalities).toHaveLength(0);
-    expect(get().aiConfig.personalityId).toBeUndefined();
+    expect(get().aiConfig.personalityId).toBeNull();
   });
 });
