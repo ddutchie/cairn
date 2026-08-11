@@ -8,6 +8,7 @@ import { useModalOpenHaptic } from "@/haptics";
 import { loadChatUsageHistory, clearChatUsageHistory, type ChatUsageRow } from "@/db/chat-store";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { getLogoProvider } from "@/chat/models-dev";
+import { formatUsd } from "@cairn/shared/chat/provider-credits";
 
 /**
  * Usage — mobile chat token/cost tracker. Mirrors the desktop Usage view:
@@ -59,7 +60,7 @@ export default function UsageSettingsScreen() {
 
   // Cache hit rate: share of input served from the provider's cache.
   const cachePct = totals.prompt > 0 ? Math.round((totals.cacheRead / totals.prompt) * 100) : 0;
-  const cacheColor = cachePct >= 50 ? t.success : cachePct >= 25 ? "#f59e0b" : t.textTertiary;
+  const cacheColor = cachePct >= 50 ? t.success : cachePct >= 25 ? t.warning : t.textTertiary;
 
   const series = useMemo(() => {
     const days: { day: string; input: number; output: number; cost: number; requests: number }[] = [];
@@ -443,10 +444,6 @@ function formatCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
-}
-
-function formatUsd(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
 }
 
 function formatWhen(iso: string): string {

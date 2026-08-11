@@ -67,16 +67,24 @@ export async function fetchPersonalitiesManifest(): Promise<{
   error?: string;
 }> {
   const cached = getCachedPersonalitiesManifest();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const etag = getMeta(META_ETAG);
-    const headers: Record<string, string> = {};
-    if (etag) headers["If-None-Match"] = etag;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const res = await expoFetch(PERSONALITIES_URL, { headers, signal: controller.signal });
-    clearTimeout(timer);
+    // Conditional GET only when we have a valid cached manifest to fall back
+    // to — with a stale ETag but no cache, a 304 would wrongly return null
+    // instead of downloading.
+    const fetchOnce = (withEtag: boolean) =>
+      expoFetch(PERSONALITIES_URL, {
+        headers: withEtag && etag ? { "If-None-Match": etag } : {},
+        signal: controller.signal,
+      });
+    let res = await fetchOnce(cached != null);
     if (res.status === 304) {
-      return { manifest: cached };
+      if (cached) return { manifest: cached };
+      // Stale ETag but no valid cache — re-download the full manifest without
+      // the conditional header.
+      res = await fetchOnce(false);
     }
     if (!res.ok) {
       return { manifest: cached, error: `Registry responded ${res.status}` };
@@ -97,5 +105,7 @@ export async function fetchPersonalitiesManifest(): Promise<{
     return { manifest };
   } catch (err) {
     return { manifest: cached, error: err instanceof Error ? err.message : "Registry fetch failed" };
+  } finally {
+    clearTimeout(timer);
   }
 }

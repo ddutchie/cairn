@@ -95,9 +95,15 @@ async function* streamRork(
     return {
       promptTokens,
       contextLimit: RORK_CONTEXT_LIMIT,
-      // Server-reported output when available; otherwise count what we
-      // streamed so the Usage view shows input AND output, not input alone.
-      completionTokens: serverCompletionTokens ?? (streamedText ? countTextTokens(streamedText) : 0),
+      // Server-reported output when available; otherwise count what we streamed
+      // — answer AND reasoning deltas, matching ChatUsage's completion-token
+      // semantics (OpenAI-style completion includes reasoning). Zero when
+      // neither stream carried text (e.g. a bare tool-call turn).
+      completionTokens:
+        serverCompletionTokens ??
+        (streamedText || streamedReasoning
+          ? countTextTokens(streamedText) + countTextTokens(streamedReasoning)
+          : 0),
       // Reasoning is streamed as reasoning-delta parts — count it so the
       // Usage view's "thinking" column reflects Rork's chain-of-thought too.
       reasoningTokens: streamedReasoning ? countTextTokens(streamedReasoning) : 0,

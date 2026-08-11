@@ -474,7 +474,15 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     setPersonalityRefreshing(true);
     try {
       const { manifest } = await fetchPersonalitiesManifest();
-      if (manifest) setPersonalityManifest(manifest);
+      if (manifest) {
+        setPersonalityManifest(manifest);
+        // The selected personality may have been removed from the registry —
+        // clear it so the agent doesn't reference a vanished id.
+        if (personalityId && !manifest.personalities.some((p) => p.id === personalityId)) {
+          setChatPersonalityId("");
+          setPersonalityId("");
+        }
+      }
     } finally {
       setPersonalityRefreshing(false);
     }
@@ -1145,7 +1153,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
             })}
             {!personalityManifest && !personalityRefreshing && (
               <Text style={styles.compatHint}>
-                No personalities loaded yet — pull to refresh, or check your connection.
+                No personalities loaded yet — tap Done to retry, or check your connection.
               </Text>
             )}
           </ScrollView>

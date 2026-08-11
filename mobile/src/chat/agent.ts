@@ -193,6 +193,9 @@ export async function runAgent(
     let text = "";
     const toolCalls: { id: string; name: string; input: unknown }[] = [];
     let finishReason: string | undefined;
+    // Reset per-turn usage so a finish WITHOUT a usage event can't leak the
+    // previous round's numbers into this turn's "usage" event.
+    usage = undefined;
 
     try {
       for await (const ev of provider.stream(conversation, tools, signal)) {
