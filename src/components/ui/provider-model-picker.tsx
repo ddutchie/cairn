@@ -187,6 +187,10 @@ export function ProviderModelPicker({
                 placeholder={isLocalBaseUrl(activeProvider.baseUrl) ? "local model" : "model id"}
                 onChange={setModel}
                 onRefresh={refreshModels}
+                // Non-modal so the popover content (provider list) stays
+                // clickable while the model menu is open — a modal menu disables
+                // outside pointer events and traps the user.
+                modal={false}
               />
             )}
           </div>

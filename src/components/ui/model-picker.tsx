@@ -103,6 +103,16 @@ export interface ModelPickerProps {
   /** Dropdown alignment (default "start"). */
   align?: "start" | "center" | "end";
   className?: string;
+  /**
+   * Dropdown modality (default true, Radix's default). A MODAL menu disables
+   * pointer events / traps focus on everything outside its content, which is
+   * correct for a standalone dropdown but traps the user when the picker is
+   * nested inside another floating layer (e.g. ProviderModelPicker's popover) —
+   * the surrounding content becomes unclickable while the menu is open. Set to
+   * false there so clicking outside dismisses the menu and the host stays
+   * interactive.
+   */
+  modal?: boolean;
 }
 
 /**
@@ -124,6 +134,7 @@ export function ModelPicker({
   size = "sm",
   align = "start",
   className,
+  modal = true,
 }: ModelPickerProps) {
   // Custom-entry mode: a free-text input for a model id not in the list.
   const [custom, setCustom] = useState(false);
@@ -195,7 +206,7 @@ export function ModelPicker({
 
   return (
     <div className={cn("flex gap-1", className)}>
-      <DropdownMenu>
+      <DropdownMenu modal={modal}>
         <DropdownMenuTrigger asChild disabled={disabled}>
           <button
             className={cn(
