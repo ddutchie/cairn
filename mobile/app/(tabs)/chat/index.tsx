@@ -49,6 +49,20 @@ function usageModelLabel(): string {
   return pref === "openai" ? getOpenAIModel() || "—" : pref;
 }
 
+/** Add two ChatUsage records (for accumulating spend across tool rounds). */
+function sumUsage(a: ChatUsage, b: ChatUsage): ChatUsage {
+  return {
+    promptTokens: a.promptTokens + b.promptTokens,
+    contextLimit: b.contextLimit,
+    completionTokens: (a.completionTokens ?? 0) + (b.completionTokens ?? 0),
+    reasoningTokens: (a.reasoningTokens ?? 0) + (b.reasoningTokens ?? 0),
+    cacheReadTokens: (a.cacheReadTokens ?? 0) + (b.cacheReadTokens ?? 0),
+    cacheCreationTokens: (a.cacheCreationTokens ?? 0) + (b.cacheCreationTokens ?? 0),
+    costUsd: (a.costUsd ?? 0) + (b.costUsd ?? 0) || undefined,
+    estimated: a.estimated === true || b.estimated === true,
+  };
+}
+
 export default function ChatScreen() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -162,6 +176,9 @@ export default function ChatScreen() {
     let acc = "";
     let reasoningAcc = "";
     const toolTrail: ToolCall[] = [];
+    // Sum of per-round usage across the run (tool-calling turns emit one usage
+    // event per round; the ring uses the final round, the history uses this sum).
+    let usageTotal: ChatUsage | undefined = undefined;
 
     const patchAssistant = (patch: Partial<UiMessage>) => {
       setMessages((prev) => {
@@ -215,14 +232,24 @@ export default function ChatScreen() {
           else toolTrail.push(finalized);
           patchAssistant({ tools: [...toolTrail] });
           haptics.impact(); // agent ran a tool
+        } else if (e.type === "usage" && e.usage) {
+          // Accumulate the real spend across tool-calling rounds — each round
+          // re-sends the whole conversation, so the last round alone under-
+          // counts a tool-heavy turn.
+          usageTotal = usageTotal ? sumUsage(usageTotal, e.usage) : e.usage;
         } else if (e.type === "final" && e.usage) {
-          // Only drive the ring with valid token counts — a negative prompt
-          // count or non-positive limit renders a broken/empty ring.
+          // Drive the ring with the FINAL round's context window (a negative
+          // prompt count or non-positive limit renders a broken/empty ring).
           const u = e.usage;
           if (u.promptTokens >= 0 && u.contextLimit > 0) {
             setUsage(u);
             saveLastChatUsage(u); // persist so the ring survives tab close/reopen
-            recordChatUsage(u, usageProviderLabel(), usageModelLabel());
+          }
+          // Record the SUMMED spend (falls back to the final round's usage when
+          // only one usage event arrived — e.g. a plain single-turn reply).
+          const total = usageTotal ?? u;
+          if (total.promptTokens >= 0 && (total.completionTokens ?? 0) >= 0) {
+            recordChatUsage(total, usageProviderLabel(), usageModelLabel());
           }
         }
         setTimeout(() => scrollToEndSoon(true), 20);

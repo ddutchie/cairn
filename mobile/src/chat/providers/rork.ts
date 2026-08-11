@@ -100,10 +100,12 @@ async function* streamRork(
         completionTokens: serverCompletionTokens ?? (streamedText ? countTextTokens(streamedText) : 0),
       };
     }
-    // Estimate from the outgoing conversation (o200k_base — approximate for
-    // whatever model Rork serves, which is all a fill gauge needs).
+    // Estimate from the outgoing conversation PLUS the tool definitions (the
+    // request body carries `tools`, so omitting them under-counts input) —
+    // o200k_base, approximate for whatever model Rork serves.
     return {
-      promptTokens: countTextTokens(conversationText(messages)),
+      promptTokens:
+        countTextTokens(conversationText(messages)) + countTextTokens(JSON.stringify(tools ?? {})),
       contextLimit: RORK_CONTEXT_LIMIT,
       completionTokens: streamedText ? countTextTokens(streamedText) : 0,
       estimated: true,

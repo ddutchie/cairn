@@ -32,7 +32,7 @@ import { getCachedPersonalitiesManifest } from "./personalities-registry";
 const MAX_TURNS = 30;
 
 export interface AgentEvent {
-  type: "text-delta" | "reasoning-delta" | "tool-start" | "tool" | "final" | "error";
+  type: "text-delta" | "reasoning-delta" | "tool-start" | "tool" | "usage" | "final" | "error";
   delta?: string; // for text-delta / reasoning-delta
   tool?: string;
   toolCallId?: string; // correlates a "tool-start" with its later "tool"
@@ -40,7 +40,7 @@ export interface AgentEvent {
   result?: unknown;
   text?: string; // full text for final / error
   reasoning?: string; // accumulated reasoning text, on "final"
-  usage?: ChatUsage; // context-window usage, on "final"
+  usage?: ChatUsage; // context-window usage — per-turn on "usage", final round on "final"
 }
 
 /** Build the system message (as a UIMessage part). */
@@ -244,6 +244,12 @@ export async function runAgent(
     // Record the assistant text part.
     if (text) assistant.parts.push({ type: "text", text });
     finalText = text || finalText;
+
+    // Surface THIS turn's usage so the caller can accumulate the real spend
+    // across tool-calling rounds (each round re-sends the whole conversation,
+    // so only the last round's tokens would otherwise be counted). The final
+    // event still carries the last round's usage for the context ring.
+    if (usage) onEvent?.({ type: "usage", usage });
 
     // No tool calls → we're done.
     if (toolCalls.length === 0) {
