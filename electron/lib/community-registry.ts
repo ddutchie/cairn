@@ -22,9 +22,11 @@ import {
   parseManifest,
   parseProvidersManifest,
   parseAutomationsManifest,
+  parsePersonalitiesManifest,
   type CommunityManifest,
   type ProvidersManifest,
   type AutomationsManifest,
+  type PersonalitiesManifest,
 } from "../../shared/chat/registry-schema";
 
 // Manifest TYPES + Zod validation now live in shared/chat/registry-schema.ts so
@@ -34,13 +36,15 @@ export type {
   CommunityManifest,
   ProvidersManifest,
   AutomationsManifest,
+  PersonalitiesManifest,
   RegistryMcpEntry,
   RegistryServiceEntry,
   RegistryProviderEntry,
   RegistryAutomationEntry,
+  RegistryPersonalityEntry,
   RegistryEntryMeta,
 } from "../../shared/chat/registry-schema";
-export { parseManifest, parseProvidersManifest, parseAutomationsManifest } from "../../shared/chat/registry-schema";
+export { parseManifest, parseProvidersManifest, parseAutomationsManifest, parsePersonalitiesManifest } from "../../shared/chat/registry-schema";
 
 export interface RegistryFetchResult {
   manifest: CommunityManifest;
@@ -63,15 +67,25 @@ export interface AutomationsFetchResult {
   error?: string;
 }
 
+export interface PersonalitiesFetchResult {
+  manifest: PersonalitiesManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
 const MANIFEST_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/manifest.json";
 const PROVIDERS_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/providers.json";
 const AUTOMATIONS_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/automations.json";
+const PERSONALITIES_URL =
+  "https://raw.githubusercontent.com/ddutchie/cairn-community/main/personalities.json";
 const CACHE_FILE = "community-registry.json";
 const PROVIDERS_CACHE_FILE = "community-providers.json";
 const AUTOMATIONS_CACHE_FILE = "community-automations.json";
+const PERSONALITIES_CACHE_FILE = "community-personalities.json";
 const FETCH_TIMEOUT_MS = 10_000;
 
 // ── generic cache + fetch core (shared by both manifests) ───────────────────
@@ -280,14 +294,35 @@ export function refreshAutomationsManifest(): Promise<AutomationsFetchResult> {
   return fetchAutomationsManifest({ force: true });
 }
 
+// ── personalities manifest ───────────────────────────────────────────────────
+
+const PERSONALITIES_SPEC: FetchSpec<PersonalitiesManifest> = {
+  url: PERSONALITIES_URL,
+  file: PERSONALITIES_CACHE_FILE,
+  parse: parsePersonalitiesManifest,
+  empty: { version: 1, updatedAt: "", personalities: [] },
+};
+
+/** Fetch the community PERSONALITIES manifest (cache-first; see fetchManifest). */
+export function fetchPersonalitiesManifest(opts?: { force?: boolean }): Promise<PersonalitiesFetchResult> {
+  return fetchGeneric(PERSONALITIES_SPEC, opts);
+}
+
+/** Force a network refresh of the personalities manifest. */
+export function refreshPersonalitiesManifest(): Promise<PersonalitiesFetchResult> {
+  return fetchPersonalitiesManifest({ force: true });
+}
+
 /** Exposed for tests. */
 export const __test = {
   MANIFEST_URL,
   PROVIDERS_URL,
   AUTOMATIONS_URL,
+  PERSONALITIES_URL,
   CACHE_FILE,
   PROVIDERS_CACHE_FILE,
   AUTOMATIONS_CACHE_FILE,
+  PERSONALITIES_CACHE_FILE,
   cachePath: () => cacheFilePath(CACHE_FILE),
   readCache: () => readCacheFile(CACHE_FILE, parseManifest),
   writeCache: (env: CacheEnvelope<CommunityManifest>) => writeCacheFile(CACHE_FILE, env),
@@ -299,4 +334,8 @@ export const __test = {
   readAutomationsCache: () => readCacheFile(AUTOMATIONS_CACHE_FILE, parseAutomationsManifest),
   writeAutomationsCache: (env: CacheEnvelope<AutomationsManifest>) =>
     writeCacheFile(AUTOMATIONS_CACHE_FILE, env),
+  personalitiesCachePath: () => cacheFilePath(PERSONALITIES_CACHE_FILE),
+  readPersonalitiesCache: () => readCacheFile(PERSONALITIES_CACHE_FILE, parsePersonalitiesManifest),
+  writePersonalitiesCache: (env: CacheEnvelope<PersonalitiesManifest>) =>
+    writeCacheFile(PERSONALITIES_CACHE_FILE, env),
 };

@@ -52,6 +52,36 @@ export interface SavedProvider {
 }
 
 /**
+ * An installed chat personality — a set of behavioral rules appended to the
+ * chat system prompt to shape the assistant's tone and style. Installed from
+ * the cairn-community catalog (`source: "community"`) or authored locally by
+ * the user (`source: "custom"`). Lives on `aiConfig.installedPersonalities`;
+ * the active one is `aiConfig.personalityId` (absent = Default, no layer).
+ */
+export interface InstalledPersonality {
+  /** Stable id (uuid). */
+  id: string;
+  /** Display name shown in the picker. */
+  name: string;
+  /** One line shown in the picker / browse card. */
+  description?: string;
+  /** Behavioral rules appended to the chat system prompt. */
+  prompt: string;
+  /** Where it came from — the community catalog or a local custom entry. */
+  source: "community" | "custom";
+  /** Community catalog id when `source === "community"` — dedups re-installs. */
+  communityId?: string;
+  /** Catalog version when community (for "update available" checks). */
+  version?: string;
+  /** Author handle when community. */
+  author?: string;
+  /** Tint for the picker dot. */
+  brandColor?: string;
+  /** Attribution/source link when community (rendered as a link). */
+  homepage?: string;
+}
+
+/**
  * The connection-carrying subset shared by AIConfig and AgentConfig, so the
  * mirror-into-config helpers below can operate on either one generically. The
  * saved-provider *list* itself is shared and lives on aiConfig.savedProviders.
@@ -279,6 +309,15 @@ export interface AIConfig {
   savedProviders?: SavedProvider[];
   /** Id of the AI Chat's active saved provider (matches an entry in `savedProviders`). */
   activeProviderId?: string;
+  /**
+   * Installed chat personalities (community + custom). The active one is
+   * `personalityId` (absent/"" = Default — the base Cairn assistant with no
+   * personality layer). Selection is global like the model picker it sits next
+   * to.
+   */
+  installedPersonalities?: InstalledPersonality[];
+  /** Id of the AI Chat's active personality (matches an entry in `installedPersonalities`). */
+  personalityId?: string;
 }
 
 export interface AgentConfig {
@@ -433,6 +472,27 @@ export interface UISlice extends AppUIState {
     entry: { id: string; definition: { name: string; baseUrl: string; defaultModel?: string } },
     apiKey?: string,
   ) => Promise<string>;
+
+  // Chat personalities — a global installed list + active selection on aiConfig.
+  /** Set (or clear, with null) the active chat personality. */
+  setPersonality: (id: string | null) => void;
+  /**
+   * Install (or update) a community personality from the catalog into the
+   * installed list. Dedups by communityId (or name). Does NOT auto-select.
+   * Returns the installed personality id.
+   */
+  installCommunityPersonality: (entry: {
+    id: string;
+    author?: string;
+    version?: string;
+    brandColor?: string;
+    homepage?: string;
+    definition: { name: string; description?: string; prompt: string };
+  }) => Promise<string>;
+  /** Remove an installed personality; clears the active selection if it was active. */
+  removePersonality: (id: string) => void;
+  /** Create a local (custom) personality. Returns the new id. */
+  createCustomPersonality: (input: { name: string; description?: string; prompt: string }) => string;
 
   // Agent config
   agentConfig: AgentConfig;
@@ -709,6 +769,80 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       return { aiConfig: nextAi, agentConfig: nextAgent };
     });
 
+    return id;
+  },
+
+  // ── Chat personalities ──────────────────────────
+  setPersonality(id) {
+    set((s) => {
+      const next = { ...s.aiConfig, personalityId: id ?? undefined };
+      persistAi(next);
+      return { aiConfig: next };
+    });
+  },
+
+  async installCommunityPersonality(entry) {
+    const def = entry.definition;
+    const existing = (get().aiConfig.installedPersonalities ?? []).find(
+      (p) => p.communityId === entry.id || p.name.toLowerCase() === def.name.toLowerCase(),
+    );
+    // Reuse the existing row's id on re-install (dedup by communityId/name).
+    const id = existing?.id ?? genId();
+    set((s) => {
+      const prev = s.aiConfig.installedPersonalities ?? [];
+      const matchIdx = prev.findIndex(
+        (p) => p.id === id || p.communityId === entry.id || p.name.toLowerCase() === def.name.toLowerCase(),
+      );
+      const row: InstalledPersonality = {
+        id: matchIdx >= 0 ? prev[matchIdx].id : id,
+        name: def.name,
+        description: def.description,
+        prompt: def.prompt,
+        source: "community",
+        communityId: entry.id,
+        version: entry.version,
+        author: entry.author,
+        brandColor: entry.brandColor,
+        homepage: entry.homepage,
+      };
+      const merged = matchIdx >= 0 ? prev.map((p, i) => (i === matchIdx ? row : p)) : [...prev, row];
+      const nextAi: AIConfig = { ...s.aiConfig, installedPersonalities: merged };
+      persistAi(nextAi);
+      return { aiConfig: nextAi };
+    });
+    return id;
+  },
+
+  removePersonality(id) {
+    set((s) => {
+      const list = (s.aiConfig.installedPersonalities ?? []).filter((p) => p.id !== id);
+      const nextAi: AIConfig = {
+        ...s.aiConfig,
+        installedPersonalities: list,
+        ...(s.aiConfig.personalityId === id ? { personalityId: undefined } : {}),
+      };
+      persistAi(nextAi);
+      return { aiConfig: nextAi };
+    });
+  },
+
+  createCustomPersonality(input) {
+    const id = genId();
+    set((s) => {
+      const row: InstalledPersonality = {
+        id,
+        name: input.name,
+        description: input.description,
+        prompt: input.prompt,
+        source: "custom",
+      };
+      const nextAi: AIConfig = {
+        ...s.aiConfig,
+        installedPersonalities: [...(s.aiConfig.installedPersonalities ?? []), row],
+      };
+      persistAi(nextAi);
+      return { aiConfig: nextAi };
+    });
     return id;
   },
 

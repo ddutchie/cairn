@@ -393,6 +393,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       systemPrompt = `## Context\n- **Date:** ${date}\n\n${GRAPH_SYSTEM_PROMPT}\n\n--- CURRENT GRAPH SNAPSHOT ---\n${graphContext}`;
     }
 
+    // Active chat personality (Default = none). The main process appends its
+    // prompt to the system prompt as a delimited style layer.
+    const activePersonality = aiConfig.installedPersonalities?.find((p) => p.id === aiConfig.personalityId);
+
     const formatChatHistory = (msgs: typeof messages) => {
       const history: ChatHistoryEntry[] = [];
       msgs.slice(-40).forEach((m) => {
@@ -465,6 +469,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         isReasoningModel: getModelInfo(aiConfig.model)?.reasoning === true,
       },
       systemPrompt,
+      // Active chat personality (Default = none). The main process appends it
+      // to the system prompt as a delimited style layer.
+      personality: activePersonality ? { name: activePersonality.name, prompt: activePersonality.prompt } : undefined,
       images: attachmentsToSend?.map((a) => ({ name: a.name, dataUrl: a.dataUrl, kind: a.kind })),
       // Subagents is now a GLOBAL AI setting (aiConfig.subagentsEnabled), not a
       // per-thread flag. Ignored server-side / here for the localllm provider.

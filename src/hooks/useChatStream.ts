@@ -61,6 +61,9 @@ export interface ChatStreamRequest {
     isReasoningModel?: boolean;
   };
   systemPrompt?: string;
+  /** Active chat personality — a style layer appended to the system prompt.
+   *  Absent = Default (no personality). */
+  personality?: { name: string; prompt: string };
   /** Attachments on the current user message (base64 data URLs; kind tells
    *  pdf from image so the main process can emit the right content part). */
   images?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;

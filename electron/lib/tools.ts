@@ -144,6 +144,12 @@ export interface ChatRequest {
   history?: ChatHistoryEntry[];
   config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; maxTokens?: number; isReasoningModel?: boolean };
   systemPrompt?: string;
+  /**
+   * Active chat personality for this turn — a style layer appended verbatim
+   * after the system prompt. `name` is the display label; `prompt` holds the
+   * behavioral rules. Absent = no personality (default Cairn behavior).
+   */
+  personality?: { name: string; prompt: string };
   /** Attachments on the current user message (base64 data URLs; kind="pdf"
    *  becomes an Anthropic-style `document` part, images become `image_url`). */
   images?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;
@@ -171,6 +177,21 @@ Use the provided tools to read and modify the user's workspace. Choose the tool 
 - **Rendering:** Replies are markdown — use bold, lists, tables, fenced code (with language), and mermaid fenced blocks for diagrams. Keep replies concise and actionable.
 
 Tone: calm, focused, like a thoughtful co-worker.`;
+}
+
+/**
+ * Append the active chat personality to a built system prompt as a clearly
+ * delimited style LAYER. A personality is never a replacement identity — the
+ * base "You are the Cairn AI assistant" prompt stays intact and the behavioral
+ * rules are added under their own header so the model treats them as session
+ * style guidance rather than a conflicting persona.
+ */
+export function withPersonality(
+  systemPrompt: string,
+  personality?: { name: string; prompt: string },
+): string {
+  if (!personality || !personality.name || !personality.prompt) return systemPrompt;
+  return `${systemPrompt}\n\n## Personality: ${personality.name}\n${personality.prompt}`;
 }
 
 /**

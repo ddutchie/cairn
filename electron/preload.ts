@@ -94,6 +94,15 @@ interface AutomationsManifest {
 interface AutomationsFetchResult {
   manifest: AutomationsManifest; fromCache: boolean; cachedAt?: string; error?: string;
 }
+interface RegistryPersonalityEntry extends RegistryEntryMeta {
+  definition: { name: string; description?: string; prompt: string };
+}
+interface PersonalitiesManifest {
+  version: number; updatedAt: string; personalities: RegistryPersonalityEntry[];
+}
+interface PersonalitiesFetchResult {
+  manifest: PersonalitiesManifest; fromCache: boolean; cachedAt?: string; error?: string;
+}
 // ── Inline types for the codebase index / Architecture tab ──────────────────
 interface CodebaseSymbol {
   id: string; file_id: string; name: string; kind: string; line: number;
@@ -856,6 +865,10 @@ const api = {
     fetchAutomations: () => invoke<AutomationsFetchResult>("registry:fetchAutomations"),
     /** Force a network refresh of the automations manifest. */
     refreshAutomations: () => invoke<AutomationsFetchResult>("registry:refreshAutomations"),
+    /** Community personalities (separate personalities.json manifest). Cache-first. */
+    fetchPersonalities: () => invoke<PersonalitiesFetchResult>("registry:fetchPersonalities"),
+    /** Force a network refresh of the personalities manifest. */
+    refreshPersonalities: () => invoke<PersonalitiesFetchResult>("registry:refreshPersonalities"),
   },
 
   // ── Git operations (Agent Git tab) ────────────

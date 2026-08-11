@@ -500,6 +500,36 @@ export interface AutomationsFetchResult {
   error?: string;
 }
 
+/** A community personality — behavioral rules appended to the chat system prompt. */
+export interface RegistryPersonalityDefinition {
+  /** Display name shown in the personality picker. */
+  name: string;
+  /** One line shown in the browse card and picker list. */
+  description?: string;
+  /** Behavioral rules appended to the chat system prompt (style layer, never a
+   *  "You are …" identity claim). */
+  prompt: string;
+}
+
+export interface RegistryPersonalityEntry extends RegistryEntryMeta {
+  definition: RegistryPersonalityDefinition;
+}
+
+/** The parsed cairn-community PERSONALITIES manifest (personalities.json). */
+export interface PersonalitiesManifest {
+  version: number;
+  updatedAt: string;
+  personalities: RegistryPersonalityEntry[];
+}
+
+/** Result of a personalities-manifest fetch — manifest plus cache provenance. */
+export interface PersonalitiesFetchResult {
+  manifest: PersonalitiesManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
 // ── Chat ──────────────────────────────────────
 export type ChatThreadScope = "workspace" | "project";
 

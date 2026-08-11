@@ -35,6 +35,22 @@ export interface CachedConfig {
     // id of the active one. Persisted so the switcher survives restarts.
     savedProviders?: Array<{ id: string; name: string; baseUrl: string; apiKey: string; model: string }>;
     activeProviderId?: string;
+    // Installed chat personalities (community + custom) and the active one.
+    // Persisted so the picker + selection survive restarts; the personality
+    // text is plain (no secrets), so it is cached verbatim.
+    installedPersonalities?: Array<{
+      id: string;
+      name: string;
+      description?: string;
+      prompt: string;
+      source: "community" | "custom";
+      communityId?: string;
+      version?: string;
+      author?: string;
+      brandColor?: string;
+      homepage?: string;
+    }>;
+    personalityId?: string;
   };
   agentConfig?: {
     baseUrl?: string;
@@ -153,6 +169,12 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
             )
           : current.aiConfig?.savedProviders,
         activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.aiConfig?.activeProviderId,
+        // Installed personalities + active selection. The prompt text is plain
+        // (never a secret), so it is stored verbatim like savedProviders.
+        installedPersonalities: Array.isArray((config as { installedPersonalities?: unknown }).installedPersonalities)
+          ? (config as { installedPersonalities: NonNullable<CachedConfig["aiConfig"]>["installedPersonalities"] }).installedPersonalities
+          : current.aiConfig?.installedPersonalities,
+        personalityId: typeof configRecord.personalityId === "string" ? configRecord.personalityId : current.aiConfig?.personalityId,
       };
     } else if (type === "agent" && configRecord) {
       current.agentConfig = {

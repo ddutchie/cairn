@@ -226,6 +226,35 @@ export interface ProvidersManifest {
   providers: RegistryProviderEntry[];
 }
 
+/**
+ * A community personality — a set of behavioral rules appended verbatim to
+ * Cairn's chat system prompt to shape the assistant's tone and style. Installed
+ * into `aiConfig.installedPersonalities` and picked next to the model selector
+ * in chat. Kept in a SEPARATE manifest (personalities.json) from the tools
+ * catalog so the two can evolve independently.
+ */
+export interface RegistryPersonalityEntry extends RegistryEntryMeta {
+  definition: {
+    /** Display name shown in the personality picker. */
+    name: string;
+    /** One line shown in the browse card and picker list. */
+    description?: string;
+    /**
+     * Behavioral rules appended to the chat system prompt. A style LAYER on the
+     * existing "You are the Cairn AI assistant" identity — must NOT open with a
+     * "You are …" identity claim (CI rejects those upstream).
+     */
+    prompt: string;
+  };
+}
+
+/** The parsed cairn-community PERSONALITIES manifest (personalities.json). */
+export interface PersonalitiesManifest {
+  version: number;
+  updatedAt: string;
+  personalities: RegistryPersonalityEntry[];
+}
+
 // ── validation (mirrors cairn-community/schema.json) ────────────────────────
 
 const headers = z.record(z.string(), z.string()).optional();
@@ -465,4 +494,44 @@ export function parseProvidersManifest(raw: unknown): ProvidersManifest {
       return r.success ? [r.data] : [];
     }),
   } as ProvidersManifest;
+}
+
+// ── personalities manifest (personalities.json) ──────────────────────────────
+
+const personalityDefinition = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  // A personality is a STYLE LAYER on the existing Cairn assistant identity. An
+  // opening "You are …" claim would contradict the base system prompt, so it is
+  // rejected here (mirrors the cairn-community validator). Min 20 chars keeps
+  // thin one-liners that add nothing to the prompt out of the catalog.
+  prompt: z
+    .string()
+    .min(20)
+    .refine((p) => !/^you\s+are/i.test(p.trim()), {
+      message: "prompt must not start with a 'You are …' identity claim",
+    }),
+});
+
+const personalityEntry = z.object({ ...entryMeta, definition: personalityDefinition }).passthrough();
+
+// Envelope-only validation; entries validated individually in
+// parsePersonalitiesManifest so one bad entry can't blank the catalog.
+const personalitiesManifestSchema = z.object({
+  version: z.number(),
+  updatedAt: z.string(),
+  personalities: z.array(z.unknown()),
+});
+
+/** Parse + validate an unknown payload into a PersonalitiesManifest, or throw. */
+export function parsePersonalitiesManifest(raw: unknown): PersonalitiesManifest {
+  const m = personalitiesManifestSchema.parse(raw);
+  return {
+    version: m.version,
+    updatedAt: m.updatedAt,
+    personalities: m.personalities.flatMap((e) => {
+      const r = personalityEntry.safeParse(e);
+      return r.success ? [r.data] : [];
+    }),
+  } as PersonalitiesManifest;
 }

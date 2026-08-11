@@ -92,6 +92,34 @@ describe("config-cache AI settings round-trip", () => {
     expect(ai?.maxOutputAuto).toBe(true);
     expect(ai?.maxOutputTokens).toBe(8192);
   });
+
+  it("persists installedPersonalities + the active personalityId", async () => {
+    const { saveCachedConfig, getCachedConfig } = await import("./config-cache");
+    const installedPersonalities = [
+      {
+        id: "p1",
+        name: "Grill Me",
+        description: "Calibrated grilling.",
+        prompt: "Pressure-test plans with calibrated questions.",
+        source: "community" as const,
+        communityId: "grill-me",
+        version: "1.0.0",
+        author: "cairn",
+        brandColor: "#f43f5e",
+        homepage: "https://github.com/JuliusBrussee/skills",
+      },
+      { id: "p2", name: "Mine", prompt: "Be brief.", source: "custom" as const },
+    ];
+    saveCachedConfig("ai", { installedPersonalities, personalityId: "p1" });
+    const ai = getCachedConfig().aiConfig;
+    expect(ai?.installedPersonalities).toHaveLength(2);
+    expect(ai?.installedPersonalities?.[0].communityId).toBe("grill-me");
+    expect(ai?.personalityId).toBe("p1");
+    // A later connection-only save must not clobber the personality fields.
+    saveCachedConfig("ai", { model: "gpt-4o" });
+    expect(getCachedConfig().aiConfig?.personalityId).toBe("p1");
+    expect(getCachedConfig().aiConfig?.installedPersonalities).toHaveLength(2);
+  });
 });
 
 describe("config-cache without Electron", () => {

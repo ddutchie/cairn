@@ -233,6 +233,19 @@ const FEATURES = [
       "Persists Per Session: Todos are stored with the session and restored when you resume it, so long-running work survives restarts.",
     ],
   },
+  {
+    id: "v2.6.12-chat-personalities",
+    version: "v2.6.12",
+    title: "Chat Personalities",
+    category: "Chat",
+    description:
+      "Pick a personality next to the model selector in the chat input to layer behavioral rules onto the system prompt. The catalog ships with Caveman, Grill Me, Junior to Senior, Last 20%, and Ponytail — all with full prompt transparency — plus a way to browse more from the community or write your own.",
+    highlights: [
+      "Session Style Layer: A personality is appended to the system prompt as behavioral rules — Default keeps the exact current assistant with no layer.",
+      "Community Catalog: Browse and install ready-made personalities from cairn-community in Settings → AI & Chat → Chat personality; the full prompt is shown before you install.",
+      "Write Your Own: Create custom rules in the picker or Settings — e.g. 'Always talk in ASD-STE100 Simplified English'.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };
