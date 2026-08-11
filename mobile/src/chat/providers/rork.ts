@@ -88,6 +88,7 @@ async function* streamRork(
   let serverPromptTokens: number | undefined;
   let serverCompletionTokens: number | undefined;
   let streamedText = "";
+  let streamedReasoning = "";
   let sawFinish = false;
 
   const usageEvent = (): ChatUsage => {
@@ -110,6 +111,9 @@ async function* streamRork(
       // Server-reported output when available; otherwise count what we
       // streamed so the Usage view shows input AND output, not input alone.
       completionTokens: serverCompletionTokens ?? (streamedText ? countTextTokens(streamedText) : 0),
+      // Reasoning is streamed as reasoning-delta parts — count it so the
+      // Usage view's "thinking" column reflects Rork's chain-of-thought too.
+      reasoningTokens: streamedReasoning ? countTextTokens(streamedReasoning) : 0,
       // Marked estimated when we fell back to the client-side prompt count.
       estimated: promptTokens !== serverPromptTokens,
     };
@@ -152,6 +156,14 @@ async function* streamRork(
         if (ev.type === "text-delta") {
           const d = (ev as { delta?: string }).delta;
           if (typeof d === "string") streamedText += d;
+        }
+        // Reasoning (chain-of-thought) is also streamed — count it as reasoning
+        // tokens so the Usage view's "thinking" column is populated.
+        if (ev.type === "reasoning-delta") {
+          const d = (ev as { delta?: string }).delta;
+          if (typeof d === "string" && d.trim() && d.trim().toUpperCase() !== "[REDACTED]") {
+            streamedReasoning += d;
+          }
         }
 
         if (ev.type === "finish") {
