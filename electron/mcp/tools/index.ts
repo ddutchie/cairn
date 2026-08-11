@@ -196,7 +196,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       return {
         configured: true,
         mode,
-        markdown: mode === "full" ? style.fullGuide : style.cheatsheet,
+        markdown: mode === "full" ? style.fullGuide || style.cheatsheet : style.cheatsheet || style.fullGuide,
         persona: style.persona,
         updatedAt: style.updatedAt,
       };

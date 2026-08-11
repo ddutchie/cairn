@@ -55,12 +55,11 @@ export function UserStyleWizardModal({
   onClose: () => void;
   existing?: UserStyleRow | null;
 }) {
-  const { notes, cards, saveUserStyle, aiConfig, activeWorkspaceId, activeProjectId, projects } = useCairnStore(
+  const { notes, cards, saveUserStyle, activeWorkspaceId, activeProjectId, projects } = useCairnStore(
     useShallow((s) => ({
       notes: s.notes,
       cards: s.cards,
       saveUserStyle: s.saveUserStyle,
-      aiConfig: s.aiConfig,
       activeWorkspaceId: s.activeWorkspaceId,
       activeProjectId: s.activeProjectId,
       projects: s.projects,
@@ -84,6 +83,16 @@ export function UserStyleWizardModal({
       unsubsRef.current = [];
     };
   }, []);
+
+  const cancelGeneration = () => {
+    window.electron?.abortUserStyleStream?.();
+    unsubsRef.current.forEach((u) => u());
+    unsubsRef.current = [];
+    setBusy(false);
+    setStreaming(false);
+    setStreamingText("");
+    setStreamTools([]);
+  };
 
   // Step 1 — persona
   const [persona, setPersona] = useState<UserStylePersona>(
@@ -188,7 +197,6 @@ export function UserStyleWizardModal({
 
       const activeProject = projects.find((p) => p.id === activeProjectId);
       electron.generateUserStyleStream({
-        config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
         workspaceId: activeWorkspaceId ?? undefined,
         projectId: activeProjectId ?? undefined,
         projectName: activeProject?.name,
@@ -449,17 +457,22 @@ export function UserStyleWizardModal({
 
       {/* Footer actions */}
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-[var(--border)]">
-        <Button variant="ghost" size="sm" disabled={busy} onClick={step === 0 ? onClose : () => setStep((s) => s - 1)}>
-          {step === 0 ? "Cancel" : "Back"}
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy && !streaming}
+          onClick={streaming ? cancelGeneration : (step === 0 ? onClose : () => setStep((s) => s - 1))}
+        >
+          {streaming ? "Cancel generation" : (step === 0 ? "Cancel" : "Back")}
         </Button>
         <div className="flex items-center gap-2">
           {step === 0 && (
-            <Button size="sm" disabled={!canProceed(0)} onClick={() => setStep(1)}>
+            <Button size="sm" disabled={busy || !canProceed(0)} onClick={() => setStep(1)}>
               Next
             </Button>
           )}
           {step === 1 && (
-            <Button size="sm" disabled={busy} onClick={() => setStep(2)}>
+            <Button size="sm" disabled={busy || !canProceed(1)} onClick={() => setStep(2)}>
               Next
             </Button>
           )}

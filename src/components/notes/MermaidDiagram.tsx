@@ -90,16 +90,47 @@ export const colorLuminance = (input: string): number | null => {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 
+/** WCAG contrast ratio between two relative luminances (1–21). */
+export function contrastRatio(l1: number, l2: number): number {
+  const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
 function enforceClusterLabelContrast(container: HTMLElement) {
+  // FIXED (theme-independent) label candidates from the design tokens — dark
+  // text on light fills, light text on dark fills.
+  const styles = getComputedStyle(container);
+  const darkColor = styles.getPropertyValue("--mermaid-label-dark").trim() || "#1a1917";
+  const lightColor = styles.getPropertyValue("--mermaid-label-light").trim() || "#e8e4dc";
+  const darkLum = colorLuminance(darkColor);
+  const lightLum = colorLuminance(lightColor);
+
   for (const cluster of container.querySelectorAll<SVGElement>("g.cluster")) {
     const rect = cluster.querySelector<SVGRectElement>("rect") ?? (cluster.firstElementChild as SVGGraphicsElement | null);
-    const label = cluster.querySelector<SVGTextElement>(".cluster-label text, text.cluster-label");
-    if (!rect || !label) continue;
+    const svgLabel = cluster.querySelector<SVGTextElement>(".cluster-label text, text.cluster-label");
+    const htmlLabel = cluster.querySelector<HTMLElement>(".cluster-label span");
+    if (!rect) continue;
+
+    // Prefer the rect's own fill; fall back to the computed style when the
+    // attribute is missing/"none". If the attribute value is present but fails
+    // to parse (e.g. an SVG paint-server url), retry luminance with the
+    // computed style before giving up on this cluster.
     const attrFill = rect.getAttribute("fill");
-    const fill = attrFill && attrFill !== "none" ? attrFill : getComputedStyle(rect).fill;
-    const luminance = colorLuminance(fill);
+    let luminance = colorLuminance(attrFill && attrFill !== "none" ? attrFill : getComputedStyle(rect).fill);
+    if (luminance === null) {
+      luminance = colorLuminance(getComputedStyle(rect).fill);
+    }
     if (luminance === null) continue;
-    label.setAttribute("fill", luminance > 0.5 ? "#1a1917" : "#e8e4dc");
+
+    // Pick whichever candidate has the HIGHER WCAG contrast against the fill
+    // instead of a fixed 0.5-luminance threshold.
+    const useDark = darkLum !== null && lightLum !== null
+      ? contrastRatio(luminance, darkLum) >= contrastRatio(luminance, lightLum)
+      : luminance > 0.5;
+    const color = useDark ? darkColor : lightColor;
+
+    if (svgLabel) svgLabel.setAttribute("fill", color);
+    if (htmlLabel) htmlLabel.style.color = color;
   }
 }
 

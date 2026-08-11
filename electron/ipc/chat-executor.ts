@@ -304,7 +304,9 @@ export async function executeTool(
       return {
         configured: true,
         mode,
-        markdown: mode === "full" ? style.fullGuide : style.cheatsheet,
+        // Fall back to the alternate guide when the requested one is empty
+        // (the wizard permits saving either guide alone).
+        markdown: mode === "full" ? style.fullGuide || style.cheatsheet : style.cheatsheet || style.fullGuide,
         persona: style.persona,
         updatedAt: style.updatedAt,
       };

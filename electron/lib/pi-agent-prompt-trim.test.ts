@@ -182,7 +182,7 @@ async function toolCallsFor(
     db, req, cwd, BASE_URL, MODEL, API_KEY, messages,
     (e) => { called.add(e.tool); },
     undefined, undefined, "openai",
-    (pt) => { promptTokens = pt; },
+    (pt) => { promptTokens += pt; }, // accumulate across tool-loop rounds
     (e) => { if (e.output) { try { if (JSON.parse(e.output)?.error) toolErrors += 1; } catch { /* ignore */ } } },
   );
   return { called, promptTokens, toolErrors };

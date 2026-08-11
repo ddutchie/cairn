@@ -788,15 +788,20 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   async installCommunityPersonality(entry) {
     const def = entry.definition;
+    const nameMatch = (p: InstalledPersonality) => p.name.toLowerCase() === def.name.toLowerCase();
     const existing = (get().aiConfig.installedPersonalities ?? []).find(
-      (p) => p.communityId === entry.id || p.name.toLowerCase() === def.name.toLowerCase(),
+      // Name-based dedup only matches rows that CAME from the catalog — a
+      // custom personality with the same name must never be replaced/upgraded
+      // by a community install (its prompt would be lost, source flipped).
+      (p) => p.communityId === entry.id || (p.source === "community" && nameMatch(p)),
     );
-    // Reuse the existing row's id on re-install (dedup by communityId/name).
+    // Reuse the existing row's id on re-install (dedup by communityId, or by
+    // name for prior community rows).
     const id = existing?.id ?? genId();
     set((s) => {
       const prev = s.aiConfig.installedPersonalities ?? [];
       const matchIdx = prev.findIndex(
-        (p) => p.id === id || p.communityId === entry.id || p.name.toLowerCase() === def.name.toLowerCase(),
+        (p) => p.id === id || p.communityId === entry.id || (p.source === "community" && nameMatch(p)),
       );
       const row: InstalledPersonality = {
         id: matchIdx >= 0 ? prev[matchIdx].id : id,

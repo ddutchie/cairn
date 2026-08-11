@@ -23,19 +23,12 @@ import Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createNote, createColumn } from "../db/queries";
 import { runToolLoop } from "./chat-loop";
-import { TOOLS } from "./tools";
-import { generateUserStyleMarkdown, isUsableGuide } from "../ipc/user-style-handlers";
+import { generateUserStyleMarkdown, isUsableGuide, writingStyleToolsOverride, buildUserStylePromptPair } from "../ipc/user-style-handlers";
 import type { UserStyleGenerationInput } from "./user-style-prompt";
-import { buildUserStyleFullGuidePrompt } from "./user-style-prompt";
 import { BASE_URL, MODEL, API_KEY, endpointUp, LIVE_TESTS_ENABLED } from "./bench-endpoint";
 import type { LLMConfig } from "./llm";
 
 const config: LLMConfig = { provider: "openai", baseUrl: BASE_URL, model: MODEL, apiKey: API_KEY };
-
-// Mirrors ipc/user-style-handlers.ts — read-only tools for the analyse path.
-const WRITING_STYLE_TOOLS = new Set([
-  "get_project_context_pack", "search_notes", "get_note", "search_tasks", "get_task",
-]);
 
 /** Realistic sample set — technical, DM, and a long pasted doc (caps exercise). */
 function realisticInput(): UserStyleGenerationInput {
@@ -102,15 +95,17 @@ describe.skipIf(!LIVE_TESTS_ENABLED)("Writing Style generation (live)", () => {
 
     try {
       const input = realisticInput();
-      const systemPrompt = "You are a writing-style analyst and editor. Produce a precise, evidence-based writing style guide from the user's real writing. Follow the structure in the user prompt exactly. Write in clean, well-formed Markdown with ## headings.";
-      const userPrompt = buildUserStyleFullGuidePrompt(input) +
+      // Reuse the handler's prompt pair + read-only tool override so the test
+      // always reflects the handler's current configuration.
+      const { systemPrompt, userPrompt: baseUserPrompt } = buildUserStylePromptPair("full", input);
+      const userPrompt = baseUserPrompt +
         "\n\n## Active context\nProject: Demo\nWorkspace ID: ws\nProject ID: proj\nRead the user's notes with search_notes/get_note (scope to project proj) to ground the guide.";
       const req = { message: userPrompt, threadId: "us-test", workspaceId: "ws", projectId: "proj", config: { maxSteps: 4, temperature: 0.3 } };
       const messages = [
         { role: "system" as const, content: systemPrompt },
         { role: "user" as const, content: userPrompt },
       ];
-      const toolsOverride = TOOLS.filter((t) => WRITING_STYLE_TOOLS.has(t.function.name));
+      const toolsOverride = writingStyleToolsOverride(true);
 
       const tokens: string[] = [];
       const toolCalls: string[] = [];

@@ -1386,4 +1386,34 @@ describe("get_user_writing_style", () => {
     const full = await exec(db, "get_user_writing_style", { mode: "full" }) as Record<string, unknown>;
     expect(full.markdown).toContain("Voice in one line");
   });
+
+  it("falls back to the full guide when only it exists (cheatsheet requested)", async () => {
+    const db = makeDb();
+    seed(db);
+    q.saveUserStyle(db, {
+      persona: { name: "Gerard" },
+      fullGuide: "## 1. Voice in one line\nWarm and precise.",
+      cheatsheet: "",
+      source: "guided",
+    });
+    const def = await exec(db, "get_user_writing_style", {}) as Record<string, unknown>;
+    expect(def.configured).toBe(true);
+    expect(def.mode).toBe("cheatsheet");
+    expect(def.markdown).toContain("Voice in one line");
+  });
+
+  it("falls back to the cheat sheet when only it exists (full requested)", async () => {
+    const db = makeDb();
+    seed(db);
+    q.saveUserStyle(db, {
+      persona: { name: "Gerard" },
+      fullGuide: "",
+      cheatsheet: "Warm and precise.",
+      source: "guided",
+    });
+    const full = await exec(db, "get_user_writing_style", { mode: "full" }) as Record<string, unknown>;
+    expect(full.configured).toBe(true);
+    expect(full.mode).toBe("full");
+    expect(full.markdown).toBe("Warm and precise.");
+  });
 });

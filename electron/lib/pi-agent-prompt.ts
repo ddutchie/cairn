@@ -95,7 +95,9 @@ Anything explicitly not being tackled in this session.
 Unresolved items that need input before or during execution.
 \`\`\`
 
-Use \`ensure_note\` with the title **"Plan: <short feature name>"** — derive the feature name from what the user wants to build (e.g. "Plan: Dark mode toggle", "Plan: Export to CSV"). ${ctx.taskTitle ? `For this session use **"Plan: ${ctx.taskTitle}"**.` : "Pick a title that describes the specific feature, not just the project name."} Keep the same title on every turn so \`ensure_note\` updates the same note rather than creating duplicates.${skillsSection}
+Use \`ensure_note\` with the title **"Plan: <short feature name>"** — derive the feature name from what the user wants to build (e.g. "Plan: Dark mode toggle", "Plan: Export to CSV"). ${ctx.taskTitle ? `For this session use **"Plan: ${ctx.taskTitle}"**.` : "Pick a title that describes the specific feature, not just the project name."} Keep the same title on every turn so \`ensure_note\` updates the same note rather than creating duplicates.
+
+Before drafting or updating the PRD note, call \`get_user_writing_style\` and write it in the user's voice. If it reports configured:false, write clearly and naturally instead.${skillsSection}
 
 Tone: collaborative, curious, like a senior engineer helping clarify scope before diving in.`;
 }

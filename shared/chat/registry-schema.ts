@@ -17,6 +17,14 @@
 
 import * as z from "zod";
 
+/**
+ * Shared ceiling for a personality prompt (behavioural rules appended verbatim
+ * to the chat system prompt). Enforced by the registry schema (zod .max), the
+ * custom-personality forms (maxLength) and withPersonality (truncation) so an
+ * oversized prompt can never bloat the system prompt.
+ */
+export const MAX_PERSONALITY_PROMPT_CHARS = 4000;
+
 // ── Types (mirror src/types/index.ts; wired to the renderer by IPC strings) ──
 
 export interface RegistryEntryMeta {
@@ -504,10 +512,12 @@ const personalityDefinition = z.object({
   // A personality is a STYLE LAYER on the existing Cairn assistant identity. An
   // opening "You are …" claim would contradict the base system prompt, so it is
   // rejected here (mirrors the cairn-community validator). Min 20 chars keeps
-  // thin one-liners that add nothing to the prompt out of the catalog.
+  // thin one-liners that add nothing to the prompt out of the catalog; the max
+  // (shared MAX_PERSONALITY_PROMPT_CHARS) keeps the appended layer compact.
   prompt: z
     .string()
     .min(20)
+    .max(MAX_PERSONALITY_PROMPT_CHARS)
     .refine((p) => !/^you\s+are/i.test(p.trim()), {
       message: "prompt must not start with a 'You are …' identity claim",
     }),

@@ -12,6 +12,7 @@ import { LlamaServerConsole } from "./LlamaServerConsole";
 import { ProviderManager } from "./ProviderManager";
 import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
 import { BrowsePersonalitiesModal } from "@/components/chat/BrowsePersonalitiesModal";
+import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-schema";
 
 export function AISettings() {
   const { aiConfig, setAIConfig, setPersonality, removePersonality, createCustomPersonality } = useCairnStore(useShallow((s) => ({
@@ -304,52 +305,64 @@ export function AISettings() {
           >
             <div className="flex flex-col gap-1.5 w-full min-w-52">
               {/* None — no personality layer */}
-              <div
+              <button
+                type="button"
                 className={cn(
-                  "flex items-center gap-2 rounded-md border px-2.5 py-2 cursor-pointer transition-colors",
+                  "flex items-center gap-2 rounded-md border px-2.5 py-2 cursor-pointer transition-colors text-left",
                   !aiConfig.personalityId
                     ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
                     : "border-[var(--border)] hover:bg-[var(--surface-2)]",
                 )}
                 onClick={() => setPersonality(null)}
                 title="No personality layer"
+                aria-label="Select None — no personality layer"
               >
                 <Sparkles size={12} className="text-[var(--text-tertiary)] shrink-0" />
                 <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1">None</span>
                 <span className={cn("text-[0.65rem] shrink-0", !aiConfig.personalityId ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
                   {!aiConfig.personalityId ? "Active" : "Inactive"}
                 </span>
-              </div>
+              </button>
               {aiConfig.installedPersonalities.map((p) => {
                 const isActive = p.id === aiConfig.personalityId;
                 return (
                   <div
                     key={p.id}
                     className={cn(
-                      "flex items-center gap-2 rounded-md border px-2.5 py-2 cursor-pointer transition-colors",
+                      "flex items-center gap-2 rounded-md border transition-colors",
                       isActive
                         ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
-                        : "border-[var(--border)] hover:bg-[var(--surface-2)]",
+                        : "border-[var(--border)]",
                     )}
-                    onClick={() => setPersonality(isActive ? null : p.id)}
-                    title={isActive ? "Click to switch to None" : "Set as active"}
                   >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ background: p.brandColor ?? "var(--text-tertiary)" }}
-                    />
-                    <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 truncate">{p.name}</span>
-                    {p.source === "custom" && (
-                      <span className="text-[0.6rem] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
-                    )}
-                    <span className={cn("text-[0.65rem] shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
-                      {isActive ? "Active" : "Inactive"}
-                    </span>
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); removePersonality(p.id); }}
-                      className="text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0"
+                      onClick={() => setPersonality(isActive ? null : p.id)}
+                      title={isActive ? "Click to switch to None" : "Set as active"}
+                      aria-label={`${isActive ? "Deactivate" : "Activate"} ${p.name}`}
+                      className={cn(
+                        "flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors text-left flex-1 min-w-0",
+                        !isActive && "hover:bg-[var(--surface-2)]",
+                      )}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ background: p.brandColor ?? "var(--text-tertiary)" }}
+                      />
+                      <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 truncate">{p.name}</span>
+                      {p.source === "custom" && (
+                        <span className="text-[0.6rem] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
+                      )}
+                      <span className={cn("text-[0.65rem] shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+                        {isActive ? "Active" : "Inactive"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removePersonality(p.id)}
+                      className="text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0 mr-2"
                       title="Remove"
+                      aria-label={`Remove ${p.name}`}
                     >
                       <Trash2 size={12} />
                     </button>
@@ -391,6 +404,7 @@ export function AISettings() {
               className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none resize-none min-h-24"
               placeholder="Behavioral rules appended to the chat system prompt. Write rules, not a 'You are …' identity."
               value={personaPrompt}
+              maxLength={MAX_PERSONALITY_PROMPT_CHARS}
               onChange={(e) => setPersonaPrompt(e.target.value)}
             />
             <div className="flex items-center justify-end gap-2">

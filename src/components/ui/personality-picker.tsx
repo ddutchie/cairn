@@ -17,6 +17,7 @@ import { Sparkles, ChevronDown, Plus, Download, Trash2, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
+import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-schema";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { BrowsePersonalitiesModal } from "@/components/chat/BrowsePersonalitiesModal";
@@ -200,8 +201,9 @@ export function PersonalityPicker({
                         <button
                           type="button"
                           onClick={() => removePersonality(p.id)}
-                          title="Remove"
-                          className="text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 hover:text-[var(--danger)] transition-opacity mt-0.5 flex-shrink-0"
+                          title={`Remove ${p.name}`}
+                          aria-label={`Remove ${p.name}`}
+                          className="text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-[var(--danger)] transition-opacity mt-0.5 flex-shrink-0"
                         >
                           <Trash2 size={11} />
                         </button>
@@ -234,6 +236,7 @@ export function PersonalityPicker({
                   className={cn(inputCls, "resize-none min-h-20")}
                   placeholder="Behavioral rules appended to the system prompt. Write rules, not a 'You are …' identity."
                   value={prompt}
+                  maxLength={MAX_PERSONALITY_PROMPT_CHARS}
                   onChange={(e) => setPrompt(e.target.value)}
                 />
                 <div className="flex items-center justify-end gap-2">

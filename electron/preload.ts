@@ -556,8 +556,8 @@ const api = {
   generateUserStyle: (step: "full" | "cheatsheet" | "optimize", input: UserStyleGenerationInput) =>
     invoke<{ markdown: string }>("user-style:generate", { step, input }),
   // Streaming generation (wizard) — fire-and-forget; listen via onUserStyle*.
+  // Credentials are resolved main-side (resolveChatConfig), never sent here.
   generateUserStyleStream: (req: {
-    config?: { baseUrl?: string; model?: string; apiKey?: string };
     workspaceId?: string;
     projectId?: string;
     projectName?: string;

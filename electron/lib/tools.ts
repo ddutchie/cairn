@@ -7,6 +7,7 @@
 
 import * as z from "zod";
 import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, AGENT_EXCLUDED_TOOLS } from "./tool-schemas";
+import { MAX_PERSONALITY_PROMPT_CHARS } from "../../shared/chat/registry-schema";
 import type { ToolName } from "./tool-schemas";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -193,7 +194,13 @@ export function withPersonality(
   personality?: { name: string; prompt: string },
 ): string {
   if (!personality || !personality.name || !personality.prompt) return systemPrompt;
-  return `${systemPrompt}\n\n## Personality: ${personality.name}\n${personality.prompt}`;
+  // Guard the appended layer against an oversized prompt (same shared ceiling
+  // the registry schema + create forms enforce — truncate defensively so an
+  // over-long persisted prompt can't bloat the system prompt).
+  const prompt = personality.prompt.length > MAX_PERSONALITY_PROMPT_CHARS
+    ? personality.prompt.slice(0, MAX_PERSONALITY_PROMPT_CHARS)
+    : personality.prompt;
+  return `${systemPrompt}\n\n## Personality: ${personality.name}\n${prompt}`;
 }
 
 /**

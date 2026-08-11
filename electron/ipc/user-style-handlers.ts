@@ -29,7 +29,7 @@ import type { UserStyleSaveInput } from "../db/user-style-queries";
  * nothing else. No get_active_context (IDs are passed in the prompt), no write
  * tools, so generation can never mutate anything.
  */
-const WRITING_STYLE_TOOLS = new Set([
+export const WRITING_STYLE_TOOLS = new Set([
   "get_project_context_pack",
   "search_notes",
   "get_note",
@@ -37,7 +37,8 @@ const WRITING_STYLE_TOOLS = new Set([
   "get_task",
 ]);
 
-function writingStyleToolsOverride(analyseNotes: boolean) {
+/** Read-only TOOLS subset for the analyse path (exported for the live test). */
+export function writingStyleToolsOverride(analyseNotes: boolean) {
   if (!analyseNotes) return [] as typeof TOOLS;
   return TOOLS.filter((t) => WRITING_STYLE_TOOLS.has(t.function.name));
 }
@@ -112,11 +113,12 @@ export async function generateUserStyleMarkdown(
   step: UserStyleStep,
   input: UserStyleGenerationInput,
 ): Promise<string> {
-  const { systemPrompt, userPrompt } = buildUserStylePromptPair(step, input);
-
+  // Validate the precondition BEFORE building a prompt from a possibly-empty
+  // source guide.
   if ((step === "cheatsheet" || step === "optimize") && !input.fullGuide) {
     throw new Error(step === "cheatsheet" ? "No full guide to condense." : "No full guide to optimize.");
   }
+  const { systemPrompt, userPrompt } = buildUserStylePromptPair(step, input);
 
   let markdown = await callLLM(cfg, systemPrompt, userPrompt, {
     source: "writing-style",
@@ -171,7 +173,6 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
   //   user-style:tool-call    { tool, label, args } — a note/task read (analyse path)
   //   user-style:done         { content, usable, error? }
   registerIpcOn("user-style:generateStream", (event, req: {
-    config?: { baseUrl?: string; model?: string; apiKey?: string };
     workspaceId?: string;
     projectId?: string;
     projectName?: string;
@@ -195,16 +196,19 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
           return;
         }
 
+        // Validate the precondition BEFORE building a prompt from a possibly
+        // empty source guide.
+        if ((req.step === "cheatsheet" || req.step === "optimize") && !req.input.fullGuide) {
+          send("user-style:done", { content: "", usable: false, error: req.step === "cheatsheet" ? "No full guide to condense." : "No full guide to optimize." });
+          return;
+        }
+
         // Build the generation prompt pair (shared with the one-shot path).
         const { systemPrompt, userPrompt: baseUserPrompt } = buildUserStylePromptPair(req.step, req.input);
         const scopeHint = req.projectName
           ? `\n\n## Active context\nProject: ${req.projectName}\nWorkspace ID: ${req.workspaceId ?? ""}\nProject ID: ${req.projectId ?? ""}\nIf you need the user's own content, search/read their notes and tasks with the tools (scope searches to the project ID). Do NOT call get_active_context — the IDs are above. Never call write tools.`
           : "";
         const userPrompt = baseUserPrompt + scopeHint;
-        if ((req.step === "cheatsheet" || req.step === "optimize") && !req.input.fullGuide) {
-          send("user-style:done", { content: "", usable: false, error: req.step === "cheatsheet" ? "No full guide to condense." : "No full guide to optimize." });
-          return;
-        }
 
         const chatReq = {
           message: userPrompt,
@@ -256,13 +260,19 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
           error: err instanceof Error ? err.message : String(err),
         });
       } finally {
-        abortControllers.delete(event.sender.id);
+        // Only delete the map entry if it still references THIS run's
+        // controller — a newer generation started for the same sender (which
+        // aborted this one and replaced the entry) must not be removed here.
+        if (abortControllers.get(event.sender.id) === abortCtrl) {
+          abortControllers.delete(event.sender.id);
+        }
       }
     })();
   });
 
   registerIpcOn("user-style:abort", (event) => {
     abortControllers.get(event.sender.id)?.abort();
-    abortControllers.delete(event.sender.id);
+    // The aborted run's finally clears the entry only when it still owns it,
+    // so a freshly-started generation's controller survives this abort.
   });
 }

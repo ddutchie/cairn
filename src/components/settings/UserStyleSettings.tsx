@@ -35,6 +35,7 @@ export function UserStyleSettings() {
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [regenerateError, setRegenerateError] = useState<string | null>(null);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   const [fullOpen, setFullOpen] = useState(false);
 
@@ -46,9 +47,14 @@ export function UserStyleSettings() {
 
   const regenerateCheatsheet = async () => {
     if (!userStyle?.fullGuide) return;
+    if (!window.electron?.generateUserStyle) {
+      setRegenerateError("AI generation isn't available in this build.");
+      return;
+    }
     setRegenerating(true);
+    setRegenerateError(null);
     try {
-      const res = await window.electron?.generateUserStyle("cheatsheet", {
+      const res = await window.electron.generateUserStyle("cheatsheet", {
         persona: userStyle.persona ?? {},
         samples: [],
         answers: [],
@@ -60,7 +66,11 @@ export function UserStyleSettings() {
           cheatsheet: res.markdown,
           source: userStyle.source,
         });
+      } else {
+        setRegenerateError("Generation returned no output — try again.");
       }
+    } catch (err) {
+      setRegenerateError(err instanceof Error ? err.message : "Couldn't regenerate the cheat sheet.");
     } finally {
       setRegenerating(false);
     }
@@ -163,6 +173,9 @@ export function UserStyleSettings() {
                   <Trash2 size={12} /> Clear
                 </button>
               </div>
+              {regenerateError && (
+                <p className="mt-2 text-[0.65rem] text-[var(--danger)]">{regenerateError}</p>
+              )}
             </SettingsRow>
           </>
         )}

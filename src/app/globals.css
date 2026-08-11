@@ -43,6 +43,13 @@
      is the fallback foreground when an entry ships no brandColor. */
   --connector-chip-bg: #f5f4f2;
   --connector-chip-fg: #1a1a1a;
+  /* Mermaid subgraph label contrast candidates. FIXED (theme-independent)
+     near-black / near-white so a cluster label always contrasts with its
+     arbitrary fill regardless of the current theme — the lighter candidate is
+     used on dark fills and the darker on light fills. Not overridden in the
+     light block on purpose. */
+  --mermaid-label-dark: #1a1917;
+  --mermaid-label-light: #e8e4dc;
 }
 
 /* Light theme — applied via data-theme="light" on <html> */
