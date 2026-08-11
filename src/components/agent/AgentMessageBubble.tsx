@@ -7,6 +7,7 @@ import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
 import { ThinkingPanel } from "@/components/chat/chat-panel/ThinkingPanel";
 import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
+import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
 import { useCairnStore } from "@/store";
 import { ContextRing } from "./ContextRing";
 import type { PiAgentMessage, PiSubagentMessage } from "@/types";
@@ -116,6 +117,12 @@ function ToolChip({ tc, sessionId, connectors }: ToolChipProps) {
         <span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
       </div>
     );
+  }
+
+  // No writing style configured — surface a "set up" chip instead of a plain
+  // success chip so the user knows the agent couldn't match their voice.
+  if (tc.name === "get_user_writing_style" && tc.ok && writingStyleNeedsSetup(tc.output)) {
+    return <WritingStylePromptChip output={tc.output} />;
   }
 
   // Cairn write tools get a dedicated linked bubble instead of raw JSON expansion

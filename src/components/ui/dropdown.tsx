@@ -29,6 +29,7 @@ export function DropdownMenuContent({
           className
         )}
         sideOffset={6}
+        data-dialog-portal
         {...(onOpenAutoFocus
           ? ({ onOpenAutoFocus } as Record<string, unknown>)
           : {})}

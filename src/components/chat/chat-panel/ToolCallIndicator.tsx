@@ -6,6 +6,7 @@ import { MarkdownContent } from "./MarkdownContent";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { MessageAvatar, StreamingCursor } from "./message-ui";
 import { ExternalRefChip } from "@/components/shared/cairn-ref-chip";
+import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
 import { ConnectorToolCard } from "@/components/shared/ConnectorToolCard";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 import { humanizeTool } from "@/lib/humanize-tool";
@@ -32,6 +33,8 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
               <span className="text-[0.786rem] text-[var(--text-secondary)]">{humanizeTool(tc.tool, parseToolArgs(tc.args)).pre} failed</span>
               {tc.error && <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[220px]">— {tc.error}</span>}
             </div>
+          ) : tc.status === "done" && tc.tool === "get_user_writing_style" && tc.ok !== false && writingStyleNeedsSetup(tc.output) ? (
+            <WritingStylePromptChip key={i} output={tc.output} />
           ) : tc.status === "done" && connectors && connectorForTool(tc.tool, connectors) ? (
             <ConnectorToolCard key={i} toolCall={{ tool: tc.tool, args: parseToolArgs(tc.args), output: tc.output, externalRef: tc.externalRef }} connector={connectorForTool(tc.tool, connectors)!} testId="chat-connector-card" />
           ) : tc.status === "done" && tc.externalRef ? (
