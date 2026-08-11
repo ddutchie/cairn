@@ -91,24 +91,27 @@ async function* streamRork(
   let sawFinish = false;
 
   const usageEvent = (): ChatUsage => {
-    if (serverPromptTokens != null) {
-      return {
-        promptTokens: serverPromptTokens,
-        contextLimit: RORK_CONTEXT_LIMIT,
-        // Server-reported output when available; otherwise count what we
-        // streamed so the Usage view shows input AND output, not input alone.
-        completionTokens: serverCompletionTokens ?? (streamedText ? countTextTokens(streamedText) : 0),
-      };
-    }
-    // Estimate from the outgoing conversation PLUS the tool definitions (the
-    // request body carries `tools`, so omitting them under-counts input) —
-    // o200k_base, approximate for whatever model Rork serves.
+    // The server's /agent/chat sometimes reports a prompt-token count far below
+    // the real request (it appears to omit system / tools / history — observed
+    // ~270 reported for a ~6k request). The context ring and its breakdown are
+    // rescaled to this number, so an under-count makes every segment tiny.
+    // Trust the server value only when it's plausibly close to the client
+    // estimate (conversation text + tool definitions); otherwise use the
+    // estimate so the ring reflects the actual request.
+    const estimatedPrompt =
+      countTextTokens(conversationText(messages)) + countTextTokens(JSON.stringify(tools ?? {}));
+    const promptTokens =
+      serverPromptTokens != null && serverPromptTokens >= estimatedPrompt * 0.8
+        ? serverPromptTokens
+        : estimatedPrompt;
     return {
-      promptTokens:
-        countTextTokens(conversationText(messages)) + countTextTokens(JSON.stringify(tools ?? {})),
+      promptTokens,
       contextLimit: RORK_CONTEXT_LIMIT,
-      completionTokens: streamedText ? countTextTokens(streamedText) : 0,
-      estimated: true,
+      // Server-reported output when available; otherwise count what we
+      // streamed so the Usage view shows input AND output, not input alone.
+      completionTokens: serverCompletionTokens ?? (streamedText ? countTextTokens(streamedText) : 0),
+      // Marked estimated when we fell back to the client-side prompt count.
+      estimated: promptTokens !== serverPromptTokens,
     };
   };
 
