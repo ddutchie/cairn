@@ -5,7 +5,9 @@ import * as RadixDropdown from "@radix-ui/react-dropdown-menu";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export const DropdownMenu = RadixDropdown.Root;
+export function DropdownMenu({ modal = false, ...props }: RadixDropdown.DropdownMenuProps) {
+  return <RadixDropdown.Root modal={modal} {...props} />;
+}
 export const DropdownMenuTrigger = RadixDropdown.Trigger;
 
 export function DropdownMenuContent({
