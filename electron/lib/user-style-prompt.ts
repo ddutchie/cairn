@@ -40,8 +40,25 @@ const PERSONA_BLOCK = (p: UserStyleGenerationInput["persona"]) => {
 
 /** Build the system prompt for generating the FULL writing style guide. */
 export function buildUserStyleFullGuidePrompt(input: UserStyleGenerationInput): string {
-  const samples = input.samples.length
-    ? input.samples.map((s, i) => `### Sample ${i + 1} — ${s.context}\n${s.text}`).join("\n\n")
+  // Bound the raw material: a pasted document (e.g. an existing style guide)
+  // can run tens of thousands of chars and drown a smaller model — truncate
+  // each sample and cap the combined block so the analysis prompt stays
+  // digestible. Truncation is lossy but the style *signals* survive.
+  const MAX_SAMPLE_CHARS = 2000;
+  const MAX_TOTAL_CHARS = 12_000;
+  let total = 0;
+  const bounded: string[] = [];
+  for (const s of input.samples) {
+    const text = s.text.slice(0, MAX_SAMPLE_CHARS);
+    if (total + text.length > MAX_TOTAL_CHARS) {
+      bounded.push(`### ${s.context}\n${text.slice(0, Math.max(0, MAX_TOTAL_CHARS - total))}`);
+      break;
+    }
+    total += text.length;
+    bounded.push(`### ${s.context}\n${text}`);
+  }
+  const samples = bounded.length
+    ? bounded.join("\n\n")
     : "(no samples provided)";
   const answers = input.answers.length
     ? input.answers.map((a) => `- ${a.question}: ${a.answer || "(no answer)"}`).join("\n")

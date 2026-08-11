@@ -33,6 +33,26 @@ function resolveChatConfig(): { error: string } | LLMConfig {
   return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef) };
 }
 
+/**
+ * Cheap coherence check: a generated style guide must contain a sensible number
+ * of markdown headings. A failed generation degrades into "token soup" — long
+ * scrambled fragments with almost no structure — and this catches that before
+ * it reaches the preview. Thresholds are deliberately low (the full guide asks
+ * for 12 sections, the cheat sheet for ~8).
+ */
+/** Exported for tests. */
+export function countHeadings(markdown: string): number {
+  const m = markdown.match(/^\s*#{1,2}\s+/gm);
+  return m ? m.length : 0;
+}
+
+/** Exported for tests. */
+export function isUsableGuide(markdown: string, step: "full" | "cheatsheet"): boolean {
+  const headings = countHeadings(markdown);
+  if (step === "full") return headings >= 6;
+  return headings >= 3;
+}
+
 export function registerUserStyleHandlers(ctx: DbContext): void {
   registerIpcHandle("user-style:get", () => handle(() => q.getUserStyle(ctx.db)));
   registerIpcHandle("user-style:save", (_e, { input }: { input: UserStyleSaveInput }) => handle(() => q.saveUserStyle(ctx.db, input)));
@@ -48,8 +68,8 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
 
       const systemPrompt =
         step === "full"
-          ? "You are a writing-style analyst and editor. Produce a precise, evidence-based writing style guide from the user's real writing. Follow the structure in the user prompt exactly."
-          : "You are a copy editor who condenses style guides into tight cheat sheets.";
+          ? "You are a writing-style analyst and editor. Produce a precise, evidence-based writing style guide from the user's real writing. Follow the structure in the user prompt exactly. Write in clean, well-formed Markdown with ## headings — never splice or garble the user's words."
+          : "You are a copy editor who condenses style guides into tight cheat sheets. Write in clean, well-formed Markdown with headings — never splice or garble the source text.";
       const userPrompt =
         step === "full"
           ? buildUserStyleFullGuidePrompt(input)
@@ -59,9 +79,26 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
         throw new Error("No full guide to condense.");
       }
 
-      const markdown = await callLLM(cfg, systemPrompt, userPrompt, {
+      // Retry once at a lower temperature if the model returns unusable output
+      // ("token soup"). A second failure surfaces as an explicit error rather
+      // than showing/saving garbage.
+      let markdown = await callLLM(cfg, systemPrompt, userPrompt, {
         source: "writing-style",
+        temperature: 0.3,
+        maxTokens: 8192,
       });
+      if (!isUsableGuide(markdown, step)) {
+        markdown = await callLLM(cfg, systemPrompt, userPrompt, {
+          source: "writing-style",
+          temperature: 0.1,
+          maxTokens: 8192,
+        });
+      }
+      if (!isUsableGuide(markdown, step)) {
+        throw new Error(
+          `The model (${cfg.model}) returned unusable output for the style guide. Try again, or switch to a more capable model in Settings → AI & Chat.`,
+        );
+      }
       return { markdown };
     }),
   );

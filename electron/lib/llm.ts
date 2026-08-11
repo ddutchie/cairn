@@ -124,6 +124,10 @@ export interface LlmCallOpts {
   sessionId?: string;
   projectId?: string;
   workspaceId?: string;
+  /** Sampling temperature override (default 0.4). */
+  temperature?: number;
+  /** Max output/completion token override (default 4096). */
+  maxTokens?: number;
 }
 
 /**
@@ -225,8 +229,8 @@ export async function callLLM(
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      max_tokens: 4096,
-      temperature: 0.4,
+      max_tokens: opts.maxTokens ?? 4096,
+      temperature: opts.temperature ?? 0.4,
       // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
       stream: true,
     },
