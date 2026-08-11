@@ -19,6 +19,7 @@ import {
   type UserStyleGenerationInput,
 } from "../lib/user-style-prompt";
 import { runToolLoop } from "../lib/chat-loop";
+import { recordLlmUsage } from "../lib/usage-recorder";
 import { TOOLS } from "../lib/tools";
 import * as q from "../db/queries";
 import type { UserStyleSaveInput } from "../db/user-style-queries";
@@ -223,6 +224,28 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
         ];
         const toolsOverride = writingStyleToolsOverride(req.analyseNotes);
 
+        // Persist one usage row per tool-loop round so wizard generation shows
+        // up under "Writing style" in the Usage view — not "Chat" (the shared
+        // runToolLoop defers recording to the caller; the chat handler records
+        // source "chat", this path records its own feature source).
+        const onUsage = (pt: number, ct: number, rt?: number, cost?: number, cacheRead?: number, cacheCreate?: number) => {
+          recordLlmUsage({
+            source: "writing-style",
+            sessionId: "user-style",
+            workspaceId: req.workspaceId,
+            projectId: req.projectId,
+            provider: cfg.provider,
+            model: cfg.model,
+            baseUrl: cfg.baseUrl,
+            promptTokens: pt,
+            completionTokens: ct,
+            reasoningTokens: typeof rt === "number" ? rt : 0,
+            cacheReadTokens: cacheRead,
+            cacheCreationTokens: cacheCreate,
+            costUsd: cost,
+          });
+        };
+
         const run = async () => {
           const result = await runToolLoop(
             ctx.db, chatReq as never, ctx.workspacePath,
@@ -230,7 +253,7 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
             messages,
             (e) => send("user-style:tool-call", e),
             abortCtrl.signal, undefined, "openai",
-            undefined,
+            onUsage,
             (e) => send("user-style:tool-call-done", e),
             (delta) => send("user-style:token", { delta }),
             undefined,

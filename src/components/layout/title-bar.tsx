@@ -30,8 +30,9 @@ export function TitleBar() {
   // mount — imperceptible in Electron since it renders before the first frame.
   const [platform, setPlatform] = useState<"darwin" | "win32" | "linux" | null>(null);
 
-  const { notificationUnreadCount, setNotificationOpen, runningAutomationCount, setView } = useCairnStore(useShallow((s) => ({
+  const { notificationUnreadCount, notificationOpen, setNotificationOpen, runningAutomationCount, setView } = useCairnStore(useShallow((s) => ({
     notificationUnreadCount: s.notificationUnreadCount,
+    notificationOpen: s.notificationOpen,
     setNotificationOpen: s.setNotificationOpen,
     runningAutomationCount: s.runningAutomationCount,
     setView: s.setView,
@@ -88,7 +89,8 @@ export function TitleBar() {
           </button>
         )}
         <button
-          onClick={() => setNotificationOpen(true)}
+          onClick={() => setNotificationOpen(!notificationOpen)}
+          data-notification-toggle
           className={cn(
             "relative flex items-center justify-center w-7 h-7 rounded-md transition-colors",
             notificationUnreadCount > 0
@@ -97,6 +99,7 @@ export function TitleBar() {
           )}
           title={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
           aria-label={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
+          aria-expanded={notificationOpen}
         >
           <Bell
             size={14}

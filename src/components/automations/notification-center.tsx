@@ -69,6 +69,12 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
   // Close on outside click / Escape (the popover only exists while open).
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
+      // Clicking the bell itself is a toggle, not an outside click — the bell
+      // button carries data-notification-toggle (TitleBar / sidebar), so ignore
+      // it here and let the button's onClick flip the open state. Without this
+      // the outside mousedown would close the popup and the button's click would
+      // immediately reopen it, making the bell look stuck open.
+      if (e.target instanceof Element && e.target.closest("[data-notification-toggle]")) return;
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();

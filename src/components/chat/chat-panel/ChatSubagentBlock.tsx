@@ -17,6 +17,7 @@ import { useCairnStore } from "@/store";
 import { MarkdownContent } from "./MarkdownContent";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { CairnRefChip, ExternalRefChip } from "@/components/shared/cairn-ref-chip";
+import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
 import type { ChatSubagent, ChatToolCallRecord } from "@/types";
 
 function SubToolChip({ tc }: { tc: ChatToolCallRecord }) {
@@ -30,6 +31,11 @@ function SubToolChip({ tc }: { tc: ChatToolCallRecord }) {
   }
   if (tc.cairnRef) return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
   if (tc.externalRef) return <ExternalRefChip toolName={tc.tool} externalRef={tc.externalRef} />;
+  // Writing style not configured — surface the "set up" prompt (the writing
+  // subagent is exactly where prose gets drafted in the user's voice).
+  if (tc.tool === "get_user_writing_style" && writingStyleNeedsSetup(tc.output)) {
+    return <WritingStylePromptChip output={tc.output} />;
+  }
   const running = !tc.output;
   return (
     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-3)] border border-[var(--border)] w-fit">

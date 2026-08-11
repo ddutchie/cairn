@@ -10,6 +10,7 @@ import { ThinkingPanel } from "./ThinkingPanel";
 import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { MessageAvatar } from "./message-ui";
 import { CairnRefChip, ExternalRefChip } from "@/components/shared/cairn-ref-chip";
+import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
 import { ConnectorToolCard } from "@/components/shared/ConnectorToolCard";
 import type { ChatMessage, LinkedContextReference, ChatToolCallRecord } from "@/types";
 import { humanizeTool } from "@/lib/humanize-tool";
@@ -28,6 +29,12 @@ function ChatToolCallChip({ tc, connectors }: { tc: ChatToolCallRecord; connecto
   }
   if (tc.cairnRef) {
     return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
+  }
+  // Writing style not configured — surface the "set up" prompt (persisted
+  // messages render here, not ToolCallIndicator, so this is where it shows
+  // after the stream completes).
+  if (tc.tool === "get_user_writing_style" && writingStyleNeedsSetup(tc.output)) {
+    return <WritingStylePromptChip output={tc.output} />;
   }
   const connector = connectors ? connectorForTool(tc.tool, connectors) : undefined;
   if (connector) return <ConnectorToolCard toolCall={{ tool: tc.tool, args: parseToolArgs(tc.args), output: tc.output, externalRef: tc.externalRef }} connector={connector} testId="chat-connector-card" />;

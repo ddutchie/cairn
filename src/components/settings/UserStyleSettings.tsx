@@ -33,7 +33,7 @@ export function UserStyleSettings() {
     })),
   );
 
-  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardMode, setWizardMode] = useState<"guided" | "paste" | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [regenerateError, setRegenerateError] = useState<string | null>(null);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
@@ -91,12 +91,20 @@ export function UserStyleSettings() {
               <span />
             </SettingsRow>
             <SettingsRow label="Get started">
-              <button
-                onClick={() => setWizardOpen(true)}
-                className="px-3 py-1.5 text-[0.714rem] rounded-md bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90 transition-opacity flex items-center gap-1.5 cursor-pointer"
-              >
-                <Sparkles size={12} /> Set up your writing style
-              </button>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button
+                  onClick={() => setWizardMode("guided")}
+                  className="px-3 py-1.5 text-[0.714rem] rounded-md bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90 transition-opacity flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles size={12} /> Set up your writing style
+                </button>
+                <button
+                  onClick={() => setWizardMode("paste")}
+                  className="px-3 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <PenLine size={12} /> Paste a style directly
+                </button>
+              </div>
             </SettingsRow>
           </>
         ) : (
@@ -153,10 +161,16 @@ export function UserStyleSettings() {
             <SettingsRow label="Manage">
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
-                  onClick={() => setWizardOpen(true)}
+                  onClick={() => setWizardMode("guided")}
                   className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <PenLine size={12} /> Edit / Regenerate
+                </button>
+                <button
+                  onClick={() => setWizardMode("paste")}
+                  className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <PenLine size={12} /> Paste style
                 </button>
                 <button
                   onClick={() => void regenerateCheatsheet()}
@@ -186,10 +200,11 @@ export function UserStyleSettings() {
         </p>
       </SettingsGroup>
 
-      {wizardOpen && (
+      {wizardMode && (
         <UserStyleWizardModal
-          onClose={() => setWizardOpen(false)}
+          onClose={() => setWizardMode(null)}
           existing={configured ? userStyle : null}
+          initialPasteMode={wizardMode === "paste"}
         />
       )}
     </>
