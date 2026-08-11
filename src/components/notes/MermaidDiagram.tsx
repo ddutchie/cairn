@@ -61,6 +61,48 @@ async function getMermaid(id: string) {
   return { mermaid, id };
 }
 
+// ── Subgraph label contrast ───────────────────────────────────────────────────
+
+// Subgraphs (clusters) can carry an explicit fill chosen by the diagram author
+// (LLM-generated charts often pick light pastels). Mermaid's label colour
+// follows the theme — light text in dark mode — so an explicitly-light fill
+// becomes unreadable. Fix by computing the actual fill luminance per cluster
+// and pinning the label to a contrasting dark/light fill.
+export const parseColor = (input: string): [number, number, number] | null => {
+  const s = (input ?? "").trim();
+  const hex = s.match(/^#([0-9a-f]{6})$/i);
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const rgb = s.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
+  if (rgb) return [parseInt(rgb[1], 10), parseInt(rgb[2], 10), parseInt(rgb[3], 10)];
+  return null;
+};
+
+export const colorLuminance = (input: string): number | null => {
+  const rgb = parseColor(input);
+  if (!rgb) return null;
+  const [r, g, b] = rgb.map((c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+function enforceClusterLabelContrast(container: HTMLElement) {
+  for (const cluster of container.querySelectorAll<SVGElement>("g.cluster")) {
+    const rect = cluster.querySelector<SVGRectElement>("rect") ?? (cluster.firstElementChild as SVGGraphicsElement | null);
+    const label = cluster.querySelector<SVGTextElement>(".cluster-label text, text.cluster-label");
+    if (!rect || !label) continue;
+    const attrFill = rect.getAttribute("fill");
+    const fill = attrFill && attrFill !== "none" ? attrFill : getComputedStyle(rect).fill;
+    const luminance = colorLuminance(fill);
+    if (luminance === null) continue;
+    label.setAttribute("fill", luminance > 0.5 ? "#1a1917" : "#e8e4dc");
+  }
+}
+
 // ── Full-screen modal ─────────────────────────────────────────────────────────
 
 function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }) {
@@ -78,6 +120,7 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
         const { svg } = await mermaid.render(modalId, chart.trim());
         if (!cancelled && containerRef.current) {
           containerRef.current.innerHTML = svg;
+          enforceClusterLabelContrast(containerRef.current);
           // Remove fixed width/height so SVG scales to fill the modal
           const svgEl = containerRef.current.querySelector("svg");
           if (svgEl) {
@@ -131,6 +174,7 @@ export function MermaidDiagram({ chart }: Props) {
         const { svg } = await mermaid.render(`mermaid-${id}`, chart.trim());
         if (!cancelled && containerRef.current) {
           containerRef.current.innerHTML = svg;
+          enforceClusterLabelContrast(containerRef.current);
           setError(null);
         }
       } catch (e) {
