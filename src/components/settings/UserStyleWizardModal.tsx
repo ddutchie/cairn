@@ -22,6 +22,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Sparkles, Loader2, Plus, Trash2, X, FileText, PenLine } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { UserStylePersona, UserStyleRow } from "@/types";
 
@@ -227,9 +228,14 @@ export function UserStyleWizardModal({
             </p>
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
-                <select className={cn(inputCls, "w-44 flex-shrink-0")} value={context} onChange={(e) => setContext(e.target.value)}>
-                  {CONTEXTS.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <Select
+                  value={context}
+                  options={CONTEXTS.map((c) => ({ value: c, label: c }))}
+                  onChange={setContext}
+                  size="sm"
+                  ariaLabel="Message context"
+                  className="w-44 flex-shrink-0"
+                />
                 <button
                   onClick={addNotesAsSamples}
                   className="px-2.5 py-2 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -308,17 +314,37 @@ export function UserStyleWizardModal({
           {step === 0 ? "Cancel" : "Back"}
         </Button>
         <div className="flex items-center gap-2">
-          {step === 2 && (
-            <Button size="sm" disabled={busy || !canProceed(0)} onClick={() => void generate("full")}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              Generate full guide
+          {step === 0 && (
+            <Button size="sm" disabled={!canProceed(0)} onClick={() => setStep(1)}>
+              Next
             </Button>
           )}
-          {step === 3 && (
-            <Button size="sm" disabled={busy || !fullGuide.trim()} onClick={() => void generate("cheatsheet")}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              Generate cheat sheet
+          {step === 1 && (
+            <Button size="sm" onClick={() => setStep(2)}>
+              Next
             </Button>
+          )}
+          {step === 2 && (
+            <>
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => setStep(3)}>
+                Skip for now
+              </Button>
+              <Button size="sm" disabled={busy || !canProceed(0)} onClick={() => void generate("full")}>
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                Generate full guide
+              </Button>
+            </>
+          )}
+          {step === 3 && (
+            <>
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => setStep(4)}>
+                Skip for now
+              </Button>
+              <Button size="sm" disabled={busy || !fullGuide.trim()} onClick={() => void generate("cheatsheet")}>
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                Generate cheat sheet
+              </Button>
+            </>
           )}
           {step === 4 && (
             <Button size="sm" disabled={busy || (!fullGuide.trim() && !cheatsheet.trim())} onClick={() => void save()}>
