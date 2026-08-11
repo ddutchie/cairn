@@ -19,7 +19,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { Sparkles, Loader2, Plus, Trash2, X, FileText, PenLine, Check, Wand2 } from "lucide-react";
+import { Sparkles, Loader2, Plus, Trash2, X, FileText, PenLine, Check, Wand2, Copy } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -48,12 +48,51 @@ const textareaCls = cn(inputCls, "resize-y min-h-20");
 
 const STEPS = ["Persona", "Raw material", "Questions", "Full guide", "Cheat sheet"];
 
+/**
+ * Prompt for an EXTERNAL AI (ChatGPT, Claude, …) so the user can generate a
+ * style guide outside Cairn and paste the result back — skipping the guided
+ * steps entirely. Mirrors the canonical 12-section structure the in-app
+ * generator produces, so a pasted guide is directly usable.
+ */
+export function buildExternalStylePrompt(persona: UserStylePersona): string {
+  const identity = [
+    persona.name ? `Name: ${persona.name}` : "",
+    persona.role ? `Role: ${persona.role}` : "",
+  ].filter(Boolean).join(", ");
+  return `You are a writing-style analyst. I'm creating a personal "writing style guide" so AI assistants can draft messages that sound like me${identity ? ` (${identity})` : ""}.
+
+Produce a complete guide in clean Markdown with EXACTLY these ## headings, one section per heading:
+
+## 1. Voice in one line
+## 2. Sentence Length & Rhythm
+## 3. Tone & Register
+## 4. Openings & Closings
+## 5. Punctuation Habits
+## 6. Vocabulary & Phrases (signature phrases, then "Avoid")
+## 7. How I Give Feedback or Disagree
+## 8. Emoji Use
+## 9. Formatting
+## 10. Other Distinctive Patterns
+## 11. Anti-Patterns — Does NOT Sound Like Me
+## 12. Preserve These Voice Tells
+
+Rules:
+- Output ONLY the guide. No preamble, no commentary, no code fences.
+- Base everything on how I actually write — quote concrete examples in my voice where you can.
+- Make section 11 explicit and hard (e.g. "never use em-dashes (—); use a plain hyphen" if that fits me).
+- Where you don't know a trait, mark it "Uncertain — not covered." rather than inventing it.
+
+Return the complete guide:`;
+}
+
 export function UserStyleWizardModal({
   onClose,
   existing,
+  initialPasteMode = false,
 }: {
   onClose: () => void;
   existing?: UserStyleRow | null;
+  initialPasteMode?: boolean;
 }) {
   const { notes, cards, saveUserStyle, activeWorkspaceId, activeProjectId, projects } = useCairnStore(
     useShallow((s) => ({
@@ -67,6 +106,10 @@ export function UserStyleWizardModal({
   );
 
   const [step, setStep] = useState(0);
+  // "Paste a style directly" — skip the questionnaire, generate elsewhere
+  // (e.g. ChatGPT) and paste the guide back. Save writes source "manual".
+  const [pasteMode, setPasteMode] = useState(initialPasteMode);
+  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Live streaming generation state.
@@ -256,6 +299,39 @@ export function UserStyleWizardModal({
     }
   };
 
+  const savePasted = async () => {
+    if (!fullGuide.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await saveUserStyle({
+        persona: {
+          name: persona.name?.trim() || undefined,
+          role: persona.role?.trim() || undefined,
+          context: persona.context?.trim() || undefined,
+          audiences: persona.audiences?.trim() || undefined,
+        },
+        fullGuide: fullGuide.trim(),
+        source: "manual",
+      });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyExternalPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(buildExternalStylePrompt(persona));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Couldn't copy to the clipboard — select the prompt below and copy it manually.");
+    }
+  };
+
   const canProceed = (i: number) => {
     if (i === 0) return persona.name?.trim() || persona.role?.trim();
     if (i === 1) return samples.length > 0;
@@ -273,11 +349,13 @@ export function UserStyleWizardModal({
           <PenLine size={16} /> {existing ? "Edit your writing style" : "Set up your writing style"}
         </span>
       }
-      description="A short guided session — the assistant analyses your answers and builds a full style guide plus a condensed cheat sheet."
+      description={pasteMode
+        ? "Skip the questionnaire — paste a style guide generated elsewhere (e.g. ChatGPT) and save it directly."
+        : "A short guided session — the assistant analyses your answers and builds a full style guide plus a condensed cheat sheet."}
     >
-      {/* Step indicator */}
+      {/* Step indicator / mode toggle */}
       <div className="flex items-center gap-1.5 pb-3 border-b border-[var(--border)] flex-wrap">
-        {STEPS.map((label, i) => (
+        {!pasteMode && STEPS.map((label, i) => (
           <div key={label} className="flex items-center gap-1.5">
             <span
               className={cn(
@@ -294,6 +372,12 @@ export function UserStyleWizardModal({
             {i < STEPS.length - 1 && <span className="text-[var(--text-tertiary)] text-[0.6rem]">→</span>}
           </div>
         ))}
+        <button
+          onClick={() => { setPasteMode((v) => !v); setError(null); }}
+          className="ml-auto shrink-0 text-[0.65rem] rounded-md border border-[var(--border)] px-2 py-1 text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+        >
+          {pasteMode ? "Back to guided setup" : "Paste a style instead"}
+        </button>
       </div>
 
       {error && (
@@ -303,6 +387,40 @@ export function UserStyleWizardModal({
       )}
 
       <div className="mt-4 space-y-3 min-h-[16rem]">
+        {pasteMode && (
+          <div className="space-y-3">
+            <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 space-y-2">
+              <p className="text-[0.714rem] text-[var(--text-secondary)]">
+                Skip the questionnaire — generate the guide in any other AI (ChatGPT, Claude, …), then paste the result here.
+                Copy the prompt below, run it there, and paste its output into the box underneath.
+              </p>
+              <div className="flex items-start gap-2">
+                <pre className="flex-1 text-[0.65rem] font-mono leading-relaxed text-[var(--text-secondary)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] rounded-md p-2 max-h-40 overflow-y-auto whitespace-pre-wrap">{buildExternalStylePrompt(persona)}</pre>
+                <button
+                  onClick={() => void copyExternalPrompt()}
+                  className="shrink-0 px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? "Copied" : "Copy prompt"}
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input className={inputCls} placeholder="Your name (optional)" value={persona.name ?? ""} onChange={(e) => setPersona({ ...persona, name: e.target.value })} />
+              <input className={inputCls} placeholder="Role (optional)" value={persona.role ?? ""} onChange={(e) => setPersona({ ...persona, role: e.target.value })} />
+            </div>
+            <textarea
+              className={cn(textareaCls, "min-h-[18rem] font-mono text-[0.714rem]")}
+              value={fullGuide}
+              onChange={(e) => setFullGuide(e.target.value)}
+              placeholder="Paste the writing style guide generated by the other AI here…"
+            />
+            <p className="text-[0.65rem] text-[var(--text-tertiary)] leading-relaxed">
+              Saved as your writing style — chat and the agent read it via <code className="font-mono">get_user_writing_style</code>.
+              You can generate a condensed cheat sheet from it afterwards in the guided setup.
+            </p>
+          </div>
+        )}
+
         {step === 0 && (
           <div className="space-y-3">
             <input className={inputCls} placeholder="Your name (e.g. Gerard)" value={persona.name ?? ""} onChange={(e) => setPersona({ ...persona, name: e.target.value })} />
@@ -461,11 +579,19 @@ export function UserStyleWizardModal({
           variant="ghost"
           size="sm"
           disabled={busy && !streaming}
-          onClick={streaming ? cancelGeneration : (step === 0 ? onClose : () => setStep((s) => s - 1))}
+          onClick={pasteMode ? () => setPasteMode(false) : (streaming ? cancelGeneration : (step === 0 ? onClose : () => setStep((s) => s - 1)))}
         >
-          {streaming ? "Cancel generation" : (step === 0 ? "Cancel" : "Back")}
+          {pasteMode ? "Back to guided setup" : (streaming ? "Cancel generation" : (step === 0 ? "Cancel" : "Back"))}
         </Button>
         <div className="flex items-center gap-2">
+          {pasteMode && (
+            <Button size="sm" disabled={busy || !fullGuide.trim()} onClick={() => void savePasted()}>
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <X size={12} className="rotate-45" />}
+              Save writing style
+            </Button>
+          )}
+          {!pasteMode && (
+          <>
           {step === 0 && (
             <Button size="sm" disabled={busy || !canProceed(0)} onClick={() => setStep(1)}>
               Next
@@ -507,6 +633,8 @@ export function UserStyleWizardModal({
               {busy ? <Loader2 size={12} className="animate-spin" /> : <X size={12} className="rotate-45" />}
               Save writing style
             </Button>
+          )}
+          </>
           )}
         </div>
       </div>
