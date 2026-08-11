@@ -53,6 +53,51 @@ export function isUsableGuide(markdown: string, step: "full" | "cheatsheet"): bo
   return headings >= 3;
 }
 
+/**
+ * Run a style-guide generation with the handler's exact resilience: build the
+ * prompt, call the LLM (bounded output, lower temperature), and if the result
+ * fails the coherence gate retry once at temp 0.1. Throws a clear error if both
+ * attempts are unusable. Exported so the live test drives the same code path
+ * the wizard uses.
+ */
+export async function generateUserStyleMarkdown(
+  cfg: LLMConfig,
+  step: "full" | "cheatsheet",
+  input: UserStyleGenerationInput,
+): Promise<string> {
+  const systemPrompt =
+    step === "full"
+      ? "You are a writing-style analyst and editor. Produce a precise, evidence-based writing style guide from the user's real writing. Follow the structure in the user prompt exactly. Write in clean, well-formed Markdown with ## headings — never splice or garble the user's words."
+      : "You are a copy editor who condenses style guides into tight cheat sheets. Write in clean, well-formed Markdown with headings — never splice or garble the source text.";
+  const userPrompt =
+    step === "full"
+      ? buildUserStyleFullGuidePrompt(input)
+      : buildUserStyleCheatsheetPrompt(input.fullGuide ?? "");
+
+  if (step === "cheatsheet" && !input.fullGuide) {
+    throw new Error("No full guide to condense.");
+  }
+
+  let markdown = await callLLM(cfg, systemPrompt, userPrompt, {
+    source: "writing-style",
+    temperature: 0.3,
+    maxTokens: 8192,
+  });
+  if (!isUsableGuide(markdown, step)) {
+    markdown = await callLLM(cfg, systemPrompt, userPrompt, {
+      source: "writing-style",
+      temperature: 0.1,
+      maxTokens: 8192,
+    });
+  }
+  if (!isUsableGuide(markdown, step)) {
+    throw new Error(
+      `The model (${cfg.model}) returned unusable output for the style guide. Try again, or switch to a more capable model in Settings → AI & Chat.`,
+    );
+  }
+  return markdown;
+}
+
 export function registerUserStyleHandlers(ctx: DbContext): void {
   registerIpcHandle("user-style:get", () => handle(() => q.getUserStyle(ctx.db)));
   registerIpcHandle("user-style:save", (_e, { input }: { input: UserStyleSaveInput }) => handle(() => q.saveUserStyle(ctx.db, input)));
@@ -65,40 +110,7 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
     handle(async () => {
       const cfg = resolveChatConfig();
       if ("error" in cfg) throw new Error(cfg.error);
-
-      const systemPrompt =
-        step === "full"
-          ? "You are a writing-style analyst and editor. Produce a precise, evidence-based writing style guide from the user's real writing. Follow the structure in the user prompt exactly. Write in clean, well-formed Markdown with ## headings — never splice or garble the user's words."
-          : "You are a copy editor who condenses style guides into tight cheat sheets. Write in clean, well-formed Markdown with headings — never splice or garble the source text.";
-      const userPrompt =
-        step === "full"
-          ? buildUserStyleFullGuidePrompt(input)
-          : buildUserStyleCheatsheetPrompt(input.fullGuide ?? "");
-
-      if (step === "cheatsheet" && !input.fullGuide) {
-        throw new Error("No full guide to condense.");
-      }
-
-      // Retry once at a lower temperature if the model returns unusable output
-      // ("token soup"). A second failure surfaces as an explicit error rather
-      // than showing/saving garbage.
-      let markdown = await callLLM(cfg, systemPrompt, userPrompt, {
-        source: "writing-style",
-        temperature: 0.3,
-        maxTokens: 8192,
-      });
-      if (!isUsableGuide(markdown, step)) {
-        markdown = await callLLM(cfg, systemPrompt, userPrompt, {
-          source: "writing-style",
-          temperature: 0.1,
-          maxTokens: 8192,
-        });
-      }
-      if (!isUsableGuide(markdown, step)) {
-        throw new Error(
-          `The model (${cfg.model}) returned unusable output for the style guide. Try again, or switch to a more capable model in Settings → AI & Chat.`,
-        );
-      }
+      const markdown = await generateUserStyleMarkdown(cfg, step, input);
       return { markdown };
     }),
   );
