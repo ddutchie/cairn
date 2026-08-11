@@ -23,6 +23,7 @@ import {
   codebase_get_references,
   codebase_get_file_symbols
 } from "./codebase";
+import { getUserStyle } from "../../db/queries";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
@@ -177,6 +178,29 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
 
     case "codebase_get_file_symbols":
       return codebase_get_file_symbols(db, args as Parameters<typeof codebase_get_file_symbols>[1]);
+
+    case "get_user_writing_style": {
+      const mode = (args.mode as "cheatsheet" | "full" | undefined) ?? "cheatsheet";
+      const style = getUserStyle(db);
+      const configured = !!style && style.source !== "none" && !!(style.fullGuide || style.cheatsheet);
+      if (!configured) {
+        return {
+          configured: false,
+          message: "No writing style set up yet — the user hasn't configured one in Settings → Writing Style. Draft in the user's natural, clear voice; do not invent a style guide.",
+          mode,
+          markdown: null,
+          persona: null,
+          updatedAt: null,
+        };
+      }
+      return {
+        configured: true,
+        mode,
+        markdown: mode === "full" ? style.fullGuide : style.cheatsheet,
+        persona: style.persona,
+        updatedAt: style.updatedAt,
+      };
+    }
 
     default:
       return { error: `Unknown tool: ${toolName}` };

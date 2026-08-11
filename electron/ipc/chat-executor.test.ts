@@ -20,6 +20,7 @@ import { describe, it, expect } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
+import * as q from "../db/queries";
 import {
   createWorkspace, createProject, createNote, updateNote,
   createColumn, createCard, getCardById, getNoteById, findLiveNoteByTitle,
@@ -1353,5 +1354,36 @@ describe("get_project_context_pack", () => {
     seed(db);
     const result = await exec(db, "get_project_context_pack", { projectId: "nope" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
+  });
+});
+
+// ── get_user_writing_style ────────────────────────────────────────────────────
+
+describe("get_user_writing_style", () => {
+  it("reports configured:false when no style is set up", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "get_user_writing_style", {}) as Record<string, unknown>;
+    expect(result.configured).toBe(false);
+    expect(result.markdown).toBeNull();
+  });
+
+  it("returns the cheat sheet by default and the full guide on request", async () => {
+    const db = makeDb();
+    seed(db);
+    q.saveUserStyle(db, {
+      persona: { name: "Gerard" },
+      fullGuide: "## 1. Voice in one line\nWarm and precise.",
+      cheatsheet: "Warm and precise.",
+      source: "guided",
+    });
+
+    const def = await exec(db, "get_user_writing_style", {}) as Record<string, unknown>;
+    expect(def.configured).toBe(true);
+    expect(def.markdown).toBe("Warm and precise.");
+    expect(def.persona).toEqual({ name: "Gerard" });
+
+    const full = await exec(db, "get_user_writing_style", { mode: "full" }) as Record<string, unknown>;
+    expect(full.markdown).toContain("Voice in one line");
   });
 });

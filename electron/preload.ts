@@ -31,6 +31,25 @@ interface CustomServiceConfig {
 interface ToolAttachment {
   projectId: string; toolType: "mcp" | "service"; toolId: string; enabled: boolean;
 }
+// ── User writing style (persona + full guide + cheat sheet) ──────────────────
+interface UserStylePersona {
+  name?: string; role?: string; context?: string; audiences?: string;
+}
+interface UserStyleRow {
+  id: string; persona: UserStylePersona | null;
+  fullGuide: string; cheatsheet: string;
+  source: "none" | "guided" | "manual" | "analyzed"; updatedAt: string;
+}
+interface UserStyleSaveInput {
+  persona?: UserStylePersona; fullGuide?: string; cheatsheet?: string;
+  source: "none" | "guided" | "manual" | "analyzed";
+}
+interface UserStyleGenerationInput {
+  persona: UserStylePersona;
+  samples: Array<{ context: string; text: string }>;
+  answers: Array<{ question: string; answer: string }>;
+  fullGuide?: string;
+}
 // ── Community registry (cairn-community manifest) ───────────────────────────
 interface RegistryEntryMeta {
   id: string; author: string; version: string; category?: string; tags: string[]; blurb: string;
@@ -530,6 +549,12 @@ const api = {
   resetAllData: () => invoke("app:reset"),
   getAiSettings: () => invoke<Record<string, unknown> | null>("app:getAiSettings"),
   saveAiSettings: (config: Record<string, unknown>) => invoke<{ ok: true }>("app:saveAiSettings", { config }),
+  // User writing style (persona + full guide + cheat sheet) — Settings → Writing Style.
+  getUserStyle: () => invoke<UserStyleRow | null>("user-style:get"),
+  saveUserStyle: (input: UserStyleSaveInput) => invoke<UserStyleRow>("user-style:save", { input }),
+  clearUserStyle: () => invoke<{ ok: true }>("user-style:clear"),
+  generateUserStyle: (step: "full" | "cheatsheet", input: UserStyleGenerationInput) =>
+    invoke<{ markdown: string }>("user-style:generate", { step, input }),
   getAgentSettings: () => invoke<Record<string, unknown> | null>("app:getAgentSettings"),
   saveAgentSettings: (config: Record<string, unknown>) => invoke<{ ok: true }>("app:saveAgentSettings", { config }),
   getTheme: () => invoke<string | null>("app:getTheme"),

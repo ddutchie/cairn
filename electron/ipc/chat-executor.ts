@@ -286,6 +286,30 @@ export async function executeTool(
 
       return { tasksCreated: createdCards.length, tasks: createdCards, noteId: args.noteId };
     }
+
+    case "get_user_writing_style": {
+      const mode = (args.mode as "cheatsheet" | "full" | undefined) ?? "cheatsheet";
+      const style = q.getUserStyle(db);
+      const configured = !!style && style.source !== "none" && !!(style.fullGuide || style.cheatsheet);
+      if (!configured) {
+        return {
+          configured: false,
+          message: "No writing style set up yet — the user hasn't configured one in Settings → Writing Style. Draft in the user's natural, clear voice; do not invent a style guide.",
+          mode,
+          markdown: null,
+          persona: null,
+          updatedAt: null,
+        };
+      }
+      return {
+        configured: true,
+        mode,
+        markdown: mode === "full" ? style.fullGuide : style.cheatsheet,
+        persona: style.persona,
+        updatedAt: style.updatedAt,
+      };
+    }
+
     default:
       return { error: `Unknown tool: ${name}` };
   }

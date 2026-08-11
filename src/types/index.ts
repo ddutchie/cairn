@@ -843,6 +843,7 @@ export type SettingsSection =
   | "agents"
   | "tools"
   | "commands"
+  | "writing-style"
   | "mobile"
   | "sync"
   | "data"
@@ -996,4 +997,36 @@ export interface PiSessionSummary {
   status: "running" | "exited";
   spawnedAt: string;
   updatedAt: string;
+}
+
+// ── User writing style ──────────────────────
+// Persona + full style guide + condensed cheat sheet, stored in the single-row
+// `user_style` table and surfaced via the get_user_writing_style tool.
+
+export type UserStyleSource = "none" | "guided" | "manual" | "analyzed";
+
+export interface UserStylePersona {
+  name?: string;
+  role?: string;
+  context?: string;
+  audiences?: string;
+}
+
+export interface UserStyleRow {
+  id: string;
+  persona: UserStylePersona | null;
+  /** The long, section-structured writing style guide (markdown). */
+  fullGuide: string;
+  /** The condensed one-page cheat sheet (markdown). */
+  cheatsheet: string;
+  /** How the guide was produced: guided wizard / manual / analyzed / none. */
+  source: UserStyleSource;
+  updatedAt: string;
+}
+
+export interface UserStyleSaveInput {
+  persona?: UserStylePersona;
+  fullGuide?: string;
+  cheatsheet?: string;
+  source: UserStyleSource;
 }

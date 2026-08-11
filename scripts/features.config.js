@@ -246,6 +246,19 @@ const FEATURES = [
       "Write Your Own: Create custom rules in the picker or Settings — e.g. 'Always talk in ASD-STE100 Simplified English'.",
     ],
   },
+  {
+    id: "v2.6.12-writing-style",
+    version: "v2.6.12",
+    title: "Writing Style",
+    category: "Chat",
+    description:
+      "Set up your writing voice once in Settings → Writing Style: a short guided session builds a full style guide plus a condensed cheat sheet from who you are, a few pasted messages, and your notes. Then chat and the coding agent can call get_user_writing_style to draft emails, replies, notes, and PRDs in your voice.",
+    highlights: [
+      "Guided Setup: Persona → paste real messages (or analyse your notes & tasks) → a few questions → generated full guide → condensed cheat sheet, both editable.",
+      "Your Voice Everywhere: get_user_writing_style is exposed to chat and the agent — it returns the cheat sheet by default and is only fetched when actually drafting.",
+      "Full + Cheat Sheet: The tool never injects your full guide into every prompt — it fetches on demand to keep context lean.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

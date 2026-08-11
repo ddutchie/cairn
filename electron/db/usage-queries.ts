@@ -23,7 +23,8 @@ export type UsageSource =
   | "explain"
   | "flow-ai-summary"
   | "summary"
-  | "tool-builder";
+  | "tool-builder"
+  | "writing-style";
 
 /** Human label for a source, used by the renderer (kept here so it never drifts). */
 export const USAGE_SOURCE_LABELS: Record<UsageSource, string> = {
@@ -39,6 +40,7 @@ export const USAGE_SOURCE_LABELS: Record<UsageSource, string> = {
   "flow-ai-summary": "Idea Flow summary",
   summary: "Compaction",
   "tool-builder": "Tool builder",
+  "writing-style": "Writing style",
 };
 
 export interface LlmUsageRecord {

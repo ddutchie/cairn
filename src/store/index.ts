@@ -52,6 +52,8 @@ import { createCodingAgentsSlice } from "./slices/coding-agents";
 import type { CodingAgentsSlice } from "./slices/coding-agents";
 import { createToolsSlice } from "./slices/tools";
 import type { ToolsSlice } from "./slices/tools";
+import { createUserStyleSlice } from "./slices/user-style";
+import type { UserStyleSlice } from "./slices/user-style";
 import { createTerminalSessionsSlice } from "./slices/terminal-sessions";
 import type { TerminalSessionsSlice } from "./slices/terminal-sessions";
 
@@ -115,6 +117,7 @@ export interface CairnStore
     GraphSlice,
     CodingAgentsSlice,
     ToolsSlice,
+    UserStyleSlice,
     TerminalSessionsSlice,
     HydrationSlice {}
 
@@ -286,6 +289,7 @@ export const useCairnStore = create<CairnStore>()(
     ...createGraphSlice(...a),
     ...createCodingAgentsSlice(...a),
     ...createToolsSlice(...a),
+    ...createUserStyleSlice(...a),
     ...createTerminalSessionsSlice(...a),
 
     // ── Hydration (cross-slice; stays in index.ts) ──

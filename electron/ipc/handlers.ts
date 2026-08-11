@@ -44,6 +44,7 @@ import { registerUrlMetadataHandler } from "./url-metadata";
 import { registerMobileHandlers } from "./mobile-handlers";
 import { registerMigrationHandlers } from "./migration-handlers";
 import { registerSettingsHandlers } from "./settings-handlers";
+import { registerUserStyleHandlers } from "./user-style-handlers";
 import { registerUsageHandlers } from "./usage-handlers";
 import { initUsageRecorder } from "../lib/usage-recorder";
 import { runStartupHygiene } from "../lib/db-hygiene";
@@ -66,6 +67,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   registerDbHandlers(ctx);
   registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
   registerChatDbHandlers(ctx);
+  registerUserStyleHandlers(ctx);
   registerPiSessionHandlers(ctx);
   registerFlowHandlers(ctx);
   registerAiHandlers(ctx);

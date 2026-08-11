@@ -52,6 +52,13 @@ export const TOOL_SCHEMAS = {
     schema: z.object({}),
   },
 
+  get_user_writing_style: {
+    description: "Return the user's personal writing style — their persona plus a style guide to match when drafting or rewriting content IN the user's voice (emails, notes, PRDs, replies). Prefer the condensed 'cheatsheet' for everyday drafting; request 'full' for long-form work or deep analysis. Returns configured:false when the user hasn't set one up — never invent a style.",
+    schema: z.object({
+      mode: z.enum(["cheatsheet", "full"]).optional().describe("'cheatsheet' (default) = condensed one-page reference; 'full' = the complete style guide"),
+    }),
+  },
+
   get_note: {
     description: "Get the full content of a note by ID.",
     schema: z.object({ noteId: sId }),
