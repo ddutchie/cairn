@@ -12,7 +12,7 @@ import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { broadcastToChat } from "../chat-popout";
 import type Database from "better-sqlite3";
 import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown, isSendableMessage } from "../lib/llm";
-import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
+import { TOOLS, buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { getExternalToolDefs } from "../lib/external-tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { runToolLoop } from "../lib/chat-loop";
@@ -157,10 +157,15 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         } as unknown as OpenAIMessage)
       : { role: "user", content: req.message };
 
+    // Compose the system prompt ONCE — buildSystemPrompt embeds the current
+    // date, so recomputing it later (the token-usage breakdown) could measure a
+    // different string if a turn crosses midnight.
+    const systemContent = withPersonality(buildSystemPrompt(req), req.personality);
+
     const messages: OpenAIMessage[] = [
       {
         role: resolveSystemRole({ isReasoningModel: req.config?.isReasoningModel, baseUrl, provider, modelId: model }),
-        content: buildSystemPrompt(req),
+        content: systemContent,
       },
       ...(req.history ?? [])
         // Drop assistant turns that carry neither content nor tool_calls — a
@@ -236,7 +241,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         costUsd = (costUsd ?? 0) + cost;
       }
       try {
-        const rawBreakdown = calculatePromptBreakdown(buildSystemPrompt(req), messages, allTools);
+        const rawBreakdown = calculatePromptBreakdown(systemContent, messages, allTools);
         lastBreakdown = scaleBreakdown(rawBreakdown, promptTokens);
       } catch (err) {
         console.error("[chat] failed to calculate breakdown:", err);

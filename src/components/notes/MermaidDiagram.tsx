@@ -61,6 +61,79 @@ async function getMermaid(id: string) {
   return { mermaid, id };
 }
 
+// ── Subgraph label contrast ───────────────────────────────────────────────────
+
+// Subgraphs (clusters) can carry an explicit fill chosen by the diagram author
+// (LLM-generated charts often pick light pastels). Mermaid's label colour
+// follows the theme — light text in dark mode — so an explicitly-light fill
+// becomes unreadable. Fix by computing the actual fill luminance per cluster
+// and pinning the label to a contrasting dark/light fill.
+export const parseColor = (input: string): [number, number, number] | null => {
+  const s = (input ?? "").trim();
+  const hex = s.match(/^#([0-9a-f]{6})$/i);
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const rgb = s.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
+  if (rgb) return [parseInt(rgb[1], 10), parseInt(rgb[2], 10), parseInt(rgb[3], 10)];
+  return null;
+};
+
+export const colorLuminance = (input: string): number | null => {
+  const rgb = parseColor(input);
+  if (!rgb) return null;
+  const [r, g, b] = rgb.map((c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+/** WCAG contrast ratio between two relative luminances (1–21). */
+export function contrastRatio(l1: number, l2: number): number {
+  const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+function enforceClusterLabelContrast(container: HTMLElement) {
+  // FIXED (theme-independent) label candidates from the design tokens — dark
+  // text on light fills, light text on dark fills.
+  const styles = getComputedStyle(container);
+  const darkColor = styles.getPropertyValue("--mermaid-label-dark").trim() || "#1a1917";
+  const lightColor = styles.getPropertyValue("--mermaid-label-light").trim() || "#e8e4dc";
+  const darkLum = colorLuminance(darkColor);
+  const lightLum = colorLuminance(lightColor);
+
+  for (const cluster of container.querySelectorAll<SVGElement>("g.cluster")) {
+    const rect = cluster.querySelector<SVGRectElement>("rect") ?? (cluster.firstElementChild as SVGGraphicsElement | null);
+    const svgLabel = cluster.querySelector<SVGTextElement>(".cluster-label text, text.cluster-label");
+    const htmlLabel = cluster.querySelector<HTMLElement>(".cluster-label span");
+    if (!rect) continue;
+
+    // Prefer the rect's own fill; fall back to the computed style when the
+    // attribute is missing/"none". If the attribute value is present but fails
+    // to parse (e.g. an SVG paint-server url), retry luminance with the
+    // computed style before giving up on this cluster.
+    const attrFill = rect.getAttribute("fill");
+    let luminance = colorLuminance(attrFill && attrFill !== "none" ? attrFill : getComputedStyle(rect).fill);
+    if (luminance === null) {
+      luminance = colorLuminance(getComputedStyle(rect).fill);
+    }
+    if (luminance === null) continue;
+
+    // Pick whichever candidate has the HIGHER WCAG contrast against the fill
+    // instead of a fixed 0.5-luminance threshold.
+    const useDark = darkLum !== null && lightLum !== null
+      ? contrastRatio(luminance, darkLum) >= contrastRatio(luminance, lightLum)
+      : luminance > 0.5;
+    const color = useDark ? darkColor : lightColor;
+
+    if (svgLabel) svgLabel.setAttribute("fill", color);
+    if (htmlLabel) htmlLabel.style.color = color;
+  }
+}
+
 // ── Full-screen modal ─────────────────────────────────────────────────────────
 
 function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }) {
@@ -78,6 +151,7 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
         const { svg } = await mermaid.render(modalId, chart.trim());
         if (!cancelled && containerRef.current) {
           containerRef.current.innerHTML = svg;
+          enforceClusterLabelContrast(containerRef.current);
           // Remove fixed width/height so SVG scales to fill the modal
           const svgEl = containerRef.current.querySelector("svg");
           if (svgEl) {
@@ -131,6 +205,7 @@ export function MermaidDiagram({ chart }: Props) {
         const { svg } = await mermaid.render(`mermaid-${id}`, chart.trim());
         if (!cancelled && containerRef.current) {
           containerRef.current.innerHTML = svg;
+          enforceClusterLabelContrast(containerRef.current);
           setError(null);
         }
       } catch (e) {

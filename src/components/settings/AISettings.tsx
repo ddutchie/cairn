@@ -3,7 +3,7 @@
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
-import { Cpu, Globe, Download } from "lucide-react";
+import { Cpu, Globe, Download, Plus, Trash2, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
@@ -11,11 +11,16 @@ import { MCPServerSettings } from "./MCPSettings";
 import { LlamaServerConsole } from "./LlamaServerConsole";
 import { ProviderManager } from "./ProviderManager";
 import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
+import { BrowsePersonalitiesModal } from "@/components/chat/BrowsePersonalitiesModal";
+import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-schema";
 
 export function AISettings() {
-  const { aiConfig, setAIConfig } = useCairnStore(useShallow((s) => ({
+  const { aiConfig, setAIConfig, setPersonality, removePersonality, createCustomPersonality } = useCairnStore(useShallow((s) => ({
     aiConfig:             s.aiConfig,
     setAIConfig:          s.setAIConfig,
+    setPersonality:       s.setPersonality,
+    removePersonality:    s.removePersonality,
+    createCustomPersonality: s.createCustomPersonality,
   })));
 
   // General config destructuring. Connection fields (baseUrl/apiKey/model) are
@@ -37,6 +42,11 @@ export function AISettings() {
   const [detectedContext, setDetectedContext] = useState<number | null>(null);
   const [autoState, setAutoState] = useState<"idle" | "loading" | "detected" | "not_found">("idle");
   const [browsingProviders, setBrowsingProviders] = useState(false);
+  const [browsingPersonalities, setBrowsingPersonalities] = useState(false);
+  const [creatingPersonality, setCreatingPersonality] = useState(false);
+  const [personaName, setPersonaName] = useState("");
+  const [personaDescription, setPersonaDescription] = useState("");
+  const [personaPrompt, setPersonaPrompt] = useState("");
   useEffect(() => {
     if (provider === "localllm") return;
     let cancelled = false;
@@ -271,10 +281,167 @@ export function AISettings() {
         )}
       </SettingsGroup>
 
+      {/* ── Chat personalities ── */}
+      <SettingsGroup
+        title="Chat personality"
+        description="A style layer appended to the chat system prompt — behavioral rules that shape tone. Pick one per session in the chat input, or manage them here."
+      >
+        <SettingsRow
+          label="Community personalities"
+          description="Install ready-made tone & style rules from the cairn-community catalog. The full prompt is shown before install."
+        >
+          <button
+            onClick={() => setBrowsingPersonalities(true)}
+            className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <Download size={12} /> Browse Community
+          </button>
+        </SettingsRow>
+
+        {aiConfig.installedPersonalities && aiConfig.installedPersonalities.length > 0 && (
+          <SettingsRow
+            label="Installed"
+            description="The active one applies to chat. Remove any entry freely — nothing is sent to the model until it's selected."
+          >
+            <div className="flex flex-col gap-1.5 w-full min-w-52">
+              {/* None — no personality layer */}
+              <button
+                type="button"
+                className={cn(
+                  "flex items-center gap-2 rounded-md border px-2.5 py-2 cursor-pointer transition-colors text-left",
+                  !aiConfig.personalityId
+                    ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
+                    : "border-[var(--border)] hover:bg-[var(--surface-2)]",
+                )}
+                onClick={() => setPersonality(null)}
+                title="No personality layer"
+                aria-label="Select None — no personality layer"
+              >
+                <Sparkles size={12} className="text-[var(--text-tertiary)] shrink-0" />
+                <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1">None</span>
+                <span className={cn("text-[0.65rem] shrink-0", !aiConfig.personalityId ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+                  {!aiConfig.personalityId ? "Active" : "Inactive"}
+                </span>
+              </button>
+              {aiConfig.installedPersonalities.map((p) => {
+                const isActive = p.id === aiConfig.personalityId;
+                return (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md border transition-colors",
+                      isActive
+                        ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
+                        : "border-[var(--border)]",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setPersonality(isActive ? null : p.id)}
+                      title={isActive ? "Click to switch to None" : "Set as active"}
+                      aria-label={`${isActive ? "Deactivate" : "Activate"} ${p.name}`}
+                      className={cn(
+                        "flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors text-left flex-1 min-w-0",
+                        !isActive && "hover:bg-[var(--surface-2)]",
+                      )}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ background: p.brandColor ?? "var(--text-tertiary)" }}
+                      />
+                      <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 truncate">{p.name}</span>
+                      {p.source === "custom" && (
+                        <span className="text-[0.6rem] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
+                      )}
+                      <span className={cn("text-[0.65rem] shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+                        {isActive ? "Active" : "Inactive"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removePersonality(p.id)}
+                      className="text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0 mr-2"
+                      title="Remove"
+                      aria-label={`Remove ${p.name}`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </SettingsRow>
+        )}
+
+        <SettingsRow
+          label="Create your own"
+          description="Write your own behavioral rules — e.g. 'Always talk in ASD-STE100 Simplified English'. Rules, not a new identity: the Cairn assistant stays the assistant."
+        >
+          <button
+            onClick={() => setCreatingPersonality((v) => !v)}
+            className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            {creatingPersonality ? <X size={12} /> : <Plus size={12} />}
+            {creatingPersonality ? "Cancel" : "New personality"}
+          </button>
+        </SettingsRow>
+
+        {creatingPersonality && (
+          <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+            <input
+              className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none"
+              placeholder="Name (e.g. Concise)"
+              value={personaName}
+              onChange={(e) => setPersonaName(e.target.value)}
+            />
+            <input
+              className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none"
+              placeholder="Description (optional)"
+              value={personaDescription}
+              onChange={(e) => setPersonaDescription(e.target.value)}
+            />
+            <textarea
+              className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none resize-none min-h-24"
+              placeholder="Behavioral rules appended to the chat system prompt. Write rules, not a 'You are …' identity."
+              value={personaPrompt}
+              maxLength={MAX_PERSONALITY_PROMPT_CHARS}
+              onChange={(e) => setPersonaPrompt(e.target.value)}
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => { setCreatingPersonality(false); setPersonaName(""); setPersonaDescription(""); setPersonaPrompt(""); }}
+                className="px-2.5 py-1.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!personaName.trim() || !personaPrompt.trim()}
+                onClick={() => {
+                  const id = createCustomPersonality({
+                    name: personaName.trim(),
+                    description: personaDescription.trim() || undefined,
+                    prompt: personaPrompt.trim(),
+                  });
+                  setPersonality(id);
+                  setCreatingPersonality(false);
+                  setPersonaName("");
+                  setPersonaDescription("");
+                  setPersonaPrompt("");
+                }}
+                className="px-2.5 py-1.5 text-[0.714rem] rounded-md bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles size={12} /> Create
+              </button>
+            </div>
+          </div>
+        )}
+      </SettingsGroup>
+
       {/* ── MCP Server ── */}
       <MCPServerSettings />
 
       {browsingProviders && <BrowseProvidersModal onClose={() => setBrowsingProviders(false)} />}
+      {browsingPersonalities && <BrowsePersonalitiesModal onClose={() => setBrowsingPersonalities(false)} />}
     </div>
   );
 }

@@ -233,6 +233,32 @@ const FEATURES = [
       "Persists Per Session: Todos are stored with the session and restored when you resume it, so long-running work survives restarts.",
     ],
   },
+  {
+    id: "v2.6.12-chat-personalities",
+    version: "v2.6.12",
+    title: "Chat Personalities",
+    category: "Chat",
+    description:
+      "Pick a personality next to the model selector in the chat input to layer behavioral rules onto the system prompt. The catalog ships with Caveman, Grill Me, Junior to Senior, Last 20%, and Ponytail — all with full prompt transparency — plus a way to browse more from the community or write your own.",
+    highlights: [
+      "Session Style Layer: A personality is appended to the system prompt as behavioral rules — Default keeps the exact current assistant with no layer.",
+      "Community Catalog: Browse and install ready-made personalities from cairn-community in Settings → AI & Chat → Chat personality; the full prompt is shown before you install.",
+      "Write Your Own: Create custom rules in the picker or Settings — e.g. 'Always talk in ASD-STE100 Simplified English'.",
+    ],
+  },
+  {
+    id: "v2.6.12-writing-style",
+    version: "v2.6.12",
+    title: "Writing Style",
+    category: "Chat",
+    description:
+      "Set up your writing voice once in Settings → Writing Style: a short guided session builds a full style guide plus a condensed cheat sheet from who you are, a few pasted messages, and your notes. Then chat and the coding agent can call get_user_writing_style to draft emails, replies, notes, and PRDs in your voice.",
+    highlights: [
+      "Guided Setup: Persona → paste real messages (or analyse your notes & tasks) → a few questions → generated full guide → condensed cheat sheet, both editable.",
+      "Your Voice Everywhere: get_user_writing_style is exposed to chat and the agent — it returns the cheat sheet by default and is only fetched when actually drafting.",
+      "Full + Cheat Sheet: The tool never injects your full guide into every prompt — it fetches on demand to keep context lean.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

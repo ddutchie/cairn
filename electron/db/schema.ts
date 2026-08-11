@@ -1007,6 +1007,24 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_pi_todos_session ON pi_session_todos(session_id);
     `);
   },
+
+  // v41: Single-row user writing-style table — the user's persona, full style
+  // guide, and condensed cheat sheet. App-global (not project/workspace-scoped):
+  // read by the get_user_writing_style tool (chat + agent) and editable via
+  // Settings → Writing Style. `id` is a fixed constant ("global"); the row is
+  // upserted, never inserted twice.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS user_style (
+        id           TEXT PRIMARY KEY,
+        persona_json TEXT,
+        full_guide   TEXT,
+        cheatsheet   TEXT,
+        source       TEXT NOT NULL DEFAULT 'none',
+        updated_at   TEXT NOT NULL
+      );
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

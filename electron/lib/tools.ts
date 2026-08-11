@@ -7,6 +7,7 @@
 
 import * as z from "zod";
 import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, AGENT_EXCLUDED_TOOLS } from "./tool-schemas";
+import { MAX_PERSONALITY_PROMPT_CHARS } from "../../shared/chat/registry-schema";
 import type { ToolName } from "./tool-schemas";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,6 +18,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_cairn_context:          () => "Reading workspace context",
   get_project_context_pack:   () => "Reading project context pack",
   get_active_context:         () => "Reading active context",
+  get_user_writing_style:     (a) => (a.mode === "full" ? "Reading your full writing style" : "Reading your writing style cheat sheet"),
   get_note:               () => "Reading note",
   search_notes:           (a) => `Searching notes for "${a.query}"`,
   search_notes_semantic:  (a) => `Semantic search for "${a.query}"`,
@@ -142,8 +144,14 @@ export interface ChatRequest {
   projectId?: string;
   workspaceId?: string;
   history?: ChatHistoryEntry[];
-  config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; maxTokens?: number; isReasoningModel?: boolean };
+  config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; maxTokens?: number; isReasoningModel?: boolean; reasoningEffort?: "none" | "low" | "high" | "max" };
   systemPrompt?: string;
+  /**
+   * Active chat personality for this turn — a style layer appended verbatim
+   * after the system prompt. `name` is the display label; `prompt` holds the
+   * behavioral rules. Absent = no personality (default Cairn behavior).
+   */
+  personality?: { name: string; prompt: string };
   /** Attachments on the current user message (base64 data URLs; kind="pdf"
    *  becomes an Anthropic-style `document` part, images become `image_url`). */
   images?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;
@@ -169,8 +177,30 @@ Use the provided tools to read and modify the user's workspace. Choose the tool 
 - **Writes:** Call the tool directly (no confirmation needed), then briefly confirm what you did.
 - **Suggesting connections:** When proposing new links, wikilinks, note↔card links, or tags, you MUST call \`suggest_connections\` (the UI renders "Apply" buttons) rather than describing them in prose.
 - **Rendering:** Replies are markdown — use bold, lists, tables, fenced code (with language), and mermaid fenced blocks for diagrams. Keep replies concise and actionable.
+- **Writing in the user's voice:** When the user asks you to draft or rewrite content that sounds like them (emails, replies, notes, PRDs), call \`get_user_writing_style\` first and match it. If it reports configured:false, write in a natural, clear voice instead.
 
 Tone: calm, focused, like a thoughtful co-worker.`;
+}
+
+/**
+ * Append the active chat personality to a built system prompt as a clearly
+ * delimited style LAYER. A personality is never a replacement identity — the
+ * base "You are the Cairn AI assistant" prompt stays intact and the behavioral
+ * rules are added under their own header so the model treats them as session
+ * style guidance rather than a conflicting persona.
+ */
+export function withPersonality(
+  systemPrompt: string,
+  personality?: { name: string; prompt: string },
+): string {
+  if (!personality || !personality.name || !personality.prompt) return systemPrompt;
+  // Guard the appended layer against an oversized prompt (same shared ceiling
+  // the registry schema + create forms enforce — truncate defensively so an
+  // over-long persisted prompt can't bloat the system prompt).
+  const prompt = personality.prompt.length > MAX_PERSONALITY_PROMPT_CHARS
+    ? personality.prompt.slice(0, MAX_PERSONALITY_PROMPT_CHARS)
+    : personality.prompt;
+  return `${systemPrompt}\n\n## Personality: ${personality.name}\n${prompt}`;
 }
 
 /**

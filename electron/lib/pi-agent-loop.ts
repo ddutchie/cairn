@@ -296,6 +296,7 @@ const CAIRN_TOOL_NAMES = new Set([
   // ── Context / read ──────────────────────────────────────────────────────────
   "get_active_context",
   "get_project_context_pack",
+  "get_user_writing_style",
   "get_neighbors",
   // ── Notes ───────────────────────────────────────────────────────────────────
   "get_note",
@@ -344,6 +345,7 @@ const PLAN_MODE_ALLOWED = new Set([
   "read", "grep", "find", "ls",
   // Cairn read
   "get_active_context", "get_project_context_pack",
+  "get_user_writing_style",
   "get_note", "search_notes",
   "get_task", "search_tasks", "list_ready_tasks",
   "list_overdue_tasks", "list_tasks_due",

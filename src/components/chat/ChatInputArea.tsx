@@ -14,6 +14,7 @@
 import React, { useState, useCallback } from "react";
 import { ChatInput, type SlashCommand, type SuggestionItem } from "@/components/chat/ChatInput";
 import { ProviderModelPicker } from "@/components/ui/provider-model-picker";
+import { PersonalityPicker } from "@/components/ui/personality-picker";
 import { readAttachments, type AttachmentItem } from "@/lib/read-attachments";
 import { cn } from "@/lib/utils";
 
@@ -108,6 +109,7 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
       />
       <div className="flex items-center gap-2 mt-2">
         {providerModelTarget && <ProviderModelPicker target={providerModelTarget} disabled={disabled} />}
+        {providerModelTarget === "ai" && <PersonalityPicker disabled={disabled} />}
         {statusText && (
           <p className={cn("text-[0.643rem] text-[var(--text-tertiary)] ml-auto", isLoading && "text-[var(--text-secondary)]")}>
             {statusText}

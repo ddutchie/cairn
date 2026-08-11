@@ -18,7 +18,7 @@ vi.mock("../runtime/port-discovery", () => ({
 }));
 
 // Import AFTER the mock is registered.
-import { parseManifest, fetchManifest, refreshManifest, __test } from "./community-registry";
+import { parseManifest, parsePersonalitiesManifest, fetchManifest, fetchPersonalitiesManifest, refreshManifest, __test } from "./community-registry";
 
 const VALID = {
   version: 1,
@@ -159,6 +159,98 @@ describe("parseManifest", () => {
     // The good service survives; the malformed one is filtered out.
     expect(parsed.services).toHaveLength(1);
     expect(parsed.services[0].definition.name).toBe("Weather");
+  });
+});
+
+describe("parsePersonalitiesManifest", () => {
+  const VALID_PERSONALITIES = {
+    version: 1,
+    updatedAt: "2026-08-11T00:00:00Z",
+    personalities: [
+      {
+        id: "caveman",
+        author: "cairn",
+        version: "1.0.0",
+        category: "Tone & Style",
+        tags: ["tone"],
+        blurb: "Short, plain words.",
+        brandColor: "#9ca3af",
+        homepage: "https://github.com/JuliusBrussee/caveman",
+        definition: {
+          name: "Caveman",
+          description: "Blunt, minimal answers.",
+          prompt: "Speak in short, simple sentences. Use plain words. Give the answer or result first.",
+        },
+      },
+    ],
+  };
+
+  it("accepts a valid personalities manifest", () => {
+    const m = parsePersonalitiesManifest(VALID_PERSONALITIES);
+    expect(m.personalities).toHaveLength(1);
+    expect(m.personalities[0].definition.name).toBe("Caveman");
+  });
+
+  it("drops a personality whose prompt opens with a 'You are …' identity claim", () => {
+    const bad = structuredClone(VALID_PERSONALITIES) as { personalities: Array<{ definition: { prompt: string } }> };
+    bad.personalities[0].definition.prompt = "You are Grug Assistant.\nSpeak short.";
+    const m = parsePersonalitiesManifest(bad);
+    expect(m.personalities).toHaveLength(0);
+  });
+
+  it("drops a personality whose prompt is a thin one-liner (<20 chars)", () => {
+    const bad = structuredClone(VALID_PERSONALITIES) as { personalities: Array<{ definition: { prompt: string } }> };
+    bad.personalities[0].definition.prompt = "be concise.";
+    const m = parsePersonalitiesManifest(bad);
+    expect(m.personalities).toHaveLength(0);
+  });
+
+  it("drops a malformed entry instead of rejecting the whole manifest", () => {
+    const mixed = structuredClone(VALID_PERSONALITIES) as Record<string, unknown>;
+    const list = mixed.personalities as Array<Record<string, unknown>>;
+    list.push({ id: "bad", author: "x", version: "1.0.0", tags: [], blurb: "bad", definition: {} });
+    const m = parsePersonalitiesManifest(mixed);
+    expect(m.personalities).toHaveLength(1);
+  });
+});
+
+describe("fetchPersonalitiesManifest", () => {
+  const VALID = {
+    version: 1,
+    updatedAt: "2026-08-11T00:00:00Z",
+    personalities: [
+      {
+        id: "grill-me",
+        author: "cairn",
+        version: "1.0.0",
+        category: "Critique & Review",
+        tags: ["stress-test"],
+        blurb: "Stress-tests your plan.",
+        definition: {
+          name: "Grill Me",
+          prompt: "Pressure-test plans with calibrated questions. Ask one question at a time. Give a recommended answer.",
+        },
+      },
+    ],
+  };
+
+  it("fetches from network, validates, and writes its own cache file", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => fetchResponse({ status: 200, json: VALID })));
+    const res = await fetchPersonalitiesManifest({ force: true });
+    expect(res.fromCache).toBe(false);
+    expect(res.manifest.personalities[0].definition.name).toBe("Grill Me");
+    expect(__test.readPersonalitiesCache()?.manifest.personalities).toHaveLength(1);
+  });
+
+  it("fails soft to the cache when the network fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => fetchResponse({ status: 200, json: VALID })));
+    await fetchPersonalitiesManifest({ force: true });
+
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+    const res = await fetchPersonalitiesManifest({ force: true });
+    expect(res.fromCache).toBe(true);
+    expect(res.error).toBe("offline");
+    expect(res.manifest.personalities).toHaveLength(1);
   });
 });
 

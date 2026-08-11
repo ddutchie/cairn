@@ -230,21 +230,32 @@ export async function runToolLoop(
     } else {
       streamingTurn = true;
       let response: Response;
-      try {
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-        response = await fetch(buildApiUrl(baseUrl, "chat/completions"), {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      const buildBody = (reasoningEffort?: "none" | "low" | "high" | "max") =>
+        buildChatCompletionsBody({
+          model,
+          messages: prepareForSend(),
+          tools: combinedTools,
+          maxTokens,
+          temperature,
+          reasoningEffort,
+        });
+      const doFetch = (body: Record<string, unknown>) =>
+        fetch(buildApiUrl(baseUrl, "chat/completions"), {
           method: "POST",
           headers,
           signal,
-          body: JSON.stringify(buildChatCompletionsBody({
-            model,
-            messages: prepareForSend(),
-            tools: combinedTools,
-            maxTokens,
-            temperature,
-          })),
+          body: JSON.stringify(body),
         });
+      try {
+        response = await doFetch(buildBody(req.config?.reasoningEffort));
+        // reasoning_effort is ignored by non-reasoning models but a strict
+        // endpoint may reject it (400/422) — retry once without it so the
+        // loop never breaks for models that don't support the field.
+        if (req.config?.reasoningEffort && (response.status === 400 || response.status === 422)) {
+          response = await doFetch(buildBody(undefined));
+        }
       } catch (_err) {
         if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
         return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.`, reasoning: "" };

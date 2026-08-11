@@ -19,7 +19,7 @@
 
 import type { AgentLLMConfig, AgentMessage, AgentToolResultMsg, PiAgentSession } from "./pi-agent-loop";
 import { buildApiUrl, postChatCompletions } from "./llm";
-import { recordLlmUsage, extractCost, extractCacheTokens } from "./usage-recorder";
+import { recordLlmUsage, extractCost } from "./usage-recorder";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -128,26 +128,37 @@ export async function generateSummary(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const response = await postChatCompletions(
+  const body = {
+    model,
+    // System prompt as a `role: "system"` message (not a top-level `system:`
+    // field) so strict OpenAI-compatible providers don't reject the request
+    // with "unknown parameter system".
+    messages: [
+      { role: "system", content: SUMMARIZATION_SYSTEM_PROMPT },
+      { role: "user", content: SUMMARIZATION_USER_PROMPT(conversationText) },
+    ],
+    max_tokens: SUMMARY_MAX_TOKENS,
+    temperature: 0.1, // deterministic summary
+    // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
+    stream: true,
+    // Summary is a direct transform — skip reasoning for ~2x speed, like the
+    // writing-style one-shots.
+    reasoning_effort: "none",
+  };
+  const post = (b: Record<string, unknown>) => postChatCompletions(
     buildApiUrl(baseUrl, "chat/completions"),
     headers,
-    {
-      model,
-      // System prompt as a `role: "system"` message (not a top-level `system:`
-      // field) so strict OpenAI-compatible providers don't reject the request
-      // with "unknown parameter system".
-      messages: [
-        { role: "system", content: SUMMARIZATION_SYSTEM_PROMPT },
-        { role: "user", content: SUMMARIZATION_USER_PROMPT(conversationText) },
-      ],
-      max_tokens: SUMMARY_MAX_TOKENS,
-      temperature: 0.1, // deterministic summary
-      // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
-      stream: true,
-    },
+    b,
     true,
     signal,
   );
+
+  let response = await post(body);
+  // A strict endpoint may reject reasoning_effort (400/422) — retry without it
+  // so compaction never breaks for models that don't support the field.
+  if (response.status === 400 || response.status === 422) {
+    response = await post({ ...body, reasoning_effort: undefined });
+  }
 
   if (!response.ok) {
     throw new Error(`Compaction LLM call failed: ${response.status} ${response.statusText}`);
@@ -156,36 +167,26 @@ export async function generateSummary(
   const reader = response.body?.getReader();
   if (!reader) throw new Error("No response stream for compaction");
 
-  const decoder = new TextDecoder();
-  let content = "";
   let usage: { pt?: number; ct?: number; rt?: number; cacheRead?: number; cacheCreate?: number; chunkCost?: unknown; raw?: unknown } | undefined;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const jsonStr = trimmed.slice(5).trim();
-      if (jsonStr === "[DONE]") break;
-      try {
-        const obj = JSON.parse(jsonStr);
-        if (obj.usage) {
-          const cache = extractCacheTokens(obj.usage);
-          usage = {
-            pt: obj.usage.prompt_tokens ?? 0,
-            ct: obj.usage.completion_tokens ?? 0,
-            rt: obj.usage.completion_tokens_details?.reasoning_tokens ?? 0,
-            cacheRead: cache.cacheReadTokens,
-            cacheCreate: cache.cacheCreationTokens,
-            chunkCost: obj.cost,
-            raw: obj.usage,
-          };
-        }
-        const delta = obj.choices?.[0]?.delta?.content ?? "";
-        if (delta) content += delta;
-      } catch { /* skip malformed lines */ }
-    }
-  }
+  // Consume via the shared buffered SSE parser (same as chat/agent/callLLM) —
+  // the old inline split("\n")-per-chunk loop mangled records that straddled
+  // TCP reads and ignored reasoning fields.
+  const { consumeAssistantStream } = await import("./llm-stream");
+  const turn = await consumeAssistantStream(reader, {
+    signal,
+    onUsage: (u) => {
+      usage = {
+        pt: u.promptTokens ?? 0,
+        ct: u.completionTokens ?? 0,
+        rt: u.reasoningTokens ?? 0,
+        cacheRead: u.cacheReadTokens,
+        cacheCreate: u.cacheCreationTokens,
+        chunkCost: u.chunkCost,
+        raw: u.raw,
+      };
+    },
+  });
+  const content = turn.content;
 
   if (usage) {
     recordLlmUsage({

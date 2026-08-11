@@ -31,6 +31,25 @@ interface CustomServiceConfig {
 interface ToolAttachment {
   projectId: string; toolType: "mcp" | "service"; toolId: string; enabled: boolean;
 }
+// ── User writing style (persona + full guide + cheat sheet) ──────────────────
+interface UserStylePersona {
+  name?: string; role?: string; context?: string; audiences?: string;
+}
+interface UserStyleRow {
+  id: string; persona: UserStylePersona | null;
+  fullGuide: string; cheatsheet: string;
+  source: "none" | "guided" | "manual" | "analyzed"; updatedAt: string;
+}
+interface UserStyleSaveInput {
+  persona?: UserStylePersona; fullGuide?: string; cheatsheet?: string;
+  source: "none" | "guided" | "manual" | "analyzed";
+}
+interface UserStyleGenerationInput {
+  persona: UserStylePersona;
+  samples: Array<{ context: string; text: string }>;
+  answers: Array<{ question: string; answer: string }>;
+  fullGuide?: string;
+}
 // ── Community registry (cairn-community manifest) ───────────────────────────
 interface RegistryEntryMeta {
   id: string; author: string; version: string; category?: string; tags: string[]; blurb: string;
@@ -93,6 +112,15 @@ interface AutomationsManifest {
 }
 interface AutomationsFetchResult {
   manifest: AutomationsManifest; fromCache: boolean; cachedAt?: string; error?: string;
+}
+interface RegistryPersonalityEntry extends RegistryEntryMeta {
+  definition: { name: string; description?: string; prompt: string };
+}
+interface PersonalitiesManifest {
+  version: number; updatedAt: string; personalities: RegistryPersonalityEntry[];
+}
+interface PersonalitiesFetchResult {
+  manifest: PersonalitiesManifest; fromCache: boolean; cachedAt?: string; error?: string;
 }
 // ── Inline types for the codebase index / Architecture tab ──────────────────
 interface CodebaseSymbol {
@@ -521,6 +549,43 @@ const api = {
   resetAllData: () => invoke("app:reset"),
   getAiSettings: () => invoke<Record<string, unknown> | null>("app:getAiSettings"),
   saveAiSettings: (config: Record<string, unknown>) => invoke<{ ok: true }>("app:saveAiSettings", { config }),
+  // User writing style (persona + full guide + cheat sheet) — Settings → Writing Style.
+  getUserStyle: () => invoke<UserStyleRow | null>("user-style:get"),
+  saveUserStyle: (input: UserStyleSaveInput) => invoke<UserStyleRow>("user-style:save", { input }),
+  clearUserStyle: () => invoke<{ ok: true }>("user-style:clear"),
+  generateUserStyle: (step: "full" | "cheatsheet" | "optimize", input: UserStyleGenerationInput) =>
+    invoke<{ markdown: string }>("user-style:generate", { step, input }),
+  // Streaming generation (wizard) — fire-and-forget; listen via onUserStyle*.
+  // Credentials are resolved main-side (resolveChatConfig), never sent here.
+  generateUserStyleStream: (req: {
+    workspaceId?: string;
+    projectId?: string;
+    projectName?: string;
+    step: "full" | "cheatsheet" | "optimize";
+    analyseNotes: boolean;
+    input: UserStyleGenerationInput;
+  }) => ipcRenderer.send("user-style:generateStream", req),
+  abortUserStyleStream: () => ipcRenderer.send("user-style:abort"),
+  onUserStyleToken: (cb: (e: { delta: string }) => void) => {
+    const handler = (_: unknown, e: { delta: string }) => cb(e);
+    ipcRenderer.on("user-style:token", handler);
+    return () => ipcRenderer.off("user-style:token", handler);
+  },
+  onUserStyleToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown> }) => void) => {
+    const handler = (_: unknown, e: { tool: string; label: string; args: Record<string, unknown> }) => cb(e);
+    ipcRenderer.on("user-style:tool-call", handler);
+    return () => ipcRenderer.off("user-style:tool-call", handler);
+  },
+  onUserStyleToolCallDone: (cb: (e: { tool: string; ok?: boolean; error?: string }) => void) => {
+    const handler = (_: unknown, e: { tool: string; ok?: boolean; error?: string }) => cb(e);
+    ipcRenderer.on("user-style:tool-call-done", handler);
+    return () => ipcRenderer.off("user-style:tool-call-done", handler);
+  },
+  onUserStyleDone: (cb: (e: { content: string; usable: boolean; error?: string }) => void) => {
+    const handler = (_: unknown, e: { content: string; usable: boolean; error?: string }) => cb(e);
+    ipcRenderer.on("user-style:done", handler);
+    return () => ipcRenderer.off("user-style:done", handler);
+  },
   getAgentSettings: () => invoke<Record<string, unknown> | null>("app:getAgentSettings"),
   saveAgentSettings: (config: Record<string, unknown>) => invoke<{ ok: true }>("app:saveAgentSettings", { config }),
   getTheme: () => invoke<string | null>("app:getTheme"),
@@ -856,6 +921,10 @@ const api = {
     fetchAutomations: () => invoke<AutomationsFetchResult>("registry:fetchAutomations"),
     /** Force a network refresh of the automations manifest. */
     refreshAutomations: () => invoke<AutomationsFetchResult>("registry:refreshAutomations"),
+    /** Community personalities (separate personalities.json manifest). Cache-first. */
+    fetchPersonalities: () => invoke<PersonalitiesFetchResult>("registry:fetchPersonalities"),
+    /** Force a network refresh of the personalities manifest. */
+    refreshPersonalities: () => invoke<PersonalitiesFetchResult>("registry:refreshPersonalities"),
   },
 
   // ── Git operations (Agent Git tab) ────────────

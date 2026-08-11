@@ -351,3 +351,85 @@ describe("installCommunityProvider", () => {
     expect(list[0].apiKey).toBe("");
   });
 });
+
+describe("chat personalities", () => {
+  function setup() {
+    let state: any = {};
+    const mockSet = (updater: any) => {
+      const next = typeof updater === "function" ? updater(state) : updater;
+      state = { ...state, ...next };
+    };
+    const mockGet = () => state;
+    const slice = createUISlice(mockSet, mockGet, {} as any);
+    state = { ...state, ...slice };
+    return { get: () => state };
+  }
+
+  const entry = {
+    id: "grill-me",
+    author: "cairn",
+    version: "1.0.0",
+    brandColor: "#f43f5e",
+    homepage: "https://github.com/JuliusBrussee/skills",
+    definition: {
+      name: "Grill Me",
+      description: "Calibrated grilling.",
+      prompt: "Pressure-test plans with calibrated questions. Ask one question at a time.",
+    },
+  };
+
+  it("installCommunityPersonality adds a community row with source + communityId, no auto-select", async () => {
+    const { get } = setup();
+    const id = await get().installCommunityPersonality(entry);
+    const list = get().aiConfig.installedPersonalities;
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe(id);
+    expect(list[0].source).toBe("community");
+    expect(list[0].communityId).toBe("grill-me");
+    expect(list[0].prompt).toContain("Pressure-test plans");
+    expect(list[0].homepage).toBe("https://github.com/JuliusBrussee/skills");
+    expect(get().aiConfig.personalityId).toBeUndefined(); // never auto-selects
+  });
+
+  it("re-install dedups by communityId and updates the row", async () => {
+    const { get } = setup();
+    const firstId = await get().installCommunityPersonality(entry);
+    const secondId = await get().installCommunityPersonality({
+      ...entry,
+      definition: { ...entry.definition, prompt: "Updated rules." },
+    });
+    expect(secondId).toBe(firstId);
+    const list = get().aiConfig.installedPersonalities;
+    expect(list).toHaveLength(1);
+    expect(list[0].prompt).toBe("Updated rules.");
+  });
+
+  it("setPersonality selects and clears (null = None)", () => {
+    const { get } = setup();
+    get().setPersonality("p1");
+    expect(get().aiConfig.personalityId).toBe("p1");
+    get().setPersonality(null);
+    // "None" is stored as null (not undefined) so the backend cache can clear
+    // its previous value and the choice survives a restart.
+    expect(get().aiConfig.personalityId).toBeNull();
+  });
+
+  it("createCustomPersonality adds a custom row and returns its id", () => {
+    const { get } = setup();
+    const id = get().createCustomPersonality({ name: "Concise", prompt: "Always talk in ASD-STE100 Simplified English." });
+    const row = get().aiConfig.installedPersonalities.find((p: any) => p.id === id);
+    expect(row?.source).toBe("custom");
+    expect(row?.name).toBe("Concise");
+    expect(row?.communityId).toBeUndefined();
+  });
+
+  it("removePersonality deletes the row and clears the active selection if it was active", () => {
+    const { get } = setup();
+    const id = get().createCustomPersonality({ name: "Mine", prompt: "Be brief but correct." });
+    get().setPersonality(id);
+    expect(get().aiConfig.personalityId).toBe(id);
+    get().removePersonality(id);
+    expect(get().aiConfig.installedPersonalities).toHaveLength(0);
+    expect(get().aiConfig.personalityId).toBeNull();
+  });
+});

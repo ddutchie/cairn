@@ -1823,3 +1823,8 @@ export * from "./codebase-queries";
 // Note + task embedding queries live in embeddings-queries.ts; re-exported
 // here so existing `./queries` / `../db/queries` imports are unchanged.
 export * from "./embeddings-queries";
+
+// ── User writing style ────────────────────────
+// Persona + style guide queries live in user-style-queries.ts; re-exported
+// here so tools/ipc can import from the single `./db/queries` surface.
+export * from "./user-style-queries";
