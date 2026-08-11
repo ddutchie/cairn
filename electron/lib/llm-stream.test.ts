@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { consumeAssistantStream, failToolCallsFromTruncatedMessage, prepareContextMessages, resolveSystemRole, supportsDeveloperRole } from "./llm-stream";
+import { consumeAssistantStream, failToolCallsFromTruncatedMessage, prepareContextMessages, resolveSystemRole, supportsDeveloperRole, buildChatCompletionsBody } from "./llm-stream";
 
 function sseReader(...chunks: string[]): ReadableStreamDefaultReader<Uint8Array> {
   const encoder = new TextEncoder();
@@ -313,5 +313,18 @@ describe("failToolCallsFromTruncatedMessage", () => {
     expect(starts[0]).toBe("ls:ls:truncated:0");
     expect(results[1].tool_call_id).toBe("call_ok");
     expect(results.every((r) => r.content.includes("not executed"))).toBe(true);
+  });
+});
+
+describe("buildChatCompletionsBody reasoning_effort", () => {
+  it("includes reasoning_effort when provided", () => {
+    const body = buildChatCompletionsBody({ model: "m", messages: [], tools: [], maxTokens: 1000, temperature: 0.3, reasoningEffort: "none" });
+    expect(body.reasoning_effort).toBe("none");
+  });
+  it("omits reasoning_effort when undefined (the non-reasoning fallback)", () => {
+    const body = buildChatCompletionsBody({ model: "m", messages: [], tools: [], maxTokens: 1000, temperature: 0.3 });
+    expect(body.reasoning_effort).toBeUndefined();
+    const retry = buildChatCompletionsBody({ model: "m", messages: [], tools: [], maxTokens: 1000, temperature: 0.3, reasoningEffort: undefined });
+    expect(retry.reasoning_effort).toBeUndefined();
   });
 });

@@ -235,27 +235,33 @@ export async function callLLM(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
   const stream = opts.stream ?? true;
-  const response = await postChatCompletions(
-    buildApiUrl(config.baseUrl, "chat/completions"),
-    headers,
-    {
-      model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      max_tokens: opts.maxTokens ?? 4096,
-      temperature: opts.temperature ?? 0.4,
-      // Stream by default to prevent proxy connection drop timeouts (e.g.
-      // gateway/reverse proxy limits on blocking sync calls returning 504
-      // Gateway Time-out). Callers that need a clean final message (one-shots)
-      // can pass stream:false — some gateways garble SSE when a reasoning model
-      // interleaves huge reasoning_content deltas with content deltas.
-      stream,
-      ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
-    },
+  const body = {
+    model: config.model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    max_tokens: opts.maxTokens ?? 4096,
+    temperature: opts.temperature ?? 0.4,
+    // Stream by default to prevent proxy connection drop timeouts (e.g.
+    // gateway/reverse proxy limits on blocking sync calls returning 504
+    // Gateway Time-out). Callers that need a clean final message (one-shots)
+    // can pass stream:false — some gateways garble SSE when a reasoning model
+    // interleaves huge reasoning_content deltas with content deltas.
     stream,
-  );
+    ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
+  };
+  const post = (b: typeof body) =>
+    postChatCompletions(buildApiUrl(config.baseUrl, "chat/completions"), headers, b, stream);
+
+  let response = await post(body);
+  // reasoning_effort is OpenAI's param for reasoning models; non-reasoning
+  // models/endpoints IGNORE it, but a strict OpenAI-compatible server may
+  // reject it with 400/422. Fall back to a retry without it so generation
+  // never breaks for models that don't support the field.
+  if (opts.reasoningEffort && (response.status === 400 || response.status === 422)) {
+    response = await post({ ...body, reasoning_effort: undefined });
+  }
   if (!response.ok) throw new Error(`LLM error ${response.status}: ${await response.text().catch(() => response.statusText)}`);
 
   // Non-streaming: the response is a single JSON body — read message.content and
