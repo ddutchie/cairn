@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
 import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle } from "lucide-react-native";
 import { computeProjectMetrics } from "@cairn/shared/overview/metrics";
@@ -12,6 +12,7 @@ import { ProjectIcon } from "@/components/ProjectIcon";
 import { PressableScale } from "@/components/PressableScale";
 import { EmptyState } from "@/components/EmptyState";
 import { ProgressRing } from "./ProgressRing";
+import { celebrateProjectMilestone } from "@/gamification/rewards";
 import { useTheme, withAlpha, elevation, type as typeScale, type Theme } from "@/theme";
 
 /** Project status → theme colour token. Mirrors desktop STATUS_CSS_COLORS. */
@@ -81,6 +82,15 @@ export function OverviewTab({ data, nav, bottomPad, onRefresh, refreshing }: { d
   const { completionRate, doneCards, allCards, openCards, overdueCount, priorityCounts, hasAnyCategorised } = metrics;
 
   const empty = data.notes.length === 0 && allCards.length === 0;
+
+  // Celebrate crossing a completion milestone (25/50/75/100%). Fires at most
+  // once per milestone per project per session — celebrateProjectMilestone
+  // dedupes internally, so refresh / tab re-render never re-fires it.
+  useEffect(() => {
+    if (project) {
+      celebrateProjectMilestone(project.id, completionRate, allCards.length);
+    }
+  }, [project, completionRate, allCards.length]);
 
   return (
     <ScrollView
