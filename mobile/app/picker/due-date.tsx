@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet, useColorScheme } from "react-native";
+import { View, Text, Pressable, StyleSheet, useColorScheme } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useHeaderHeight } from "expo-router/build/react-navigation/elements";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { resolveSheetResult } from "@/lib/sheet-result";
@@ -20,6 +21,11 @@ export default function DueDatePickerRoute() {
   const router = useRouter();
   const { resultKey, initial } = useLocalSearchParams<{ resultKey?: string; initial?: string }>();
   const [value, setValue] = useState<Date>(() => (initial ? new Date(initial) : new Date()));
+  // The sheet content is short and static, so we keep it a plain View (no
+  // ScrollView — its automatic content inset re-triggers a layout jump when the
+  // sheet is dragged between detents, making the picker vanish). Pad by the
+  // native header height so the content clears it.
+  const headerHeight = useHeaderHeight();
 
   const done = (iso: string | null) => {
     if (resultKey) resolveSheetResult(resultKey, iso);
@@ -40,29 +46,22 @@ export default function DueDatePickerRoute() {
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
 
-      {/* ScrollView + automatic content inset so the content clears the (glass)
-          sheet header, exactly like the other picker sheets. scrollEnabled=false:
-          the content is short and never needs to scroll — this also stops the
-          automatic inset from re-triggering a contentOffset jump when the sheet
-          is dragged between detents (which made the picker vanish on expand). */}
-      <ScrollView contentInsetAdjustmentBehavior="automatic" scrollEnabled={false} style={{ flex: 1 }}>
-        <View style={styles.body}>
-          <DateTimePicker
-            value={value}
-            mode="date"
-            display="spinner"
-            themeVariant={scheme === "dark" ? "dark" : "light"}
-            onValueChange={(_event, date) => {
-              if (date) setValue(date);
-            }}
-            style={styles.picker}
-          />
+      <View style={[styles.body, { paddingTop: headerHeight + 12 }]}>
+        <DateTimePicker
+          value={value}
+          mode="date"
+          display="spinner"
+          themeVariant={scheme === "dark" ? "dark" : "light"}
+          onValueChange={(_event, date) => {
+            if (date) setValue(date);
+          }}
+          style={styles.picker}
+        />
 
-          <Pressable style={styles.clear} onPress={() => done(null)}>
-            <Text style={styles.clearText}>Clear due date</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+        <Pressable style={styles.clear} onPress={() => done(null)}>
+          <Text style={styles.clearText}>Clear due date</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -70,9 +69,8 @@ export default function DueDatePickerRoute() {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1 },
-    // Small breathing room; the ScrollView's automatic content inset clears the
-    // sheet header above.
-    body: { paddingTop: 16, paddingBottom: 24 },
+    // Top padding is applied inline (headerHeight + 12); bottom just breathes.
+    body: { paddingBottom: 24 },
     picker: { alignSelf: "center" },
     clear: { alignItems: "center", paddingVertical: 14, marginHorizontal: 18, marginTop: 8 },
     clearText: { ...typeScale.body, fontWeight: "500", color: t.danger },
