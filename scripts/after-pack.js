@@ -64,30 +64,37 @@ exports.default = async function afterPack(context) {
   //    arch-separated on every platform, so safe to strip the other arch here.
   rm(path.join("electron-native", other));
 
-  // 2. Standalone MCP binary + its sqlite sidecar. Only macOS builds TWO MCP
-  //    arches (cairn-mcp = arm64, cairn-mcp-x64 = x64) with both sidecars, so
-  //    only there is there an "other arch" MCP artifact to strip. win/linux
-  //    build a single x64 MCP binary + a single x64 sidecar; leave those alone
-  //    (stripping by the pack's arch would wrongly delete the only sidecar on an
-  //    arm64 win/linux pack).
-  if (platform === "darwin") {
-    // Strip the other arch's binary + sidecar…
-    rm(path.join("dist-mcp", other === "x64" ? "cairn-mcp-x64" : "cairn-mcp"));
-    rm(path.join("dist-mcp", `better_sqlite3-${other}.node`));
-    // …then canonicalise the surviving binary to `cairn-mcp` so every consumer
-    // (app:mcpServerPath, agent configs) references one stable name regardless
-    // of arch. On the x64 pack the survivor is `cairn-mcp-x64` → rename it.
-    if (target === "x64") {
-      const from = path.join(unpacked, "dist-mcp", "cairn-mcp-x64");
-      const to = path.join(unpacked, "dist-mcp", "cairn-mcp");
-      try {
-        if (fs.existsSync(from)) {
-          fs.renameSync(from, to);
-          removed.push("renamed cairn-mcp-x64 → cairn-mcp");
-        }
-      } catch (err) {
-        console.warn(`[afterPack] could not rename cairn-mcp-x64 → cairn-mcp: ${err.message}`);
+  // 2. Standalone MCP binary + its sqlite sidecar. Every release build produces
+  //    BOTH arches' binaries (arch-suffixed) + sidecars in dist-mcp/; strip the
+  //    other arch's, then canonicalise the survivor so every consumer
+  //    (app:mcpServerPath, agent configs) references one stable name per
+  //    platform regardless of arch.
+  //      macOS:  cairn-mcp (arm64) / cairn-mcp-x64 (x64)      → cairn-mcp
+  //      win32:  cairn-mcp-win-arm64.exe / -win-x64.exe       → cairn-mcp.exe
+  //      linux:  cairn-mcp-linux-arm64 / cairn-mcp-linux-x64  → cairn-mcp-linux
+  const mcpNames =
+    platform === "darwin"
+      ? { x64: "cairn-mcp-x64", arm64: "cairn-mcp" }
+      : platform === "win32"
+        ? { x64: "cairn-mcp-win-x64.exe", arm64: "cairn-mcp-win-arm64.exe" }
+        : { x64: "cairn-mcp-linux-x64", arm64: "cairn-mcp-linux-arm64" };
+  const mcpCanonical =
+    platform === "darwin" ? "cairn-mcp"
+    : platform === "win32" ? "cairn-mcp.exe"
+    : "cairn-mcp-linux";
+
+  rm(path.join("dist-mcp", mcpNames[other]));
+  rm(path.join("dist-mcp", `better_sqlite3-${other}.node`));
+  if (mcpNames[target] !== mcpCanonical) {
+    const from = path.join(unpacked, "dist-mcp", mcpNames[target]);
+    const to = path.join(unpacked, "dist-mcp", mcpCanonical);
+    try {
+      if (fs.existsSync(from)) {
+        fs.renameSync(from, to);
+        removed.push(`renamed ${mcpNames[target]} → ${mcpCanonical}`);
       }
+    } catch (err) {
+      console.warn(`[afterPack] could not rename ${mcpNames[target]} → ${mcpCanonical}: ${err.message}`);
     }
   }
 

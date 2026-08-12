@@ -354,7 +354,7 @@ jobs:
           node -e "const fs = require('fs'); ['win32', 'darwin'].forEach(p => fs.rmSync('node_modules/onnxruntime-node/bin/napi-v6/' + p, { recursive: true, force: true }))"
           node -e "const fs = require('fs'); ['darwin-arm64', 'darwin-x64', 'win32-arm64', 'win32-x64'].forEach(p => fs.rmSync('node_modules/node-pty/prebuilds/' + p, { recursive: true, force: true }))"
           node scripts/build-mcp-binary.js --linux
-          chmod +x dist-mcp/cairn-mcp-linux
+          chmod +x dist-mcp/cairn-mcp-linux-x64 dist-mcp/cairn-mcp-linux-arm64
           npm run smoke-test:mcp
           npx electron-builder --linux --publish onTagOrDraft
 
