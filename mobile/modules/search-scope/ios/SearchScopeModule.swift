@@ -68,8 +68,11 @@ public class SearchScopeModule: Module {
   }
 
   // ── Finding the active search controller ──────────────────────────────────
-  // The search screen is the top of its tab's native stack; react-native-screens
-  // attaches the UISearchController to the top view controller's navigationItem.
+  // The search screen is nested inside expo-router's hierarchy: root stack →
+  // tab bar → per-tab stack → screen. react-native-screens attaches the
+  // UISearchController to the screen's UINavigationItem, so we walk the whole
+  // view-controller tree (nav stacks, tab bars, presented modals, children)
+  // looking for a navigationItem that carries one.
   private func activeSearchController() -> UISearchController? {
     // Split the window lookup into two guard-let bindings: optional chaining
     // across a continuation line (`?.windows`) parses as a ternary and fails to
@@ -82,18 +85,28 @@ public class SearchScopeModule: Module {
     else {
       return nil
     }
+    return findSearchController(from: window.rootViewController)
+  }
 
-    var vc = window.rootViewController
-    while let presented = vc?.presentedViewController {
-      vc = presented
+  private func findSearchController(from vc: UIViewController?) -> UISearchController? {
+    guard let vc else { return nil }
+    if let sc = vc.navigationItem.searchController { return sc }
+    // Native navigation / tab containers: descend into their active child.
+    if let nav = vc as? UINavigationController, let top = nav.topViewController {
+      return findSearchController(from: top)
     }
-    if let nav = vc as? UINavigationController {
-      return nav.topViewController?.navigationItem.searchController
+    if let tab = vc as? UITabBarController, let selected = tab.selectedViewController {
+      return findSearchController(from: selected)
     }
-    if let tab = vc as? UITabBarController {
-      return tab.selectedViewController?.navigationItem.searchController
+    // Presented modals (e.g. a sheet over the tab bar).
+    if let presented = vc.presentedViewController {
+      return findSearchController(from: presented)
     }
-    return vc?.navigationItem.searchController
+    // react-native-screens nests screens as child view controllers.
+    for child in vc.children {
+      if let sc = findSearchController(from: child) { return sc }
+    }
+    return nil
   }
 
   /// Wrap the search bar's current delegate in a forwarding proxy (once), so

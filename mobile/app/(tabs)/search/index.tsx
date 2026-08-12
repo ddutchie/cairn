@@ -168,12 +168,18 @@ export default function SearchScreen() {
       });
       const apply = () =>
         setNativeSearchScope(["All", "Notes", "Tasks"], typeFilters.indexOf(typeFilterRef.current));
-      let retry: ReturnType<typeof requestAnimationFrame> | null = null;
-      void apply().then((ok) => {
-        if (!ok && retry === null) retry = requestAnimationFrame(() => void apply());
-      });
+      // Retry until the scope bar attaches: the search controller (and the
+      // search bar's focus state, which gates scope visibility) can land a few
+      // frames late on a cold mount / tab switch. ~1s of attempts is plenty.
+      let tries = 0;
+      const timer = setInterval(() => {
+        void apply().then((ok) => {
+          if (ok || ++tries >= 6) clearInterval(timer);
+        });
+      }, 150);
+      void apply();
       return () => {
-        if (retry !== null) cancelAnimationFrame(retry);
+        clearInterval(timer);
         sub?.remove();
         void clearNativeSearchScope();
       };
