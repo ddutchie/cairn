@@ -324,6 +324,24 @@ jobs:
         if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm run rebuild
 
+      - name: Cross-compile node-pty for arm64 (Linux)
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        # node-pty has no Linux prebuild (compiled per-arch), so the arm64
+        # target needs its own build. electron-builder builds x64 + arm64 from
+        # this x64 runner, so cross-compile node-pty against the Electron arm64
+        # headers and stage it as prebuilds/linux-arm64/ — node-pty's loader
+        # falls back to prebuilds/<platform>-<arch> when build/Release fails to
+        # load, so both arches coexist. Then restore the host (x64) build/Release.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          cd node_modules/node-pty
+          CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ \
+            npx electron-rebuild -f -o node-pty --arch arm64
+          mkdir -p prebuilds/linux-arm64
+          cp build/Release/pty.node prebuilds/linux-arm64/pty.node
+          npx electron-rebuild -f -o node-pty
+
       - name: Build & publish (Linux)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

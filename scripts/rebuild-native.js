@@ -40,8 +40,14 @@ const ELECTRON_VERSION = require(path.join(root, "node_modules", "electron", "pa
 const bsqliteDir = path.join(root, "node_modules", "better-sqlite3");
 const prebuildsDir = path.join(bsqliteDir, "prebuilds");
 
-// macOS builds are universal (both arches); other platforms build the host arch only.
-const ARCHES = process.platform === "darwin" ? ["arm64", "x64"] : [process.arch];
+// macOS builds are universal (both arches). Windows/Linux electron-builder
+// targets BOTH x64 and arm64, and better-sqlite3 v13's in-package N-API
+// prebuilds let us provision arm64 from an x64 runner by plain copy — no
+// cross-compilation needed for the sqlite binding.
+const ARCHES =
+  process.platform === "darwin"
+    ? ["arm64", "x64"]
+    : [...new Set([process.arch, "arm64"])];
 
 function run(cmd, cwd = root) {
   console.log(`\n> ${cmd}`);
