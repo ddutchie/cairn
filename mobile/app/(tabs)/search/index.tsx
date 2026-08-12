@@ -21,11 +21,6 @@ type TypeFilter = "all" | "notes" | "tasks";
 // Approx height of the native iOS 26 tab-bar search field — the results list
 // clears it at the bottom so the last row isn't hidden behind it.
 const SEARCH_FIELD_H = 52;
-// The All|Notes|Tasks scope bar is a screen-pinned overlay directly below the
-// native search field (Apple-Music-style). These clear the results list and
-// empty state by its height + a breathing gap.
-const SCOPE_BAR_H = 40;
-const SCOPE_GAP = 8;
 
 /**
  * Search screen using the native iOS search bar (headerSearchBarOptions).
@@ -347,6 +342,29 @@ export default function SearchScreen() {
         }}
       />
 
+      {/* Type filter, in-flow directly below the native search field — Apple
+          Music-style scope bar. Renders as the first element under the opaque
+          header (same layout as the project screen's Overview|Notes|Board
+          segment), with the results list scrolling beneath it. Content type
+          only — the ranking mode is the header ✨. */}
+      <View style={styles.topScope}>
+        <GlassBar style={[styles.scopeBar, !glassActive && styles.scopeBarFallback]}>
+          {typeFilters.map((f) => (
+            <Pressable
+              key={f}
+              onPress={() => setType(f)}
+              style={[styles.scopeBtn, typeFilter === f && styles.scopeBtnActive]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: typeFilter === f }}
+            >
+              <Text style={[styles.scopeText, typeFilter === f && styles.scopeTextActive]}>
+                {typeLabel(f)}
+              </Text>
+            </Pressable>
+          ))}
+        </GlassBar>
+      </View>
+
       <View style={styles.results}>
         {semanticMode ? (
           <FlatList
@@ -399,7 +417,7 @@ export default function SearchScreen() {
             ListEmptyComponent). Decoupled from the list's keyboard/content inset,
             so it never jumps when the keyboard opens — and it shares Chat's exact
             anchoring system (pinned + default 25% top bias). `insetTop` clears
-            the native search header + the pinned scope bar; `pointerEvents="none"`
+            the native search header; `pointerEvents="none"`
             (inside EmptyState) lets scroll / pull-to-reindex gestures pass
             through to the list beneath. Only shown when the list is empty. */}
         {isListEmpty ? (
@@ -409,7 +427,7 @@ export default function SearchScreen() {
             // state). Pinned so it holds position when the keyboard is open.
             <View
               pointerEvents="none"
-              style={[styles.hintOverlay, { paddingTop: insets.top + SCOPE_BAR_H + SCOPE_GAP }]}
+              style={[styles.hintOverlay, { paddingTop: insets.top }]}
             >
               <View style={styles.hintBias} />
               <Text style={styles.hint}>{emptyHint.primary}</Text>
@@ -423,32 +441,10 @@ export default function SearchScreen() {
               title={emptyHint.primary}
               subtitle={emptyHint.secondary}
               pinned
-              insetTop={insets.top + SCOPE_BAR_H + SCOPE_GAP}
+              insetTop={insets.top}
             />
           )
         ) : null}
-      </View>
-
-      {/* Type filter, pinned directly below the native search field — Apple
-          Music-style scope bar. Screen-pinned overlay (same anchoring as the
-          empty state, `paddingTop` clears the search header) so results scroll
-          under it; content type only — the ranking mode is the header ✨. */}
-      <View style={[styles.topScope, { paddingTop: insets.top }]}>
-        <GlassBar style={[styles.scopeBar, !glassActive && styles.scopeBarFallback]}>
-          {typeFilters.map((f) => (
-            <Pressable
-              key={f}
-              onPress={() => setType(f)}
-              style={[styles.scopeBtn, typeFilter === f && styles.scopeBtnActive]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: typeFilter === f }}
-            >
-              <Text style={[styles.scopeText, typeFilter === f && styles.scopeTextActive]}>
-                {typeLabel(f)}
-              </Text>
-            </Pressable>
-          ))}
-        </GlassBar>
       </View>
     </TabScreen>
   );
@@ -456,11 +452,10 @@ export default function SearchScreen() {
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    // Results list region. In flow so the pinned scope bar overlays only its
-    // top edge; the empty-state overlay anchors to this container.
+    // Results list region, below the in-flow scope bar.
     results: { flex: 1 },
-    // All|Notes|Tasks scope bar, pinned below the native search field.
-    topScope: { position: "absolute", top: 0, left: 12, right: 12 },
+    // All|Notes|Tasks scope bar, in-flow below the native search field.
+    topScope: { marginHorizontal: 12, marginTop: 8 },
     scopeBar: {
       flexDirection: "row",
       gap: 4,
@@ -477,13 +472,11 @@ function makeStyles(t: Theme) {
     // Header ✨ semantic toggle: bare icon, no background — iOS supplies its own
     // toggle chrome. Colour (accent vs tertiary) is the on/off signal.
     semBtn: { alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
-    // Top pad clears the pinned All|Notes|Tasks scope bar (the automatic top
-    // inset already clears the native search header). Bottom pad clears the tab
-    // bar + the native search field on iOS ≤26 (none on iOS 27, so drop that
-    // reservation) with a small buffer.
+    // Bottom pad clears the tab bar + the native search field on iOS ≤26 (none
+    // on iOS 27, so drop that reservation) with a small buffer. The top is plain
+    // padding — the in-flow scope bar already reserves that space.
     list: {
       padding: 12,
-      paddingTop: SCOPE_BAR_H + SCOPE_GAP,
       paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 12,
     },
     // Lets an empty list stay exactly the viewport height (no scroll) — the
