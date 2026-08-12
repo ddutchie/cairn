@@ -1,46 +1,45 @@
 import { useMemo, useState } from "react";
 import { View, Text, Pressable, TextInput, FlatList, StyleSheet } from "react-native";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { FileText, Search } from "lucide-react-native";
 import { listNotes, searchNotes, type NoteRow } from "@/db/queries";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { BottomSheet, BottomSheetHeader } from "./BottomSheet";
+import { resolveSheetResult } from "@/lib/sheet-result";
 
 /**
- * Bottom-anchored note picker for inserting a `[[Wikilink]]`. Searches note
+ * Native formSheet note picker for inserting a `[[Wikilink]]`. Searches note
  * titles/content; picking a note returns its title so the caller can insert
  * `[[Title]]` at the cursor. Mirrors the desktop wikilink picker.
  */
-export function WikilinkPickerSheet({
-  visible,
-  onSelect,
-  onClose,
-}: {
-  visible: boolean;
-  onSelect: (title: string) => void;
-  onClose: () => void;
-}) {
+export default function WikilinkPickerRoute() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const router = useRouter();
+  const { resultKey } = useLocalSearchParams<{ resultKey?: string }>();
   const [query, setQuery] = useState("");
 
-  // Reset the query each time the sheet opens.
-  const [wasVisible, setWasVisible] = useState(false);
-  if (visible && !wasVisible) {
-    setQuery("");
-    setWasVisible(true);
-  } else if (!visible && wasVisible) {
-    setWasVisible(false);
-  }
-
   const results: NoteRow[] = useMemo(() => {
-    if (!visible) return [];
     const rows = query.trim() ? searchNotes(query.trim()) : listNotes();
     return rows.slice(0, 50);
-  }, [visible, query]);
+  }, [query]);
+
+  const pick = (title: string) => {
+    if (resultKey) resolveSheetResult(resultKey, title);
+    router.back();
+  };
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} maxHeight="70%" avoidKeyboard>
-      <BottomSheetHeader title="Link a note" onCancel={onClose} />
+    <View style={[styles.container, { backgroundColor: t.background }]}>
+      <Stack.Screen
+        options={{
+          title: "Link a note",
+          headerLeft: () => (
+            <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel">
+              <Text style={styles.cancel}>Cancel</Text>
+            </Pressable>
+          ),
+        }}
+      />
 
       <View style={styles.searchRow}>
         <Search size={15} color={t.textTertiary} />
@@ -65,7 +64,7 @@ export function WikilinkPickerSheet({
           keyboardShouldPersistTaps="handled"
           style={styles.list}
           renderItem={({ item }) => (
-            <Pressable style={styles.row} onPress={() => onSelect(item.title || "Untitled")}>
+            <Pressable style={styles.row} onPress={() => pick(item.title || "Untitled")}>
               <FileText size={15} color={t.textTertiary} />
               <Text style={styles.name} numberOfLines={1}>
                 {item.title || "Untitled"}
@@ -74,12 +73,13 @@ export function WikilinkPickerSheet({
           )}
         />
       )}
-    </BottomSheet>
+    </View>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
+    container: { flex: 1 },
     searchRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -105,5 +105,6 @@ function makeStyles(t: Theme) {
     },
     name: { flex: 1, ...typeScale.body, color: t.textPrimary },
     empty: { color: t.textTertiary, textAlign: "center", padding: 28, ...typeScale.caption },
+    cancel: { ...typeScale.subtitle, fontWeight: "400", color: t.textTertiary },
   });
 }

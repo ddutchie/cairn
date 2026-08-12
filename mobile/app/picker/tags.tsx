@@ -1,40 +1,34 @@
 import { useMemo, useState } from "react";
 import { View, Text, Pressable, FlatList, StyleSheet } from "react-native";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Check } from "lucide-react-native";
 import { listAllTags, type TagRow } from "@/db/queries";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
-import { BottomSheet, BottomSheetHeader } from "./BottomSheet";
+import { resolveSheetResult } from "@/lib/sheet-result";
 
 /**
- * A bottom-anchored sheet for selecting a note/card's tags. Presents every
+ * Native formSheet route for selecting a note/card's tags. Presents every
  * workspace tag as a toggleable row (coloured dot + name + check). Selection is
- * held locally and returned via onDone so the caller can persist it in one
- * write (setNoteTags / setCardTags).
+ * held locally and returned via the result key on Done, so the caller can
+ * persist it in one write (setNoteTags / setCardTags).
  */
-export function TagPickerSheet({
-  visible,
-  initialSelected,
-  onDone,
-  onClose,
-}: {
-  visible: boolean;
-  initialSelected: string[];
-  onDone: (tagIds: string[]) => void;
-  onClose: () => void;
-}) {
+export default function TagPickerRoute() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const allTags: TagRow[] = useMemo(() => (visible ? listAllTags() : []), [visible]);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
+  const router = useRouter();
+  const { resultKey, initial } = useLocalSearchParams<{ resultKey?: string; initial?: string }>();
 
-  // Reset the working selection whenever the sheet re-opens.
-  const [wasVisible, setWasVisible] = useState(false);
-  if (visible && !wasVisible) {
-    setSelected(new Set(initialSelected));
-    setWasVisible(true);
-  } else if (!visible && wasVisible) {
-    setWasVisible(false);
-  }
+  const initialIds = useMemo<string[]>(() => {
+    try {
+      const v = initial ? JSON.parse(initial) : [];
+      return Array.isArray(v) ? v.map(String) : [];
+    } catch {
+      return [];
+    }
+  }, [initial]);
+
+  const allTags: TagRow[] = useMemo(() => listAllTags(), []);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialIds));
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -45,11 +39,28 @@ export function TagPickerSheet({
     });
   };
 
-  const done = () => onDone([...selected]);
+  const done = () => {
+    if (resultKey) resolveSheetResult(resultKey, [...selected]);
+    router.back();
+  };
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} maxHeight="70%">
-      <BottomSheetHeader title="Tags" onCancel={onClose} onDone={done} />
+    <View style={[styles.container, { backgroundColor: t.background }]}>
+      <Stack.Screen
+        options={{
+          title: "Tags",
+          headerLeft: () => (
+            <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel">
+              <Text style={styles.cancel}>Cancel</Text>
+            </Pressable>
+          ),
+          headerRight: () => (
+            <Pressable onPress={done} hitSlop={12} accessibilityRole="button" accessibilityLabel="Done">
+              <Text style={styles.done}>Done</Text>
+            </Pressable>
+          ),
+        }}
+      />
 
       {allTags.length === 0 ? (
         <Text style={styles.empty}>No tags in this workspace yet.</Text>
@@ -75,12 +86,13 @@ export function TagPickerSheet({
           }}
         />
       )}
-    </BottomSheet>
+    </View>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
+    container: { flex: 1 },
     list: { paddingHorizontal: 10 },
     row: {
       flexDirection: "row",
@@ -93,5 +105,7 @@ function makeStyles(t: Theme) {
     dot: { width: 12, height: 12, borderRadius: 6 },
     name: { flex: 1, ...typeScale.body, color: t.textPrimary },
     empty: { color: t.textTertiary, textAlign: "center", padding: 28, ...typeScale.caption },
+    cancel: { ...typeScale.subtitle, fontWeight: "400", color: t.textTertiary },
+    done: { ...typeScale.subtitle, color: t.accent },
   });
 }

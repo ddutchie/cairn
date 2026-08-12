@@ -1,0 +1,74 @@
+import { useMemo, useState } from "react";
+import { View, Text, Pressable, StyleSheet, useColorScheme } from "react-native";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { resolveSheetResult } from "@/lib/sheet-result";
+
+/**
+ * Native formSheet route for picking a card's due date. Wraps the native
+ * DateTimePicker (spinner) and commits on an explicit Done button rather than on
+ * the picker's onChange — this fixes two inline-mode problems: (1) tapping the
+ * already-selected day fires no change event, so "today" was impossible to pick,
+ * and (2) the inline picker had no dismissal affordance. The working date is
+ * held locally; Done returns it, Clear returns null, Cancel discards.
+ */
+export default function DueDatePickerRoute() {
+  const t = useTheme();
+  const scheme = useColorScheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  const router = useRouter();
+  const { resultKey, initial } = useLocalSearchParams<{ resultKey?: string; initial?: string }>();
+  const [value, setValue] = useState<Date>(() => (initial ? new Date(initial) : new Date()));
+
+  const done = (iso: string | null) => {
+    if (resultKey) resolveSheetResult(resultKey, iso);
+    router.back();
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: t.background }]}>
+      <Stack.Screen
+        options={{
+          title: "Due date",
+          headerLeft: () => (
+            <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel">
+              <Text style={styles.cancel}>Cancel</Text>
+            </Pressable>
+          ),
+          headerRight: () => (
+            <Pressable onPress={() => done(value.toISOString())} hitSlop={12} accessibilityRole="button" accessibilityLabel="Done">
+              <Text style={styles.done}>Done</Text>
+            </Pressable>
+          ),
+        }}
+      />
+
+      <DateTimePicker
+        value={value}
+        mode="date"
+        display="spinner"
+        themeVariant={scheme === "dark" ? "dark" : "light"}
+        onChange={(_event, date) => {
+          if (date) setValue(date);
+        }}
+        style={styles.picker}
+      />
+
+      <Pressable style={styles.clear} onPress={() => done(null)}>
+        <Text style={styles.clearText}>Clear due date</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function makeStyles(t: Theme) {
+  return StyleSheet.create({
+    container: { flex: 1 },
+    picker: { alignSelf: "center", marginTop: 8 },
+    clear: { alignItems: "center", paddingVertical: 12, marginHorizontal: 18, marginTop: 4 },
+    clearText: { ...typeScale.body, fontWeight: "500", color: t.danger },
+    cancel: { ...typeScale.subtitle, fontWeight: "400", color: t.textTertiary },
+    done: { ...typeScale.subtitle, color: t.accent },
+  });
+}

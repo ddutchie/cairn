@@ -2,7 +2,6 @@ import { useRef, type ReactNode } from "react";
 import { TextInput, StyleSheet } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
-import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
 import type { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { useTheme, type as typeScale } from "@/theme";
 
@@ -90,12 +89,6 @@ export function NoteEditorBody({
           bottomInset={bottomInset}
         />
       </KeyboardStickyView>
-
-      <WikilinkPickerSheet
-        visible={fmt.wikilinkOpen}
-        onSelect={fmt.onWikilink}
-        onClose={fmt.closeWikilink}
-      />
     </>
   );
 }

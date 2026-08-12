@@ -151,6 +151,13 @@ export default function RootLayout() {
                 <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal" }} />
                 <Stack.Screen name="settings/tools" options={{ title: "Tools & Services", presentation: "modal" }} />
                 <Stack.Screen name="settings/appearance" options={{ title: "Appearance", presentation: "modal" }} />
+                {/* Native iOS sheets for the contextual pickers (tags, move,
+                    wikilink, due date) — UISheetPresentationController gives
+                    blur, drag-to-dismiss and detents for free. */}
+                <Stack.Screen name="picker/tags" options={{ title: "Tags", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
+                <Stack.Screen name="picker/note" options={{ title: "Choose", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
+                <Stack.Screen name="picker/wikilink" options={{ title: "Link a note", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
+                <Stack.Screen name="picker/due-date" options={{ title: "Due date", presentation: "formSheet", sheetAllowedDetents: [0.3, 0.6], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
               </Stack>
             </ToastProvider>
           </ThemeProvider>

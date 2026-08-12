@@ -9,8 +9,6 @@ import {
   listNotes,
   listColumns,
   listCards,
-  listProjects,
-  listFolders,
   moveCardToColumn,
   moveNoteToProject,
   moveNotesToFolder,
@@ -26,7 +24,7 @@ import {
   type ColumnRow,
   type ProjectOverviewData,
 } from "@/db/queries";
-import { NotePickerSheet, type PickerOption } from "@/components/NotePickerSheet";
+import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
@@ -86,10 +84,6 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState("");
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
-  // The note currently targeted by the long-press action menu, and which
-  // move-picker sheet (if any) is open for it. `null` = no menu/sheet.
-  const [actionNote, setActionNote] = useState<NoteRow | null>(null);
-  const [picker, setPicker] = useState<null | "project" | "folder">(null);
   // Brief spinner state for the Overview pull-to-refresh gesture.
   const [refreshing, setRefreshing] = useState(false);
 
@@ -137,8 +131,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   // A per-note contextual menu mirroring the desktop note ⋯ menu (Pin/Unpin,
   // Move to project, Move to folder, Delete). Presented as a native action
   // sheet (iOS) / Alert action list (Android) on long-press; the two "Move"
-  // actions open a themed BottomSheet picker (NotePickerSheet). Kept as stable
-  // callbacks so the memoised NoteRowItem rows don't re-render.
+  // actions open the native formSheet picker route (app/picker/note.tsx). Kept
+  // as stable callbacks so the memoised NoteRowItem rows don't re-render.
 
   const togglePin = useCallback((note: NoteRow) => {
     pinNote(note.id, !note.is_pinned);
@@ -170,8 +164,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
     const pinLabel = note.is_pinned ? "Unpin" : "Pin";
     const run = (choice: "pin" | "project" | "folder" | "delete") => {
       if (choice === "pin") togglePin(note);
-      else if (choice === "project") { setActionNote(note); setPicker("project"); }
-      else if (choice === "folder") { setActionNote(note); setPicker("folder"); }
+      else if (choice === "project") openMovePicker(note, "project");
+      else if (choice === "folder") openMovePicker(note, "folder");
       else if (choice === "delete") confirmDelete(note);
     };
     if (Platform.OS === "ios") {
@@ -200,56 +194,44 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
     }
   }, [togglePin, confirmDelete]);
 
-  // Commit a picker selection, then close the menu + sheet and refresh the list.
-  const onPickProject = useCallback((projectId: string) => {
-    if (actionNote) {
-      const res = moveNoteToProject(actionNote.id, projectId);
-      if ("error" in res) {
-        // Surface the failure and keep the picker open (state intact) so the
-        // user can retry or pick a different target — don't silently swallow it.
-        haptics.error();
-        Alert.alert("Couldn't move note", res.error);
-        return;
-      }
-      haptics.success();
-    }
-    setPicker(null);
-    setActionNote(null);
-    load();
-  }, [actionNote, load]);
-
-  const onPickFolder = useCallback((folder: string) => {
-    if (actionNote) {
-      moveNotesToFolder([actionNote.id], folder);
-      haptics.success();
-    }
-    setPicker(null);
-    setActionNote(null);
-    load();
-  }, [actionNote, load]);
-
-  const closePicker = useCallback(() => { setPicker(null); setActionNote(null); }, []);
-
-  // Picker option lists, computed only while the relevant sheet is open. The
-  // project list excludes the current project; the folder list is prefixed with
-  // an explicit "Root" (folder="") option, matching the desktop folder picker.
-  const projectOptions = useMemo<PickerOption[]>(
-    () =>
-      picker === "project"
-        ? listProjects()
-            .filter((p) => p.id !== id)
-            .map((p) => ({ value: p.id, label: p.name, icon: p.icon }))
-        : [],
-    [picker, id],
+  // Open the native move picker (project / folder) for `note`. The picked value
+  // comes back through the sheet-result bus; failure surfaces as an alert after
+  // the sheet closes.
+  const openMovePicker = useCallback(
+    (note: NoteRow, variant: "project" | "folder") => {
+      const key = newSheetResultKey();
+      registerSheetResult<string>(key, (value) => {
+        if (variant === "project") {
+          const res = moveNoteToProject(note.id, value);
+          if ("error" in res) {
+            haptics.error();
+            Alert.alert("Couldn't move note", res.error);
+            return;
+          }
+        } else {
+          moveNotesToFolder([note.id], value);
+        }
+        haptics.success();
+        load();
+      });
+      router.push({
+        pathname: "/picker/note",
+        params: {
+          resultKey: key,
+          title: variant === "project" ? "Move to project" : "Move to folder",
+          variant,
+          excludeProjectId: variant === "project" ? (id ?? undefined) : undefined,
+          projectId: variant === "folder" ? (id ?? undefined) : undefined,
+          currentValue: variant === "folder" ? (note.folder ?? "") : undefined,
+          emptyText:
+            variant === "project"
+              ? "No other projects in this workspace."
+              : "No folders in this project yet.",
+        },
+      });
+    },
+    [id, load, router],
   );
-  const folderOptions = useMemo<PickerOption[]>(() => {
-    if (picker !== "folder" || !id) return [];
-    const opts: PickerOption[] = [{ value: "", label: "Root" }];
-    for (const f of listFolders(id)) {
-      if (f) opts.push({ value: f, label: f });
-    }
-    return opts;
-  }, [picker, id]);
 
   const tree = useMemo(() => buildFolderTree(notes), [notes]);
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -477,28 +459,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
       )}
       </View>
 
-      {/* Long-press move pickers. Options are read lazily (only while the sheet
-          is open) so they reflect the current DB without polling. */}
-      <NotePickerSheet
-        visible={picker === "project"}
-        title="Move to project"
-        variant="project"
-        options={projectOptions}
-        selectedValue={id}
-        emptyText="No other projects in this workspace."
-        onSelect={onPickProject}
-        onClose={closePicker}
-      />
-      <NotePickerSheet
-        visible={picker === "folder"}
-        title="Move to folder"
-        variant="folder"
-        options={folderOptions}
-        selectedValue={actionNote?.folder ?? ""}
-        emptyText="No folders in this project yet."
-        onSelect={onPickFolder}
-        onClose={closePicker}
-      />
+      {/* Long-press move pickers now live in the native formSheet routes
+          (app/picker/note.tsx), opened via openMovePicker. */}
     </View>
   );
 }

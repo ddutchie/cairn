@@ -1,11 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Calendar, X } from "lucide-react-native";
 import { getCard, listColumns, listCards, updateTask, moveCardToColumn, archiveCard, deleteCard, tagsForCard, noteTagIds, setCardTags, type ColumnRow } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
-import { TagPickerSheet } from "@/components/TagPickerSheet";
-import { DueDatePickerSheet } from "@/components/DueDatePickerSheet";
 import { MarkdownView } from "@/components/MarkdownView";
 import { PriorityChips, ColumnChips } from "@/components/TaskChips";
 import { NotFound } from "@/components/NotFound";
@@ -14,6 +12,7 @@ import { haptics, toolbarPress } from "@/haptics";
 import { toast } from "@/components/Toast";
 import { celebrateTaskDone, isDoneColumn } from "@/gamification/rewards";
 import { formatDate } from "@cairn/shared/format/date";
+import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
@@ -38,14 +37,30 @@ export function CardDetailScreen() {
   const [dueDate, setDueDate] = useState<string | null>(card?.due_date ?? null);
   const [assignee, setAssignee] = useState(card?.assignee ?? "");
   const [tagIds, setTagIds] = useState<string[]>(card ? noteTagIds(card) : []);
-  const [tagPickerOpen, setTagPickerOpen] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [descPreview, setDescPreview] = useState(false);
   const columns: ColumnRow[] = useMemo(
     () => (card ? listColumns(card.project_id) : []),
     [card],
   );
   const tags = useMemo(() => (card ? tagsForCard({ tag_ids: JSON.stringify(tagIds) }) : []), [card, tagIds]);
+
+  // Open the native tags / due-date sheets; selections return via the
+  // sheet-result bus and are persisted here.
+  const openTagPicker = useCallback(() => {
+    const key = newSheetResultKey();
+    registerSheetResult<string[]>(key, (ids) => {
+      if (!card) return;
+      setTagIds(ids);
+      setCardTags(card.id, ids);
+    });
+    router.push({ pathname: "/picker/tags", params: { resultKey: key, initial: JSON.stringify(tagIds) } });
+  }, [card, router, tagIds]);
+
+  const openDatePicker = useCallback(() => {
+    const key = newSheetResultKey();
+    registerSheetResult<string | null>(key, (iso) => setDueDate(iso));
+    router.push({ pathname: "/picker/due-date", params: { resultKey: key, initial: dueDate ?? undefined } });
+  }, [dueDate, router]);
 
   if (!card) {
     return <NotFound label="Task" />;
@@ -140,7 +155,7 @@ export function CardDetailScreen() {
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Task title" placeholderTextColor={t.textTertiary} multiline />
 
         <Text style={styles.label}>Tags</Text>
-        <Pressable onPress={() => setTagPickerOpen(true)}>
+        <Pressable onPress={openTagPicker}>
           {tags.length > 0 ? (
             <TagChips tags={tags} />
           ) : (
@@ -160,7 +175,7 @@ export function CardDetailScreen() {
 
         <Text style={styles.label}>Due date</Text>
         <View style={styles.dueRow}>
-          <Pressable style={styles.dueButton} onPress={() => setShowDatePicker(true)}>
+          <Pressable style={styles.dueButton} onPress={openDatePicker}>
             <Calendar size={16} color={t.textSecondary} />
             <Text style={[styles.dueText, !dueDate && { color: t.textTertiary }]}>
               {dueDate ? formatDate(dueDate) : "No due date"}
@@ -206,26 +221,6 @@ export function CardDetailScreen() {
           />
         )}
       </ScrollView>
-
-      <TagPickerSheet
-        visible={tagPickerOpen}
-        initialSelected={tagIds}
-        onDone={(ids) => {
-          setTagIds(ids);
-          setTagPickerOpen(false);
-        }}
-        onClose={() => setTagPickerOpen(false)}
-      />
-
-      <DueDatePickerSheet
-        visible={showDatePicker}
-        initial={dueDate}
-        onDone={(iso) => {
-          setDueDate(iso);
-          setShowDatePicker(false);
-        }}
-        onClose={() => setShowDatePicker(false)}
-      />
     </KeyboardAvoidingView>
   );
 }
