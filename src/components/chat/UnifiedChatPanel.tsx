@@ -85,6 +85,17 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
       window.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      // The effect tears down mid-drag when activeView changes (e.g. the user
+      // switches views while resizing) — mouseup never fires. Retain the latest
+      // dragged width, commit it, and clear the resizing flag so the panel
+      // doesn't stay in a half-resized, transition-less state.
+      if (dragging) {
+        dragging = false;
+        setChatPanelResizing(false);
+        const live = document.documentElement.style.getPropertyValue("--chat-panel-width");
+        const parsed = parseInt(live, 10);
+        if (Number.isFinite(parsed)) setChatPanelWidth(parsed);
+      }
     };
   }, [setChatPanelWidth, setChatPanelResizing, activeView]);
 

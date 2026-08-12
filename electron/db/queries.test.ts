@@ -1379,4 +1379,21 @@ describe("v43 migration (blocked_by_ids data repair)", () => {
     expect(after.version).toBe(before); // untouched — no spurious version bump
     db.close();
   });
+
+  it("drops a blocker with deleted_at set (sync tombstone)", () => {
+    const db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    seedStale(db);
+    // Tombstone the live blocker — a soft-deleted (but still present) row must
+    // be treated as resolved just like an archived or done-card blocker.
+    db.prepare("UPDATE task_cards SET deleted_at = '2026-02-01T00:00:00.000Z' WHERE id = 'live-blocker'").run();
+    db.pragma("user_version = 42");
+    applySchema(db);
+    const cleaned = JSON.parse(
+      (db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = 'blocked'").get() as { blocked_by_ids: string }).blocked_by_ids
+    ) as string[];
+    // done, archived, orphaned, and now tombstoned blockers all dropped
+    expect(cleaned).toEqual([]);
+    db.close();
+  });
 });

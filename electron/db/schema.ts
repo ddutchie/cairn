@@ -1079,9 +1079,10 @@ const MIGRATIONS: Migration[] = [
   // when archived, deleted, or in a done column), but the stale refs persisted
   // in get_task / list_ready_tasks output and got replicated via sync.
   //
-  // Sweep every blocked_by_ids array, dropping any id whose card is archived or
-  // in a done column. Deleted cards are already removed by deleteCard's cleanup,
-  // but drop orphans defensively too. Idempotent — re-running is a no-op.
+  // Sweep every blocked_by_ids array, dropping any id whose card is archived,
+  // tombstoned (deleted_at set — sync soft-deletes keep the row), or in a done
+  // column. Hard-deleted cards are already removed by deleteCard's cleanup, but
+  // drop orphans defensively too. Idempotent — re-running is a no-op.
   (db) => {
     const rows = db.prepare(
       "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]'"
@@ -1090,14 +1091,14 @@ const MIGRATIONS: Migration[] = [
 
     const resolved = new Set<string>();
     const getState = db.prepare(`
-      SELECT tc.archived_at, bc.type AS col_type
+      SELECT tc.archived_at, tc.deleted_at, bc.type AS col_type
       FROM task_cards tc JOIN board_columns bc ON tc.column_id = bc.id
       WHERE tc.id = ?
     `);
     const isResolved = (bid: string): boolean => {
       if (resolved.has(bid)) return true;
-      const row = getState.get(bid) as { archived_at: string | null; col_type: string } | undefined;
-      const done = !row || row.archived_at !== null || row.col_type === "done";
+      const row = getState.get(bid) as { archived_at: string | null; deleted_at: string | null; col_type: string } | undefined;
+      const done = !row || row.archived_at !== null || row.deleted_at !== null || row.col_type === "done";
       if (done) resolved.add(bid);
       return done;
     };

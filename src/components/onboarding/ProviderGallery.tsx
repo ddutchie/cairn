@@ -15,9 +15,11 @@ const emptyResult: ProvidersFetchResult = {
 };
 
 interface Props {
-  /** Called once a provider is installed (keyless install or key confirmed).
-   *  Lets the parent prefill the active connection (baseUrl / model). */
-  onPick: (entry: RegistryProviderEntry) => void;
+  /** Called once a provider is installed (keyless install or key confirmed),
+   *  with the installed provider's id and its keychain apiKey reference (empty
+   *  for keyless providers). Lets the parent mirror it as the active
+   *  connection before onboarding persists. */
+  onPick: (picked: { entry: RegistryProviderEntry; id: string; apiKeyRef: string }) => void;
 }
 
 /**
@@ -79,10 +81,15 @@ export function ProviderGallery({ onPick }: Props) {
       setInstalling(entry.id);
       setInstallError(null);
       try {
-        await installCommunityProvider(entry, apiKey);
+        const id = await installCommunityProvider(entry, apiKey);
         setKeyPrompt(null);
         setKeyValue("");
-        onPick(entry);
+        // Read the installed row back so the parent can mirror the keychain
+        // apiKey ref (not a raw key) into the active connection.
+        const installed = (useCairnStore.getState().aiConfig.savedProviders ?? []).find(
+          (p) => p.id === id || (p.communityId && p.communityId === entry.id),
+        );
+        onPick({ entry, id, apiKeyRef: installed?.apiKey ?? "" });
       } catch (err) {
         setInstallError(err instanceof Error ? err.message : "Couldn't add the provider.");
       } finally {
@@ -173,7 +180,7 @@ export function ProviderGallery({ onPick }: Props) {
                         type="button"
                         disabled={installing !== null || !keyValue.trim()}
                         onClick={() => void runInstall(entry, keyValue)}
-                        className="shrink-0 px-2 py-1 text-[0.65rem] rounded bg-[var(--accent)] text-white disabled:opacity-40"
+                        className="shrink-0 px-2 py-1 text-[0.65rem] rounded bg-[var(--accent)] text-[var(--accent-fg,#fff)] disabled:opacity-40"
                       >
                         {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
                       </button>

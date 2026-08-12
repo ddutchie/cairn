@@ -21,6 +21,10 @@ import UIKit
 /// working) while intercepting `selectedScopeButtonIndexDidChange` for JS.
 public class SearchScopeModule: Module {
   private var proxy: SearchBarDelegateProxy?
+  /// The search bar the proxy is currently installed on. Retained independent
+  /// of the active search controller so `clear` can always unwire the bar we
+  /// configured, even after the search screen (and its controller) has gone.
+  private var configuredSearchBar: UISearchBar?
 
   public func definition() -> ModuleDefinition {
     Name("SearchScope")
@@ -59,17 +63,21 @@ public class SearchScopeModule: Module {
     }
 
     // Remove the scope bar (called when the search screen loses focus so a
-    // different screen's search bar never inherits stale titles).
+    // different screen's search bar never inherits stale titles). Operates on
+    // the search bar we configured (stored when the proxy was installed), NOT
+    // the currently-active controller — the search screen may already be gone
+    // by the time this runs, and clearing must still unwire its proxy.
     AsyncFunction("clear") { () -> Void in
       await MainActor.run {
-        guard let sc = self.activeSearchController() else { return }
-        sc.searchBar.scopeButtonTitles = nil
+        guard let bar = self.configuredSearchBar else { return }
+        bar.scopeButtonTitles = nil
         // Unwire the delegate proxy and hand the search bar back to
         // react-native-screens' original delegate.
-        if let proxy = self.proxy, sc.searchBar.delegate === proxy {
-          sc.searchBar.delegate = proxy.originalDelegate
+        if let proxy = self.proxy, bar.delegate === proxy {
+          bar.delegate = proxy.originalDelegate
         }
         self.proxy = nil
+        self.configuredSearchBar = nil
       }
     }
 
@@ -113,16 +121,19 @@ public class SearchScopeModule: Module {
   private func findSearchController(from vc: UIViewController?) -> UISearchController? {
     guard let vc else { return nil }
     if let sc = vc.navigationItem.searchController { return sc }
+    // Presented modals (e.g. a sheet over the tab bar) can sit in front of the
+    // search screen — check them first so a presented controller isn't skipped
+    // when its presenter's own branch comes up empty. Only return when the
+    // recursive result is non-nil; otherwise keep checking the other branches.
+    if let presented = vc.presentedViewController {
+      if let sc = findSearchController(from: presented) { return sc }
+    }
     // Native navigation / tab containers: descend into their active child.
     if let nav = vc as? UINavigationController, let top = nav.topViewController {
-      return findSearchController(from: top)
+      if let sc = findSearchController(from: top) { return sc }
     }
     if let tab = vc as? UITabBarController, let selected = tab.selectedViewController {
-      return findSearchController(from: selected)
-    }
-    // Presented modals (e.g. a sheet over the tab bar).
-    if let presented = vc.presentedViewController {
-      return findSearchController(from: presented)
+      if let sc = findSearchController(from: selected) { return sc }
     }
     // react-native-screens nests screens as child view controllers.
     for child in vc.children {
@@ -144,6 +155,7 @@ public class SearchScopeModule: Module {
     }
     sc.searchBar.delegate = proxy
     self.proxy = proxy
+    self.configuredSearchBar = sc.searchBar
   }
 }
 

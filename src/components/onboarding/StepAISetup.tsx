@@ -52,12 +52,14 @@ export function StepAISetup({
     : ["gpt-5.6-luna", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3-mini"];
 
   /** A gallery provider was installed — make it the ACTIVE connection by
-   *  prefilling baseUrl + default model (key stays in the keychain). */
-  function handleProviderPick(entry: RegistryProviderEntry) {
+   *  prefilling baseUrl + default model and mirroring its keychain apiKey ref
+   *  (the raw key never leaves the keychain). */
+  function handleProviderPick({ entry, apiKeyRef }: { entry: RegistryProviderEntry; id: string; apiKeyRef: string }) {
     const def = entry.definition;
     onProviderChange("openai");
     onBaseUrlChange(def.baseUrl);
     if (def.defaultModel) onModelChange(def.defaultModel);
+    if (apiKeyRef) onApiKeyChange(apiKeyRef);
   }
 
   return (
@@ -237,7 +239,7 @@ export function StepAISetup({
                               "px-2 py-0.5 text-[0.714rem] rounded border transition-colors cursor-pointer",
                               model === m
                                 ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                                : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-secondary)]"
+                                : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] hover:text-[var(--text-secondary)]"
                             )}
                           >
                             {m}

@@ -23,8 +23,11 @@ const installCommunityProvider = vi.fn();
 let savedProviders: unknown[] = [];
 
 vi.mock("@/store", () => ({
-  useCairnStore: (selector: (s: unknown) => unknown) =>
-    selector({ aiConfig: { savedProviders }, installCommunityProvider }),
+  useCairnStore: Object.assign(
+    (selector: (s: unknown) => unknown) =>
+      selector({ aiConfig: { savedProviders }, installCommunityProvider }),
+    { getState: () => ({ aiConfig: { savedProviders }, installCommunityProvider }) },
+  ),
 }));
 
 // ── Registry fetch fixture ────────────────────────────────────────────────────
@@ -126,7 +129,10 @@ describe("StepAISetup merged provider gallery", () => {
   });
 
   it("installs a keyless provider and makes it the active connection (prefills baseUrl + model)", async () => {
-    installCommunityProvider.mockResolvedValue("id-1");
+    installCommunityProvider.mockImplementation(async () => {
+      savedProviders = [{ id: "id-1", name: "Ollama", baseUrl: "http://localhost:11434", communityId: "ollama", apiKey: "", model: "" }];
+      return "id-1";
+    });
     const props = renderStep();
     await waitFor(() => expect(screen.getByText("OpenRouter")).toBeInTheDocument());
 
@@ -138,12 +144,16 @@ describe("StepAISetup merged provider gallery", () => {
     // onPick → provider flips to cloud + baseUrl/model prefilled from the preset.
     expect(props.onProviderChange).toHaveBeenCalledWith("openai");
     expect(props.onBaseUrlChange).toHaveBeenCalledWith("http://localhost:11434");
-    // Ollama has no defaultModel → model untouched.
+    // Ollama has no defaultModel and is keyless → model/key untouched.
     expect(props.onModelChange).not.toHaveBeenCalled();
+    expect(props.onApiKeyChange).not.toHaveBeenCalled();
   });
 
-  it("prefills the default model when the picked preset declares one", async () => {
-    installCommunityProvider.mockResolvedValue("id-openrouter");
+  it("prefills the default model and mirrors the keychain ref when the picked preset declares one", async () => {
+    installCommunityProvider.mockImplementation(async () => {
+      savedProviders = [{ id: "id-openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", communityId: "openrouter", apiKey: "secret://llm:id-openrouter/apiKey", model: "deepseek" }];
+      return "id-openrouter";
+    });
     const props = renderStep();
     await waitFor(() => expect(screen.getByText("OpenRouter")).toBeInTheDocument());
 
@@ -156,6 +166,8 @@ describe("StepAISetup merged provider gallery", () => {
     expect(props.onProviderChange).toHaveBeenCalledWith("openai");
     expect(props.onBaseUrlChange).toHaveBeenCalledWith("https://openrouter.ai/api/v1");
     expect(props.onModelChange).toHaveBeenCalledWith("deepseek");
+    // The keychain ref (not the raw key) is mirrored so handleSaveAI persists it.
+    expect(props.onApiKeyChange).toHaveBeenCalledWith("secret://llm:id-openrouter/apiKey");
   });
 
   it("prompts inline for an API key on a keyed provider", async () => {
