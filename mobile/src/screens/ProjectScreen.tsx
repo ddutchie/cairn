@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import SegmentedControl from "@react-native-segmented-control/segmented-control";
 import {
   getProject,
   getProjectOverview,
@@ -38,12 +39,15 @@ import { useTheme, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 import { NoteRowItem } from "./project/NoteRowItem";
 import { FolderRow } from "./project/FolderRow";
-import { Segment } from "./project/Segment";
 import { Empty } from "./project/Empty";
 import { NoteFilterBar } from "./project/NoteFilterBar";
 import { type ListRow, rowKey } from "./project/list-rows";
 
 type Tab = "overview" | "notes" | "board";
+
+// Order of the native UISegmentedControl segments (Overview | Notes | Board);
+// the control's selectedIndex maps straight into the `tab` union.
+const PROJECT_TABS: Tab[] = ["overview", "notes", "board"];
 
 /**
  * Project detail (notes tree + board). Shared by two routes:
@@ -343,9 +347,16 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
       </Stack.Toolbar>
 
       <View style={styles.segment}>
-        <Segment label="Overview" active={tab === "overview"} onPress={() => setTab("overview")} t={t} />
-        <Segment label="Notes" count={notes.length} active={tab === "notes"} onPress={() => setTab("notes")} t={t} />
-        <Segment label="Board" count={cards.length} active={tab === "board"} onPress={() => setTab("board")} t={t} />
+        <SegmentedControl
+          style={{ flex: 1 }}
+          values={["Overview", `Notes ${notes.length}`, `Board ${cards.length}`]}
+          selectedIndex={PROJECT_TABS.indexOf(tab)}
+          onChange={(e) => setTab(PROJECT_TABS[e.nativeEvent.selectedSegmentIndex] ?? "overview")}
+          backgroundColor={t.surface2}
+          tintColor={t.accent}
+          fontStyle={{ color: t.textSecondary, fontSize: 15, fontWeight: "600" }}
+          activeFontStyle={{ color: t.accentFg, fontSize: 15, fontWeight: "600" }}
+        />
       </View>
 
       {tab === "overview" ? (
@@ -484,7 +495,9 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
-    segment: { flexDirection: "row", gap: 4, margin: 12, padding: 4, backgroundColor: t.surface2, borderRadius: 10 },
+    // The native UISegmentedControl draws its own track/active chrome; the
+    // wrapper only keeps the surrounding margin.
+    segment: { margin: 12 },
     notesScroll: { flexGrow: 1 },
   });
 }
