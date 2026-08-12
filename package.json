@@ -62,7 +62,7 @@
     "d3-sankey": "^0.12.3",
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
-    "katex": "^0.17.0",
+    "katex": "^0.18.4",
     "mermaid": "^11.14.0",
     "node-pty": "^1.1.0",
     "onnxruntime-node": "1.21.0",
