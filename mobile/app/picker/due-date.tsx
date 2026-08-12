@@ -41,8 +41,11 @@ export default function DueDatePickerRoute() {
       </Stack.Toolbar>
 
       {/* ScrollView + automatic content inset so the content clears the (glass)
-          sheet header, exactly like the other picker sheets. */}
-      <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ flex: 1 }}>
+          sheet header, exactly like the other picker sheets. scrollEnabled=false:
+          the content is short and never needs to scroll — this also stops the
+          automatic inset from re-triggering a contentOffset jump when the sheet
+          is dragged between detents (which made the picker vanish on expand). */}
+      <ScrollView contentInsetAdjustmentBehavior="automatic" scrollEnabled={false} style={{ flex: 1 }}>
         <View style={styles.body}>
           <DateTimePicker
             value={value}

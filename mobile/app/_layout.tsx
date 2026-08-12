@@ -159,7 +159,7 @@ export default function RootLayout() {
                 <Stack.Screen name="picker/tags" options={{ title: "Tags", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
                 <Stack.Screen name="picker/note" options={{ title: "Choose", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
                 <Stack.Screen name="picker/wikilink" options={{ title: "Link a note", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
-                <Stack.Screen name="picker/due-date" options={{ title: "Due date", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.7], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
+                <Stack.Screen name="picker/due-date" options={{ title: "Due date", presentation: "formSheet", sheetAllowedDetents: [0.5, 0.8], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
               </Stack>
             </ToastProvider>
           </ThemeProvider>
