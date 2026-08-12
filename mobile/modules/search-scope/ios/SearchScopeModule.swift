@@ -37,6 +37,14 @@ public class SearchScopeModule: Module {
         guard let sc = self.activeSearchController() else { return false }
         sc.searchBar.scopeButtonTitles = titles
         sc.searchBar.selectedScopeButtonIndex = selectedIndex
+        // iOS 26+ shows/hides the scope bar per `scopeBarActivation`. We want it
+        // to appear when the search becomes active (Apple-Music behaviour) and
+        // dismiss on cancel. Note: UIKit has a bug where this NEVER renders with
+        // integrated/automatic search-bar placement on iPhone — the search screen
+        // therefore uses `placement: "stacked"`.
+        if #available(iOS 26.0, *) {
+          sc.scopeBarActivation = .onSearchActivation
+        }
         self.wireDelegateProxy(on: sc)
         return true
       }

@@ -377,6 +377,13 @@ export default function SearchScreen() {
             autoCapitalize: "none",
             autoFocus: true,
             hideWhenScrolling: false,
+            // Stacked placement (search field in a dedicated row below the nav
+            // bar). iOS 26+/27 UIKit has a bug where the UISearchController
+            // scope bar NEVER renders with integrated/automatic placement on
+            // iPhone — stacked is the layout where the native All|Notes|Tasks
+            // scope bar actually appears (Apple-Music-style, directly below the
+            // search field).
+            placement: "stacked",
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
           // Header trailing controls: an optional info button (shown when
