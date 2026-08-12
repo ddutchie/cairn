@@ -1032,6 +1032,12 @@ const MIGRATIONS: Migration[] = [
   // stage rows in sync_pending like every other replicated table. The runtime
   // table list is in shared/sync/schema.ts (SYNCABLE_TABLES); this migration is
   // only the per-connection DDL.
+  //
+  // CRITICAL: on an EXISTING install the engine has already backfilled (the
+  // sync_state "backfilled" flag short-circuits backfill() to a no-op), so the
+  // pre-existing row would never be stamped into the oplog — the triggers only
+  // fire on NEW writes. Stage any existing live row into sync_pending here so
+  // the next drain publishes it without the user having to re-save their style.
   (db) => {
     const cols = db.prepare("PRAGMA table_info(user_style)").all() as { name: string }[];
     if (!cols.some((c) => c.name === "hlc")) db.exec("ALTER TABLE user_style ADD COLUMN hlc TEXT");
@@ -1056,6 +1062,12 @@ const MIGRATIONS: Migration[] = [
       BEGIN
         INSERT INTO sync_pending (entity, entity_id, op) VALUES ('user_style', OLD.id, 'delete');
       END;
+
+      -- Seed any pre-existing style into the pending queue (idempotent).
+      INSERT INTO sync_pending (entity, entity_id, op)
+      SELECT 'user_style', id, 'put' FROM user_style
+      WHERE deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM sync_pending WHERE entity = 'user_style' AND entity_id = user_style.id);
     `);
   },
 ];
