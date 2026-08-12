@@ -67,7 +67,7 @@ export default function NotePickerRoute() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: t.background }]}>
+    <>
       <Stack.Screen options={{ title: params.title || "Choose" }} />
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
@@ -81,7 +81,7 @@ export default function NotePickerRoute() {
         <FlatList
           data={options}
           keyExtractor={(o) => o.value}
-          style={styles.list}
+          style={[styles.list, { flex: 1 }]}
           contentInsetAdjustmentBehavior="automatic"
           renderItem={({ item }) => {
             const on = item.value === params.currentValue;
@@ -115,13 +115,12 @@ export default function NotePickerRoute() {
           }}
         />
       )}
-    </View>
+    </>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    container: { flex: 1 },
     list: { paddingHorizontal: 10, paddingBottom: 6 },
     row: {
       flexDirection: "row",

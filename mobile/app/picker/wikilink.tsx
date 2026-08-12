@@ -29,7 +29,7 @@ export default function WikilinkPickerRoute() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: t.background }]}>
+    <>
       <Stack.Screen options={{ title: "Link a note" }} />
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
@@ -37,46 +37,43 @@ export default function WikilinkPickerRoute() {
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
 
-      <View style={styles.searchRow}>
-        <Search size={15} color={t.textTertiary} />
-        <TextInput
-          autoFocus
-          style={styles.searchInput}
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search notes…"
-          placeholderTextColor={t.textTertiary}
-          autoCorrect={false}
-          returnKeyType="search"
-        />
-      </View>
-
-      {results.length === 0 ? (
-        <Text style={styles.empty}>No notes found.</Text>
-      ) : (
-        <FlatList
-          data={results}
-          keyExtractor={(n) => n.id}
-          keyboardShouldPersistTaps="handled"
-          contentInsetAdjustmentBehavior="automatic"
-          style={styles.list}
-          renderItem={({ item }) => (
-            <Pressable style={styles.row} onPress={() => pick(item.title || "Untitled")}>
-              <FileText size={15} color={t.textTertiary} />
-              <Text style={styles.name} numberOfLines={1}>
-                {item.title || "Untitled"}
-              </Text>
-            </Pressable>
-          )}
-        />
-      )}
-    </View>
+      <FlatList
+        data={results}
+        keyExtractor={(n) => n.id}
+        keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior="automatic"
+        style={[styles.list, { flex: 1 }]}
+        ListHeaderComponent={
+          <View style={styles.searchRow}>
+            <Search size={15} color={t.textTertiary} />
+            <TextInput
+              autoFocus
+              style={styles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search notes…"
+              placeholderTextColor={t.textTertiary}
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+          </View>
+        }
+        ListEmptyComponent={<Text style={styles.empty}>No notes found.</Text>}
+        renderItem={({ item }) => (
+          <Pressable style={styles.row} onPress={() => pick(item.title || "Untitled")}>
+            <FileText size={15} color={t.textTertiary} />
+            <Text style={styles.name} numberOfLines={1}>
+              {item.title || "Untitled"}
+            </Text>
+          </Pressable>
+        )}
+      />
+    </>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    container: { flex: 1 },
     searchRow: {
       flexDirection: "row",
       alignItems: "center",

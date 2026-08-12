@@ -45,7 +45,7 @@ export default function TagPickerRoute() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: t.background }]}>
+    <>
       <Stack.Screen options={{ title: "Tags" }} />
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
@@ -64,7 +64,7 @@ export default function TagPickerRoute() {
         <FlatList
           data={allTags}
           keyExtractor={(tag) => tag.id}
-          style={styles.list}
+          style={[styles.list, { flex: 1 }]}
           contentInsetAdjustmentBehavior="automatic"
           renderItem={({ item }) => {
             const on = selected.has(item.id);
@@ -83,13 +83,12 @@ export default function TagPickerRoute() {
           }}
         />
       )}
-    </View>
+    </>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    container: { flex: 1 },
     list: { paddingHorizontal: 10 },
     row: {
       flexDirection: "row",
