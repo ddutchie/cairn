@@ -19,9 +19,9 @@
   "dependencies": {
     "@expo/material-symbols": "^0.1.1",
     "@expo/ui": "~57.0.10",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@react-native-community/datetimepicker": "9.1.0",
-    "ai": "^7.0.29",
+    "ai": "^7.0.62",
     "expo": "~57.0.12",
     "expo-auth-session": "~57.0.6",
     "expo-build-properties": "~57.0.10",
@@ -46,9 +46,9 @@
     "js-tiktoken": "^1.0.21",
     "katex": "^0.17.0",
     "lowlight": "^3.3.0",
-    "lucide-react-native": "^1.24.0",
+    "lucide-react-native": "^1.31.0",
     "markdown-it-mark": "^4.0.0",
-    "mermaid": "^11.16.0",
+    "mermaid": "^11.16.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",
@@ -66,7 +66,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/react": "~19.2.4",
+    "@types/react": "^19.2.18",
     "babel-plugin-module-resolver": "^5.0.2",
     "d3": "^7.9.0",
     "eslint": "^9.39.5",
