@@ -16,7 +16,7 @@ files:
   - dist-electron/**/*
   # Changelogs — displayed in Settings > About
   - changelogs/**/*
-  # MCP server — self-contained binary (bundles Node 22 + better-sqlite3)
+  # MCP server — self-contained binary (bundles Node 24 + better-sqlite3)
   - dist-mcp/cairn-mcp
   - dist-mcp/cairn-mcp.exe
   - dist-mcp/cairn-mcp-linux

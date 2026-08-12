@@ -41,12 +41,12 @@
   "overrides": {
     "postcss": "^8.5.10",
     "sharp": "file:electron/sharp-stub",
-    "onnxruntime-node": "$onnxruntime-node"
+    "onnxruntime-node": "1.23.0"
   },
   "dependencies": {
     "@codemirror/search": "^6.7.0",
     "@dagrejs/dagre": "^3.0.0",
-    "@huggingface/transformers": "3.7.5",
+    "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@radix-ui/react-context-menu": "^2.2.16",
     "@types/d3-hierarchy": "^3.1.7",
@@ -65,7 +65,7 @@
     "katex": "^0.18.4",
     "mermaid": "^11.14.0",
     "node-pty": "^1.1.0",
-    "onnxruntime-node": "1.21.0",
+    "onnxruntime-node": "1.23.0",
     "parse-diff": "^0.12.0",
     "partial-json": "^0.1.7",
     "pdfjs-dist": "^6.2.108",
