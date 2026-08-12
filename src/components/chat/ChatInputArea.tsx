@@ -107,11 +107,11 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
         allowImages={allowImages}
         allowPdf={allowPdf}
       />
-      <div className="flex items-center gap-2 mt-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mt-2">
         {providerModelTarget && <ProviderModelPicker target={providerModelTarget} disabled={disabled} />}
         {providerModelTarget === "ai" && <PersonalityPicker disabled={disabled} />}
         {statusText && (
-          <p className={cn("text-[0.643rem] text-[var(--text-tertiary)] ml-auto", isLoading && "text-[var(--text-secondary)]")}>
+          <p className={cn("text-[0.643rem] text-[var(--text-tertiary)] ml-auto shrink-0", isLoading && "text-[var(--text-secondary)]")}>
             {statusText}
           </p>
         )}
