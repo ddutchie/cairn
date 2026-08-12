@@ -5,6 +5,9 @@
   "description": "Cairn shared brain — portable domain + offline-first sync engine consumed by both the Electron desktop app and the Expo mobile app.",
   "types": "./sync/index.ts",
   "main": "./sync/index.ts",
+  "dependencies": {
+    "partial-json": "^0.1.7"
+  },
   "exports": {
     ".": "./sync/index.ts",
     "./sync": "./sync/index.ts",
