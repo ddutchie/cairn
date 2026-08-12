@@ -21,6 +21,7 @@
     "@expo/ui": "~57.0.10",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@react-native-community/datetimepicker": "9.1.0",
+    "@react-native-segmented-control/segmented-control": "2.5.7",
     "ai": "^7.0.62",
     "expo": "~57.0.12",
     "expo-auth-session": "~57.0.6",

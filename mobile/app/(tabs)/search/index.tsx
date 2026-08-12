@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard } from "react-native";
+import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, listUnindexedCards, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
@@ -7,7 +7,7 @@ import { ResultRow } from "@/components/ResultRow";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { IndexingBar } from "@/components/IndexingBar";
-import { GlassBar, glassActive } from "@/components/GlassBar";
+import SegmentedControl from "@react-native-segmented-control/segmented-control";
 import { Sparkles, Info } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
@@ -21,22 +21,33 @@ type TypeFilter = "all" | "notes" | "tasks";
 // Approx height of the native iOS 26 tab-bar search field — the results list
 // clears it at the bottom so the last row isn't hidden behind it.
 const SEARCH_FIELD_H = 52;
+// The All|Notes|Tasks scope bar + its breathing gap below the search field.
+const SCOPE_BAR_H = 40;
+const SCOPE_GAP = 8;
 
 /**
  * Search screen using the native iOS search bar (headerSearchBarOptions).
  * Two independent axes:
  *   - RANKING mode: semantic (meaning-based, on-device) vs keyword. Toggled by
  *     the ✨ header button; defaults ON when the device supports embeddings.
- *   - TYPE filter: All / Notes / Tasks (the bottom bar), applied in both modes.
+ *   - TYPE filter: All / Notes / Tasks (the scope bar below the search field),
+ *     applied in both modes.
  */
 export default function SearchScreen() {
   const router = useRouter();
   const t = useTheme();
   const semanticAvailable = isAppleEmbeddingsSupported();
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
   // Semantic ranking on by default when available; the header ✨ toggles it.
   const [semanticMode, setSemanticMode] = useState(semanticAvailable);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  // Vertical offset from the screen top to just below the native search field.
+  // The results list underlaps the opaque header and `contentInsetAdjustmentBehavior`
+  // "automatic" pushes its content down by exactly the header+search-field height —
+  // we read that measured inset from scroll events and pin the scope bar there.
+  // Until the first scroll, fall back to safe-area + search-field height.
+  const [belowHeader, setBelowHeader] = useState(insets.top + SEARCH_FIELD_H);
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [tasks, setTasks] = useState<CardRow[]>([]);
   const [hits, setHits] = useState<SemanticHit[]>([]);
@@ -45,7 +56,6 @@ export default function SearchScreen() {
   const [unindexed, setUnindexed] = useState<UnindexedNote[]>([]);
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
-  const insets = useSafeAreaInsets();
   // Monotonic token so a slow semantic query can't overwrite a newer one.
   const semanticSeq = useRef(0);
 
@@ -291,6 +301,13 @@ export default function SearchScreen() {
     keyboardShouldPersistTaps: "handled" as const,
     keyboardDismissMode: "on-drag" as const,
     ListHeaderComponent: <IndexingBar />,
+    // Read the effective top content inset iOS applies to clear the native
+    // search field, and pin the scope bar to that exact offset (see below).
+    scrollEventThrottle: 16,
+    onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const top = e.nativeEvent.contentInset?.top ?? 0;
+      if (top > 0 && top !== belowHeader) setBelowHeader(top);
+    },
   };
 
   return (
@@ -342,27 +359,21 @@ export default function SearchScreen() {
         }}
       />
 
-      {/* Type filter, in-flow directly below the native search field — Apple
-          Music-style scope bar. Renders as the first element under the opaque
-          header (same layout as the project screen's Overview|Notes|Board
-          segment), with the results list scrolling beneath it. Content type
-          only — the ranking mode is the header ✨. */}
-      <View style={styles.topScope}>
-        <GlassBar style={[styles.scopeBar, !glassActive && styles.scopeBarFallback]}>
-          {typeFilters.map((f) => (
-            <Pressable
-              key={f}
-              onPress={() => setType(f)}
-              style={[styles.scopeBtn, typeFilter === f && styles.scopeBtnActive]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: typeFilter === f }}
-            >
-              <Text style={[styles.scopeText, typeFilter === f && styles.scopeTextActive]}>
-                {typeLabel(f)}
-              </Text>
-            </Pressable>
-          ))}
-        </GlassBar>
+      {/* Type filter, pinned directly below the native search field — Apple
+          Music-style scope bar (a native UISegmentedControl). Absolutely
+          positioned at `belowHeader` (the measured height the list's automatic
+          content inset uses to clear the search field), so results scroll
+          beneath it. Content type only — the ranking mode is the header ✨. */}
+      <View style={[styles.topScope, { top: belowHeader }]}>
+        <SegmentedControl
+          values={typeFilters.map(typeLabel)}
+          selectedIndex={typeFilters.indexOf(typeFilter)}
+          onChange={(e) => setType(typeFilters[e.nativeEvent.selectedSegmentIndex] ?? "all")}
+          tintColor={t.accent}
+          backgroundColor={t.surface2}
+          fontStyle={{ color: t.textSecondary, fontSize: 15, fontWeight: "600" }}
+          activeFontStyle={{ color: t.accentFg, fontSize: 15, fontWeight: "600" }}
+        />
       </View>
 
       <View style={styles.results}>
@@ -427,7 +438,7 @@ export default function SearchScreen() {
             // state). Pinned so it holds position when the keyboard is open.
             <View
               pointerEvents="none"
-              style={[styles.hintOverlay, { paddingTop: insets.top }]}
+              style={[styles.hintOverlay, { paddingTop: belowHeader + SCOPE_BAR_H + SCOPE_GAP }]}
             >
               <View style={styles.hintBias} />
               <Text style={styles.hint}>{emptyHint.primary}</Text>
@@ -441,7 +452,7 @@ export default function SearchScreen() {
               title={emptyHint.primary}
               subtitle={emptyHint.secondary}
               pinned
-              insetTop={insets.top}
+              insetTop={belowHeader + SCOPE_BAR_H + SCOPE_GAP}
             />
           )
         ) : null}
@@ -452,31 +463,22 @@ export default function SearchScreen() {
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    // Results list region, below the in-flow scope bar.
+    // Results list region (underlaps the opaque header; automatic content inset
+    // clears the search field). The scope bar overlays its top edge.
     results: { flex: 1 },
-    // All|Notes|Tasks scope bar, in-flow below the native search field.
-    topScope: { marginHorizontal: 12, marginTop: 8 },
-    scopeBar: {
-      flexDirection: "row",
-      gap: 4,
-      padding: 4,
-      borderRadius: 12,
-      overflow: "hidden",
-    },
-    // Fallback (no Liquid Glass): give the bar a solid themed surface + border.
-    scopeBarFallback: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
-    scopeBtn: { flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: "center" },
-    scopeBtnActive: { backgroundColor: t.accent },
-    scopeText: { ...typeScale.control, color: t.textSecondary },
-    scopeTextActive: { color: t.accentFg },
+    // All|Notes|Tasks scope bar (native UISegmentedControl) — absolute, top is
+    // set inline to `belowHeader`. zIndex keeps it above the results list
+    // (which is later in the tree).
+    topScope: { position: "absolute", left: 12, right: 12, zIndex: 1 },
     // Header ✨ semantic toggle: bare icon, no background — iOS supplies its own
     // toggle chrome. Colour (accent vs tertiary) is the on/off signal.
     semBtn: { alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
-    // Bottom pad clears the tab bar + the native search field on iOS ≤26 (none
-    // on iOS 27, so drop that reservation) with a small buffer. The top is plain
-    // padding — the in-flow scope bar already reserves that space.
+    // Top pad clears the pinned scope bar; bottom pad clears the tab bar + the
+    // native search field on iOS ≤26 (none on iOS 27, so drop that reservation)
+    // with a small buffer.
     list: {
       padding: 12,
+      paddingTop: SCOPE_BAR_H + SCOPE_GAP,
       paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 12,
     },
     // Lets an empty list stay exactly the viewport height (no scroll) — the
