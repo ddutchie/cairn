@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, useColorScheme } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/build/react-navigation/elements";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { resolveSheetResult } from "@/lib/sheet-result";
+import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
 
 /**
  * Native formSheet route for picking a card's due date. Wraps the native
@@ -31,6 +31,13 @@ export default function DueDatePickerRoute() {
     if (resultKey) resolveSheetResult(resultKey, iso);
     router.back();
   };
+
+  // Dismissed without choosing (swipe-down)? Drop the caller's pending handler.
+  useEffect(() => {
+    return () => {
+      if (resultKey) discardSheetResult(resultKey);
+    };
+  }, [resultKey]);
 
   return (
     <View style={[styles.container, { backgroundColor: t.background }]}>

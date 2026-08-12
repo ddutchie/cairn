@@ -120,7 +120,7 @@ export default function SearchScreen() {
   const setType = (type: TypeFilter) => {
     if (type !== typeFilter) haptics.selection();
     setTypeFilter(type);
-    if (usingNativeScope) setNativeSearchScopeIndex(typeFilters.indexOf(type));
+    if (usingNativeScope) setNativeSearchScopeIndex(typeFilters.indexOf(type)).catch(() => {});
     if (debounceRef.current) clearTimeout(debounceRef.current);
     run(query, semanticMode, type);
   };
@@ -171,13 +171,20 @@ export default function SearchScreen() {
       // Retry until the scope bar attaches: the search controller (and the
       // search bar's focus state, which gates scope visibility) can land a few
       // frames late on a cold mount / tab switch. ~1s of attempts is plenty.
+      // A rejected apply() counts as a failed attempt too — otherwise the
+      // interval would spin forever on a permanently-broken native binding.
       let tries = 0;
-      const timer = setInterval(() => {
-        void apply().then((ok) => {
-          if (ok || ++tries >= 6) clearInterval(timer);
-        });
-      }, 150);
-      void apply();
+      const attempt = () => {
+        void apply()
+          .then((ok) => {
+            if (ok || ++tries >= 6) clearInterval(timer);
+          })
+          .catch(() => {
+            if (++tries >= 6) clearInterval(timer);
+          });
+      };
+      const timer = setInterval(attempt, 150);
+      attempt();
       return () => {
         clearInterval(timer);
         sub?.remove();

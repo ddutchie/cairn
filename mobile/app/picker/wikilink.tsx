@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, TextInput, FlatList, StyleSheet } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { FileText, Search } from "lucide-react-native";
 import { listNotes, searchNotes, type NoteRow } from "@/db/queries";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { resolveSheetResult } from "@/lib/sheet-result";
+import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
 
 /**
  * Native formSheet note picker for inserting a `[[Wikilink]]`. Searches note
@@ -27,6 +27,13 @@ export default function WikilinkPickerRoute() {
     if (resultKey) resolveSheetResult(resultKey, title);
     router.back();
   };
+
+  // Dismissed without picking (swipe-down)? Drop the caller's pending handler.
+  useEffect(() => {
+    return () => {
+      if (resultKey) discardSheetResult(resultKey);
+    };
+  }, [resultKey]);
 
   return (
     <>

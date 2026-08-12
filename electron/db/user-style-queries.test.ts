@@ -53,19 +53,16 @@ describe("user-style queries", () => {
   });
 
   it("v42 seeds a pre-existing style into sync_pending so backfill isn't required", () => {
-    // Simulate a writing style that existed BEFORE the v42 sync migration: the
-    // row is present but nothing is staged (its capture trigger didn't exist
-    // yet, and backfill already ran, so it would otherwise never reach the
-    // oplog). Migration v42 handles this by seeding sync_pending.
+    // The v42 migration is what stages pre-existing rows into sync_pending, so
+    // rewind the schema to v41 and let the PRODUCTION migration re-run — no
+    // hand-copied SQL. saveUserStyle is written through the (current) v42
+    // insert trigger, which also stages; clear that so the only thing left to
+    // stage the row is the migration's seed.
     const db = makeDb();
+    db.pragma("user_version = 41");
     saveUserStyle(db, { persona: { name: "A" }, fullGuide: "g", cheatsheet: "c", source: "guided" });
-    db.prepare("DELETE FROM sync_pending").run(); // simulate pre-trigger world
-    db.prepare(`
-      INSERT INTO sync_pending (entity, entity_id, op)
-      SELECT 'user_style', id, 'put' FROM user_style
-      WHERE deleted_at IS NULL
-        AND NOT EXISTS (SELECT 1 FROM sync_pending WHERE entity = 'user_style' AND entity_id = user_style.id)
-    `).run();
+    db.prepare("DELETE FROM sync_pending").run();
+    applySchema(db); // re-runs v42's production migration (idempotent)
     const pending = db.prepare("SELECT entity, entity_id, op FROM sync_pending WHERE entity = 'user_style'").all();
     expect(pending).toEqual([{ entity: "user_style", entity_id: "global", op: "put" }]);
     db.close();

@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, FlatList, StyleSheet } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Check } from "lucide-react-native";
 import { listAllTags, type TagRow } from "@/db/queries";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
-import { resolveSheetResult } from "@/lib/sheet-result";
+import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
 
 /**
  * Native formSheet route for selecting a note/card's tags. Presents every
@@ -29,6 +29,14 @@ export default function TagPickerRoute() {
 
   const allTags: TagRow[] = useMemo(() => listAllTags(), []);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialIds));
+
+  // Dismissed without Done (swipe-down)? Drop the caller's pending handler so
+  // it isn't left registered after this route unmounts.
+  useEffect(() => {
+    return () => {
+      if (resultKey) discardSheetResult(resultKey);
+    };
+  }, [resultKey]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {

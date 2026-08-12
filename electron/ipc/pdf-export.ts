@@ -65,9 +65,9 @@ export function registerPdfExportHandler(ctx: DbContext): void {
             headerTemplate: buildPdfHeaderTemplate(),
             footerTemplate: buildPdfFooterTemplate(title, theme),
             // Explicit margins so the footer has room. Values in inches:
-            // ~0.79in ≈ 2cm sides/top, ~0.59in ≈ 1.5cm bottom for the footer.
-            // (Electron ≥42 dropped marginType — providing custom values is
-            // the custom-margin mode.)
+            // ~0.79in ≈ 2cm top, ~0.59in ≈ 1.5cm bottom, ~0.87in ≈ 2.2cm sides.
+            // (Electron 21 removed the old marginsType enum — the object form
+            // below is the custom-margin mode.)
             margins: { top: 0.79, bottom: 0.59, left: 0.87, right: 0.87 },
           });
 

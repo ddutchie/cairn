@@ -1,11 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { View, Text, Pressable, FlatList, StyleSheet } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Check, Folder, FolderOpen } from "lucide-react-native";
 import { listProjects, listFolders } from "@/db/queries";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { ProjectIcon } from "@/components/ProjectIcon";
-import { resolveSheetResult } from "@/lib/sheet-result";
+import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
 
 /** One selectable option in the picker. */
 export interface PickerOption {
@@ -65,6 +65,13 @@ export default function NotePickerRoute() {
     if (params.resultKey) resolveSheetResult(params.resultKey, value);
     router.back();
   };
+
+  // Dismissed without picking (swipe-down)? Drop the caller's pending handler.
+  useEffect(() => {
+    return () => {
+      if (params.resultKey) discardSheetResult(params.resultKey);
+    };
+  }, [params.resultKey]);
 
   return (
     <>

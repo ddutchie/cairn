@@ -62,16 +62,30 @@ public class SearchScopeModule: Module {
     // different screen's search bar never inherits stale titles).
     AsyncFunction("clear") { () -> Void in
       await MainActor.run {
-        self.activeSearchController()?.searchBar.scopeButtonTitles = nil
+        guard let sc = self.activeSearchController() else { return }
+        sc.searchBar.scopeButtonTitles = nil
+        // Unwire the delegate proxy and hand the search bar back to
+        // react-native-screens' original delegate.
+        if let proxy = self.proxy, sc.searchBar.delegate === proxy {
+          sc.searchBar.delegate = proxy.originalDelegate
+        }
         self.proxy = nil
       }
     }
 
     // Synchronous probe: is there an active search controller right now? Lets
     // the JS layer decide between the native scope bar and its fallback without
-    // waiting on a promise. Read-only — safe to run off-main.
+    // waiting on a promise. All UIApplication / UIWindowScene / UINavigationItem
+    // access must happen on the main thread — hop over synchronously (the sync
+    // Function runs on the JS thread, so this can't deadlock).
     Function("isSearchActive") { () -> Bool in
-      self.activeSearchController() != nil
+      var found = false
+      if Thread.isMainThread {
+        found = self.activeSearchController() != nil
+      } else {
+        DispatchQueue.main.sync { found = self.activeSearchController() != nil }
+      }
+      return found
     }
   }
 
@@ -125,7 +139,7 @@ public class SearchScopeModule: Module {
     if let current = sc.searchBar.delegate, current is SearchBarDelegateProxy {
       return
     }
-    let proxy = SearchBarDelegateProxy(original: sc.searchBar.delegate) { [weak self] index in
+    let proxy = SearchBarDelegateProxy(originalDelegate: sc.searchBar.delegate) { [weak self] index in
       self?.sendEvent("scopeSelected", ["index": index])
     }
     sc.searchBar.delegate = proxy
@@ -137,11 +151,11 @@ public class SearchScopeModule: Module {
 /// (react-native-screens' `RNSSearchBar`) via Objective-C message forwarding,
 /// while handling `selectedScopeButtonIndexDidChange` itself to emit JS events.
 private final class SearchBarDelegateProxy: NSObject, UISearchBarDelegate {
-  private let original: UISearchBarDelegate?
+  let originalDelegate: UISearchBarDelegate?
   private let onScopeChange: (Int) -> Void
 
-  init(original: UISearchBarDelegate?, onScopeChange: @escaping (Int) -> Void) {
-    self.original = original
+  init(originalDelegate: UISearchBarDelegate?, onScopeChange: @escaping (Int) -> Void) {
+    self.originalDelegate = originalDelegate
     self.onScopeChange = onScopeChange
     super.init()
   }
@@ -150,7 +164,7 @@ private final class SearchBarDelegateProxy: NSObject, UISearchBarDelegate {
     if aSelector == #selector(UISearchBarDelegate.searchBar(_:selectedScopeButtonIndexDidChange:)) {
       return true
     }
-    return original?.responds(to: aSelector) ?? false
+    return originalDelegate?.responds(to: aSelector) ?? super.responds(to: aSelector)
   }
 
   override func forwardingTarget(for aSelector: Selector!) -> Any? {
@@ -158,7 +172,7 @@ private final class SearchBarDelegateProxy: NSObject, UISearchBarDelegate {
     if aSelector == #selector(UISearchBarDelegate.searchBar(_:selectedScopeButtonIndexDidChange:)) {
       return nil
     }
-    return original
+    return originalDelegate
   }
 
   func searchBar(_ searchBar: UISearchBar, selectedScopeButtonIndexDidChange selectedScope: Int) {

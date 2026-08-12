@@ -36,3 +36,12 @@ export function resolveSheetResult(key: string, result: unknown): void {
     handler(result);
   }
 }
+
+/**
+ * Remove the handler for `key` WITHOUT invoking it. Routes call this in their
+ * unmount cleanup so a sheet dismissed by swipe-down (never resolving) doesn't
+ * leave the caller's callback registered forever.
+ */
+export function discardSheetResult(key: string): void {
+  handlers.delete(key);
+}
