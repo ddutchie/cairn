@@ -8,21 +8,23 @@ import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { IndexingBar } from "@/components/IndexingBar";
 import { GlassBar, glassActive } from "@/components/GlassBar";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { Sparkles, Info } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
+import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, type as typeScale, type Theme } from "@/theme";
 
 type TypeFilter = "all" | "notes" | "tasks";
 
-// Approx height of the native iOS 26 tab-bar search field (used to lift the
-// filter bar clear of it, both docked-on-keyboard and resting above the tab bar).
+// Approx height of the native iOS 26 tab-bar search field — the results list
+// clears it at the bottom so the last row isn't hidden behind it.
 const SEARCH_FIELD_H = 52;
-// Breathing room between the filter bar and the search field.
+// The All|Notes|Tasks scope bar is a screen-pinned overlay directly below the
+// native search field (Apple-Music-style). These clear the results list and
+// empty state by its height + a breathing gap.
+const SCOPE_BAR_H = 40;
 const SCOPE_GAP = 8;
 
 /**
@@ -267,13 +269,14 @@ export default function SearchScreen() {
   })();
 
   // Shared list scrolling behaviour. `contentInsetAdjustmentBehavior="automatic"`
-  // makes the list clear the native search header (top). The bottom pad in
-  // `styles.list` already clears the keyboard/scope-bar/tab-bar area, so we do
-  // NOT set `automaticallyAdjustKeyboardInsets` — combined with the automatic
-  // top inset it miscalculates the content offset when the keyboard opens and
-  // scrolls the first result up under the header. IndexingBar rides as the list
-  // header so the FlatList stays the screen's first (and only) scroll view —
-  // required for iOS to apply the automatic search-header inset.
+  // makes the list clear the native search header (top). The top pad in
+  // `styles.list` clears the pinned All|Notes|Tasks scope bar, and the bottom
+  // pad clears the tab-bar/search-field/keyboard area, so we do NOT set
+  // `automaticallyAdjustKeyboardInsets` — combined with the automatic top inset
+  // it miscalculates the content offset when the keyboard opens and scrolls the
+  // first result up under the header. IndexingBar rides as the list header so
+  // the FlatList stays the screen's first (and only) scroll view — required for
+  // iOS to apply the automatic search-header inset.
   //
   // The empty/hint state is NO LONGER a ListEmptyComponent — it's a pinned
   // absolute-overlay SIBLING of the list (see below). Rendering it inside the
@@ -344,91 +347,93 @@ export default function SearchScreen() {
         }}
       />
 
-      {semanticMode ? (
-        <FlatList
-          data={hits}
-          keyExtractor={(h) => `${h.kind ?? "note"}:${h.noteId}`}
-          {...listProps}
-          refreshControl={
-            <RefreshControl refreshing={reindexing} onRefresh={forceReindex} tintColor={t.textTertiary} />
-          }
-          renderItem={({ item }) => (
-            <ResultRow
-              title={item.title}
-              preview={item.kind === "card" ? `Task · ${item.sectionTitle}` : item.sectionTitle}
-              score={item.rank}
-              accentColor={item.kind === "card" ? t.success : t.info}
-              onPress={() =>
-                openResult(
-                  item.kind === "card"
-                    ? { pathname: "/card/[id]", params: { id: item.noteId, back: "Search" } }
-                    : { pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } },
-                )
-              }
-            />
-          )}
-        />
-      ) : (
-        <FlatList
-          data={keywordResults}
-          keyExtractor={(r) => `${r.kind}:${r.id}`}
-          {...listProps}
-          renderItem={({ item }) => (
-            <ResultRow
-              title={item.title}
-              preview={item.kind === "card" ? `Task · ${item.preview}` : item.preview}
-              accentColor={item.kind === "card" ? t.success : t.info}
-              dotColor={item.kind === "card" ? PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? undefined : undefined}
-              onPress={() =>
-                openResult(
-                  item.kind === "card"
-                    ? { pathname: "/card/[id]", params: { id: item.id, back: "Search" } }
-                    : { pathname: "/note/[id]", params: { id: item.id, back: "Search" } },
-                )
-              }
-            />
-          )}
-        />
-      )}
-
-      {/* Empty state as a screen-pinned overlay SIBLING of the list (not a
-          ListEmptyComponent). Decoupled from the list's keyboard/content inset,
-          so it never jumps when the keyboard opens — and it shares Chat's exact
-          anchoring system (pinned + default 25% top bias). `insetTop` clears the
-          native search header; `pointerEvents="none"` (inside EmptyState) lets
-          scroll / pull-to-reindex gestures pass through to the list beneath.
-          Only shown when the list is empty. */}
-      {isListEmpty ? (
-        hasQuery ? (
-          // Active search with no matches → light top-anchored text hint (no
-          // branded splash — that's the resting state, not a "found nothing"
-          // state). Pinned so it holds position when the keyboard is open.
-          <View
-            pointerEvents="none"
-            style={[styles.hintOverlay, { paddingTop: insets.top }]}
-          >
-            <View style={styles.hintBias} />
-            <Text style={styles.hint}>{emptyHint.primary}</Text>
-            {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
-          </View>
+      <View style={styles.results}>
+        {semanticMode ? (
+          <FlatList
+            data={hits}
+            keyExtractor={(h) => `${h.kind ?? "note"}:${h.noteId}`}
+            {...listProps}
+            refreshControl={
+              <RefreshControl refreshing={reindexing} onRefresh={forceReindex} tintColor={t.textTertiary} />
+            }
+            renderItem={({ item }) => (
+              <ResultRow
+                title={item.title}
+                preview={item.kind === "card" ? `Task · ${item.sectionTitle}` : item.sectionTitle}
+                score={item.rank}
+                accentColor={item.kind === "card" ? t.success : t.info}
+                onPress={() =>
+                  openResult(
+                    item.kind === "card"
+                      ? { pathname: "/card/[id]", params: { id: item.noteId, back: "Search" } }
+                      : { pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } },
+                  )
+                }
+              />
+            )}
+          />
         ) : (
-          // Resting (no query) → branded Cairn empty state. The "why not all
-          // indexed?" affordance lives in the header (see headerRight) so it's
-          // always visible and never hides behind the list or tab bar.
-          <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} pinned insetTop={insets.top} />
-        )
-      ) : null}
+          <FlatList
+            data={keywordResults}
+            keyExtractor={(r) => `${r.kind}:${r.id}`}
+            {...listProps}
+            renderItem={({ item }) => (
+              <ResultRow
+                title={item.title}
+                preview={item.kind === "card" ? `Task · ${item.preview}` : item.preview}
+                accentColor={item.kind === "card" ? t.success : t.info}
+                dotColor={item.kind === "card" ? PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? undefined : undefined}
+                onPress={() =>
+                  openResult(
+                    item.kind === "card"
+                      ? { pathname: "/card/[id]", params: { id: item.id, back: "Search" } }
+                      : { pathname: "/note/[id]", params: { id: item.id, back: "Search" } },
+                  )
+                }
+              />
+            )}
+          />
+        )}
 
-      {/* Type filter, pinned to the bottom. Positioning mirrors the old scope
-          bar (docks above the tab-bar search field on iOS ≤26 / above the tab
-          bar on iOS 27). Content type only — the ranking mode is the header ✨. */}
-      <KeyboardStickyView
-        offset={{
-          closed: hasTabBarSearchField ? -insets.bottom : -tabBarClosedLift(insets.bottom),
-          opened: hasTabBarSearchField ? -(SEARCH_FIELD_H + SCOPE_GAP) : -KEYBOARD_OPEN_GAP,
-        }}
-        style={styles.scopeOverlay}
-      >
+        {/* Empty state as a screen-pinned overlay SIBLING of the list (not a
+            ListEmptyComponent). Decoupled from the list's keyboard/content inset,
+            so it never jumps when the keyboard opens — and it shares Chat's exact
+            anchoring system (pinned + default 25% top bias). `insetTop` clears
+            the native search header + the pinned scope bar; `pointerEvents="none"`
+            (inside EmptyState) lets scroll / pull-to-reindex gestures pass
+            through to the list beneath. Only shown when the list is empty. */}
+        {isListEmpty ? (
+          hasQuery ? (
+            // Active search with no matches → light top-anchored text hint (no
+            // branded splash — that's the resting state, not a "found nothing"
+            // state). Pinned so it holds position when the keyboard is open.
+            <View
+              pointerEvents="none"
+              style={[styles.hintOverlay, { paddingTop: insets.top + SCOPE_BAR_H + SCOPE_GAP }]}
+            >
+              <View style={styles.hintBias} />
+              <Text style={styles.hint}>{emptyHint.primary}</Text>
+              {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
+            </View>
+          ) : (
+            // Resting (no query) → branded Cairn empty state. The "why not all
+            // indexed?" affordance lives in the header (see headerRight) so it's
+            // always visible and never hides behind the list or tab bar.
+            <EmptyState
+              title={emptyHint.primary}
+              subtitle={emptyHint.secondary}
+              pinned
+              insetTop={insets.top + SCOPE_BAR_H + SCOPE_GAP}
+            />
+          )
+        ) : null}
+      </View>
+
+      {/* Type filter, pinned directly below the native search field — Apple
+          Music-style scope bar. Screen-pinned overlay (same anchoring as the
+          empty state, `paddingTop` clears the search header) so results scroll
+          under it; content type only — the ranking mode is the header ✨. */}
+      <View style={[styles.topScope, { paddingTop: insets.top }]}>
         <GlassBar style={[styles.scopeBar, !glassActive && styles.scopeBarFallback]}>
           {typeFilters.map((f) => (
             <Pressable
@@ -444,14 +449,18 @@ export default function SearchScreen() {
             </Pressable>
           ))}
         </GlassBar>
-      </KeyboardStickyView>
+      </View>
     </TabScreen>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    scopeOverlay: { position: "absolute", left: 12, right: 12, bottom: 0 },
+    // Results list region. In flow so the pinned scope bar overlays only its
+    // top edge; the empty-state overlay anchors to this container.
+    results: { flex: 1 },
+    // All|Notes|Tasks scope bar, pinned below the native search field.
+    topScope: { position: "absolute", top: 0, left: 12, right: 12 },
     scopeBar: {
       flexDirection: "row",
       gap: 4,
@@ -468,15 +477,22 @@ function makeStyles(t: Theme) {
     // Header ✨ semantic toggle: bare icon, no background — iOS supplies its own
     // toggle chrome. Colour (accent vs tertiary) is the on/off signal.
     semBtn: { alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
-    // Bottom pad clears the pinned scope bar + tab bar (+ the native search
-    // field on iOS ≤26; none on iOS 27, so drop that reservation).
-    list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 48 },
+    // Top pad clears the pinned All|Notes|Tasks scope bar (the automatic top
+    // inset already clears the native search header). Bottom pad clears the tab
+    // bar + the native search field on iOS ≤26 (none on iOS 27, so drop that
+    // reservation) with a small buffer.
+    list: {
+      padding: 12,
+      paddingTop: SCOPE_BAR_H + SCOPE_GAP,
+      paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 12,
+    },
     // Lets an empty list stay exactly the viewport height (no scroll) — the
     // pinned empty-state overlay sits on top of it as a sibling.
     listGrow: { flexGrow: 1 },
     // Active-search "no matches" hint — a screen-pinned overlay sibling of the
     // list (matches the branded EmptyState's positioning) so it doesn't jump
-    // when the keyboard opens. Icon-less; just the top-biased text.
+    // when the keyboard opens. Icon-less; just the top-biased text. paddingTop
+    // clears the search header + the pinned scope bar.
     hintOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", paddingHorizontal: 32 },
     // Push the hint text down to the same ~25% position as the branded state.
     hintBias: { height: "25%" },
