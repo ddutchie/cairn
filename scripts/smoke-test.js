@@ -46,10 +46,15 @@ check("dist-electron/main.js exists", () => {
 });
 
 // ── 2. better-sqlite3 loads and opens an in-memory database ──────────────────
-// In CI the Node ABI matches. Locally the module may be built for Electron's
-// ABI — skip the load check but still verify the .node file is present.
+// better-sqlite3 v13+ ships N-API prebuilds in-package at
+// node_modules/better-sqlite3/prebuilds/<platform>-<arch>.node (ABI-stable
+// across Electron, pkg and Node). The old post-install build output at
+// build/Release/better_sqlite3.node no longer exists for v13+. In CI the Node
+// ABI matches, so the load check below is the real verification; the file
+// presence check is a fast fail with a clearer message when the binary is
+// genuinely missing.
 check("better-sqlite3 — .node binary exists", () => {
-  const p = path.join(root, "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node");
+  const p = path.join(root, "node_modules", "better-sqlite3", "prebuilds", `${process.platform}-${process.arch}.node`);
   if (!fs.existsSync(p)) throw new Error(`Not found: ${p}`);
 });
 
