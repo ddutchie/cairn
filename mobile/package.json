@@ -13,7 +13,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "type-check": "tsc --noEmit",
+    "type-check": "node node_modules/@typescript/native/bin/tsc --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -67,10 +67,13 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "babel-plugin-module-resolver": "^5.0.2",
     "d3": "^7.9.0",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.1",
+    "eslint-import-resolver-typescript": "^3.10.1",
     "typescript": "~6.0.3"
   },
   "expo": {
