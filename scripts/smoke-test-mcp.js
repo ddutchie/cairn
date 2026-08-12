@@ -29,7 +29,9 @@ const root = path.resolve(__dirname, "..");
 function platformBinary() {
   // Release builds produce arch-suffixed binaries in dist-mcp/ (afterPack
   // canonicalises only inside the packaged app), so resolve by process.arch.
-  if (process.platform === "win32") return path.join(root, "dist-mcp", `cairn-mcp-win-${process.arch}.exe`);
+  // Windows ships x64 ONLY — pkg can't fabricate a win-arm64 binary on an x64
+  // host, so the win MCP binary is the canonical single-arch cairn-mcp.exe.
+  if (process.platform === "win32") return path.join(root, "dist-mcp", "cairn-mcp.exe");
   if (process.platform === "linux") return path.join(root, "dist-mcp", `cairn-mcp-linux-${process.arch}`);
   return path.join(root, "dist-mcp", process.arch === "x64" ? "cairn-mcp-x64" : "cairn-mcp");
 }

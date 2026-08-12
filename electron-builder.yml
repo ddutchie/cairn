@@ -6,9 +6,10 @@ directories:
   output: dist-app
   buildResources: build-resources
 
-# Strip the non-target arch's native binaries from each per-arch pack (mac/win
-# build arch: [arm64, x64]; without this every app ships BOTH arches' natives —
-# incl. the ~84 MB other-arch MCP binary — as dead weight). See scripts/after-pack.js.
+# Strip the non-target arch's native binaries from each per-arch pack (mac/linux
+# build arch: [arm64, x64]; Windows is x64-only — pkg can't fabricate win-arm64
+# on an x64 host). Without this every app ships BOTH arches' natives — incl. the
+# ~84 MB other-arch MCP binary — as dead weight. See scripts/after-pack.js.
 afterPack: scripts/after-pack.js
 
 files:
@@ -21,8 +22,6 @@ files:
   - dist-mcp/cairn-mcp.exe
   - dist-mcp/cairn-mcp-linux
   - dist-mcp/cairn-mcp-x64
-  - dist-mcp/cairn-mcp-win-x64.exe
-  - dist-mcp/cairn-mcp-win-arm64.exe
   - dist-mcp/cairn-mcp-linux-x64
   - dist-mcp/cairn-mcp-linux-arm64
   # Arch-matched better-sqlite3 sidecars staged next to the MCP binary by
@@ -73,8 +72,6 @@ asarUnpack:
   - dist-mcp/cairn-mcp.exe
   - dist-mcp/cairn-mcp-linux
   - dist-mcp/cairn-mcp-x64
-  - dist-mcp/cairn-mcp-win-x64.exe
-  - dist-mcp/cairn-mcp-win-arm64.exe
   - dist-mcp/cairn-mcp-linux-x64
   - dist-mcp/cairn-mcp-linux-arm64
   - dist-mcp/better_sqlite3-arm64.node
@@ -112,7 +109,7 @@ dmg:
 win:
   target:
     - target: nsis
-      arch: [x64, arm64]
+      arch: [x64]
   icon: build-resources/icon.ico
 
 nsis:

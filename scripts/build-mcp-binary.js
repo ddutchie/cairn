@@ -51,14 +51,12 @@ if (wantMac || (!wantWin && !wantLinux && platform === "darwin")) {
   }
 }
 if (wantWin || (!wantMac && !wantWin && !wantLinux && platform === "win32")) {
-  if (wantWin) {
-    // Release: both arches, arch-suffixed (afterPack canonicalises + strips).
-    targets.push({ id: "node24-win-x64",   out: "cairn-mcp-win-x64.exe",   arch: "x64" });
-    targets.push({ id: "node24-win-arm64", out: "cairn-mcp-win-arm64.exe", arch: "arm64" });
-  } else {
-    const arch = process.arch === "x64" ? "x64" : "arm64";
-    targets.push({ id: `node24-win-${arch}`, out: "cairn-mcp.exe", arch });
-  }
+  // Windows ships x64 ONLY. pkg cannot fabricate a win-arm64 binary on an x64
+  // Windows host (it must execute the target Node binary to produce bytecode,
+  // and x64 Windows can't run an arm64 exe), so an arm64 MCP binary has never
+  // shipped for Windows — the electron-builder win target stays x64 to match.
+  const arch = process.arch === "x64" ? "x64" : "arm64";
+  targets.push({ id: `node24-win-${arch}`, out: "cairn-mcp.exe", arch });
 }
 if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux")) {
   if (wantLinux) {
