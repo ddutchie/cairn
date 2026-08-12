@@ -46,21 +46,17 @@ export default function TagPickerRoute() {
 
   return (
     <View style={[styles.container, { backgroundColor: t.background }]}>
-      <Stack.Screen
-        options={{
-          title: "Tags",
-          headerLeft: () => (
-            <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel">
-              <Text style={styles.cancel}>Cancel</Text>
-            </Pressable>
-          ),
-          headerRight: () => (
-            <Pressable onPress={done} hitSlop={12} accessibilityRole="button" accessibilityLabel="Done">
-              <Text style={styles.done}>Done</Text>
-            </Pressable>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ title: "Tags" }} />
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
+          Cancel
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button accessibilityLabel="Done" onPress={done}>
+          Done
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
 
       {allTags.length === 0 ? (
         <Text style={styles.empty}>No tags in this workspace yet.</Text>
@@ -69,6 +65,7 @@ export default function TagPickerRoute() {
           data={allTags}
           keyExtractor={(tag) => tag.id}
           style={styles.list}
+          contentInsetAdjustmentBehavior="automatic"
           renderItem={({ item }) => {
             const on = selected.has(item.id);
             return (
@@ -105,7 +102,5 @@ function makeStyles(t: Theme) {
     dot: { width: 12, height: 12, borderRadius: 6 },
     name: { flex: 1, ...typeScale.body, color: t.textPrimary },
     empty: { color: t.textTertiary, textAlign: "center", padding: 28, ...typeScale.caption },
-    cancel: { ...typeScale.subtitle, fontWeight: "400", color: t.textTertiary },
-    done: { ...typeScale.subtitle, color: t.accent },
   });
 }

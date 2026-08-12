@@ -28,36 +28,34 @@ export default function DueDatePickerRoute() {
 
   return (
     <View style={[styles.container, { backgroundColor: t.background }]}>
-      <Stack.Screen
-        options={{
-          title: "Due date",
-          headerLeft: () => (
-            <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel">
-              <Text style={styles.cancel}>Cancel</Text>
-            </Pressable>
-          ),
-          headerRight: () => (
-            <Pressable onPress={() => done(value.toISOString())} hitSlop={12} accessibilityRole="button" accessibilityLabel="Done">
-              <Text style={styles.done}>Done</Text>
-            </Pressable>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ title: "Due date" }} />
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
+          Cancel
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button accessibilityLabel="Done" onPress={() => done(value.toISOString())}>
+          Done
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
 
-      <DateTimePicker
-        value={value}
-        mode="date"
-        display="spinner"
-        themeVariant={scheme === "dark" ? "dark" : "light"}
-        onChange={(_event, date) => {
-          if (date) setValue(date);
-        }}
-        style={styles.picker}
-      />
+      <View style={styles.body}>
+        <DateTimePicker
+          value={value}
+          mode="date"
+          display="spinner"
+          themeVariant={scheme === "dark" ? "dark" : "light"}
+          onChange={(_event, date) => {
+            if (date) setValue(date);
+          }}
+          style={styles.picker}
+        />
 
-      <Pressable style={styles.clear} onPress={() => done(null)}>
-        <Text style={styles.clearText}>Clear due date</Text>
-      </Pressable>
+        <Pressable style={styles.clear} onPress={() => done(null)}>
+          <Text style={styles.clearText}>Clear due date</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -65,10 +63,10 @@ export default function DueDatePickerRoute() {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1 },
-    picker: { alignSelf: "center", marginTop: 8 },
-    clear: { alignItems: "center", paddingVertical: 12, marginHorizontal: 18, marginTop: 4 },
+    // Clear the opaque sheet header + add breathing room above the spinner.
+    body: { paddingTop: 28 },
+    picker: { alignSelf: "center" },
+    clear: { alignItems: "center", paddingVertical: 14, marginHorizontal: 18, marginTop: 8 },
     clearText: { ...typeScale.body, fontWeight: "500", color: t.danger },
-    cancel: { ...typeScale.subtitle, fontWeight: "400", color: t.textTertiary },
-    done: { ...typeScale.subtitle, color: t.accent },
   });
 }

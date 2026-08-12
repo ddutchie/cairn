@@ -68,16 +68,12 @@ export default function NotePickerRoute() {
 
   return (
     <View style={[styles.container, { backgroundColor: t.background }]}>
-      <Stack.Screen
-        options={{
-          title: params.title || "Choose",
-          headerLeft: () => (
-            <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel">
-              <Text style={styles.cancel}>Cancel</Text>
-            </Pressable>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ title: params.title || "Choose" }} />
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
+          Cancel
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
 
       {options.length === 0 ? (
         <Text style={styles.empty}>{emptyText}</Text>
@@ -86,6 +82,7 @@ export default function NotePickerRoute() {
           data={options}
           keyExtractor={(o) => o.value}
           style={styles.list}
+          contentInsetAdjustmentBehavior="automatic"
           renderItem={({ item }) => {
             const on = item.value === params.currentValue;
             return (
@@ -137,6 +134,5 @@ function makeStyles(t: Theme) {
     iconSlot: { width: 16 },
     name: { flex: 1, ...typeScale.body, color: t.textPrimary },
     empty: { color: t.textTertiary, textAlign: "center", padding: 28, ...typeScale.caption },
-    cancel: { ...typeScale.subtitle, fontWeight: "400", color: t.textTertiary },
   });
 }

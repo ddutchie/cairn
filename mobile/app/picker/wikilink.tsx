@@ -30,16 +30,12 @@ export default function WikilinkPickerRoute() {
 
   return (
     <View style={[styles.container, { backgroundColor: t.background }]}>
-      <Stack.Screen
-        options={{
-          title: "Link a note",
-          headerLeft: () => (
-            <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel">
-              <Text style={styles.cancel}>Cancel</Text>
-            </Pressable>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ title: "Link a note" }} />
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
+          Cancel
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
 
       <View style={styles.searchRow}>
         <Search size={15} color={t.textTertiary} />
@@ -62,6 +58,7 @@ export default function WikilinkPickerRoute() {
           data={results}
           keyExtractor={(n) => n.id}
           keyboardShouldPersistTaps="handled"
+          contentInsetAdjustmentBehavior="automatic"
           style={styles.list}
           renderItem={({ item }) => (
             <Pressable style={styles.row} onPress={() => pick(item.title || "Untitled")}>
@@ -105,6 +102,5 @@ function makeStyles(t: Theme) {
     },
     name: { flex: 1, ...typeScale.body, color: t.textPrimary },
     empty: { color: t.textTertiary, textAlign: "center", padding: 28, ...typeScale.caption },
-    cancel: { ...typeScale.subtitle, fontWeight: "400", color: t.textTertiary },
   });
 }

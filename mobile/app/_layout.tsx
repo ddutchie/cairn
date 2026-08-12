@@ -153,11 +153,13 @@ export default function RootLayout() {
                 <Stack.Screen name="settings/appearance" options={{ title: "Appearance", presentation: "modal" }} />
                 {/* Native iOS sheets for the contextual pickers (tags, move,
                     wikilink, due date) — UISheetPresentationController gives
-                    blur, drag-to-dismiss and detents for free. */}
-                <Stack.Screen name="picker/tags" options={{ title: "Tags", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
-                <Stack.Screen name="picker/note" options={{ title: "Choose", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
-                <Stack.Screen name="picker/wikilink" options={{ title: "Link a note", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
-                <Stack.Screen name="picker/due-date" options={{ title: "Due date", presentation: "formSheet", sheetAllowedDetents: [0.3, 0.6], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
+                    blur, drag-to-dismiss and detents for free. Expansion is
+                    grabber-only: auto-expanding when the list is scrolled to the
+                    edge made the content jump/disappear during the transition. */}
+                <Stack.Screen name="picker/tags" options={{ title: "Tags", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
+                <Stack.Screen name="picker/note" options={{ title: "Choose", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
+                <Stack.Screen name="picker/wikilink" options={{ title: "Link a note", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
+                <Stack.Screen name="picker/due-date" options={{ title: "Due date", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.7], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
               </Stack>
             </ToastProvider>
           </ThemeProvider>
