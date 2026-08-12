@@ -15,7 +15,7 @@ import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { isNativeSearchScopeAvailable, setNativeSearchScope, setNativeSearchScopeIndex, clearNativeSearchScope, subscribeNativeSearchScope } from "@modules/search-scope";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, type as typeScale, type Theme } from "@/theme";
+import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 type TypeFilter = "all" | "notes" | "tasks";
 
@@ -539,13 +539,14 @@ function makeStyles(t: Theme) {
     // Header ✨ semantic toggle: bare icon, no background — iOS supplies its own
     // toggle chrome. Colour (accent vs tertiary) is the on/off signal.
     semBtn: { alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
-    // Bottom pad clears the tab bar + the native search field on iOS ≤26 (none
-    // on iOS 27, so drop that reservation) with a small buffer. The top pad is
-    // applied inline (`paddingTop: 12 + scopeClearance`) so it's zero extra when
-    // the scope bar is native.
+    // Bottom pad clears the tab bar with a small buffer. The search field is
+    // stacked below the nav bar (never in the tab bar), so there's no tab-bar
+    // search-field reservation. The top pad is applied inline
+    // (`paddingTop: 12 + scopeClearance`) so it's zero extra when the scope bar
+    // is native.
     list: {
       padding: 12,
-      paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 12,
+      paddingBottom: 12 + TAB_BAR_BASE + 12,
     },
     // Lets an empty list stay exactly the viewport height (no scroll) — the
     // pinned empty-state overlay sits on top of it as a sibling.
