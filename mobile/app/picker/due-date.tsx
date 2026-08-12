@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme } from "react-native";
+import { View, Text, Pressable, ScrollView, StyleSheet, useColorScheme } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
@@ -40,22 +40,26 @@ export default function DueDatePickerRoute() {
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
 
-      <View style={styles.body}>
-        <DateTimePicker
-          value={value}
-          mode="date"
-          display="spinner"
-          themeVariant={scheme === "dark" ? "dark" : "light"}
-          onValueChange={(_event, date) => {
-            if (date) setValue(date);
-          }}
-          style={styles.picker}
-        />
+      {/* ScrollView + automatic content inset so the content clears the (glass)
+          sheet header, exactly like the other picker sheets. */}
+      <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ flex: 1 }}>
+        <View style={styles.body}>
+          <DateTimePicker
+            value={value}
+            mode="date"
+            display="spinner"
+            themeVariant={scheme === "dark" ? "dark" : "light"}
+            onValueChange={(_event, date) => {
+              if (date) setValue(date);
+            }}
+            style={styles.picker}
+          />
 
-        <Pressable style={styles.clear} onPress={() => done(null)}>
-          <Text style={styles.clearText}>Clear due date</Text>
-        </Pressable>
-      </View>
+          <Pressable style={styles.clear} onPress={() => done(null)}>
+            <Text style={styles.clearText}>Clear due date</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -63,8 +67,9 @@ export default function DueDatePickerRoute() {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1 },
-    // Clear the opaque sheet header + breathing room above the spinner.
-    body: { paddingTop: 44 },
+    // Small breathing room; the ScrollView's automatic content inset clears the
+    // sheet header above.
+    body: { paddingTop: 16, paddingBottom: 24 },
     picker: { alignSelf: "center" },
     clear: { alignItems: "center", paddingVertical: 14, marginHorizontal: 18, marginTop: 8 },
     clearText: { ...typeScale.body, fontWeight: "500", color: t.danger },
