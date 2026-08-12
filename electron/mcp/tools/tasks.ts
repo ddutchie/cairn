@@ -241,6 +241,9 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     const updated = q.updateCard(db, cardId as string, {
       archivedAt: new Date().toISOString(),
     });
+    // An archived blocker no longer blocks anything — clear its ID from every
+    // other task's blocked_by_ids so get_task stops reporting a pending dep.
+    q.clearBlockersFromAll(db, [cardId as string]);
     insertNotification(db, "update_task", "Task archived", `"${card.title}" was archived`, { type: "task", id: card.id });
     return updated;
   }

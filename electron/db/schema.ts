@@ -1070,6 +1070,50 @@ const MIGRATIONS: Migration[] = [
         AND NOT EXISTS (SELECT 1 FROM sync_pending WHERE entity = 'user_style' AND entity_id = user_style.id);
     `);
   },
+
+  // v43: Data repair — drop stale `blocked_by_ids` references. The IPC split
+  // (011ab827) dropped the done-column blocker cleanup from `db:card:update`,
+  // and archive (UI + MCP) never cleaned up at all, so a card that moved to a
+  // done column or was archived could linger in other cards' blocked_by_ids.
+  // getReadyCards/listReadyCards compensate at read time (a blocker is resolved
+  // when archived, deleted, or in a done column), but the stale refs persisted
+  // in get_task / list_ready_tasks output and got replicated via sync.
+  //
+  // Sweep every blocked_by_ids array, dropping any id whose card is archived or
+  // in a done column. Deleted cards are already removed by deleteCard's cleanup,
+  // but drop orphans defensively too. Idempotent — re-running is a no-op.
+  (db) => {
+    const rows = db.prepare(
+      "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]'"
+    ).all() as { id: string; blocked_by_ids: string }[];
+    if (rows.length === 0) return;
+
+    const resolved = new Set<string>();
+    const getState = db.prepare(`
+      SELECT tc.archived_at, bc.type AS col_type
+      FROM task_cards tc JOIN board_columns bc ON tc.column_id = bc.id
+      WHERE tc.id = ?
+    `);
+    const isResolved = (bid: string): boolean => {
+      if (resolved.has(bid)) return true;
+      const row = getState.get(bid) as { archived_at: string | null; col_type: string } | undefined;
+      const done = !row || row.archived_at !== null || row.col_type === "done";
+      if (done) resolved.add(bid);
+      return done;
+    };
+
+    const now = new Date().toISOString();
+    const update = db.prepare(
+      "UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?"
+    );
+    for (const row of rows) {
+      const ids = JSON.parse(row.blocked_by_ids) as string[];
+      const cleaned = ids.filter((bid) => !isResolved(bid));
+      if (cleaned.length !== ids.length) {
+        update.run(JSON.stringify(cleaned), now, row.id);
+      }
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
