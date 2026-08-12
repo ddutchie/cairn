@@ -46,7 +46,7 @@ export default function DueDatePickerRoute() {
           mode="date"
           display="spinner"
           themeVariant={scheme === "dark" ? "dark" : "light"}
-          onChange={(_event, date) => {
+          onValueChange={(_event, date) => {
             if (date) setValue(date);
           }}
           style={styles.picker}
@@ -63,8 +63,8 @@ export default function DueDatePickerRoute() {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1 },
-    // Clear the opaque sheet header + add breathing room above the spinner.
-    body: { paddingTop: 28 },
+    // Clear the opaque sheet header + breathing room above the spinner.
+    body: { paddingTop: 44 },
     picker: { alignSelf: "center" },
     clear: { alignItems: "center", paddingVertical: 14, marginHorizontal: 18, marginTop: 8 },
     clearText: { ...typeScale.body, fontWeight: "500", color: t.danger },
