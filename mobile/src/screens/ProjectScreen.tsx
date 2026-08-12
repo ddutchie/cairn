@@ -348,7 +348,10 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 
       <View style={styles.segment}>
         <SegmentedControl
-          style={{ flex: 1 }}
+          // Explicit height: UISegmentedControl needs one in RN (flex: 1 in a
+          // parent without a defined height collapses to zero), and it keeps the
+          // row the same visual height as the old pill (≈33pt).
+          style={{ flex: 1, height: 36 }}
           values={["Overview", `Notes ${notes.length}`, `Board ${cards.length}`]}
           selectedIndex={PROJECT_TABS.indexOf(tab)}
           onChange={(e) => setTab(PROJECT_TABS[e.nativeEvent.selectedSegmentIndex] ?? "overview")}
