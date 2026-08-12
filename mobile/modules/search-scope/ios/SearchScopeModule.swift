@@ -3,10 +3,10 @@ import UIKit
 
 /// Native UISearchController scope bar for the search screen.
 ///
-/// react-native-screens renders the header search bar as a `UISearchController`
-/// and sets `searchBar.scopeButtonTitles` is NOT one of the props it exposes, so
-/// we drive the real UIKit scope bar directly: this module locates the active
-/// screen's search controller (its `UINavigationItem.searchController`), sets
+/// react-native-screens renders the header search bar as a `UISearchController`,
+/// but `scopeButtonTitles` is NOT one of the props it exposes, so we drive the
+/// real UIKit scope bar directly: this module locates the active screen's search
+/// controller (its `UINavigationItem.searchController`), sets
 /// `scopeButtonTitles` / `selectedScopeButtonIndex`, and reports scope taps back
 /// to JS.
 ///
@@ -71,11 +71,14 @@ public class SearchScopeModule: Module {
   // The search screen is the top of its tab's native stack; react-native-screens
   // attaches the UISearchController to the top view controller's navigationItem.
   private func activeSearchController() -> UISearchController? {
-    guard let window = UIApplication.shared.connectedScenes
-      .compactMap({ $0 as? UIWindowScene })
-      .first(where: { $0.activationState == .foregroundActive })
-      ?.windows
-      .first(where: { $0.isKeyWindow })
+    // Split the window lookup into two guard-let bindings: optional chaining
+    // across a continuation line (`?.windows`) parses as a ternary and fails to
+    // compile.
+    guard
+      let scene = UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene })
+        .first(where: { $0.activationState == .foregroundActive }),
+      let window = scene.windows.first(where: { $0.isKeyWindow })
     else {
       return nil
     }
