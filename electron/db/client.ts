@@ -5,8 +5,11 @@
  * The path is now resolved in main.ts based on the user-chosen workspace folder.
  * Call initDb() once from main.ts before any IPC handlers are registered.
  *
- * Passes the Electron-ABI binary via the `nativeBinding` option so the
+ * Passes the native binary via the `nativeBinding` option so the
  * system-Node binary in node_modules/ stays intact for the MCP server.
+ * better-sqlite3 v13+ is N-API, so this binary is ABI-stable across Electron,
+ * the pkg cairn-mcp runtime and vitest — the per-arch copies differ only in
+ * architecture, not ABI.
  * Both can open the same .db file concurrently — SQLite WAL mode handles it.
  */
 
@@ -16,7 +19,7 @@ import fs from "fs";
 import { app } from "electron";
 import { applySchema } from "./schema";
 
-// Path to the Electron-ABI native binary (downloaded per-arch by rebuild-native.js).
+// Path to the native binary (provisioned per-arch by rebuild-native.js).
 // Binaries are arch-separated so a universal macOS build can ship both arm64 and
 // x64; the resolver keys on process.arch.
 // In dev:  __dirname = <project>/dist-electron  →  ../electron-native/<arch>/
@@ -32,7 +35,7 @@ export function initDb(dbPath: string): Database.Database {
   // Ensure the parent directory exists
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
-  // nativeBinding tells better-sqlite3 to use our Electron-ABI .node file
+  // nativeBinding tells better-sqlite3 to use our bundled .node file
   // instead of the one it would find via `bindings` (the system-Node build).
   const db = new Database(dbPath, { nativeBinding: ELECTRON_BINDING } as ConstructorParameters<typeof Database>[1]);
 

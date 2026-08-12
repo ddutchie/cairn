@@ -95,6 +95,16 @@ for (const target of targets) {
   // (cairn-mcp arm64 + cairn-mcp-x64) coexist in dist-mcp/ via the arch suffix.
   const sidecar = path.join(outDir, `better_sqlite3-${target.arch}.node`);
   fs.copyFileSync(archNative, sidecar);
+  // macOS: re-sign the sidecar at its final path with an explicit identifier.
+  // pkg dlopen's this from an ad-hoc-signed process; a fresh signature here
+  // avoids dyld code-signature page rejection ("Invalid Page") — and prevents
+  // any stale signature-cache state from a previously-crash-loaded file.
+  if (process.platform === "darwin") {
+    execSync(
+      `codesign --force --sign - -i cairn-better-sqlite3-${target.arch} ${JSON.stringify(sidecar)}`,
+      { stdio: "inherit" },
+    );
+  }
   console.log(`[build-mcp-binary] Staged native binding: ${path.basename(sidecar)}`);
 }
 
