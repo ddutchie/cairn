@@ -93,15 +93,15 @@ jobs:
         if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Build native SQLite binding for Vitest
-        # rebuild-native.js also runs @electron/rebuild which needs Electron headers.
-        # For tests we only need the system Node ABI — rebuild it directly and copy
-        # to vitest-native/ where the vitest-sqlite-shim.cjs expects to find it.
+      - name: Provision vitest-native SQLite binding
+        # better-sqlite3 v13+ ships N-API prebuilds in-package
+        # (prebuilds/<platform>-<arch>.node) that are ABI-stable for the
+        # system Node — copy the matching one to vitest-native/ where the
+        # vitest-sqlite-shim.cjs expects to find it.
         if: steps.cache-npm.outputs.cache-hit != 'true'
         run: |
-          npm rebuild better-sqlite3
           mkdir -p vitest-native
-          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node vitest-native/
+          cp "node_modules/better-sqlite3/prebuilds/$(node -e 'process.stdout.write(process.platform + "-" + process.arch)').node" vitest-native/better_sqlite3.node
 
       - name: Run tests
         # `npm test` generates licenses + the What's New registry (imported by app
