@@ -1,11 +1,14 @@
 /**
- * Component tests for StepProviders — the onboarding provider gallery.
+ * Component tests for the merged AI-setup step — the provider gallery embedded
+ * in StepAISetup's "Cloud & Local" branch (the standalone providers step was
+ * folded in because both were provider pickers).
  *
- * Covers the onboarding-specific presentation contract:
- *  - renders a fixed-height gallery of community providers (two per row)
- *  - each card wears its own add state (Add / Add · key / Added)
- *  - keyless providers install on click; keyed providers prompt inline
- *  - the gallery frame stays a constant height (no jump while loading)
+ * Covers:
+ *  - the gallery renders inside the step and lists community providers
+ *  - per-provider add state (Add / Add · key / Added)
+ *  - keyless install + onPick prefills the active connection (baseUrl/model)
+ *  - keyed providers prompt inline for the API key
+ *  - the fixed-height frame stays constant while loading
  *
  * Runs in the "component" vitest project (jsdom + Testing Library).
  */
@@ -44,14 +47,6 @@ const PROVIDERS: RegistryProviderEntry[] = [
     blurb: "Local models, no key.",
     definition: { name: "Ollama", baseUrl: "http://localhost:11434", needsApiKey: false },
   },
-  {
-    id: "mistral",
-    author: "community",
-    version: "1.0.0",
-    tags: [],
-    blurb: "Mistral API.",
-    definition: { name: "Mistral", baseUrl: "https://api.mistral.ai/v1", needsApiKey: true, defaultModel: "mistral-small" },
-  },
 ];
 
 const { fetchProviders } = vi.hoisted(() => ({ fetchProviders: vi.fn() }));
@@ -67,15 +62,33 @@ function setupWindow() {
     registry: {
       fetchProviders: fetchProviders as never,
     },
+    ai: {
+      localLLMStatus: vi.fn().mockResolvedValue({ available: false }),
+    },
   };
 }
 
-import { StepProviders } from "./StepProviders";
+import { StepAISetup } from "./StepAISetup";
 
-function renderStep() {
-  const props = { onBack: vi.fn(), onNext: vi.fn() };
-  // StepProviders renders its own <Shell>; render inside a minimal host.
-  render(<StepProviders {...props} />);
+type Props = React.ComponentProps<typeof StepAISetup>;
+
+function renderStep(overrides: Partial<Props> = {}) {
+  const props: Props = {
+    aiEnabled: true,
+    provider: "openai",
+    baseUrl: "https://api.openai.com",
+    apiKey: "",
+    model: "gpt-4o",
+    onAiEnabledChange: vi.fn(),
+    onProviderChange: vi.fn(),
+    onBaseUrlChange: vi.fn(),
+    onApiKeyChange: vi.fn(),
+    onModelChange: vi.fn(),
+    onBack: vi.fn(),
+    onNext: vi.fn(),
+    ...overrides,
+  };
+  render(<StepAISetup {...props} />);
   return props;
 }
 
@@ -90,43 +103,59 @@ beforeEach(() => {
   setupWindow();
 });
 
-describe("StepProviders gallery", () => {
-  it("shows a fixed-height loading frame, then the provider grid", async () => {
-    // Hold the fetch so we can assert the loading state first.
+describe("StepAISetup merged provider gallery", () => {
+  it("shows a fixed-height loading frame, then the provider grid inside the step", async () => {
     let resolveFetch!: (v: unknown) => void;
     fetchProviders.mockReturnValue(new Promise((r) => { resolveFetch = r; }));
     renderStep();
 
-    // Loading — frame present with the loader, no cards yet.
+    // Loading — loader present, no cards yet.
     expect(screen.getByText("Add an AI provider")).toBeInTheDocument();
-    expect(screen.getByText("One-click presets for OpenAI-compatible endpoints. Keys are stored in your OS keychain. You can add these later from Settings → AI.")).toBeInTheDocument();
 
     resolveFetch({ manifest: { version: 1, updatedAt: "", providers: PROVIDERS }, fromCache: false });
     await waitFor(() => expect(screen.getByText("OpenRouter")).toBeInTheDocument());
     expect(screen.getByText("Ollama")).toBeInTheDocument();
-    expect(screen.getByText("Mistral")).toBeInTheDocument();
   });
 
   it("shows per-provider add state: keyed providers get 'Add · key', keyless get 'Add'", async () => {
     renderStep();
     await waitFor(() => expect(screen.getByText("OpenRouter")).toBeInTheDocument());
 
-    // OpenRouter + Mistral need a key; Ollama doesn't.
-    expect(screen.getAllByText("Add · key")).toHaveLength(2);
+    expect(screen.getAllByText("Add · key")).toHaveLength(1);
     expect(screen.getByText("Add")).toBeInTheDocument();
   });
 
-  it("installs a keyless provider on click and marks it Added", async () => {
+  it("installs a keyless provider and makes it the active connection (prefills baseUrl + model)", async () => {
     installCommunityProvider.mockResolvedValue("id-1");
-    renderStep();
+    const props = renderStep();
     await waitFor(() => expect(screen.getByText("OpenRouter")).toBeInTheDocument());
 
-    // The "Add" with no suffix belongs to the keyless provider (Ollama).
     const ollamaAdd = screen.getAllByRole("button", { name: "Add" }).find((b) => b.textContent === "Add");
     expect(ollamaAdd).toBeTruthy();
     await userEvent.click(ollamaAdd!);
 
-    await waitFor(() => expect(installCommunityProvider).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(installCommunityProvider).toHaveBeenCalledWith(PROVIDERS[1], undefined));
+    // onPick → provider flips to cloud + baseUrl/model prefilled from the preset.
+    expect(props.onProviderChange).toHaveBeenCalledWith("openai");
+    expect(props.onBaseUrlChange).toHaveBeenCalledWith("http://localhost:11434");
+    // Ollama has no defaultModel → model untouched.
+    expect(props.onModelChange).not.toHaveBeenCalled();
+  });
+
+  it("prefills the default model when the picked preset declares one", async () => {
+    installCommunityProvider.mockResolvedValue("id-openrouter");
+    const props = renderStep();
+    await waitFor(() => expect(screen.getByText("OpenRouter")).toBeInTheDocument());
+
+    // Keyed provider → confirm the inline key first.
+    await userEvent.click(screen.getAllByRole("button", { name: "Add · key" })[0]);
+    await userEvent.type(screen.getByPlaceholderText("sk-…"), "sk-test");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(installCommunityProvider).toHaveBeenCalledWith(PROVIDERS[0], "sk-test"));
+    expect(props.onProviderChange).toHaveBeenCalledWith("openai");
+    expect(props.onBaseUrlChange).toHaveBeenCalledWith("https://openrouter.ai/api/v1");
+    expect(props.onModelChange).toHaveBeenCalledWith("deepseek");
   });
 
   it("prompts inline for an API key on a keyed provider", async () => {
@@ -134,16 +163,16 @@ describe("StepProviders gallery", () => {
     await waitFor(() => expect(screen.getByText("OpenRouter")).toBeInTheDocument());
 
     await userEvent.click(screen.getAllByRole("button", { name: "Add · key" })[0]);
-    const input = screen.getByPlaceholderText("sk-…");
-    expect(input).toBeInTheDocument();
-    await userEvent.type(input, "sk-test");
-    await userEvent.keyboard("{Enter}");
-
-    await waitFor(() => expect(installCommunityProvider).toHaveBeenCalledWith(PROVIDERS[0], "sk-test"));
+    expect(screen.getByPlaceholderText("sk-…")).toBeInTheDocument();
   });
 
-  it("renders a Shell progress header (wordmark) so the step is framed", async () => {
+  it("shows the manual endpoint section under an advanced toggle", async () => {
     renderStep();
-    expect(screen.getByText("Cairn")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("OpenRouter")).toBeInTheDocument());
+
+    // Advanced (manual baseUrl/key/model) is hidden by default.
+    expect(screen.queryByPlaceholderText("https://api.openai.com")).toBeNull();
+    await userEvent.click(screen.getByText("Manual endpoint / custom model"));
+    expect(screen.getByPlaceholderText("https://api.openai.com")).toBeInTheDocument();
   });
 });

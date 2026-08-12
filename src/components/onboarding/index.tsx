@@ -10,7 +10,6 @@ import { StepChooseFolder } from "./StepChooseFolder";
 import { StepWorkspaceDetails } from "./StepWorkspaceDetails";
 import { StepAppearance } from "./StepAppearance";
 import { StepAISetup } from "./StepAISetup";
-import { StepProviders } from "./StepProviders";
 import { StepMCP } from "./StepMCP";
 import { StepEmbeddings } from "./StepEmbeddings";
 import { StepViews } from "./StepViews";
@@ -213,7 +212,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     if (provider !== "localllm") {
       setAgentConfig({ baseUrl, apiKey, model });
     }
-    setStep("providers");
+    setStep("mcp");
   }
 
   async function handleSaveEmbeddings() {
@@ -301,19 +300,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     );
   }
 
-  if (step === "providers") {
-    return (
-      <StepProviders
-        onBack={() => setStep("ai-setup")}
-        onNext={() => setStep("mcp")}
-      />
-    );
-  }
-
   if (step === "mcp") {
     return (
       <StepMCP
-        onBack={() => setStep("providers")}
+        onBack={() => setStep("ai-setup")}
         onNext={() => setStep("embeddings")}
       />
     );
