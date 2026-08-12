@@ -132,7 +132,7 @@ export function StepProviders({ onBack, onNext }: Props) {
             You can add these later from Settings → AI.
           </p>
 
-          <div className="h-[21rem]">
+          <div className="h-[21rem] overflow-y-auto pr-0.5">
             {loading ? (
               <div className="flex items-center justify-center h-full text-[var(--text-tertiary)]">
                 <Loader2 size={18} className="animate-spin" />
@@ -142,7 +142,7 @@ export function StepProviders({ onBack, onNext }: Props) {
                 {result?.error ? "No providers available offline." : "No community providers available."}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 h-full content-start">
+              <div className="grid grid-cols-2 gap-2 content-start pb-1">
                 {providers.map((entry) => {
                   const def = entry.definition;
                   const installed = isInstalled(entry);
