@@ -13,6 +13,7 @@ export type OnboardingStep =
   | "workspace-details"
   | "appearance"
   | "ai-setup"
+  | "providers"
   | "mcp"
   | "embeddings"
   | "views"
@@ -24,7 +25,7 @@ export type OnboardingStep =
  *  create-project and imported-projects steps are mutually exclusive
  *  alternatives that occupy the SAME slot, so only create-project appears here;
  *  imported-projects is normalised to it in Shell. */
-export const PROGRESS_STEPS: OnboardingStep[] = ["appearance", "ai-setup", "mcp", "embeddings", "views", "create-project", "done"];
+export const PROGRESS_STEPS: OnboardingStep[] = ["appearance", "ai-setup", "providers", "mcp", "embeddings", "views", "create-project", "done"];
 
 // ── Font scale options ────────────────────────────────────────────────────────
 
