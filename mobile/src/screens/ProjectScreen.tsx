@@ -49,6 +49,10 @@ type Tab = "overview" | "notes" | "board";
 // the control's selectedIndex maps straight into the `tab` union.
 const PROJECT_TABS: Tab[] = ["overview", "notes", "board"];
 
+// Height of the floating Overview|Notes|Board bar (control 36 + 8 top + 6
+// bottom padding) — tab content clears this so the first row isn't hidden.
+const SEGMENT_BAR_H = 50;
+
 /**
  * Project detail (notes tree + board). Shared by two routes:
  *
@@ -348,21 +352,24 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 
       <View style={styles.segment}>
         <SegmentedControl
-          // Explicit height: UISegmentedControl needs one in RN (flex: 1 in a
-          // parent without a defined height collapses to zero), and it keeps the
-          // row the same visual height as the old pill (≈33pt).
-          style={{ flex: 1, height: 36 }}
-          values={["Overview", `Notes ${notes.length}`, `Board ${cards.length}`]}
-          selectedIndex={PROJECT_TABS.indexOf(tab)}
-          onChange={(e) => setTab(PROJECT_TABS[e.nativeEvent.selectedSegmentIndex] ?? "overview")}
-          backgroundColor={t.surface2}
+          // No flex:1 — Yoga's flexBasis:0 makes the native view collapse to
+          // height 0 when the parent's height is content-driven. Width stretches
+          // via the default alignItems:stretch; only the height needs setting.
+          // No backgroundColor: UISegmentedControl's track is a private subview
+          // on iOS 13+, so the prop can't strip it — we let the native iOS
+          // 26/27 Liquid Glass track render and tint only the selected segment.
+          style={{ height: 36 }}
           tintColor={t.accent}
           fontStyle={{ color: t.textSecondary, fontSize: 15, fontWeight: "600" }}
           activeFontStyle={{ color: t.accentFg, fontSize: 15, fontWeight: "600" }}
+          values={["Overview", `Notes ${notes.length}`, `Board ${cards.length}`]}
+          selectedIndex={PROJECT_TABS.indexOf(tab)}
+          onChange={(e) => setTab(PROJECT_TABS[e.nativeEvent.selectedSegmentIndex] ?? "overview")}
         />
       </View>
 
-      {tab === "overview" ? (
+      <View style={styles.content}>
+        {tab === "overview" ? (
         overview ? (
           <OverviewTab
             data={overview}
@@ -468,6 +475,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
           }}
         />
       )}
+      </View>
 
       {/* Long-press move pickers. Options are read lazily (only while the sheet
           is open) so they reflect the current DB without polling. */}
@@ -498,9 +506,23 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
-    // The native UISegmentedControl draws its own track/active chrome; the
-    // wrapper only keeps the surrounding margin.
-    segment: { margin: 12 },
+    // Floating Overview|Notes|Board bar in the header colour: an absolute
+    // overlay pinned below the nav bar, so the tab content scrolls beneath it
+    // (like the search scope bar). Height = control 36 + 8 top + 6 bottom pad.
+    segment: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 1,
+      backgroundColor: t.surface,
+      paddingHorizontal: 12,
+      paddingTop: 8,
+      paddingBottom: 6,
+    },
+    // Tab content clears the floating segment bar (SEGMENT_BAR_H) plus a small
+    // breathing gap so the first row isn't flush against the control.
+    content: { flex: 1, paddingTop: SEGMENT_BAR_H + 8 },
     notesScroll: { flexGrow: 1 },
   });
 }

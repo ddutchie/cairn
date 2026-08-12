@@ -386,7 +386,10 @@ function makeStyles(t: Theme) {
   // rest of the app's makeStyles pattern and future theme-dependent layout.
   void t;
   return StyleSheet.create({
-    content: { padding: 12, gap: 20 },
+    // paddingTop 0: the project screen wraps this in a container that already
+    // clears the floating Overview|Notes|Board bar, so the scroll content's own
+    // top padding would double it up.
+    content: { padding: 12, paddingTop: 0, gap: 20 },
     header: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
     headerIcon: { width: 44, height: 44, borderRadius: 11, alignItems: "center", justifyContent: "center" },
     pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
