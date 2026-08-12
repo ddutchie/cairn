@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote, workspaceIdForNote, exportNote } from "@/db/queries";
 import { MarkdownView } from "@/components/MarkdownView";
 import { TagChips } from "@/components/TagChips";
-import { TagPickerSheet } from "@/components/TagPickerSheet";
+import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
 import { NoteEditorBody } from "@/components/NoteEditorBody";
 import { PressableScale } from "@/components/PressableScale";
 import { ResultRow } from "@/components/ResultRow";
@@ -55,7 +55,6 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note?.title ?? "");
   const [body, setBody] = useState(note?.content ?? "");
-  const [tagPickerOpen, setTagPickerOpen] = useState(false);
 
   // Editing toolbar state.
   const fmt = useNoteFormattingToolbar(body, setBody);
@@ -100,12 +99,20 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
     setNote(getNote(note.id));
   }, [note, isPinned]);
 
-  const onTags = useCallback((tagIds: string[]) => {
+  // Open the native tags sheet. Selection returns through the sheet-result bus;
+  // persist it in one write and refresh the note.
+  const openTagPicker = useCallback(() => {
     if (!note) return;
-    setNoteTags(note.id, tagIds);
-    setNote(getNote(note.id));
-    setTagPickerOpen(false);
-  }, [note]);
+    const key = newSheetResultKey();
+    registerSheetResult<string[]>(key, (tagIds) => {
+      setNoteTags(note.id, tagIds);
+      setNote(getNote(note.id));
+    });
+    router.push({
+      pathname: "/picker/tags",
+      params: { resultKey: key, initial: JSON.stringify(noteTagIds(note)) },
+    });
+  }, [note, router]);
 
   // Toggling a task-list checkbox in the rendered preview rewrites the source
   // and persists immediately (mirrors the desktop live-preview toggle).
@@ -218,7 +225,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
             >
               {isPinned ? "Unpin" : "Pin"}
             </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon={ICON_TAG} onPress={toolbarPress(() => setTagPickerOpen(true))}>
+            <Stack.Toolbar.MenuAction icon={ICON_TAG} onPress={toolbarPress(openTagPicker)}>
               Edit tags
             </Stack.Toolbar.MenuAction>
             <Stack.Toolbar.MenuAction icon={ICON_EXPORT} onPress={toolbarPress(onExport)}>
@@ -314,12 +321,8 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
         </ScrollView>
       </BottomSheet>
 
-      <TagPickerSheet
-        visible={tagPickerOpen}
-        initialSelected={noteTagIds(note)}
-        onDone={onTags}
-        onClose={() => setTagPickerOpen(false)}
-      />
+      {/* The tag picker now lives in the native formSheet route
+          (app/picker/tags.tsx), opened via openTagPicker. */}
     </View>
   );
 }

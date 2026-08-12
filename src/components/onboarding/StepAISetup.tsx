@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
-import { Globe, Key, Cpu, Sparkles, CheckCircle } from "lucide-react";
+import { Globe, Key, Cpu, Sparkles, CheckCircle, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Shell, NavRow } from "./shared";
+import { ProviderGallery } from "./ProviderGallery";
+import type { RegistryProviderEntry } from "@/types";
 
 interface Props {
   aiEnabled: boolean;
@@ -18,18 +20,13 @@ interface Props {
   onNext: () => void;
 }
 
-const ENDPOINT_PRESETS = [
-  { label: "OpenAI",    url: "https://api.openai.com" },
-  { label: "Ollama",    url: "http://localhost:11434" },
-  { label: "LM Studio", url: "http://localhost:1234" },
-];
-
 export function StepAISetup({
   aiEnabled, provider = "openai", baseUrl, apiKey, model,
   onAiEnabledChange, onProviderChange, onBaseUrlChange, onApiKeyChange, onModelChange,
   onBack, onNext,
 }: Props) {
   const [localLLMAvailable, setLocalLLMAvailable] = useState<boolean | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
@@ -53,6 +50,17 @@ export function StepAISetup({
   const suggestedModels = isLocal
     ? ["llama3.2", "llama3.1", "qwen2.5:14b", "mistral", "phi4", "gemma3:12b"]
     : ["gpt-5.6-luna", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3-mini"];
+
+  /** A gallery provider was installed — make it the ACTIVE connection by
+   *  prefilling baseUrl + default model and mirroring its keychain apiKey ref
+   *  (the raw key never leaves the keychain). */
+  function handleProviderPick({ entry, apiKeyRef }: { entry: RegistryProviderEntry; id: string; apiKeyRef: string }) {
+    const def = entry.definition;
+    onProviderChange("openai");
+    onBaseUrlChange(def.baseUrl);
+    if (def.defaultModel) onModelChange(def.defaultModel);
+    if (apiKeyRef) onApiKeyChange(apiKeyRef);
+  }
 
   return (
     <Shell step="ai-setup">
@@ -158,87 +166,89 @@ export function StepAISetup({
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                <p className="text-xs font-medium text-[var(--text-secondary)]">API Connection</p>
-
-                {/* Presets */}
-                <div className="flex gap-2">
-                  {ENDPOINT_PRESETS.map((p) => (
-                    <button
-                      key={p.url}
-                      type="button"
-                      onClick={() => onBaseUrlChange(p.url)}
-                      className={cn(
-                        "px-3 py-1.5 text-xs rounded-lg border transition-colors cursor-pointer",
-                        baseUrl === p.url
-                          ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                          : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-secondary)]"
-                      )}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Base URL */}
-                <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
-                  <Globe size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                  <input
-                    type="url"
-                    value={baseUrl}
-                    onChange={(e) => onBaseUrlChange(e.target.value)}
-                    placeholder="https://api.openai.com"
-                    className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
-                  />
-                </div>
-
-                {/* API key */}
-                {!isLocal ? (
-                  <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
-                    <Key size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                    <input
-                      type="password"
-                      value={apiKey}
-                      onChange={(e) => onApiKeyChange(e.target.value)}
-                      placeholder="sk-…  (API key)"
-                      className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
-                    />
-                  </div>
-                ) : (
-                  <p className="text-[0.714rem] text-[var(--text-tertiary)]">
-                    No API key needed for local endpoints.
-                  </p>
-                )}
-
-                {/* Model */}
                 <div>
-                  <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 mb-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
-                    <Cpu size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                    <input
-                      type="text"
-                      value={model}
-                      onChange={(e) => onModelChange(e.target.value)}
-                      placeholder="Model name"
-                      className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {suggestedModels.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => onModelChange(m)}
-                        className={cn(
-                          "px-2 py-0.5 text-[0.714rem] rounded border transition-colors cursor-pointer",
-                          model === m
-                            ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                            : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-secondary)]"
-                        )}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
+                  <p className="text-xs font-medium text-[var(--text-secondary)] mb-2">Add an AI provider</p>
+                  <p className="text-xs text-[var(--text-tertiary)] leading-relaxed mb-3">
+                    Pick a preset — it&apos;s added to your saved providers and becomes the active connection.
+                    Keys are stored in your OS keychain.
+                  </p>
+                  <ProviderGallery onPick={handleProviderPick} />
                 </div>
+
+                {/* Advanced — manual endpoint config */}
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                >
+                  <SlidersHorizontal size={11} />
+                  {showAdvanced ? "Hide manual endpoint" : "Manual endpoint / custom model"}
+                </button>
+
+                {showAdvanced && (
+                  <div className="flex flex-col gap-4">
+                    {/* Base URL */}
+                    <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
+                      <Globe size={12} className="text-[var(--text-tertiary)] shrink-0" />
+                      <input
+                        type="url"
+                        value={baseUrl}
+                        onChange={(e) => onBaseUrlChange(e.target.value)}
+                        placeholder="https://api.openai.com"
+                        className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+                      />
+                    </div>
+
+                    {/* API key */}
+                    {!isLocal ? (
+                      <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
+                        <Key size={12} className="text-[var(--text-tertiary)] shrink-0" />
+                        <input
+                          type="password"
+                          value={apiKey}
+                          onChange={(e) => onApiKeyChange(e.target.value)}
+                          placeholder="sk-…  (API key)"
+                          className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+                        No API key needed for local endpoints.
+                      </p>
+                    )}
+
+                    {/* Model */}
+                    <div>
+                      <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 mb-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
+                        <Cpu size={12} className="text-[var(--text-tertiary)] shrink-0" />
+                        <input
+                          type="text"
+                          value={model}
+                          onChange={(e) => onModelChange(e.target.value)}
+                          placeholder="Model name"
+                          className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {suggestedModels.map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => onModelChange(m)}
+                            className={cn(
+                              "px-2 py-0.5 text-[0.714rem] rounded border transition-colors cursor-pointer",
+                              model === m
+                                ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                                : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] hover:text-[var(--text-secondary)]"
+                            )}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

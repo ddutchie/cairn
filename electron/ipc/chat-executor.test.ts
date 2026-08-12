@@ -1308,6 +1308,38 @@ describe("bulk_update_task_status to done — blocker cleanup", () => {
   });
 });
 
+// ── update_task archive — blocker cleanup ─────────────────────────────────────
+
+describe("update_task archive — blocker cleanup", () => {
+  it("clears an archived blocker from blocked tasks' blockedByIds", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
+    createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
+    await exec(db, "update_task", { cardId: "blocked", blockedBy: "blocker" });
+
+    await exec(db, "update_task", { cardId: "blocker", archived: true });
+
+    const task = await exec(db, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
+    expect((task.blockedByIds as string[])).not.toContain("blocker");
+    expect((task.blockedByIds as string[])).toHaveLength(0);
+  });
+
+  it("restoring an archived blocker does NOT re-block anything", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
+    createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
+    await exec(db, "update_task", { cardId: "blocked", blockedBy: "blocker" });
+    await exec(db, "update_task", { cardId: "blocker", archived: true });
+
+    await exec(db, "update_task", { cardId: "blocker", archived: false });
+
+    const task = await exec(db, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
+    expect((task.blockedByIds as string[])).not.toContain("blocker");
+  });
+});
+
 // ── get_project_context_pack ──────────────────────────────────────────────────
 
 describe("get_project_context_pack", () => {

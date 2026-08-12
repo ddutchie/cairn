@@ -1032,6 +1032,12 @@ const MIGRATIONS: Migration[] = [
   // stage rows in sync_pending like every other replicated table. The runtime
   // table list is in shared/sync/schema.ts (SYNCABLE_TABLES); this migration is
   // only the per-connection DDL.
+  //
+  // CRITICAL: on an EXISTING install the engine has already backfilled (the
+  // sync_state "backfilled" flag short-circuits backfill() to a no-op), so the
+  // pre-existing row would never be stamped into the oplog — the triggers only
+  // fire on NEW writes. Stage any existing live row into sync_pending here so
+  // the next drain publishes it without the user having to re-save their style.
   (db) => {
     const cols = db.prepare("PRAGMA table_info(user_style)").all() as { name: string }[];
     if (!cols.some((c) => c.name === "hlc")) db.exec("ALTER TABLE user_style ADD COLUMN hlc TEXT");
@@ -1056,7 +1062,58 @@ const MIGRATIONS: Migration[] = [
       BEGIN
         INSERT INTO sync_pending (entity, entity_id, op) VALUES ('user_style', OLD.id, 'delete');
       END;
+
+      -- Seed any pre-existing style into the pending queue (idempotent).
+      INSERT INTO sync_pending (entity, entity_id, op)
+      SELECT 'user_style', id, 'put' FROM user_style
+      WHERE deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM sync_pending WHERE entity = 'user_style' AND entity_id = user_style.id);
     `);
+  },
+
+  // v43: Data repair — drop stale `blocked_by_ids` references. The IPC split
+  // (011ab827) dropped the done-column blocker cleanup from `db:card:update`,
+  // and archive (UI + MCP) never cleaned up at all, so a card that moved to a
+  // done column or was archived could linger in other cards' blocked_by_ids.
+  // getReadyCards/listReadyCards compensate at read time (a blocker is resolved
+  // when archived, deleted, or in a done column), but the stale refs persisted
+  // in get_task / list_ready_tasks output and got replicated via sync.
+  //
+  // Sweep every blocked_by_ids array, dropping any id whose card is archived,
+  // tombstoned (deleted_at set — sync soft-deletes keep the row), or in a done
+  // column. Hard-deleted cards are already removed by deleteCard's cleanup, but
+  // drop orphans defensively too. Idempotent — re-running is a no-op.
+  (db) => {
+    const rows = db.prepare(
+      "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]'"
+    ).all() as { id: string; blocked_by_ids: string }[];
+    if (rows.length === 0) return;
+
+    const resolved = new Set<string>();
+    const getState = db.prepare(`
+      SELECT tc.archived_at, tc.deleted_at, bc.type AS col_type
+      FROM task_cards tc JOIN board_columns bc ON tc.column_id = bc.id
+      WHERE tc.id = ?
+    `);
+    const isResolved = (bid: string): boolean => {
+      if (resolved.has(bid)) return true;
+      const row = getState.get(bid) as { archived_at: string | null; deleted_at: string | null; col_type: string } | undefined;
+      const done = !row || row.archived_at !== null || row.deleted_at !== null || row.col_type === "done";
+      if (done) resolved.add(bid);
+      return done;
+    };
+
+    const now = new Date().toISOString();
+    const update = db.prepare(
+      "UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?"
+    );
+    for (const row of rows) {
+      const ids = JSON.parse(row.blocked_by_ids) as string[];
+      const cleaned = ids.filter((bid) => !isResolved(bid));
+      if (cleaned.length !== ids.length) {
+        update.run(JSON.stringify(cleaned), now, row.id);
+      }
+    }
   },
 ];
 

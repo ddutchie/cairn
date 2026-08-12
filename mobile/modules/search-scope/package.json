@@ -1,0 +1,7 @@
+{
+  "name": "search-scope",
+  "version": "0.1.0",
+  "description": "Native UISearchController scope bar (All|Notes|Tasks) for the search screen — Apple-Music-style toggles inside the real search field. Local Expo module (iOS only).",
+  "main": "index.ts",
+  "private": true
+}

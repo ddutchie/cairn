@@ -16,11 +16,15 @@ files:
   - dist-electron/**/*
   # Changelogs — displayed in Settings > About
   - changelogs/**/*
-  # MCP server — self-contained binary (bundles Node 22 + better-sqlite3)
+  # MCP server — self-contained binary (bundles Node 24 + better-sqlite3)
   - dist-mcp/cairn-mcp
   - dist-mcp/cairn-mcp.exe
   - dist-mcp/cairn-mcp-linux
   - dist-mcp/cairn-mcp-x64
+  - dist-mcp/cairn-mcp-win-x64.exe
+  - dist-mcp/cairn-mcp-win-arm64.exe
+  - dist-mcp/cairn-mcp-linux-x64
+  - dist-mcp/cairn-mcp-linux-arm64
   # Arch-matched better-sqlite3 sidecars staged next to the MCP binary by
   # build-mcp-binary.js. resolveMcpNativeBinding() loads these by process.arch so
   # the standalone binary can open the DB when run outside the app (agents run it
@@ -69,6 +73,10 @@ asarUnpack:
   - dist-mcp/cairn-mcp.exe
   - dist-mcp/cairn-mcp-linux
   - dist-mcp/cairn-mcp-x64
+  - dist-mcp/cairn-mcp-win-x64.exe
+  - dist-mcp/cairn-mcp-win-arm64.exe
+  - dist-mcp/cairn-mcp-linux-x64
+  - dist-mcp/cairn-mcp-linux-arm64
   - dist-mcp/better_sqlite3-arm64.node
   - dist-mcp/better_sqlite3-x64.node
   - node_modules/better-sqlite3/**/*

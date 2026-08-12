@@ -578,11 +578,24 @@ export function registerDbHandlers(ctx: DbContext): void {
     }
     const card = q.updateCard(ctx.db, id, patch);
     invalidateRelationshipCache(ctx.db, id);
-    // Archiving is a soft delete (row stays, so the FK cascade doesn't fire) —
-    // drop its embeddings so an archived card can't surface in semantic search.
+    // A resolved blocker (archived, or moved to a done column) must leave every
+    // other card's blocked_by_ids — otherwise get_task/list_ready_tasks keep
+    // reporting stale refs. Archiving is also a soft delete (row stays, so the
+    // FK cascade doesn't fire) — drop its embeddings too so an archived card
+    // can't surface in semantic search.
     if (card.archivedAt) {
+      q.clearBlockersFromAll(ctx.db, [id]);
       q.deleteTaskEmbeddingSections(ctx.db, id);
       return card;
+    }
+    // Restore the done-column cleanup dropped in the IPC split (011ab827) —
+    // the renderer drag-and-drop path (db:card:update { columnId }) previously
+    // removed the moved card from other tasks' blocked_by_ids.
+    if (patch.columnId) {
+      const col = ctx.db
+        .prepare("SELECT type FROM board_columns WHERE id = ?")
+        .get(patch.columnId) as { type: string } | undefined;
+      if (col?.type === "done") q.clearBlockersFromAll(ctx.db, [id]);
     }
     if (card.workspaceId) {
       computeAutoRelationships(ctx.db, card.workspaceId, [id]);
@@ -625,6 +638,9 @@ export function registerDbHandlers(ctx: DbContext): void {
       invalidateRelationshipCache(ctx.db, c.id);
       q.deleteTaskEmbeddingSections(ctx.db, c.id);
     }
+    // Archived cards no longer block anything — clear them from other tasks'
+    // blocked_by_ids (same rule as single-card archive / move-to-done).
+    q.clearBlockersFromAll(ctx.db, cards.map((c) => c.id));
     return { archived: cards.length };
   }));
 

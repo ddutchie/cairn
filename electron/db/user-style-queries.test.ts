@@ -51,4 +51,20 @@ describe("user-style queries", () => {
     expect(getUserStyle(db)).toBeNull();
     db.close();
   });
+
+  it("v42 seeds a pre-existing style into sync_pending so backfill isn't required", () => {
+    // The v42 migration is what stages pre-existing rows into sync_pending, so
+    // rewind the schema to v41 and let the PRODUCTION migration re-run — no
+    // hand-copied SQL. saveUserStyle is written through the (current) v42
+    // insert trigger, which also stages; clear that so the only thing left to
+    // stage the row is the migration's seed.
+    const db = makeDb();
+    db.pragma("user_version = 41");
+    saveUserStyle(db, { persona: { name: "A" }, fullGuide: "g", cheatsheet: "c", source: "guided" });
+    db.prepare("DELETE FROM sync_pending").run();
+    applySchema(db); // re-runs v42's production migration (idempotent)
+    const pending = db.prepare("SELECT entity, entity_id, op FROM sync_pending WHERE entity = 'user_style'").all();
+    expect(pending).toEqual([{ entity: "user_style", entity_id: "global", op: "put" }]);
+    db.close();
+  });
 });

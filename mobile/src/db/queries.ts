@@ -1311,6 +1311,11 @@ export function stalePeerCount(): number {
   return getEngine().listPeerProtocols().filter((p) => p.behind).length;
 }
 
+/** Protocol versions of peers that are behind this build (for the update hint). */
+export function stalePeerVersions(): number[] {
+  return getEngine().listPeerProtocols().filter((p) => p.behind).map((p) => p.version);
+}
+
 /**
  * Resolve a conflict by keeping the CONFLICT-COPY's body: overwrite the
  * original note with the copy's content, then delete the copy. If the original

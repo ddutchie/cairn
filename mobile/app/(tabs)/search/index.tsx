@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, listUnindexedCards, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
@@ -7,22 +7,23 @@ import { ResultRow } from "@/components/ResultRow";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { IndexingBar } from "@/components/IndexingBar";
-import { GlassBar, glassActive } from "@/components/GlassBar";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import SegmentedControl from "@react-native-segmented-control/segmented-control";
 import { Sparkles, Info } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
+import { isNativeSearchScopeAvailable, setNativeSearchScope, setNativeSearchScopeIndex, clearNativeSearchScope, subscribeNativeSearchScope } from "@modules/search-scope";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
+import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 type TypeFilter = "all" | "notes" | "tasks";
 
-// Approx height of the native iOS 26 tab-bar search field (used to lift the
-// filter bar clear of it, both docked-on-keyboard and resting above the tab bar).
+// Approx height of the native iOS 26 tab-bar search field — the results list
+// clears it at the bottom so the last row isn't hidden behind it.
 const SEARCH_FIELD_H = 52;
-// Breathing room between the filter bar and the search field.
+// The All|Notes|Tasks scope bar + its breathing gap below the search field.
+const SCOPE_BAR_H = 40;
 const SCOPE_GAP = 8;
 
 /**
@@ -30,16 +31,35 @@ const SCOPE_GAP = 8;
  * Two independent axes:
  *   - RANKING mode: semantic (meaning-based, on-device) vs keyword. Toggled by
  *     the ✨ header button; defaults ON when the device supports embeddings.
- *   - TYPE filter: All / Notes / Tasks (the bottom bar), applied in both modes.
+ *   - TYPE filter: All / Notes / Tasks (the scope bar below the search field),
+ *     applied in both modes.
  */
 export default function SearchScreen() {
   const router = useRouter();
   const t = useTheme();
   const semanticAvailable = isAppleEmbeddingsSupported();
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
   // Semantic ranking on by default when available; the header ✨ toggles it.
   const [semanticMode, setSemanticMode] = useState(semanticAvailable);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  // Vertical offset from the screen top to just below the native search field.
+  // The results list underlaps the opaque header and `contentInsetAdjustmentBehavior`
+  // "automatic" pushes its content down by exactly the header+search-field height —
+  // we read that measured inset from scroll events and pin the scope bar there.
+  // Until the first scroll, fall back to safe-area + search-field height.
+  const [belowHeader, setBelowHeader] = useState(insets.top + SEARCH_FIELD_H);
+  // The All|Notes|Tasks toggle lives in the native search field (UISearchController
+  // scope bar) when this build has the search-scope module — UIKit owns its
+  // animation and the header-height transitions. Elsewhere (Android, Expo Go,
+  // older builds) we fall back to a JS SegmentedControl overlay.
+  const usingNativeScope = isNativeSearchScopeAvailable();
+  // Latest-value refs so the native scope subscription/apply never reads a stale
+  // closure. Synced in effects (the react-hooks/refs rule forbids writing refs
+  // during render); they're only READ in event handlers, so the one-render lag
+  // is irrelevant.
+  const typeFilterRef = useRef(typeFilter);
+  useEffect(() => { typeFilterRef.current = typeFilter; }, [typeFilter]);
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [tasks, setTasks] = useState<CardRow[]>([]);
   const [hits, setHits] = useState<SemanticHit[]>([]);
@@ -48,7 +68,6 @@ export default function SearchScreen() {
   const [unindexed, setUnindexed] = useState<UnindexedNote[]>([]);
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
-  const insets = useSafeAreaInsets();
   // Monotonic token so a slow semantic query can't overwrite a newer one.
   const semanticSeq = useRef(0);
 
@@ -101,6 +120,7 @@ export default function SearchScreen() {
   const setType = (type: TypeFilter) => {
     if (type !== typeFilter) haptics.selection();
     setTypeFilter(type);
+    if (usingNativeScope) setNativeSearchScopeIndex(typeFilters.indexOf(type)).catch(() => {});
     if (debounceRef.current) clearTimeout(debounceRef.current);
     run(query, semanticMode, type);
   };
@@ -129,6 +149,48 @@ export default function SearchScreen() {
       const id = setTimeout(() => searchRef.current?.focus(), 350);
       return () => clearTimeout(id);
     }, []),
+  );
+
+  // Native scope bar: attach the All|Notes|Tasks titles to the search field on
+  // focus and detach on blur. The header config may not have applied the search
+  // controller yet on a fresh mount, so retry next frame if setScope finds
+  // nothing. UIKit animates the scope bar in/out with focus. Wrapped in
+  // useCallback so it only re-runs when focus actually changes (not every
+  // render); mutable values are read through refs to avoid stale closures.
+  const setTypeRef = useRef(setType);
+  useEffect(() => { setTypeRef.current = setType; });
+  useFocusEffect(
+    useCallback(() => {
+      if (!usingNativeScope) return;
+      const sub = subscribeNativeSearchScope((idx) => {
+        const f = typeFilters[idx];
+        if (f && f !== typeFilterRef.current) setTypeRef.current(f);
+      });
+      const apply = () =>
+        setNativeSearchScope(["All", "Notes", "Tasks"], typeFilters.indexOf(typeFilterRef.current));
+      // Retry until the scope bar attaches: the search controller (and the
+      // search bar's focus state, which gates scope visibility) can land a few
+      // frames late on a cold mount / tab switch. ~1s of attempts is plenty.
+      // A rejected apply() counts as a failed attempt too — otherwise the
+      // interval would spin forever on a permanently-broken native binding.
+      let tries = 0;
+      const attempt = () => {
+        void apply()
+          .then((ok) => {
+            if (ok || ++tries >= 6) clearInterval(timer);
+          })
+          .catch(() => {
+            if (++tries >= 6) clearInterval(timer);
+          });
+      };
+      const timer = setInterval(attempt, 150);
+      attempt();
+      return () => {
+        clearInterval(timer);
+        sub?.remove();
+        void clearNativeSearchScope();
+      };
+    }, [usingNativeScope]),
   );
 
   // Navigate to a result, dismissing the keyboard + blurring the native search
@@ -266,14 +328,21 @@ export default function SearchScreen() {
     return { primary: hasQuery ? `No matching ${what}` : `Search ${what} by keyword.` };
   })();
 
+  // Space to clear below the search field for the scope control. When the scope
+  // lives natively in the search field, UIKit's automatic content inset already
+  // includes it; the JS fallback overlay needs explicit room.
+  const scopeClearance = usingNativeScope ? 0 : SCOPE_BAR_H + SCOPE_GAP;
+
   // Shared list scrolling behaviour. `contentInsetAdjustmentBehavior="automatic"`
-  // makes the list clear the native search header (top). The bottom pad in
-  // `styles.list` already clears the keyboard/scope-bar/tab-bar area, so we do
-  // NOT set `automaticallyAdjustKeyboardInsets` — combined with the automatic
-  // top inset it miscalculates the content offset when the keyboard opens and
-  // scrolls the first result up under the header. IndexingBar rides as the list
-  // header so the FlatList stays the screen's first (and only) scroll view —
-  // required for iOS to apply the automatic search-header inset.
+  // makes the list clear the native search header (top) — including the scope
+  // bar when it's native. The top pad in `contentContainerStyle` clears the JS
+  // fallback scope overlay (zero when native), and the bottom pad clears the
+  // tab-bar/search-field/keyboard area, so we do NOT set
+  // `automaticallyAdjustKeyboardInsets` — combined with the automatic top inset
+  // it miscalculates the content offset when the keyboard opens and scrolls the
+  // first result up under the header. IndexingBar rides as the list header so
+  // the FlatList stays the screen's first (and only) scroll view — required for
+  // iOS to apply the automatic search-header inset.
   //
   // The empty/hint state is NO LONGER a ListEmptyComponent — it's a pinned
   // absolute-overlay SIBLING of the list (see below). Rendering it inside the
@@ -284,7 +353,9 @@ export default function SearchScreen() {
     // Empty state: use flexGrow-only (no results padding) so the content is
     // exactly the viewport height and the screen doesn't scroll. With results:
     // apply the list padding that clears the scope bar / tab bar / keyboard.
-    contentContainerStyle: isListEmpty ? styles.listGrow : styles.list,
+    contentContainerStyle: isListEmpty
+      ? styles.listGrow
+      : [styles.list, { paddingTop: 12 + scopeClearance }],
     // Nothing to scroll when empty — also stops the list being draggable under
     // the header. EXCEPT semantic mode, which needs to stay scrollable when
     // empty so its pull-to-reindex RefreshControl works.
@@ -293,6 +364,13 @@ export default function SearchScreen() {
     keyboardShouldPersistTaps: "handled" as const,
     keyboardDismissMode: "on-drag" as const,
     ListHeaderComponent: <IndexingBar />,
+    // Read the effective top content inset iOS applies to clear the native
+    // search field, and pin the fallback scope overlay to that exact offset.
+    scrollEventThrottle: 16,
+    onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const top = e.nativeEvent.contentInset?.top ?? 0;
+      if (top > 0 && top !== belowHeader) setBelowHeader(top);
+    },
   };
 
   return (
@@ -306,6 +384,13 @@ export default function SearchScreen() {
             autoCapitalize: "none",
             autoFocus: true,
             hideWhenScrolling: false,
+            // Stacked placement (search field in a dedicated row below the nav
+            // bar). iOS 26+/27 UIKit has a bug where the UISearchController
+            // scope bar NEVER renders with integrated/automatic placement on
+            // iPhone — stacked is the layout where the native All|Notes|Tasks
+            // scope bar actually appears (Apple-Music-style, directly below the
+            // search field).
+            placement: "stacked",
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
           // Header trailing controls: an optional info button (shown when
@@ -344,139 +429,139 @@ export default function SearchScreen() {
         }}
       />
 
-      {semanticMode ? (
-        <FlatList
-          data={hits}
-          keyExtractor={(h) => `${h.kind ?? "note"}:${h.noteId}`}
-          {...listProps}
-          refreshControl={
-            <RefreshControl refreshing={reindexing} onRefresh={forceReindex} tintColor={t.textTertiary} />
-          }
-          renderItem={({ item }) => (
-            <ResultRow
-              title={item.title}
-              preview={item.kind === "card" ? `Task · ${item.sectionTitle}` : item.sectionTitle}
-              score={item.rank}
-              accentColor={item.kind === "card" ? t.success : t.info}
-              onPress={() =>
-                openResult(
-                  item.kind === "card"
-                    ? { pathname: "/card/[id]", params: { id: item.noteId, back: "Search" } }
-                    : { pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } },
-                )
-              }
-            />
-          )}
-        />
-      ) : (
-        <FlatList
-          data={keywordResults}
-          keyExtractor={(r) => `${r.kind}:${r.id}`}
-          {...listProps}
-          renderItem={({ item }) => (
-            <ResultRow
-              title={item.title}
-              preview={item.kind === "card" ? `Task · ${item.preview}` : item.preview}
-              accentColor={item.kind === "card" ? t.success : t.info}
-              dotColor={item.kind === "card" ? PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? undefined : undefined}
-              onPress={() =>
-                openResult(
-                  item.kind === "card"
-                    ? { pathname: "/card/[id]", params: { id: item.id, back: "Search" } }
-                    : { pathname: "/note/[id]", params: { id: item.id, back: "Search" } },
-                )
-              }
-            />
-          )}
-        />
-      )}
-
-      {/* Empty state as a screen-pinned overlay SIBLING of the list (not a
-          ListEmptyComponent). Decoupled from the list's keyboard/content inset,
-          so it never jumps when the keyboard opens — and it shares Chat's exact
-          anchoring system (pinned + default 25% top bias). `insetTop` clears the
-          native search header; `pointerEvents="none"` (inside EmptyState) lets
-          scroll / pull-to-reindex gestures pass through to the list beneath.
-          Only shown when the list is empty. */}
-      {isListEmpty ? (
-        hasQuery ? (
-          // Active search with no matches → light top-anchored text hint (no
-          // branded splash — that's the resting state, not a "found nothing"
-          // state). Pinned so it holds position when the keyboard is open.
-          <View
-            pointerEvents="none"
-            style={[styles.hintOverlay, { paddingTop: insets.top }]}
-          >
-            <View style={styles.hintBias} />
-            <Text style={styles.hint}>{emptyHint.primary}</Text>
-            {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
-          </View>
-        ) : (
-          // Resting (no query) → branded Cairn empty state. The "why not all
-          // indexed?" affordance lives in the header (see headerRight) so it's
-          // always visible and never hides behind the list or tab bar.
-          <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} pinned insetTop={insets.top} />
-        )
+      {/* Type filter. With the native scope module this lives IN the search
+          field itself (UISearchController scope bar — UIKit animates it with
+          focus). Fallback (Android / builds without the module): a JS
+          SegmentedControl pinned at `belowHeader`, the measured height the
+          list's automatic content inset uses to clear the search field. */}
+      {!usingNativeScope ? (
+        <View style={[styles.topScope, { top: belowHeader }]}>
+          <SegmentedControl
+            values={typeFilters.map(typeLabel)}
+            selectedIndex={typeFilters.indexOf(typeFilter)}
+            onChange={(e) => setType(typeFilters[e.nativeEvent.selectedSegmentIndex] ?? "all")}
+            tintColor={t.accent}
+            backgroundColor={t.surface2}
+            fontStyle={{ color: t.textSecondary, fontSize: 15, fontWeight: "600" }}
+            activeFontStyle={{ color: t.accentFg, fontSize: 15, fontWeight: "600" }}
+          />
+        </View>
       ) : null}
 
-      {/* Type filter, pinned to the bottom. Positioning mirrors the old scope
-          bar (docks above the tab-bar search field on iOS ≤26 / above the tab
-          bar on iOS 27). Content type only — the ranking mode is the header ✨. */}
-      <KeyboardStickyView
-        offset={{
-          closed: hasTabBarSearchField ? -insets.bottom : -tabBarClosedLift(insets.bottom),
-          opened: hasTabBarSearchField ? -(SEARCH_FIELD_H + SCOPE_GAP) : -KEYBOARD_OPEN_GAP,
-        }}
-        style={styles.scopeOverlay}
-      >
-        <GlassBar style={[styles.scopeBar, !glassActive && styles.scopeBarFallback]}>
-          {typeFilters.map((f) => (
-            <Pressable
-              key={f}
-              onPress={() => setType(f)}
-              style={[styles.scopeBtn, typeFilter === f && styles.scopeBtnActive]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: typeFilter === f }}
+      <View style={styles.results}>
+        {semanticMode ? (
+          <FlatList
+            data={hits}
+            keyExtractor={(h) => `${h.kind ?? "note"}:${h.noteId}`}
+            {...listProps}
+            refreshControl={
+              <RefreshControl refreshing={reindexing} onRefresh={forceReindex} tintColor={t.textTertiary} />
+            }
+            renderItem={({ item }) => (
+              <ResultRow
+                title={item.title}
+                preview={item.kind === "card" ? `Task · ${item.sectionTitle}` : item.sectionTitle}
+                score={item.rank}
+                accentColor={item.kind === "card" ? t.success : t.info}
+                onPress={() =>
+                  openResult(
+                    item.kind === "card"
+                      ? { pathname: "/card/[id]", params: { id: item.noteId, back: "Search" } }
+                      : { pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } },
+                  )
+                }
+              />
+            )}
+          />
+        ) : (
+          <FlatList
+            data={keywordResults}
+            keyExtractor={(r) => `${r.kind}:${r.id}`}
+            {...listProps}
+            renderItem={({ item }) => (
+              <ResultRow
+                title={item.title}
+                preview={item.kind === "card" ? `Task · ${item.preview}` : item.preview}
+                accentColor={item.kind === "card" ? t.success : t.info}
+                dotColor={item.kind === "card" ? PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? undefined : undefined}
+                onPress={() =>
+                  openResult(
+                    item.kind === "card"
+                      ? { pathname: "/card/[id]", params: { id: item.id, back: "Search" } }
+                      : { pathname: "/note/[id]", params: { id: item.id, back: "Search" } },
+                  )
+                }
+              />
+            )}
+          />
+        )}
+
+        {/* Empty state as a screen-pinned overlay SIBLING of the list (not a
+            ListEmptyComponent). Decoupled from the list's keyboard/content inset,
+            so it never jumps when the keyboard opens — and it shares Chat's exact
+            anchoring system (pinned + default 25% top bias). `insetTop` clears
+            the native search header; `pointerEvents="none"`
+            (inside EmptyState) lets scroll / pull-to-reindex gestures pass
+            through to the list beneath. Only shown when the list is empty. */}
+        {isListEmpty ? (
+          hasQuery ? (
+            // Active search with no matches → light top-anchored text hint (no
+            // branded splash — that's the resting state, not a "found nothing"
+            // state). Pinned so it holds position when the keyboard is open.
+            <View
+              pointerEvents="none"
+              style={[styles.hintOverlay, { paddingTop: belowHeader + scopeClearance }]}
             >
-              <Text style={[styles.scopeText, typeFilter === f && styles.scopeTextActive]}>
-                {typeLabel(f)}
-              </Text>
-            </Pressable>
-          ))}
-        </GlassBar>
-      </KeyboardStickyView>
+              <View style={styles.hintBias} />
+              <Text style={styles.hint}>{emptyHint.primary}</Text>
+              {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
+            </View>
+          ) : (
+            // Resting (no query) → branded Cairn empty state. The "why not all
+            // indexed?" affordance lives in the header (see headerRight) so it's
+            // always visible and never hides behind the list or tab bar.
+            <EmptyState
+              title={emptyHint.primary}
+              subtitle={emptyHint.secondary}
+              pinned
+              insetTop={belowHeader + scopeClearance}
+            />
+          )
+        ) : null}
+      </View>
     </TabScreen>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    scopeOverlay: { position: "absolute", left: 12, right: 12, bottom: 0 },
-    scopeBar: {
-      flexDirection: "row",
-      gap: 4,
-      padding: 4,
-      borderRadius: 12,
-      overflow: "hidden",
-    },
-    // Fallback (no Liquid Glass): give the bar a solid themed surface + border.
-    scopeBarFallback: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
-    scopeBtn: { flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: "center" },
-    scopeBtnActive: { backgroundColor: t.accent },
-    scopeText: { ...typeScale.control, color: t.textSecondary },
-    scopeTextActive: { color: t.accentFg },
+    // Results list region (underlaps the opaque header; automatic content inset
+    // clears the search field + the native scope bar when present).
+    results: { flex: 1 },
+    // JS fallback All|Notes|Tasks scope bar (native UISegmentedControl) —
+    // absolute, top is set inline to `belowHeader`, shown only when the native
+    // scope module isn't available. zIndex keeps it above the results list
+    // (which is later in the tree).
+    topScope: { position: "absolute", left: 12, right: 12, zIndex: 1 },
     // Header ✨ semantic toggle: bare icon, no background — iOS supplies its own
     // toggle chrome. Colour (accent vs tertiary) is the on/off signal.
     semBtn: { alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
-    // Bottom pad clears the pinned scope bar + tab bar (+ the native search
-    // field on iOS ≤26; none on iOS 27, so drop that reservation).
-    list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 48 },
+    // Bottom pad clears the tab bar with a small buffer. The search field is
+    // stacked below the nav bar (never in the tab bar), so there's no tab-bar
+    // search-field reservation. The top pad is applied inline
+    // (`paddingTop: 12 + scopeClearance`) so it's zero extra when the scope bar
+    // is native.
+    list: {
+      padding: 12,
+      paddingBottom: 12 + TAB_BAR_BASE + 12,
+    },
     // Lets an empty list stay exactly the viewport height (no scroll) — the
     // pinned empty-state overlay sits on top of it as a sibling.
     listGrow: { flexGrow: 1 },
     // Active-search "no matches" hint — a screen-pinned overlay sibling of the
     // list (matches the branded EmptyState's positioning) so it doesn't jump
-    // when the keyboard opens. Icon-less; just the top-biased text.
+    // when the keyboard opens. Icon-less; just the top-biased text. paddingTop
+    // clears the search header + the pinned scope bar.
     hintOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", paddingHorizontal: 32 },
     // Push the hint text down to the same ~25% position as the branded state.
     hintBias: { height: "25%" },

@@ -37,21 +37,38 @@ const wantMac   = args.includes("--mac");
 const wantWin   = args.includes("--win");
 const wantLinux = args.includes("--linux");
 
-// Default to current platform
+// Default to current platform (host arch only, dev convenience)
 const platform = process.platform;
 const targets = [];
-if (wantMac) {
-  targets.push({ id: "node24-macos-arm64",  out: "cairn-mcp",     arch: "arm64" });
-} else if (!wantWin && !wantLinux && platform === "darwin") {
-  const arch = process.arch === "x64" ? "x64" : "arm64";
-  targets.push({ id: `node24-macos-${arch}`, out: "cairn-mcp",     arch });
+if (wantMac || (!wantWin && !wantLinux && platform === "darwin")) {
+  if (wantMac) {
+    // Release: universal mac — arm64 canonical + x64 suffixed.
+    targets.push({ id: "node24-macos-arm64", out: "cairn-mcp",     arch: "arm64" });
+    targets.push({ id: "node24-macos-x64",   out: "cairn-mcp-x64", arch: "x64" });
+  } else {
+    const arch = process.arch === "x64" ? "x64" : "arm64";
+    targets.push({ id: `node24-macos-${arch}`, out: "cairn-mcp", arch });
+  }
 }
-if (wantWin   || (!wantMac && !wantWin && !wantLinux && platform === "win32"))   targets.push({ id: "node24-win-x64",      out: "cairn-mcp.exe",   arch: "x64" });
-if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux"))   targets.push({ id: "node24-linux-x64",    out: "cairn-mcp-linux", arch: "x64" });
-
-// CI: explicit --mac adds the x64 arch too (universal mac release).
-if (wantMac) {
-  targets.push({ id: "node24-macos-x64", out: "cairn-mcp-x64", arch: "x64" });
+if (wantWin || (!wantMac && !wantWin && !wantLinux && platform === "win32")) {
+  if (wantWin) {
+    // Release: both arches, arch-suffixed (afterPack canonicalises + strips).
+    targets.push({ id: "node24-win-x64",   out: "cairn-mcp-win-x64.exe",   arch: "x64" });
+    targets.push({ id: "node24-win-arm64", out: "cairn-mcp-win-arm64.exe", arch: "arm64" });
+  } else {
+    const arch = process.arch === "x64" ? "x64" : "arm64";
+    targets.push({ id: `node24-win-${arch}`, out: "cairn-mcp.exe", arch });
+  }
+}
+if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux")) {
+  if (wantLinux) {
+    // Release: both arches, arch-suffixed (afterPack canonicalises + strips).
+    targets.push({ id: "node24-linux-x64",   out: "cairn-mcp-linux-x64",   arch: "x64" });
+    targets.push({ id: "node24-linux-arm64", out: "cairn-mcp-linux-arm64", arch: "arm64" });
+  } else {
+    const arch = process.arch === "x64" ? "x64" : "arm64";
+    targets.push({ id: `node24-linux-${arch}`, out: "cairn-mcp-linux", arch });
+  }
 }
 
 function run(cmd) {
@@ -91,10 +108,21 @@ for (const target of targets) {
   // Stage the arch-matched native binding NEXT TO the output binary as
   // `better_sqlite3-<arch>.node` — a real on-disk path resolveMcpNativeBinding()
   // loads via process.execPath. Deterministic and loadable when the binary runs
-  // standalone (agents run it with the app closed). Multiple mac arches
-  // (cairn-mcp arm64 + cairn-mcp-x64) coexist in dist-mcp/ via the arch suffix.
+  // standalone (agents run it with the app closed). Multiple arches coexist in
+  // dist-mcp/ via the arch-suffixed sidecar + binary names; afterPack strips the
+  // non-target arch and canonicalises the surviving binary per platform.
   const sidecar = path.join(outDir, `better_sqlite3-${target.arch}.node`);
   fs.copyFileSync(archNative, sidecar);
+  // macOS: re-sign the sidecar at its final path with an explicit identifier.
+  // pkg dlopen's this from an ad-hoc-signed process; a fresh signature here
+  // avoids dyld code-signature page rejection ("Invalid Page") — and prevents
+  // any stale signature-cache state from a previously-crash-loaded file.
+  if (process.platform === "darwin") {
+    execSync(
+      `codesign --force --sign - -i cairn-better-sqlite3-${target.arch} ${JSON.stringify(sidecar)}`,
+      { stdio: "inherit" },
+    );
+  }
   console.log(`[build-mcp-binary] Staged native binding: ${path.basename(sidecar)}`);
 }
 

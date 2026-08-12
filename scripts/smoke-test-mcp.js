@@ -27,9 +27,11 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 
 function platformBinary() {
-  if (process.platform === "win32") return path.join(root, "dist-mcp", "cairn-mcp.exe");
-  if (process.platform === "linux") return path.join(root, "dist-mcp", "cairn-mcp-linux");
-  return path.join(root, "dist-mcp", "cairn-mcp");
+  // Release builds produce arch-suffixed binaries in dist-mcp/ (afterPack
+  // canonicalises only inside the packaged app), so resolve by process.arch.
+  if (process.platform === "win32") return path.join(root, "dist-mcp", `cairn-mcp-win-${process.arch}.exe`);
+  if (process.platform === "linux") return path.join(root, "dist-mcp", `cairn-mcp-linux-${process.arch}`);
+  return path.join(root, "dist-mcp", process.arch === "x64" ? "cairn-mcp-x64" : "cairn-mcp");
 }
 
 const BIN = process.argv[2] || platformBinary();

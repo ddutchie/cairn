@@ -90,7 +90,7 @@ export function StepMCP({ onBack, onNext }: Props) {
           </div>
         </div>
 
-        <NavRow onBack={onBack} onNext={onNext} nextLabel="Save & continue" />
+        <NavRow onBack={onBack} onNext={onNext} />
       </div>
     </Shell>
   );

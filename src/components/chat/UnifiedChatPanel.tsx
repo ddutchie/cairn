@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { SessionPane } from "@/components/agent/SessionPane";
@@ -17,7 +17,6 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
   const {
     activeView,
     chatOpen,
-    chatPanelWidth,
     setChatPanelWidth,
     sidebarCollapsed,
     activePreviewItem,
@@ -26,7 +25,6 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
   } = useCairnStore(useShallow((s) => ({
     activeView: s.activeView,
     chatOpen: s.chatOpen,
-    chatPanelWidth: s.chatPanelWidth,
     setChatPanelWidth: s.setChatPanelWidth,
     sidebarCollapsed: s.sidebarCollapsed,
     activePreviewItem: s.activePreviewItem,
@@ -36,15 +34,6 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
 
   const panelRef = useRef<HTMLElement>(null);
   const dividerRef = useRef<HTMLDivElement>(null);
-  const [localWidth, setLocalWidth] = useState(chatPanelWidth);
-
-  // Sync local width with store width when not dragging
-  useEffect(() => {
-    if (!chatPanelResizing) {
-      // eslint-disable-next-line
-      setLocalWidth(chatPanelWidth);
-    }
-  }, [chatPanelWidth, chatPanelResizing]);
 
   useEffect(() => {
     const divider = dividerRef.current;
@@ -59,7 +48,11 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
       if (!dragging) return;
       // Panel is on the right; dragging left (lower clientX) makes it wider
       const next = Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, startW - (e.clientX - startX)));
-      setLocalWidth(next);
+      // Write the live width straight to :root so BOTH the fixed panel and the
+      // centered content margin reflow instantly — no React re-render per
+      // mousemove (updating the store per pixel re-renders the whole page tree
+      // and can blow React's nested-update limit).
+      document.documentElement.style.setProperty("--chat-panel-width", `${next}px`);
     }
 
     function onMouseUp() {
@@ -92,6 +85,17 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
       window.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      // The effect tears down mid-drag when activeView changes (e.g. the user
+      // switches views while resizing) — mouseup never fires. Retain the latest
+      // dragged width, commit it, and clear the resizing flag so the panel
+      // doesn't stay in a half-resized, transition-less state.
+      if (dragging) {
+        dragging = false;
+        setChatPanelResizing(false);
+        const live = document.documentElement.style.getPropertyValue("--chat-panel-width");
+        const parsed = parseInt(live, 10);
+        if (Number.isFinite(parsed)) setChatPanelWidth(parsed);
+      }
     };
   }, [setChatPanelWidth, setChatPanelResizing, activeView]);
 
@@ -109,16 +113,14 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
       "--sidebar-width": sidebarWidth,
     } as React.CSSProperties;
   } else {
-    // Sidebar mode
-    positioningClasses = "right-0 border-l border-[var(--border)] bg-[var(--surface)] left-[calc(100%-var(--chat-panel-width))]";
+    // Sidebar mode. Width comes from the :root `--chat-panel-width` variable
+    // (shared with the centered content margin) so the drag reflows both live.
+    positioningClasses = "right-0 border-l border-[var(--border)] bg-[var(--surface)] left-[calc(100%-var(--chat-panel-width,320px))]";
     if (chatOpen) {
       positioningClasses += " opacity-100 translate-x-0";
     } else {
       positioningClasses += " opacity-0 translate-x-full pointer-events-none";
     }
-    widthStyle = {
-      "--chat-panel-width": `${localWidth}px`,
-    } as React.CSSProperties;
   }
 
   return (

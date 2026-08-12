@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { GitMerge, ChevronRight, Trash2, ArrowUpCircle } from "lucide-react-native";
+import { GitMerge, ChevronRight, Trash2, ArrowUpCircle, PenLine } from "lucide-react-native";
 import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
 import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
-import { restorableCount, stalePeerCount } from "@/db/queries";
+import { restorableCount, stalePeerCount, stalePeerVersions, getUserStyle, type UserStyleRow } from "@/db/queries";
+import { SYNC_PROTOCOL_VERSION } from "@cairn/shared/sync/engine";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
 import { SectionLabel } from "@/components/SectionLabel";
 import { ICON_CHECK } from "@/components/toolbar-icons";
@@ -23,6 +24,23 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
  * Workspace switching lives in the Projects header (WorkspaceHeaderMenu), not
  * here — the Sync modal is purely sync status/diagnostics.
  */
+/** Version-aware explanation for why a peer needs updating. */
+function peerUpdateHint(peerVersions: number[]): string {
+  const oldest = peerVersions.length ? Math.min(...peerVersions) : 0;
+  // v1 → v2: the writing style became a synced entity (v1 peers can't publish it).
+  if (SYNC_PROTOCOL_VERSION === 2 && oldest === 1) {
+    return "Update Cairn there so your writing style syncs to this device.";
+  }
+  if (oldest < SYNC_PROTOCOL_VERSION) {
+    return "Update Cairn there to sync the latest features.";
+  }
+  return "Update Cairn there so deletions sync correctly — until then a deleted note can reappear.";
+}
+
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export default function SyncScreen() {
   useModalOpenHaptic();
   const t = useTheme();
@@ -31,6 +49,8 @@ export default function SyncScreen() {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [restorable, setRestorable] = useState(0);
   const [stalePeers, setStalePeers] = useState(0);
+  const [staleVersions, setStaleVersions] = useState<number[]>([]);
+  const [userStyle, setUserStyle] = useState<UserStyleRow | null>(null);
   const styles = useMemo(() => makeStyles(t), [t]);
   const busy = state === "syncing";
 
@@ -46,9 +66,17 @@ export default function SyncScreen() {
     }
     try {
       setStalePeers(stalePeerCount());
+      setStaleVersions(stalePeerVersions());
     } catch (err) {
       console.warn("[cairn] stalePeerCount failed", err);
       setStalePeers(0);
+      setStaleVersions([]);
+    }
+    try {
+      setUserStyle(getUserStyle());
+    } catch (err) {
+      console.warn("[cairn] getUserStyle failed", err);
+      setUserStyle(null);
     }
   }, []);
 
@@ -154,7 +182,31 @@ export default function SyncScreen() {
                 {stalePeers === 1 ? "Another device needs updating" : `${stalePeers} devices need updating`}
               </Text>
               <Text style={styles.conflictHelp}>
-                Update Cairn there so deletions sync correctly — until then a deleted note can reappear.
+                {peerUpdateHint(staleVersions)}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {userStyle ? (
+          <View style={styles.conflictRow}>
+            <PenLine size={18} color={t.textSecondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.conflictTitle, { color: t.textPrimary }]}>
+                Writing style synced
+              </Text>
+              <Text style={styles.conflictHelp}>
+                {userStyle.persona?.name ? `${userStyle.persona.name} · ` : ""}updated {formatWhen(userStyle.updatedAt)} — chat can draft in your voice.
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.conflictRow}>
+            <PenLine size={18} color={t.textTertiary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.conflictTitle}>Writing style not synced</Text>
+              <Text style={styles.conflictHelp}>
+                Set one up on your desktop (Settings → Writing Style) and sync — then this device can draft in your voice too.
               </Text>
             </View>
           </View>

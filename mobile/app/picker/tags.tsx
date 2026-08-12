@@ -1,40 +1,42 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, FlatList, StyleSheet } from "react-native";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Check } from "lucide-react-native";
 import { listAllTags, type TagRow } from "@/db/queries";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
-import { BottomSheet, BottomSheetHeader } from "./BottomSheet";
+import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
 
 /**
- * A bottom-anchored sheet for selecting a note/card's tags. Presents every
+ * Native formSheet route for selecting a note/card's tags. Presents every
  * workspace tag as a toggleable row (coloured dot + name + check). Selection is
- * held locally and returned via onDone so the caller can persist it in one
- * write (setNoteTags / setCardTags).
+ * held locally and returned via the result key on Done, so the caller can
+ * persist it in one write (setNoteTags / setCardTags).
  */
-export function TagPickerSheet({
-  visible,
-  initialSelected,
-  onDone,
-  onClose,
-}: {
-  visible: boolean;
-  initialSelected: string[];
-  onDone: (tagIds: string[]) => void;
-  onClose: () => void;
-}) {
+export default function TagPickerRoute() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const allTags: TagRow[] = useMemo(() => (visible ? listAllTags() : []), [visible]);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
+  const router = useRouter();
+  const { resultKey, initial } = useLocalSearchParams<{ resultKey?: string; initial?: string }>();
 
-  // Reset the working selection whenever the sheet re-opens.
-  const [wasVisible, setWasVisible] = useState(false);
-  if (visible && !wasVisible) {
-    setSelected(new Set(initialSelected));
-    setWasVisible(true);
-  } else if (!visible && wasVisible) {
-    setWasVisible(false);
-  }
+  const initialIds = useMemo<string[]>(() => {
+    try {
+      const v = initial ? JSON.parse(initial) : [];
+      return Array.isArray(v) ? v.map(String) : [];
+    } catch {
+      return [];
+    }
+  }, [initial]);
+
+  const allTags: TagRow[] = useMemo(() => listAllTags(), []);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialIds));
+
+  // Dismissed without Done (swipe-down)? Drop the caller's pending handler so
+  // it isn't left registered after this route unmounts.
+  useEffect(() => {
+    return () => {
+      if (resultKey) discardSheetResult(resultKey);
+    };
+  }, [resultKey]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -45,11 +47,24 @@ export function TagPickerSheet({
     });
   };
 
-  const done = () => onDone([...selected]);
+  const done = () => {
+    if (resultKey) resolveSheetResult(resultKey, [...selected]);
+    router.back();
+  };
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} maxHeight="70%">
-      <BottomSheetHeader title="Tags" onCancel={onClose} onDone={done} />
+    <>
+      <Stack.Screen options={{ title: "Tags" }} />
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
+          Cancel
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button accessibilityLabel="Done" onPress={done}>
+          Done
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
 
       {allTags.length === 0 ? (
         <Text style={styles.empty}>No tags in this workspace yet.</Text>
@@ -57,7 +72,8 @@ export function TagPickerSheet({
         <FlatList
           data={allTags}
           keyExtractor={(tag) => tag.id}
-          style={styles.list}
+          style={[styles.list, { flex: 1 }]}
+          contentInsetAdjustmentBehavior="automatic"
           renderItem={({ item }) => {
             const on = selected.has(item.id);
             return (
@@ -75,7 +91,7 @@ export function TagPickerSheet({
           }}
         />
       )}
-    </BottomSheet>
+    </>
   );
 }
 

@@ -2,14 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import SegmentedControl from "@react-native-segmented-control/segmented-control";
 import {
   getProject,
   getProjectOverview,
   listNotes,
   listColumns,
   listCards,
-  listProjects,
-  listFolders,
   moveCardToColumn,
   moveNoteToProject,
   moveNotesToFolder,
@@ -25,7 +24,7 @@ import {
   type ColumnRow,
   type ProjectOverviewData,
 } from "@/db/queries";
-import { NotePickerSheet, type PickerOption } from "@/components/NotePickerSheet";
+import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
@@ -38,12 +37,19 @@ import { useTheme, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 import { NoteRowItem } from "./project/NoteRowItem";
 import { FolderRow } from "./project/FolderRow";
-import { Segment } from "./project/Segment";
 import { Empty } from "./project/Empty";
 import { NoteFilterBar } from "./project/NoteFilterBar";
 import { type ListRow, rowKey } from "./project/list-rows";
 
 type Tab = "overview" | "notes" | "board";
+
+// Order of the native UISegmentedControl segments (Overview | Notes | Board);
+// the control's selectedIndex maps straight into the `tab` union.
+const PROJECT_TABS: Tab[] = ["overview", "notes", "board"];
+
+// Height of the floating Overview|Notes|Board bar (control 36 + 8 top + 6
+// bottom padding) — tab content clears this so the first row isn't hidden.
+const SEGMENT_BAR_H = 50;
 
 /**
  * Project detail (notes tree + board). Shared by two routes:
@@ -78,10 +84,6 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState("");
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
-  // The note currently targeted by the long-press action menu, and which
-  // move-picker sheet (if any) is open for it. `null` = no menu/sheet.
-  const [actionNote, setActionNote] = useState<NoteRow | null>(null);
-  const [picker, setPicker] = useState<null | "project" | "folder">(null);
   // Brief spinner state for the Overview pull-to-refresh gesture.
   const [refreshing, setRefreshing] = useState(false);
 
@@ -129,8 +131,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   // A per-note contextual menu mirroring the desktop note ⋯ menu (Pin/Unpin,
   // Move to project, Move to folder, Delete). Presented as a native action
   // sheet (iOS) / Alert action list (Android) on long-press; the two "Move"
-  // actions open a themed BottomSheet picker (NotePickerSheet). Kept as stable
-  // callbacks so the memoised NoteRowItem rows don't re-render.
+  // actions open the native formSheet picker route (app/picker/note.tsx). Kept
+  // as stable callbacks so the memoised NoteRowItem rows don't re-render.
 
   const togglePin = useCallback((note: NoteRow) => {
     pinNote(note.id, !note.is_pinned);
@@ -162,8 +164,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
     const pinLabel = note.is_pinned ? "Unpin" : "Pin";
     const run = (choice: "pin" | "project" | "folder" | "delete") => {
       if (choice === "pin") togglePin(note);
-      else if (choice === "project") { setActionNote(note); setPicker("project"); }
-      else if (choice === "folder") { setActionNote(note); setPicker("folder"); }
+      else if (choice === "project") openMovePicker(note, "project");
+      else if (choice === "folder") openMovePicker(note, "folder");
       else if (choice === "delete") confirmDelete(note);
     };
     if (Platform.OS === "ios") {
@@ -192,56 +194,44 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
     }
   }, [togglePin, confirmDelete]);
 
-  // Commit a picker selection, then close the menu + sheet and refresh the list.
-  const onPickProject = useCallback((projectId: string) => {
-    if (actionNote) {
-      const res = moveNoteToProject(actionNote.id, projectId);
-      if ("error" in res) {
-        // Surface the failure and keep the picker open (state intact) so the
-        // user can retry or pick a different target — don't silently swallow it.
-        haptics.error();
-        Alert.alert("Couldn't move note", res.error);
-        return;
-      }
-      haptics.success();
-    }
-    setPicker(null);
-    setActionNote(null);
-    load();
-  }, [actionNote, load]);
-
-  const onPickFolder = useCallback((folder: string) => {
-    if (actionNote) {
-      moveNotesToFolder([actionNote.id], folder);
-      haptics.success();
-    }
-    setPicker(null);
-    setActionNote(null);
-    load();
-  }, [actionNote, load]);
-
-  const closePicker = useCallback(() => { setPicker(null); setActionNote(null); }, []);
-
-  // Picker option lists, computed only while the relevant sheet is open. The
-  // project list excludes the current project; the folder list is prefixed with
-  // an explicit "Root" (folder="") option, matching the desktop folder picker.
-  const projectOptions = useMemo<PickerOption[]>(
-    () =>
-      picker === "project"
-        ? listProjects()
-            .filter((p) => p.id !== id)
-            .map((p) => ({ value: p.id, label: p.name, icon: p.icon }))
-        : [],
-    [picker, id],
+  // Open the native move picker (project / folder) for `note`. The picked value
+  // comes back through the sheet-result bus; failure surfaces as an alert after
+  // the sheet closes.
+  const openMovePicker = useCallback(
+    (note: NoteRow, variant: "project" | "folder") => {
+      const key = newSheetResultKey();
+      registerSheetResult<string>(key, (value) => {
+        if (variant === "project") {
+          const res = moveNoteToProject(note.id, value);
+          if ("error" in res) {
+            haptics.error();
+            Alert.alert("Couldn't move note", res.error);
+            return;
+          }
+        } else {
+          moveNotesToFolder([note.id], value);
+        }
+        haptics.success();
+        load();
+      });
+      router.push({
+        pathname: "/picker/note",
+        params: {
+          resultKey: key,
+          title: variant === "project" ? "Move to project" : "Move to folder",
+          variant,
+          excludeProjectId: variant === "project" ? (id ?? undefined) : undefined,
+          projectId: variant === "folder" ? (id ?? undefined) : undefined,
+          currentValue: variant === "folder" ? (note.folder ?? "") : undefined,
+          emptyText:
+            variant === "project"
+              ? "No other projects in this workspace."
+              : "No folders in this project yet.",
+        },
+      });
+    },
+    [id, load, router],
   );
-  const folderOptions = useMemo<PickerOption[]>(() => {
-    if (picker !== "folder" || !id) return [];
-    const opts: PickerOption[] = [{ value: "", label: "Root" }];
-    for (const f of listFolders(id)) {
-      if (f) opts.push({ value: f, label: f });
-    }
-    return opts;
-  }, [picker, id]);
 
   const tree = useMemo(() => buildFolderTree(notes), [notes]);
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -343,12 +333,25 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
       </Stack.Toolbar>
 
       <View style={styles.segment}>
-        <Segment label="Overview" active={tab === "overview"} onPress={() => setTab("overview")} t={t} />
-        <Segment label="Notes" count={notes.length} active={tab === "notes"} onPress={() => setTab("notes")} t={t} />
-        <Segment label="Board" count={cards.length} active={tab === "board"} onPress={() => setTab("board")} t={t} />
+        <SegmentedControl
+          // No flex:1 — Yoga's flexBasis:0 makes the native view collapse to
+          // height 0 when the parent's height is content-driven. Width stretches
+          // via the default alignItems:stretch; only the height needs setting.
+          // No backgroundColor: UISegmentedControl's track is a private subview
+          // on iOS 13+, so the prop can't strip it — we let the native iOS
+          // 26/27 Liquid Glass track render and tint only the selected segment.
+          style={{ height: 36 }}
+          tintColor={t.accent}
+          fontStyle={{ color: t.textSecondary, fontSize: 15, fontWeight: "600" }}
+          activeFontStyle={{ color: t.accentFg, fontSize: 15, fontWeight: "600" }}
+          values={["Overview", `Notes ${notes.length}`, `Board ${cards.length}`]}
+          selectedIndex={PROJECT_TABS.indexOf(tab)}
+          onChange={(e) => setTab(PROJECT_TABS[e.nativeEvent.selectedSegmentIndex] ?? "overview")}
+        />
       </View>
 
-      {tab === "overview" ? (
+      <View style={styles.content}>
+        {tab === "overview" ? (
         overview ? (
           <OverviewTab
             data={overview}
@@ -454,29 +457,10 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
           }}
         />
       )}
+      </View>
 
-      {/* Long-press move pickers. Options are read lazily (only while the sheet
-          is open) so they reflect the current DB without polling. */}
-      <NotePickerSheet
-        visible={picker === "project"}
-        title="Move to project"
-        variant="project"
-        options={projectOptions}
-        selectedValue={id}
-        emptyText="No other projects in this workspace."
-        onSelect={onPickProject}
-        onClose={closePicker}
-      />
-      <NotePickerSheet
-        visible={picker === "folder"}
-        title="Move to folder"
-        variant="folder"
-        options={folderOptions}
-        selectedValue={actionNote?.folder ?? ""}
-        emptyText="No folders in this project yet."
-        onSelect={onPickFolder}
-        onClose={closePicker}
-      />
+      {/* Long-press move pickers now live in the native formSheet routes
+          (app/picker/note.tsx), opened via openMovePicker. */}
     </View>
   );
 }
@@ -484,7 +468,23 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
-    segment: { flexDirection: "row", gap: 4, margin: 12, padding: 4, backgroundColor: t.surface2, borderRadius: 10 },
+    // Floating Overview|Notes|Board bar in the header colour: an absolute
+    // overlay pinned below the nav bar, so the tab content scrolls beneath it
+    // (like the search scope bar). Height = control 36 + 8 top + 6 bottom pad.
+    segment: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 1,
+      backgroundColor: t.surface,
+      paddingHorizontal: 12,
+      paddingTop: 8,
+      paddingBottom: 6,
+    },
+    // Tab content clears the floating segment bar (SEGMENT_BAR_H) plus a small
+    // breathing gap so the first row isn't flush against the control.
+    content: { flex: 1, paddingTop: SEGMENT_BAR_H + 8 },
     notesScroll: { flexGrow: 1 },
   });
 }

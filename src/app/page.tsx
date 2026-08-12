@@ -110,6 +110,15 @@ export default function Home() {
   // Keep ref in sync whenever state changes
   useEffect(() => { onboardingStateRef.current = onboardingState; }, [onboardingState]);
 
+  // Expose the chat panel width as a :root CSS variable so the fixed chat panel
+  // and the centered content margin share one live source. The drag writes the
+  // variable imperatively (no React re-renders per mousemove); this effect keeps
+  // it in sync with the committed store value.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    document.documentElement.style.setProperty("--chat-panel-width", `${chatPanelWidth}px`);
+  }, [chatPanelWidth]);
+
   // Auto-updater state — tracked separately so event order doesn't matter
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
@@ -451,7 +460,7 @@ export default function Home() {
             !chatPanelResizing && "transition-[margin-right] duration-300 ease-in-out"
           )}
           style={{
-            marginRight: (activeView !== "chat" && chatOpen) ? `${chatPanelWidth}px` : "0px",
+            marginRight: (activeView !== "chat" && chatOpen) ? "var(--chat-panel-width, 320px)" : "0px",
           }}
         >
           <Topbar />

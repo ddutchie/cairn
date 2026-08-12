@@ -1326,3 +1326,74 @@ describe("session todos (todowrite)", () => {
     expect(getSessionTodos(db, "pi1")).toEqual([]);
   });
 });
+
+// ── v43 migration — stale blocked_by_ids sweep ────────────────────────────────
+
+describe("v43 migration (blocked_by_ids data repair)", () => {
+  function seedStale(db: Database.Database) {
+    seedWorkspace(db);
+    seedProject(db);
+    createColumn(db, { id: "col1", projectId: "proj1", workspaceId: "ws1", name: "Backlog", type: "backlog", order: 0 });
+    createColumn(db, { id: "col-done", projectId: "proj1", workspaceId: "ws1", name: "Done", type: "done", order: 1 });
+    // done blocker + archived blocker + live blocker
+    createCard(db, { id: "done-blocker", columnId: "col-done", projectId: "proj1", workspaceId: "ws1", title: "Done Blocker", order: 0 });
+    createCard(db, { id: "archived-blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Archived Blocker", order: 1 });
+    db.prepare("UPDATE task_cards SET archived_at = '2026-01-01T00:00:00.000Z' WHERE id = 'archived-blocker'").run();
+    createCard(db, { id: "live-blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Live Blocker", order: 2 });
+    createCard(db, { id: "orphan-blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Orphan Blocker", order: 3 });
+    db.prepare("DELETE FROM task_cards WHERE id = 'orphan-blocker'").run();
+    // blocked card references all four
+    createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 4 });
+    db.prepare(
+      "UPDATE task_cards SET blocked_by_ids = ? WHERE id = 'blocked'"
+    ).run(JSON.stringify(["done-blocker", "archived-blocker", "live-blocker", "orphan-blocker"]));
+  }
+
+  it("re-winding to v42 then re-applying schema sweeps stale refs", () => {
+    const db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    seedStale(db);
+    db.pragma("user_version = 42"); // force v43 to re-run on next applySchema
+    applySchema(db);
+    const cleaned = JSON.parse(
+      (db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = 'blocked'").get() as { blocked_by_ids: string }).blocked_by_ids
+    ) as string[];
+    // done, archived, and orphaned blockers are dropped; the live one stays
+    expect(cleaned).toEqual(["live-blocker"]);
+    db.close();
+  });
+
+  it("is a no-op when no stale refs exist", () => {
+    const db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    seedStale(db);
+    // Only live blockers (all in non-done columns, none archived) → nothing to change
+    db.prepare(
+      "UPDATE task_cards SET blocked_by_ids = ? WHERE id = 'blocked'"
+    ).run(JSON.stringify(["live-blocker"]));
+    const before = (db.prepare("SELECT blocked_by_ids, version FROM task_cards WHERE id = 'blocked'").get() as { version: number }).version;
+    db.pragma("user_version = 42");
+    applySchema(db);
+    const after = (db.prepare("SELECT blocked_by_ids, version FROM task_cards WHERE id = 'blocked'").get() as { blocked_by_ids: string; version: number });
+    expect(after.blocked_by_ids).toBe(JSON.stringify(["live-blocker"]));
+    expect(after.version).toBe(before); // untouched — no spurious version bump
+    db.close();
+  });
+
+  it("drops a blocker with deleted_at set (sync tombstone)", () => {
+    const db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    seedStale(db);
+    // Tombstone the live blocker — a soft-deleted (but still present) row must
+    // be treated as resolved just like an archived or done-card blocker.
+    db.prepare("UPDATE task_cards SET deleted_at = '2026-02-01T00:00:00.000Z' WHERE id = 'live-blocker'").run();
+    db.pragma("user_version = 42");
+    applySchema(db);
+    const cleaned = JSON.parse(
+      (db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = 'blocked'").get() as { blocked_by_ids: string }).blocked_by_ids
+    ) as string[];
+    // done, archived, orphaned, and now tombstoned blockers all dropped
+    expect(cleaned).toEqual([]);
+    db.close();
+  });
+});
