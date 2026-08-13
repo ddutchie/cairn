@@ -32,14 +32,15 @@ import { getCachedPersonalitiesManifest } from "./personalities-registry";
 const MAX_TURNS = 30;
 
 export interface AgentEvent {
-  type: "text-delta" | "reasoning-delta" | "tool-start" | "tool" | "usage" | "final" | "error";
-  delta?: string; // for text-delta / reasoning-delta
+  type: "text-delta" | "reasoning-delta" | "reasoning-summary-delta" | "tool-start" | "tool" | "usage" | "final" | "error";
+  delta?: string; // for text-delta / reasoning-delta / reasoning-summary-delta
   tool?: string;
   toolCallId?: string; // correlates a "tool-start" with its later "tool"
   args?: unknown;
   result?: unknown;
   text?: string; // full text for final / error
   reasoning?: string; // accumulated reasoning text, on "final"
+  reasoningSummary?: string; // condensed reasoning summary, on "final"
   usage?: ChatUsage; // context-window usage — per-turn on "usage", final round on "final"
 }
 
@@ -149,6 +150,9 @@ export async function runAgent(
   let finalText = "";
   // Accumulated reasoning ("thinking") text across the run's turns (PCC only).
   let reasoning = "";
+  // Condensed reasoning summary (Responses `reasoning.summary`), when the
+  // provider emits one. Shown collapsed in place of the raw trace.
+  let reasoningSummary = "";
   // Context-window usage from the latest turn's finish event (Apple provider).
   let usage: ChatUsage | undefined;
 
@@ -207,6 +211,10 @@ export async function runAgent(
           const delta = (ev as { delta: string }).delta;
           reasoning += delta;
           onEvent?.({ type: "reasoning-delta", delta });
+        } else if (ev.type === "reasoning-summary-delta" && typeof (ev as { delta?: string }).delta === "string") {
+          const delta = (ev as { delta: string }).delta;
+          reasoningSummary += delta;
+          onEvent?.({ type: "reasoning-summary-delta", delta });
         } else if (ev.type === "tool-input-available") {
           const e = ev as { toolCallId: string; toolName: string; input: unknown };
           toolCalls.push({ id: e.toolCallId, name: e.toolName, input: e.input });
@@ -259,7 +267,7 @@ export async function runAgent(
       // Ensure the assistant turn is in history even if empty-ish.
       if (assistant.parts.length === 0) assistant.parts.push({ type: "text", text: finalText });
       conversation.push(assistant);
-      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, usage: withBreakdown(usage) });
+      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, reasoningSummary: reasoningSummary || undefined, usage: withBreakdown(usage) });
       return finalText;
     }
 
@@ -300,7 +308,7 @@ export async function runAgent(
     conversation.push(assistant);
     // Loop for the model's follow-up turn (it now sees the tool outputs).
     if (finishReason === "stop") {
-      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, usage: withBreakdown(usage) });
+      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, reasoningSummary: reasoningSummary || undefined, usage: withBreakdown(usage) });
       return finalText;
     }
   }
@@ -311,7 +319,7 @@ export async function runAgent(
   // half-finished answer off as complete.
   const limitNote = `I reached the maximum of ${MAX_TURNS} steps. Any changes made have been saved — try a more focused request.`;
   const msg = finalText ? `${finalText}\n\n${limitNote}` : limitNote;
-  onEvent?.({ type: "final", text: msg, reasoning: reasoning || undefined, usage: withBreakdown(usage) });
+  onEvent?.({ type: "final", text: msg, reasoning: reasoning || undefined, reasoningSummary: reasoningSummary || undefined, usage: withBreakdown(usage) });
   return msg;
 }
 

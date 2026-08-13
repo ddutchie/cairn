@@ -275,6 +275,7 @@ export function toChatMessage(row: any) {
     role: row.role as string,
     content: row.content as string,
     reasoning: (row.reasoning as string | null) ?? undefined,
+    reasoningSummary: (row.reasoning_summary as string | null) ?? undefined,
     contextRefs: row.context_refs ? JSON.parse(row.context_refs) : undefined,
     toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
     subagents: row.subagents ? JSON.parse(row.subagents) : undefined,

@@ -15,8 +15,8 @@
 import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
 import type { OpenAIMessage } from "./llm";
-import { buildApiUrl } from "./llm";
-import { AUTO_OUTPUT_TOKEN_CAP, buildChatCompletionsBody, consumeAssistantStream, failToolCallsFromTruncatedMessage, interruptedStreamToolCallError, truncationRetryNotice } from "./llm-stream";
+import { AUTO_OUTPUT_TOKEN_CAP, failToolCallsFromTruncatedMessage, interruptedStreamToolCallError, truncationRetryNotice } from "./llm-stream";
+import { resolveTransport, markCompletionsOnly, isEndpointNotFound, COMPLETIONS_TRANSPORT, type LlmTransport } from "./llm-transport";
 import { TOOLS, type ChatRequest } from "./tools";
 import { extractCacheTokens } from "./usage-recorder";
 import { executeTool } from "../ipc/chat-executor";
@@ -27,8 +27,8 @@ import { traceTool } from "./tool-trace";
 import { parseToolArgs } from "./parse-tool-args";
 
 export type RunToolLoopResult =
-  | { exhausted: true; content: string; reasoning: string }
-  | { exhausted: false; content: string; reasoning: string };
+  | { exhausted: true; content: string; reasoning: string; reasoningSummary?: string }
+  | { exhausted: false; content: string; reasoning: string; reasoningSummary?: string };
 
 /**
  * Run the tool-call loop. Returns when the model produces a response with no
@@ -83,6 +83,16 @@ export async function runToolLoop(
   const combinedTools = extraTools.length > 0 ? [...baseTools, ...extraTools] : baseTools;
   let accumulatedContent = "";
   let accumulatedReasoning = "";
+  // Responses-only: condensed reasoning summary, when the provider emits one
+  // (captured so the final message's collapsed Thinking panel can show it).
+  let accumulatedReasoningSummary = "";
+
+  // Resolve the wire protocol once per run (cached per base URL by the
+  // transport). localllm never reaches here — it has its own branch below.
+  let transport: LlmTransport | null = null;
+  if (provider !== "localllm") {
+    transport = await resolveTransport(baseUrl, apiKey);
+  }
 
   // Reasoning round-trip (pi parity): the streamed chain-of-thought is captured
   // for the ThinkingPanel AND re-sent to the SAME model under its native field
@@ -232,8 +242,11 @@ export async function runToolLoop(
       let response: Response;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      // transport is resolved before the loop (cloud providers only). A 404/405
+      // mid-flight downgrades it to completions for this and future rounds.
+      let t = transport!;
       const buildBody = (reasoningEffort?: "none" | "low" | "high" | "max") =>
-        buildChatCompletionsBody({
+        t.buildBody({
           model,
           messages: prepareForSend(),
           tools: combinedTools,
@@ -242,7 +255,7 @@ export async function runToolLoop(
           reasoningEffort,
         });
       const doFetch = (body: Record<string, unknown>) =>
-        fetch(buildApiUrl(baseUrl, "chat/completions"), {
+        fetch(t.endpoint(baseUrl), {
           method: "POST",
           headers,
           signal,
@@ -262,8 +275,23 @@ export async function runToolLoop(
       }
 
       if (!response.ok) {
-        const errText = await response.text().catch(() => response.statusText);
-        return { exhausted: true, content: `AI endpoint error (${response.status}): ${errText.slice(0, 300)}`, reasoning: "" };
+        // A provider we thought spoke Responses returned 404/405 — downgrade it
+        // to chat-completions and re-fetch this turn once.
+        if (t.mode === "responses" && isEndpointNotFound(response.status)) {
+          markCompletionsOnly(baseUrl);
+          transport = COMPLETIONS_TRANSPORT;
+          t = transport;
+          try {
+            response = await doFetch(buildBody(req.config?.reasoningEffort));
+          } catch (_err) {
+            if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
+            return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.`, reasoning: "" };
+          }
+        }
+        if (!response.ok) {
+          const errText = await response.text().catch(() => response.statusText);
+          return { exhausted: true, content: `AI endpoint error (${response.status}): ${errText.slice(0, 300)}`, reasoning: "" };
+        }
       }
 
       const reader = response.body?.getReader();
@@ -271,10 +299,11 @@ export async function runToolLoop(
 
       // Shared SSE parse (same as the agent loop) so reasoning-field capture,
       // finish_reason tracking, and tool-call buffering can never diverge again.
-      const turn = await consumeAssistantStream(reader, {
+      const turn = await t.consume(reader, {
         signal,
         onToken: (delta) => { if (onToken) onToken(delta); },
         onThought: (delta) => { if (onThought) onThought(delta); },
+        onSummary: (delta) => { accumulatedReasoningSummary += delta; },
         onUsage: (usage) => {
           if (!onUsage) return;
           const topCost = usage.chunkCost as { request_cost_usd?: unknown } | undefined;
@@ -332,7 +361,7 @@ export async function runToolLoop(
     // No tool calls — model is ready to produce its final reply
     if (!assistantMsg.tool_calls?.length) {
       messages.push(assistantMsg);
-      return { exhausted: false, content: accumulatedContent, reasoning: accumulatedReasoning };
+      return { exhausted: false, content: accumulatedContent, reasoning: accumulatedReasoning, reasoningSummary: accumulatedReasoningSummary };
     }
 
     // Output-token-limit / interrupted-stream truncation guard. A "length"
@@ -497,5 +526,6 @@ export async function runToolLoop(
     exhausted: true,
     content: "I reached the maximum number of steps for this request. Any actions taken so far have been saved — check your board and notes. Try breaking the request into smaller steps.",
     reasoning: accumulatedReasoning,
+    reasoningSummary: accumulatedReasoningSummary,
   };
 }

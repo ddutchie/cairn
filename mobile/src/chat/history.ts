@@ -21,6 +21,8 @@ export interface UiMessage {
   images?: string[];
   tools?: import("@/db/chat-store").ToolCall[];
   reasoning?: string;
+  /** Condensed reasoning summary (Responses `reasoning.summary`), shown collapsed. */
+  reasoningSummary?: string;
   streaming?: boolean;
 }
 

@@ -16,20 +16,19 @@
 
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
-import { isLocalEndpoint, calculatePromptBreakdown, scaleBreakdown, buildApiUrl, type TokenBreakdown } from "./llm";
+import { isLocalEndpoint, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "./llm";
 import type { ContentPart } from "../../shared/models/pdf-attach";
 import { recordLlmUsage, extractCost } from "./usage-recorder";
 import type { UsageSource } from "../db/usage-queries";
 import {
   AUTO_OUTPUT_TOKEN_CAP,
-  buildChatCompletionsBody,
-  consumeAssistantStream,
   failToolCallsFromTruncatedMessage,
   interruptedStreamToolCallError,
   truncationRetryNotice,
   prepareContextMessages,
   resolveSystemRole,
 } from "./llm-stream";
+import { resolveTransport, markCompletionsOnly, isEndpointNotFound, COMPLETIONS_TRANSPORT, type LlmTransport } from "./llm-transport";
 import { normalizeContextLimit } from "../../shared/models/model-catalog";
 import {
   readTool,  readToolDefinition,
@@ -661,6 +660,13 @@ export async function runAgentLoop(
     return;
   }
 
+  // Resolve the wire protocol once per run (cached per base URL). Local servers
+  // short-circuit to completions; unknown non-local providers are probed once.
+  let transport: LlmTransport = await resolveTransport(baseUrl, apiKey);
+  // One-shot downgrade guard: if a provider we thought spoke Responses 404s,
+  // flip to completions and retry once (never loops — completions won't 404).
+  let downgraded = false;
+
   // Build the context pruner — closes over session so it sees live lastPromptTokens
   const pruner = callbacks.transformContext
     ?? buildSlidingWindowPruner(session, contextWindow);
@@ -713,11 +719,11 @@ export async function runAgentLoop(
 
       let fetchError: string | null = null;
       try {
-        response = await fetch(buildApiUrl(baseUrl, "chat/completions"), {
+        response = await fetch(transport.endpoint(baseUrl), {
           method: "POST",
           headers,
           signal,
-          body: JSON.stringify(buildChatCompletionsBody({
+          body: JSON.stringify(transport.buildBody({
             model,
             messages: contextMessages,
             tools: allTools,
@@ -735,6 +741,15 @@ export async function runAgentLoop(
       let bodyText = "";
       if (response && !response.ok) {
         bodyText = await response.text().catch(() => response!.statusText);
+      }
+
+      // A provider we (or the probe) thought spoke Responses returned 404/405 —
+      // downgrade it to chat-completions and re-fetch this turn once.
+      if (response && !response.ok && transport.mode === "responses" && isEndpointNotFound(status) && !downgraded) {
+        downgraded = true;
+        markCompletionsOnly(baseUrl);
+        transport = COMPLETIONS_TRANSPORT;
+        continue;
       }
 
       const shouldRetry =
@@ -783,9 +798,9 @@ export async function runAgentLoop(
 
     // Shared SSE parse (identical to the chat loop) — reasoning-field capture,
     // finish_reason tracking, tool-call buffering, and pending-chip callIds all
-    // live in `consumeAssistantStream` so the two loops cannot drift again.
+    // live in the transport's parser so the two loops cannot drift again.
     let toolsReadyFired = false;
-    const turn = await consumeAssistantStream(reader, {
+    const turn = await transport.consume(reader, {
       signal,
       onToken: (delta) => callbacks.onToken(delta),
       onThought: (delta) => callbacks.onThought?.(delta),

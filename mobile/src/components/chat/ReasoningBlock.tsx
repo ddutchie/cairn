@@ -7,13 +7,15 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
  * Collapsible "reasoning" (thinking) disclosure for models that stream it
  * (Apple PCC, or OpenAI-compatible endpoints like DeepSeek/OpenRouter).
  * Expanded while the answer is still streaming so the user sees the model think;
- * collapses to a one-line summary once done. Session-only (not persisted).
+ * collapses to a condensed summary (when the provider emits one) once done.
+ * Session-only (not persisted).
  */
-export function ReasoningBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+export function ReasoningBlock({ text, summary, streaming }: { text: string; summary?: string; streaming?: boolean }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const [open, setOpen] = useState(false);
   const expanded = open || !!streaming;
+  const collapsedText = summary && summary.trim() ? summary.trim() : null;
   return (
     <View style={styles.reasoning}>
       <Pressable
@@ -32,7 +34,11 @@ export function ReasoningBlock({ text, streaming }: { text: string; streaming?: 
           style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
         />
       </Pressable>
-      {expanded ? <Text style={styles.reasoningText}>{text}</Text> : null}
+      {expanded ? (
+        <Text style={styles.reasoningText}>{text}</Text>
+      ) : collapsedText ? (
+        <Text style={styles.reasoningSummary} numberOfLines={2}>{collapsedText}</Text>
+      ) : null}
     </View>
   );
 }
@@ -55,6 +61,12 @@ function makeStyles(t: Theme) {
       ...typeScale.caption,
       color: t.textTertiary,
       fontStyle: "italic",
+      lineHeight: 17,
+      paddingLeft: 16,
+    },
+    reasoningSummary: {
+      ...typeScale.caption,
+      color: t.textTertiary,
       lineHeight: 17,
       paddingLeft: 16,
     },

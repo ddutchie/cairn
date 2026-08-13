@@ -6,6 +6,7 @@ import { encode } from "gpt-tokenizer";
 import { pdfTokenEstimate } from "../../shared/models/pdf-attach";
 import { recordLlmUsage, extractCost, extractCacheTokens } from "./usage-recorder";
 import type { UsageSource } from "../db/usage-queries";
+import { buildResponsesBody, parseResponsesOutput } from "./responses";
 
 /**
  * Normalise a user-supplied base URL by stripping trailing slashes.
@@ -235,12 +236,70 @@ export async function callLLM(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
   const stream = opts.stream ?? true;
+  const messages: OpenAIMessage[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
+
+  // Resolve the wire protocol once (dynamic import breaks the llm ↔ llm-transport
+  // module cycle). Responses-capable providers (OpenAI / Azure, or anything the
+  // probe discovers) take the /v1/responses path; everything else stays on
+  // chat-completions.
+  const { resolveTransport } = await import("./llm-transport");
+  const transport = await resolveTransport(config.baseUrl, config.apiKey);
+
+  if (transport.mode === "responses") {
+    const rbody = buildResponsesBody({
+      model: config.model,
+      messages,
+      maxTokens: opts.maxTokens ?? 4096,
+      temperature: opts.temperature ?? 0.4,
+      reasoningEffort: opts.reasoningEffort,
+      stream,
+    });
+    const res = await fetch(transport.endpoint(config.baseUrl), { method: "POST", headers, body: JSON.stringify(rbody) });
+    if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => res.statusText)}`);
+
+    if (!stream) {
+      const parsed = parseResponsesOutput(await res.json());
+      if (parsed.usage) {
+        record(parsed.usage.promptTokens, parsed.usage.completionTokens, parsed.usage.reasoningTokens, extractCost(undefined, parsed.usage.raw), undefined, parsed.usage.cacheReadTokens, 0);
+      } else {
+        record(tok(systemPrompt) + tok(userPrompt), tok(parsed.content), 0);
+      }
+      return parsed.content;
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("No readable stream");
+
+    let usage: { pt?: number; ct?: number; rt?: number; cacheRead?: number; cacheCreate?: number; chunkCost?: unknown; raw?: unknown } | undefined;
+    const turn = await transport.consume(reader, {
+      signal: undefined,
+      onUsage: (u) => {
+        usage = {
+          pt: u.promptTokens ?? 0,
+          ct: u.completionTokens ?? 0,
+          rt: u.reasoningTokens ?? 0,
+          cacheRead: u.cacheReadTokens,
+          cacheCreate: u.cacheCreationTokens,
+          chunkCost: u.chunkCost,
+          raw: u.raw,
+        };
+      },
+    });
+    const content = turn.content;
+    if (usage) {
+      record(usage.pt ?? 0, usage.ct ?? 0, usage.rt ?? 0, extractCost(usage.chunkCost, usage.raw), undefined, usage.cacheRead, usage.cacheCreate);
+    } else {
+      record(tok(systemPrompt) + tok(userPrompt), tok(content), 0);
+    }
+    return content;
+  }
+
   const body = {
     model: config.model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
+    messages,
     max_tokens: opts.maxTokens ?? 4096,
     temperature: opts.temperature ?? 0.4,
     // Stream by default to prevent proxy connection drop timeouts (e.g.

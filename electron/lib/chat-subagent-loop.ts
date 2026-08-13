@@ -20,13 +20,14 @@
 
 import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
-import { buildApiUrl, type OpenAIMessage, isSendableMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "./llm";
+import { type OpenAIMessage, isSendableMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "./llm";
 import { AUTO_OUTPUT_TOKEN_CAP } from "./llm-stream";
 import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
 import { parseToolArgs } from "./parse-tool-args";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 import { recordLlmUsage, extractCost, extractCacheTokens } from "./usage-recorder";
+import { buildResponsesBody, responsesToCompletionsShape } from "./responses";
 
 /** Loosely-typed OpenAI function tool — the synthetic dispatch tools ("research",
  *  "write") aren't in the schema-derived `typeof TOOLS` union, so we widen. */
@@ -399,22 +400,27 @@ async function forceFinalAnswer(
   if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
 
   try {
-    const response = await fetch(buildApiUrl(cfg.baseUrl, "chat/completions"), {
+    const { resolveTransport } = await import("./llm-transport");
+    const transport = await resolveTransport(cfg.baseUrl, cfg.apiKey);
+    const body = transport.mode === "responses"
+      ? buildResponsesBody({ model: cfg.model, messages: nudged, maxTokens, temperature: 0.2, stream: false, toolChoice: "none" })
+      : {
+          model: cfg.model,
+          messages: nudged,
+          tool_choice: "none",
+          ...(maxTokens ? { max_tokens: maxTokens } : {}),
+          temperature: 0.2,
+          stream: false,
+        };
+    const response = await fetch(transport.endpoint(cfg.baseUrl), {
       method: "POST",
       headers,
       signal,
-      body: JSON.stringify({
-        model: cfg.model,
-        messages: nudged,
-        tool_choice: "none",
-        ...(maxTokens ? { max_tokens: maxTokens } : {}),
-        temperature: 0.2,
-        stream: false,
-      }),
+      body: JSON.stringify(body),
     });
     if (!response.ok) return "";
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = await response.json() as any;
+    const data = (transport.mode === "responses" ? responsesToCompletionsShape(await response.json()) : await response.json()) as any;
     if (data.usage) {
       const cache = extractCacheTokens(data.usage);
       metrics.promptTokens += data.usage.prompt_tokens ?? 0;
@@ -519,6 +525,10 @@ export async function runDispatchLoop(
   let finalContent = "";
   let finalReasoning = "";
 
+  // Resolve the wire protocol once (cached per base URL) for the dispatcher.
+  const { resolveTransport } = await import("./llm-transport");
+  const transport = await resolveTransport(cfg.baseUrl, cfg.apiKey);
+
   for (let round = 0; round < maxSteps; round++) {
     if (signal?.aborted) {
       return { content: finalContent, reasoning: finalReasoning, metrics };
@@ -526,13 +536,9 @@ export async function runDispatchLoop(
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
 
-    let response: Response;
-    try {
-      response = await fetch(buildApiUrl(cfg.baseUrl, "chat/completions"), {
-        method: "POST",
-        headers,
-        signal,
-        body: JSON.stringify({
+    const body = transport.mode === "responses"
+      ? buildResponsesBody({ model: cfg.model, messages, tools: DISPATCH_TOOLS, maxTokens, temperature, stream: false })
+      : {
           model: cfg.model,
           messages,
           tools: DISPATCH_TOOLS,
@@ -541,7 +547,15 @@ export async function runDispatchLoop(
           temperature,
           stream: false,
           stream_options: undefined,
-        }),
+        };
+
+    let response: Response;
+    try {
+      response = await fetch(transport.endpoint(cfg.baseUrl), {
+        method: "POST",
+        headers,
+        signal,
+        body: JSON.stringify(body),
       });
     } catch (_err) {
       if (signal?.aborted) return { content: finalContent, reasoning: finalReasoning, metrics };
@@ -556,7 +570,7 @@ export async function runDispatchLoop(
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = await response.json() as any;
+    const data = (transport.mode === "responses" ? responsesToCompletionsShape(await response.json()) : await response.json()) as any;
     if (data.usage) {
       const pt = data.usage.prompt_tokens ?? 0;
       const ct = data.usage.completion_tokens ?? 0;

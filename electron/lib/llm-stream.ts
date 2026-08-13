@@ -73,6 +73,8 @@ export interface StreamOptions {
   onToken?: (delta: string) => void;
   /** Streamed reasoning/thinking delta (UI). */
   onThought?: (delta: string) => void;
+  /** Streamed reasoning *summary* delta (Responses `reasoning.summary`), when the provider emits one. */
+  onSummary?: (delta: string) => void;
   /** Fired as soon as a tool call's name is first seen (live "pending" chip). */
   onToolPending?: (name: string, callId: string) => void;
   /** Fired on the trailing usage chunk. */
@@ -86,6 +88,8 @@ export interface StreamedTurn {
   reasoning: string;
   /** Which reasoning field the provider used, if any. */
   reasoningField: string | null;
+  /** Condensed reasoning summary (Responses `reasoning.summary`), empty when the provider emits none. */
+  reasoningSummary: string;
   /** finish_reason of the last chunk that carried one (null if the stream ended without it). */
   finishReason: string | null;
   /** API-ready tool calls in stream order. */
@@ -208,7 +212,7 @@ export async function consumeAssistantStream(
   }));
   const toolCallIndexes = entries.map(([idx]) => idx);
 
-  return { content, reasoning, reasoningField, finishReason, toolCalls, toolCallIndexes, streamCallIds };
+  return { content, reasoning, reasoningField, reasoningSummary: "", finishReason, toolCalls, toolCallIndexes, streamCallIds };
 }
 
 // ── Request body ─────────────────────────────────────────────────────────────

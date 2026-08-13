@@ -94,6 +94,7 @@ export type StreamEvent =
     }
   | { type: "finish"; finishReason?: string; usage?: ChatUsage }
   | { type: "reasoning-delta"; delta?: string }
+  | { type: "reasoning-summary-delta"; delta?: string }
   | { type: string; [k: string]: unknown };
 
 /** Context-window usage for the chat ring (prompt tokens over the model limit). */

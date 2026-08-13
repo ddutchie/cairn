@@ -27,7 +27,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
 
       {/* Column: tool chips, bubble, timestamp */}
       <View style={[styles.col, isUser && styles.colUser]}>
-        {!isUser && m.reasoning ? <ReasoningBlock text={m.reasoning} streaming={m.streaming} /> : null}
+        {!isUser && m.reasoning ? <ReasoningBlock text={m.reasoning} summary={m.reasoningSummary} streaming={m.streaming} /> : null}
         {!isUser && m.tools && m.tools.length > 0 && <ToolTrail tools={m.tools} />}
 
         <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>

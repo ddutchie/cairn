@@ -57,7 +57,7 @@ interface OpenAIMessage {
 }
 
 /** Map one internal UIMessage to one-or-more OpenAI messages. */
-function mapMessage(m: UIMessage): OpenAIMessage[] {
+export function mapMessage(m: UIMessage): OpenAIMessage[] {
   const textParts = m.parts.filter((p): p is TextPart => p.type === "text");
   const fileParts = m.parts.filter((p): p is FilePart => p.type === "file");
   const toolParts = m.parts.filter(
@@ -117,7 +117,7 @@ function mapMessage(m: UIMessage): OpenAIMessage[] {
   return out;
 }
 
-function mapTools(tools: Record<string, AiTool>) {
+export function mapTools(tools: Record<string, AiTool>) {
   return Object.entries(tools).map(([name, t]) => ({
     type: "function" as const,
     function: { name, description: t.description, parameters: t.jsonSchema },

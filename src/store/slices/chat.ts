@@ -30,6 +30,7 @@ export interface ChatSlice {
     reasoning?: string,
     images?: ChatMessage["images"],
     subagents?: ChatMessage["subagents"],
+    reasoningSummary?: string,
   ) => ChatMessage;
   confirmAction: (action: PendingAction) => void;
   deleteThread: (threadId: ID) => void;
@@ -162,13 +163,14 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     return thread;
   },
 
-  addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning, images, subagents) {
+  addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning, images, subagents, reasoningSummary) {
     const msg: ChatMessage = {
       id: id(),
       threadId,
       role,
       content,
       reasoning: reasoning || undefined,
+      reasoningSummary: reasoningSummary || undefined,
       contextRefs,
       toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
       actions: actions && actions.length > 0 ? actions : undefined,
