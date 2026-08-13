@@ -42,6 +42,13 @@ interface ChatInputProps {
   /** When true the file picker also accepts PDFs (model supports pdf input, or
    *  image input can rasterize them as a fallback). */
   allowPdf?: boolean;
+  /** When true, sending while a turn is running is allowed — the caller queues
+   *  the message and sends it when the current reply finishes. Keeps the send
+   *  button visible next to Stop and lets Enter submit while busy. */
+  queueWhileBusy?: boolean;
+  /** Number of messages already queued behind the current turn (shown on the
+   *  send button as a badge while busy). */
+  queuedCount?: number;
 }
 
 export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
@@ -65,6 +72,8 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       onAttachImages,
       allowImages = true,
       allowPdf = false,
+      queueWhileBusy = false,
+      queuedCount = 0,
     },
     ref
   ) => {
@@ -289,7 +298,8 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        if (!disabled && !isLoading && value.trim()) {
+        // While busy, submitting is allowed only when the caller queues.
+        if (!disabled && value.trim() && (!isLoading || queueWhileBusy)) {
           onSubmit();
         }
       }
@@ -464,18 +474,45 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
               </Tooltip>
             )}
             {isLoading && onStop ? (
-              <Tooltip content="Stop generation" side="left">
-                <button
-                  onClick={onStop}
-                  type="button"
-                  className={cn(
-                    "flex-shrink-0 rounded-lg bg-[var(--danger)] text-white hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--danger)]/10",
-                    isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
-                  )}
-                >
-                  <Square size={isOverview ? 11 : 10} fill="currentColor" />
-                </button>
-              </Tooltip>
+              <>
+                {queueWhileBusy && (
+                  <Tooltip
+                    content={queuedCount > 0
+                      ? `${queuedCount} message${queuedCount === 1 ? "" : "s"} queued — sending adds to the queue`
+                      : "Queue message — sends when the current reply finishes"}
+                    side="left"
+                  >
+                    <button
+                      onClick={onSubmit}
+                      disabled={disabled || (!value.trim() && (!pendingImages || pendingImages.length === 0))}
+                      type="button"
+                      className={cn(
+                        "relative flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[color-mix(in_srgb,var(--accent)_10%,transparent)]",
+                        isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
+                      )}
+                    >
+                      <Send size={isOverview ? 13 : 12} />
+                      {queuedCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--surface-3)] border border-[var(--border)] text-[0.571rem] font-semibold text-[var(--text-secondary)] flex items-center justify-center leading-none">
+                          {queuedCount}
+                        </span>
+                      )}
+                    </button>
+                  </Tooltip>
+                )}
+                <Tooltip content="Stop generation" side="left">
+                  <button
+                    onClick={onStop}
+                    type="button"
+                    className={cn(
+                      "flex-shrink-0 rounded-lg bg-[var(--danger)] text-white hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--danger)]/10",
+                      isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
+                    )}
+                  >
+                    <Square size={isOverview ? 11 : 10} fill="currentColor" />
+                  </button>
+                </Tooltip>
+              </>
             ) : (
               <Tooltip content="Send (Enter)" side="left">
                 <button
@@ -483,7 +520,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                   disabled={disabled || (!value.trim() && (!pendingImages || pendingImages.length === 0))}
                   type="button"
                   className={cn(
-                    "flex-shrink-0 rounded-lg bg-[var(--accent)] text-white hover:bg-[color-mix(in srgb,var(--accent)_90%,black)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--accent)]/10",
+                    "flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[color-mix(in_srgb,var(--accent)_10%,transparent)]",
                     isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
                   )}
                 >

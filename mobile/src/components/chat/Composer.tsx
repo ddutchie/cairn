@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import {
   View,
+  Text,
   TextInput,
   Pressable,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   Image,
   type ViewStyle,
   type StyleProp,
@@ -40,6 +40,8 @@ export interface ComposerProps {
   onLayoutHeight: (h: number) => void;
   /** When false the attach menu is hidden (active model has no image input). */
   allowImages?: boolean;
+  /** Messages already queued behind the current turn (badge on the send button). */
+  queuedCount?: number;
 }
 
 /**
@@ -64,6 +66,7 @@ export function Composer({
   closedLift,
   onLayoutHeight,
   allowImages = true,
+  queuedCount = 0,
 }: ComposerProps) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -121,17 +124,23 @@ export function Composer({
               placeholder="Message Cairn…"
               placeholderTextColor={t.textTertiary}
               multiline
-              editable={!busy}
+              // Always editable — while busy, sending queues the message.
             />
             <Pressable
               style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
               onPress={onSend}
               disabled={!canSend}
               accessibilityRole="button"
-              accessibilityLabel="Send message"
+              accessibilityLabel={busy ? "Queue message" : "Send message"}
               accessibilityState={{ disabled: !canSend }}
             >
-              {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={14} color={t.accentFg} />}
+              {/* While busy the send button becomes the queue affordance. */}
+              <View>
+                <Send size={14} color={t.accentFg} />
+                {busy && queuedCount > 0 && (
+                  <Text style={styles.sendBadge}>{queuedCount}</Text>
+                )}
+              </View>
             </Pressable>
           </GlassBar>
         </View>
@@ -212,6 +221,24 @@ function makeStyles(t: Theme) {
       alignItems: "center",
       justifyContent: "center",
       alignSelf: "center",
+    },
+    sendBadge: {
+      position: "absolute",
+      top: -6,
+      right: -6,
+      minWidth: 14,
+      height: 14,
+      paddingHorizontal: 2,
+      borderRadius: 7,
+      backgroundColor: t.surface3,
+      borderWidth: 1,
+      borderColor: t.border,
+      color: t.textSecondary,
+      fontSize: 9,
+      fontWeight: "700",
+      textAlign: "center",
+      lineHeight: 12,
+      overflow: "hidden",
     },
     sendBtnDisabled: { opacity: 0.4 },
   });

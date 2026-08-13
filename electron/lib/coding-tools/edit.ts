@@ -10,6 +10,7 @@
 import fs from "fs";
 import path from "path";
 import { withFileMutex } from "./file-mutex";
+import { assertNotSecretFile } from "./secrets";
 
 export interface EditEntry {
   oldText: string;
@@ -176,6 +177,7 @@ export async function editTool(args: EditArgs, cwd: string): Promise<string> {
   }
 
   const filePath = path.isAbsolute(args.path) ? args.path : path.join(cwd, args.path);
+  assertNotSecretFile(filePath);
 
   return withFileMutex(filePath, async () => {
     let raw: string;

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   View,
   Text,
@@ -26,7 +26,7 @@ import { getOpenAIModel, getProviderPref, getActiveProvider } from "@/chat/ai-co
 import { isRorkAvailable } from "@/chat/providers/rork";
 import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/chat/models-dev";
 import { supportsImageInput } from "@cairn/shared/models/model-catalog";
-import type { UIMessage, ChatUsage } from "@/chat/providers/types";
+import { type UIMessage, type ChatUsage, msgId } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
 import { toolRef } from "@cairn/shared/chat/tool-ref";
 import { extractExternalRef } from "@cairn/shared/chat/external-ref";
@@ -84,6 +84,15 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
+  // Messages the user queued while a turn was running — sent (FIFO) when the
+  // current reply finishes. Attachments are stored alongside so staged
+  // images/PDFs are never silently dropped. Session-scoped.
+  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Attachment[] }[]>([]);
+  const queuedRef = useRef<typeof queued>([]);
+  useEffect(() => { queuedRef.current = queued; }, [queued]);
+  // Content + attachments for the next queued send — read by `send` when the
+  // queue drains.
+  const pendingSendRef = useRef<{ content: string; attachments?: Attachment[] } | null>(null);
   const [configured, setConfigured] = useState(true);
   // Context-window usage for the ring (Apple provider reports it per turn).
   // Seeded from the last persisted value so the ring survives closing/reopening
@@ -153,17 +162,31 @@ export default function ChatScreen() {
   );
 
   const send = useCallback(async () => {
-    const text = input.trim();
-    const atts = attachments;
-    if ((!text && atts.length === 0) || busy) return;
+    const queuedSend = pendingSendRef.current;
+    pendingSendRef.current = null;
+    const text = (queuedSend?.content ?? input).trim();
+    const atts = queuedSend?.attachments ?? attachments;
+    if (!text && atts.length === 0) return;
+    // A turn is already running — queue this message instead of interrupting
+    // it. The queue drains (FIFO) when the current reply finishes.
+    if (busy) {
+      setQueued((prev) => [...prev, { id: msgId(), content: text, attachments: atts }]);
+      setInput("");
+      setAttachments([]);
+      return;
+    }
     haptics.selection(); // message sent
     // Dismiss via the keyboard-controller API (not RN's Keyboard.dismiss, which
     // can desync with this library and leave the keyboard stuck open until an
     // app switch). Fire-and-forget; don't block the send.
     KeyboardController.dismiss().catch(() => { });
     followEnd(); // sending jumps to the end; follow the reply
-    setInput("");
-    setAttachments([]);
+    // Only clear the composer when the user submitted their OWN draft — a
+    // queue drain must not wipe a newer unsent draft.
+    if (!queuedSend) {
+      setInput("");
+      setAttachments([]);
+    }
     setBusy(true);
 
     // UI: add the user bubble + an empty streaming assistant bubble.
@@ -284,6 +307,26 @@ export default function ChatScreen() {
     }
   }, [input, attachments, busy, followEnd, scrollToEndSoon]);
 
+  // Drain the queue: when a turn finishes (busy went true → false), send the
+  // next queued message. Keeps the queue on Stop and drains after errors too.
+  const sendRef = useRef<() => void>(() => {});
+  useEffect(() => { sendRef.current = send; }, [send]);
+  const prevBusyRef = useRef(busy);
+  useEffect(() => {
+    const wasBusy = prevBusyRef.current;
+    prevBusyRef.current = busy;
+    if (wasBusy && !busy && queuedRef.current.length > 0) {
+      const [next, ...rest] = queuedRef.current;
+      setQueued(rest);
+      pendingSendRef.current = { content: next.content, attachments: next.attachments };
+      sendRef.current();
+    }
+  }, [busy]);
+
+  const removeQueued = useCallback((qid: string) => {
+    setQueued((prev) => prev.filter((q) => q.id !== qid));
+  }, []);
+
   const addImages = useCallback(async () => {
     try {
       const picked = await pickImages();
@@ -351,7 +394,9 @@ export default function ChatScreen() {
     ]);
   }, [messages.length, busy]);
 
-  const canSend = (!!input.trim() || attachments.length > 0) && !busy;
+  // canSend stays true while busy so sending queues the message instead of
+  // being blocked — the queue drains when the current reply finishes.
+  const canSend = !!input.trim() || attachments.length > 0;
 
   return (
     <TabScreen>
@@ -435,6 +480,22 @@ export default function ChatScreen() {
               // app relaunch forced a native re-layout.
               <View key={resumeKey}>
                 {messages.map((m, i) => <MessageBubble key={i} m={m} />)}
+                {queued.map((q) => (
+                  <View key={q.id} style={styles.queuedRow}>
+                    <View style={styles.queuedBubble}>
+                      <Text style={styles.queuedText}>
+                        {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
+                        {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : ""}
+                      </Text>
+                    </View>
+                    <View style={styles.queuedMeta}>
+                      <Text style={styles.queuedLabel}>Queued — sends when the current reply finishes</Text>
+                      <Pressable onPress={() => removeQueued(q.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove queued message">
+                        <Text style={styles.queuedRemove}>Remove</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
               </View>
             )}
           </KeyboardChatScrollView>
@@ -483,6 +544,7 @@ export default function ChatScreen() {
           closedLift={closedLift}
           onLayoutHeight={setComposerH}
           allowImages={allowImages}
+          queuedCount={queued.length}
         />
       </View>
     </TabScreen>
@@ -509,5 +571,21 @@ function makeStyles(t: Theme) {
       borderRadius: 12,
     },
     configureBtnText: { ...typeScale.control, color: t.accentFg },
+    queuedRow: { alignItems: "flex-end", gap: 3, marginBottom: 14 },
+    queuedBubble: {
+      maxWidth: "90%",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 14,
+      borderTopRightRadius: 4,
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderStyle: "dashed",
+      borderColor: t.border,
+    },
+    queuedText: { ...typeScale.body, lineHeight: 21, color: t.textSecondary },
+    queuedMeta: { flexDirection: "row", alignItems: "center", gap: 12, paddingRight: 4 },
+    queuedLabel: { ...typeScale.caption, color: t.textTertiary, flexShrink: 1 },
+    queuedRemove: { ...typeScale.caption, color: t.textTertiary, fontWeight: "600" },
   });
 }

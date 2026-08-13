@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
-import { Trash2, FileText, Zap, Map as MapIcon, Loader2 } from "lucide-react";
+import { Trash2, FileText, Zap, Map as MapIcon, Loader2, Clock, ChevronDown } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
@@ -21,6 +21,7 @@ import { getCommandsForScope } from "@/lib/slash-commands";
 import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
@@ -153,6 +154,36 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   );
 
   const messages    = session.piMessages ?? [];
+
+  // ── Virtualized transcript (react-virtuoso) ───────────────────────────────
+  // Only messages near the viewport are mounted, so a session with thousands of
+  // persisted messages (each with reasoning, tool chips, subagent traces) stays
+  // light no matter how far you scroll — the DOM never grows with scroll depth.
+  // Prompts the user queued while the agent was running — sent (FIFO) when the
+  // current run finishes. Kept on Stop and drained after errors too. Attachments
+  // are queued alongside so staged images/PDFs are never silently dropped.
+  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }[]>([]);
+  const queuedRef = useRef<typeof queued>([]);
+  useEffect(() => { queuedRef.current = queued; }, [queued]);
+  // Collapsed pinned queue: shows just the count by default; expands on click
+  // to list (truncated) messages with remove buttons.
+  const [queueExpanded, setQueueExpanded]         = useState(false);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const lastSessionIdRef = useRef(session.sessionId);
+  useEffect(() => {
+    if (lastSessionIdRef.current !== session.sessionId) {
+      lastSessionIdRef.current = session.sessionId;
+      // Queued prompts belong to the previous session — drop them so they are
+      // never sent into the newly selected session.
+      setQueued([]);
+      // Jump to the newest message when switching sessions.
+      if (messages.length > 0) {
+        virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
+      }
+    }
+    // messages.length in deps is deliberate — the guard above short-circuits
+    // so it only scrolls when the session actually changes.
+  }, [session.sessionId, messages.length]);
   const project     = projects.find((p) => p.id === session.projectId);
 
   const [input, setInput]                         = useState("");
@@ -178,7 +209,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const allowImages = supportsImageInput(agentModelInfo);
   const allowPdf = supportsPdfInput(agentModelInfo);
 
-  const messagesEndRef  = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -210,18 +240,24 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Always-current reference to sendPrompt — lets the initialPrompt effect
   // call it after mount without capturing a stale closure.
-  const sendPromptRef   = useRef<(text: string) => void>(() => {});
+  const sendPromptRef   = useRef<(text: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => void>(() => {});
   const firedSessions   = useRef(new Set<string>());
 
   // Scroll to bottom on new messages / streaming growth, and whenever the
-  // ask_questions form appears — otherwise it can land out of view if the user
-  // had scrolled up when the model asked its questions.
-  // Use a scalar (pendingQuestions?.length) rather than the array so React
-  // doesn't flag the dependency change.
+  // Scroll to the very END of the virtualized content when the pane becomes
+  // active or the ask_questions form appears (the form renders in Virtuoso's
+  // Footer, so it can otherwise stay below the viewport if the user had
+  // scrolled up when the model asked its questions). Streaming follow is
+  // handled by Virtuoso's followOutput. Use a scalar (pendingQuestions?.length)
+  // rather than the array so React doesn't flag the dependency change.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
-    if (isActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, messages[messages.length - 1]?.content?.length, isActive, pendingQuestions?.length ?? 0]);
+    if (isActive && virtuosoRef.current && messages.length > 0) {
+      // scrollTo top=MAX reaches past the last item into the Footer, unlike
+      // scrollToIndex which aligns only the final message item.
+      virtuosoRef.current.scrollTo({ top: Number.MAX_SAFE_INTEGER, behavior: "smooth" });
+    }
+  }, [isActive, pendingQuestions?.length ?? 0]);
   /* eslint-enable react-hooks/exhaustive-deps */
 
   // Focus input when pane becomes active
@@ -514,7 +550,17 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     const trimmed = text.trim();
     // Attachment-only submissions are valid (an image/PDF with no caption), so
     // only block when there is NEITHER text NOR attachments.
-    if ((!trimmed && attachments.length === 0) || isLoading || !session.cwd) return;
+    if ((!trimmed && attachments.length === 0) || !session.cwd) return;
+
+    // A run is already in progress — queue this prompt instead of interrupting.
+    // The queue drains (FIFO) when the current run finishes. Attachments are
+    // queued alongside the text so staged images/PDFs are never dropped.
+    if (isLoading) {
+      if (!trimmed && attachments.length === 0) return;
+      setQueued((prev) => [...prev, { id: id(), content: trimmed, attachments }]);
+      setInput("");
+      return;
+    }
 
     // ── Slash commands ─────────────────────────────────────────────────────
     if (trimmed === "/compact") {
@@ -598,12 +644,29 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
        },
     };
     window.electron?.piAgent.prompt(promptPayload);
-  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage]);
+  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, setQueued]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
   // before any async callbacks fire without triggering the react-hooks/refs lint rule.
   useLayoutEffect(() => { sendPromptRef.current = sendPrompt; });
+
+  // Drain the queue: when a run finishes (loading went true → false), send the
+  // next queued prompt. Keeps the queue on Stop and drains after errors.
+  const prevLoadingRef = useRef(isLoading);
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = isLoading;
+    if (wasLoading && !isLoading && queuedRef.current.length > 0) {
+      const [next, ...rest] = queuedRef.current;
+      setQueued(rest);
+      sendPromptRef.current(next.content, next.attachments);
+    }
+  }, [isLoading]);
+
+  const removeQueued = useCallback((qid: string) => {
+    setQueued((prev) => prev.filter((q) => q.id !== qid));
+  }, [setQueued]);
 
   // Doom-loop decision: allow → the repeated call runs and the session stops
   // re-pausing; deny → the main loop halts with an error.
@@ -654,6 +717,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   function handleClear() {
     if (isLoading) handleStop();
+    // Clearing the conversation must also drop anything queued for it — the
+    // drain effect (which fires when handleStop flips isLoading to false) would
+    // otherwise immediately send the queued prompts into a cleared session.
+    setQueued([]);
     clearPiMessages(session.sessionId);
     setPiSessionTodos(session.sessionId, []);
     window.electron?.piAgent.clear(session.sessionId);
@@ -768,80 +835,137 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
-            <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">
-              {session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
-            </p>
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-48">
-              {session.mode === "plan"
-                ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
-                : "Ask me to read, edit, or run code — or manage your project board."}
-            </p>
-          </div>
-        )}
-        {messages.map((msg) => (
-          <AgentMessageBubble
-            key={msg.id}
-            message={msg}
-            sessionId={session.sessionId}
-            connectors={connectorMap}
-          />
-        ))}
-        {pendingQuestions && (
-          <QuestionForm
-            questions={pendingQuestions}
-            onSubmit={submitQuestions}
-            disabled={false}
-          />
-        )}
-        {doomLoop && (
-          <div
-            data-testid="doom-loop-card"
-            className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5"
-          >
-            <div className="flex items-start gap-2">
-              <Loader2 size={14} className="mt-0.5 text-[var(--warning)] animate-spin shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">
-                  The agent is repeating the same action
-                </p>
-                <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">
-                  <span className="font-mono text-[var(--text-secondary)]">{doomLoop.toolName}</span> has been
-                  called {doomLoop.count} times in a row with identical arguments — this looks like a loop.
-                </p>
-              </div>
+      {/* Messages — virtualized so a session with thousands of persisted
+          messages (each with reasoning, tool chips, subagent traces) only ever
+          mounts the items near the viewport, no matter how far you scroll. */}
+      <Virtuoso
+        ref={virtuosoRef}
+        className="flex-1 min-h-0"
+        data={messages}
+        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+        followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
+        components={{
+          EmptyPlaceholder: () => (
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-3">
+              <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">
+                {session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
+              </p>
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-48">
+                {session.mode === "plan"
+                  ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
+                  : "Ask me to read, edit, or run code — or manage your project board."}
+              </p>
             </div>
-            <div className="mt-2 flex items-center justify-end gap-1.5">
-              <button
-                data-testid="doom-loop-deny"
-                onClick={() => resolveDoomLoop(false)}
-                className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors"
-              >
-                Stop
-              </button>
-              <button
-                data-testid="doom-loop-allow"
-                onClick={() => resolveDoomLoop(true)}
-                className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded transition-opacity"
-              >
-                Continue anyway
-              </button>
+          ),
+          Footer: () => (
+            <div className="px-3 pb-3 space-y-3">
+              {pendingQuestions && (
+                <QuestionForm
+                  questions={pendingQuestions}
+                  onSubmit={submitQuestions}
+                  disabled={false}
+                />
+              )}
+              {doomLoop && (
+                <div
+                  data-testid="doom-loop-card"
+                  className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5"
+                >
+                  <div className="flex items-start gap-2">
+                    <Loader2 size={14} className="mt-0.5 text-[var(--warning)] animate-spin shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">
+                        The agent is repeating the same action
+                      </p>
+                      <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">
+                        <span className="font-mono text-[var(--text-secondary)]">{doomLoop.toolName}</span> has been
+                        called {doomLoop.count} times in a row with identical arguments — this looks like a loop.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center justify-end gap-1.5">
+                    <button
+                      data-testid="doom-loop-deny"
+                      onClick={() => resolveDoomLoop(false)}
+                      className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors"
+                    >
+                      Stop
+                    </button>
+                    <button
+                      data-testid="doom-loop-allow"
+                      onClick={() => resolveDoomLoop(true)}
+                      className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded transition-opacity"
+                    >
+                      Continue anyway
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+          ),
+        }}
+        itemContent={(_index, msg) => (
+          <div className="px-3 pt-3">
+            <AgentMessageBubble
+              message={msg}
+              sessionId={session.sessionId}
+              connectors={connectorMap}
+            />
           </div>
         )}
-        {isLoading && !pendingQuestions && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
-            <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
-            <span className="text-[0.786rem] text-[var(--text-tertiary)]">Working…</span>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+      />
 
       {/* Input — with upward-expanding plan task list docked above it */}
       <div className="border-t border-[var(--border)] flex-shrink-0">
+        {/* Pinned status strip: always visible above the input even when the
+            transcript is scrolled up. Shows the working state and the queued
+            message count — the queue stays collapsed so full message content
+            is only rendered when the user expands it. */}
+        {isLoading && !pendingQuestions && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)]">
+            <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
+            <span className="text-[0.714rem] text-[var(--text-secondary)]">
+              Agent is working — you can queue messages below
+            </span>
+          </div>
+        )}
+        {queued.length > 0 && (
+          <div className="border-b border-[var(--border)] bg-[var(--surface)]">
+            <button
+              type="button"
+              onClick={() => setQueueExpanded((v) => !v)}
+              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-[var(--surface-2)] transition-colors"
+            >
+              <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
+              <span className="text-[0.714rem] text-[var(--text-secondary)]">
+                {queued.length} message{queued.length === 1 ? "" : "s"} queued — will send after the current run
+              </span>
+              <ChevronDown
+                size={11}
+                className={`ml-auto text-[var(--text-tertiary)] shrink-0 transition-transform ${queueExpanded ? "rotate-180" : ""}`}
+              />
+            </button>
+            {queueExpanded && (
+              <div className="px-3 pb-2 space-y-2">
+                {queued.map((q) => (
+                  <div key={q.id} className="flex items-start gap-2">
+                    <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
+                      {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
+                      {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : null}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeQueued(q.id)}
+                      className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {session.mode === "plan" && planNoteContent && session.planNoteId && (
           <PlanApprovalCard
             content={planNoteContent}
@@ -864,6 +988,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           onSubmit={sendPrompt}
           onStop={handleStop}
           isLoading={isLoading}
+          queueWhileBusy={isLoading}
+          queuedCount={queued.length}
           placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
           commands={agentCommands}
           onSearchSuggestions={handleSearchFiles}

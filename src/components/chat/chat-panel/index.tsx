@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
-import { Trash2, ChevronDown, ArrowLeftFromLine } from "lucide-react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { Trash2, ChevronDown, ArrowLeftFromLine, Loader2, Clock } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -23,7 +24,7 @@ import { useCommunityConnectorMap } from "./connector-context";
 import { QuestionForm } from "./QuestionForm";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { getCommandsForScope } from "@/lib/slash-commands";
-import { cn } from "@/lib/utils";
+import { cn, id } from "@/lib/utils";
 import {
   getModelInfo,
   getModelCatalogVersion,
@@ -114,11 +115,23 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const connectorMap = useCommunityConnectorMap();
 
   const [input, setInput] = useState("");
+  // Messages the user queued while a turn was running — sent (FIFO) when the
+  // current reply finishes. Each item carries the thread + attachments captured
+  // at enqueue time so a thread switch or queued images/PDFs are never lost.
+  // Session-scoped; cleared on thread switch.
+  const [queued, setQueued] = useState<{ id: string; content: string; threadId: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }[]>([]);
+  const queuedRef = useRef<typeof queued>([]);
+  useEffect(() => { queuedRef.current = queued; }, [queued]);
+  // Collapsed pinned queue: shows just the count by default; expands on click
+  // to list (truncated) messages with remove buttons.
+  const [queueExpanded, setQueueExpanded] = useState(false);
   const chatCommands = useMemo(
     () => getCommandsForScope("chat", customCommands),
     [customCommands]
   );
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Virtualized transcript handle — used to jump to the newest message when the
+  // panel activates or a question form appears (followOutput handles streaming).
+  const chatVirtuosoRef = useRef<VirtuosoHandle>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
   const projectRef     = useRef<HTMLDivElement>(null);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -130,7 +143,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const allowImages = supportsImageInput(getModelInfo(aiConfig.model));
   const allowPdf = supportsPdfInput(getModelInfo(aiConfig.model));
 
-  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions } = useChatStream(threadId);
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -179,8 +192,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const handleClear = useCallback(() => {
     if (!threadId) return;
     if (isLoading) stopStream();
+    // Drop any in-flight questions form too — it belongs to this thread and
+    // would otherwise linger after the transcript is cleared.
+    clearQuestions();
     clearThreadMessages(threadId);
-  }, [threadId, isLoading, stopStream, clearThreadMessages]);
+  }, [threadId, isLoading, stopStream, clearThreadMessages, clearQuestions]);
 
   const handleArchiveChat = useCallback(async () => {
     if (!threadId) return;
@@ -286,6 +302,35 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const isLoadingRef = useRef(isLoading);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
+  // Drain the queue: when a turn finishes (loading went true → false), send the
+  // next queued message. Keep the queue on Stop (the user only cancels the
+  // in-flight reply) and drain after errors too — any turn ending advances the
+  // queue. Uses handleSendRef so the effect never re-triggers on handleSend
+  // identity changes.
+  const handleSendRef = useRef<(text?: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => void>(() => {});
+  const prevLoadingRef = useRef(isLoading);
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = isLoading;
+    if (wasLoading && !isLoading && queuedRef.current.length > 0) {
+      const [next, ...rest] = queuedRef.current;
+      setQueued(rest);
+      // Only drain into the thread the message was queued for — a thread switch
+      // in the same commit must not post it into the newly active thread.
+      if (next.threadId === threadId) {
+        handleSendRef.current(next.content, next.attachments);
+      }
+    }
+  }, [isLoading, threadId]);
+
+  const removeQueued = useCallback((qid: string) => {
+    setQueued((prev) => prev.filter((q) => q.id !== qid));
+  }, []);
+
+  // A queue belongs to the thread that was active when its messages were
+  // written — switching threads drops anything still pending.
+  useEffect(() => { setQueued([]); /* eslint-disable-line react-hooks/set-state-in-effect */ }, [threadId]);
+
 
 
   // Initialise / switch thread when the project changes.
@@ -344,13 +389,37 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   // had scrolled up when the model asked its questions. `pendingQuestions` is
   // an array, so depend on its length (a scalar) to avoid a deps-change warning.
   const pendingQuestionCount = pendingQuestions?.length ?? 0;
-  useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive, pendingQuestionCount]);
+  // Jump to the newest message when the panel activates or the ask_questions
+  // form appears — otherwise it can land out of view if the user had scrolled
+  // up. Streaming follow is handled by Virtuoso's followOutput (only follows
+  // while the user is at the bottom), so this deliberately does NOT depend on
+  // messages.length — a new message must not yank a user who scrolled up.
+  const chatMessagesLengthRef = useRef(messages.length);
+  useEffect(() => { chatMessagesLengthRef.current = messages.length; }, [messages.length]);
+  useEffect(() => {
+    // chatMessagesLengthRef is read imperatively — messages.length intentionally
+    // absent from deps so a new message never yanks a scrolled-up user.
+    const count = chatMessagesLengthRef.current;
+    if (isChatActive && chatVirtuosoRef.current && count > 0) {
+      chatVirtuosoRef.current.scrollToIndex({ index: count - 1, align: "end", behavior: "smooth" });
+    }
+  }, [isChatActive, pendingQuestionCount]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
   const handleSend = useCallback(async (text?: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = []) => {
     const content = text ?? input.trim();
     if ((!content || !content.trim()) && attachments.length === 0) return;
     if (!threadId) return;
+
+    // A turn is already running — queue this message instead of interrupting it.
+    // The queue drains (FIFO) when the current reply finishes. Attachments are
+    // queued alongside the text so staged images/PDFs are never silently dropped.
+    if (isLoadingRef.current) {
+      if (!content.trim() && attachments.length === 0) return;
+      setQueued((prev) => [...prev, { id: id(), content, threadId, attachments }]);
+      setInput("");
+      return;
+    }
 
     const trimmed = content.trim();
     if (!attachments.length) {
@@ -490,6 +559,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     });
   }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project]);
 
+  useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
+
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
   }, [handleSend]);
@@ -616,47 +687,104 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         )}
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
-        <div className={cn("space-y-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-          {messages.length === 0
-            ? (
-                <SuggestedPrompts
-                  onSend={handleSend}
-                  disabled={isLoading || !threadId}
-                  prompts={activeView === "graph" ? graphPrompts : undefined}
-                  subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
-                />
-              )
-            : messages.map((message) => (
-                <ChatMessageBubble
-                  key={message.id}
-                  message={message}
-                  onRetry={!isLoading ? handleRetry : undefined}
-                  connectors={connectorMap}
-                />
-              ))
-          }
-          {pendingQuestions && (
-            <QuestionForm
-              questions={pendingQuestions}
-              onSubmit={(text) => handleSend(text)}
-              disabled={isLoading && !pendingQuestions}
-            />
-          )}
-          {isLoading && subagents.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {subagents.map((sub) => (
-                <ChatSubagentBlock key={sub.childId} sub={sub} />
-              ))}
+      {/* Messages — virtualized so long threads never balloon the DOM; only the
+          items near the viewport are mounted no matter how far you scroll. */}
+      <Virtuoso
+        ref={chatVirtuosoRef}
+        className="flex-1 min-h-0"
+        data={messages}
+        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+        followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
+        components={{
+          EmptyPlaceholder: () => (
+            <div className={cn("px-3 py-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+              <SuggestedPrompts
+                onSend={handleSend}
+                disabled={isLoading || !threadId}
+                prompts={activeView === "graph" ? graphPrompts : undefined}
+                subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
+              />
             </div>
-          )}
-          {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} connectors={connectorMap} />}
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
+          ),
+          Footer: () => (
+            <div className={cn("px-3 py-3 space-y-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+              {pendingQuestions && (
+                <QuestionForm
+                  questions={pendingQuestions}
+                  onSubmit={(text) => handleSend(text)}
+                  disabled={isLoading && !pendingQuestions}
+                />
+              )}
+              {isLoading && subagents.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {subagents.map((sub) => (
+                    <ChatSubagentBlock key={sub.childId} sub={sub} />
+                  ))}
+                </div>
+              )}
+              {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} connectors={connectorMap} />}
+            </div>
+          ),
+        }}
+        itemContent={(_index, message) => (
+          <div className={cn("px-3 py-1.5", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+            <ChatMessageBubble
+              message={message}
+              onRetry={!isLoading ? handleRetry : undefined}
+              connectors={connectorMap}
+            />
+          </div>
+        )}
+      />
 
       {/* Input */}
+      {(isLoading || queued.length > 0) && (
+        <div className={cn("border-t border-[var(--border)] bg-[var(--surface)]", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
+          {isLoading && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5">
+              <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
+              <span className="text-[0.714rem] text-[var(--text-secondary)]">Cairn is working — you can queue messages below</span>
+            </div>
+          )}
+          {queued.length > 0 && (
+            <div className={isLoading ? "border-t border-[var(--border)]" : undefined}>
+              <button
+                type="button"
+                onClick={() => setQueueExpanded((v) => !v)}
+                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
+                <span className="text-[0.714rem] text-[var(--text-secondary)]">
+                  {queued.length} message{queued.length === 1 ? "" : "s"} queued — will send after the current reply
+                </span>
+                <ChevronDown
+                  size={11}
+                  className={`ml-auto text-[var(--text-tertiary)] shrink-0 transition-transform ${queueExpanded ? "rotate-180" : ""}`}
+                />
+              </button>
+              {queueExpanded && (
+                <div className="px-3 pb-2 space-y-2">
+                  {queued.map((q) => (
+                    <div key={q.id} className="flex items-start gap-2">
+                      <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
+                        {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
+                        {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : null}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeQueued(q.id)}
+                        className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <div className={cn("border-t border-[var(--border)] p-3 flex-shrink-0", activeView === "chat" && "border-t-0 bg-transparent p-6 max-w-3xl mx-auto w-full")}>
         <ChatInputArea
           ref={inputRef}
@@ -674,6 +802,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           variant={activeView === "chat" ? "overview" : "default"}
           showSparkles={activeView === "chat"}
           statusText={isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
+          queueWhileBusy={isLoading}
+          queuedCount={queued.length}
           footerTrailing={aiConfig.provider === "localllm" ? (
             <span className="text-[0.625rem] font-bold text-[var(--accent-fg)] bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_srgb,var(--accent)_60%,var(--background))] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
               {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}
