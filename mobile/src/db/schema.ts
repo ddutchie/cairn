@@ -82,7 +82,6 @@ CREATE TABLE IF NOT EXISTS notes (
   workspace_id     TEXT NOT NULL,
   title            TEXT NOT NULL,
   content          TEXT,
-  content_text     TEXT NOT NULL DEFAULT '',
   tag_ids          TEXT NOT NULL DEFAULT '[]',
   linked_note_ids  TEXT NOT NULL DEFAULT '[]',
   linked_card_ids  TEXT NOT NULL DEFAULT '[]',
@@ -163,6 +162,26 @@ CREATE INDEX IF NOT EXISTS idx_notes_workspace ON notes(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_cards_column    ON task_cards(column_id);
 CREATE INDEX IF NOT EXISTS idx_cards_project   ON task_cards(project_id);
 CREATE INDEX IF NOT EXISTS idx_columns_project ON board_columns(project_id);
+
+-- Full-text search over note title + body (matches desktop schema v44).
+-- External-content FTS5: index only — the original text stays in notes.
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+  title,
+  content,
+  content='notes',
+  content_rowid='rowid',
+  tokenize='unicode61'
+);
+CREATE TRIGGER IF NOT EXISTS trg_notes_fts_ai AFTER INSERT ON notes BEGIN
+  INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, coalesce(new.content, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS trg_notes_fts_ad AFTER DELETE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, coalesce(old.content, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS trg_notes_fts_au AFTER UPDATE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, coalesce(old.content, ''));
+  INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, coalesce(new.content, ''));
+END;
 
 -- Local-only chat log. Deliberately SEPARATE from the synced chat_threads/
 -- chat_messages tables and has NO capture trigger, so mobile chat history stays

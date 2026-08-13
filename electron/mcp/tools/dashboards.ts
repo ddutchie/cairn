@@ -15,7 +15,6 @@ export function create_dashboard(db: Database.Database, snap: Snapshot, args: Re
     workspaceId: project.workspaceId as string,
     title: title as string,
     content: (html as string) ?? "",
-    contentText: "",
     type: "dashboard",
   });
   insertNotification(db, "create_dashboard", "Dashboard created", `"${title}" added to ${project.name}`);
@@ -28,7 +27,7 @@ export function update_dashboard(db: Database.Database, snap: Snapshot, args: Re
   if (!note) return { error: "Dashboard not found" };
   const patch: Parameters<typeof q.updateNote>[2] = {};
   if (title !== undefined) patch.title = title;
-  if (html !== undefined) { patch.content = html; patch.contentText = ""; }
+  if (html !== undefined) { patch.content = html; }
   const updatedNote = q.updateNote(db, noteId as string, patch);
   insertNotification(db, "update_dashboard", "Dashboard updated", `"${title ?? note.title}" was updated`);
   return { id: noteId, title: updatedNote.title, updatedAt: updatedNote.updatedAt };

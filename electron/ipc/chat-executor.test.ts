@@ -47,7 +47,7 @@ function seed(db: Database.Database) {
   createProject(db, { id: "proj1", workspaceId: "ws1", name: "Project" });
   createColumn(db, { id: "col1", projectId: "proj1", workspaceId: "ws1", name: "Backlog", type: "backlog", order: 0 });
   createColumn(db, { id: "col2", projectId: "proj1", workspaceId: "ws1", name: "Done", type: "done", order: 4 });
-  createNote(db, { id: "note1", projectId: "proj1", workspaceId: "ws1", title: "My Note", content: "hello", contentText: "hello" });
+  createNote(db, { id: "note1", projectId: "proj1", workspaceId: "ws1", title: "My Note", content: "hello" });
   createCard(db, { id: "card1", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Task One", order: 0 });
 }
 
@@ -315,7 +315,6 @@ describe("templates", () => {
       id: "tpl1", projectId: "proj1", workspaceId: "ws1",
       title: "Template: Standup",
       content: "# Standup — {{date}}\n\n**Yesterday:**\n**Today:**",
-      contentText: "Standup",
       type: "template",
     });
   }
@@ -871,7 +870,7 @@ describe("ensure_note", () => {
     // Insert a note directly into the DB — it exists in the live DB. A snapshot
     // taken before this call would still see it (executeTool re-snapshots), but
     // this pins that the authoritative match is by live title lookup.
-    createNote(db, { id: "live1", projectId: "proj1", workspaceId: "ws1", title: "Roadmap", content: "v1", contentText: "v1" });
+    createNote(db, { id: "live1", projectId: "proj1", workspaceId: "ws1", title: "Roadmap", content: "v1" });
     const result = await exec(db, "ensure_note", { projectId: "proj1", title: "Roadmap", content: "v2" }) as Record<string, unknown>;
     expect(result.action).toBe("updated");
     expect(result.id).toBe("live1");
@@ -917,7 +916,7 @@ describe("rename_note", () => {
     const db = makeDb();
     seed(db);
     // Create note2 which links to note1
-    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "Links to [[My Note]]", contentText: "Links to [[My Note]]" });
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "Links to [[My Note]]" });
 
     // Rename note1 ("My Note") to "New Title"
     const result = await exec(db, "rename_note", { noteId: "note1", newTitle: "New Title" }) as Record<string, unknown>;
@@ -938,7 +937,7 @@ describe("bulk_move_notes", () => {
   it("moves multiple notes to a folder", async () => {
     const db = makeDb();
     seed(db);
-    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "hello", contentText: "hello" });
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "hello" });
 
     const result = await exec(db, "bulk_move_notes", { noteIds: ["note1", "note2"], folder: "Archive/Old" }) as Record<string, unknown>;
     expect(result.moved).toBe(2);
@@ -996,8 +995,8 @@ describe("search_notes advanced parameters", () => {
   it("supports offset pagination", async () => {
     const db = makeDb();
     seed(db);
-    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "hello", contentText: "hello" });
-    createNote(db, { id: "note3", projectId: "proj1", workspaceId: "ws1", title: "Note Three", content: "hello", contentText: "hello" });
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "hello" });
+    createNote(db, { id: "note3", projectId: "proj1", workspaceId: "ws1", title: "Note Three", content: "hello" });
     // Deterministic updated_at: note3 newest, note1 oldest
     db.prepare("UPDATE notes SET updated_at = '2023-01-01T00:00:00.000Z' WHERE id = 'note1'").run();
     db.prepare("UPDATE notes SET updated_at = '2024-01-01T00:00:00.000Z' WHERE id = 'note2'").run();
@@ -1017,7 +1016,7 @@ describe("search_notes advanced parameters", () => {
     const db = makeDb();
     seed(db);
     
-    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Old Note", content: "hello", contentText: "hello" });
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Old Note", content: "hello" });
     db.prepare("UPDATE notes SET updated_at = '2020-01-01T00:00:00.000Z' WHERE id = 'note2'").run();
 
     const results = await exec(db, "search_notes", { query: "hello", updatedAfter: "2025-01-01T00:00:00.000Z" }) as Array<Record<string, unknown>>;

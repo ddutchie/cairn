@@ -13,7 +13,7 @@
  *      key in Settings (or enable Apple Intelligence).
  */
 
-import { getProviderPref, resolveOpenAIConfig } from "../ai-config";
+import { getProviderPref, resolveOpenAIConfig, type OpenAIConfig } from "../ai-config";
 import {
   appleOnDeviceProvider,
   appleProvider,
@@ -21,6 +21,7 @@ import {
   isAppleServerProviderAvailable,
 } from "./apple";
 import { makeOpenAIProvider } from "./openai";
+import { makeResponsesProvider, supportsResponses } from "./responses";
 import { isRorkAvailable, rorkProvider } from "./rork";
 import type { ChatProvider } from "./types";
 
@@ -48,6 +49,18 @@ function appleProviderOrNull(): ChatProvider | null {
 }
 
 /**
+ * Pick the OpenAI-compatible provider for a config: the Responses API when the
+ * endpoint serves `/responses` (OpenAI/Azure, or anything the probe discovers),
+ * else Chat Completions. The probe is a single cheap request and never throws.
+ */
+async function openaiCompatible(config: OpenAIConfig): Promise<ChatProvider> {
+  if (await supportsResponses(config.baseUrl, config.apiKey)) {
+    return makeResponsesProvider(config);
+  }
+  return makeOpenAIProvider(config);
+}
+
+/**
  * Resolve the active provider. Honours the user's preference first (Apple →
  * PCC when available, else dev on-device; OpenAI when configured), then Rork
  * when built in, then a configured OpenAI, then Apple as a fallback, else
@@ -63,14 +76,14 @@ export async function resolveProvider(): Promise<ChatProvider> {
     // Preferred Apple but unavailable (older OS / not entitled / disabled) — fall through.
   } else if (pref === "openai") {
     const openai = await resolveOpenAIConfig();
-    if (openai) return makeOpenAIProvider(openai);
+    if (openai) return openaiCompatible(openai);
     // Preferred OpenAI but not configured — fall back below.
   }
 
   // Fallback order: Rork → configured OpenAI → Apple (PCC or dev on-device).
   if (rork) return rorkProvider;
   const openai = await resolveOpenAIConfig();
-  if (openai) return makeOpenAIProvider(openai);
+  if (openai) return openaiCompatible(openai);
   if (apple) return apple;
   throw new NoProviderError();
 }

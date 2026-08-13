@@ -33,10 +33,16 @@ export function SettingsRow({
   label,
   description,
   children,
+  controlClassName,
 }: {
   label: string;
   description?: string;
   children: React.ReactNode;
+  /** Overrides the control slot's flex classes (defaults to non-shrinking so
+   *  toggles/inputs keep their natural width). Rows with multi-button controls
+   *  pass `min-w-0 @sm:self-auto` so the buttons wrap instead of overflowing
+   *  on narrow pages. */
+  controlClassName?: string;
 }) {
   const id = React.useId();
   return (
@@ -47,7 +53,7 @@ export function SettingsRow({
           <div className="text-xs text-[var(--text-tertiary)] mt-0.5 leading-relaxed">{description}</div>
         )}
       </div>
-      <div className="flex-shrink-0 @sm:self-auto">
+      <div className={controlClassName ?? "flex-shrink-0 @sm:self-auto"}>
         {/* Inject id into the first form-control child if it accepts it */}
         {React.isValidElement(children)
           ? React.cloneElement(children as React.ReactElement<{ id?: string }>, { id })

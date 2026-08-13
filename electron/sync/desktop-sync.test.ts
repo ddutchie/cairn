@@ -25,7 +25,7 @@ function makeDeps(db: Database.Database, state: { fail: boolean; calls: string[]
     updateNoteBody: (id, title, content) => {
       state.calls.push(id);
       if (state.fail) throw new Error("EACCES: permission denied");
-      q.updateNote(db, id, { title, content, contentText: content });
+      q.updateNote(db, id, { title, content });
     },
     deleteNoteRow: (id) => {
       q.deleteNote(db, id);

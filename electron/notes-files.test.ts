@@ -480,10 +480,10 @@ describe("syncNotesFromDisk", () => {
     // Insert the DB row with an updated_at well in the future relative to the file,
     // so both the frontmatter timestamp and the file mtime are definitively older.
     const futureTs = new Date(Date.now() + 60_000).toISOString();
-    db.prepare(`INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+    db.prepare(`INSERT INTO notes (id, project_id, workspace_id, title, content,
       tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', '', ?, ?)`)
-      .run(note.id, note.projectId, note.workspaceId, "Modified Title", note.content, "",
+      VALUES (?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', '', ?, ?)`)
+      .run(note.id, note.projectId, note.workspaceId, "Modified Title", note.content,
            note.createdAt, futureTs);
 
     syncNotesFromDisk(db, tmpDir);

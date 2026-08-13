@@ -427,11 +427,11 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
 
     if (abortCtrl.signal.aborted) {
       flushStream();
-      send("chat:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
+      send("chat:done", { content: "", reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, contextRefs: [], usage: finalUsage() });
       return;
     }
 
     flushStream();
-    send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
+    send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, contextRefs: [], usage: finalUsage() });
   });
 }

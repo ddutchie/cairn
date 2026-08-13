@@ -18,8 +18,9 @@
  */
 
 import type { AgentLLMConfig, AgentMessage, AgentToolResultMsg, PiAgentSession } from "./pi-agent-loop";
-import { buildApiUrl, postChatCompletions } from "./llm";
+import { postChatCompletions, type OpenAIMessage } from "./llm";
 import { recordLlmUsage, extractCost } from "./usage-recorder";
+import { buildResponsesBody } from "./responses";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -128,36 +129,62 @@ export async function generateSummary(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const body = {
-    model,
-    // System prompt as a `role: "system"` message (not a top-level `system:`
-    // field) so strict OpenAI-compatible providers don't reject the request
-    // with "unknown parameter system".
-    messages: [
-      { role: "system", content: SUMMARIZATION_SYSTEM_PROMPT },
-      { role: "user", content: SUMMARIZATION_USER_PROMPT(conversationText) },
-    ],
-    max_tokens: SUMMARY_MAX_TOKENS,
-    temperature: 0.1, // deterministic summary
-    // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
-    stream: true,
-    // Summary is a direct transform — skip reasoning for ~2x speed, like the
-    // writing-style one-shots.
-    reasoning_effort: "none",
-  };
-  const post = (b: Record<string, unknown>) => postChatCompletions(
-    buildApiUrl(baseUrl, "chat/completions"),
-    headers,
-    b,
-    true,
-    signal,
-  );
+  // Resolve the wire protocol once (dynamic import avoids the compaction ↔
+  // llm-transport cycle). Responses-capable providers use /v1/responses.
+  const { resolveTransport, markCompletionsOnly, isEndpointNotFound, COMPLETIONS_TRANSPORT } = await import("./llm-transport");
+  let transport = await resolveTransport(baseUrl, apiKey);
 
-  let response = await post(body);
+  const summaryMessages: OpenAIMessage[] = [
+    { role: "system", content: SUMMARIZATION_SYSTEM_PROMPT },
+    { role: "user", content: SUMMARIZATION_USER_PROMPT(conversationText) },
+  ];
+
+  const buildBody = (reasoningEffort?: "none", minimal = false): Record<string, unknown> =>
+    transport.mode === "responses"
+      ? buildResponsesBody({
+          model,
+          messages: summaryMessages,
+          maxTokens: SUMMARY_MAX_TOKENS,
+          temperature: 0.1,
+          reasoningEffort,
+          stream: true,
+          // A strict third-party Responses endpoint may reject `include` and
+          // `temperature` — strip both on the minimal retry.
+          ...(minimal ? { supportsEncryptedReasoning: false, includeTemperature: false } : {}),
+        })
+      : {
+          model,
+          // System prompt as a `role: "system"` message (not a top-level `system:`
+          // field) so strict OpenAI-compatible providers don't reject the request
+          // with "unknown parameter system".
+          messages: summaryMessages,
+          max_tokens: SUMMARY_MAX_TOKENS,
+          temperature: 0.1, // deterministic summary
+          // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
+          stream: true,
+          // Summary is a direct transform — skip reasoning for ~2x speed, like the
+          // writing-style one-shots.
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+        };
+
+  const doFetch = (b: Record<string, unknown>) =>
+    transport.mode === "responses"
+      ? fetch(transport.endpoint(baseUrl), { method: "POST", headers, signal, body: JSON.stringify(b) })
+      : postChatCompletions(transport.endpoint(baseUrl), headers, b, true, signal);
+
+  let response = await doFetch(buildBody("none"));
   // A strict endpoint may reject reasoning_effort (400/422) — retry without it
-  // so compaction never breaks for models that don't support the field.
+  // (and with the optional Responses `include`/`temperature` stripped) so
+  // compaction never breaks for models that don't support the field.
   if (response.status === 400 || response.status === 422) {
-    response = await post({ ...body, reasoning_effort: undefined });
+    response = await doFetch(buildBody(undefined, true));
+  }
+  // A provider we (or the probe) thought spoke Responses returned 404/405 —
+  // downgrade it to chat-completions and retry this summary once.
+  if (!response.ok && transport.mode === "responses" && isEndpointNotFound(response.status)) {
+    markCompletionsOnly(baseUrl);
+    transport = COMPLETIONS_TRANSPORT;
+    response = await doFetch(buildBody(undefined));
   }
 
   if (!response.ok) {
@@ -171,8 +198,7 @@ export async function generateSummary(
   // Consume via the shared buffered SSE parser (same as chat/agent/callLLM) —
   // the old inline split("\n")-per-chunk loop mangled records that straddled
   // TCP reads and ignored reasoning fields.
-  const { consumeAssistantStream } = await import("./llm-stream");
-  const turn = await consumeAssistantStream(reader, {
+  const turn = await transport.consume(reader, {
     signal,
     onUsage: (u) => {
       usage = {

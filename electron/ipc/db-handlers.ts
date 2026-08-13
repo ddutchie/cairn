@@ -14,7 +14,7 @@ import path from "path";
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
-import { writeNoteFile, deleteNoteFile, hardDeleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders, stripMarkdown, findNoteFilePath } from "../notes-files";
+import { writeNoteFile, deleteNoteFile, hardDeleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders, findNoteFilePath } from "../notes-files";
 import { suppressNextChange } from "../file-watcher";
 import { executeTool as executeMcpTool } from "../mcp/tools";
 import { executeReadTool } from "../lib/read-tools";
@@ -263,7 +263,6 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:note:create", (_e, args: Parameters<typeof q.createNote>[1]) => handle(() => {
     const note = q.createNote(ctx.db, {
       ...args,
-      contentText: stripMarkdown(args.content ?? ""),
     });
     if (note.type !== "dashboard") {
       suppressNextChange(note.id);
@@ -284,11 +283,7 @@ export function registerDbHandlers(ctx: DbContext): void {
       // the DB in a consistent state (either both applied or neither).
       const note = ctx.db.transaction(() => {
         if (Object.keys(rest).length > 0) {
-          const enrichedRest = { ...rest };
-          if (rest.content !== undefined && rest.contentText === undefined) {
-            enrichedRest.contentText = stripMarkdown(rest.content);
-          }
-          q.updateNote(ctx.db, id, enrichedRest);
+          q.updateNote(ctx.db, id, rest);
         }
         return q.restoreNote(ctx.db, id);
       })();
@@ -297,10 +292,6 @@ export function registerDbHandlers(ctx: DbContext): void {
         writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
       }
       return note;
-    }
-    const enrichedPatch = { ...patch };
-    if (patch.content !== undefined && patch.contentText === undefined) {
-      enrichedPatch.contentText = stripMarkdown(patch.content);
     }
     // Did the title actually change? A title edit is an explicit rename → the
     // .md filename should be re-derived (renameFile:true) AND inbound
@@ -330,7 +321,7 @@ export function registerDbHandlers(ctx: DbContext): void {
       oldTargets = [prevTitle, ...(stem ? [stem] : [])];
     }
     const note = ctx.db.transaction(() => {
-      const u = q.updateNote(ctx.db, id, enrichedPatch);
+      const u = q.updateNote(ctx.db, id, patch);
       if (oldTargets.length > 0) {
         relinked = q.rewriteInboundWikilinks(ctx.db, id, oldTargets, patch.title as string);
       }

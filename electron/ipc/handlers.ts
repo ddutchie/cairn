@@ -337,7 +337,7 @@ export function registerAppHandlers(
       conflictDeps: {
         updateNoteBody: (id: string, title: string, content: string) => {
           suppressNextChange(id);
-          const note = q.updateNote(ctx.db, id, { title, content, contentText: content });
+          const note = q.updateNote(ctx.db, id, { title, content });
           if (note && note.type !== "dashboard") {
             writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
           }

@@ -1,6 +1,7 @@
-import { memo, useMemo } from "react";
-import { View, Text, Image, StyleSheet, ActivityIndicator } from "react-native";
-import { Bot, User } from "lucide-react-native";
+import { memo, useMemo, useState } from "react";
+import { View, Text, Image, StyleSheet, ActivityIndicator, Pressable } from "react-native";
+import { Bot, User, Copy, Check } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
 import { MarkdownView } from "@/components/MarkdownView";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { ReasoningBlock } from "./ReasoningBlock";
@@ -18,6 +19,19 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const isUser = m.role === "user";
+  const [copied, setCopied] = useState(false);
+
+  // Copy the message content — same behaviour as the desktop copy button.
+  const handleCopy = async () => {
+    try {
+      await Clipboard.setStringAsync(m.content ?? "");
+    } catch {
+      /* clipboard unavailable — ignore */
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
   return (
     <View style={[styles.row, isUser && styles.rowUser]}>
       {/* Avatar */}
@@ -27,8 +41,8 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
 
       {/* Column: tool chips, bubble, timestamp */}
       <View style={[styles.col, isUser && styles.colUser]}>
-        {!isUser && m.reasoning ? <ReasoningBlock text={m.reasoning} streaming={m.streaming} /> : null}
         {!isUser && m.tools && m.tools.length > 0 && <ToolTrail tools={m.tools} />}
+        {!isUser && (m.reasoning || m.reasoningSummary) ? <ReasoningBlock text={m.reasoning ?? ""} summary={m.reasoningSummary} streaming={m.streaming} hasContent={!!m.content} /> : null}
 
         <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
           {isUser && m.images && m.images.length > 0 && (
@@ -46,6 +60,12 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
             <MarkdownView content={m.content} resolveLinks />
           )}
         </View>
+
+        {!isUser && !m.streaming ? (
+          <Pressable onPress={handleCopy} hitSlop={8} accessibilityLabel="Copy response" style={styles.copyBtn}>
+            {copied ? <Check size={12} color={t.success} /> : <Copy size={12} color={t.textTertiary} />}
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -68,5 +88,6 @@ function makeStyles(t: Theme) {
     userText: { ...typeScale.body, lineHeight: 21, color: t.accentFg },
     bubbleImages: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },
     bubbleImg: { width: 120, height: 120, borderRadius: 8, backgroundColor: t.surface3 },
+    copyBtn: { alignSelf: "flex-start", padding: 2, opacity: 0.6 },
   });
 }

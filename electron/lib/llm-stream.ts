@@ -73,6 +73,8 @@ export interface StreamOptions {
   onToken?: (delta: string) => void;
   /** Streamed reasoning/thinking delta (UI). */
   onThought?: (delta: string) => void;
+  /** Streamed reasoning *summary* delta (Responses `reasoning.summary`), when the provider emits one. */
+  onSummary?: (delta: string) => void;
   /** Fired as soon as a tool call's name is first seen (live "pending" chip). */
   onToolPending?: (name: string, callId: string) => void;
   /** Fired on the trailing usage chunk. */
@@ -86,6 +88,10 @@ export interface StreamedTurn {
   reasoning: string;
   /** Which reasoning field the provider used, if any. */
   reasoningField: string | null;
+  /** Condensed reasoning summary (Responses `reasoning.summary`), empty when the provider emits none. */
+  reasoningSummary: string;
+  /** Raw Responses reasoning items to round-trip on the next turn. Empty for completions. */
+  reasoningItems: Array<Record<string, unknown>>;
   /** finish_reason of the last chunk that carried one (null if the stream ended without it). */
   finishReason: string | null;
   /** API-ready tool calls in stream order. */
@@ -208,7 +214,7 @@ export async function consumeAssistantStream(
   }));
   const toolCallIndexes = entries.map(([idx]) => idx);
 
-  return { content, reasoning, reasoningField, finishReason, toolCalls, toolCallIndexes, streamCallIds };
+  return { content, reasoning, reasoningField, reasoningSummary: "", reasoningItems: [], finishReason, toolCalls, toolCallIndexes, streamCallIds };
 }
 
 // ── Request body ─────────────────────────────────────────────────────────────
@@ -378,12 +384,14 @@ export interface OutgoingMessage {
   reasoningField?: string;
   /** Model key (`baseUrl::model`) that produced this message. */
   reasoningModel?: string;
+  /** Raw Responses reasoning items to round-trip (Responses only). */
+  reasoningItems?: Array<Record<string, unknown>>;
 }
 
 const REASONING_KEY_SET = new Set<string>(REASONING_FIELDS);
 
 /** Internal message metadata persisted for reasoning round-trip — never sent to the provider. */
-const INTERNAL_MESSAGE_KEYS = ["reasoning", "reasoningField", "reasoningModel"] as const;
+const INTERNAL_MESSAGE_KEYS = ["reasoning", "reasoningField", "reasoningModel", "reasoningItems"] as const;
 
 /**
  * Drop internal round-trip metadata from a message before it leaves the process.
@@ -397,7 +405,7 @@ function stripInternalMessageFields(m: Record<string, unknown>): Record<string, 
   return out;
 }
 
-/** True when an assistant message is safe to send: content, tool calls, or round-tripped reasoning. */
+/** True when an assistant message is safe to send: content, tool calls, round-tripped reasoning, or reasoning items. */
 function isOutgoingSendable(m: Record<string, unknown>): boolean {
   if (m.role !== "assistant") return true;
   if (typeof m.content === "string" && m.content.trim()) return true;
@@ -406,6 +414,8 @@ function isOutgoingSendable(m: Record<string, unknown>): boolean {
     const v = m[field];
     if (typeof v === "string" && v.trim().length > 0) return true;
   }
+  // Items-only assistant turns (Responses round-trip) carry no text field.
+  if (Array.isArray(m.reasoningItems) && m.reasoningItems.length > 0) return true;
   return false;
 }
 
@@ -435,25 +445,36 @@ export async function prepareContextMessages<M extends OutgoingMessage>(opts: {
   currentModelKey: string;
   /** Role for the system prompt message (defaults to "system"). */
   systemRole?: "system" | "developer";
+  /** Round-trip Responses reasoning items (same-model) instead of dropping them. */
+  roundTripItems?: boolean;
   pruner?: (messages: M[]) => M[] | Promise<M[]>;
 }): Promise<OpenAIMessage[]> {
-  const reasoningByMsg = new Map<M, { reasoning: string; field: string; modelKey: string }>();
+  const reasoningByMsg = new Map<M, { reasoning: string; field: string; modelKey: string; items?: Array<Record<string, unknown>> }>();
   const stripped = opts.messages.map((m): M => {
-    if (m.role === "assistant" && typeof m.reasoning === "string" && m.reasoning.length > 0) {
-      if (typeof m.reasoningField === "string" && typeof m.reasoningModel === "string") {
-        // Has round-trip metadata — remember the STRIPPED object (the one the
-        // pruner operates on) so reasoning can be re-attached after pruning.
-        const { reasoning: _r, reasoningField: _rf, reasoningModel: _rm, ...rest } = m;
-        reasoningByMsg.set(rest as M, { reasoning: m.reasoning, field: m.reasoningField, modelKey: m.reasoningModel });
-        return rest as M;
-      }
-      // Bare reasoning with no round-trip metadata (legacy/persisted without
-      // the field name) — strip it rather than leak it to a provider that may
-      // reject or mis-handle an unknown assistant field.
-      const { reasoning: _r, ...rest } = m;
+    if (m.role !== "assistant") return m;
+    const hasText = typeof m.reasoning === "string" && m.reasoning.length > 0;
+    const hasItems = Array.isArray(m.reasoningItems) && m.reasoningItems.length > 0;
+    if (!hasText && !hasItems) return m;
+    // Round-trip metadata needs the model key plus either a native field name
+    // (text reasoning) or populated items (Responses items-only) — so an
+    // items-only assistant message is also remembered and restored after pruning.
+    if (typeof m.reasoningModel === "string" && (typeof m.reasoningField === "string" || hasItems)) {
+      // Has round-trip metadata — remember the STRIPPED object (the one the
+      // pruner operates on) so reasoning can be re-attached after pruning.
+      const { reasoning: _r, reasoningField: _rf, reasoningModel: _rm, reasoningItems: _ri, ...rest } = m as M & { reasoningItems?: unknown };
+      reasoningByMsg.set(rest as M, {
+        reasoning: m.reasoning ?? "",
+        field: m.reasoningField ?? "",
+        modelKey: m.reasoningModel,
+        ...(hasItems ? { items: m.reasoningItems } : {}),
+      });
       return rest as M;
     }
-    return m;
+    // Bare reasoning with no round-trip metadata (legacy/persisted without
+    // the field name) — strip it rather than leak it to a provider that may
+    // reject or mis-handle an unknown assistant field.
+    const { reasoning: _r, reasoningItems: _ri, ...rest } = m as M & { reasoningItems?: unknown };
+    return rest as M;
   });
 
   const pruned = opts.pruner ? await opts.pruner(stripped) : stripped;
@@ -469,11 +490,17 @@ export async function prepareContextMessages<M extends OutgoingMessage>(opts: {
     let outgoing: Record<string, unknown>;
     if (ri) {
       if (ri.modelKey === opts.currentModelKey) {
-        // Same model → round-trip reasoning under its native field (pi behaviour).
-        outgoing = { ...raw, [ri.field]: ri.reasoning };
+        // Same model → round-trip reasoning under its native field (pi behaviour),
+        // plus the Responses reasoning items when the caller wants them.
+        outgoing = { ...raw };
+        if (ri.reasoning) outgoing[ri.field] = ri.reasoning;
+        if (opts.roundTripItems && ri.items && ri.items.length > 0) {
+          outgoing.reasoningItems = ri.items;
+        }
       } else {
         // Different model → convert reasoning to plain text content (pi behaviour),
-        // never sent as a foreign field the new provider may reject.
+        // never sent as a foreign field the new provider may reject. Reasoning
+        // items are dropped (they're opaque to a different model).
         const existing = typeof raw.content === "string" && raw.content.trim() ? raw.content.trim() : "";
         outgoing = { ...raw, content: [existing, ri.reasoning].filter(Boolean).join("\n\n") };
       }

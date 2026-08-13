@@ -42,9 +42,9 @@ afterEach(() => {
 
 function seedNoteRow(id: string, folder = "") {
   db.prepare(
-    `INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+    `INSERT INTO notes (id, project_id, workspace_id, title, content,
        tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
-     VALUES (?, 'proj1', 'ws1', ?, '', '', '[]', '[]', '[]', 0, 'note', ?, ?, ?)`,
+     VALUES (?, 'proj1', 'ws1', ?, '', '[]', '[]', '[]', 0, 'note', ?, ?, ?)`,
   ).run(id, `Note ${id}`, folder, "2025-01-01T00:00:00.000Z", "2025-01-01T00:00:00.000Z");
 }
 

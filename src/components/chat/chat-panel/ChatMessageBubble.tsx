@@ -100,8 +100,8 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
             ))}
           </div>
         )}
-        {!isUser && message.reasoning && (
-          <ThinkingPanel text={message.reasoning} />
+        {!isUser && (message.reasoning || message.reasoningSummary) && (
+          <ThinkingPanel text={message.reasoning ?? ""} summary={message.reasoningSummary} />
         )}
         {message.images && message.images.length > 0 && (
           <div className={cn("flex flex-wrap gap-2", isUser && "justify-end")}>

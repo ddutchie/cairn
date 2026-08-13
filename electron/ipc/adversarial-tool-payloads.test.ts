@@ -110,7 +110,7 @@ describe("Case 2 — unicode that shifts byte offsets (patch_note)", () => {
   it("replaces a codepoint-heavy oldString and reports replacement count", async () => {
     const ctx = makeCtx();
     const db = ctx.db;
-    createNote(db, { id: "TEST", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "U", content: original, contentText: original });
+    createNote(db, { id: "TEST", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "U", content: original });
     const raw = JSON.stringify({
       noteId: "TEST",
       oldString: "\uD83D\uDFE2 Active \u2014 collaborative builds yield 10x",
@@ -129,7 +129,7 @@ describe("Case 2 — unicode that shifts byte offsets (patch_note)", () => {
   it("returns an explicit 'not found' (not 0 silent replacements) when oldString is absent", async () => {
     const ctx = makeCtx();
     const db = ctx.db;
-    createNote(db, { id: "TEST", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "U", content: original, contentText: original });
+    createNote(db, { id: "TEST", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "U", content: original });
     const raw = JSON.stringify({ noteId: "TEST", oldString: "does not exist \uD83D\uDE80", newString: "x" });
     const out = await runRaw(ctx, "patch_note", raw);
     expect(out.stage).toBe("execute");
@@ -146,7 +146,7 @@ describe("Case 2 — unicode that shifts byte offsets (patch_note)", () => {
     const ctx = makeCtx();
     const db = ctx.db;
     const crlf = "line1\r\nline2\u00A0end"; // NBSP before 'end'
-    createNote(db, { id: "TEST", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "U", content: crlf, contentText: crlf });
+    createNote(db, { id: "TEST", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "U", content: crlf });
     const raw = JSON.stringify({ noteId: "TEST", oldString: "line2\u00A0end", newString: "line2 end" });
     const out = await runRaw(ctx, "patch_note", raw);
     if (out.stage === "execute") {
@@ -197,7 +197,7 @@ describe("Case 4 — clobber guard against wiping a large note", () => {
   it("refuses to overwrite a 12KB note with a 3-char body", async () => {
     const ctx = makeCtx();
     const db = ctx.db;
-    createNote(db, { id: "big1", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "IGS AIM Peer Learning and Activation", content: bigDoc, contentText: bigDoc });
+    createNote(db, { id: "big1", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "IGS AIM Peer Learning and Activation", content: bigDoc });
     const raw = JSON.stringify({ projectId: "qMM4mUBTnZGz", title: "IGS AIM Peer Learning and Activation", content: "wip" });
     const out = await runRaw(ctx, "ensure_note", raw);
     if (out.stage === "execute") {
@@ -212,7 +212,7 @@ describe("Case 4 — clobber guard against wiping a large note", () => {
   it("permits the same overwrite when overwrite:true is set", async () => {
     const ctx = makeCtx();
     const db = ctx.db;
-    createNote(db, { id: "big1", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "Doc", content: bigDoc, contentText: bigDoc });
+    createNote(db, { id: "big1", projectId: "qMM4mUBTnZGz", workspaceId: "ws1", title: "Doc", content: bigDoc });
     const raw = JSON.stringify({ projectId: "qMM4mUBTnZGz", title: "Doc", content: "wip", overwrite: true });
     const out = await runRaw(ctx, "ensure_note", raw);
     if (out.stage === "execute") {

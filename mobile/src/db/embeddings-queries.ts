@@ -9,6 +9,7 @@
 
 import { getDb } from "./index";
 import { LIVE, NOT_CONFLICT } from "./sql";
+import { stripMarkdown } from "@cairn/shared/notes/text";
 
 // ---------------------------------------------------------------------------
 // On-device semantic-search index (note_embeddings). Local-only, never synced.
@@ -388,10 +389,10 @@ export function noteTextByIds(noteIds: string[]): Map<string, { title: string; t
   const out = new Map<string, { title: string; text: string }>();
   if (noteIds.length === 0) return out;
   const placeholders = noteIds.map(() => "?").join(",");
-  const rows = getDb().getAllSync<{ id: string; title: string; content_text: string }>(
-    `SELECT id, title, content_text FROM notes WHERE id IN (${placeholders})`,
+  const rows = getDb().getAllSync<{ id: string; title: string; content: string }>(
+    `SELECT id, title, content FROM notes WHERE id IN (${placeholders})`,
     ...noteIds,
   );
-  for (const r of rows) out.set(r.id, { title: r.title, text: r.content_text ?? "" });
+  for (const r of rows) out.set(r.id, { title: r.title, text: stripMarkdown(r.content ?? "") });
   return out;
 }

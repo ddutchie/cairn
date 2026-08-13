@@ -971,8 +971,8 @@ function mintImportConflictCopy(
   const copyTitle = `${row.title} (conflicted copy — import)`;
   try {
     db.prepare(
-      `INSERT INTO notes (id, project_id, workspace_id, title, content, content_text, tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at, archived_at, hlc, deleted_at, version)
-       SELECT ?, project_id, workspace_id, ?, content, content_text, tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at, NULL, NULL, NULL, 0
+      `INSERT INTO notes (id, project_id, workspace_id, title, content, tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at, archived_at, hlc, deleted_at, version)
+       SELECT ?, project_id, workspace_id, ?, content, tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at, NULL, NULL, NULL, 0
        FROM notes WHERE id = ? AND deleted_at IS NULL`,
     ).run(copyId, copyTitle, row.id);
   } catch (err) {
@@ -1144,18 +1144,17 @@ export function upsertNoteFromFile(db: Database.Database, note: NoteData): void 
   if (!project) return;
 
   const now = note.updatedAt ?? new Date().toISOString();
-  const contentText = stripMarkdown(note.content);
 
   // INSERT OR IGNORE — no-op if the row already exists (avoids UNIQUE error)
   db.prepare(`
     INSERT OR IGNORE INTO notes
-      (id, project_id, workspace_id, title, content, content_text,
+      (id, project_id, workspace_id, title, content,
        tag_ids, linked_note_ids, linked_card_ids, is_pinned, type,
        folder, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?, ?)
   `).run(
     note.id, note.projectId, note.workspaceId,
-    note.title, note.content, contentText,
+    note.title, note.content,
     JSON.stringify(note.tagIds ?? []),
     note.folder ?? "",
     note.createdAt ?? now, now,
@@ -1165,7 +1164,6 @@ export function upsertNoteFromFile(db: Database.Database, note: NoteData): void 
   q.updateNote(db, note.id, {
     title: note.title,
     content: note.content,
-    contentText,
     tagIds: note.tagIds,
     linkedNoteIds: note.linkedNoteIds,
     linkedCardIds: note.linkedCardIds,

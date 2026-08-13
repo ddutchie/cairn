@@ -675,6 +675,12 @@ export interface ChatMessage {
    * from compaction summaries. Empty for models that don't expose reasoning.
    */
   reasoning?: string;
+  /**
+   * Condensed reasoning summary (Responses `reasoning.summary`), when the
+   * provider emits one. Shown in the collapsed Thinking panel in place of the
+   * raw reasoning preview; absent for providers that don't support it.
+   */
+  reasoningSummary?: string;
   /** Entities cited in or used to produce this message */
   contextRefs?: LinkedContextReference[];
   /** Tool calls made during this assistant turn — persisted so they remain visible after streaming ends */

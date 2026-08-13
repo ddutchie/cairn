@@ -51,6 +51,12 @@ export interface UIMessage {
   id: string;
   role: RorkRole;
   parts: UIPart[];
+  /** Reasoning text round-tripped to a completions provider (same model). */
+  reasoning?: string;
+  /** The provider field the reasoning arrived in (e.g. "reasoning_content"). */
+  reasoningField?: string;
+  /** Raw Responses reasoning items round-tripped to a Responses provider. */
+  reasoningItems?: Array<Record<string, unknown>>;
 }
 
 /**
@@ -93,7 +99,9 @@ export type StreamEvent =
       output: unknown;
     }
   | { type: "finish"; finishReason?: string; usage?: ChatUsage }
-  | { type: "reasoning-delta"; delta?: string }
+  | { type: "reasoning-delta"; delta?: string; field?: string }
+  | { type: "reasoning-summary-delta"; delta?: string }
+  | { type: "reasoning-items"; items: Array<Record<string, unknown>> }
   | { type: string; [k: string]: unknown };
 
 /** Context-window usage for the chat ring (prompt tokens over the model limit). */

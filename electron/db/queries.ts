@@ -54,6 +54,7 @@ import {
   type McpNotification
 } from "../shared/db-mappers";
 import { normalizeNoteTitle, stripMarkdown } from "../shared/text-utils";
+import { ftsMatchQuery } from "../../shared/notes/text";
 
 /** Re-export for callers that only need a new ID without importing utils directly. */
 export { newId as generateId };
@@ -441,7 +442,6 @@ export function rewriteInboundWikilinks(
     if (next === content) continue; // LIKE matched but no real wikilink — skip
     const u = updateNote(db, String(row.id), {
       content: next,
-      contentText: stripMarkdown(next),
     });
     updated.push(u);
   }
@@ -450,26 +450,25 @@ export function rewriteInboundWikilinks(
 
 export function createNote(db: Database.Database, n: {
   id: string; projectId: string; workspaceId: string; title: string;
-  content?: string; contentText?: string; type?: "note" | "dashboard" | "template";
+  content?: string; type?: "note" | "dashboard" | "template";
   tagIds?: string[]; isPinned?: boolean; folder?: string;
 }) {
   const now = ts();
   const content = n.content ?? "";
-  const contentText = n.contentText ?? content;
   const type = n.type ?? "note";
   const tagIds = JSON.stringify(n.tagIds ?? []);
   const isPinned = n.isPinned ? 1 : 0;
   const folder = n.folder ?? "";
   db.prepare(`
-    INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+    INSERT INTO notes (id, project_id, workspace_id, title, content,
       tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at, version)
-    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, 0)
-  `).run(n.id, n.projectId, n.workspaceId, n.title, content, contentText, tagIds, isPinned, type, folder, now, now);
+    VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, 0)
+  `).run(n.id, n.projectId, n.workspaceId, n.title, content, tagIds, isPinned, type, folder, now, now);
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(n.id));
 }
 
 export function updateNote(db: Database.Database, id: string, patch: Partial<{
-  title: string; content: string; contentText: string;
+  title: string; content: string;
   tagIds: string[]; linkedNoteIds: string[]; linkedCardIds: string[];
   isPinned: boolean; archivedAt: string; type: "note" | "dashboard" | "template"; folder: string;
 }>) {
@@ -478,7 +477,6 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
     UPDATE notes SET
       title           = COALESCE(?, title),
       content         = COALESCE(?, content),
-      content_text    = COALESCE(?, content_text),
       tag_ids         = COALESCE(?, tag_ids),
       linked_note_ids = COALESCE(?, linked_note_ids),
       linked_card_ids = COALESCE(?, linked_card_ids),
@@ -492,7 +490,6 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
   `).run(
     patch.title ?? null,
     patch.content !== undefined ? patch.content : null,
-    patch.contentText !== undefined ? patch.contentText : null,
     patch.tagIds ? j(patch.tagIds) : null,
     patch.linkedNoteIds ? j(patch.linkedNoteIds) : null,
     patch.linkedCardIds ? j(patch.linkedCardIds) : null,
@@ -1049,13 +1046,13 @@ export function getChatMessages(db: Database.Database, threadId: string) {
 }
 
 export function addChatMessage(db: Database.Database, m: {
-  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown; reasoning?: string; subagents?: unknown;
+  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown; reasoning?: string; reasoningSummary?: string; subagents?: unknown;
 }) {
   const now = ts();
   db.prepare(`
-    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, reasoning, subagents, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, m.reasoning ?? null, m.subagents ? JSON.stringify(m.subagents) : null, now);
+    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, reasoning, reasoning_summary, subagents, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, m.reasoning ?? null, m.reasoningSummary ?? null, m.subagents ? JSON.stringify(m.subagents) : null, now);
   return toChatMessage(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(m.id));
 }
 
@@ -1249,10 +1246,10 @@ export function getResolvedFlow(db: Database.Database, projectId: string) {
     let base = { ...node, absoluteX, absoluteY };
 
     if (node.type === "note_ref" && node.data.noteId) {
-      const noteRow = db.prepare("SELECT id, title, content_text FROM notes WHERE id = ?").get(node.data.noteId) as
-        | { id: string; title: string; content_text: string } | undefined;
+      const noteRow = db.prepare("SELECT id, title, content FROM notes WHERE id = ?").get(node.data.noteId) as
+        | { id: string; title: string; content: string } | undefined;
       if (noteRow) {
-        base = { ...base, resolvedTitle: noteRow.title, resolvedSnippet: noteRow.content_text?.slice(0, 200) ?? "" } as typeof base & { resolvedTitle: string; resolvedSnippet: string };
+        base = { ...base, resolvedTitle: noteRow.title, resolvedSnippet: stripMarkdown(noteRow.content ?? "").slice(0, 200) } as typeof base & { resolvedTitle: string; resolvedSnippet: string };
       }
     }
     if (node.type === "task_ref" && node.data.cardId) {
@@ -1352,17 +1349,21 @@ export interface SearchTasksOpts {
 }
 
 export function searchNotes(db: Database.Database, opts: SearchNotesOpts) {
-  const q = opts.query.toLowerCase();
+  const match = ftsMatchQuery(opts.query);
   const limit = opts.limit ?? 10;
+  if (!match) return [];
   return db
     .prepare(
-      `SELECT * FROM notes
-       WHERE archived_at IS NULL AND deleted_at IS NULL
-         AND (? IS NULL OR project_id = ?)
-         AND (lower(title) LIKE ? OR lower(content_text) LIKE ?)
+      `SELECT n.* FROM notes_fts
+        JOIN notes n ON n.rowid = notes_fts.rowid
+       WHERE notes_fts MATCH ?
+         AND n.archived_at IS NULL AND n.deleted_at IS NULL AND n.type = 'note'
+         AND (? IS NULL OR n.project_id = ?)
+         AND (? IS NULL OR n.workspace_id = ?)
+       ORDER BY n.updated_at DESC
        LIMIT ?`
     )
-    .all(opts.projectId ?? null, opts.projectId ?? null, `%${q}%`, `%${q}%`, limit)
+    .all(match, opts.projectId ?? null, opts.projectId ?? null, opts.workspaceId ?? null, opts.workspaceId ?? null, limit)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((row) => toNote(row as any));
 }

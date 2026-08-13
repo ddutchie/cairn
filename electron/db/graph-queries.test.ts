@@ -136,9 +136,9 @@ describe("computeSemanticRelationships — top-K behaviour (single-section)", ()
   beforeEach(() => {
     db = makeDb();
     seed(db);
-    createNote(db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "A", contentText: "alpha" });
-    createNote(db, { id: "n2", projectId: "p1", workspaceId: "ws1", title: "B", contentText: "beta" });
-    createNote(db, { id: "n3", projectId: "p1", workspaceId: "ws1", title: "C", contentText: "gamma" });
+    createNote(db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "A", content: "alpha" });
+    createNote(db, { id: "n2", projectId: "p1", workspaceId: "ws1", title: "B", content: "beta" });
+    createNote(db, { id: "n3", projectId: "p1", workspaceId: "ws1", title: "C", content: "gamma" });
   });
 
   it("creates no edges when embeddings table is empty", () => {
@@ -165,7 +165,7 @@ describe("computeSemanticRelationships — top-K behaviour (single-section)", ()
   it("caps each note at TOP_K=5 outgoing edges", () => {
     for (let i = 1; i <= 8; i++) {
       const id = "m" + i;
-      createNote(db, { id, projectId: "p1", workspaceId: "ws1", title: "M" + i, contentText: "shared topic " + i });
+      createNote(db, { id, projectId: "p1", workspaceId: "ws1", title: "M" + i, content: "shared topic " + i });
       upsertEmbedding(db, id, vec(1, i * 0.001, 0, 0));
     }
     computeSemanticRelationships(db, "ws1");
@@ -242,9 +242,9 @@ describe("computeSemanticRelationships — multi-section notes", () => {
   beforeEach(() => {
     db = makeDb();
     seed(db);
-    createNote(db, { id: "plan", projectId: "p1", workspaceId: "ws1", title: "Project Plan", contentText: "intro" });
-    createNote(db, { id: "arch", projectId: "p1", workspaceId: "ws1", title: "Architecture", contentText: "microservices" });
-    createNote(db, { id: "mkt", projectId: "p1", workspaceId: "ws1", title: "Marketing", contentText: "go to market" });
+    createNote(db, { id: "plan", projectId: "p1", workspaceId: "ws1", title: "Project Plan", content: "intro" });
+    createNote(db, { id: "arch", projectId: "p1", workspaceId: "ws1", title: "Architecture", content: "microservices" });
+    createNote(db, { id: "mkt", projectId: "p1", workspaceId: "ws1", title: "Marketing", content: "go to market" });
   });
 
   it("a note with 2 sections gets edges from BOTH sections", () => {
@@ -326,12 +326,12 @@ describe("scenario: topic clusters with realistic cosines", () => {
     db = makeDb();
     seed(db);
 
-    createNote(db, { id: "react", projectId: "p1", workspaceId: "ws1", title: "React Hooks", contentText: "useState, useEffect" });
-    createNote(db, { id: "vue", projectId: "p1", workspaceId: "ws1", title: "Vue Composables", contentText: "ref, computed" });
-    createNote(db, { id: "svelte", projectId: "p1", workspaceId: "ws1", title: "Svelte Stores", contentText: "writable, derived" });
-    createNote(db, { id: "python", projectId: "p1", workspaceId: "ws1", title: "Python Decorators", contentText: "@app.route" });
-    createNote(db, { id: "ruby", projectId: "p1", workspaceId: "ws1", title: "Ruby Blocks", contentText: "yield, proc" });
-    createNote(db, { id: "pizza", projectId: "p1", workspaceId: "ws1", title: "Pizza Recipe", contentText: "flour, tomato, mozzarella" });
+    createNote(db, { id: "react", projectId: "p1", workspaceId: "ws1", title: "React Hooks", content: "useState, useEffect" });
+    createNote(db, { id: "vue", projectId: "p1", workspaceId: "ws1", title: "Vue Composables", content: "ref, computed" });
+    createNote(db, { id: "svelte", projectId: "p1", workspaceId: "ws1", title: "Svelte Stores", content: "writable, derived" });
+    createNote(db, { id: "python", projectId: "p1", workspaceId: "ws1", title: "Python Decorators", content: "@app.route" });
+    createNote(db, { id: "ruby", projectId: "p1", workspaceId: "ws1", title: "Ruby Blocks", content: "yield, proc" });
+    createNote(db, { id: "pizza", projectId: "p1", workspaceId: "ws1", title: "Pizza Recipe", content: "flour, tomato, mozzarella" });
   });
 
   it("connects notes within topic clusters, isolates unrelated notes", () => {
@@ -411,10 +411,10 @@ describe("scenario: multi-topic note discovers connections via sections", () => 
   beforeEach(() => {
     db = makeDb();
     seed(db);
-    createNote(db, { id: "plan", projectId: "p1", workspaceId: "ws1", title: "Project Plan", contentText: "intro" });
-    createNote(db, { id: "arch", projectId: "p1", workspaceId: "ws1", title: "Architecture Doc", contentText: "microservices" });
-    createNote(db, { id: "mkt", projectId: "p1", workspaceId: "ws1", title: "Marketing Plan", contentText: "go to market" });
-    createNote(db, { id: "cooking", projectId: "p1", workspaceId: "ws1", title: "Cooking Notes", contentText: "pasta recipe" });
+    createNote(db, { id: "plan", projectId: "p1", workspaceId: "ws1", title: "Project Plan", content: "intro" });
+    createNote(db, { id: "arch", projectId: "p1", workspaceId: "ws1", title: "Architecture Doc", content: "microservices" });
+    createNote(db, { id: "mkt", projectId: "p1", workspaceId: "ws1", title: "Marketing Plan", content: "go to market" });
+    createNote(db, { id: "cooking", projectId: "p1", workspaceId: "ws1", title: "Cooking Notes", content: "pasta recipe" });
   });
 
   it("multi-topic note connects to architecture AND marketing notes", () => {
@@ -469,9 +469,9 @@ describe("getKnowledgeGraph — semantic edge integration", () => {
   beforeEach(() => {
     db = makeDb();
     seed(db);
-    createNote(db, { id: "na", projectId: "p1", workspaceId: "ws1", title: "Alpha", contentText: "shared content here" });
-    createNote(db, { id: "nb", projectId: "p1", workspaceId: "ws1", title: "Beta", contentText: "shared content there" });
-    createNote(db, { id: "nc", projectId: "p1", workspaceId: "ws1", title: "Gamma", contentText: "totally unrelated text" });
+    createNote(db, { id: "na", projectId: "p1", workspaceId: "ws1", title: "Alpha", content: "shared content here" });
+    createNote(db, { id: "nb", projectId: "p1", workspaceId: "ws1", title: "Beta", content: "shared content there" });
+    createNote(db, { id: "nc", projectId: "p1", workspaceId: "ws1", title: "Gamma", content: "totally unrelated text" });
   });
 
   it("semantic edges appear in graph when includeAuto is true", () => {
@@ -537,9 +537,9 @@ describe("getKnowledgeGraph — client-side threshold filter", () => {
   beforeEach(() => {
     db = makeDb();
     seed(db);
-    createNote(db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "X", contentText: "a b c" });
-    createNote(db, { id: "n2", projectId: "p1", workspaceId: "ws1", title: "Y", contentText: "a b c" });
-    createNote(db, { id: "n3", projectId: "p1", workspaceId: "ws1", title: "Z", contentText: "a b c" });
+    createNote(db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "X", content: "a b c" });
+    createNote(db, { id: "n2", projectId: "p1", workspaceId: "ws1", title: "Y", content: "a b c" });
+    createNote(db, { id: "n3", projectId: "p1", workspaceId: "ws1", title: "Z", content: "a b c" });
     upsertEmbedding(db, "n1", vec(1, 0, 0, 0));
     upsertEmbedding(db, "n2", vec(0.98, 0.2, 0, 0));
     upsertEmbedding(db, "n3", vec(0, 0, 1, 0));

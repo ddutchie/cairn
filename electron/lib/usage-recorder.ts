@@ -171,10 +171,11 @@ export interface CacheTokens {
 /**
  * Normalise provider-reported prompt-cache token counts from the various
  * shapes seen across OpenAI-compatible endpoints. Handles the Anthropic-style
- * top-level fields (`cache_read_input_tokens`, `cache_creation_input_tokens`)
- * and the OpenAI-style nested `prompt_tokens_details.cached_tokens` (plus a
- * couple of compatible variants some gateways use). Returns zeros when the
- * provider reported none — callers treat that as "no caching".
+ * top-level fields (`cache_read_input_tokens`, `cache_creation_input_tokens`),
+ * the DeepSeek-style top-level `prompt_cache_hit_tokens`, and the OpenAI-style
+ * nested `prompt_tokens_details.cached_tokens` (plus a couple of compatible
+ * variants some gateways use). Returns zeros when the provider reported none —
+ * callers treat that as "no caching".
  */
 export function extractCacheTokens(raw: unknown): CacheTokens {
   if (!raw || typeof raw !== "object") return { cacheReadTokens: 0, cacheCreationTokens: 0 };
@@ -185,6 +186,7 @@ export function extractCacheTokens(raw: unknown): CacheTokens {
   return {
     cacheReadTokens:
       num(u.cache_read_input_tokens) +
+      num(u.prompt_cache_hit_tokens) +
       num(details.cached_tokens) +
       num(details.cache_read_input_tokens),
     cacheCreationTokens:

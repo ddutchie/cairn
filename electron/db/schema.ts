@@ -60,7 +60,6 @@ CREATE TABLE IF NOT EXISTS notes (
   workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   title            TEXT NOT NULL,
   content          TEXT,          -- Raw markdown (type=note) or HTML (type=dashboard)
-  content_text     TEXT NOT NULL DEFAULT '',
   tag_ids          TEXT NOT NULL DEFAULT '[]',
   linked_note_ids  TEXT NOT NULL DEFAULT '[]',
   linked_card_ids  TEXT NOT NULL DEFAULT '[]',
@@ -143,6 +142,28 @@ CREATE INDEX IF NOT EXISTS idx_cards_column       ON task_cards(column_id);
 CREATE INDEX IF NOT EXISTS idx_cards_project      ON task_cards(project_id);
 CREATE INDEX IF NOT EXISTS idx_columns_project    ON board_columns(project_id);
 CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);
+
+-- Full-text search over note title + body. External-content FTS5: the index
+-- lives in the shadow tables, the original text stays in notes (no second
+-- copy of the body — the removed content_text column). rowid is the hidden
+-- integer rowid of the notes table (id is a TEXT PK, not a rowid alias).
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+  title,
+  content,
+  content='notes',
+  content_rowid='rowid',
+  tokenize='unicode61'
+);
+CREATE TRIGGER IF NOT EXISTS trg_notes_fts_ai AFTER INSERT ON notes BEGIN
+  INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, coalesce(new.content, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS trg_notes_fts_ad AFTER DELETE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, coalesce(old.content, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS trg_notes_fts_au AFTER UPDATE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, coalesce(old.content, ''));
+  INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, coalesce(new.content, ''));
+END;
 `;
 
 // ── Versioned migrations ──────────────────────────────────────────────────────
@@ -1115,6 +1136,58 @@ const MIGRATIONS: Migration[] = [
       }
     }
   },
+
+  // v44: FTS5 note search replaces the derived `content_text` column.
+  //
+  // The base schema now creates `notes_fts` (external-content FTS5 over title +
+  // body) plus its insert/update/delete triggers, and no longer defines
+  // `content_text` on notes — so a fresh install is already correct. For an
+  // EXISTING install the base schema is a no-op on the notes table (the column
+  // is still there), and the triggers only fire on NEW writes, so this migration
+  // must (a) back-fill the FTS index from the rows already present, and (b) drop
+  // the now-redundant `content_text` mirror. Plain text is derived on read via
+  // stripMarkdown; search goes through notes_fts. This also removes `content_text`
+  // from the sync oplog payload (a `SELECT *` snapshot no longer contains it),
+  // halving the note-body size replicated to peers.
+  (db) => {
+    // Idempotent DDL (the base schema already ran; this guards an upgraded DB).
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+        title,
+        content,
+        content='notes',
+        content_rowid='rowid',
+        tokenize='unicode61'
+      );
+      CREATE TRIGGER IF NOT EXISTS trg_notes_fts_ai AFTER INSERT ON notes BEGIN
+        INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, coalesce(new.content, ''));
+      END;
+      CREATE TRIGGER IF NOT EXISTS trg_notes_fts_ad AFTER DELETE ON notes BEGIN
+        INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, coalesce(old.content, ''));
+      END;
+      CREATE TRIGGER IF NOT EXISTS trg_notes_fts_au AFTER UPDATE ON notes BEGIN
+        INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, coalesce(old.content, ''));
+        INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, coalesce(new.content, ''));
+      END;
+    `);
+    // Back-fill the index. On a fresh install there are no rows yet, so this is
+    // a no-op; on an existing install it indexes everything the triggers missed.
+    db.prepare(
+      "INSERT INTO notes_fts(rowid, title, content) SELECT rowid, title, coalesce(content, '') FROM notes",
+    ).run();
+    const cols = db.prepare("PRAGMA table_info(notes)").all() as { name: string }[];
+    if (cols.some((c) => c.name === "content_text")) {
+      db.exec("ALTER TABLE notes DROP COLUMN content_text");
+    }
+    // Strip the now-removed content_text out of any already-published note 'put'
+    // snapshots so the redundant mirror stops being replicated to peers (and the
+    // freed bytes are reclaimed by db-hygiene's one-time VACUUM). Receivers are
+    // column-agnostic (they ignore fields their schema lacks), so this is
+    // convergence-safe; json_remove is a no-op when the key is absent.
+    db.prepare(
+      "UPDATE sync_oplog SET payload = json_remove(payload, '$.content_text') WHERE entity = 'notes' AND op = 'put' AND payload IS NOT NULL AND json_valid(payload)",
+    ).run();
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1146,6 +1219,7 @@ function ensureColumns(db: Database.Database): void {
   };
   ensure("chat_threads", "use_subagents", "use_subagents INTEGER NOT NULL DEFAULT 0");
   ensure("chat_messages", "subagents", "subagents TEXT");
+  ensure("chat_messages", "reasoning_summary", "reasoning_summary TEXT");
   ensure("automations", "approval_mode", "approval_mode TEXT NOT NULL DEFAULT 'auto'");
   ensure("automations", "active_hours_start", "active_hours_start TEXT");
   ensure("automations", "active_hours_end", "active_hours_end TEXT");

@@ -113,9 +113,10 @@ export default function ChatScreen() {
     hasProvider().then(setConfigured).catch(() => setConfigured(false));
   }, []);
 
-  // Image attach is hidden when the ACTIVE provider is OpenAI-compatible and
-  // its model is known not to accept images. Rork / Apple / unknown models stay
-  // permissive. Re-resolved on focus (provider may change in settings).
+  // Image attach is hidden when the ACTIVE provider is an OpenAI-compatible or
+  // Responses endpoint and its model is known not to accept images. Rork /
+  // Apple / unknown models stay permissive. Re-resolved on focus (provider may
+  // change in settings).
   const [openAiModelActive, setOpenAiModelActive] = useState<string | null>(null);
   // Re-renders on catalog arrival/refresh; the version feeds the memo so
   // gating recomputes when a model's capabilities finally resolve.
@@ -135,7 +136,9 @@ export default function ChatScreen() {
       resolveProvider()
         .then((p) => {
           if (!alive) return;
-          setOpenAiModelActive(p.name === "OpenAI-compatible" ? getOpenAIModel() : null);
+          // Both wire protocols built from an OpenAI config gate images on the
+          // catalog model's capability — "Responses" is makeResponsesProvider().
+          setOpenAiModelActive(p.name === "OpenAI-compatible" || p.name === "Responses" ? getOpenAIModel() : null);
         })
         .catch(() => {
           if (alive) setOpenAiModelActive(null);
@@ -175,6 +178,7 @@ export default function ChatScreen() {
     saveChatMessage({ role: "user", content: text, images: atts.map((a) => a.url) });
     let acc = "";
     let reasoningAcc = "";
+    let reasoningSummaryAcc = "";
     const toolTrail: ToolCall[] = [];
     // Sum of per-round usage across the run (tool-calling turns emit one usage
     // event per round; the ring uses the final round, the history uses this sum).
@@ -201,6 +205,9 @@ export default function ChatScreen() {
         } else if (e.type === "reasoning-delta" && e.delta) {
           reasoningAcc += e.delta;
           patchAssistant({ reasoning: reasoningAcc });
+        } else if (e.type === "reasoning-summary-delta" && e.delta) {
+          reasoningSummaryAcc += e.delta;
+          patchAssistant({ reasoningSummary: reasoningSummaryAcc });
         } else if (e.type === "tool-start" && e.tool) {
           // Show a "running" chip immediately so slow tools (MCP / web search)
           // aren't invisible until they finish.
@@ -237,19 +244,24 @@ export default function ChatScreen() {
           // re-sends the whole conversation, so the last round alone under-
           // counts a tool-heavy turn.
           usageTotal = usageTotal ? sumUsage(usageTotal, e.usage) : e.usage;
-        } else if (e.type === "final" && e.usage) {
-          // Drive the ring with the FINAL round's context window (a negative
-          // prompt count or non-positive limit renders a broken/empty ring).
-          const u = e.usage;
-          if (u.promptTokens >= 0 && u.contextLimit > 0) {
-            setUsage(u);
-            saveLastChatUsage(u); // persist so the ring survives tab close/reopen
-          }
-          // Record the SUMMED spend (falls back to the final round's usage when
-          // only one usage event arrived — e.g. a plain single-turn reply).
-          const total = usageTotal ?? u;
-          if (total.promptTokens >= 0 && (total.completionTokens ?? 0) >= 0) {
-            recordChatUsage(total, usageProviderLabel(), usageModelLabel());
+        } else if (e.type === "final") {
+          // Patch the condensed reasoning summary (arrives via reasoning-summary-
+          // delta during streaming, or only in the final event on some providers).
+          if (e.reasoningSummary) patchAssistant({ reasoningSummary: e.reasoningSummary });
+          if (e.usage) {
+            // Drive the ring with the FINAL round's context window (a negative
+            // prompt count or non-positive limit renders a broken/empty ring).
+            const u = e.usage;
+            if (u.promptTokens >= 0 && u.contextLimit > 0) {
+              setUsage(u);
+              saveLastChatUsage(u); // persist so the ring survives tab close/reopen
+            }
+            // Record the SUMMED spend (falls back to the final round's usage when
+            // only one usage event arrived — e.g. a plain single-turn reply).
+            const total = usageTotal ?? u;
+            if (total.promptTokens >= 0 && (total.completionTokens ?? 0) >= 0) {
+              recordChatUsage(total, usageProviderLabel(), usageModelLabel());
+            }
           }
         }
         setTimeout(() => scrollToEndSoon(true), 20);

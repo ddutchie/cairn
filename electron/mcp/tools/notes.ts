@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
-import { stripMarkdown, normalizeNoteTitle } from "../../shared/text-utils";
+import { normalizeNoteTitle } from "../../shared/text-utils";
 import { executeSearchNotes } from "../../shared/read-tools-pure";
 import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "../../../shared/notes/folder-tree";
 import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
@@ -113,7 +113,6 @@ export function instantiate_template(db: Database.Database, snap: Snapshot, work
         workspaceId: project.workspaceId as string,
         title,
         content,
-        contentText: stripMarkdown(content),
         tagIds: (template.tagIds as string[]) ?? [],
         folder: newFolder,
         type: "note",
@@ -208,7 +207,7 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
       let updatedNote: any;
       db.transaction(() => {
         updatedNote = q.updateNote(db, existing.id, {
-          ...(content !== undefined ? { content, contentText: stripMarkdown(content as string) } : {}),
+          ...(content !== undefined ? { content } : {}),
           ...(ensureResolvedTagIds ? { tagIds: ensureResolvedTagIds } : {}),
           ...(ensureResolvedIsPinned !== undefined ? { isPinned: ensureResolvedIsPinned } : {}),
           ...(ensureFolder !== undefined ? { folder: ensureFolder } : {}),
@@ -243,7 +242,7 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
         if (raced) {
           raceUpdate = true;
           return q.updateNote(db, raced.id, {
-            ...(content !== undefined ? { content: markdown, contentText: stripMarkdown(markdown) } : {}),
+            ...(content !== undefined ? { content: markdown } : {}),
             ...(ensureResolvedTagIds ? { tagIds: ensureResolvedTagIds } : {}),
             ...(ensureResolvedIsPinned !== undefined ? { isPinned: ensureResolvedIsPinned } : {}),
             ...(ensureFolder !== undefined ? { folder: ensureFolder } : {}),
@@ -255,7 +254,6 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
           workspaceId: project.workspaceId as string,
           title: title as string,
           content: markdown,
-          contentText: stripMarkdown(markdown),
           tagIds: newTagIds,
           isPinned: newIsPinned,
           folder: newFolder,
@@ -312,7 +310,6 @@ export function append_to_note(db: Database.Database, snap: Snapshot, workspaceP
     const updated = db.transaction(() => {
       q.updateNote(db, noteId as string, {
         content: newContent,
-        contentText: stripMarkdown(newContent),
       });
       insertNotification(db, "update_note", "Note updated", `Content appended to "${note.title}"`, { type: "note", id: note.id });
       return q.getNoteById(db, noteId as string);
@@ -356,7 +353,6 @@ export function patch_note(db: Database.Database, snap: Snapshot, workspacePath:
     const updated = db.transaction(() => {
       q.updateNote(db, noteId, {
         content: newContent,
-        contentText: stripMarkdown(newContent),
       });
       insertNotification(db, "update_note", "Note updated", `Patch applied to "${note.title}"`, { type: "note", id: note.id });
       return q.getNoteById(db, noteId);

@@ -129,6 +129,32 @@ describe("prepareContextMessages", () => {
     expect(JSON.stringify(out[1])).not.toContain("reasoningModel");
   });
 
+  it("round-trips Responses reasoning items for an items-only assistant turn", async () => {
+    const out = await prepareContextMessages({
+      systemPrompt: "sys",
+      currentModelKey: "a::m",
+      roundTripItems: true,
+      messages: [
+        {
+          role: "assistant",
+          content: null,
+          reasoning: "",
+          reasoningItems: [{ type: "reasoning", id: "rs_1", encrypted_content: "enc" }],
+          reasoningModel: "a::m",
+        },
+      ],
+    });
+
+    // Items-only turn has no text and no tool_calls, but the reasoning items
+    // must survive pruning and be re-attached for the Responses round-trip.
+    expect(out).toHaveLength(2); // system + items-only assistant kept
+    expect(out[1]).toMatchObject({
+      role: "assistant",
+      reasoningItems: [{ type: "reasoning", id: "rs_1", encrypted_content: "enc" }],
+    });
+    expect(JSON.stringify(out[1])).not.toContain("reasoningModel");
+  });
+
   it("converts reasoning from a different model to plain text (pi behaviour)", async () => {
     const out = await prepareContextMessages({
       systemPrompt: "sys",
