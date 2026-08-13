@@ -226,6 +226,67 @@ describe("runAgentLoop — SSE streaming", () => {
     expect(log[log.length - 1]).toBe("done");
   });
 
+  it("strips optional fields on 400 and consumes the stripped response (no third request)", async () => {
+    // Strict Responses endpoint: the full body (with temperature/include) 400s,
+    // the stripped retry succeeds. The stripped response must be consumed
+    // directly — a third request re-sending the original body would 400 again.
+    let loopCalls = 0;
+    const loopBodies: Record<string, unknown>[] = [];
+    const srv = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c) => chunks.push(c as Buffer));
+      req.on("end", () => {
+        let parsed: Record<string, unknown> = {};
+        try { parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { parsed = {}; }
+        if (!("model" in parsed)) {
+          // Transport probe ({}): validation error → resolves to responses.
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "'model' is a required property", type: "invalid_request_error" } }));
+          return;
+        }
+        loopCalls++;
+        loopBodies.push(parsed);
+        if (loopCalls === 1) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "unknown parameter 'temperature'", type: "invalid_request_error" } }));
+          return;
+        }
+        // The Responses transport's parser consumes Responses SSE, not
+        // chat-completions chunks.
+        const sse = [
+          `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "Stripped OK." })}\n\n`,
+          `data: ${JSON.stringify({ type: "response.completed", response: { status: "completed", usage: {} } })}\n\n`,
+        ].join("");
+        res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" });
+        res.end(sse);
+      });
+    });
+    await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+
+    const session = makeSession();
+    const { log, callbacks } = makeCallbacks();
+    try {
+      await runAgentLoop(
+        session, "You are a test assistant.",
+        { baseUrl: url, model: "test", apiKey: "test", maxSteps: 5, temperature: 0.3 },
+        callbacks, makeToolCtx(db),
+      );
+    } finally {
+      await new Promise<void>((r) => srv.close(() => r()));
+    }
+
+    expect(log).toContain("token:Stripped OK.");
+    expect(log).toContain("done");
+    expect(log).not.toContain("error");
+    // Exactly two loop requests: the full body (400) then the stripped retry —
+    // the successful stripped response is consumed, never re-sent.
+    expect(loopCalls).toBe(2);
+    expect(loopBodies[0]).toHaveProperty("temperature");
+    expect(loopBodies[1]).not.toHaveProperty("temperature");
+    expect(loopBodies[1]).not.toHaveProperty("include");
+  });
+
   // ── 2. Tool call with no preceding text ───────────────────────────────────
 
   it("tool-call (no text): onToolsReady fires BEFORE onToolStart", async () => {

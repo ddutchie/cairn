@@ -316,6 +316,9 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         send("chat:done", {
           content: abortCtrl.signal.aborted ? "" : dispatchResult.content,
           reasoning: dispatchResult.reasoning,
+          reasoningItems: dispatchResult.reasoningItems,
+          reasoningField: dispatchResult.reasoningField,
+          reasoningModel: dispatchResult.reasoningModel,
           contextRefs: [],
           usage: finalUsage(),
         });

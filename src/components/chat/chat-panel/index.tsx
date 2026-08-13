@@ -430,14 +430,17 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
               });
             });
           } else {
-            // Skip assistant turns with no content and no tool calls — a
-            // thinking model that stopped mid-reasoning leaves an empty turn
-            // (its reasoning is stripped before re-send), and replaying it
-            // trips the provider's "content or tool_calls must be set" 400.
-            if (!m.content?.trim()) return;
+            // Skip assistant turns with no content, no tool calls, and no
+            // reasoning items to round-trip — a thinking model that stopped
+            // mid-reasoning leaves an empty turn (its reasoning is stripped
+            // before re-send), and replaying it trips the provider's "content
+            // or tool_calls must be set" 400. A turn carrying reasoning items
+            // IS kept so a resumed thread can replay its chain-of-thought
+            // (the loop gates the replay on the same model key).
+            if (!m.content?.trim() && !(m.reasoningItems && m.reasoningItems.length > 0)) return;
             history.push({
               role: "assistant",
-              content: m.content,
+              content: m.content || null,
               ...(m.reasoning ? { reasoning: m.reasoning } : {}),
               ...(m.reasoningField ? { reasoningField: m.reasoningField } : {}),
               ...(m.reasoningModel ? { reasoningModel: m.reasoningModel } : {}),
