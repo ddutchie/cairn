@@ -914,12 +914,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
                   </div>
                 </div>
               )}
-              {isLoading && !pendingQuestions && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
-                  <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
-                  <span className="text-[0.786rem] text-[var(--text-tertiary)]">Working…</span>
-                </div>
-              )}
             </div>
           ),
         }}
@@ -936,6 +930,17 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
       {/* Input — with upward-expanding plan task list docked above it */}
       <div className="border-t border-[var(--border)] flex-shrink-0">
+        {/* Pinned working indicator: always visible above the input even when
+            the transcript is scrolled up, so it's clear the agent is still
+            running (and that messages can be queued). */}
+        {isLoading && !pendingQuestions && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)]">
+            <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
+            <span className="text-[0.714rem] text-[var(--text-secondary)]">
+              Agent is working — you can queue messages below
+            </span>
+          </div>
+        )}
         {session.mode === "plan" && planNoteContent && session.planNoteId && (
           <PlanApprovalCard
             content={planNoteContent}

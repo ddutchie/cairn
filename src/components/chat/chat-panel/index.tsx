@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { Trash2, ChevronDown, ArrowLeftFromLine } from "lucide-react";
+import { Trash2, ChevronDown, ArrowLeftFromLine, Loader2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -732,6 +732,12 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       />
 
       {/* Input */}
+      {isLoading && (
+        <div className={cn("flex items-center gap-1.5 px-3 py-1.5 border-t border-[var(--border)] bg-[var(--surface)]", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
+          <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
+          <span className="text-[0.714rem] text-[var(--text-secondary)]">Cairn is working — you can queue messages below</span>
+        </div>
+      )}
       <div className={cn("border-t border-[var(--border)] p-3 flex-shrink-0", activeView === "chat" && "border-t-0 bg-transparent p-6 max-w-3xl mx-auto w-full")}>
         <ChatInputArea
           ref={inputRef}
