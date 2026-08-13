@@ -244,15 +244,18 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const firedSessions   = useRef(new Set<string>());
 
   // Scroll to bottom on new messages / streaming growth, and whenever the
-  // Scroll to the newest message when the pane becomes active or the
-  // ask_questions form appears (it can otherwise land out of view if the user
-  // had scrolled up when the model asked its questions). Streaming follow is
+  // Scroll to the very END of the virtualized content when the pane becomes
+  // active or the ask_questions form appears (the form renders in Virtuoso's
+  // Footer, so it can otherwise stay below the viewport if the user had
+  // scrolled up when the model asked its questions). Streaming follow is
   // handled by Virtuoso's followOutput. Use a scalar (pendingQuestions?.length)
   // rather than the array so React doesn't flag the dependency change.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (isActive && virtuosoRef.current && messages.length > 0) {
-      virtuosoRef.current.scrollToIndex({ index: messages.length - 1, align: "end", behavior: "smooth" });
+      // scrollTo top=MAX reaches past the last item into the Footer, unlike
+      // scrollToIndex which aligns only the final message item.
+      virtuosoRef.current.scrollTo({ top: Number.MAX_SAFE_INTEGER, behavior: "smooth" });
     }
   }, [isActive, pendingQuestions?.length ?? 0]);
   /* eslint-enable react-hooks/exhaustive-deps */
