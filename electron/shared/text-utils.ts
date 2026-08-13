@@ -38,7 +38,8 @@ export function normalizeNoteTitle(title: string): string {
 
 /**
  * Strip markdown syntax from a string, returning plain text.
- * Used to populate the SQLite `content_text` search column.
+ * Used to derive plain text on read for search snippets, embeddings, and the
+ * knowledge graph (the dedicated `content_text` column was removed — see schema v44).
  */
 export function stripMarkdown(md: string): string {
   return md

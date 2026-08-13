@@ -48,3 +48,20 @@ export function matchesQuery(query: string, haystack: string): boolean {
   const hay = haystack.toLowerCase();
   return terms.every((t) => hay.includes(t));
 }
+
+/**
+ * Convert a user search query into an FTS5 MATCH expression.
+ *
+ * Each whitespace term becomes a quoted prefix phrase (`"term"*`), joined with
+ * spaces — FTS5's implicit AND. Quoting treats user input as literal text rather
+ * than FTS query syntax, and the `*` suffix recovers the prefix-substring
+ * behaviour of the old LIKE '%term%' search ("auth" still matches
+ * "authentication"). An empty/whitespace query returns "" (no terms), which
+ * callers must guard against before issuing a MATCH (FTS rejects an empty
+ * expression).
+ */
+export function ftsMatchQuery(query: string): string {
+  return queryTerms(query)
+    .map((t) => `"${t.replace(/"/g, '""')}"*`)
+    .join(" ");
+}

@@ -17,6 +17,7 @@
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
+import { stripMarkdown } from "../shared/text-utils";
 import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
@@ -180,10 +181,10 @@ export function registerFlowHandlers(ctx: DbContext): void {
             const body = data.body as string | undefined;
             parts.push(`[Idea] ${title ?? "Untitled"}${body ? `: ${body}` : ""}`);
           } else if (type === "note_ref" && data.noteId) {
-            const noteRow = ctx.db.prepare("SELECT title, content_text FROM notes WHERE id = ?").get(data.noteId) as
-              | { title: string; content_text: string }
+            const noteRow = ctx.db.prepare("SELECT title, content FROM notes WHERE id = ?").get(data.noteId) as
+              | { title: string; content: string }
               | undefined;
-            if (noteRow) parts.push(`[Note] ${noteRow.title}: ${noteRow.content_text?.slice(0, 600) ?? ""}`);
+            if (noteRow) parts.push(`[Note] ${noteRow.title}: ${stripMarkdown(noteRow.content ?? "").slice(0, 600)}`);
           } else if (type === "task_ref" && data.cardId) {
             const cardRow = ctx.db.prepare(
               "SELECT tc.title, tc.description, tc.priority, bc.name as col FROM task_cards tc LEFT JOIN board_columns bc ON tc.column_id = bc.id WHERE tc.id = ?"

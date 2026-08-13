@@ -21,6 +21,7 @@ import { toFloat32 } from "./cosine";
 import { splitIntoSections } from "./sections";
 import { EMBED_MODEL_ID, EMBED_DIM } from "./types";
 import type { EmbedTask } from "./types";
+import { stripMarkdown } from "../shared/text-utils";
 
 export type EmbedFn = (texts: string[], task: EmbedTask, model?: string) => Promise<number[][]>;
 
@@ -105,7 +106,7 @@ interface NoteStub {
   id: string;
   workspace_id: string;
   title: string;
-  content_text: string;
+  content: string;
   archived_at: string | null;
 }
 
@@ -113,12 +114,12 @@ function fetchNotes(db: Database.Database, workspaceId: string, noteIds?: string
   if (noteIds && noteIds.length > 0) {
     const placeholders = noteIds.map(() => "?").join(",");
     return db.prepare(
-      `SELECT id, workspace_id, title, content_text, archived_at
+      `SELECT id, workspace_id, title, content, archived_at
        FROM notes WHERE workspace_id = ? AND id IN (${placeholders})`
     ).all(workspaceId, ...noteIds) as NoteStub[];
   }
   return db.prepare(
-    `SELECT id, workspace_id, title, content_text, archived_at
+    `SELECT id, workspace_id, title, content, archived_at
      FROM notes WHERE workspace_id = ? AND archived_at IS NULL`
   ).all(workspaceId) as NoteStub[];
 }
@@ -160,14 +161,15 @@ export async function reindexNotes(
     const batch = notes.slice(i, i + BATCH_SIZE);
 
     for (const n of batch) {
-      if (!n.content_text || n.content_text.trim().length === 0) {
+      const plain = stripMarkdown(n.content);
+      if (!plain || plain.trim().length === 0) {
         deleteNoteEmbedding(db, n.id);
         skipped++;
         done++;
         onProgress?.(done, total);
         continue;
       }
-      const sections = splitIntoSections(n.title, n.content_text);
+      const sections = splitIntoSections(n.title, plain);
       const existing = getNoteEmbeddings(db, n.id);
       const existingBySectionIdx = new Map(existing.map((e) => [e.sectionIdx, e]));
 
@@ -446,7 +448,8 @@ export async function recomputeProjections(
   const missing: NoteStub[] = [];
   for (const n of allNotes) {
     const recs = byNote.get(n.id);
-    const sections = splitIntoSections(n.title, n.content_text);
+    const plain = stripMarkdown(n.content);
+    const sections = splitIntoSections(n.title, plain);
     const sectionHashes = sections.map((s) => {
       const text = `${n.title}\n\n## ${s.title}\n${s.text}`;
       return sha256(text);
@@ -459,7 +462,7 @@ export async function recomputeProjections(
         r.task !== "search_document" ||
         !sectionHashes.includes(r.contentHash),
       );
-    if (stale && n.content_text && n.content_text.trim().length > 0) {
+    if (stale && plain && plain.trim().length > 0) {
       missing.push(n);
     }
   }
@@ -471,7 +474,7 @@ export async function recomputeProjections(
   for (let i = 0; i < missing.length; i += BATCH_SIZE) {
     const batch = missing.slice(i, i + BATCH_SIZE);
     for (const n of batch) {
-      const sections = splitIntoSections(n.title, n.content_text);
+      const sections = splitIntoSections(n.title, stripMarkdown(n.content));
       deleteNoteEmbeddingSections(db, n.id, sections.length);
       for (const s of sections) {
         const text = `${n.title}\n\n## ${s.title}\n${s.text}`;

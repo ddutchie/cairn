@@ -17,6 +17,7 @@ import type Database from "better-sqlite3";
 import { getAllEmbeddingsForWorkspace, getAllTaskEmbeddingsForWorkspace } from "./queries";
 import type { NoteEmbeddingRecord, TaskEmbeddingRecord } from "./queries";
 import { cosine, toFloat32 } from "../embeddings/cosine";
+import { stripMarkdown } from "../shared/text-utils";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -158,7 +159,7 @@ export function getKnowledgeGraph(
 
   // ── 2. Notes ───────────────────────────────────────────────────────────────
   const notes = db.prepare(
-    `SELECT id, project_id, workspace_id, title, content_text, tag_ids,
+    `SELECT id, project_id, workspace_id, title, content, tag_ids,
             linked_note_ids, linked_card_ids, is_pinned
      FROM notes
      WHERE project_id IN (${projPlaceholders}) AND archived_at IS NULL`
@@ -177,7 +178,7 @@ export function getKnowledgeGraph(
         meta: {
           tagIds: parseJson(n.tag_ids),
           isPinned: n.is_pinned === 1,
-          snippet: (n.content_text as string || "").slice(0, 600),
+          snippet: stripMarkdown(n.content as string || "").slice(0, 600),
         },
       });
     }
@@ -552,7 +553,7 @@ export function computeAutoRelationships(
 
   // Load all non-archived notes + cards for this workspace
   const allNotes = db.prepare(
-    `SELECT id, title, content_text FROM notes
+    `SELECT id, title, content FROM notes
      WHERE workspace_id = ? AND archived_at IS NULL`
   ).all(workspaceId) as Row[];
 
@@ -600,7 +601,7 @@ export function computeAutoRelationships(
 
     notes = allNotes.filter((n) => {
       if (idSet.has(n.id as string)) return true;
-      const text = ((n.content_text as string) || "").toLowerCase();
+      const text = stripMarkdown(n.content as string || "").toLowerCase();
       for (const t of changedTitles) if (text.includes(t)) return true;
       return false;
     });
@@ -626,7 +627,7 @@ export function computeAutoRelationships(
     for (const n of allNotes) noteTitleToId.set((n.title as string).toLowerCase(), n.id as string);
 
     for (const n of notes) {
-      const content = (n.content_text as string) || "";
+      const content = (n.content as string) || "";
       const targets = extractWikilinkTitles(content);
       for (const titleLower of targets) {
         const targetId = noteTitleToId.get(titleLower);
@@ -644,7 +645,7 @@ export function computeAutoRelationships(
     for (const c of allCards) titleMap.set((c.title as string).toLowerCase(), c.id as string);
 
     for (const n of notes) {
-      const text = ((n.content_text as string) || "").toLowerCase();
+      const text = stripMarkdown(n.content as string || "").toLowerCase();
       for (const [title, targetId] of titleMap) {
         if (targetId === n.id) continue;
         if (title.length >= 5 && text.includes(title)) {
@@ -658,7 +659,7 @@ export function computeAutoRelationships(
     // ── Keyword similarity: TF-IDF Jaccard between notes ────────────────
     const noteTokens: { id: string; tokens: Set<string> }[] = notes.map((n) => ({
       id: n.id as string,
-      tokens: new Set(tokenise(((n.title as string) || "") + " " + ((n.content_text as string) || ""))),
+      tokens: new Set(tokenise(((n.title as string) || "") + " " + stripMarkdown(n.content as string || ""))),
     }));
 
     // For incremental mode, also build tokens for all notes so we can compare
@@ -666,7 +667,7 @@ export function computeAutoRelationships(
     const allNoteTokens: { id: string; tokens: Set<string> }[] = (entityIds && entityIds.length > 0)
       ? allNotes.map((n) => ({
           id: n.id as string,
-          tokens: new Set(tokenise(((n.title as string) || "") + " " + ((n.content_text as string) || ""))),
+          tokens: new Set(tokenise(((n.title as string) || "") + " " + stripMarkdown(n.content as string || ""))),
         }))
       : noteTokens;
 

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
-import { writeNoteFile, stripMarkdown } from "../notes-files";
+import { writeNoteFile } from "../notes-files";
 import { callLLM, type LLMConfig } from "./llm";
 import { newId } from "../db/utils";
 
@@ -45,7 +45,6 @@ export async function generatePrd(
     workspaceId: project.workspaceId,
     title: args.title,
     content: prdMarkdown,
-    contentText: stripMarkdown(prdMarkdown),
   });
   writeNoteFile(workspacePath, { ...note, projectName: project.name });
 

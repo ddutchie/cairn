@@ -32,7 +32,7 @@ function seed(db: Database.Database) {
   createWorkspace(db, { id: "ws1", name: "Workspace" });
   createProject(db, { id: "proj1", workspaceId: "ws1", name: "Project" });
   createColumn(db, { id: "col1", projectId: "proj1", workspaceId: "ws1", name: "Backlog", type: "backlog", order: 0 });
-  createNote(db, { id: "note1", projectId: "proj1", workspaceId: "ws1", title: "Note", content: "body", contentText: "body" });
+  createNote(db, { id: "note1", projectId: "proj1", workspaceId: "ws1", title: "Note", content: "body" });
   createCard(db, { id: "card1", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Task", order: 0 });
 }
 

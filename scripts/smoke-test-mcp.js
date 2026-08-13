@@ -103,7 +103,7 @@ function seedDb() {
   db.prepare("INSERT INTO workspaces (id,name,created_at,updated_at) VALUES ('ws','WS',?,?)").run(now, now);
   db.prepare("INSERT INTO projects (id,workspace_id,name,status,priority,tag_ids,created_at,updated_at) VALUES ('proj','ws',?,'active','medium','[]',?,?)").run(projectDirName, now, now);
   db.prepare("INSERT INTO board_columns (id,project_id,workspace_id,name,type,\"order\",created_at,updated_at) VALUES ('col','proj','ws','Todo','todo',0,?,?)").run(now, now);
-  db.prepare("INSERT INTO notes (id,project_id,workspace_id,title,content,content_text,tag_ids,linked_note_ids,linked_card_ids,is_pinned,type,folder,created_at,updated_at) VALUES ('note1','proj','ws','SmokeNote','body','body','[]','[]','[]',0,'note','Research',?,?)").run(now, now);
+  db.prepare("INSERT INTO notes (id,project_id,workspace_id,title,content,tag_ids,linked_note_ids,linked_card_ids,is_pinned,type,folder,created_at,updated_at) VALUES ('note1','proj','ws','SmokeNote','body','[]','[]','[]',0,'note','Research',?,?)").run(now, now);
   db.prepare("INSERT INTO task_cards (id,column_id,project_id,workspace_id,title,description,tag_ids,priority,linked_note_ids,\"order\",created_at,updated_at) VALUES ('card1','col','proj','ws','SmokeCard','','[]','medium','[]',0,?,?)").run(now, now);
   db.close();
 }

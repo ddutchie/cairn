@@ -135,6 +135,40 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
         created_at        TEXT NOT NULL
       );
     `),
+  // v8: FTS5 note search replaces the derived `content_text` column (matches
+  // desktop migration v44). The base schema now creates notes_fts + triggers and
+  // omits content_text, so fresh installs are correct. Existing installs get the
+  // index back-filled from the rows already present (triggers only fire on new
+  // writes) and the now-redundant content_text mirror dropped. This also removes
+  // content_text from the synced oplog payload.
+  (db) => {
+    db.execSync(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+        title,
+        content,
+        content='notes',
+        content_rowid='rowid',
+        tokenize='unicode61'
+      );
+      CREATE TRIGGER IF NOT EXISTS trg_notes_fts_ai AFTER INSERT ON notes BEGIN
+        INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, coalesce(new.content, ''));
+      END;
+      CREATE TRIGGER IF NOT EXISTS trg_notes_fts_ad AFTER DELETE ON notes BEGIN
+        INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, coalesce(old.content, ''));
+      END;
+      CREATE TRIGGER IF NOT EXISTS trg_notes_fts_au AFTER UPDATE ON notes BEGIN
+        INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, coalesce(old.content, ''));
+        INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, coalesce(new.content, ''));
+      END;
+    `);
+    db.execSync(
+      "INSERT INTO notes_fts(rowid, title, content) SELECT rowid, title, coalesce(content, '') FROM notes",
+    );
+    const cols = db.getAllSync<{ name: string }>("PRAGMA table_info(notes)").map((c) => c.name);
+    if (cols.includes("content_text")) {
+      db.execSync("ALTER TABLE notes DROP COLUMN content_text");
+    }
+  },
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

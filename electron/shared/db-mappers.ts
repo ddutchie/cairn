@@ -5,6 +5,8 @@
  * to avoid duplication and schema discrepancies.
  */
 
+import { stripMarkdown } from "./text-utils";
+
 // ── JSON & Data parsing helpers ──────────────────────────────────────────────
 
 export function j(v: unknown): string {
@@ -176,7 +178,9 @@ export function toNote(row: any) {
     workspaceId: row.workspace_id as string,
     title: row.title as string,
     content: (row.content ?? "") as string,
-    contentText: (row.content_text ?? "") as string,
+    // Plain-text mirror, derived on read from `content` (the dedicated column was
+    // removed — see schema v44). Dashboards keep an empty mirror as before.
+    contentText: row.type === "dashboard" ? "" : stripMarkdown(row.content ?? ""),
     tagIds: p(row.tag_ids) as string[],
     linkedNoteIds: p(row.linked_note_ids) as string[],
     linkedCardIds: p(row.linked_card_ids) as string[],

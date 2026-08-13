@@ -8,7 +8,7 @@ import { LIVE, NOT_CONFLICT } from "./sql";
 import { parseIds } from "./row-helpers";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
 import type { RestoreResult, SyncActivityRow, RestorableRow } from "@cairn/shared/sync/engine";
-import { stripMarkdown, queryTerms } from "@cairn/shared/notes/text";
+import { queryTerms, ftsMatchQuery } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "@cairn/shared/notes/folder-tree";
 import { buildNoteMarkdown } from "@cairn/shared/notes/export";
@@ -439,13 +439,14 @@ function buildTermClause(query: string, columns: string[]): { sql: string; param
 }
 
 export function searchNotes(query: string): NoteRow[] {
-  const clause = buildTermClause(query, ["title", "content_text"]);
-  if (!clause) return [];
+  const match = ftsMatchQuery(query);
+  if (!match) return [];
   return getDb().getAllSync<NoteRow>(
-    `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
-     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} ${clause.sql}
-     ORDER BY updated_at DESC LIMIT 50`,
-    ...clause.params,
+    `SELECT n.id, n.project_id, n.title, n.content, n.folder, n.tag_ids, n.updated_at
+     FROM notes_fts JOIN notes n ON n.rowid = notes_fts.rowid
+     WHERE notes_fts MATCH ? AND ${LIVE} AND n.type = 'note' AND ${NOT_CONFLICT}
+     ORDER BY n.updated_at DESC LIMIT 50`,
+    match,
   );
 }
 
@@ -669,10 +670,6 @@ export function bulkUpdateTaskStatus(cardIds: string[], targetColumnId: string):
   return { moved, failed, targetColumnId };
 }
 
-function plainText(md: string): string {
-  return stripMarkdown(md);
-}
-
 /** Find a note by exact title within a project (for ensure_note upsert). */
 export function findNoteByTitle(projectId: string, title: string): NoteRow | null {
   return (
@@ -732,14 +729,13 @@ export function createNote(projectId: string, title: string, content: string, fo
   // folder — it collapses to "" (project root). Mirrors buildFolderTree.
   const normalizedFolder = normalizeFolderPath(folder);
   getDb().runSync(
-    `INSERT INTO notes (id, project_id, workspace_id, title, content, content_text, folder, type, created_at, updated_at, version)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'note', ?, ?, 0)`,
+    `INSERT INTO notes (id, project_id, workspace_id, title, content, folder, type, created_at, updated_at, version)
+     VALUES (?, ?, ?, ?, ?, ?, 'note', ?, ?, 0)`,
     id,
     projectId,
     workspaceIdForProject(projectId),
     title,
     content,
-    plainText(content),
     normalizedFolder,
     now,
     now,
@@ -1067,17 +1063,14 @@ export function getProjectOverview(projectId: string): ProjectOverviewData {
 /**
  * Update a note's title/body locally. A plain UPDATE so the capture triggers
  * stage the change into sync_pending; syncNow() drains + publishes it.
- * content_text is kept as a plain-text mirror for search (matches desktop).
  */
 export function updateNote(id: string, title: string, content: string): void {
   const now = new Date().toISOString();
-  const contentText = stripMarkdown(content);
   getDb().runSync(
-    `UPDATE notes SET title = ?, content = ?, content_text = ?, updated_at = ?, version = version + 1
+    `UPDATE notes SET title = ?, content = ?, updated_at = ?, version = version + 1
      WHERE id = ?`,
     title,
     content,
-    contentText,
     now,
     id,
   );
@@ -1126,9 +1119,8 @@ export function renameNote(id: string, newTitle: string): { error: string } | { 
     for (const other of linked) {
       const next = other.content.split(oldLink).join(newLink);
       getDb().runSync(
-        `UPDATE notes SET content = ?, content_text = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+        `UPDATE notes SET content = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
         next,
-        stripMarkdown(next),
         now,
         other.id,
       );
