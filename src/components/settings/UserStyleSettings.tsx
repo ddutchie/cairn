@@ -158,7 +158,7 @@ export function UserStyleSettings() {
               </div>
             )}
 
-            <SettingsRow label="Manage">
+            <SettingsRow label="Manage" controlClassName="min-w-0 @sm:self-auto">
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
                   onClick={() => setWizardMode("guided")}
