@@ -666,6 +666,9 @@ export async function runAgentLoop(
   // One-shot downgrade guard: if a provider we thought spoke Responses 404s,
   // flip to completions and retry once (never loops — completions won't 404).
   let downgraded = false;
+  // One-shot guard for a strict Responses endpoint that rejects the optional
+  // include/temperature/reasoning fields — retried stripped once, never loops.
+  let strippedRetried = false;
 
   // Build the context pruner — closes over session so it sees live lastPromptTokens
   const pruner = callbacks.transformContext
@@ -735,6 +738,10 @@ export async function runAgentLoop(
             tools: allTools,
             maxTokens,
             temperature,
+            // Condensed reasoning summary for the Thinking panel (Responses-only;
+            // ignored on chat-completions) so turn 1 asks for summaries and the
+            // round-trip can replay them.
+            reasoningSummary: llmConfig.isReasoningModel ? "concise" : undefined,
           })),
         });
       } catch (e) {
@@ -766,6 +773,33 @@ export async function runAgentLoop(
           roundTripItems: false,
           pruner,
         });
+        continue;
+      }
+
+      // A strict Responses endpoint rejected the optional fields (include /
+      // temperature / reasoning effort) — retry this turn once with them
+      // stripped before surfacing an error (mirrors chat-loop / compaction).
+      if (response && !response.ok && transport.mode === "responses" && (status === 400 || status === 422) && !strippedRetried) {
+        strippedRetried = true;
+        try {
+          response = await fetch(transport.endpoint(baseUrl), {
+            method: "POST",
+            headers,
+            signal,
+            body: JSON.stringify(transport.buildBody({
+              model,
+              messages: contextMessages,
+              tools: allTools,
+              maxTokens,
+              temperature,
+              supportsEncryptedReasoning: false,
+              includeTemperature: false,
+            })),
+          });
+        } catch (e) {
+          if (signal.aborted) { callbacks.onDone(); return; }
+          fetchError = (e as Error).message;
+        }
         continue;
       }
 

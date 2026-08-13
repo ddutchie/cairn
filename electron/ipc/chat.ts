@@ -178,6 +178,12 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
           if (m.tool_calls) out.tool_calls = m.tool_calls;
           if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
           if (m.name) out.name = m.name;
+          // Round-trip reasoning metadata persisted on the message so a resumed
+          // thread keeps its chain-of-thought (chat-loop gates on model key).
+          if (m.reasoning) out.reasoning = m.reasoning;
+          if (m.reasoningField) out.reasoningField = m.reasoningField;
+          if (m.reasoningModel) out.reasoningModel = m.reasoningModel;
+          if (m.reasoningItems) out.reasoningItems = m.reasoningItems;
           return out;
         }),
       userMessage,
@@ -427,11 +433,11 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
 
     if (abortCtrl.signal.aborted) {
       flushStream();
-      send("chat:done", { content: "", reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, contextRefs: [], usage: finalUsage() });
+      send("chat:done", { content: "", reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
       return;
     }
 
     flushStream();
-    send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, contextRefs: [], usage: finalUsage() });
+    send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
   });
 }

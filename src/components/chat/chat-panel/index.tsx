@@ -415,7 +415,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
                 id: tc.callId!,
                 type: "function" as const,
                 function: { name: tc.tool, arguments: tc.args! }
-              }))
+              })),
+              ...(m.reasoning ? { reasoning: m.reasoning } : {}),
+              ...(m.reasoningField ? { reasoningField: m.reasoningField } : {}),
+              ...(m.reasoningModel ? { reasoningModel: m.reasoningModel } : {}),
+              ...(m.reasoningItems && m.reasoningItems.length > 0 ? { reasoningItems: m.reasoningItems } : {}),
             });
             toolCalls.forEach((tc) => {
               history.push({
@@ -434,6 +438,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             history.push({
               role: "assistant",
               content: m.content,
+              ...(m.reasoning ? { reasoning: m.reasoning } : {}),
+              ...(m.reasoningField ? { reasoningField: m.reasoningField } : {}),
+              ...(m.reasoningModel ? { reasoningModel: m.reasoningModel } : {}),
+              ...(m.reasoningItems && m.reasoningItems.length > 0 ? { reasoningItems: m.reasoningItems } : {}),
             });
           }
         } else if (m.role === "system") {

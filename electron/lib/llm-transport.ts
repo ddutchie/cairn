@@ -63,6 +63,13 @@ export interface BodyOpts {
   reasoningEffort?: "none" | "low" | "high" | "max";
   /** Responses-only: request a condensed reasoning summary. */
   reasoningSummary?: "concise" | "detailed";
+  /**
+   * Responses-only capability gates for strict third-party endpoints that
+   * reject `include: ["reasoning.encrypted_content"]` and/or `temperature`.
+   * Default true (OpenAI native); callers strip them on a 400/422 retry.
+   */
+  supportsEncryptedReasoning?: boolean;
+  includeTemperature?: boolean;
 }
 
 export interface LlmTransport {
@@ -102,6 +109,8 @@ export const RESPONSES_TRANSPORT: LlmTransport = {
       temperature: opts.temperature,
       reasoningEffort: opts.reasoningEffort,
       reasoningSummary: opts.reasoningSummary,
+      supportsEncryptedReasoning: opts.supportsEncryptedReasoning,
+      includeTemperature: opts.includeTemperature,
     }),
   consume: consumeResponsesStream,
 };

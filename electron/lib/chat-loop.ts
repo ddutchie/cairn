@@ -27,8 +27,8 @@ import { traceTool } from "./tool-trace";
 import { parseToolArgs } from "./parse-tool-args";
 
 export type RunToolLoopResult =
-  | { exhausted: true; content: string; reasoning: string; reasoningSummary?: string }
-  | { exhausted: false; content: string; reasoning: string; reasoningSummary?: string };
+  | { exhausted: true; content: string; reasoning: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string }
+  | { exhausted: false; content: string; reasoning: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string };
 
 /**
  * Run the tool-call loop. Returns when the model produces a response with no
@@ -104,24 +104,44 @@ export async function runToolLoop(
   // their own prior chain-of-thought on tool-call rounds.
   const currentModelKey = `${baseUrl}::${model}`;
   const reasoningByMsg = new Map<OpenAIMessage, { reasoning: string; field: string; modelKey: string; items?: Array<Record<string, unknown>> }>();
+  // The last turn's reasoning metadata, surfaced to the caller (chat:done) so
+  // the renderer can persist it on the assistant message for thread resume.
+  let lastTurnReasoningMeta: { reasoning: string; field: string; modelKey: string; items?: Array<Record<string, unknown>> } | undefined;
 
   // Build the outgoing request messages: round-trip reasoning for the same
   // model under its native field (completions) or as reasoning items (responses),
   // fold it into `content` for a different model, and never send the internal
-  // metadata. Mirrors prepareContextMessages.
+  // metadata. Handles BOTH the in-loop side map (reasoningByMsg) and metadata
+  // carried directly on persisted history messages (loaded from chat_messages).
+  // Mirrors prepareContextMessages.
   const prepareForSend = (): OpenAIMessage[] => {
     const responses = transport?.mode === "responses";
     return messages.map((m) => {
       const ri = reasoningByMsg.get(m);
-      if (!ri || m.role !== "assistant") return m;
-      if (ri.modelKey === currentModelKey) {
-        if (responses) {
-          return { ...m, ...(ri.items && ri.items.length > 0 ? { reasoningItems: ri.items } : {}) } as unknown as OpenAIMessage;
-        }
-        return { ...m, [ri.field]: ri.reasoning } as unknown as OpenAIMessage;
+      const carried = !ri && (m as OpenAIMessage & { reasoningModel?: string }).reasoningModel
+        ? {
+            reasoning: (m as OpenAIMessage & { reasoning?: string }).reasoning ?? "",
+            field: (m as OpenAIMessage & { reasoningField?: string }).reasoningField ?? "reasoning",
+            modelKey: (m as OpenAIMessage & { reasoningModel?: string }).reasoningModel!,
+            items: (m as OpenAIMessage & { reasoningItems?: Array<Record<string, unknown>> }).reasoningItems,
+          }
+        : undefined;
+      const meta = ri ?? carried;
+      if (m.role !== "assistant") return m;
+      if (!meta) {
+        // Strip any stray round-trip metadata so it can never leak to the wire.
+        const { reasoning: _r, reasoningField: _rf, reasoningModel: _rm, reasoningItems: _ri, ...rest } = m as OpenAIMessage & { reasoning?: string; reasoningField?: string; reasoningModel?: string; reasoningItems?: Array<Record<string, unknown>> };
+        return rest as OpenAIMessage;
       }
-      const existing = typeof m.content === "string" && m.content.trim() ? m.content.trim() : "";
-      return { ...m, content: [existing, ri.reasoning].filter(Boolean).join("\n\n") } as unknown as OpenAIMessage;
+      const { reasoning: _r, reasoningField: _rf, reasoningModel: _rm, reasoningItems: _ri, ...rest } = m as OpenAIMessage & { reasoning?: string; reasoningField?: string; reasoningModel?: string; reasoningItems?: Array<Record<string, unknown>> };
+      if (meta.modelKey === currentModelKey) {
+        if (responses) {
+          return { ...rest, ...(meta.items && meta.items.length > 0 ? { reasoningItems: meta.items } : {}) } as unknown as OpenAIMessage;
+        }
+        return { ...rest, [meta.field]: meta.reasoning } as unknown as OpenAIMessage;
+      }
+      const existing = typeof rest.content === "string" && rest.content.trim() ? rest.content.trim() : "";
+      return { ...rest, content: [existing, meta.reasoning].filter(Boolean).join("\n\n") } as unknown as OpenAIMessage;
     });
   };
 
@@ -250,7 +270,10 @@ export async function runToolLoop(
       // transport is resolved before the loop (cloud providers only). A 404/405
       // mid-flight downgrades it to completions for this and future rounds.
       let t = transport!;
-      const buildBody = (reasoningEffort?: "none" | "low" | "high" | "max") =>
+      // `minimal` strips the optional Responses fields (include / temperature /
+      // reasoning summary) for the 400/422 retry — mirroring the compaction
+      // retry path.
+      const buildBody = (reasoningEffort?: "none" | "low" | "high" | "max", minimal = false) =>
         t.buildBody({
           model,
           messages: prepareForSend(),
@@ -258,6 +281,11 @@ export async function runToolLoop(
           maxTokens,
           temperature,
           reasoningEffort,
+          // Condensed reasoning summary for the Thinking panel (Responses-only;
+          // ignored on chat-completions). Requested for reasoning models so the
+          // previous turn's summary is available on round-trip.
+          reasoningSummary: minimal ? undefined : (req.config?.isReasoningModel ? "concise" : undefined),
+          ...(minimal ? { supportsEncryptedReasoning: false, includeTemperature: false } : {}),
         });
       const doFetch = (body: Record<string, unknown>) =>
         fetch(t.endpoint(baseUrl), {
@@ -268,11 +296,13 @@ export async function runToolLoop(
         });
       try {
         response = await doFetch(buildBody(req.config?.reasoningEffort));
-        // reasoning_effort is ignored by non-reasoning models but a strict
-        // endpoint may reject it (400/422) — retry once without it so the
-        // loop never breaks for models that don't support the field.
-        if (req.config?.reasoningEffort && (response.status === 400 || response.status === 422)) {
-          response = await doFetch(buildBody(undefined));
+        // reasoning_effort is ignored by non-reasoning models, but a strict
+        // endpoint may reject it (and/or the optional Responses include /
+        // temperature fields) with 400/422 — retry once with the optional
+        // fields stripped so the loop never breaks for models that don't
+        // support them.
+        if (response.status === 400 || response.status === 422) {
+          response = await doFetch(buildBody(undefined, true));
         }
       } catch (_err) {
         if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
@@ -362,12 +392,21 @@ export async function runToolLoop(
           ...(turn.reasoningItems.length > 0 ? { items: turn.reasoningItems } : {}),
         });
       }
+      lastTurnReasoningMeta = reasoningByMsg.get(assistantMsg);
     }
 
     // No tool calls — model is ready to produce its final reply
     if (!assistantMsg.tool_calls?.length) {
       messages.push(assistantMsg);
-      return { exhausted: false, content: accumulatedContent, reasoning: accumulatedReasoning, reasoningSummary: accumulatedReasoningSummary };
+      return {
+        exhausted: false,
+        content: accumulatedContent,
+        reasoning: accumulatedReasoning,
+        reasoningSummary: accumulatedReasoningSummary,
+        reasoningItems: lastTurnReasoningMeta?.items,
+        reasoningField: lastTurnReasoningMeta?.field,
+        reasoningModel: lastTurnReasoningMeta?.modelKey,
+      };
     }
 
     // Output-token-limit / interrupted-stream truncation guard. A "length"
@@ -533,5 +572,8 @@ export async function runToolLoop(
     content: "I reached the maximum number of steps for this request. Any actions taken so far have been saved — check your board and notes. Try breaking the request into smaller steps.",
     reasoning: accumulatedReasoning,
     reasoningSummary: accumulatedReasoningSummary,
+    reasoningItems: lastTurnReasoningMeta?.items,
+    reasoningField: lastTurnReasoningMeta?.field,
+    reasoningModel: lastTurnReasoningMeta?.modelKey,
   };
 }

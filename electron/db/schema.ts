@@ -1188,6 +1188,21 @@ const MIGRATIONS: Migration[] = [
       "UPDATE sync_oplog SET payload = json_remove(payload, '$.content_text') WHERE entity = 'notes' AND op = 'put' AND payload IS NOT NULL AND json_valid(payload)",
     ).run();
   },
+
+  // v45: Persist chat reasoning round-trip metadata so resumed threads keep
+  // chain-of-thought across restarts. `reasoning_items` holds the raw Responses
+  // reasoning items (JSON) for the Responses round-trip; `reasoning_field` and
+  // `reasoning_model` carry the native field + model key for the completions
+  // path. Additive — existing rows keep a NULL and simply don't round-trip.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(chat_messages)").all() as { name: string }[];
+    const add = (name: string, ddl: string) => {
+      if (!cols.some((c) => c.name === name)) db.exec(`ALTER TABLE chat_messages ADD COLUMN ${ddl}`);
+    };
+    add("reasoning_items", "reasoning_items TEXT");
+    add("reasoning_field", "reasoning_field TEXT");
+    add("reasoning_model", "reasoning_model TEXT");
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1220,6 +1235,9 @@ function ensureColumns(db: Database.Database): void {
   ensure("chat_threads", "use_subagents", "use_subagents INTEGER NOT NULL DEFAULT 0");
   ensure("chat_messages", "subagents", "subagents TEXT");
   ensure("chat_messages", "reasoning_summary", "reasoning_summary TEXT");
+  ensure("chat_messages", "reasoning_items", "reasoning_items TEXT");
+  ensure("chat_messages", "reasoning_field", "reasoning_field TEXT");
+  ensure("chat_messages", "reasoning_model", "reasoning_model TEXT");
   ensure("automations", "approval_mode", "approval_mode TEXT NOT NULL DEFAULT 'auto'");
   ensure("automations", "active_hours_start", "active_hours_start TEXT");
   ensure("automations", "active_hours_end", "active_hours_end TEXT");
