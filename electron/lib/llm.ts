@@ -251,8 +251,8 @@ export async function callLLM(
   // module cycle). Responses-capable providers (OpenAI / Azure, or anything the
   // probe discovers) take the /v1/responses path; everything else stays on
   // chat-completions.
-  const { resolveTransport } = await import("./llm-transport");
-  const transport = await resolveTransport(config.baseUrl, config.apiKey);
+  const { resolveTransport, markCompletionsOnly, isEndpointNotFound, COMPLETIONS_TRANSPORT } = await import("./llm-transport");
+  let transport = await resolveTransport(config.baseUrl, config.apiKey);
 
   if (transport.mode === "responses") {
     const rbody = buildResponsesBody({
@@ -264,43 +264,51 @@ export async function callLLM(
       stream,
     });
     const res = await fetch(transport.endpoint(config.baseUrl), { method: "POST", headers, body: JSON.stringify(rbody) });
-    if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => res.statusText)}`);
-
-    if (!stream) {
-      const parsed = parseResponsesOutput(await res.json());
-      if (parsed.usage) {
-        record(parsed.usage.promptTokens, parsed.usage.completionTokens, parsed.usage.reasoningTokens, extractCost(undefined, parsed.usage.raw), undefined, parsed.usage.cacheReadTokens, 0);
-      } else {
-        record(tok(systemPrompt) + tok(userPrompt), tok(parsed.content), 0);
-      }
-      return parsed.content;
-    }
-
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("No readable stream");
-
-    let usage: { pt?: number; ct?: number; rt?: number; cacheRead?: number; cacheCreate?: number; chunkCost?: unknown; raw?: unknown } | undefined;
-    const turn = await transport.consume(reader, {
-      signal: undefined,
-      onUsage: (u) => {
-        usage = {
-          pt: u.promptTokens ?? 0,
-          ct: u.completionTokens ?? 0,
-          rt: u.reasoningTokens ?? 0,
-          cacheRead: u.cacheReadTokens,
-          cacheCreate: u.cacheCreationTokens,
-          chunkCost: u.chunkCost,
-          raw: u.raw,
-        };
-      },
-    });
-    const content = turn.content;
-    if (usage) {
-      record(usage.pt ?? 0, usage.ct ?? 0, usage.rt ?? 0, extractCost(usage.chunkCost, usage.raw), undefined, usage.cacheRead, usage.cacheCreate);
+    if (isEndpointNotFound(res.status)) {
+      // A provider we (or the probe) thought spoke Responses returned 404/405 —
+      // downgrade to chat-completions and fall through to the completions path
+      // once (mirrors the chat/agent loops' mid-flight downgrade).
+      markCompletionsOnly(config.baseUrl);
+      transport = COMPLETIONS_TRANSPORT;
+    } else if (!res.ok) {
+      throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => res.statusText)}`);
     } else {
-      record(tok(systemPrompt) + tok(userPrompt), tok(content), 0);
+      if (!stream) {
+        const parsed = parseResponsesOutput(await res.json());
+        if (parsed.usage) {
+          record(parsed.usage.promptTokens, parsed.usage.completionTokens, parsed.usage.reasoningTokens, extractCost(undefined, parsed.usage.raw), undefined, parsed.usage.cacheReadTokens, 0);
+        } else {
+          record(tok(systemPrompt) + tok(userPrompt), tok(parsed.content), 0);
+        }
+        return parsed.content;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No readable stream");
+
+      let usage: { pt?: number; ct?: number; rt?: number; cacheRead?: number; cacheCreate?: number; chunkCost?: unknown; raw?: unknown } | undefined;
+      const turn = await transport.consume(reader, {
+        signal: undefined,
+        onUsage: (u) => {
+          usage = {
+            pt: u.promptTokens ?? 0,
+            ct: u.completionTokens ?? 0,
+            rt: u.reasoningTokens ?? 0,
+            cacheRead: u.cacheReadTokens,
+            cacheCreate: u.cacheCreationTokens,
+            chunkCost: u.chunkCost,
+            raw: u.raw,
+          };
+        },
+      });
+      const content = turn.content;
+      if (usage) {
+        record(usage.pt ?? 0, usage.ct ?? 0, usage.rt ?? 0, extractCost(usage.chunkCost, usage.raw), undefined, usage.cacheRead, usage.cacheCreate);
+      } else {
+        record(tok(systemPrompt) + tok(userPrompt), tok(content), 0);
+      }
+      return content;
     }
-    return content;
   }
 
   const body = {

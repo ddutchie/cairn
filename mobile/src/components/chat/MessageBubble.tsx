@@ -21,14 +21,10 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
   const isUser = m.role === "user";
   const [copied, setCopied] = useState(false);
 
-  // Copy the full response (reasoning + summary + answer) for debugging.
+  // Copy the message content — same behaviour as the desktop copy button.
   const handleCopy = async () => {
-    const parts: string[] = [];
-    if (m.reasoning) parts.push(`[Reasoning]\n${m.reasoning}`);
-    if (m.reasoningSummary) parts.push(`[Summary]\n${m.reasoningSummary}`);
-    parts.push(m.content);
     try {
-      await Clipboard.setStringAsync(parts.join("\n\n"));
+      await Clipboard.setStringAsync(m.content ?? "");
     } catch {
       /* clipboard unavailable — ignore */
     }
@@ -46,7 +42,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
       {/* Column: tool chips, bubble, timestamp */}
       <View style={[styles.col, isUser && styles.colUser]}>
         {!isUser && m.tools && m.tools.length > 0 && <ToolTrail tools={m.tools} />}
-        {!isUser && m.reasoning ? <ReasoningBlock text={m.reasoning} summary={m.reasoningSummary} streaming={m.streaming} hasContent={!!m.content} /> : null}
+        {!isUser && (m.reasoning || m.reasoningSummary) ? <ReasoningBlock text={m.reasoning ?? ""} summary={m.reasoningSummary} streaming={m.streaming} hasContent={!!m.content} /> : null}
 
         <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
           {isUser && m.images && m.images.length > 0 && (

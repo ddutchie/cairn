@@ -671,6 +671,16 @@ export async function runAgentLoop(
   const pruner = callbacks.transformContext
     ?? buildSlidingWindowPruner(session, contextWindow);
 
+  // The system message role (`"system"` by default, `"developer"` for reasoning
+  // models on providers that support it) — resolved once per run and reused for
+  // every turn's context build, including the post-downgrade rebuild.
+  const systemRole = resolveSystemRole({
+    isReasoningModel: llmConfig.isReasoningModel,
+    baseUrl,
+    provider: llmConfig.provider,
+    modelId: model,
+  });
+
   let steps = 0;
   // Set when a doom-loop denial halts the run — checked after each turn's
   // outcomes are appended so the current turn's results are still persisted.
@@ -693,16 +703,11 @@ export async function runAgentLoop(
     // it — never a top-level `system:` field. Reasoning round-trips to the SAME
     // model under its native field, and reasoning is kept out of the pruner so
     // compaction summaries can never see chain-of-thought.
-    const contextMessages = await prepareContextMessages({
+    let contextMessages = await prepareContextMessages({
       systemPrompt,
       messages: session.messages,
       currentModelKey,
-      systemRole: resolveSystemRole({
-        isReasoningModel: llmConfig.isReasoningModel,
-        baseUrl,
-        provider: llmConfig.provider,
-        modelId: model,
-      }),
+      systemRole,
       roundTripItems: transport.mode === "responses",
       pruner,
     });
@@ -750,6 +755,17 @@ export async function runAgentLoop(
         downgraded = true;
         markCompletionsOnly(baseUrl);
         transport = COMPLETIONS_TRANSPORT;
+        // Rebuild the turn context with Responses reasoning-item round-trip
+        // disabled so the retried chat-completions payload carries no
+        // reasoningItems (they're opaque to the completions path).
+        contextMessages = await prepareContextMessages({
+          systemPrompt,
+          messages: session.messages,
+          currentModelKey,
+          systemRole,
+          roundTripItems: false,
+          pruner,
+        });
         continue;
       }
 

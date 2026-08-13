@@ -15,6 +15,7 @@ import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   isResponsesEndpoint,
+  classifyResponsesProbe,
   mapToolToResponses,
   mapMessagesToInput,
   roundTripReasoningItem,
@@ -212,6 +213,70 @@ describe("mapMessagesToInput", () => {
       { type: "message", role: "assistant", content: "The answer is 42." },
     ]);
   });
+
+  it("converts assistant multimodal content parts and preserves them as a message", () => {
+    const { input } = mapMessagesToInput([
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Here is the image:" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,BBBB" } },
+        ],
+      },
+    ] as unknown as OpenAIMessage[]);
+
+    expect(input).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [
+          { type: "input_text", text: "Here is the image:" },
+          { type: "input_image", image_url: "data:image/png;base64,BBBB" },
+        ],
+      },
+    ]);
+  });
+
+  it("preserves the actual role of non-assistant, non-tool messages", () => {
+    const { input } = mapMessagesToInput([
+      { role: "user", content: "hi" },
+      { role: "critic", content: "be terse" },
+    ] as unknown as OpenAIMessage[]);
+    // An unknown role keeps its own role instead of being coerced to "user".
+    expect(input).toEqual([
+      { type: "message", role: "user", content: "hi" },
+      { type: "message", role: "critic", content: "be terse" },
+    ]);
+  });
+
+  it("skips a tool result with no call_id instead of emitting a dangling output item", () => {
+    const { input } = mapMessagesToInput([
+      { role: "assistant", content: null, tool_calls: [{ id: "call_x", type: "function", function: { name: "ls", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: "", content: "orphaned result" },
+    ] as unknown as OpenAIMessage[]);
+    expect(input).toEqual([
+      { type: "function_call", call_id: "call_x", name: "ls", arguments: "{}" },
+    ]);
+  });
+});
+
+describe("classifyResponsesProbe", () => {
+  it("confirms support only on positive route evidence", () => {
+    // Missing route → never supported.
+    expect(classifyResponsesProbe(404, "not found")).toBe(false);
+    expect(classifyResponsesProbe(405, "method not allowed")).toBe(false);
+    // Accepted request / auth-challenge → the route exists.
+    expect(classifyResponsesProbe(200, "")).toBe(true);
+    expect(classifyResponsesProbe(401, '{"error":{"message":"auth"}}')).toBe(true);
+    expect(classifyResponsesProbe(403, '{"error":{"message":"forbidden"}}')).toBe(true);
+    // Validation error naming the request shape → positive.
+    expect(classifyResponsesProbe(400, '{"error":{"type":"invalid_request_error","message":"\'model\' is a required property"}}')).toBe(true);
+    expect(classifyResponsesProbe(422, '{"error":{"type":"invalid_request_error","message":"input is required"}}')).toBe(true);
+    // Generic/unrelated 400 → NOT confirmation.
+    expect(classifyResponsesProbe(400, '{"error":{"type":"rate_limit_error","message":"slow down"}}')).toBe(false);
+    expect(classifyResponsesProbe(400, "gateway error")).toBe(false);
+    expect(classifyResponsesProbe(503, "unavailable")).toBe(false);
+  });
 });
 
 describe("roundTripReasoningItem", () => {
@@ -278,6 +343,19 @@ describe("buildResponsesBody", () => {
     // No reasoning fields → no `reasoning` key at all.
     const plain = buildResponsesBody({ model: "m", messages: [], tools: [] });
     expect(plain).not.toHaveProperty("reasoning");
+  });
+
+  it("strips optional fields when the endpoint capability flags are off", () => {
+    const body = buildResponsesBody({
+      model: "m",
+      messages: [],
+      tools: [],
+      temperature: 0.5,
+      supportsEncryptedReasoning: false,
+      includeTemperature: false,
+    });
+    expect(body).not.toHaveProperty("include");
+    expect(body).not.toHaveProperty("temperature");
   });
 });
 
@@ -442,6 +520,48 @@ describe("consumeResponsesStream", () => {
 
     await server.close();
   });
+
+  it("throws a provider message on a response.failed event", async () => {
+    const events = [
+      frame({ type: "response.output_text.delta", delta: "partial" }),
+      frame({
+        type: "response.failed",
+        response: {
+          status: "failed",
+          error: { message: "model overloaded", code: "server_error" },
+        },
+      }),
+    ];
+    await expect(consumeResponsesStream(sseReader(...events), {})).rejects.toThrow(/model overloaded/);
+  });
+
+  it("associates argument deltas with the right call when output_index is omitted", async () => {
+    // No output_index on the delta/done events — the parser must still land the
+    // args on the single tracked function_call (not fabricate a bogus buffer).
+    const events = [
+      frame(fnCallAdded(0, "call_7", "grep")),
+      frame({ type: "response.function_call_arguments.delta", item_id: "fc_call_7", delta: '{"pat' }),
+      frame({ type: "response.function_call_arguments.delta", item_id: "fc_call_7", delta: 'tern":"x"}' }),
+      frame({ type: "response.function_call_arguments.done", item_id: "fc_call_7", arguments: '{"pattern":"x"}' }),
+      frame({ type: "response.completed", response: { status: "completed", usage: {} } }),
+    ];
+    const turn = await consumeResponsesStream(sseReader(...events), {});
+    expect(turn.toolCalls).toHaveLength(1);
+    expect(turn.toolCalls[0].function.name).toBe("grep");
+    expect(turn.toolCalls[0].function.arguments).toBe('{"pattern":"x"}');
+  });
+
+  it("does not create a tool buffer for a stray index-less argument delta", async () => {
+    // output_index absent AND no buffered call yet → fallback index is -1 → the
+    // delta is skipped rather than creating an empty-id/name accumulator.
+    const events = [
+      frame({ type: "response.function_call_arguments.delta", item_id: "fc_mystery", delta: '{"a":' }),
+      frame({ type: "response.function_call_arguments.done", item_id: "fc_mystery", arguments: '{"a":1}' }),
+      frame({ type: "response.completed", response: { status: "completed", usage: {} } }),
+    ];
+    const turn = await consumeResponsesStream(sseReader(...events), {});
+    expect(turn.toolCalls).toHaveLength(0);
+  });
 });
 
 // ── non-streaming output conversion ──────────────────────────────────────────
@@ -471,6 +591,17 @@ describe("parseResponsesOutput", () => {
     expect(parsed.content).toBe("");
     expect(parsed.reasoningSummary).toBe("");
     expect(parsed.usage).toBeUndefined();
+  });
+
+  it("appends summaries across multiple reasoning items", () => {
+    const parsed = parseResponsesOutput({
+      output: [
+        { type: "reasoning", summary: [{ type: "summary_text", text: "first" }] },
+        { type: "reasoning", summary: [{ type: "summary_text", text: "second" }] },
+        { type: "message", content: [{ type: "output_text", text: "hi" }] },
+      ],
+    });
+    expect(parsed.reasoningSummary).toBe("first\n\nsecond");
   });
 });
 

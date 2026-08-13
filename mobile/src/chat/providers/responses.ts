@@ -17,6 +17,7 @@
 import { fetch as expoFetch } from "expo/fetch";
 import {
   buildResponsesBody,
+  classifyResponsesProbe,
   isEndpointNotFound,
   isResponsesEndpoint,
 } from "@cairn/shared/chat/responses";
@@ -24,7 +25,7 @@ import type { OpenAIConfig } from "../ai-config";
 import { contextLimitForModel } from "../models-dev";
 import { estimatePromptTokens } from "../token-breakdown";
 import { countTextTokens } from "../tokens";
-import { mapMessage, mapTools } from "./openai";
+import { mapMessage, mapTools, makeOpenAIProvider } from "./openai";
 import type { AiTool, ChatProvider, ChatUsage, StreamEvent, UIMessage } from "./types";
 
 interface ToolAccum {
@@ -60,6 +61,13 @@ function makeResponsesStreamer(config: OpenAIConfig) {
       signal,
     });
     if (!res.ok || !res.body) {
+      // 404/405 means the endpoint doesn't serve /responses (or dropped it) —
+      // fall back to the Chat Completions streaming path for this call instead
+      // of throwing. Other failures still surface as errors.
+      if (isEndpointNotFound(res.status)) {
+        yield* makeOpenAIProvider(config).stream(messages, tools, signal);
+        return;
+      }
       const detail = res.ok ? "no response body" : `HTTP ${res.status}`;
       throw new Error(`Responses provider error (${detail})`);
     }
@@ -68,6 +76,10 @@ function makeResponsesStreamer(config: OpenAIConfig) {
     const decoder = new TextDecoder();
     let buffer = "";
     const toolAccum = new Map<number, ToolAccum>();
+    // Most recently observed output_index, so argument-delta events that omit it
+    // (some providers stream deltas without the index) still land on the right
+    // accumulator instead of a toolAccum.size-derived guess.
+    let lastOutputIndex: number | undefined;
     let finishReason: string | undefined;
     let promptTokens: number | undefined;
     let completionTokens: number | undefined;
@@ -114,6 +126,8 @@ function makeResponsesStreamer(config: OpenAIConfig) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      // Normalise CRLF streams so \r\n\r\n frames split exactly like \n\n.
+      buffer = buffer.replace(/\r\n/g, "\n");
 
       let idx: number;
       while ((idx = buffer.indexOf("\n\n")) !== -1) {
@@ -157,7 +171,8 @@ function makeResponsesStreamer(config: OpenAIConfig) {
             case "response.output_item.added": {
               const item = evt.item ?? {};
               if (item.type === "function_call") {
-                const outIdx = typeof evt.output_index === "number" ? evt.output_index : toolAccum.size;
+                const outIdx = typeof evt.output_index === "number" ? evt.output_index : (lastOutputIndex ?? toolAccum.size);
+                if (typeof evt.output_index === "number") lastOutputIndex = outIdx;
                 const name = String(item.name ?? "");
                 const callId = String(item.call_id ?? "");
                 toolAccum.set(outIdx, { id: callId, name, args: "" });
@@ -166,19 +181,25 @@ function makeResponsesStreamer(config: OpenAIConfig) {
               break;
             }
             case "response.function_call_arguments.delta": {
-              const outIdx = typeof evt.output_index === "number" ? evt.output_index : toolAccum.size - 1;
-              const acc = toolAccum.get(outIdx);
-              const d = String(evt.delta ?? "");
-              if (acc) acc.args += d;
-              else toolAccum.set(outIdx, { id: "", name: "", args: d });
+              const outIdx = typeof evt.output_index === "number" ? evt.output_index : lastOutputIndex;
+              if (typeof outIdx === "number") {
+                lastOutputIndex = outIdx;
+                const acc = toolAccum.get(outIdx);
+                const d = String(evt.delta ?? "");
+                if (acc) acc.args += d;
+                else if (d) toolAccum.set(outIdx, { id: "", name: "", args: d });
+              }
               break;
             }
             case "response.function_call_arguments.done": {
-              const outIdx = typeof evt.output_index === "number" ? evt.output_index : toolAccum.size - 1;
-              const acc = toolAccum.get(outIdx);
-              const args = String(evt.arguments ?? "");
-              if (acc) acc.args = args;
-              else toolAccum.set(outIdx, { id: "", name: "", args });
+              const outIdx = typeof evt.output_index === "number" ? evt.output_index : lastOutputIndex;
+              if (typeof outIdx === "number") {
+                lastOutputIndex = outIdx;
+                const acc = toolAccum.get(outIdx);
+                const args = String(evt.arguments ?? "");
+                if (acc) acc.args = args;
+                else if (args) toolAccum.set(outIdx, { id: "", name: "", args });
+              }
               break;
             }
             case "response.completed":
@@ -240,27 +261,40 @@ export function makeResponsesProvider(config: OpenAIConfig): ChatProvider {
   return { name: "Responses", stream: makeResponsesStreamer(config) };
 }
 
+/** Per-baseUrl probe results, cached for the session so each endpoint is probed once. */
+const supportsCache = new Map<string, Promise<boolean>>();
+
 /**
  * Whether the configured endpoint serves `/responses`. OpenAI-native / Azure
- * endpoints answer true without I/O; anything else is probed once with a tiny
- * request (404/405 = chat-completions only). Never throws.
+ * endpoints answer true without I/O; anything else is probed once with a
+ * route-semantics check — an empty body that a Responses endpoint rejects on
+ * missing-model validation (before any inference), so nothing metered runs and
+ * the status must positively confirm the route. Never throws.
  */
 export async function supportsResponses(baseUrl: string, apiKey: string): Promise<boolean> {
   if (isResponsesEndpoint(baseUrl)) return true;
-  const url = new URL("responses", baseUrl.replace(/\/?$/, "/")).toString();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
-  try {
-    const res = await expoFetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: "__cairn_probe__", input: "ping", max_output_tokens: 1, stream: false }),
-      signal: controller.signal,
-    });
-    return !isEndpointNotFound(res.status);
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
+  const key = baseUrl.replace(/\/?$/, "/");
+  const cached = supportsCache.get(key);
+  if (cached) return cached;
+  const pending = (async () => {
+    const url = new URL("responses", key).toString();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await expoFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({}),
+        signal: controller.signal,
+      });
+      const bodyText = await res.text().catch(() => "");
+      return classifyResponsesProbe(res.status, bodyText);
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  supportsCache.set(key, pending);
+  return pending;
 }

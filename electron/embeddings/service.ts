@@ -18,7 +18,7 @@ import {
 import type { NoteEmbeddingRecord } from "../db/queries";
 import { projectTo2d, normaliseProjection } from "./projection";
 import { toFloat32 } from "./cosine";
-import { splitIntoSections } from "./sections";
+import { splitIntoSections, type NoteSection } from "./sections";
 import { EMBED_MODEL_ID, EMBED_DIM } from "./types";
 import type { EmbedTask } from "./types";
 import { stripMarkdown } from "../shared/text-utils";
@@ -80,6 +80,25 @@ function averageVectors(vectors: number[][]): number[] {
   norm = Math.sqrt(norm);
   if (norm < 1e-9) return out;
   for (let i = 0; i < EMBED_DIM; i++) out[i] = out[i] / norm;
+  return out;
+}
+
+/**
+ * Split a note into sections on the RAW markdown so `#` / `##` headings still
+ * delimit sections, then strip markdown from each section's text before it is
+ * hashed and embedded (stripping first would destroy the heading delimiters).
+ * Empty plain-text sections are dropped and the survivors are renumbered
+ * contiguously, so section indexes always run 0..n-1.
+ */
+function sectionsForNote(title: string, content: string): NoteSection[] {
+  const raw = splitIntoSections(title, content);
+  const out: NoteSection[] = [];
+  let idx = 0;
+  for (const s of raw) {
+    const plain = stripMarkdown(s.text);
+    if (!plain || plain.trim().length === 0) continue;
+    out.push({ idx: idx++, title: s.title, text: plain });
+  }
   return out;
 }
 
@@ -161,15 +180,16 @@ export async function reindexNotes(
     const batch = notes.slice(i, i + BATCH_SIZE);
 
     for (const n of batch) {
-      const plain = stripMarkdown(n.content);
-      if (!plain || plain.trim().length === 0) {
+      // Split the RAW content so headings still delimit sections, then strip
+      // markdown per section (see sectionsForNote).
+      const sections = sectionsForNote(n.title, n.content);
+      if (sections.length === 0) {
         deleteNoteEmbedding(db, n.id);
         skipped++;
         done++;
         onProgress?.(done, total);
         continue;
       }
-      const sections = splitIntoSections(n.title, plain);
       const existing = getNoteEmbeddings(db, n.id);
       const existingBySectionIdx = new Map(existing.map((e) => [e.sectionIdx, e]));
 
@@ -448,8 +468,7 @@ export async function recomputeProjections(
   const missing: NoteStub[] = [];
   for (const n of allNotes) {
     const recs = byNote.get(n.id);
-    const plain = stripMarkdown(n.content);
-    const sections = splitIntoSections(n.title, plain);
+    const sections = sectionsForNote(n.title, n.content);
     const sectionHashes = sections.map((s) => {
       const text = `${n.title}\n\n## ${s.title}\n${s.text}`;
       return sha256(text);
@@ -462,7 +481,7 @@ export async function recomputeProjections(
         r.task !== "search_document" ||
         !sectionHashes.includes(r.contentHash),
       );
-    if (stale && plain && plain.trim().length > 0) {
+    if (stale && sections.length > 0) {
       missing.push(n);
     }
   }
@@ -474,7 +493,7 @@ export async function recomputeProjections(
   for (let i = 0; i < missing.length; i += BATCH_SIZE) {
     const batch = missing.slice(i, i + BATCH_SIZE);
     for (const n of batch) {
-      const sections = splitIntoSections(n.title, stripMarkdown(n.content));
+      const sections = sectionsForNote(n.title, n.content);
       deleteNoteEmbeddingSections(db, n.id, sections.length);
       for (const s of sections) {
         const text = `${n.title}\n\n## ${s.title}\n${s.text}`;

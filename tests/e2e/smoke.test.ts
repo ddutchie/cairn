@@ -298,8 +298,9 @@ test.describe("What's New modal", () => {
     try {
       // The fixture starts with no seen features, so the latest release modal shows.
       await expect(p.getByRole("heading", { name: /What's New in Cairn/i })).toBeVisible({ timeout: 10_000 });
-      // The latest registry feature title is rendered.
-      await expect(p.getByText(LATEST_FEATURE.title)).toBeVisible();
+      // The latest registry feature title is rendered as its heading (getByText
+      // would also match the description paragraph, which repeats the title).
+      await expect(p.getByRole("heading", { name: LATEST_FEATURE.title })).toBeVisible();
     } finally {
       await p.context().close();
     }

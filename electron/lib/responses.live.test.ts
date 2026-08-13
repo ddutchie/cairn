@@ -110,7 +110,10 @@ describe.skipIf(!LIVE_TESTS_ENABLED)("Responses API adapter (live, OCGO)", () =>
     expect(turn.toolCalls.length).toBeGreaterThan(0);
     const call = turn.toolCalls[0];
     expect(call.function.name).toBe("get_weather");
-    expect(call.id).toMatch(/^call_/);
+    // Third-party Responses routers may use their own call-id scheme, so only
+    // require a non-empty id (not OpenAI's `call_` prefix).
+    expect(typeof call.id).toBe("string");
+    expect(call.id.length).toBeGreaterThan(0);
     const args = JSON.parse(call.function.arguments);
     expect(typeof args.location).toBe("string");
   }, 120_000);

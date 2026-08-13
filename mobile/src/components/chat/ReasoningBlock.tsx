@@ -36,7 +36,9 @@ export function ReasoningBlock({ text, summary, streaming, hasContent }: { text:
         />
       </Pressable>
       {expanded ? (
-        <Text style={styles.reasoningText}>{text}</Text>
+        // Prefer the raw trace; fall back to the summary so summary-only
+        // reasoning stays visible when expanded.
+        text ? <Text style={styles.reasoningText}>{text}</Text> : collapsedText ? <Text style={styles.reasoningText}>{collapsedText}</Text> : null
       ) : collapsedText ? (
         <Text style={styles.reasoningSummary} numberOfLines={2}>{collapsedText}</Text>
       ) : null}

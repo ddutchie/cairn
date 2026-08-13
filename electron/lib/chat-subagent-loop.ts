@@ -400,24 +400,37 @@ async function forceFinalAnswer(
   if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
 
   try {
-    const { resolveTransport } = await import("./llm-transport");
-    const transport = await resolveTransport(cfg.baseUrl, cfg.apiKey);
-    const body = transport.mode === "responses"
-      ? buildResponsesBody({ model: cfg.model, messages: nudged, maxTokens, temperature: 0.2, stream: false, toolChoice: "none" })
-      : {
-          model: cfg.model,
-          messages: nudged,
-          tool_choice: "none",
-          ...(maxTokens ? { max_tokens: maxTokens } : {}),
-          temperature: 0.2,
-          stream: false,
-        };
-    const response = await fetch(transport.endpoint(cfg.baseUrl), {
+    const { resolveTransport, markCompletionsOnly, isEndpointNotFound, COMPLETIONS_TRANSPORT } = await import("./llm-transport");
+    let transport = await resolveTransport(cfg.baseUrl, cfg.apiKey);
+    const buildBody = () =>
+      transport.mode === "responses"
+        ? buildResponsesBody({ model: cfg.model, messages: nudged, maxTokens, temperature: 0.2, stream: false, toolChoice: "none" })
+        : {
+            model: cfg.model,
+            messages: nudged,
+            tool_choice: "none",
+            ...(maxTokens ? { max_tokens: maxTokens } : {}),
+            temperature: 0.2,
+            stream: false,
+          };
+    let response = await fetch(transport.endpoint(cfg.baseUrl), {
       method: "POST",
       headers,
       signal,
-      body: JSON.stringify(body),
+      body: JSON.stringify(buildBody()),
     });
+    // A provider we (or the probe) thought spoke Responses returned 404/405 —
+    // downgrade to chat-completions and retry this final-answer call once.
+    if (!response.ok && transport.mode === "responses" && isEndpointNotFound(response.status)) {
+      markCompletionsOnly(cfg.baseUrl);
+      transport = COMPLETIONS_TRANSPORT;
+      response = await fetch(transport.endpoint(cfg.baseUrl), {
+        method: "POST",
+        headers,
+        signal,
+        body: JSON.stringify(buildBody()),
+      });
+    }
     if (!response.ok) return "";
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = (transport.mode === "responses" ? responsesToCompletionsShape(await response.json()) : await response.json()) as any;
@@ -526,8 +539,8 @@ export async function runDispatchLoop(
   let finalReasoning = "";
 
   // Resolve the wire protocol once (cached per base URL) for the dispatcher.
-  const { resolveTransport } = await import("./llm-transport");
-  const transport = await resolveTransport(cfg.baseUrl, cfg.apiKey);
+  const { resolveTransport, markCompletionsOnly, isEndpointNotFound, COMPLETIONS_TRANSPORT } = await import("./llm-transport");
+  let transport = await resolveTransport(cfg.baseUrl, cfg.apiKey);
 
   for (let round = 0; round < maxSteps; round++) {
     if (signal?.aborted) {
@@ -536,7 +549,9 @@ export async function runDispatchLoop(
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
 
-    const body = transport.mode === "responses"
+    // Rebuilt after a mid-flight downgrade so the retried payload uses the
+    // (now chat-completions) transport's body shape.
+    const buildBody = () => transport.mode === "responses"
       ? buildResponsesBody({ model: cfg.model, messages, tools: DISPATCH_TOOLS, maxTokens, temperature, stream: false })
       : {
           model: cfg.model,
@@ -555,7 +570,7 @@ export async function runDispatchLoop(
         method: "POST",
         headers,
         signal,
-        body: JSON.stringify(body),
+        body: JSON.stringify(buildBody()),
       });
     } catch (_err) {
       if (signal?.aborted) return { content: finalContent, reasoning: finalReasoning, metrics };
@@ -565,8 +580,27 @@ export async function runDispatchLoop(
     }
 
     if (!response.ok) {
-      const errText = await response.text().catch(() => response.statusText);
-      return { content: `Dispatch endpoint error (${response.status}): ${errText.slice(0, 300)}`, reasoning: finalReasoning, metrics };
+      // A provider we (or the probe) thought spoke Responses returned 404/405 —
+      // downgrade it to chat-completions and re-fetch this round once.
+      if (transport.mode === "responses" && isEndpointNotFound(response.status)) {
+        markCompletionsOnly(cfg.baseUrl);
+        transport = COMPLETIONS_TRANSPORT;
+        try {
+          response = await fetch(transport.endpoint(cfg.baseUrl), {
+            method: "POST",
+            headers,
+            signal,
+            body: JSON.stringify(buildBody()),
+          });
+        } catch (_err) {
+          if (signal?.aborted) return { content: finalContent, reasoning: finalReasoning, metrics };
+          return { content: `Could not reach the AI endpoint at \`${cfg.baseUrl}\`. Check your endpoint URL and make sure the server is running.`, reasoning: finalReasoning, metrics };
+        }
+      }
+      if (!response.ok) {
+        const errText = await response.text().catch(() => response.statusText);
+        return { content: `Dispatch endpoint error (${response.status}): ${errText.slice(0, 300)}`, reasoning: finalReasoning, metrics };
+      }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -22,6 +22,7 @@ import type { StreamOptions, StreamedTurn } from "./llm-stream";
 export {
   isResponsesEndpoint,
   isEndpointNotFound,
+  classifyResponsesProbe,
   mapToolToResponses,
   mapContentPartsToResponses,
   mapMessagesToInput,
@@ -123,6 +124,7 @@ export async function consumeResponsesStream(
       }
       case "response.function_call_arguments.delta": {
         const idx = typeof e.output_index === "number" ? e.output_index : toolBuffers.size - 1;
+        if (idx < 0) break; // no known output index — skip rather than fabricate a buffer
         const buf = toolBuffers.get(idx);
         const delta = String(e.delta ?? "");
         if (buf) buf.args += delta;
@@ -131,6 +133,7 @@ export async function consumeResponsesStream(
       }
       case "response.function_call_arguments.done": {
         const idx = typeof e.output_index === "number" ? e.output_index : toolBuffers.size - 1;
+        if (idx < 0) break; // no known output index — skip rather than fabricate a buffer
         const buf = toolBuffers.get(idx);
         const args = String(e.arguments ?? "");
         if (buf) buf.args = args;
@@ -148,6 +151,11 @@ export async function consumeResponsesStream(
           const details = (resp.incomplete_details ?? {}) as Record<string, unknown>;
           // The Responses analogue of Chat Completions' finish_reason: "length".
           finishReason = details.reason === "max_output_tokens" ? "length" : null;
+        } else if (status === "failed") {
+          // Surface the provider's failure message to the caller instead of
+          // silently ending the stream with finishReason null.
+          const err = (resp.error ?? {}) as Record<string, unknown>;
+          throw new Error(`Responses API stream error: ${String(err.message ?? err.code ?? "response failed")}`);
         } else {
           finishReason = null;
         }

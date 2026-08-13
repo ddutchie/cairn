@@ -1359,10 +1359,11 @@ export function searchNotes(db: Database.Database, opts: SearchNotesOpts) {
        WHERE notes_fts MATCH ?
          AND n.archived_at IS NULL AND n.deleted_at IS NULL AND n.type = 'note'
          AND (? IS NULL OR n.project_id = ?)
+         AND (? IS NULL OR n.workspace_id = ?)
        ORDER BY n.updated_at DESC
        LIMIT ?`
     )
-    .all(match, opts.projectId ?? null, opts.projectId ?? null, limit)
+    .all(match, opts.projectId ?? null, opts.projectId ?? null, opts.workspaceId ?? null, opts.workspaceId ?? null, limit)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((row) => toNote(row as any));
 }

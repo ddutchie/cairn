@@ -405,7 +405,7 @@ function stripInternalMessageFields(m: Record<string, unknown>): Record<string, 
   return out;
 }
 
-/** True when an assistant message is safe to send: content, tool calls, or round-tripped reasoning. */
+/** True when an assistant message is safe to send: content, tool calls, round-tripped reasoning, or reasoning items. */
 function isOutgoingSendable(m: Record<string, unknown>): boolean {
   if (m.role !== "assistant") return true;
   if (typeof m.content === "string" && m.content.trim()) return true;
@@ -414,6 +414,8 @@ function isOutgoingSendable(m: Record<string, unknown>): boolean {
     const v = m[field];
     if (typeof v === "string" && v.trim().length > 0) return true;
   }
+  // Items-only assistant turns (Responses round-trip) carry no text field.
+  if (Array.isArray(m.reasoningItems) && m.reasoningItems.length > 0) return true;
   return false;
 }
 
@@ -453,13 +455,16 @@ export async function prepareContextMessages<M extends OutgoingMessage>(opts: {
     const hasText = typeof m.reasoning === "string" && m.reasoning.length > 0;
     const hasItems = Array.isArray(m.reasoningItems) && m.reasoningItems.length > 0;
     if (!hasText && !hasItems) return m;
-    if (typeof m.reasoningField === "string" && typeof m.reasoningModel === "string") {
+    // Round-trip metadata needs the model key plus either a native field name
+    // (text reasoning) or populated items (Responses items-only) — so an
+    // items-only assistant message is also remembered and restored after pruning.
+    if (typeof m.reasoningModel === "string" && (typeof m.reasoningField === "string" || hasItems)) {
       // Has round-trip metadata — remember the STRIPPED object (the one the
       // pruner operates on) so reasoning can be re-attached after pruning.
       const { reasoning: _r, reasoningField: _rf, reasoningModel: _rm, reasoningItems: _ri, ...rest } = m as M & { reasoningItems?: unknown };
       reasoningByMsg.set(rest as M, {
         reasoning: m.reasoning ?? "",
-        field: m.reasoningField,
+        field: m.reasoningField ?? "",
         modelKey: m.reasoningModel,
         ...(hasItems ? { items: m.reasoningItems } : {}),
       });

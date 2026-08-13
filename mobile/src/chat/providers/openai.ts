@@ -266,6 +266,8 @@ function makeStreamer(config: OpenAIConfig) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      // Normalise CRLF streams so \r\n\r\n frames split exactly like \n\n.
+      buffer = buffer.replace(/\r\n/g, "\n");
 
       let idx: number;
       while ((idx = buffer.indexOf("\n\n")) !== -1) {
@@ -332,10 +334,13 @@ function makeStreamer(config: OpenAIConfig) {
           if (typeof chunk.usage?.cost === "number") {
             costUsd = chunk.usage.cost;
           }
+          // prompt_cache_hit_tokens and prompt_tokens_details.cached_tokens are
+          // the SAME number reported under different names (DeepSeek vs
+          // OpenAI-style) — take the max, not the sum, then add any separate
+          // Anthropic-style cache_read_input_tokens on top.
           const cacheRead =
             (chunk.usage?.cache_read_input_tokens ?? 0) +
-            (chunk.usage?.prompt_cache_hit_tokens ?? 0) +
-            (chunk.usage?.prompt_tokens_details?.cached_tokens ?? 0);
+            Math.max(chunk.usage?.prompt_cache_hit_tokens ?? 0, chunk.usage?.prompt_tokens_details?.cached_tokens ?? 0);
           if (cacheRead > 0) cacheReadTokens = cacheRead;
           if (typeof chunk.usage?.cache_creation_input_tokens === "number") {
             cacheCreationTokens = chunk.usage.cache_creation_input_tokens;

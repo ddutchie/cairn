@@ -41,6 +41,47 @@ export function isEndpointNotFound(status: number): boolean {
   return status === 404 || status === 405;
 }
 
+/**
+ * Classify a `/responses` probe response. Only returns true when the status
+ * POSITIVELY confirms the route is a live Responses endpoint:
+ *
+ *   - 404/405        → the route does not exist (false)
+ *   - 200            → the endpoint accepted the request shape (true)
+ *   - 401/403        → the route answered before rejecting auth (true)
+ *   - 400/422        → only when the error names an invalid/missing request
+ *                      field — the endpoint validated the body, so the route
+ *                      exists (true); a generic catch-all error is NOT treated
+ *                      as support (false)
+ *   - anything else  → false (network failure / unexpected status)
+ *
+ * Parsing the body keeps an arbitrary gateway 400 (returned for ANY unknown
+ * path) from being misclassified as Responses support.
+ */
+export function classifyResponsesProbe(status: number, bodyText: string): boolean {
+  if (isEndpointNotFound(status)) return false;
+  if (status === 200) return true;
+  if (status === 401 || status === 403) return true;
+  if (status === 400 || status === 422) {
+    try {
+      const parsed = JSON.parse(bodyText) as {
+        error?: { code?: string; type?: string; message?: string };
+      };
+      const code = String(parsed.error?.code ?? "");
+      const type = String(parsed.error?.type ?? "");
+      const message = String(parsed.error?.message ?? bodyText);
+      // A validation error references the request shape (model / input /
+      // instructions / max_output_tokens …) — the handler ran, so the route
+      // exists. "invalid_request_error" is OpenAI's error type for it, and a
+      // model-related code/message (e.g. "model_not_found") is the same signal.
+      const haystack = `${code} ${type} ${message}`;
+      return /invalid_request/i.test(type) || /(?:model|input|instructions|request).*?(?:required|missing|invalid)/i.test(haystack);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** A single Responses input item (message / function_call / function_call_output / …). */
@@ -181,8 +222,16 @@ export function mapMessagesToInput(messages: ResponsesSourceMessage[]): {
         const item = roundTripReasoningItem(ri);
         if (item) input.push(item);
       }
-      if (typeof m.content === "string" && m.content.trim()) {
-        input.push({ type: "message", role: "assistant", content: m.content });
+      // Assistant messages may carry string OR multimodal-parts content —
+      // convert parts via mapContentPartsToResponses and keep both forms.
+      const hasStringContent = typeof m.content === "string" && m.content.trim();
+      const hasPartsContent = Array.isArray(m.content) && m.content.length > 0;
+      if (hasStringContent || hasPartsContent) {
+        input.push({
+          type: "message",
+          role: "assistant",
+          content: Array.isArray(m.content) ? mapContentPartsToResponses(m.content) : m.content,
+        });
       }
       for (const tc of m.tool_calls ?? []) {
         input.push({
@@ -195,18 +244,22 @@ export function mapMessagesToInput(messages: ResponsesSourceMessage[]): {
       continue;
     }
     if (m.role === "tool") {
-      input.push({
-        type: "function_call_output",
-        call_id: m.tool_call_id,
-        output: m.content ?? "",
-      });
+      // A function_call_output MUST reference its call — a dangling item with
+      // an undefined call_id would 400. Skip it gracefully when missing.
+      if (typeof m.tool_call_id === "string" && m.tool_call_id.length > 0) {
+        input.push({
+          type: "function_call_output",
+          call_id: m.tool_call_id,
+          output: m.content ?? "",
+        });
+      }
       continue;
     }
-    // user (and any future role) — convert multimodal content parts, else pass
-    // the string content through verbatim.
+    // Any other role (user, and future roles) — preserve the actual role rather
+    // than coercing to "user", and convert multimodal content parts.
     input.push({
       type: "message",
-      role: "user",
+      role: m.role,
       content: Array.isArray(m.content) ? mapContentPartsToResponses(m.content) : (m.content ?? ""),
     });
   }
@@ -241,6 +294,14 @@ export function buildResponsesBody(opts: {
   stream?: boolean;
   /** Tool-call policy ("none" / "required" / "auto"). Omit = auto. */
   toolChoice?: "none" | "auto" | "required";
+  /**
+   * Capability gates for fields some Responses-compatible providers reject:
+   * `include: ["reasoning.encrypted_content"]` and `temperature`. Default true
+   * (OpenAI native); set false to strip the field when the endpoint has proven
+   * it rejects them (see the 400/422 retry paths).
+   */
+  supportsEncryptedReasoning?: boolean;
+  includeTemperature?: boolean;
 }): Record<string, unknown> {
   const { instructions, input } = mapMessagesToInput(opts.messages);
   const reasoning = {
@@ -253,11 +314,14 @@ export function buildResponsesBody(opts: {
     input,
     tools: (opts.tools ?? []).map(mapToolToResponses),
     ...(opts.maxTokens && opts.maxTokens > 0 ? { max_output_tokens: opts.maxTokens } : {}),
-    temperature: opts.temperature,
+    // temperature is an optional OpenAI field some strict Responses-compatible
+    // servers reject — strip it when the caller has proven the endpoint refuses it.
+    ...(opts.includeTemperature === false ? {} : { temperature: opts.temperature }),
     stream: opts.stream ?? true,
     // Ask for encrypted reasoning content so reasoning items can be rehydrated
-    // (round-tripped) on the next turn. Harmless for non-reasoning models.
-    include: ["reasoning.encrypted_content"],
+    // (round-tripped) on the next turn. Harmless for non-reasoning models, but a
+    // strict third-party endpoint may reject `include` — gate it off there.
+    ...(opts.supportsEncryptedReasoning === false ? {} : { include: ["reasoning.encrypted_content"] }),
     ...(opts.toolChoice ? { tool_choice: opts.toolChoice } : {}),
     ...(opts.reasoningEffort || opts.reasoningSummary ? { reasoning } : {}),
   };
@@ -299,10 +363,13 @@ export function parseResponsesOutput(json: unknown): {
       } else if (item.type === "reasoning") {
         const summary = item.summary as Array<Record<string, unknown>> | undefined;
         if (Array.isArray(summary)) {
-          reasoningSummary = summary
+          const text = summary
             .map((p) => String(p.text ?? ""))
             .filter(Boolean)
             .join("\n");
+          // Append across multiple reasoning items rather than replacing —
+          // matches the streaming accumulation behaviour.
+          if (text) reasoningSummary = reasoningSummary ? `${reasoningSummary}\n\n${text}` : text;
         }
       }
     }

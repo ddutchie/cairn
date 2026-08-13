@@ -70,7 +70,8 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
     if (!text) setUserOverride(false);
   }, [text]);
 
-  if (!text) return null;
+  // Nothing to render when the model produced neither raw reasoning nor a summary.
+  if (!text && !(summary && summary.trim())) return null;
 
   const handleToggle = () => {
     setUserOverride(true);
@@ -78,6 +79,8 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
   };
 
   const collapsedText = summary && summary.trim() ? summary.trim() : text;
+  // Expanded body prefers the raw trace; summary-only reasoning uses the summary.
+  const bodyText = text || collapsedText;
   const preview = streaming && open ? null : (
     <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[280px]">
       {collapsedText.slice(0, 120).trim()}{collapsedText.length > 120 ? "…" : ""}
@@ -104,7 +107,7 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
       </button>
       {open && (
         <div className="px-3 py-2 border-t text-[0.786rem] leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto" style={{ borderTopColor: "color-mix(in srgb, var(--border) 50%, transparent)" }}>
-          <MarkdownContent content={text} />
+          <MarkdownContent content={bodyText} />
           {streaming && open && <StreamingCursor />}
         </div>
       )}

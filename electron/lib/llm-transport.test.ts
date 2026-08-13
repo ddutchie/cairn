@@ -107,6 +107,23 @@ describe("resolveTransport", () => {
     expect(probe).toHaveBeenCalledTimes(1); // probed exactly once, then cached
   });
 
+  it("dedupes concurrent resolutions for the same base URL into one probe", async () => {
+    let calls = 0;
+    const probe = vi.fn(async () => {
+      calls++;
+      return true;
+    });
+    const [a, b, c] = await Promise.all([
+      resolveTransport("https://concurrent.example.com", "", probe),
+      resolveTransport("https://concurrent.example.com", "", probe),
+      resolveTransport("https://concurrent.example.com", "", probe),
+    ]);
+    expect(a).toBe(RESPONSES_TRANSPORT);
+    expect(b).toBe(RESPONSES_TRANSPORT);
+    expect(c).toBe(RESPONSES_TRANSPORT);
+    expect(calls).toBe(1); // the three callers shared one in-flight probe
+  });
+
   it("markCompletionsOnly downgrades a previously-responses provider", async () => {
     recordMode("https://example-down.com", "responses");
     expect(readCachedMode("https://example-down.com")).toBe("responses");

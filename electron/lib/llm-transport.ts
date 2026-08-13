@@ -13,11 +13,14 @@
  *
  * `resolveTransport` chooses one per base URL and CACHES the answer:
  *
- *   1. static allowlist (`isResponsesEndpoint`) — api.openai.com / Azure / the
- *      opencode zen proxy resolve to `responses` with no network I/O;
- *   2. otherwise probe `/responses` ONCE (a tiny, cheap request) — a 404/405
- *      means the provider only speaks chat-completions, anything else means the
- *      route exists;
+ *   1. static allowlist (`isResponsesEndpoint`) — ONLY api.openai.com and Azure
+ *      resolve to `responses` with no network I/O; the opencode zen proxy is
+ *      NOT allowlisted, so it follows the probe path like any other provider;
+ *   2. otherwise probe `/responses` ONCE (a route-semantics check — an empty
+ *      body that a Responses endpoint rejects on missing-model validation, so
+ *      nothing metered ever runs) — a 404/405 or non-confirming response means
+ *      the provider only speaks chat-completions, a validation/auth/200 reply
+ *      means the route exists;
  *   3. remember the result for the process lifetime so every subsequent turn
  *      for that base URL is free.
  *
@@ -44,6 +47,7 @@ import {
   consumeResponsesStream,
   isResponsesEndpoint,
   isEndpointNotFound,
+  classifyResponsesProbe,
 } from "./responses";
 export { isEndpointNotFound };
 
@@ -105,6 +109,8 @@ export const RESPONSES_TRANSPORT: LlmTransport = {
 // ── Capability cache (in-memory, per app session) ────────────────────────────
 
 const capability = new Map<string, ApiMode>();
+/** In-flight resolutions, keyed by base URL, so concurrent callers share one probe. */
+const inFlightResolutions = new Map<string, Promise<LlmTransport>>();
 
 function cacheKey(baseUrl: string): string {
   return normaliseBaseUrl(baseUrl).toLowerCase();
@@ -127,10 +133,12 @@ export function markCompletionsOnly(baseUrl: string): void {
 }
 
 /**
- * Probe whether a provider serves `/v1/responses`. A 404/405 means the route
- * doesn't exist (chat-completions only); any other status (400 bad model, 401
- * auth, 422 validation, 200) means the route exists. Never throws — a network
- * failure conservatively resolves to "completions".
+ * Probe whether a provider serves `/v1/responses`. Sends an EMPTY body — a
+ * route-semantics check rather than a metered inference request: a Responses
+ * endpoint rejects the missing-model body with a 400 validation error (before
+ * any model runs), which positively confirms the route exists; a completions-
+ * only provider 404s/405s the route. `classifyResponsesProbe` decides, and any
+ * network failure conservatively resolves to "completions".
  */
 export async function probeResponses(baseUrl: string, apiKey = ""): Promise<boolean> {
   try {
@@ -140,15 +148,11 @@ export async function probeResponses(baseUrl: string, apiKey = ""): Promise<bool
         "Content-Type": "application/json",
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
-      body: JSON.stringify({
-        model: "__cairn_probe__",
-        input: "ping",
-        max_output_tokens: 1,
-        stream: false,
-      }),
+      body: JSON.stringify({}),
       signal: AbortSignal.timeout(5000),
     });
-    return !isEndpointNotFound(res.status);
+    const bodyText = await res.text().catch(() => "");
+    return classifyResponsesProbe(res.status, bodyText);
   } catch {
     return false;
   }
@@ -156,11 +160,12 @@ export async function probeResponses(baseUrl: string, apiKey = ""): Promise<bool
 
 /**
  * Resolve the transport for a base URL, probing once and caching the answer.
- * OpenAI-native / Azure / zen endpoints skip the probe via the static allowlist;
+ * OpenAI-native / Azure endpoints skip the probe via the static allowlist;
  * local servers (Ollama, LM Studio, llama.cpp, in-process test mocks) resolve to
  * chat-completions without a probe — they don't serve `/responses` today.
  *
  * `probe` is injectable for tests; production always uses `probeResponses`.
+ * Concurrent resolutions for the same base URL share one in-flight probe.
  */
 export async function resolveTransport(
   baseUrl: string,
@@ -171,25 +176,40 @@ export async function resolveTransport(
   const cached = capability.get(key);
   if (cached) return cached === "responses" ? RESPONSES_TRANSPORT : COMPLETIONS_TRANSPORT;
 
-  // Resolve the mode, remembering WHY so the dev log can explain the decision.
-  let mode: ApiMode;
-  let reason: string;
-  if (isResponsesEndpoint(baseUrl)) {
-    mode = "responses";
-    reason = "known Responses endpoint";
-  } else if (isLocalEndpoint(baseUrl)) {
-    mode = "completions";
-    reason = "local server";
-  } else {
-    const available = await probe(baseUrl, apiKey);
-    mode = available ? "responses" : "completions";
-    reason = available ? "probe: /responses available" : "probe: no /responses (chat-completions)";
-  }
+  // Reuse the in-flight probe for concurrent callers of the same base URL so
+  // only one network request is issued (then re-resolve from the cache).
+  const inFlight = inFlightResolutions.get(key);
+  if (inFlight) return inFlight;
 
-  // One line per provider per session so `npm run dev` shows which wire protocol
-  // each connection resolves to (and a live downgrade logs via markCompletionsOnly).
-  console.log(`[llm] ${normaliseBaseUrl(baseUrl)} → ${mode} (${reason})`);
+  const pending = (async (): Promise<LlmTransport> => {
+    try {
+      // Resolve the mode, remembering WHY so the dev log can explain the decision.
+      let mode: ApiMode;
+      let reason: string;
+      if (isResponsesEndpoint(baseUrl)) {
+        mode = "responses";
+        reason = "known Responses endpoint";
+      } else if (isLocalEndpoint(baseUrl)) {
+        mode = "completions";
+        reason = "local server";
+      } else {
+        const available = await probe(baseUrl, apiKey);
+        mode = available ? "responses" : "completions";
+        reason = available ? "probe: /responses available" : "probe: no /responses (chat-completions)";
+      }
 
-  capability.set(key, mode);
-  return mode === "responses" ? RESPONSES_TRANSPORT : COMPLETIONS_TRANSPORT;
+      // One line per provider per session so `npm run dev` shows which wire
+      // protocol each connection resolves to (and a live downgrade logs via
+      // markCompletionsOnly).
+      console.log(`[llm] ${normaliseBaseUrl(baseUrl)} → ${mode} (${reason})`);
+
+      capability.set(key, mode);
+      return mode === "responses" ? RESPONSES_TRANSPORT : COMPLETIONS_TRANSPORT;
+    } finally {
+      inFlightResolutions.delete(key);
+    }
+  })();
+
+  inFlightResolutions.set(key, pending);
+  return pending;
 }
