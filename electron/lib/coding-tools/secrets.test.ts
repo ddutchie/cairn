@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSecretFile, assertNotSecretFile } from "./secrets";
+import { isSecretFile, assertNotSecretFile, bashReferencesSecretFile, assertCommandNotReadingSecrets } from "./secrets";
 
 describe("isSecretFile", () => {
   it("blocks env files and secret-bearing files", () => {
@@ -33,5 +33,34 @@ describe("assertNotSecretFile", () => {
 
   it("does not throw for ordinary files", () => {
     expect(() => assertNotSecretFile("/proj/src/main.ts")).not.toThrow();
+  });
+});
+
+describe("bashReferencesSecretFile", () => {
+  it("blocks commands that touch secret files", () => {
+    expect(bashReferencesSecretFile("cat .env")).toBe(true);
+    expect(bashReferencesSecretFile("grep API_KEY .env.local")).toBe(true);
+    expect(bashReferencesSecretFile('cat "$PWD/.env"')).toBe(true);
+    expect(bashReferencesSecretFile("cat ~/.npmrc")).toBe(true);
+    expect(bashReferencesSecretFile("cat ~/.aws/credentials")).toBe(true);
+    expect(bashReferencesSecretFile("cat server.key")).toBe(true);
+    expect(bashReferencesSecretFile("sed -n 1,5p .env")).toBe(true);
+    expect(bashReferencesSecretFile("source .env && npm start")).toBe(true);
+  });
+
+  it("allows env-VARIABLE operations and ordinary commands", () => {
+    expect(bashReferencesSecretFile("printenv")).toBe(false);
+    expect(bashReferencesSecretFile("env")).toBe(false);
+    expect(bashReferencesSecretFile("export NODE_ENV=production")).toBe(false);
+    expect(bashReferencesSecretFile("unset FOO")).toBe(false);
+    expect(bashReferencesSecretFile("npm test")).toBe(false);
+    expect(bashReferencesSecretFile("cat package.json")).toBe(false);
+    expect(bashReferencesSecretFile("cat .env.example")).toBe(false);
+    expect(bashReferencesSecretFile("git status")).toBe(false);
+  });
+
+  it("throws via assertCommandNotReadingSecrets for bash", () => {
+    expect(() => assertCommandNotReadingSecrets("cat .env")).toThrow(/protected/);
+    expect(() => assertCommandNotReadingSecrets("npm run build")).not.toThrow();
   });
 });

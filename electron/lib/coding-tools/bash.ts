@@ -12,6 +12,7 @@ import { spawn, execSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import { DEFAULT_MAX_BYTES } from "../truncation";
+import { assertCommandNotReadingSecrets } from "./secrets";
 
 // Local byte formatter for streaming truncation hints
 function fmt(bytes: number): string {
@@ -142,6 +143,11 @@ export async function bashTool(
 ): Promise<string> {
   const { onUpdate, signal } = opts;
   const timeoutMs = args.timeout ? args.timeout * 1000 : DEFAULT_TIMEOUT_MS;
+
+  // First line of defence against secret exfiltration through the shell — a
+  // conservative token scan. (The proper control is per-command user approval;
+  // see the follow-up task.)
+  assertCommandNotReadingSecrets(args.command);
 
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
