@@ -182,7 +182,14 @@ export function roundTripReasoningItem(item: Record<string, unknown>): Responses
   const out: ResponsesInputItem = { type: "reasoning" };
   if (typeof item.id === "string") out.id = item.id;
   if (hasContent) out.content = content;
-  if (hasSummary) out.summary = summary;
+  // Always carry `summary` on replay when the source item had the field (even
+  // empty) or carried encrypted content — strict Responses providers validate
+  // `input[N].summary` and reject a replay that omits it entirely.
+  if (hasSummary) {
+    out.summary = summary;
+  } else if (encrypted || Array.isArray(summary)) {
+    out.summary = [];
+  }
   if (encrypted) out.encrypted_content = item.encrypted_content;
   return out;
 }
