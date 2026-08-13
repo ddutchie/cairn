@@ -168,6 +168,13 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
     if (cols.includes("content_text")) {
       db.execSync("ALTER TABLE notes DROP COLUMN content_text");
     }
+    // Strip the now-removed content_text out of any already-published note 'put'
+    // snapshots so the redundant mirror stops being replicated to peers. Receivers
+    // are column-agnostic (they ignore fields their schema lacks), so this is
+    // convergence-safe; json_remove is a no-op when the key is absent.
+    db.execSync(
+      "UPDATE sync_oplog SET payload = json_remove(payload, '$.content_text') WHERE entity = 'notes' AND op = 'put' AND payload IS NOT NULL AND json_valid(payload)",
+    );
   },
 ];
 

@@ -1179,6 +1179,14 @@ const MIGRATIONS: Migration[] = [
     if (cols.some((c) => c.name === "content_text")) {
       db.exec("ALTER TABLE notes DROP COLUMN content_text");
     }
+    // Strip the now-removed content_text out of any already-published note 'put'
+    // snapshots so the redundant mirror stops being replicated to peers (and the
+    // freed bytes are reclaimed by db-hygiene's one-time VACUUM). Receivers are
+    // column-agnostic (they ignore fields their schema lacks), so this is
+    // convergence-safe; json_remove is a no-op when the key is absent.
+    db.prepare(
+      "UPDATE sync_oplog SET payload = json_remove(payload, '$.content_text') WHERE entity = 'notes' AND op = 'put' AND payload IS NOT NULL AND json_valid(payload)",
+    ).run();
   },
 ];
 
