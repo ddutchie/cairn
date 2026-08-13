@@ -186,9 +186,14 @@ function makeResponsesStreamer(config: OpenAIConfig) {
             case "response.failed": {
               const resp = evt.response ?? {};
               const status = typeof resp.status === "string" ? resp.status : type.slice("response.".length);
+              // The agent loop branches on finishReason to decide whether to keep
+              // looping after a tool call — mirror the completions convention of
+              // "tool_calls" so a tool-call turn isn't mistaken for a final stop.
               finishReason =
                 status === "completed"
-                  ? "stop"
+                  ? toolAccum.size > 0
+                    ? "tool_calls"
+                    : "stop"
                   : status === "incomplete" && resp.incomplete_details?.reason === "max_output_tokens"
                     ? "length"
                     : undefined;
