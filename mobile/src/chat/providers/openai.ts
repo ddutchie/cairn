@@ -280,9 +280,10 @@ function makeStreamer(config: OpenAIConfig) {
               // USD cost of the call here.
               cost?: number;
               // Prompt-cache tokens: OpenAI-style (cached_tokens is a subset of
-              // prompt_tokens) or Anthropic-style via a gateway (separate
-              // cache_read/creation input counts).
+              // prompt_tokens), DeepSeek-style (prompt_cache_hit_tokens), or
+              // Anthropic-style via a gateway (separate cache_read/creation counts).
               prompt_tokens_details?: { cached_tokens?: number };
+              prompt_cache_hit_tokens?: number;
               cache_read_input_tokens?: number;
               cache_creation_input_tokens?: number;
             };
@@ -307,6 +308,7 @@ function makeStreamer(config: OpenAIConfig) {
           }
           const cacheRead =
             (chunk.usage?.cache_read_input_tokens ?? 0) +
+            (chunk.usage?.prompt_cache_hit_tokens ?? 0) +
             (chunk.usage?.prompt_tokens_details?.cached_tokens ?? 0);
           if (cacheRead > 0) cacheReadTokens = cacheRead;
           if (typeof chunk.usage?.cache_creation_input_tokens === "number") {
