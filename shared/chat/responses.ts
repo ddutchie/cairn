@@ -56,6 +56,12 @@ export interface ResponsesSourceMessage {
   content: string | unknown[] | null;
   tool_calls?: Array<{ id: string; type?: "function"; function: { name: string; arguments: string } }>;
   tool_call_id?: string;
+  /**
+   * Raw Responses reasoning items produced alongside this assistant message, to
+   * replay verbatim on the next turn so the model continues its chain-of-thought
+   * (same model). Carried by the loops, which gate it on the current model key.
+   */
+  reasoningItems?: Array<Record<string, unknown>>;
 }
 
 /** A flattened Responses `function` tool (the Chat Completions `function` wrapper is dropped). */
@@ -92,8 +98,7 @@ export function mapToolToResponses(tool: unknown): ResponsesFunctionTool {
  * `document` (PDF) → `input_file`. Unknown parts pass through unchanged so
  * provider-specific parts are never silently dropped.
  */
-export function mapContentPartsToResponses(parts: unknown[]): unknown[] {
-  return parts.map((p) => {
+export function mapContentPartsToResponses(parts: unknown[]): unknown[] {  return parts.map((p) => {
     const part = (p ?? {}) as Record<string, unknown>;
     switch (part.type) {
       case "text":
@@ -121,6 +126,27 @@ export function mapContentPartsToResponses(parts: unknown[]): unknown[] {
 }
 
 /**
+ * Reduce a captured reasoning item to its input-item form for round-trip. The
+ * Open Responses spec accepts `content`, `summary`, and `encrypted_content` on
+ * a reasoning input item, so all three are preserved (only the output-only
+ * `status` is dropped). Returns null when the item has nothing worth replaying.
+ */
+export function roundTripReasoningItem(item: Record<string, unknown>): ResponsesInputItem | null {
+  const content = item.content;
+  const summary = item.summary;
+  const encrypted = typeof item.encrypted_content === "string" && item.encrypted_content.length > 0;
+  const hasContent = Array.isArray(content) ? content.length > 0 : content != null && content !== "";
+  const hasSummary = Array.isArray(summary) && summary.length > 0;
+  if (!hasContent && !hasSummary && !encrypted) return null;
+  const out: ResponsesInputItem = { type: "reasoning" };
+  if (typeof item.id === "string") out.id = item.id;
+  if (hasContent) out.content = content;
+  if (hasSummary) out.summary = summary;
+  if (encrypted) out.encrypted_content = item.encrypted_content;
+  return out;
+}
+
+/**
  * Convert a multi-turn message history into Responses input items.
  *
  * Mapping (from the migration guide's "Map Messages to Items"):
@@ -128,7 +154,8 @@ export function mapContentPartsToResponses(parts: unknown[]): unknown[] {
  *   - user message              → `{ role: "user", content }`
  *   - assistant message         → `{ role: "assistant", content }` (when it has
  *                                 text) plus one `function_call` item per
- *                                 `tool_calls[]` entry
+ *                                 `tool_calls[]` entry, and any round-trippable
+ *                                 reasoning items replayed first
  *   - tool result               → `{ type: "function_call_output", call_id,
  *                                 output }`
  *
@@ -150,6 +177,10 @@ export function mapMessagesToInput(messages: ResponsesSourceMessage[]): {
       continue;
     }
     if (m.role === "assistant") {
+      for (const ri of m.reasoningItems ?? []) {
+        const item = roundTripReasoningItem(ri);
+        if (item) input.push(item);
+      }
       if (typeof m.content === "string" && m.content.trim()) {
         input.push({ type: "message", role: "assistant", content: m.content });
       }
@@ -224,6 +255,9 @@ export function buildResponsesBody(opts: {
     ...(opts.maxTokens && opts.maxTokens > 0 ? { max_output_tokens: opts.maxTokens } : {}),
     temperature: opts.temperature,
     stream: opts.stream ?? true,
+    // Ask for encrypted reasoning content so reasoning items can be rehydrated
+    // (round-tripped) on the next turn. Harmless for non-reasoning models.
+    include: ["reasoning.encrypted_content"],
     ...(opts.toolChoice ? { tool_choice: opts.toolChoice } : {}),
     ...(opts.reasoningEffort || opts.reasoningSummary ? { reasoning } : {}),
   };

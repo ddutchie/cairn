@@ -85,7 +85,7 @@ export interface AgentLLMConfig {
 // ── Message types ─────────────────────────────────────────────────────────────
 
 export interface AgentUserMessage    { role: "user";      content: string | ContentPart[] }
-export interface AgentAssistantMsg   { role: "assistant"; content: string | null; reasoning?: string; reasoningField?: string; reasoningModel?: string; tool_calls?: ToolCallSpec[] }
+export interface AgentAssistantMsg   { role: "assistant"; content: string | null; reasoning?: string; reasoningField?: string; reasoningModel?: string; reasoningItems?: Array<Record<string, unknown>>; tool_calls?: ToolCallSpec[] }
 export interface AgentToolResultMsg  { role: "tool";      tool_call_id: string; content: string }
 
 export type AgentMessage =
@@ -703,6 +703,7 @@ export async function runAgentLoop(
         provider: llmConfig.provider,
         modelId: model,
       }),
+      roundTripItems: transport.mode === "responses",
       pruner,
     });
 
@@ -876,6 +877,7 @@ export async function runAgentLoop(
         reasoning: reasoningBuffer || undefined,
         reasoningField: turn.reasoningField ?? undefined,
         reasoningModel: currentModelKey,
+        reasoningItems: turn.reasoningItems.length > 0 ? turn.reasoningItems : undefined,
       });
       callbacks.onDone();
       return;
@@ -943,6 +945,7 @@ export async function runAgentLoop(
       reasoning: reasoningBuffer || undefined,
       reasoningField: turn.reasoningField ?? undefined,
       reasoningModel: currentModelKey,
+      reasoningItems: turn.reasoningItems.length > 0 ? turn.reasoningItems : undefined,
       tool_calls: toolCalls,
     });
 

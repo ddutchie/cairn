@@ -17,6 +17,7 @@ import {
   isResponsesEndpoint,
   mapToolToResponses,
   mapMessagesToInput,
+  roundTripReasoningItem,
   buildResponsesBody,
   consumeResponsesStream,
   parseResponsesOutput,
@@ -194,6 +195,41 @@ describe("mapMessagesToInput", () => {
       },
     ]);
   });
+
+  it("replays reasoning items before the assistant message (same-model round-trip)", () => {
+    const { input } = mapMessagesToInput([
+      {
+        role: "assistant",
+        content: "The answer is 42.",
+        reasoningItems: [
+          { id: "rs_1", type: "reasoning", encrypted_content: "enc", summary: [], content: [] },
+        ],
+      },
+    ] as unknown as OpenAIMessage[]);
+
+    expect(input).toEqual([
+      { type: "reasoning", id: "rs_1", encrypted_content: "enc" },
+      { type: "message", role: "assistant", content: "The answer is 42." },
+    ]);
+  });
+});
+
+describe("roundTripReasoningItem", () => {
+  it("preserves content, summary, and encrypted_content; drops status; skips empty items", () => {
+    expect(roundTripReasoningItem({ id: "rs_1", type: "reasoning", status: "completed", encrypted_content: "enc", summary: [], content: [{ type: "reasoning_text", text: "secret" }] }))
+      .toEqual({ type: "reasoning", id: "rs_1", content: [{ type: "reasoning_text", text: "secret" }], encrypted_content: "enc" });
+
+    expect(roundTripReasoningItem({ id: "rs_2", type: "reasoning", summary: [{ type: "summary_text", text: "condensed" }], content: [] }))
+      .toEqual({ type: "reasoning", id: "rs_2", summary: [{ type: "summary_text", text: "condensed" }] });
+
+    // Raw content only (third-party router) → still round-tripped now.
+    expect(roundTripReasoningItem({ id: "rs_3", type: "reasoning", content: [{ type: "reasoning_text", text: "secret" }], summary: [] }))
+      .toEqual({ type: "reasoning", id: "rs_3", content: [{ type: "reasoning_text", text: "secret" }] });
+
+    // Nothing round-trippable → null.
+    expect(roundTripReasoningItem({ id: "rs_4", type: "reasoning", content: [], summary: [] }))
+      .toBeNull();
+  });
 });
 
 describe("buildResponsesBody", () => {
@@ -219,6 +255,7 @@ describe("buildResponsesBody", () => {
       max_output_tokens: 4096,
       temperature: 0.3,
       stream: true,
+      include: ["reasoning.encrypted_content"],
     });
   });
 

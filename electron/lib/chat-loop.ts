@@ -103,16 +103,21 @@ export async function runToolLoop(
   // previously stripped reasoning entirely, which starved "thinking" models of
   // their own prior chain-of-thought on tool-call rounds.
   const currentModelKey = `${baseUrl}::${model}`;
-  const reasoningByMsg = new Map<OpenAIMessage, { reasoning: string; field: string; modelKey: string }>();
+  const reasoningByMsg = new Map<OpenAIMessage, { reasoning: string; field: string; modelKey: string; items?: Array<Record<string, unknown>> }>();
 
   // Build the outgoing request messages: round-trip reasoning for the same
-  // model under its native field, fold it into `content` for a different model,
-  // and never send the internal metadata. Mirrors prepareContextMessages.
+  // model under its native field (completions) or as reasoning items (responses),
+  // fold it into `content` for a different model, and never send the internal
+  // metadata. Mirrors prepareContextMessages.
   const prepareForSend = (): OpenAIMessage[] => {
+    const responses = transport?.mode === "responses";
     return messages.map((m) => {
       const ri = reasoningByMsg.get(m);
       if (!ri || m.role !== "assistant") return m;
       if (ri.modelKey === currentModelKey) {
+        if (responses) {
+          return { ...m, ...(ri.items && ri.items.length > 0 ? { reasoningItems: ri.items } : {}) } as unknown as OpenAIMessage;
+        }
         return { ...m, [ri.field]: ri.reasoning } as unknown as OpenAIMessage;
       }
       const existing = typeof m.content === "string" && m.content.trim() ? m.content.trim() : "";
@@ -349,11 +354,12 @@ export async function runToolLoop(
       // Round-trip reasoning to the same model (pi parity) — never baked into
       // `content`. Only the STREAMED path round-trips; the on-device path below
       // still strips reasoning (local models reject a reasoning field).
-      if (typeof turn.reasoning === "string" && turn.reasoning.length > 0 && typeof turn.reasoningField === "string") {
+      if ((typeof turn.reasoning === "string" && turn.reasoning.length > 0 && typeof turn.reasoningField === "string") || turn.reasoningItems.length > 0) {
         reasoningByMsg.set(assistantMsg, {
           reasoning: turn.reasoning,
-          field: turn.reasoningField,
+          field: turn.reasoningField ?? "reasoning",
           modelKey: currentModelKey,
+          ...(turn.reasoningItems.length > 0 ? { items: turn.reasoningItems } : {}),
         });
       }
     }

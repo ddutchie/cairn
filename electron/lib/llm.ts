@@ -84,6 +84,12 @@ export type OpenAIMessage = {
   content: string | null;
   name?: string;
   tool_call_id?: string;
+  /**
+   * Raw Responses reasoning items to replay on the next turn (same model). Set
+   * by the chat/agent loops and consumed by the Responses `mapMessagesToInput`;
+   * never sent to a chat-completions endpoint.
+   */
+  reasoningItems?: Array<Record<string, unknown>>;
   tool_calls?: Array<{
     id: string;
     type: "function";

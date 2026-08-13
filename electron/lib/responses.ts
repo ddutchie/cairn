@@ -25,6 +25,7 @@ export {
   mapToolToResponses,
   mapContentPartsToResponses,
   mapMessagesToInput,
+  roundTripReasoningItem,
   buildResponsesBody,
   parseResponsesOutput,
   responsesToCompletionsShape,
@@ -67,6 +68,8 @@ export async function consumeResponsesStream(
   let reasoningSummary = "";
   let reasoningField: string | null = null;
   let finishReason: string | null = null;
+  // Raw reasoning items captured for round-trip (encrypted_content / summary).
+  const reasoningItems: Array<Record<string, unknown>> = [];
   // Keyed by output_index (stable across added + delta + done events), matching
   // the chat-completions `index` convention the loops already understand.
   const toolBuffers = new Map<number, ResponsesToolBuffer>();
@@ -148,23 +151,21 @@ export async function consumeResponsesStream(
         } else {
           finishReason = null;
         }
-        // Some providers only surface the reasoning summary in the final output
-        // (not as `response.reasoning_summary_text.delta` events) — fall back to
-        // the completed `reasoning` item's `summary` array when nothing streamed.
-        if (!reasoningSummary) {
-          const output = resp.output as Array<Record<string, unknown>> | undefined;
-          if (Array.isArray(output)) {
-            for (const item of output) {
-              if (item.type === "reasoning" && Array.isArray(item.summary)) {
-                const text = item.summary
-                  .map((p) => String((p as Record<string, unknown>).text ?? ""))
-                  .filter(Boolean)
-                  .join("\n");
-                if (text) {
-                  reasoningSummary = text;
-                  opts.onSummary?.(text);
-                }
-                break;
+        // Capture the completed `reasoning` items for round-trip, and fall back
+        // to the `summary` array when the summary never streamed as deltas.
+        const output = resp.output as Array<Record<string, unknown>> | undefined;
+        if (Array.isArray(output)) {
+          for (const item of output) {
+            if (item.type !== "reasoning") continue;
+            reasoningItems.push(item);
+            if (!reasoningSummary && Array.isArray(item.summary)) {
+              const text = item.summary
+                .map((p) => String((p as Record<string, unknown>).text ?? ""))
+                .filter(Boolean)
+                .join("\n");
+              if (text) {
+                reasoningSummary = text;
+                opts.onSummary?.(text);
               }
             }
           }
@@ -206,5 +207,5 @@ export async function consumeResponsesStream(
   }));
   const toolCallIndexes = entries.map(([idx]) => idx);
 
-  return { content, reasoning, reasoningField, reasoningSummary, finishReason, toolCalls, toolCallIndexes, streamCallIds };
+  return { content, reasoning, reasoningField, reasoningSummary, reasoningItems, finishReason, toolCalls, toolCallIndexes, streamCallIds };
 }
