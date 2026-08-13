@@ -138,6 +138,14 @@ function execGit(args: string[], cwd: string, timeout = 10_000): Promise<{ stdou
 
 // ── Register handlers ─────────────────────────────────────────────────────────
 
+// Entries hidden from the agent's file browser. Only genuinely noisy / internal
+// entries are excluded — dotfiles like `.env`, `.gitignore`, `.editorconfig`
+// stay visible so the user can open and edit them from the tree.
+const HIDDEN_TREE_ENTRIES = new Set([".git", ".DS_Store"]);
+function isVisibleInTree(name: string): boolean {
+  return !HIDDEN_TREE_ENTRIES.has(name);
+}
+
 export function registerAgentHandlers(db: Database): void {
   // ── Coding agent CRUD ────────────────────────────────────────────────────
 
@@ -167,7 +175,7 @@ export function registerAgentHandlers(db: Database): void {
       const realPath = await assertWithinCodeDirectory(db, dirPath);
       const entries = await fs.promises.readdir(realPath, { withFileTypes: true });
       return entries
-        .filter((e) => !e.name.startsWith("."))
+        .filter((e) => isVisibleInTree(e.name))
         .sort((a, b) => {
           // Directories first, then files, alphabetical within each group
           if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
@@ -196,7 +204,7 @@ export function registerAgentHandlers(db: Database): void {
         catch { return; }
         for (const e of entries) {
           if (results.length >= MAX_RESULTS) return;
-          if (e.name.startsWith(".")) continue;
+          if (!isVisibleInTree(e.name)) continue;
           const fullPath = path.join(dir, e.name);
           const relPath = relDir ? `${relDir}/${e.name}` : e.name;
           if (e.isDirectory()) {
