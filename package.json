@@ -71,6 +71,7 @@
     "pdfjs-dist": "^6.2.108",
     "qrcode": "^1.5.4",
     "react-day-picker": "^10.0.1",
+    "react-virtuoso": "^4.18.11",
     "rehype-katex": "^7.0.1",
     "remark-breaks": "^4.0.0",
     "remark-math": "^6.0.0",
