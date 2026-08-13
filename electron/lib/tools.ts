@@ -136,6 +136,11 @@ export interface ChatHistoryEntry {
   }>;
   tool_call_id?: string;
   name?: string;
+  /** Reasoning round-trip metadata (persisted on chat_messages). */
+  reasoning?: string;
+  reasoningField?: string;
+  reasoningModel?: string;
+  reasoningItems?: Array<Record<string, unknown>>;
 }
 
 export interface ChatRequest {

@@ -23,6 +23,15 @@ describe("isSendableMessage", () => {
     ).toBe(true);
   });
 
+  it("keeps an items-only assistant turn (Responses reasoning round-trip)", () => {
+    // A resumed thread may carry an assistant turn whose only payload is the
+    // raw Responses reasoning items — it must be replayed, not dropped.
+    expect(
+      isSendableMessage({ role: "assistant", content: null, reasoningItems: [{ type: "reasoning", id: "rs_1" }] }),
+    ).toBe(true);
+    expect(isSendableMessage({ role: "assistant", content: null, reasoningItems: [] })).toBe(false);
+  });
+
   it("never filters non-assistant roles, even when empty", () => {
     // user/system/tool turns with empty content are the caller's concern; the
     // provider only rejects assistant turns for the missing-payload reason.

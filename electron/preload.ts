@@ -353,7 +353,7 @@ const api = {
       ipcRenderer.on("chat:thought", handler);
       return () => ipcRenderer.off("chat:thought", handler);
     },
-    onDone: (cb: (e: { content: string; reasoning?: string; reasoningSummary?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number } }) => void) => {
+    onDone: (cb: (e: { content: string; reasoning?: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number } }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:done", handler);

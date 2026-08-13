@@ -1046,13 +1046,13 @@ export function getChatMessages(db: Database.Database, threadId: string) {
 }
 
 export function addChatMessage(db: Database.Database, m: {
-  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown; reasoning?: string; reasoningSummary?: string; subagents?: unknown;
+  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown; reasoning?: string; reasoningSummary?: string; subagents?: unknown; reasoningItems?: unknown; reasoningField?: string; reasoningModel?: string;
 }) {
   const now = ts();
   db.prepare(`
-    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, reasoning, reasoning_summary, subagents, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, m.reasoning ?? null, m.reasoningSummary ?? null, m.subagents ? JSON.stringify(m.subagents) : null, now);
+    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, reasoning, reasoning_summary, reasoning_items, reasoning_field, reasoning_model, subagents, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, m.reasoning ?? null, m.reasoningSummary ?? null, m.reasoningItems ? JSON.stringify(m.reasoningItems) : null, m.reasoningField ?? null, m.reasoningModel ?? null, m.subagents ? JSON.stringify(m.subagents) : null, now);
   return toChatMessage(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(m.id));
 }
 

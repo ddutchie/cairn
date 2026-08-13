@@ -90,6 +90,12 @@ export type OpenAIMessage = {
    * never sent to a chat-completions endpoint.
    */
   reasoningItems?: Array<Record<string, unknown>>;
+  /** Chain-of-thought text recorded from the provider's reasoning field. */
+  reasoning?: string;
+  /** The provider field the reasoning arrived in (round-trip target). */
+  reasoningField?: string;
+  /** Model key (`baseUrl::model`) that produced this message's reasoning. */
+  reasoningModel?: string;
   tool_calls?: Array<{
     id: string;
     type: "function";
@@ -119,9 +125,10 @@ export function isSendableMessage(m: {
   role: string;
   content: string | null;
   tool_calls?: unknown[];
+  reasoningItems?: unknown[];
 }): boolean {
   if (m.role !== "assistant") return true;
-  return Boolean(m.content?.trim()) || Boolean(m.tool_calls?.length);
+  return Boolean(m.content?.trim()) || Boolean(m.tool_calls?.length) || Boolean(m.reasoningItems?.length);
 }
 
 /** Optional attribution for a one-shot `callLLM` — drives the Usage log row. */

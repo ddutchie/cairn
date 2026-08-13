@@ -190,6 +190,10 @@ export interface SubagentRunResult {
   content: string;
   reasoning: string;
   metrics: SubagentMetrics;
+  /** Raw Responses reasoning items from the dispatcher's final turn (persisted for thread resume). */
+  reasoningItems?: Array<Record<string, unknown>>;
+  reasoningField?: string;
+  reasoningModel?: string;
 }
 
 interface DispatchConfig {
@@ -603,8 +607,14 @@ export async function runDispatchLoop(
       }
     }
 
+    const rawJson = transport.mode === "responses" ? (await response.json()) as Record<string, unknown> : undefined;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = (transport.mode === "responses" ? responsesToCompletionsShape(await response.json()) : await response.json()) as any;
+    const data = (rawJson ? responsesToCompletionsShape(rawJson) : await response.json()) as any;
+    // Raw Responses reasoning items from the dispatcher's final turn, so the
+    // subagent completion can persist them for thread resume.
+    const reasoningItems = rawJson && Array.isArray(rawJson.output)
+      ? (rawJson.output as Array<Record<string, unknown>>).filter((o) => o.type === "reasoning")
+      : undefined;
     if (data.usage) {
       const pt = data.usage.prompt_tokens ?? 0;
       const ct = data.usage.completion_tokens ?? 0;
@@ -674,7 +684,14 @@ export async function runDispatchLoop(
         // rings carry their own), so no cost accumulator is passed.
         finalContent = (await forceFinalAnswer(cfg, messages, metrics, undefined, signal, maxTokens)).trim();
       }
-      return { content: finalContent, reasoning: finalReasoning, metrics };
+      return {
+        content: finalContent,
+        reasoning: finalReasoning,
+        metrics,
+        ...(reasoningItems && reasoningItems.length > 0
+          ? { reasoningItems, reasoningField: "reasoning", reasoningModel: `${cfg.baseUrl}::${cfg.model}` }
+          : {}),
+      };
     }
 
     messages.push(msgClean);
