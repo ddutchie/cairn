@@ -209,7 +209,9 @@ describe("mapMessagesToInput", () => {
     ] as unknown as OpenAIMessage[]);
 
     expect(input).toEqual([
-      { type: "reasoning", id: "rs_1", encrypted_content: "enc" },
+      // The empty summary is replayed too — strict providers reject a reasoning
+      // item that omits `summary` when encrypted content is carried.
+      { type: "reasoning", id: "rs_1", encrypted_content: "enc", summary: [] },
       { type: "message", role: "assistant", content: "The answer is 42." },
     ]);
   });
@@ -282,18 +284,26 @@ describe("classifyResponsesProbe", () => {
 describe("roundTripReasoningItem", () => {
   it("preserves content, summary, and encrypted_content; drops status; skips empty items", () => {
     expect(roundTripReasoningItem({ id: "rs_1", type: "reasoning", status: "completed", encrypted_content: "enc", summary: [], content: [{ type: "reasoning_text", text: "secret" }] }))
-      .toEqual({ type: "reasoning", id: "rs_1", content: [{ type: "reasoning_text", text: "secret" }], encrypted_content: "enc" });
+      .toEqual({ type: "reasoning", id: "rs_1", content: [{ type: "reasoning_text", text: "secret" }], encrypted_content: "enc", summary: [] });
 
     expect(roundTripReasoningItem({ id: "rs_2", type: "reasoning", summary: [{ type: "summary_text", text: "condensed" }], content: [] }))
       .toEqual({ type: "reasoning", id: "rs_2", summary: [{ type: "summary_text", text: "condensed" }] });
 
-    // Raw content only (third-party router) → still round-tripped now.
+    // Raw content only (third-party router) → still round-tripped now, and the
+    // empty summary the router emitted is replayed (strict providers require it).
     expect(roundTripReasoningItem({ id: "rs_3", type: "reasoning", content: [{ type: "reasoning_text", text: "secret" }], summary: [] }))
-      .toEqual({ type: "reasoning", id: "rs_3", content: [{ type: "reasoning_text", text: "secret" }] });
+      .toEqual({ type: "reasoning", id: "rs_3", content: [{ type: "reasoning_text", text: "secret" }], summary: [] });
 
     // Nothing round-trippable → null.
     expect(roundTripReasoningItem({ id: "rs_4", type: "reasoning", content: [], summary: [] }))
       .toBeNull();
+  });
+
+  it("replays the empty summary alongside encrypted content", () => {
+    // AIS / strict Responses providers validate `input[N].summary` and reject a
+    // reasoning item that carries encrypted content but omits summary entirely.
+    expect(roundTripReasoningItem({ id: "rs_5", type: "reasoning", encrypted_content: "enc", summary: [], content: [] }))
+      .toEqual({ type: "reasoning", id: "rs_5", encrypted_content: "enc", summary: [] });
   });
 });
 

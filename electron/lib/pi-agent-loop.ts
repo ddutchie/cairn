@@ -666,6 +666,10 @@ export async function runAgentLoop(
   // One-shot downgrade guard: if a provider we thought spoke Responses 404s,
   // flip to completions and retry once (never loops — completions won't 404).
   let downgraded = false;
+  // Once a strict Responses endpoint rejects the optional fields (400/422), the
+  // stripped body becomes the request shape for the REST of the run — so every
+  // subsequent turn skips include/temperature/reasoning without re-probing.
+  let stripOptionalFields = false;
 
   // Build the context pruner — closes over session so it sees live lastPromptTokens
   const pruner = callbacks.transformContext
@@ -720,6 +724,20 @@ export async function runAgentLoop(
     let response: Response | null = null;
     let retryAttempt = 0;
 
+    // Build the request body for THIS turn. Once a strict endpoint has proven
+    // it rejects the optional Responses fields, every subsequent request sends
+    // the stripped body (no include / temperature / reasoning summary).
+    const buildTurnBody = () => {
+      const base = { model, messages: contextMessages, tools: allTools, maxTokens, temperature };
+      if (stripOptionalFields) {
+        return transport.buildBody({ ...base, supportsEncryptedReasoning: false, includeTemperature: false });
+      }
+      // Condensed reasoning summary for the Thinking panel (Responses-only;
+      // ignored on chat-completions) so turn 1 asks for summaries and the
+      // round-trip can replay them.
+      return transport.buildBody({ ...base, reasoningSummary: llmConfig.isReasoningModel ? "concise" : undefined });
+    };
+
     while (true) {
       if (signal.aborted) { callbacks.onDone(); return; }
 
@@ -729,13 +747,7 @@ export async function runAgentLoop(
           method: "POST",
           headers,
           signal,
-          body: JSON.stringify(transport.buildBody({
-            model,
-            messages: contextMessages,
-            tools: allTools,
-            maxTokens,
-            temperature,
-          })),
+          body: JSON.stringify(buildTurnBody()),
         });
       } catch (e) {
         if (signal.aborted) { callbacks.onDone(); return; }
@@ -743,7 +755,7 @@ export async function runAgentLoop(
       }
 
       // Determine if we should retry
-      const status = response?.status ?? 0;
+      let status = response?.status ?? 0;
       let bodyText = "";
       if (response && !response.ok) {
         bodyText = await response.text().catch(() => response!.statusText);
@@ -767,6 +779,32 @@ export async function runAgentLoop(
           pruner,
         });
         continue;
+      }
+
+      // A strict Responses endpoint rejected the optional fields (include /
+      // temperature / reasoning) — retry this turn once with them stripped. The
+      // stripped response is CONSUMED immediately (no third request with the
+      // original body), and the stripped capability persists for the run.
+      if (response && !response.ok && transport.mode === "responses" && (status === 400 || status === 422) && !stripOptionalFields) {
+        stripOptionalFields = true;
+        try {
+          response = await fetch(transport.endpoint(baseUrl), {
+            method: "POST",
+            headers,
+            signal,
+            body: JSON.stringify(buildTurnBody()),
+          });
+        } catch (e) {
+          if (signal.aborted) { callbacks.onDone(); return; }
+          fetchError = (e as Error).message;
+        }
+        // Re-read from the retried response so the retry decision below sees
+        // the STRIPPED response, not the original 400.
+        status = response?.status ?? 0;
+        bodyText = "";
+        if (response && !response.ok) {
+          bodyText = await response.text().catch(() => response!.statusText);
+        }
       }
 
       const shouldRetry =

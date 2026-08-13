@@ -661,6 +661,10 @@ export interface ChatHistoryEntry {
   }>;
   tool_call_id?: string;
   name?: string;
+  reasoning?: string;
+  reasoningField?: string;
+  reasoningModel?: string;
+  reasoningItems?: Array<Record<string, unknown>>;
 }
 
 export interface ChatMessage {
@@ -681,6 +685,15 @@ export interface ChatMessage {
    * raw reasoning preview; absent for providers that don't support it.
    */
   reasoningSummary?: string;
+  /**
+   * Raw Responses reasoning items produced with this message, persisted so a
+   * resumed thread can round-trip the chain-of-thought to the same model.
+   */
+  reasoningItems?: Array<Record<string, unknown>>;
+  /** The provider field the reasoning text arrived in (round-trip target). */
+  reasoningField?: string;
+  /** Model key (`baseUrl::model`) that produced this message's reasoning. */
+  reasoningModel?: string;
   /** Entities cited in or used to produce this message */
   contextRefs?: LinkedContextReference[];
   /** Tool calls made during this assistant turn — persisted so they remain visible after streaming ends */
