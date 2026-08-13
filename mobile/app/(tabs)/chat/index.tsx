@@ -113,9 +113,10 @@ export default function ChatScreen() {
     hasProvider().then(setConfigured).catch(() => setConfigured(false));
   }, []);
 
-  // Image attach is hidden when the ACTIVE provider is OpenAI-compatible and
-  // its model is known not to accept images. Rork / Apple / unknown models stay
-  // permissive. Re-resolved on focus (provider may change in settings).
+  // Image attach is hidden when the ACTIVE provider is an OpenAI-compatible or
+  // Responses endpoint and its model is known not to accept images. Rork /
+  // Apple / unknown models stay permissive. Re-resolved on focus (provider may
+  // change in settings).
   const [openAiModelActive, setOpenAiModelActive] = useState<string | null>(null);
   // Re-renders on catalog arrival/refresh; the version feeds the memo so
   // gating recomputes when a model's capabilities finally resolve.
@@ -135,7 +136,9 @@ export default function ChatScreen() {
       resolveProvider()
         .then((p) => {
           if (!alive) return;
-          setOpenAiModelActive(p.name === "OpenAI-compatible" ? getOpenAIModel() : null);
+          // Both wire protocols built from an OpenAI config gate images on the
+          // catalog model's capability — "Responses" is makeResponsesProvider().
+          setOpenAiModelActive(p.name === "OpenAI-compatible" || p.name === "Responses" ? getOpenAIModel() : null);
         })
         .catch(() => {
           if (alive) setOpenAiModelActive(null);
