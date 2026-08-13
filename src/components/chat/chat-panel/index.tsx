@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Trash2, ChevronDown, ArrowLeftFromLine } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -123,7 +124,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     () => getCommandsForScope("chat", customCommands),
     [customCommands]
   );
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Virtualized transcript handle — used to jump to the newest message when the
+  // panel activates or a question form appears (followOutput handles streaming).
+  const chatVirtuosoRef = useRef<VirtuosoHandle>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
   const projectRef     = useRef<HTMLDivElement>(null);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -377,7 +380,15 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   // had scrolled up when the model asked its questions. `pendingQuestions` is
   // an array, so depend on its length (a scalar) to avoid a deps-change warning.
   const pendingQuestionCount = pendingQuestions?.length ?? 0;
-  useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive, pendingQuestionCount]);
+  // Jump to the newest message when the panel activates or the ask_questions
+  // form appears — otherwise it can land out of view if the user had scrolled
+  // up. Streaming follow is handled by Virtuoso's followOutput (only follows
+  // while the user is at the bottom).
+  useEffect(() => {
+    if (isChatActive && chatVirtuosoRef.current && messages.length > 0) {
+      chatVirtuosoRef.current.scrollToIndex({ index: messages.length - 1, align: "end", behavior: "smooth" });
+    }
+  }, [isChatActive, pendingQuestionCount, messages.length]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
   const handleSend = useCallback(async (text?: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = []) => {
@@ -649,66 +660,76 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         )}
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
-        <div className={cn("space-y-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-          {messages.length === 0
-            ? (
-                <SuggestedPrompts
-                  onSend={handleSend}
-                  disabled={isLoading || !threadId}
-                  prompts={activeView === "graph" ? graphPrompts : undefined}
-                  subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
-                />
-              )
-            : messages.map((message) => (
-                <ChatMessageBubble
-                  key={message.id}
-                  message={message}
-                  onRetry={!isLoading ? handleRetry : undefined}
-                  connectors={connectorMap}
-                />
-              ))
-          }
-          {queued.length > 0 && (
-            <div className="space-y-3">
-              {queued.map((q) => (
-                <div key={q.id} className="flex flex-col items-end gap-0.5">
-                  <div className="px-3 py-2.5 rounded-xl bg-[var(--surface-2)] border border-dashed border-[var(--border)] text-xs leading-relaxed text-[var(--text-secondary)] rounded-tr-sm max-w-[85%]">
-                    {q.content}
-                  </div>
-                  <div className="flex items-center gap-2 pr-1">
-                    <span className="text-[0.643rem] text-[var(--text-tertiary)]">Queued — sends when the current reply finishes</span>
-                    <button
-                      type="button"
-                      onClick={() => removeQueued(q.id)}
-                      className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
-                    >
-                      Remove
-                    </button>
-                  </div>
+      {/* Messages — virtualized so long threads never balloon the DOM; only the
+          items near the viewport are mounted no matter how far you scroll. */}
+      <Virtuoso
+        ref={chatVirtuosoRef}
+        className="flex-1 min-h-0"
+        data={messages}
+        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+        followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
+        components={{
+          EmptyPlaceholder: () => (
+            <div className={cn("px-3 py-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+              <SuggestedPrompts
+                onSend={handleSend}
+                disabled={isLoading || !threadId}
+                prompts={activeView === "graph" ? graphPrompts : undefined}
+                subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
+              />
+            </div>
+          ),
+          Footer: () => (
+            <div className={cn("px-3 py-3 space-y-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+              {queued.length > 0 && (
+                <div className="space-y-3">
+                  {queued.map((q) => (
+                    <div key={q.id} className="flex flex-col items-end gap-0.5">
+                      <div className="px-3 py-2.5 rounded-xl bg-[var(--surface-2)] border border-dashed border-[var(--border)] text-xs leading-relaxed text-[var(--text-secondary)] rounded-tr-sm max-w-[85%]">
+                        {q.content}
+                      </div>
+                      <div className="flex items-center gap-2 pr-1">
+                        <span className="text-[0.643rem] text-[var(--text-tertiary)]">Queued — sends when the current reply finishes</span>
+                        <button
+                          type="button"
+                          onClick={() => removeQueued(q.id)}
+                          className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+              {pendingQuestions && (
+                <QuestionForm
+                  questions={pendingQuestions}
+                  onSubmit={(text) => handleSend(text)}
+                  disabled={isLoading && !pendingQuestions}
+                />
+              )}
+              {isLoading && subagents.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {subagents.map((sub) => (
+                    <ChatSubagentBlock key={sub.childId} sub={sub} />
+                  ))}
+                </div>
+              )}
+              {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} connectors={connectorMap} />}
             </div>
-          )}
-          {pendingQuestions && (
-            <QuestionForm
-              questions={pendingQuestions}
-              onSubmit={(text) => handleSend(text)}
-              disabled={isLoading && !pendingQuestions}
+          ),
+        }}
+        itemContent={(_index, message) => (
+          <div className={cn("px-3 py-1.5", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+            <ChatMessageBubble
+              message={message}
+              onRetry={!isLoading ? handleRetry : undefined}
+              connectors={connectorMap}
             />
-          )}
-          {isLoading && subagents.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {subagents.map((sub) => (
-                <ChatSubagentBlock key={sub.childId} sub={sub} />
-              ))}
-            </div>
-          )}
-          {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} connectors={connectorMap} />}
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
+          </div>
+        )}
+      />
 
       {/* Input */}
       <div className={cn("border-t border-[var(--border)] p-3 flex-shrink-0", activeView === "chat" && "border-t-0 bg-transparent p-6 max-w-3xl mx-auto w-full")}>
