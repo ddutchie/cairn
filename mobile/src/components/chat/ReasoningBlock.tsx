@@ -6,15 +6,16 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
 /**
  * Collapsible "reasoning" (thinking) disclosure for models that stream it
  * (Apple PCC, or OpenAI-compatible endpoints like DeepSeek/OpenRouter).
- * Expanded while the answer is still streaming so the user sees the model think;
- * collapses to a condensed summary (when the provider emits one) once done.
+ * Expanded while the model is still thinking, auto-collapses the instant the
+ * answer starts streaming (mirrors desktop), and stays collapsed once done.
  * Session-only (not persisted).
  */
-export function ReasoningBlock({ text, summary, streaming }: { text: string; summary?: string; streaming?: boolean }) {
+export function ReasoningBlock({ text, summary, streaming, hasContent }: { text: string; summary?: string; streaming?: boolean; hasContent?: boolean }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const [open, setOpen] = useState(false);
-  const expanded = open || !!streaming;
+  // Expanded while thinking, unless the answer has started (auto-collapse).
+  const expanded = open || (!!streaming && !hasContent);
   const collapsedText = summary && summary.trim() ? summary.trim() : null;
   return (
     <View style={styles.reasoning}>
@@ -27,7 +28,7 @@ export function ReasoningBlock({ text, summary, streaming }: { text: string; sum
         accessibilityState={{ expanded }}
       >
         <Brain size={11} color={t.textTertiary} />
-        <Text style={styles.reasoningLabel}>{streaming ? "Thinking…" : "Reasoning"}</Text>
+        <Text style={styles.reasoningLabel}>{streaming && !hasContent ? "Thinking…" : "Reasoning"}</Text>
         <ChevronRight
           size={12}
           color={t.textTertiary}
