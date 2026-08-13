@@ -7,6 +7,7 @@
 import fs from "fs";
 import path from "path";
 import { withFileMutex } from "./file-mutex";
+import { assertNotSecretFile } from "./secrets";
 
 export interface WriteArgs {
   path: string;
@@ -15,6 +16,7 @@ export interface WriteArgs {
 
 export async function writeTool(args: WriteArgs, cwd: string): Promise<string> {
   const filePath = path.isAbsolute(args.path) ? args.path : path.join(cwd, args.path);
+  assertNotSecretFile(filePath);
 
   return withFileMutex(filePath, async () => {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });

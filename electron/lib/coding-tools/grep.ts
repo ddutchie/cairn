@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import { truncateOutput } from "../truncation";
 import { resolveContainedPath } from "./workspace-path";
+import { isSecretFile, assertNotSecretFile } from "./secrets";
 
 const MAX_RESULTS = 100;
 
@@ -54,6 +55,7 @@ async function searchDir(
       const ext = path.extname(entry.name).toLowerCase();
       if (SKIP_EXTS.has(ext)) continue;
       const filePath = path.join(dirPath, entry.name);
+      if (isSecretFile(filePath)) continue; // never search secret files
       if (!matchesInclude(filePath, include)) continue;
       try {
         // Async read — the main process yields between files so IPC to the
@@ -92,6 +94,7 @@ export async function grepTool(args: GrepArgs, cwd: string): Promise<string> {
   }
 
   if (stat.isFile()) {
+    assertNotSecretFile(searchPath);
     const ext = path.extname(searchPath).toLowerCase();
     if (SKIP_EXTS.has(ext)) return "Cannot search binary files.";
     const content = await fs.promises.readFile(searchPath, "utf8");

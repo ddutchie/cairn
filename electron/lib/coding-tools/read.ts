@@ -8,6 +8,7 @@
 import fs from "fs";
 import { truncateOutput, DEFAULT_MAX_LINES } from "../truncation";
 import { resolveContainedPath } from "./workspace-path";
+import { assertNotSecretFile } from "./secrets";
 
 const MAX_LINES = DEFAULT_MAX_LINES;
 const MAX_BYTES = 200_000;
@@ -21,6 +22,7 @@ export interface ReadArgs {
 export async function readTool(args: ReadArgs, cwd: string): Promise<string> {
   const filePath = resolveContainedPath(cwd, args.path);
   if (!filePath) throw new Error(`Path is outside the workspace: ${args.path}`);
+  assertNotSecretFile(filePath);
 
   let content: string;
   try {
