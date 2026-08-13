@@ -135,7 +135,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const allowImages = supportsImageInput(getModelInfo(aiConfig.model));
   const allowPdf = supportsPdfInput(getModelInfo(aiConfig.model));
 
-  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions } = useChatStream(threadId);
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -184,8 +184,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const handleClear = useCallback(() => {
     if (!threadId) return;
     if (isLoading) stopStream();
+    // Drop any in-flight questions form too — it belongs to this thread and
+    // would otherwise linger after the transcript is cleared.
+    clearQuestions();
     clearThreadMessages(threadId);
-  }, [threadId, isLoading, stopStream, clearThreadMessages]);
+  }, [threadId, isLoading, stopStream, clearThreadMessages, clearQuestions]);
 
   const handleArchiveChat = useCallback(async () => {
     if (!threadId) return;
