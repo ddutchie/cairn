@@ -90,12 +90,20 @@ describe("resolveTransport", () => {
     expect(t).toBe(RESPONSES_TRANSPORT);
   });
 
-  it("returns completions for local endpoints without probing", async () => {
-    // Local servers (Ollama / LM Studio / llama.cpp / test mocks) don't serve
-    // /responses today — resolved with no network I/O.
-    const t = await resolveTransport("http://127.0.0.1:1234/v1");
+  it("probes local endpoints for /responses too (some local servers speak the spec)", async () => {
+    // Local servers were historically assumed completions-only, but vLLM /
+    // Ollama / LM Studio / llama.cpp now implement the Open Responses spec, so
+    // a local endpoint is probed like any other non-allowlisted provider.
+    const probe = vi.fn().mockResolvedValue(false);
+    const t = await resolveTransport("http://127.0.0.1:1234/v1", "", probe);
+    expect(probe).toHaveBeenCalledTimes(1);
     expect(t).toBe(COMPLETIONS_TRANSPORT);
     expect(readCachedMode("http://127.0.0.1:1234/v1")).toBe("completions");
+
+    const servingProbe = vi.fn().mockResolvedValue(true);
+    const t2 = await resolveTransport("http://127.0.0.1:9999/v1", "", servingProbe);
+    expect(servingProbe).toHaveBeenCalledTimes(1);
+    expect(t2).toBe(RESPONSES_TRANSPORT);
   });
 
   it("probes an unknown non-local provider once and caches the result", async () => {

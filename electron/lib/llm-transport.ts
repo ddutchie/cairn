@@ -35,7 +35,7 @@
  * transport to use.
  */
 
-import { buildApiUrl, isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage } from "./llm";
+import { buildApiUrl, normaliseBaseUrl, type OpenAIMessage } from "./llm";
 import {
   buildChatCompletionsBody,
   consumeAssistantStream,
@@ -161,8 +161,9 @@ export async function probeResponses(baseUrl: string, apiKey = ""): Promise<bool
 /**
  * Resolve the transport for a base URL, probing once and caching the answer.
  * OpenAI-native / Azure endpoints skip the probe via the static allowlist;
- * local servers (Ollama, LM Studio, llama.cpp, in-process test mocks) resolve to
- * chat-completions without a probe — they don't serve `/responses` today.
+ * everything else — remote AND local — is probed for `/responses`, because
+ * local servers (vLLM, Ollama, LM Studio, llama.cpp) now speak the Open
+ * Responses spec too.
  *
  * `probe` is injectable for tests; production always uses `probeResponses`.
  * Concurrent resolutions for the same base URL share one in-flight probe.
@@ -189,10 +190,8 @@ export async function resolveTransport(
       if (isResponsesEndpoint(baseUrl)) {
         mode = "responses";
         reason = "known Responses endpoint";
-      } else if (isLocalEndpoint(baseUrl)) {
-        mode = "completions";
-        reason = "local server";
       } else {
+        // Probe local and remote alike — a local server may serve /responses.
         const available = await probe(baseUrl, apiKey);
         mode = available ? "responses" : "completions";
         reason = available ? "probe: /responses available" : "probe: no /responses (chat-completions)";
