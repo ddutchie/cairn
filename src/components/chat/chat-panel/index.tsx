@@ -23,7 +23,7 @@ import { useCommunityConnectorMap } from "./connector-context";
 import { QuestionForm } from "./QuestionForm";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { getCommandsForScope } from "@/lib/slash-commands";
-import { cn } from "@/lib/utils";
+import { cn, id } from "@/lib/utils";
 import {
   getModelInfo,
   getModelCatalogVersion,
@@ -114,6 +114,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const connectorMap = useCommunityConnectorMap();
 
   const [input, setInput] = useState("");
+  // Messages the user queued while a turn was running — sent (FIFO) when the
+  // current reply finishes. Session-scoped; cleared on thread switch.
+  const [queued, setQueued] = useState<{ id: string; content: string }[]>([]);
+  const queuedRef = useRef<{ id: string; content: string }[]>([]);
+  useEffect(() => { queuedRef.current = queued; }, [queued]);
   const chatCommands = useMemo(
     () => getCommandsForScope("chat", customCommands),
     [customCommands]
@@ -286,6 +291,31 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const isLoadingRef = useRef(isLoading);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
+  // Drain the queue: when a turn finishes (loading went true → false), send the
+  // next queued message. Keep the queue on Stop (the user only cancels the
+  // in-flight reply) and drain after errors too — any turn ending advances the
+  // queue. Uses handleSendRef so the effect never re-triggers on handleSend
+  // identity changes.
+  const handleSendRef = useRef<(text?: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => void>(() => {});
+  const prevLoadingRef = useRef(isLoading);
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = isLoading;
+    if (wasLoading && !isLoading && queuedRef.current.length > 0) {
+      const [next, ...rest] = queuedRef.current;
+      setQueued(rest);
+      handleSendRef.current(next.content);
+    }
+  }, [isLoading]);
+
+  const removeQueued = useCallback((qid: string) => {
+    setQueued((prev) => prev.filter((q) => q.id !== qid));
+  }, []);
+
+  // A queue belongs to the thread that was active when its messages were
+  // written — switching threads drops anything still pending.
+  useEffect(() => { setQueued([]); /* eslint-disable-line react-hooks/set-state-in-effect */ }, [threadId]);
+
 
 
   // Initialise / switch thread when the project changes.
@@ -351,6 +381,15 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     const content = text ?? input.trim();
     if ((!content || !content.trim()) && attachments.length === 0) return;
     if (!threadId) return;
+
+    // A turn is already running — queue this message instead of interrupting it.
+    // The queue drains (FIFO) when the current reply finishes.
+    if (isLoadingRef.current) {
+      if (!content.trim()) return;
+      setQueued((prev) => [...prev, { id: id(), content }]);
+      setInput("");
+      return;
+    }
 
     const trimmed = content.trim();
     if (!attachments.length) {
@@ -478,6 +517,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       useSubagents: aiConfig.provider !== "localllm" && (aiConfig.subagentsEnabled ?? false),
     });
   }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project]);
+
+  useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
 
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
@@ -626,6 +667,27 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
                 />
               ))
           }
+          {queued.length > 0 && (
+            <div className="space-y-3">
+              {queued.map((q) => (
+                <div key={q.id} className="flex flex-col items-end gap-0.5">
+                  <div className="px-3 py-2.5 rounded-xl bg-[var(--surface-2)] border border-dashed border-[var(--border)] text-xs leading-relaxed text-[var(--text-secondary)] rounded-tr-sm max-w-[85%]">
+                    {q.content}
+                  </div>
+                  <div className="flex items-center gap-2 pr-1">
+                    <span className="text-[0.643rem] text-[var(--text-tertiary)]">Queued — sends when the current reply finishes</span>
+                    <button
+                      type="button"
+                      onClick={() => removeQueued(q.id)}
+                      className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {pendingQuestions && (
             <QuestionForm
               questions={pendingQuestions}
@@ -663,6 +725,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           variant={activeView === "chat" ? "overview" : "default"}
           showSparkles={activeView === "chat"}
           statusText={isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
+          queueWhileBusy={isLoading}
+          queuedCount={queued.length}
           footerTrailing={aiConfig.provider === "localllm" ? (
             <span className="text-[0.625rem] font-bold text-[var(--accent-fg)] bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_srgb,var(--accent)_60%,var(--background))] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
               {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}

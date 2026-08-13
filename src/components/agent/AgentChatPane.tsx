@@ -157,6 +157,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   const [input, setInput]                         = useState("");
   const [isLoading, setIsLoading]                 = useState(false);
+  // Prompts the user queued while the agent was running — sent (FIFO) when the
+  // current run finishes. Kept on Stop and drained after errors too.
+  const [queued, setQueued]                       = useState<{ id: string; content: string }[]>([]);
+  const queuedRef = useRef<{ id: string; content: string }[]>([]);
+  useEffect(() => { queuedRef.current = queued; }, [queued]);
   const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
   /** callId of the blocked ask_questions call — echoed back on answer. */
   const [pendingQuestionCallId, setPendingQuestionCallId] = useState<string | null>(null);
@@ -514,7 +519,16 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     const trimmed = text.trim();
     // Attachment-only submissions are valid (an image/PDF with no caption), so
     // only block when there is NEITHER text NOR attachments.
-    if ((!trimmed && attachments.length === 0) || isLoading || !session.cwd) return;
+    if ((!trimmed && attachments.length === 0) || !session.cwd) return;
+
+    // A run is already in progress — queue this prompt instead of interrupting.
+    // The queue drains (FIFO) when the current run finishes.
+    if (isLoading) {
+      if (!trimmed) return;
+      setQueued((prev) => [...prev, { id: id(), content: trimmed }]);
+      setInput("");
+      return;
+    }
 
     // ── Slash commands ─────────────────────────────────────────────────────
     if (trimmed === "/compact") {
@@ -604,6 +618,23 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
   // before any async callbacks fire without triggering the react-hooks/refs lint rule.
   useLayoutEffect(() => { sendPromptRef.current = sendPrompt; });
+
+  // Drain the queue: when a run finishes (loading went true → false), send the
+  // next queued prompt. Keeps the queue on Stop and drains after errors.
+  const prevLoadingRef = useRef(isLoading);
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = isLoading;
+    if (wasLoading && !isLoading && queuedRef.current.length > 0) {
+      const [next, ...rest] = queuedRef.current;
+      setQueued(rest);
+      sendPromptRef.current(next.content);
+    }
+  }, [isLoading]);
+
+  const removeQueued = useCallback((qid: string) => {
+    setQueued((prev) => prev.filter((q) => q.id !== qid));
+  }, []);
 
   // Doom-loop decision: allow → the repeated call runs and the session stops
   // re-pausing; deny → the main loop halts with an error.
@@ -789,6 +820,27 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             connectors={connectorMap}
           />
         ))}
+        {queued.length > 0 && (
+          <div className="w-full max-w-xl flex flex-col items-end gap-0.5">
+            {queued.map((q) => (
+              <div key={q.id} className="flex flex-col items-end gap-0.5 w-full">
+                <div className="px-3 py-2.5 rounded-lg bg-[var(--surface-2)] border border-dashed border-[var(--border)] text-xs leading-relaxed text-[var(--text-secondary)] rounded-tr-sm max-w-[85%]">
+                  {q.content}
+                </div>
+                <div className="flex items-center gap-2 pr-1">
+                  <span className="text-[0.643rem] text-[var(--text-tertiary)]">Queued — sends when the current run finishes</span>
+                  <button
+                    type="button"
+                    onClick={() => removeQueued(q.id)}
+                    className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {pendingQuestions && (
           <QuestionForm
             questions={pendingQuestions}
@@ -864,6 +916,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           onSubmit={sendPrompt}
           onStop={handleStop}
           isLoading={isLoading}
+          queueWhileBusy={isLoading}
+          queuedCount={queued.length}
           placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
           commands={agentCommands}
           onSearchSuggestions={handleSearchFiles}

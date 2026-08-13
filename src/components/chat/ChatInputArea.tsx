@@ -39,6 +39,10 @@ export interface ChatInputAreaProps {
   statusText?: string;
   /** Optional trailing node in the footer row (e.g. the On-Device Llama badge). */
   footerTrailing?: React.ReactNode;
+  /** Allow sending while a turn runs — the caller queues the message. */
+  queueWhileBusy?: boolean;
+  /** Messages already queued behind the current turn (shown as a badge). */
+  queuedCount?: number;
   className?: string;
 }
 
@@ -61,6 +65,8 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
     providerModelTarget,
     statusText,
     footerTrailing,
+    queueWhileBusy = false,
+    queuedCount = 0,
     className,
   },
   ref,
@@ -106,6 +112,8 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
         onAttachImages={handleAttach}
         allowImages={allowImages}
         allowPdf={allowPdf}
+        queueWhileBusy={queueWhileBusy}
+        queuedCount={queuedCount}
       />
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mt-2">
         {providerModelTarget && <ProviderModelPicker target={providerModelTarget} disabled={disabled} />}
