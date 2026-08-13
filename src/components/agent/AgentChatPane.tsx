@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
-import { Trash2, FileText, Zap, Map as MapIcon, Loader2 } from "lucide-react";
+import { Trash2, FileText, Zap, Map as MapIcon, Loader2, Clock, ChevronDown } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
@@ -188,6 +188,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const [queued, setQueued]                       = useState<{ id: string; content: string }[]>([]);
   const queuedRef = useRef<{ id: string; content: string }[]>([]);
   useEffect(() => { queuedRef.current = queued; }, [queued]);
+  // Collapsed pinned queue: shows just the count by default; expands on click
+  // to list (truncated) messages with remove buttons.
+  const [queueExpanded, setQueueExpanded]         = useState(false);
   const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
   /** callId of the blocked ask_questions call — echoed back on answer. */
   const [pendingQuestionCallId, setPendingQuestionCallId] = useState<string | null>(null);
@@ -851,27 +854,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           ),
           Footer: () => (
             <div className="px-3 pb-3 space-y-3">
-              {queued.length > 0 && (
-                <div className="w-full max-w-xl flex flex-col items-end gap-0.5">
-                  {queued.map((q) => (
-                    <div key={q.id} className="flex flex-col items-end gap-0.5 w-full">
-                      <div className="px-3 py-2.5 rounded-lg bg-[var(--surface-2)] border border-dashed border-[var(--border)] text-xs leading-relaxed text-[var(--text-secondary)] rounded-tr-sm max-w-[85%]">
-                        {q.content}
-                      </div>
-                      <div className="flex items-center gap-2 pr-1">
-                        <span className="text-[0.643rem] text-[var(--text-tertiary)]">Queued — sends when the current run finishes</span>
-                        <button
-                          type="button"
-                          onClick={() => removeQueued(q.id)}
-                          className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
               {pendingQuestions && (
                 <QuestionForm
                   questions={pendingQuestions}
@@ -930,15 +912,50 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
       {/* Input — with upward-expanding plan task list docked above it */}
       <div className="border-t border-[var(--border)] flex-shrink-0">
-        {/* Pinned working indicator: always visible above the input even when
-            the transcript is scrolled up, so it's clear the agent is still
-            running (and that messages can be queued). */}
+        {/* Pinned status strip: always visible above the input even when the
+            transcript is scrolled up. Shows the working state and the queued
+            message count — the queue stays collapsed so full message content
+            is only rendered when the user expands it. */}
         {isLoading && !pendingQuestions && (
           <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)]">
             <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
             <span className="text-[0.714rem] text-[var(--text-secondary)]">
               Agent is working — you can queue messages below
             </span>
+          </div>
+        )}
+        {queued.length > 0 && (
+          <div className="border-b border-[var(--border)] bg-[var(--surface)]">
+            <button
+              type="button"
+              onClick={() => setQueueExpanded((v) => !v)}
+              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-[var(--surface-2)] transition-colors"
+            >
+              <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
+              <span className="text-[0.714rem] text-[var(--text-secondary)]">
+                {queued.length} message{queued.length === 1 ? "" : "s"} queued — will send after the current run
+              </span>
+              <ChevronDown
+                size={11}
+                className={`ml-auto text-[var(--text-tertiary)] shrink-0 transition-transform ${queueExpanded ? "rotate-180" : ""}`}
+              />
+            </button>
+            {queueExpanded && (
+              <div className="px-3 pb-2 space-y-2">
+                {queued.map((q) => (
+                  <div key={q.id} className="flex items-start gap-2">
+                    <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">{q.content}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeQueued(q.id)}
+                      className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {session.mode === "plan" && planNoteContent && session.planNoteId && (
