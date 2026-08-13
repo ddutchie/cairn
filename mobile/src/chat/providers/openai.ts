@@ -54,6 +54,22 @@ interface OpenAIMessage {
   content: string | OpenAIContentPart[] | null;
   tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
+  /** Reasoning text to round-trip (completions) — sent under `reasoningField`. */
+  reasoning?: string;
+  reasoningField?: string;
+  /** Raw Responses reasoning items to round-trip (Responses). */
+  reasoningItems?: Array<Record<string, unknown>>;
+}
+
+/** The reasoning round-trip metadata to attach to an assistant message, if any. */
+function reasoningMeta(m: UIMessage): Partial<OpenAIMessage> {
+  const out: Partial<OpenAIMessage> = {};
+  if (m.reasoning && m.reasoningField) {
+    out.reasoning = m.reasoning;
+    out.reasoningField = m.reasoningField;
+  }
+  if (m.reasoningItems && m.reasoningItems.length > 0) out.reasoningItems = m.reasoningItems;
+  return out;
 }
 
 /** Map one internal UIMessage to one-or-more OpenAI messages. */
@@ -73,6 +89,7 @@ export function mapMessage(m: UIMessage): OpenAIMessage[] {
     out.push({
       role: "assistant",
       content: text || null,
+      ...reasoningMeta(m),
       tool_calls: toolParts.map((t) => ({
         id: t.toolCallId,
         type: "function",
@@ -113,7 +130,7 @@ export function mapMessage(m: UIMessage): OpenAIMessage[] {
   // stopped mid-reasoning leaves one behind, and replaying it trips the
   // provider's "content or tool_calls must be set" 400 on the next message.
   if (!assistantTurnIsSendable(m.role, m.parts)) return out;
-  out.push({ role: m.role, content: text });
+  out.push({ role: m.role, content: text, ...(m.role === "assistant" ? reasoningMeta(m) : {}) });
   return out;
 }
 
@@ -138,9 +155,18 @@ function makeStreamer(config: OpenAIConfig) {
     tools: Record<string, AiTool>,
     signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
+    // Materialise the reasoning round-trip metadata onto the wire: reasoning text
+    // goes under its native field, and the Responses-only `reasoningItems` (which
+    // a chat-completions endpoint would reject) is stripped.
+    const wireMessages = messages.flatMap(mapMessage).map((m) => {
+      const { reasoning, reasoningField, reasoningItems: _ri, ...rest } = m;
+      const out = rest as Record<string, unknown>;
+      if (reasoning && reasoningField) out[reasoningField] = reasoning;
+      return out;
+    });
     const body: Record<string, unknown> = {
       model: config.model,
-      messages: messages.flatMap(mapMessage),
+      messages: wireMessages,
       stream: true,
       // Deliberately no max_tokens: omitting it lets the model finish naturally
       // (full reasoning + answer). A cap only ever truncates the tail case and
@@ -319,11 +345,17 @@ function makeStreamer(config: OpenAIConfig) {
           const delta = choice.delta;
           // Reasoning tail (if the endpoint streams it) — surface it before the
           // answer content so it renders as a "thinking" block. Skip redacted /
-          // empty deltas (some providers send a literal "[REDACTED]").
-          const reasoning = delta?.reasoning_content ?? delta?.reasoning;
+          // empty deltas (some providers send a literal "[REDACTED]"). Remember
+          // which field it arrived in so the assistant turn can round-trip it.
+          const reasoningField = delta?.reasoning_content
+            ? "reasoning_content"
+            : delta?.reasoning
+              ? "reasoning"
+              : undefined;
+          const reasoning = reasoningField ? (delta as Record<string, unknown>)[reasoningField] as string : undefined;
           if (reasoning && reasoning.trim() && reasoning.trim().toUpperCase() !== "[REDACTED]") {
             streamedReasoning += reasoning;
-            yield { type: "reasoning-delta", delta: reasoning };
+            yield { type: "reasoning-delta", delta: reasoning, field: reasoningField };
           }
           if (delta?.content) {
             streamedText += delta.content;

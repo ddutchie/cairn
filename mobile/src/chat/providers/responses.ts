@@ -201,6 +201,15 @@ function makeResponsesStreamer(config: OpenAIConfig) {
               if (typeof usage.input_tokens_details?.cached_tokens === "number") {
                 cacheReadTokens = usage.input_tokens_details.cached_tokens;
               }
+              // Capture reasoning items for round-trip before finishing.
+              const reasoningItems: Array<Record<string, unknown>> = [];
+              const output = resp.output;
+              if (Array.isArray(output)) {
+                for (const item of output) {
+                  if (item.type === "reasoning") reasoningItems.push(item);
+                }
+              }
+              if (reasoningItems.length > 0) yield { type: "reasoning-items", items: reasoningItems };
               yield* flushTools();
               yield { type: "finish", finishReason: finishReason ?? "stop", usage: await buildUsage() };
               return;
