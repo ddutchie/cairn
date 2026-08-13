@@ -155,22 +155,27 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   const messages    = session.piMessages ?? [];
 
-  // ── Transcript windowing ──────────────────────────────────────────────────
-  // Render only the TRAILING messages and let the user load earlier ones on
-  // demand — a long-lived session can persist thousands of messages (each with
-  // reasoning panels, tool chips, and nested subagent traces), and mounting
-  // them all on session switch would build an enormous DOM. The slice is cheap;
-  // only the visible window is rendered. Newest stays visible because the
-  // window anchors to the end of the array.
   // ── Virtualized transcript (react-virtuoso) ───────────────────────────────
   // Only messages near the viewport are mounted, so a session with thousands of
   // persisted messages (each with reasoning, tool chips, subagent traces) stays
   // light no matter how far you scroll — the DOM never grows with scroll depth.
+  // Prompts the user queued while the agent was running — sent (FIFO) when the
+  // current run finishes. Kept on Stop and drained after errors too. Attachments
+  // are queued alongside so staged images/PDFs are never silently dropped.
+  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }[]>([]);
+  const queuedRef = useRef<typeof queued>([]);
+  useEffect(() => { queuedRef.current = queued; }, [queued]);
+  // Collapsed pinned queue: shows just the count by default; expands on click
+  // to list (truncated) messages with remove buttons.
+  const [queueExpanded, setQueueExpanded]         = useState(false);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const lastSessionIdRef = useRef(session.sessionId);
   useEffect(() => {
     if (lastSessionIdRef.current !== session.sessionId) {
       lastSessionIdRef.current = session.sessionId;
+      // Queued prompts belong to the previous session — drop them so they are
+      // never sent into the newly selected session.
+      setQueued([]);
       // Jump to the newest message when switching sessions.
       if (messages.length > 0) {
         virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
@@ -183,14 +188,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   const [input, setInput]                         = useState("");
   const [isLoading, setIsLoading]                 = useState(false);
-  // Prompts the user queued while the agent was running — sent (FIFO) when the
-  // current run finishes. Kept on Stop and drained after errors too.
-  const [queued, setQueued]                       = useState<{ id: string; content: string }[]>([]);
-  const queuedRef = useRef<{ id: string; content: string }[]>([]);
-  useEffect(() => { queuedRef.current = queued; }, [queued]);
-  // Collapsed pinned queue: shows just the count by default; expands on click
-  // to list (truncated) messages with remove buttons.
-  const [queueExpanded, setQueueExpanded]         = useState(false);
   const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
   /** callId of the blocked ask_questions call — echoed back on answer. */
   const [pendingQuestionCallId, setPendingQuestionCallId] = useState<string | null>(null);
@@ -243,7 +240,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Always-current reference to sendPrompt — lets the initialPrompt effect
   // call it after mount without capturing a stale closure.
-  const sendPromptRef   = useRef<(text: string) => void>(() => {});
+  const sendPromptRef   = useRef<(text: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => void>(() => {});
   const firedSessions   = useRef(new Set<string>());
 
   // Scroll to bottom on new messages / streaming growth, and whenever the
@@ -553,10 +550,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     if ((!trimmed && attachments.length === 0) || !session.cwd) return;
 
     // A run is already in progress — queue this prompt instead of interrupting.
-    // The queue drains (FIFO) when the current run finishes.
+    // The queue drains (FIFO) when the current run finishes. Attachments are
+    // queued alongside the text so staged images/PDFs are never dropped.
     if (isLoading) {
-      if (!trimmed) return;
-      setQueued((prev) => [...prev, { id: id(), content: trimmed }]);
+      if (!trimmed && attachments.length === 0) return;
+      setQueued((prev) => [...prev, { id: id(), content: trimmed, attachments }]);
       setInput("");
       return;
     }
@@ -659,13 +657,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     if (wasLoading && !isLoading && queuedRef.current.length > 0) {
       const [next, ...rest] = queuedRef.current;
       setQueued(rest);
-      sendPromptRef.current(next.content);
+      sendPromptRef.current(next.content, next.attachments);
     }
   }, [isLoading]);
 
   const removeQueued = useCallback((qid: string) => {
     setQueued((prev) => prev.filter((q) => q.id !== qid));
-  }, []);
+  }, [setQueued]);
 
   // Doom-loop decision: allow → the repeated call runs and the session stops
   // re-pausing; deny → the main loop halts with an error.
@@ -716,6 +714,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   function handleClear() {
     if (isLoading) handleStop();
+    // Clearing the conversation must also drop anything queued for it — the
+    // drain effect (which fires when handleStop flips isLoading to false) would
+    // otherwise immediately send the queued prompts into a cleared session.
+    setQueued([]);
     clearPiMessages(session.sessionId);
     setPiSessionTodos(session.sessionId, []);
     window.electron?.piAgent.clear(session.sessionId);
@@ -944,7 +946,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
               <div className="px-3 pb-2 space-y-2">
                 {queued.map((q) => (
                   <div key={q.id} className="flex items-start gap-2">
-                    <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">{q.content}</span>
+                    <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
+                      {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
+                      {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : null}
+                    </span>
                     <button
                       type="button"
                       onClick={() => removeQueued(q.id)}

@@ -85,12 +85,14 @@ export default function ChatScreen() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   // Messages the user queued while a turn was running — sent (FIFO) when the
-  // current reply finishes. Session-scoped.
-  const [queued, setQueued] = useState<{ id: string; content: string }[]>([]);
-  const queuedRef = useRef<{ id: string; content: string }[]>([]);
+  // current reply finishes. Attachments are stored alongside so staged
+  // images/PDFs are never silently dropped. Session-scoped.
+  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Attachment[] }[]>([]);
+  const queuedRef = useRef<typeof queued>([]);
   useEffect(() => { queuedRef.current = queued; }, [queued]);
-  // Content for the next queued send — read by `send` when the queue drains.
-  const pendingSendRef = useRef<string | null>(null);
+  // Content + attachments for the next queued send — read by `send` when the
+  // queue drains.
+  const pendingSendRef = useRef<{ content: string; attachments?: Attachment[] } | null>(null);
   const [configured, setConfigured] = useState(true);
   // Context-window usage for the ring (Apple provider reports it per turn).
   // Seeded from the last persisted value so the ring survives closing/reopening
@@ -160,15 +162,17 @@ export default function ChatScreen() {
   );
 
   const send = useCallback(async () => {
-    const text = (pendingSendRef.current ?? input).trim();
+    const queuedSend = pendingSendRef.current;
     pendingSendRef.current = null;
-    const atts = attachments;
+    const text = (queuedSend?.content ?? input).trim();
+    const atts = queuedSend?.attachments ?? attachments;
     if (!text && atts.length === 0) return;
     // A turn is already running — queue this message instead of interrupting
     // it. The queue drains (FIFO) when the current reply finishes.
     if (busy) {
-      setQueued((prev) => [...prev, { id: msgId(), content: text }]);
+      setQueued((prev) => [...prev, { id: msgId(), content: text, attachments: atts }]);
       setInput("");
+      setAttachments([]);
       return;
     }
     haptics.selection(); // message sent
@@ -177,8 +181,12 @@ export default function ChatScreen() {
     // app switch). Fire-and-forget; don't block the send.
     KeyboardController.dismiss().catch(() => { });
     followEnd(); // sending jumps to the end; follow the reply
-    setInput("");
-    setAttachments([]);
+    // Only clear the composer when the user submitted their OWN draft — a
+    // queue drain must not wipe a newer unsent draft.
+    if (!queuedSend) {
+      setInput("");
+      setAttachments([]);
+    }
     setBusy(true);
 
     // UI: add the user bubble + an empty streaming assistant bubble.
@@ -310,7 +318,7 @@ export default function ChatScreen() {
     if (wasBusy && !busy && queuedRef.current.length > 0) {
       const [next, ...rest] = queuedRef.current;
       setQueued(rest);
-      pendingSendRef.current = next.content;
+      pendingSendRef.current = { content: next.content, attachments: next.attachments };
       sendRef.current();
     }
   }, [busy]);
@@ -475,7 +483,10 @@ export default function ChatScreen() {
                 {queued.map((q) => (
                   <View key={q.id} style={styles.queuedRow}>
                     <View style={styles.queuedBubble}>
-                      <Text style={styles.queuedText}>{q.content}</Text>
+                      <Text style={styles.queuedText}>
+                        {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
+                        {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : ""}
+                      </Text>
                     </View>
                     <View style={styles.queuedMeta}>
                       <Text style={styles.queuedLabel}>Queued — sends when the current reply finishes</Text>

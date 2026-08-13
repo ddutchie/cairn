@@ -116,9 +116,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   const [input, setInput] = useState("");
   // Messages the user queued while a turn was running — sent (FIFO) when the
-  // current reply finishes. Session-scoped; cleared on thread switch.
-  const [queued, setQueued] = useState<{ id: string; content: string }[]>([]);
-  const queuedRef = useRef<{ id: string; content: string }[]>([]);
+  // current reply finishes. Each item carries the thread + attachments captured
+  // at enqueue time so a thread switch or queued images/PDFs are never lost.
+  // Session-scoped; cleared on thread switch.
+  const [queued, setQueued] = useState<{ id: string; content: string; threadId: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }[]>([]);
+  const queuedRef = useRef<typeof queued>([]);
   useEffect(() => { queuedRef.current = queued; }, [queued]);
   // Collapsed pinned queue: shows just the count by default; expands on click
   // to list (truncated) messages with remove buttons.
@@ -313,9 +315,13 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     if (wasLoading && !isLoading && queuedRef.current.length > 0) {
       const [next, ...rest] = queuedRef.current;
       setQueued(rest);
-      handleSendRef.current(next.content);
+      // Only drain into the thread the message was queued for — a thread switch
+      // in the same commit must not post it into the newly active thread.
+      if (next.threadId === threadId) {
+        handleSendRef.current(next.content, next.attachments);
+      }
     }
-  }, [isLoading]);
+  }, [isLoading, threadId]);
 
   const removeQueued = useCallback((qid: string) => {
     setQueued((prev) => prev.filter((q) => q.id !== qid));
@@ -386,12 +392,18 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   // Jump to the newest message when the panel activates or the ask_questions
   // form appears — otherwise it can land out of view if the user had scrolled
   // up. Streaming follow is handled by Virtuoso's followOutput (only follows
-  // while the user is at the bottom).
+  // while the user is at the bottom), so this deliberately does NOT depend on
+  // messages.length — a new message must not yank a user who scrolled up.
+  const chatMessagesLengthRef = useRef(messages.length);
+  useEffect(() => { chatMessagesLengthRef.current = messages.length; }, [messages.length]);
   useEffect(() => {
-    if (isChatActive && chatVirtuosoRef.current && messages.length > 0) {
-      chatVirtuosoRef.current.scrollToIndex({ index: messages.length - 1, align: "end", behavior: "smooth" });
+    // chatMessagesLengthRef is read imperatively — messages.length intentionally
+    // absent from deps so a new message never yanks a scrolled-up user.
+    const count = chatMessagesLengthRef.current;
+    if (isChatActive && chatVirtuosoRef.current && count > 0) {
+      chatVirtuosoRef.current.scrollToIndex({ index: count - 1, align: "end", behavior: "smooth" });
     }
-  }, [isChatActive, pendingQuestionCount, messages.length]);
+  }, [isChatActive, pendingQuestionCount]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
   const handleSend = useCallback(async (text?: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = []) => {
@@ -400,10 +412,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     if (!threadId) return;
 
     // A turn is already running — queue this message instead of interrupting it.
-    // The queue drains (FIFO) when the current reply finishes.
+    // The queue drains (FIFO) when the current reply finishes. Attachments are
+    // queued alongside the text so staged images/PDFs are never silently dropped.
     if (isLoadingRef.current) {
-      if (!content.trim()) return;
-      setQueued((prev) => [...prev, { id: id(), content }]);
+      if (!content.trim() && attachments.length === 0) return;
+      setQueued((prev) => [...prev, { id: id(), content, threadId, attachments }]);
       setInput("");
       return;
     }
@@ -753,7 +766,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
                 <div className="px-3 pb-2 space-y-2">
                   {queued.map((q) => (
                     <div key={q.id} className="flex items-start gap-2">
-                      <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">{q.content}</span>
+                      <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
+                        {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
+                        {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : null}
+                      </span>
                       <button
                         type="button"
                         onClick={() => removeQueued(q.id)}
