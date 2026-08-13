@@ -74,6 +74,13 @@ function makeServer(responses: string[]): Promise<{ url: string; close: () => Pr
   let callIndex = 0;
   const bodies: Record<string, unknown>[] = [];
   const server = http.createServer((req, res) => {
+    // The transport probe (POST /v1/responses) must 404 so this completions-only
+    // mock server resolves to chat-completions without consuming an SSE body.
+    if (req.url && req.url.endsWith("/responses")) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: { message: "not found", type: "invalid_request_error" } }));
+      return;
+    }
     const chunks: Buffer[] = [];
     req.on("data", (c) => chunks.push(c as Buffer));
     req.on("end", () => {
