@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { resolveScript, runAutomationScript, scriptEnv, writeRunFile, type AutomationScriptContext } from "./automation-script";
+import { deliverFile, resolveScript, runAutomationScript, scriptEnv, writeRunFile, type AutomationScriptContext } from "./automation-script";
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "automation-script-"));
@@ -168,5 +168,27 @@ describe("writeRunFile", () => {
       await expect(writeRunFile({ path: bad, content: "x" }, { runDir })).rejects.toThrow();
     }
     expect(fs.existsSync(path.join(runDir, "..", "escape.txt"))).toBe(false);
+  });
+});
+
+describe("deliverFile", () => {
+  it("copies an out/ file into <workspace>/attachments/<automationId>/ and returns an asset reference", async () => {
+    const ws = tmpDir();
+    const outDir = path.join(ws, "out");
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(path.join(outDir, "poster.svg"), "<svg></svg>");
+    const res = JSON.parse(await deliverFile({ path: "poster.svg" }, { outDir, workspacePath: ws, automationId: "aut-1" }));
+    expect(res.ok).toBe(true);
+    expect(res.path).toBe("attachments/aut-1/poster.svg");
+    expect(res.assetUrl).toBe("asset://aut-1/poster.svg");
+    expect(fs.readFileSync(path.join(ws, "attachments", "aut-1", "poster.svg"), "utf8")).toBe("<svg></svg>");
+  });
+
+  it("rejects files that escape out/ or do not exist", async () => {
+    const ws = tmpDir();
+    const outDir = path.join(ws, "out");
+    fs.mkdirSync(outDir, { recursive: true });
+    await expect(deliverFile({ path: "../x.svg" }, { outDir, workspacePath: ws, automationId: "aut-1" })).rejects.toThrow();
+    await expect(deliverFile({ path: "missing.svg" }, { outDir, workspacePath: ws, automationId: "aut-1" })).rejects.toThrow(/not found/);
   });
 });

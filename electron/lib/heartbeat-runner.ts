@@ -49,11 +49,14 @@ import {
 import {
   runAutomationScript,
   writeRunFile,
+  deliverFile,
   type AutomationScriptContext,
   type RunScriptArgs,
   type RunScriptHandler,
   type WriteRunFileArgs,
   type WriteRunFileHandler,
+  type DeliverFileArgs,
+  type DeliverFileHandler,
 } from "./automation-script";
 import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
 import { getSecretValue } from "./secure-store";
@@ -229,6 +232,17 @@ export async function runAutomation(
     ? async (fileArgs: WriteRunFileArgs) => writeRunFile(fileArgs, { runDir })
     : undefined;
 
+  // ── deliver_file executor ───────────────────────────────────────────────────
+  // Copies a generated out/ file into <workspace>/attachments/<automationId>/
+  // (served by the asset:// protocol) so the delivered note can embed images.
+  const deliverFileHandler: DeliverFileHandler | undefined = outDir
+    ? async (fileArgs: DeliverFileArgs) => deliverFile(fileArgs, {
+        outDir,
+        workspacePath,
+        automationId: automation.id,
+      })
+    : undefined;
+
   // The recipe to execute: the agent-authored manifest.json `instructions`
   // (written during Develop) win over the automation row, so the built script
   // is actually called end-to-end. Falls back to the row when no manifest.
@@ -396,6 +410,7 @@ export async function runAutomation(
     makeApprovalGate(db, run, automation),
     runScript,                       // run_script executor (scripts/ + run cwd + out/)
     writeRunFileHandler,             // write_run_file executor (agent→script data bridge)
+    deliverFileHandler,              // deliver_file executor (out/ → attachments for the note)
   );
   emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content });
 

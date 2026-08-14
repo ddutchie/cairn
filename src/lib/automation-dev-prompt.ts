@@ -60,6 +60,9 @@ export function buildAutomationDevPrompt(automation: Automation): string {
     `## Handing data to scripts`,
     `The automation's agent can fetch results (connectors) but CANNOT write files itself. To feed a script fetched data, the recipe uses \`write_run_file\` to save it into the run folder (e.g. \`write_run_file path="tavily_results.json" content=<json>\`), then calls \`run_script\` with \`-input <file>\` — the script reads it from its cwd. A good recipe chains: fetch → \`write_run_file\` → \`run_script\` → use the printed JSON for the note.`,
     ``,
+    `## Delivering images so notes can show them`,
+    `Scripts write generated files into \`CAIRN_OUT_DIR\` — that folder is HIDDEN, so a note cannot reference those paths directly. To embed an image in the delivered note: (1) the script writes it to \`CAIRN_OUT_DIR\` only (do NOT also mirror into the run cwd — that folder is scratch and gets pruned); (2) the recipe calls \`deliver_file path="<file-in-CAIRN_OUT_DIR>"\` for each image, which copies it into the workspace \`attachments/\` folder and returns an \`assetUrl\`; (3) the note embeds it with \`![alt](<assetUrl>)\`. A good delivery step is: generate → \`deliver_file\` each image → write the note referencing the returned assetUrls.`,
+    ``,
     `## Finish`,
     `When the scripts work and manifest.json's \`instructions\` is the full recipe, tell the user to: open the Automations view → this automation's details → "Sync from manifest" (writes your recipe into the automation) → "Run now" (tests the real end-to-end path with your scripts and real secrets).`,
   ].join("\n");

@@ -30,10 +30,14 @@ import {
   runScriptToolDefinition,
   WRITE_RUN_FILE_TOOL_NAME,
   writeRunFileToolDefinition,
+  DELIVER_FILE_TOOL_NAME,
+  deliverFileToolDefinition,
   type RunScriptArgs,
   type RunScriptHandler,
   type WriteRunFileArgs,
   type WriteRunFileHandler,
+  type DeliverFileArgs,
+  type DeliverFileHandler,
 } from "./automation-script";
 
 export type RunToolLoopResult =
@@ -90,6 +94,12 @@ export async function runToolLoop(
    * scripts. Offered only when provided.
    */
   writeRunFile?: WriteRunFileHandler,
+  /**
+   * Optional deliver_file executor (heartbeat runner) — copies an out/ file
+   * into <workspace>/attachments/<automationId>/ so notes can embed generated
+   * images. Offered only when provided.
+   */
+  deliverFile?: DeliverFileHandler,
 ): Promise<RunToolLoopResult> {
   const maxSteps    = req.config?.maxSteps    ?? 30;
   const temperature = req.config?.temperature ?? 0.3;
@@ -107,6 +117,7 @@ export async function runToolLoop(
     ...baseTools,
     ...(runScript ? [runScriptToolDefinition] : []),
     ...(writeRunFile ? [writeRunFileToolDefinition] : []),
+    ...(deliverFile ? [deliverFileToolDefinition] : []),
   ];
   const combinedTools = extraTools.length > 0 ? [...withAutomationTools, ...extraTools] : withAutomationTools;
   let accumulatedContent = "";
@@ -552,6 +563,18 @@ export async function runToolLoop(
             emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: reason });
             return { call, content: JSON.stringify({ error: reason }), abort: true };
           }
+        }
+        if (call.function.name === DELIVER_FILE_TOOL_NAME) {
+          // Copy an out/ file into workspace attachments so the note can embed it.
+          emitToolCall({ tool: call.function.name, label: `Delivering ${String((args as Partial<DeliverFileArgs>).path ?? "file")}`, args, callId: call.id });
+          if (!deliverFile) {
+            const message = `"${DELIVER_FILE_TOOL_NAME}" is not available in this session.`;
+            emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: message });
+            return { call, content: JSON.stringify({ error: message }) };
+          }
+          const output = await deliverFile(args as unknown as DeliverFileArgs);
+          emitToolCallDone?.({ tool: call.function.name, callId: call.id, output, ok: true });
+          return { call, content: output };
         }
         if (call.function.name === WRITE_RUN_FILE_TOOL_NAME) {
           // Agent→script data bridge: write a file inside the run's working

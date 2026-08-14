@@ -167,17 +167,26 @@ describe("runAutomation folder plumbing", () => {
     expect(updated.runDir).toBe(expectedDir);
     expect(fs.existsSync(expectedDir)).toBe(true);
 
-    // run_script + write_run_file are wired into the loop: the mock's last two
-    // positional args are the handlers, and scripts/ + out/ exist for them.
+    // run_script + write_run_file + deliver_file are wired into the loop: the
+    // mock's last three positional args are the handlers, and scripts/ + out/
+    // exist for them.
     const loopArgs = runToolLoopMock.mock.calls[0];
-    const runScript = loopArgs[loopArgs.length - 2];
-    const writeRunFile = loopArgs[loopArgs.length - 1];
+    const runScript = loopArgs[loopArgs.length - 3];
+    const writeRunFile = loopArgs[loopArgs.length - 2];
+    const deliverFile = loopArgs[loopArgs.length - 1];
     expect(typeof runScript).toBe("function");
     expect(typeof writeRunFile).toBe("function");
+    expect(typeof deliverFile).toBe("function");
+    const autoDir = automationFolderDir(root, automation.id, "P");
     // The write_run_file handler stages a JSON file inside the RUN folder only.
     await (writeRunFile as (a: { path: string; content: string }) => Promise<string>)({ path: "stage.json", content: "{}" });
     expect(fs.readFileSync(path.join(expectedDir, "stage.json"), "utf8")).toBe("{}");
-    const autoDir = automationFolderDir(root, automation.id, "P");
+    // The deliver_file handler copies an out/ file into workspace attachments.
+    fs.mkdirSync(path.join(autoDir, "out"), { recursive: true });
+    fs.writeFileSync(path.join(autoDir, "out", "poster.svg"), "<svg/>");
+    const delivered = await (deliverFile as (a: { path: string }) => Promise<string>)({ path: "poster.svg" });
+    expect(delivered).toContain("attachments/");
+    expect(fs.existsSync(path.join(root, "attachments", automation.id, "poster.svg"))).toBe(true);
     expect(fs.existsSync(path.join(autoDir, "scripts"))).toBe(true);
     expect(fs.existsSync(path.join(autoDir, "out"))).toBe(true);
   });
@@ -239,7 +248,7 @@ describe("runAutomation folder plumbing", () => {
 
     // Invoke the runScript handler with the probe — it must see the resolved env.
     const loopArgs = runToolLoopMock.mock.calls[0];
-    const runScript = loopArgs[loopArgs.length - 2] as (a: { name: string }) => Promise<string>;
+    const runScript = loopArgs[loopArgs.length - 3] as (a: { name: string }) => Promise<string>;
     const output = await runScript({ name: "probe" });
     expect(output).toContain("TOKEN=abc");
     expect(output).toContain("SECRET=unset");

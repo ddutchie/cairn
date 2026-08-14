@@ -30,6 +30,7 @@ import { getBashExecutable, killProcessTree, trackPid, untrackPid } from "./codi
 
 export const RUN_SCRIPT_TOOL_NAME = "run_script";
 export const WRITE_RUN_FILE_TOOL_NAME = "write_run_file";
+export const DELIVER_FILE_TOOL_NAME = "deliver_file";
 
 export interface RunScriptArgs {
   /** Script name (resolved inside the automation's scripts/ folder). */
@@ -320,6 +321,84 @@ export const writeRunFileToolDefinition = {
         content: { type: "string", description: "File contents (a JSON document for scripts to read)." },
       },
       required: ["path", "content"],
+    },
+  },
+};
+
+// ── deliver_file — make generated artifacts referenceable in notes ───────────
+//
+// Scripts write durable deliverables into CAIRN_OUT_DIR (.automations/<id>/out,
+// a hidden folder). A note can't embed those — Cairn renders images only via
+// the asset:// protocol (which serves <workspace>/attachments/), and Obsidian
+// hides dot-folders. deliver_file copies an out/ file into
+// <workspace>/attachments/<automationId>/ and returns the renderable
+// reference (asset:// URL + relative path) the note should use.
+
+export interface DeliverFileArgs {
+  /** Relative path of the file inside CAIRN_OUT_DIR (e.g. "weekly-architecture-trends-2026-08-14.svg"). */
+  path: string;
+  /** Optional target filename in attachments (defaults to the source basename). */
+  name?: string;
+}
+
+export interface DeliverFileContext {
+  /** Absolute path to the automation's durable out/ folder. */
+  outDir: string;
+  /** Absolute workspace root — attachments live under <workspace>/attachments/. */
+  workspacePath: string;
+  /** Automation id — scopes the attachments subfolder. */
+  automationId: string;
+}
+
+export type DeliverFileHandler = (args: DeliverFileArgs) => Promise<string>;
+
+const ATTACHMENT_NAME_RE = /^[^/\\\0]+$/;
+
+/** Copy an out/ file into <workspace>/attachments/<automationId>/ and return its reference. */
+export async function deliverFile(args: DeliverFileArgs, ctx: DeliverFileContext): Promise<string> {
+  const rel = (args.path ?? "").trim();
+  if (!rel) throw new Error("deliver_file requires a path");
+  if (path.isAbsolute(rel) || rel.includes("\0") || rel.split(/[\\/]/).includes("..")) {
+    throw new Error(`Invalid path "${rel}" — must be a relative path inside CAIRN_OUT_DIR.`);
+  }
+  const outRoot = path.resolve(ctx.outDir);
+  const src = path.resolve(outRoot, rel);
+  if (src !== outRoot && !src.startsWith(outRoot + path.sep)) {
+    throw new Error(`Path "${rel}" escapes CAIRN_OUT_DIR.`);
+  }
+  if (!fs.existsSync(src)) {
+    throw new Error(`File not found in CAIRN_OUT_DIR: ${rel}`);
+  }
+  const name = args.name ?? path.basename(src);
+  if (!ATTACHMENT_NAME_RE.test(name)) {
+    throw new Error(`Invalid attachment name "${name}" — must be a plain filename.`);
+  }
+  const destDir = path.join(ctx.workspacePath, "attachments", ctx.automationId);
+  fs.mkdirSync(destDir, { recursive: true });
+  const dest = path.join(destDir, name);
+  fs.copyFileSync(src, dest);
+  const bytes = fs.statSync(dest).size;
+  return JSON.stringify({
+    ok: true,
+    path: `attachments/${ctx.automationId}/${name}`,
+    assetUrl: `asset://${ctx.automationId}/${name}`,
+    bytes,
+  });
+}
+
+export const deliverFileToolDefinition = {
+  type: "function" as const,
+  function: {
+    name: DELIVER_FILE_TOOL_NAME,
+    description:
+      "Make a generated file referenceable in a note. Copies a file from CAIRN_OUT_DIR into <workspace>/attachments/<automationId>/ and returns its asset:// URL and relative path — use those in the note's markdown so the image actually renders (e.g. ![alt](asset://<automationId>/<file>)). Call this for every image you want the note to show.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Relative path of the file inside CAIRN_OUT_DIR, e.g. \"weekly-architecture-trends-2026-08-14.svg\"." },
+        name: { type: "string", description: "Optional target filename in attachments (defaults to the source filename)." },
+      },
+      required: ["path"],
     },
   },
 };
