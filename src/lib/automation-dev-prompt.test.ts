@@ -49,6 +49,13 @@ describe("buildAutomationDevPrompt", () => {
     expect(prompt).toContain("run_script");
   });
 
+  it("teaches the agent→script data bridge (write_run_file → run_script -input)", () => {
+    const prompt = buildAutomationDevPrompt(makeAutomation());
+    expect(prompt).toContain("write_run_file");
+    expect(prompt).toContain("-input");
+    expect(prompt).toContain("fetch → `write_run_file` → `run_script`");
+  });
+
   it("forbids replicating connectors in scripts", () => {
     const prompt = buildAutomationDevPrompt(makeAutomation({
       requires: [{ kind: "mcp", name: "Tavily" }],

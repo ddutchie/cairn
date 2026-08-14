@@ -57,6 +57,9 @@ export function buildAutomationDevPrompt(automation: Automation): string {
     `## run_script contract (how scripts are called at run time)`,
     `Scripts are resolved by NAME from \`scripts/\` (name, .js/.ts/.sh/.py, and .bat/.cmd/.ps1 on Windows). The working directory at run time is a per-run scratch folder, NOT this folder. Env always includes CAIRN_OUT_DIR (a durable out/ folder) — copy anything worth keeping there. Keep scripts deterministic, bounded, and non-interactive: no prompts, no long sleeps, exit 0 on success with useful output. Test them here with \`node\` / \`bash\` against \`.env\`.`,
     ``,
+    `## Handing data to scripts`,
+    `The automation's agent can fetch results (connectors) but CANNOT write files itself. To feed a script fetched data, the recipe uses \`write_run_file\` to save it into the run folder (e.g. \`write_run_file path="tavily_results.json" content=<json>\`), then calls \`run_script\` with \`-input <file>\` — the script reads it from its cwd. A good recipe chains: fetch → \`write_run_file\` → \`run_script\` → use the printed JSON for the note.`,
+    ``,
     `## Finish`,
     `When the scripts work and manifest.json's \`instructions\` is the full recipe, tell the user to: open the Automations view → this automation's details → "Sync from manifest" (writes your recipe into the automation) → "Run now" (tests the real end-to-end path with your scripts and real secrets).`,
   ].join("\n");

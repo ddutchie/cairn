@@ -48,9 +48,12 @@ import {
 } from "./automation-folder";
 import {
   runAutomationScript,
+  writeRunFile,
   type AutomationScriptContext,
   type RunScriptArgs,
   type RunScriptHandler,
+  type WriteRunFileArgs,
+  type WriteRunFileHandler,
 } from "./automation-script";
 import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
 import { getSecretValue } from "./secure-store";
@@ -215,6 +218,15 @@ export async function runAutomation(
         };
         return runAutomationScript(scriptArgs, scriptCtx);
       }
+    : undefined;
+
+  // ── write_run_file executor ────────────────────────────────────────────────
+  // The agent→script data bridge: the agent (data-only) can't write files, so
+  // this writes into the RUN folder only — staging connector results as JSON
+  // for run_script to consume (-input <file>). Bounded to the ephemeral run
+  // dir; offered only when the run folder exists.
+  const writeRunFileHandler: WriteRunFileHandler | undefined = runDir
+    ? async (fileArgs: WriteRunFileArgs) => writeRunFile(fileArgs, { runDir })
     : undefined;
 
   // The recipe to execute: the agent-authored manifest.json `instructions`
@@ -383,6 +395,7 @@ export async function runAutomation(
     undefined,                       // argMutator
     makeApprovalGate(db, run, automation),
     runScript,                       // run_script executor (scripts/ + run cwd + out/)
+    writeRunFileHandler,             // write_run_file executor (agent→script data bridge)
   );
   emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content });
 

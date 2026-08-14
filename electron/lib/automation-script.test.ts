@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { resolveScript, runAutomationScript, scriptEnv, type AutomationScriptContext } from "./automation-script";
+import { resolveScript, runAutomationScript, scriptEnv, writeRunFile, type AutomationScriptContext } from "./automation-script";
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "automation-script-"));
@@ -151,5 +151,22 @@ describe("runAutomationScript", () => {
     await runAutomationScript({ name: "talk" }, baseCtx(dir, { onUpdate }));
     expect(onUpdate).toHaveBeenCalled();
     expect(onUpdate.mock.calls.some(([o]) => String(o).includes("hello"))).toBe(true);
+  });
+});
+
+describe("writeRunFile", () => {
+  it("writes a file inside the run folder, creating subfolders", async () => {
+    const runDir = tmpDir();
+    const res = JSON.parse(await writeRunFile({ path: "data/tavily_results.json", content: '{"results":[]}' }, { runDir }));
+    expect(res.ok).toBe(true);
+    expect(fs.readFileSync(path.join(runDir, "data", "tavily_results.json"), "utf8")).toBe('{"results":[]}');
+  });
+
+  it("rejects paths that escape the run folder", async () => {
+    const runDir = tmpDir();
+    for (const bad of ["../escape.txt", "a/../../etc/passwd", "/abs.txt"]) {
+      await expect(writeRunFile({ path: bad, content: "x" }, { runDir })).rejects.toThrow();
+    }
+    expect(fs.existsSync(path.join(runDir, "..", "escape.txt"))).toBe(false);
   });
 });

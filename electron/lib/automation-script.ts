@@ -29,6 +29,7 @@ import { DEFAULT_MAX_BYTES } from "./truncation";
 import { getBashExecutable, killProcessTree, trackPid, untrackPid } from "./coding-tools/bash";
 
 export const RUN_SCRIPT_TOOL_NAME = "run_script";
+export const WRITE_RUN_FILE_TOOL_NAME = "write_run_file";
 
 export interface RunScriptArgs {
   /** Script name (resolved inside the automation's scripts/ folder). */
@@ -261,6 +262,64 @@ export const runScriptToolDefinition = {
         timeout: { type: "number", description: "Timeout in seconds (default 120)." },
       },
       required: ["name"],
+    },
+  },
+};
+
+// ── write_run_file — the agent→script data bridge ────────────────────────────
+//
+// The automation agent is data-only: it can fetch (connectors), reason, and
+// call run_script, but it CANNOT write files. Scripts are real processes that
+// CAN — so the recipe "fetch news → save JSON → run script -input file" needs a
+// way for the agent to hand data to the script. write_run_file writes a file
+// STRICTLY INSIDE the run's working folder (ephemeral, pruned) — a sandboxed
+// scratch write, never a general file tool.
+
+export interface WriteRunFileArgs {
+  /** Relative path inside the run folder (subfolders auto-created). */
+  path: string;
+  /** File contents (e.g. a JSON document). */
+  content: string;
+}
+
+export interface WriteRunFileContext {
+  /** Absolute path to the run's working folder — the only writable root. */
+  runDir: string;
+}
+
+export type WriteRunFileHandler = (args: WriteRunFileArgs) => Promise<string>;
+
+/** Write a file inside the run folder. Rejects any path that escapes it. */
+export async function writeRunFile(args: WriteRunFileArgs, ctx: WriteRunFileContext): Promise<string> {
+  const rel = (args.path ?? "").trim();
+  if (!rel) throw new Error("write_run_file requires a path");
+  if (path.isAbsolute(rel) || rel.includes("\0") || rel.split(/[\\/]/).includes("..")) {
+    throw new Error(`Invalid path "${rel}" — must be a relative path inside the run folder.`);
+  }
+  const root = path.resolve(ctx.runDir);
+  const target = path.resolve(root, rel);
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    throw new Error(`Path "${rel}" escapes the run folder.`);
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const content = args.content ?? "";
+  fs.writeFileSync(target, content, "utf8");
+  return JSON.stringify({ ok: true, path: rel, bytes: Buffer.byteLength(content, "utf8") });
+}
+
+export const writeRunFileToolDefinition = {
+  type: "function" as const,
+  function: {
+    name: WRITE_RUN_FILE_TOOL_NAME,
+    description:
+      "Save data to a file in the run's working folder (e.g. results from a connector) so a run_script can consume it. The file is written inside the run's scratch folder only — never anywhere else. Use it to stage input for run_script, e.g. save connector JSON then call run_script with '-input <file>'. Subfolders are created automatically.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Relative file path inside the run folder, e.g. \"tavily_results.json\"." },
+        content: { type: "string", description: "File contents (a JSON document for scripts to read)." },
+      },
+      required: ["path", "content"],
     },
   },
 };
