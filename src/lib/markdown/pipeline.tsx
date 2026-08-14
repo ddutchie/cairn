@@ -189,16 +189,51 @@ const KNOWN_HTML_TAGS = new Set([
   "mark","callout","mathblock","wikilink",
 ]);
 
+// SVG child elements — only valid INSIDE an `<svg>` (React renders them in the
+// SVG namespace). A bare one outside an `<svg>` would crash React as an unknown
+// HTML tag, so rehypeEscapeUnknownTags escapes it to literal text.
+const SVG_CHILD_TAGS = new Set([
+  "path","g","rect","circle","line","polyline","polygon","text","tspan",
+  "defs","use","symbol","marker","mask","pattern","clippath","lineargradient",
+  "radialgradient","stop","foreignobject",
+]);
+
+// MathML child elements — only valid inside `<math>`.
+const MATHML_CHILD_TAGS = new Set([
+  "semantics","mrow","mi","mo","mn","msup","msub","mfrac","msqrt","annotation",
+]);
+
 export const rehypeEscapeUnknownTags: Plugin<[], Root> = () => (tree) => {
-  visit(tree, "element", (node, index, parent) => {
-    const tag = (node as Element).tagName?.toLowerCase();
-    if (!tag || KNOWN_HTML_TAGS.has(tag) || !parent || index === undefined) return;
-    // Rebuild the literal source faithfully — including attributes and nested
-    // markup — so escaping an unknown tag doesn't silently drop the author's
-    // content (previously only direct text children survived).
-    const literal = serializeHast(node as Element);
-    (parent.children as ElementContent[])[index] = { type: "text", value: literal };
-  });
+  // SVG/MathML children are only valid INSIDE their wrapper element. A stray
+  // `<text>` outside an `<svg>` (e.g. raw HTML in a chat/agent reply) would
+  // otherwise reach React as an unknown HTML tag and crash the renderer —
+  // escape it to literal text instead. `<svg>`/`<math>` roots themselves stay
+  // (React renders their subtree in the SVG/MathML namespace).
+  const walk = (node: unknown, inSvg: boolean, inMath: boolean) => {
+    if (!node || typeof node !== "object") return;
+    const el = node as Element;
+    if (!Array.isArray(el.children)) return;
+    const children = el.children as unknown[];
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i] as Element & { type?: string };
+      if (child?.type !== "element") continue;
+      const tag = child.tagName?.toLowerCase();
+      if (!tag) continue;
+      let keep = false;
+      if (SVG_CHILD_TAGS.has(tag)) keep = inSvg;
+      else if (MATHML_CHILD_TAGS.has(tag)) keep = inMath;
+      else if (KNOWN_HTML_TAGS.has(tag)) keep = true;
+      if (!keep) {
+        // Rebuild the literal source faithfully — including attributes and
+        // nested markup — so escaping an unknown tag doesn't silently drop the
+        // author's content (previously only direct text children survived).
+        children[i] = { type: "text", value: serializeHast(child) };
+      } else {
+        walk(child, inSvg || tag === "svg", inMath || tag === "math");
+      }
+    }
+  };
+  walk(tree, false, false);
 };
 
 // ── Rehype plugin: "what's new" changed-line highlight (read/preview mode) ────

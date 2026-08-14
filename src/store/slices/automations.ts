@@ -148,6 +148,12 @@ export interface AutomationsSlice {
   pendingApprovalCount: number;
   /** Number of automation runs currently in flight (title-bar running bar). */
   runningAutomationCount: number;
+  /**
+   * automationId → active Develop session id. Lets "Develop" REOPEN a running
+   * dev session for an automation instead of spawning a fresh one (so closing
+   * the dev modal never orphans in-flight work).
+   */
+  automationDevSessions: Record<ID, ID>;
 
   fetchAutomations: (workspaceId: ID) => Promise<void>;
   createAutomation: (input: AutomationInput) => Promise<Automation | null>;
@@ -160,6 +166,8 @@ export interface AutomationsSlice {
   fetchPendingApprovals: () => Promise<void>;
   fetchApprovalCount: () => Promise<void>;
   fetchRunningCount: () => Promise<void>;
+  registerAutomationDevSession: (automationId: ID, sessionId: ID) => void;
+  clearAutomationDevSession: (automationId: ID) => void;
   resolveApprovalItem: (id: ID, resolution: ApprovalResolution) => Promise<void>;
   startApprovalPolling: () => void;
   stopApprovalPolling: () => void;
@@ -183,6 +191,20 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   pendingApprovals: [],
   pendingApprovalCount: 0,
   runningAutomationCount: 0,
+  automationDevSessions: {},
+
+  registerAutomationDevSession(automationId, sessionId) {
+    set((s) => ({ automationDevSessions: { ...s.automationDevSessions, [automationId]: sessionId } }));
+  },
+
+  clearAutomationDevSession(automationId) {
+    set((s) => {
+      if (!(automationId in s.automationDevSessions)) return s;
+      const next = { ...s.automationDevSessions };
+      delete next[automationId];
+      return { automationDevSessions: next };
+    });
+  },
 
   async fetchAutomations(workspaceId) {
     if (typeof window === "undefined" || !window.electron?.automation) return;

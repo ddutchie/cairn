@@ -25,6 +25,7 @@ export function AutomationDevModal({
   onSyncFromManifest,
   syncing,
   onRunNow,
+  onStartOver,
 }: {
   automation: Automation | null;
   sessionId: string | null;
@@ -32,6 +33,7 @@ export function AutomationDevModal({
   onSyncFromManifest?: () => void;
   syncing?: boolean;
   onRunNow?: () => void;
+  onStartOver?: () => void;
 }) {
   const session = useCairnStore((s) =>
     sessionId ? (s.terminalSessions.find((t) => t.sessionId === sessionId) ?? null) : null,
@@ -52,6 +54,11 @@ export function AutomationDevModal({
       }
       footer={
         <>
+          {onStartOver && (
+            <Button variant="ghost" size="sm" onClick={onStartOver} title="Abort this session and start a fresh one">
+              <Sparkles size={12} className="mr-1" /> Start over
+            </Button>
+          )}
           {onSyncFromManifest && (
             <Button variant="outline" size="sm" onClick={onSyncFromManifest} disabled={syncing}>
               <RefreshCw size={12} className={cn("mr-1", syncing && "animate-spin")} /> {syncing ? "Syncing…" : "Sync from manifest"}

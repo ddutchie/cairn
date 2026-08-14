@@ -88,6 +88,11 @@ export function AutomationsView() {
     automations, lastRuns, pendingApprovals, runsById,
     fetchAutomations, createAutomation, updateAutomation, deleteAutomation, runNow, fetchRun, fetchRuns,
     addTerminalSession,
+    terminalSessions,
+    removeTerminalSession,
+    automationDevSessions,
+    registerAutomationDevSession,
+    clearAutomationDevSession,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId: s.activeProjectId,
@@ -105,6 +110,11 @@ export function AutomationsView() {
     fetchRun: s.fetchRun,
     fetchRuns: s.fetchRuns,
     addTerminalSession: s.addTerminalSession,
+    terminalSessions: s.terminalSessions,
+    removeTerminalSession: s.removeTerminalSession,
+    automationDevSessions: s.automationDevSessions,
+    registerAutomationDevSession: s.registerAutomationDevSession,
+    clearAutomationDevSession: s.clearAutomationDevSession,
   })));
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -250,21 +260,39 @@ export function AutomationsView() {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   /**
-   * Open a pi-agent session scoped to the automation's folder so an agent can
-   * author + test the automation's scripts against the real .env / manifest.
-   * "Run now" then exercises the exact scheduler path end-to-end.
+   * Open (or REOPEN) the self-contained dev modal for an automation. If a dev
+   * session is still running for it, reopening reuses it so in-flight work is
+   * never lost; `forceNew` aborts the old session and starts a fresh one. The
+   * restricted "automation-dev" persona has file tools only — it can't touch
+   * the board.
    */
-  async function develop(a: Automation) {
+  async function develop(a: Automation, forceNew = false) {
     const electron = window.electron;
     if (!electron) return;
     setDeveloping(true);
     setDevelopError(null);
     try {
       const res = (await electron.automation.folder(a.id)) as { folder: string };
+      if (!forceNew) {
+        const existing = automationDevSessions[a.id];
+        if (existing && terminalSessions.some((t) => t.sessionId === existing)) {
+          setDevAutomation(a);
+          setDevSessionId(existing);
+          return;
+        }
+      }
       const projectId = a.projectId ?? activeProjectId;
       if (!projectId) {
         setDevelopError("This automation is workspace-scoped with no active project. Pick a project first.");
         return;
+      }
+      if (forceNew) {
+        const stale = automationDevSessions[a.id];
+        if (stale && terminalSessions.some((t) => t.sessionId === stale)) {
+          electron.piAgent.destroy(stale);
+          removeTerminalSession(stale);
+        }
+        clearAutomationDevSession(a.id);
       }
       const sessionId = id();
       const now = new Date().toISOString();
@@ -296,8 +324,7 @@ export function AutomationsView() {
         role: "automation-dev",
         initialPrompt: buildAutomationDevPrompt(a),
       });
-      // Open the self-contained dev modal (no view switch). The restricted
-      // "automation-dev" persona has file tools only — it can't touch the board.
+      registerAutomationDevSession(a.id, sessionId);
       setDevAutomation(a);
       setDevSessionId(sessionId);
     } catch (err) {
@@ -500,6 +527,7 @@ export function AutomationsView() {
         onSyncFromManifest={devAutomation ? () => void syncFromManifest(devAutomation) : undefined}
         syncing={syncing}
         onRunNow={devAutomation ? () => void runNow(devAutomation.id) : undefined}
+        onStartOver={devAutomation ? () => void develop(devAutomation, true) : undefined}
       />
     </div>
   );
