@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CloudCheck, CloudOff, RefreshCw, CloudAlert, AlertTriangle } from "lucide-react";
 import { useSyncStatus, triggerSyncNow, openConflictModal, type SyncState } from "@/lib/sync-client";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 function glyph(state: SyncState, conflicts: number, pending: number) {
@@ -87,20 +88,21 @@ export function SyncStatusIndicator() {
 
   return (
     <div ref={wrapRef} className="relative" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-      <button
-        type="button"
-        aria-label={label}
-        title={label}
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 h-6 px-1.5 rounded-md hover:bg-[var(--surface-2)] transition-colors"
-      >
-        <Icon size={13} style={{ color }} className={cn(spinning && "animate-spin")} />
-        {status.conflicts > 0 && (
-          <span className="text-[0.65rem] font-semibold leading-none" style={{ color: "var(--warning)" }}>
-            {status.conflicts}
-          </span>
-        )}
-      </button>
+      <Tooltip side="bottom" content={label}>
+        <button
+          type="button"
+          aria-label={label}
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-1 h-6 px-1.5 rounded-md hover:bg-[var(--surface-2)] transition-colors"
+        >
+          <Icon size={13} style={{ color }} className={cn(spinning && "animate-spin")} />
+          {status.conflicts > 0 && (
+            <span className="text-[0.65rem] font-semibold leading-none" style={{ color: "var(--warning)" }}>
+              {status.conflicts}
+            </span>
+          )}
+        </button>
+      </Tooltip>
 
       {open && (
         <div
