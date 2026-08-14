@@ -31,6 +31,7 @@ import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
 import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies } from "./db/queries";
+import { recoverInterruptedRuns } from "./db/automation-queries";
 import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
 import { createTray } from "./lib/tray";
@@ -370,6 +371,9 @@ app.whenReady().then(async () => {
     const { runStartupHygiene } = await import("./lib/db-hygiene");
     runStartupHygiene(newDb);
 
+    // Recover runs left in-flight by a previous process on this workspace.
+    try { recoverInterruptedRuns(newDb); } catch { /* non-critical */ }
+
     // Restart file watcher on the new path
     startFileWatcher(newWorkspacePath, newDb, notifyDbChanged);
 
@@ -427,6 +431,16 @@ app.whenReady().then(async () => {
   // run's blast radius stays bounded to Cairn entities. ctx.db is re-read on
   // every tick so a workspace reinitialise is transparent. Stopped on quit so
   // no background turns fire during teardown.
+  //
+  // Recover runs left in-flight by a previous process (crash / quit mid-turn /
+  // dev reload): a stuck 'running' row would otherwise block the automation
+  // forever via the scheduler's skip-on-overlap guard.
+  try {
+    const recovered = recoverInterruptedRuns(ctx.db);
+    if (recovered > 0) console.log(`[heartbeat] recovered ${recovered} interrupted automation run(s)`);
+  } catch (err) {
+    console.warn("[heartbeat] failed to recover interrupted runs:", err);
+  }
   const heartbeatScheduler = new HeartbeatScheduler({
     dbGetter: () => ctx.db,
     runner: (run, automation) => runAutomation(

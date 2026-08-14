@@ -375,6 +375,30 @@ export function countRunningAutomationRuns(db: Database.Database): number {
   return r.n;
 }
 
+/**
+ * Mark every run still stuck in 'pending'/'running' as interrupted. Runs are
+ * only in-flight while the app is open — if the process died mid-run (crash,
+ * quit during a turn, dev reload) the row stays 'running' forever, and the
+ * scheduler's skip-on-overlap guard then blocks that automation from ever
+ * firing again. Called once at startup (and on workspace reinitialise) to
+ * recover them. Returns the number of runs recovered.
+ */
+export function recoverInterruptedRuns(
+  db: Database.Database,
+  error = "Interrupted — the app closed while this run was in flight.",
+): number {
+  const rows = db
+    .prepare("SELECT id FROM automation_runs WHERE status IN ('pending','running')")
+    .all() as Row[];
+  if (rows.length === 0) return 0;
+  const update = db.prepare(
+    "UPDATE automation_runs SET status = 'error', error = ?, finished_at = ? WHERE id = ?",
+  );
+  const now = ts();
+  for (const r of rows) update.run(error, now, r.id);
+  return rows.length;
+}
+
 /** Increment the automation's run_count. */
 export function bumpAutomationRunCount(db: Database.Database, id: string): void {
   db.prepare("UPDATE automations SET run_count = run_count + 1, updated_at = ? WHERE id = ?").run(ts(), id);

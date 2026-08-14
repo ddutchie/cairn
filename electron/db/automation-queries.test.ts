@@ -17,6 +17,7 @@ import {
   listRecentAutomationRuns,
   hasInFlightRun,
   countRunningAutomationRuns,
+  recoverInterruptedRuns,
   bumpAutomationRunCount,
   type AutomationInput,
 } from "./automation-queries";
@@ -148,6 +149,31 @@ describe("due lookup + run history", () => {
     createAutomationRun(db, b.id, "pending");
     createAutomationRun(db, a.id, "done");
     expect(countRunningAutomationRuns(db)).toBe(2);
+  });
+
+  it("recoverInterruptedRuns marks in-flight runs as interrupted so they unblock the automation", () => {
+    const a = createAutomation(db, makeInput());
+    const running = createAutomationRun(db, a.id, "running");
+    const pending = createAutomationRun(db, a.id, "pending");
+    const done = createAutomationRun(db, a.id, "done");
+
+    expect(hasInFlightRun(db, a.id)).toBe(true); // would block future runs
+    const recovered = recoverInterruptedRuns(db);
+
+    expect(recovered).toBe(2); // running + pending, NOT done
+    expect(getAutomationRunById(db, running.id)!.status).toBe("error");
+    expect(getAutomationRunById(db, running.id)!.error).toContain("Interrupted");
+    expect(getAutomationRunById(db, running.id)!.finishedAt).not.toBeNull();
+    expect(getAutomationRunById(db, pending.id)!.status).toBe("error");
+    expect(getAutomationRunById(db, done.id)!.status).toBe("done");
+    expect(hasInFlightRun(db, a.id)).toBe(false); // automation can run again
+  });
+
+  it("recoverInterruptedRuns is idempotent and returns 0 when nothing is stuck", () => {
+    const a = createAutomation(db, makeInput());
+    createAutomationRun(db, a.id, "running");
+    expect(recoverInterruptedRuns(db)).toBe(1);
+    expect(recoverInterruptedRuns(db)).toBe(0);
   });
 
   it("bumps the automation run_count", () => {
