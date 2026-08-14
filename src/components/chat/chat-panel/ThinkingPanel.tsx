@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronDown, Brain } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { StreamingCursor } from "./message-ui";
@@ -43,29 +43,20 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
   streaming = false,
   companionContent,
 }: ThinkingPanelProps) {
-  const [open, setOpen] = useState(streaming);
+  // `open` is ONLY the user's manual toggle. Whether the panel is expanded
+  // while thinking is DERIVED (`thinking`), so a remount mid-stream can never
+  // flash it open — the old `useState(streaming)` + auto-collapse/re-expand
+  // effects re-opened the panel on every mount and flickered with each content
+  // token (Virtuoso remounts items as their height changes).
+  const [open, setOpen] = useState(false);
   const [userOverride, setUserOverride] = useState(false);
-  const hadTextRef = useRef(Boolean(text));
+  const hasText = Boolean(text);
+  // Expanded while the model is actively thinking (reasoning present, answer
+  // not yet started) unless the user manually toggled it.
+  const thinking = streaming && hasText && !companionContent;
+  const expanded = open || (thinking && !userOverride);
 
-  // Auto-collapse when companion content starts streaming.
-  useEffect(() => {
-    if (streaming && companionContent && !userOverride && open) {
-      setOpen(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streaming, companionContent, userOverride]);
-
-  // Re-expand only on the empty → non-empty transition (new reasoning stream),
-  // but only if the answer hasn't started streaming yet.
-  useEffect(() => {
-    const hadText = hadTextRef.current;
-    hadTextRef.current = Boolean(text);
-    if (streaming && text && !hadText && !userOverride && !companionContent) {
-      setOpen(true);
-    }
-  }, [text, streaming, userOverride, companionContent]);
-
-  // Reset user override when text is cleared (new turn).
+  // Reset the user override when text is cleared (new turn).
   useEffect(() => {
     if (!text) setUserOverride(false);
   }, [text]);
@@ -81,7 +72,7 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
   const collapsedText = summary && summary.trim() ? summary.trim() : text;
   // Expanded body prefers the raw trace; summary-only reasoning uses the summary.
   const bodyText = text || collapsedText;
-  const preview = streaming && open ? null : (
+  const preview = expanded ? null : (
     <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[280px]">
       {collapsedText.slice(0, 120).trim()}{collapsedText.length > 120 ? "…" : ""}
     </span>
@@ -93,22 +84,22 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
         type="button"
         onClick={handleToggle}
         className="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-left hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
-        aria-expanded={open}
+        aria-expanded={expanded}
       >
         <Brain size={11} className="text-[var(--accent)] shrink-0" />
         <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] flex-shrink-0">
-          {streaming && open ? "Thinking…" : "Thought process"}
+          {thinking ? "Thinking…" : "Thought process"}
         </span>
-        {!open && preview}
+        {!expanded && preview}
         <ChevronDown
           size={11}
-          className={`text-[var(--text-tertiary)] ml-auto transition-transform ${open ? "rotate-180" : ""}`}
+          className={`text-[var(--text-tertiary)] ml-auto transition-transform ${expanded ? "rotate-180" : ""}`}
         />
       </button>
-      {open && (
+      {expanded && (
         <div className="px-3 py-2 border-t text-[0.786rem] leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto" style={{ borderTopColor: "color-mix(in srgb, var(--border) 50%, transparent)" }}>
           <MarkdownContent content={bodyText} />
-          {streaming && open && <StreamingCursor />}
+          {thinking && <StreamingCursor />}
         </div>
       )}
     </div>
