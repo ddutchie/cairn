@@ -20,6 +20,7 @@ import { autoUpdater } from "electron-updater";
 import { loadMobileSettings, startMobileServer, stopMobileServer } from "./lib/mobile-server";
 import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
+import { broadcastEvent } from "./ipc/registry";
 import { registerAgentHandlers } from "./ipc/agent";
 import { registerToolsHandlers } from "./ipc/tools";
 import { registerToolBuilderHandlers } from "./ipc/tool-builder";
@@ -429,7 +430,11 @@ app.whenReady().then(async () => {
   const heartbeatScheduler = new HeartbeatScheduler({
     dbGetter: () => ctx.db,
     runner: (run, automation) => runAutomation(
-      { db: ctx.db, workspacePath: ctx.workspacePath },
+      {
+        db: ctx.db,
+        workspacePath: ctx.workspacePath,
+        send: (channel, payload) => broadcastEvent(channel, payload),
+      },
       run,
       automation,
     ),

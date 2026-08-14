@@ -19,7 +19,7 @@ import {
   type ApprovalItem,
   type ApprovalResolution,
 } from "../db/approval-queries";
-import type { Automation, AutomationRun } from "../db/automation-queries";
+import { getAutomationById, getAutomationRunById, updateAutomation, type Automation, type AutomationRun } from "../db/automation-queries";
 import { RUN_SCRIPT_TOOL_NAME } from "./automation-script";
 
 /** How long a parked approval waits for a user decision before failing closed. */
@@ -40,6 +40,46 @@ export function isExternalTool(name: string): boolean {
 
 export function isReadTool(name: string): boolean {
   return READ_TOOL_PREFIXES.some((p) => name.startsWith(p));
+}
+
+/**
+ * The standing-rule target for a tool call — the specific thing "always allow"
+ * grants. run_script grants the SCRIPT NAME (never blanket shell); bash grants
+ * the exact command; other tools grant their primary identifier (path /
+ * note / card / title). Shared by the gate (match) and the resolve handler
+ * (persist) so the two can never disagree about what was granted.
+ */
+export function standingRuleTarget(tool: string, args: Record<string, unknown>): string | undefined {
+  if (tool === RUN_SCRIPT_TOOL_NAME) {
+    return typeof args.name === "string" && args.name ? args.name : undefined;
+  }
+  if (tool === "bash") {
+    return typeof args.command === "string" && args.command ? args.command : undefined;
+  }
+  const target = [args.path, args.noteId, args.cardId, args.title]
+    .find((v): v is string => typeof v === "string" && v.length > 0);
+  return target;
+}
+
+/**
+ * Persist an "always allow" decision as a standing rule on the run's automation
+ * (deduped by tool + target), so future runs let it through without asking.
+ * Used by the approval inbox resolve path; exported for tests.
+ */
+export function recordStandingAllowance(
+  db: Database.Database,
+  runId: string,
+  tool: string,
+  args: Record<string, unknown>,
+): void {
+  const run = getAutomationRunById(db, runId);
+  const automation = run ? getAutomationById(db, run.automationId) : null;
+  if (!automation) return;
+  const target = standingRuleTarget(tool, args);
+  const rules = automation.standingRules.filter((r) => !(r.tool === tool && r.target === target));
+  updateAutomation(db, automation.id, {
+    standingRules: [...rules, { tool, ...(target ? { target } : {}) }],
+  });
 }
 
 export function waitForApproval(db: Database.Database, itemId: string, timeoutMs = APPROVAL_TIMEOUT_MS): Promise<ApprovalResolution | null> {
@@ -130,9 +170,11 @@ export function makeApprovalGate(db: Database.Database, run: AutomationRun, auto
 
   return async (name: string, args: Record<string, unknown>): Promise<{ allow: boolean; reason?: string }> => {
     if (isReadTool(name)) return { allow: true };
+    // A standing rule ("always allow") is the shortcut for any tool — e.g.
+    // run_script:generate_images, create_task, bash:<exact command>. These are
+    // persisted by the approval inbox's "Always allow" resolution.
+    if (standingRuleAllows(name, standingRuleTarget(name, args))) return { allow: true };
     if (name === RUN_SCRIPT_TOOL_NAME) {
-      const scriptName = typeof args.name === "string" ? args.name : undefined;
-      if (scriptName && standingRuleAllows(RUN_SCRIPT_TOOL_NAME, scriptName)) return { allow: true };
       return parkAndWait(db, run, automation, name, args);
     }
     // 'ask' mode gates every write; 'auto' mode only gates external MCP/service

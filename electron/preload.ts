@@ -318,6 +318,27 @@ const api = {
     folder: (id: string) => invoke<{ folder: string }>("db:automation:folder", { id }),
     syncFromManifest: (id: string) => invoke("db:automation:syncFromManifest", { id }),
     files: (id: string) => invoke<{ files: Array<{ path: string; size: number; mtimeMs: number }> }>("db:automation:files", { id }),
+    /** Live run activity (tokens/tools/thought) for the "watch this run" view. */
+    onRunEvent: (cb: (payload: {
+      event: "started" | "token" | "thought" | "tool" | "toolDone" | "finished";
+      automationId: string;
+      runId: string;
+      delta?: string;
+      tool?: string;
+      label?: string;
+      args?: Record<string, unknown>;
+      status?: "start" | "end";
+      ok?: boolean;
+      output?: string;
+      error?: string;
+      recipe?: string;
+      content?: string;
+      exhausted?: boolean;
+    }) => void) => {
+      const handler = (_e: unknown, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("automation:run", handler);
+      return () => { ipcRenderer.removeListener("automation:run", handler); };
+    },
     env: {
       get: (automationId: string) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env", { automationId }),
       set: (automationId: string, name: string, value: string, secret: boolean) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env:set", { automationId, name, value, secret }),

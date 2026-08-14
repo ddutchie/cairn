@@ -21,6 +21,7 @@ import { BrowseAutomationsContent } from "./browse-automations";
 import { TimePicker } from "@/components/ui/time-picker";
 import { EnvEditor } from "./env-editor";
 import { AutomationDevModal } from "./automation-dev-modal";
+import { RunWatcherModal } from "./run-watcher-modal";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
 import type { RegistryAutomationEntry, RegistryRequirement, McpServerConfig, CustomServiceConfig } from "@/types";
 
@@ -256,6 +257,8 @@ export function AutomationsView() {
   const [developError, setDevelopError] = useState<string | null>(null);
   const [devAutomation, setDevAutomation] = useState<Automation | null>(null);
   const [devSessionId, setDevSessionId] = useState<string | null>(null);
+  const [watchedAutomation, setWatchedAutomation] = useState<Automation | null>(null);
+  const [watchedRunId, setWatchedRunId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
@@ -437,6 +440,11 @@ export function AutomationsView() {
                   </div>
                 </button>
                 <div className="flex items-center gap-1 shrink-0">
+                  {isRunning && lastRun && (
+                    <Button variant="ghost" size="icon" title="Watch this run live" onClick={() => { setWatchedAutomation(a); setWatchedRunId(lastRun.id); }}>
+                      <Activity size={13} />
+                    </Button>
+                  )}
                   <Button variant="ghost" size="icon" title="Develop scripts (opens the agent in the automation folder)" disabled={developing} onClick={() => void develop(a)}>
                     <Sparkles size={13} />
                   </Button>
@@ -528,6 +536,12 @@ export function AutomationsView() {
         syncing={syncing}
         onRunNow={devAutomation ? () => void runNow(devAutomation.id) : undefined}
         onStartOver={devAutomation ? () => void develop(devAutomation, true) : undefined}
+      />
+
+      <RunWatcherModal
+        automation={watchedAutomation}
+        runId={watchedRunId}
+        onClose={() => { setWatchedAutomation(null); setWatchedRunId(null); }}
       />
     </div>
   );

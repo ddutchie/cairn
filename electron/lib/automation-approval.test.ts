@@ -3,9 +3,9 @@ import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject } from "../db/queries";
-import { createAutomation, createAutomationRun, type Automation, type AutomationRun } from "../db/automation-queries";
+import { createAutomation, createAutomationRun, getAutomationById, type Automation, type AutomationRun } from "../db/automation-queries";
 import { listPendingApprovals, parkApproval, resolveApproval } from "../db/approval-queries";
-import { makeApprovalGate, waitForApproval, isReadTool, isExternalTool } from "./automation-approval";
+import { makeApprovalGate, waitForApproval, isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance } from "./automation-approval";
 
 let db: Database.Database;
 let automation: Automation;
@@ -194,6 +194,46 @@ describe("automation approval gate", () => {
       expect(pending[0].args.name).toBe("fetch_data");
       resolveApproval(db, pending[0].id, "approved_once");
       await promise;
+    });
+
+    it("persists 'always allow' as a standing rule that the gate honours next time", async () => {
+      // Resolve with approved_always → recordStandingAllowance writes the rule.
+      recordStandingAllowance(db, run.id, "run_script", { name: "generate_images", args: [] });
+      const a = getAutomationById(db, automation.id)!;
+      expect(a.standingRules).toEqual([{ tool: "run_script", target: "generate_images" }]);
+
+      // A NEW gate built from the updated automation lets the script through.
+      const gate = makeApprovalGate(db, run, a)!;
+      const res = await gate("run_script", { name: "generate_images" });
+      expect(res.allow).toBe(true);
+      expect(listPendingApprovals(db).length).toBe(0);
+    });
+
+    it("recordStandingAllowance dedupes by tool + target", () => {
+      recordStandingAllowance(db, run.id, "run_script", { name: "generate_images" });
+      recordStandingAllowance(db, run.id, "run_script", { name: "generate_images" });
+      recordStandingAllowance(db, run.id, "run_script", { name: "fetch_data" });
+      expect(getAutomationById(db, automation.id)!.standingRules).toEqual([
+        { tool: "run_script", target: "generate_images" },
+        { tool: "run_script", target: "fetch_data" },
+      ]);
+    });
+
+    it("derives standing-rule targets per tool (script name / command / identifier)", () => {
+      expect(standingRuleTarget("run_script", { name: "gen.js" })).toBe("gen.js");
+      expect(standingRuleTarget("bash", { command: "npm test" })).toBe("npm test");
+      expect(standingRuleTarget("create_task", { title: "Ship it" })).toBe("Ship it");
+      expect(standingRuleTarget("ensure_note", { path: "/notes/x.md" })).toBe("/notes/x.md");
+      expect(standingRuleTarget("create_task", {})).toBeUndefined();
+    });
+
+    it("a standing rule short-circuits ANY gated tool (not just run_script)", async () => {
+      // ask-mode automation + a standing rule for create_task → no prompt.
+      const a = makeAutomation("ask", [], [{ tool: "create_task" }]);
+      const gate = makeApprovalGate(db, run, a)!;
+      const res = await gate("create_task", { title: "Anything" });
+      expect(res.allow).toBe(true);
+      expect(listPendingApprovals(db).length).toBe(0);
     });
   });
 });

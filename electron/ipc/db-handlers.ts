@@ -38,6 +38,7 @@ import {
 import { runAutomationNow } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
+import { recordStandingAllowance } from "../lib/automation-approval";
 import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles } from "../lib/automation-folder";
 import { applyManifestEnv, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
@@ -731,7 +732,11 @@ export function registerDbHandlers(ctx: DbContext): void {
     handle(() => checkRequirements(ctx.db, workspaceId, projectId ?? "", requires)),
   );
   registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
-    const runId = runAutomationNow({ db: ctx.db, workspacePath: ctx.workspacePath }, id);
+    const runId = runAutomationNow({
+      db: ctx.db,
+      workspacePath: ctx.workspacePath,
+      send: (channel, payload) => broadcastEvent(channel, payload),
+    }, id);
     return runId === null ? { skipped: true } : { runId };
   }));
 
@@ -848,7 +853,15 @@ export function registerDbHandlers(ctx: DbContext): void {
 
   // ── Approval inbox ──────────────────────────────
   registerIpcHandle("db:approval:listPending", (_e, { limit }: { limit?: number }) => handle(() => listPendingApprovals(ctx.db, limit)));
-  registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => resolveApproval(ctx.db, id, resolution)));
+  registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => {
+    const resolved = resolveApproval(ctx.db, id, resolution);
+    // "Always allow" must persist across runs: write a standing rule on the
+    // owning automation so the gate lets it through next time without asking.
+    if (resolution === "approved_always" && resolved?.runId) {
+      recordStandingAllowance(ctx.db, resolved.runId, resolved.tool, resolved.args);
+    }
+    return resolved;
+  }));
   registerIpcHandle("db:approval:count", () => handle(() => countPendingApprovals(ctx.db)));
 
   // ── In-app notification center ─────────────────

@@ -59,6 +59,12 @@ import { toSlug } from "../shared/text-utils";
 export interface AutomationRunContext {
   db: Database.Database;
   workspacePath: string;
+  /**
+   * Optional IPC sink for live run activity (automation:run:* events). When
+   * absent (tests), the runner records everything to the run row but streams
+   * nothing.
+   */
+  send?: (channel: string, payload: unknown) => void;
 }
 
 const DEFAULT_MAX_STEPS = 10;
@@ -294,6 +300,19 @@ export async function runAutomation(
     } catch { /* best-effort */ }
   };
 
+  // Live run activity streamed to the renderer (the "watch this run" view).
+  // Best-effort: no send sink (tests) → nothing streams, the run still records.
+  const emitRun = (event: string, payload: Record<string, unknown>) => {
+    try {
+      ctx.send?.("automation:run", {
+        event,
+        automationId: automation.id,
+        runId: run.id,
+        ...payload,
+      });
+    } catch { /* best-effort */ }
+  };
+
   // Collect notes/cards the run CREATED or CHANGED so they can be surfaced as
   // navigable artifacts (the loop's emitToolCallDone carries a cairnRef for
   // note/task tools). Only WRITE tools count — get_note/get_task are reads and
@@ -318,6 +337,7 @@ export async function runAutomation(
       ? { type: artifacts[0].type, id: artifacts[0].id }
       : { type: "automation", id: automation.id };
 
+  emitRun("started", { recipe });
   const result = await runToolLoop(
     db,
     req,
@@ -326,7 +346,10 @@ export async function runAutomation(
     cached.model,
     apiKey,
     messages,
-    (e) => currentTool(e.tool),     // emitToolCall — record the active tool
+    (e) => {                       // emitToolCall — record + stream the active tool
+      currentTool(e.tool);
+      emitRun("tool", { tool: e.tool, label: e.label, args: e.args, status: "start" });
+    },
     abortCtrl.signal,
     undefined,                       // getWin
     provider,
@@ -349,15 +372,19 @@ export async function runAutomation(
         costUsd,
       });
     },
-    (e) => recordArtifact(e.tool, e.cairnRef), // emitToolCallDone — collect created/changed notes/cards
-    undefined,                       // onToken
-    undefined,                       // onThought
+    (e) => {                       // emitToolCallDone — collect artifacts + stream result
+      recordArtifact(e.tool, e.cairnRef);
+      emitRun("toolDone", { tool: e.tool, ok: e.ok, output: e.output, error: e.error, cairnRef: e.cairnRef });
+    },
+    (delta) => emitRun("token", { delta }),   // onToken
+    (delta) => emitRun("thought", { delta }), // onThought
     extraTools,                      // connector-aware recipes get their attached external tools
     undefined,                       // toolsOverride
     undefined,                       // argMutator
     makeApprovalGate(db, run, automation),
     runScript,                       // run_script executor (scripts/ + run cwd + out/)
   );
+  emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content });
 
   if (result.exhausted) {
     updateAutomationRun(db, run.id, {
