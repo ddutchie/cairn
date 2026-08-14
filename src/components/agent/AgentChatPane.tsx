@@ -114,6 +114,15 @@ interface AgentChatPaneProps {
   isActive: boolean;
 }
 
+/**
+ * Session IDs whose initial prompt has already been fired. Module-level (NOT a
+ * component ref) so the guard survives AgentChatPane remounts — the pane is
+ * conditionally rendered (e.g. dropped when the active project has no
+ * codeDirectory) and a ref would reset, letting the same session's initial
+ * prompt fire again and re-spawn a task that was already started.
+ */
+const firedInitialPrompts = new Set<string>();
+
 export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Actions — stable Zustand references, never trigger re-renders
   const addPiMessage             = useCairnStore((s) => s.addPiMessage);
@@ -237,7 +246,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Always-current reference to sendPrompt — lets the initialPrompt effect
   // call it after mount without capturing a stale closure.
   const sendPromptRef   = useRef<(text: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => void>(() => {});
-  const firedSessions   = useRef(new Set<string>());
 
   // Scroll to bottom on new messages / streaming growth, and whenever the
   // Scroll to the very END of the virtualized content when the pane becomes
@@ -268,9 +276,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const { sessionId: initialSessionId, initialPrompt } = session;
   useEffect(() => {
     if (!initialPrompt) return;
-    if (firedSessions.current.has(initialSessionId)) return;
+    if (firedInitialPrompts.has(initialSessionId)) return;
 
-    firedSessions.current.add(initialSessionId);
+    firedInitialPrompts.add(initialSessionId);
     // Defer 100ms so IPC listeners registered in the effect below are fully live.
     setTimeout(() => sendPromptRef.current(initialPrompt), 100);
   }, [initialSessionId, initialPrompt]);
