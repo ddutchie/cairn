@@ -43,30 +43,31 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
   streaming = false,
   companionContent,
 }: ThinkingPanelProps) {
-  // `open` is ONLY the user's manual toggle. Whether the panel is expanded
-  // while thinking is DERIVED (`thinking`), so a remount mid-stream can never
-  // flash it open — the old `useState(streaming)` + auto-collapse/re-expand
-  // effects re-opened the panel on every mount and flickered with each content
-  // token (Virtuoso remounts items as their height changes).
-  const [open, setOpen] = useState(false);
-  const [userOverride, setUserOverride] = useState(false);
+  // `override` is null (auto) or a user-forced expanded/collapsed value.
+  // Whether the panel is expanded while thinking is DERIVED (`thinking`) when
+  // no override is set, so a remount mid-stream can never flash it open — the
+  // old `useState(streaming)` + auto-collapse/re-expand effects re-opened the
+  // panel on every mount and flickered with each content token (Virtuoso
+  // remounts items as their height changes).
+  const [override, setOverride] = useState<boolean | null>(null);
   const hasText = Boolean(text);
   // Expanded while the model is actively thinking (reasoning present, answer
-  // not yet started) unless the user manually toggled it.
+  // not yet started) unless the user has overridden it.
   const thinking = streaming && hasText && !companionContent;
-  const expanded = open || (thinking && !userOverride);
+  const expanded = override !== null ? override : thinking;
 
-  // Reset the user override when text is cleared (new turn).
+  // Reset the manual override when text clears (new turn) so a fresh thinking
+  // cycle auto-expands again and auto-collapses with companionContent.
   useEffect(() => {
-    if (!text) setUserOverride(false);
+    if (!text) setOverride(null);
   }, [text]);
 
   // Nothing to render when the model produced neither raw reasoning nor a summary.
   if (!text && !(summary && summary.trim())) return null;
 
   const handleToggle = () => {
-    setUserOverride(true);
-    setOpen((prev) => !prev);
+    // Set the override to the inverse of the current expanded state.
+    setOverride(expanded ? false : true);
   };
 
   const collapsedText = summary && summary.trim() ? summary.trim() : text;
