@@ -166,6 +166,14 @@ describe("runAutomation folder plumbing", () => {
     const expectedDir = automationRunDir(automationFolderDir(root, automation.id, "P"), run.id);
     expect(updated.runDir).toBe(expectedDir);
     expect(fs.existsSync(expectedDir)).toBe(true);
+
+    // run_script is wired into the loop: the mock's last positional arg is the
+    // handler, and the scripts/ + out/ folders exist for it.
+    const loopArgs = runToolLoopMock.mock.calls[0];
+    expect(typeof loopArgs[loopArgs.length - 1]).toBe("function");
+    const autoDir = automationFolderDir(root, automation.id, "P");
+    expect(fs.existsSync(path.join(autoDir, "scripts"))).toBe(true);
+    expect(fs.existsSync(path.join(autoDir, "out"))).toBe(true);
   });
 
   it("records a run folder at the workspace root for workspace-scoped automations", async () => {

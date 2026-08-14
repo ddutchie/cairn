@@ -18,6 +18,7 @@
  */
 
 import type Database from "better-sqlite3";
+import path from "path";
 import type { OpenAIMessage } from "./llm";
 import { runToolLoop } from "./chat-loop";
 import { getCachedConfig } from "./config-cache";
@@ -37,7 +38,21 @@ import {
 import { makeApprovalGate } from "./automation-approval";
 import { getExternalToolDefs, checkRequirements } from "./external-tools";
 import { recordLlmUsage } from "./usage-recorder";
-import { automationFolderDir, ensureAutomationRunDir, cleanupOldRunDirs } from "./automation-folder";
+import {
+  automationFolderDir,
+  automationOutDir,
+  automationScriptsDir,
+  ensureAutomationDir,
+  ensureAutomationRunDir,
+  cleanupOldRunDirs,
+} from "./automation-folder";
+import {
+  runAutomationScript,
+  type AutomationScriptContext,
+  type RunScriptArgs,
+  type RunScriptHandler,
+} from "./automation-script";
+import { toSlug } from "../shared/text-utils";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -138,16 +153,22 @@ export async function runAutomation(
   const provider = (cached.provider ?? (isLocal(cached.baseUrl) ? "localllm" : "openai")) as "openai" | "localllm";
   const abortCtrl = new AbortController();
 
-  // ── Folder plumbing (phase 1) ─────────────────────────────────────────────
+  // ── Folder plumbing (phase 1/2) ───────────────────────────────────────────
   // Every run gets a working directory under <project>/.automations/<id>/runs/
   // (dot-prefixed → hidden from the notes browser, file-watcher, and Obsidian).
-  // The path is recorded on the run row for the UI and for phase-2 run_script's
-  // cwd. Best-effort: a filesystem failure records no runDir but never fails
-  // the automation.
+  // scripts/ + out/ are ensured once; the per-run folder is recorded on the run
+  // row and is the cwd for run_script. Best-effort: a filesystem failure records
+  // no runDir but never fails the automation.
   const projectName = projectNameOf(db, automation.projectId);
   const automationDir = automationFolderDir(workspacePath, automation.id, projectName);
+  let runDir: string | null = null;
+  let scriptsDir: string | null = null;
+  let outDir: string | null = null;
   try {
-    const runDir = ensureAutomationRunDir(automationDir, run.id);
+    ensureAutomationDir(automationDir);
+    scriptsDir = automationScriptsDir(automationDir);
+    outDir = automationOutDir(automationDir);
+    runDir = ensureAutomationRunDir(automationDir, run.id);
     updateAutomationRun(db, run.id, { runDir });
   } catch (err) {
     console.warn("[heartbeat] failed to prepare automation run folder:", err);
@@ -156,6 +177,27 @@ export async function runAutomation(
   const cleanupRuns = () => {
     try { cleanupOldRunDirs(automationDir); } catch { /* best-effort */ }
   };
+
+  // ── run_script executor (phase 2) ──────────────────────────────────────────
+  // Executes a named script from scripts/ with the run folder as cwd and the
+  // durable out/ folder exposed via CAIRN_OUT_DIR. Only offered to the model
+  // when the folders exist (a filesystem failure degrades to data-only runs).
+  const runScript: RunScriptHandler | undefined = scriptsDir && outDir && runDir
+    ? async (scriptArgs: RunScriptArgs) => {
+        const scriptCtx: AutomationScriptContext = {
+          scriptsDir,
+          cwd: runDir!,
+          outDir,
+          env: {
+            CAIRN_WORKSPACE_DIR: workspacePath,
+            CAIRN_PROJECT_DIR: projectName ? path.join(workspacePath, toSlug(projectName)) : workspacePath,
+            CAIRN_RUN_ID: run.id,
+          },
+          signal: abortCtrl.signal,
+        };
+        return runAutomationScript(scriptArgs, scriptCtx);
+      }
+    : undefined;
 
   // const-narrowed copies so the onUsage closure below keeps string types
   // (TS does not preserve property narrowing into closures).
@@ -291,6 +333,7 @@ export async function runAutomation(
     undefined,                       // toolsOverride
     undefined,                       // argMutator
     makeApprovalGate(db, run, automation),
+    runScript,                       // run_script executor (scripts/ + run cwd + out/)
   );
 
   if (result.exhausted) {

@@ -11,7 +11,11 @@ let db: Database.Database;
 let automation: Automation;
 let run: AutomationRun;
 
-function makeAutomation(approvalMode: "auto" | "ask", requires: Array<{ kind: "mcp" | "service"; name: string }> = []): Automation {
+function makeAutomation(
+  approvalMode: "auto" | "ask",
+  requires: Array<{ kind: "mcp" | "service"; name: string }> = [],
+  standingRules: Array<{ tool: string; target?: string }> = [],
+): Automation {
   const a = createAutomation(db, {
     workspaceId: "ws-1",
     projectId: "proj-1",
@@ -22,6 +26,7 @@ function makeAutomation(approvalMode: "auto" | "ask", requires: Array<{ kind: "m
     nextRunAt: new Date(Date.now() + 60_000).toISOString(),
     approvalMode,
     requires,
+    standingRules,
   });
   return a;
 }
@@ -50,9 +55,13 @@ async function waitForPending(): Promise<ReturnType<typeof listPendingApprovals>
 }
 
 describe("automation approval gate", () => {
-  it("auto mode yields no gate", () => {
+  it("auto mode still yields a gate (run_script must never be auto-approved)", async () => {
     const a = makeAutomation("auto");
-    expect(makeApprovalGate(db, run, a)).toBeUndefined();
+    const gate = makeApprovalGate(db, run, a);
+    expect(gate).toBeDefined();
+    // Data tools run freely in auto mode.
+    const res = await gate("create_task", { title: "Ship it" });
+    expect(res.allow).toBe(true);
   });
 
   it("classifies read vs write tools", () => {
@@ -137,8 +146,54 @@ describe("automation approval gate", () => {
     expect(listPendingApprovals(db).length).toBe(0);
   });
 
-  it("data-only auto automation yields no gate", () => {
+  it("data-only auto automation yields a gate but never parks data tools", async () => {
     const a = makeAutomation("auto");
-    expect(makeApprovalGate(db, run, a)).toBeUndefined();
+    const gate = makeApprovalGate(db, run, a)!;
+    const res = await gate("create_task", { title: "Ship it" });
+    expect(res.allow).toBe(true);
+    expect(listPendingApprovals(db).length).toBe(0);
+  });
+
+  describe("run_script gating", () => {
+    it("parks run_script in AUTO mode (EXEC is never silently auto-approved)", async () => {
+      const a = makeAutomation("auto");
+      const gate = makeApprovalGate(db, run, a)!;
+      const promise = gate("run_script", { name: "generate_images", args: ["-prompt", "news"] });
+
+      const pending = await waitForPending();
+      expect(pending[0].tool).toBe("run_script");
+
+      resolveApproval(db, pending[0].id, "approved_once");
+      expect((await promise).allow).toBe(true);
+    });
+
+    it("parks run_script in ASK mode too", async () => {
+      const gate = makeApprovalGate(db, run, automation)!;
+      const promise = gate("run_script", { name: "generate_images" });
+
+      const pending = await waitForPending();
+      expect(pending[0].tool).toBe("run_script");
+
+      resolveApproval(db, pending[0].id, "approved_once");
+      expect((await promise).allow).toBe(true);
+    });
+
+    it("allows run_script without parking when a script-scoped standing rule matches", async () => {
+      const a = makeAutomation("auto", [], [{ tool: "run_script", target: "generate_images" }]);
+      const gate = makeApprovalGate(db, run, a)!;
+      const res = await gate("run_script", { name: "generate_images" });
+      expect(res.allow).toBe(true);
+      expect(listPendingApprovals(db).length).toBe(0);
+    });
+
+    it("does not let a standing rule for one script auto-allow a different script", async () => {
+      const a = makeAutomation("auto", [], [{ tool: "run_script", target: "generate_images" }]);
+      const gate = makeApprovalGate(db, run, a)!;
+      const promise = gate("run_script", { name: "fetch_data" });
+      const pending = await waitForPending();
+      expect(pending[0].args.name).toBe("fetch_data");
+      resolveApproval(db, pending[0].id, "approved_once");
+      await promise;
+    });
   });
 });

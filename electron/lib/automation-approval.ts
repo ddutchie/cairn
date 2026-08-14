@@ -20,6 +20,7 @@ import {
   type ApprovalResolution,
 } from "../db/approval-queries";
 import type { Automation, AutomationRun } from "../db/automation-queries";
+import { RUN_SCRIPT_TOOL_NAME } from "./automation-script";
 
 /** How long a parked approval waits for a user decision before failing closed. */
 export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
@@ -71,53 +72,74 @@ export function waitForApproval(db: Database.Database, itemId: string, timeoutMs
 
 export type ApprovalGate = (name: string, args: Record<string, unknown>) => Promise<{ allow: boolean; reason?: string }>;
 
+/** Park an approval item, notify, and block until the user (or timeout) resolves it. */
+async function parkAndWait(
+  db: Database.Database,
+  run: AutomationRun,
+  automation: Automation,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ allow: boolean; reason?: string }> {
+  const item = parkApproval(db, {
+    runId: run.id,
+    sessionId: run.id,
+    tool: name,
+    args,
+    kind: "approval",
+    title: `Automation "${automation.name}"`,
+    body: `Run of "${automation.name}" wants to call ${name} — approve or deny?`,
+  });
+  insertNotification(
+    db,
+    "automation_approval",
+    `Approval needed: "${automation.name}"`,
+    `Run wants to ${name}. Approve or deny below.`,
+    { type: "approval", id: item.id },
+  );
+  const resolution = await waitForApproval(db, item.id);
+  if (resolution === null) {
+    return { allow: false, reason: "Approval request expired (denied by timeout)." };
+  }
+  if (resolution === "denied") {
+    return { allow: false, reason: "Blocked: user denied this action." };
+  }
+  return { allow: true };
+}
+
 /**
- * Build the approval gate for an automation. Returns undefined when there is
- * nothing to gate.
+ * Build the approval gate for an automation.
  *
- *   - 'ask' mode (regardless of requires): every non-read tool parks a durable
- *     approval item and blocks until the user resolves it.
- *   - 'auto' mode + a connector-aware automation (declares `requires`): external
- *     MCP/service tool calls are STILL gated behind the approval inbox — external
- *     side effects are never auto-approved. Built-in data tools run freely.
+ *   - `run_script` (EXEC) is ALWAYS gated — in every mode — because a script
+ *     is an arbitrary executable; the only shortcut is a script-scoped
+ *     standing rule ({ tool: "run_script", target: "generate_images" }).
+ *   - 'ask' mode: every non-read tool parks an approval and blocks.
+ *   - 'auto' mode + connector-aware automation: external MCP/service calls are
+ *     still gated — external side effects are never auto-approved. Built-in
+ *     data tools run freely.
  *
+ * A gate is always returned (run_script can be called by any automation), so
+ * the loop always executes tool calls sequentially for automation runs.
  * Denied/timeout fail closed.
  */
-export function makeApprovalGate(db: Database.Database, run: AutomationRun, automation: Automation): ApprovalGate | undefined {
+export function makeApprovalGate(db: Database.Database, run: AutomationRun, automation: Automation): ApprovalGate {
   const connectorAware = (automation.requires ?? []).length > 0;
   const gateAllWrites = automation.approvalMode === "ask";
   const gateExternalOnly = !gateAllWrites && connectorAware;
-  if (!gateAllWrites && !gateExternalOnly) {
-    return undefined;
-  }
+  const standingRuleAllows = (tool: string, target?: string) =>
+    automation.standingRules.some((r) => r.tool === tool && (r.target === undefined || r.target === target));
+
   return async (name: string, args: Record<string, unknown>): Promise<{ allow: boolean; reason?: string }> => {
     if (isReadTool(name)) return { allow: true };
-    // In auto mode only EXTERNAL tools are gated — built-in data tools (the
-    // data-only toolset) still run freely.
-    if (gateExternalOnly && !isExternalTool(name)) return { allow: true };
-    const item = parkApproval(db, {
-      runId: run.id,
-      sessionId: run.id,
-      tool: name,
-      args,
-      kind: "approval",
-      title: `Automation "${automation.name}"`,
-      body: `Run of "${automation.name}" wants to call ${name} — approve or deny?`,
-    });
-    insertNotification(
-      db,
-      "automation_approval",
-      `Approval needed: "${automation.name}"`,
-      `Run wants to ${name}. Approve or deny below.`,
-      { type: "approval", id: item.id },
-    );
-    const resolution = await waitForApproval(db, item.id);
-    if (resolution === null) {
-      return { allow: false, reason: "Approval request expired (denied by timeout)." };
+    if (name === RUN_SCRIPT_TOOL_NAME) {
+      const scriptName = typeof args.name === "string" ? args.name : undefined;
+      if (scriptName && standingRuleAllows(RUN_SCRIPT_TOOL_NAME, scriptName)) return { allow: true };
+      return parkAndWait(db, run, automation, name, args);
     }
-    if (resolution === "denied") {
-      return { allow: false, reason: "Blocked: user denied this action." };
-    }
+    // 'ask' mode gates every write; 'auto' mode only gates external MCP/service
+    // calls when the automation is connector-aware. Built-in data tools run
+    // freely in auto mode.
+    if (gateAllWrites) return parkAndWait(db, run, automation, name, args);
+    if (gateExternalOnly && isExternalTool(name)) return parkAndWait(db, run, automation, name, args);
     return { allow: true };
   };
 }

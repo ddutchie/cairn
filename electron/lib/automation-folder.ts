@@ -26,6 +26,7 @@ import { toSlug } from "../shared/text-utils";
 export const AUTOMATION_FOLDER_NAME = ".automations";
 export const RUNS_FOLDER_NAME = "runs";
 export const SCRIPTS_FOLDER_NAME = "scripts";
+export const OUT_FOLDER_NAME = "out";
 
 /** Default number of completed per-run folders to keep before pruning. */
 export const KEEP_RUN_DIRS = 10;
@@ -49,9 +50,14 @@ export function automationFolderDir(
   return path.join(parent, AUTOMATION_FOLDER_NAME, automationId);
 }
 
-/** `<automation folder>/scripts/` — where authored scripts live (phase 2). */
+/** `<automation folder>/scripts/` — where authored scripts live. */
 export function automationScriptsDir(automationDir: string): string {
   return path.join(automationDir, SCRIPTS_FOLDER_NAME);
+}
+
+/** `<automation folder>/out/` — durable deliverables, never pruned. */
+export function automationOutDir(automationDir: string): string {
+  return path.join(automationDir, OUT_FOLDER_NAME);
 }
 
 /** `<automation folder>/runs/<runId>/` — the per-run working directory. */
@@ -59,10 +65,11 @@ export function automationRunDir(automationDir: string, runId: string): string {
   return path.join(automationDir, RUNS_FOLDER_NAME, runId);
 }
 
-/** Create the automation root (and scripts dir) if missing. Returns the root. */
+/** Create the automation root (plus scripts/ + out/) if missing. Returns the root. */
 export function ensureAutomationDir(automationDir: string): string {
   fs.mkdirSync(automationDir, { recursive: true });
   fs.mkdirSync(automationScriptsDir(automationDir), { recursive: true });
+  fs.mkdirSync(automationOutDir(automationDir), { recursive: true });
   return automationDir;
 }
 
