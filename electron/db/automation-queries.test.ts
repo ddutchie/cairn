@@ -69,6 +69,21 @@ describe("automation CRUD", () => {
     ]);
   });
 
+  it("persists env vars as JSON (secret values stay null in the row)", () => {
+    const a = createAutomation(db, makeInput({
+      env: [
+        { name: "PLAIN", value: "abc", secret: false },
+        { name: "SECRET_KEY", secret: true },
+      ],
+    }));
+    expect(getAutomationById(db, a.id)!.env).toEqual([
+      { name: "PLAIN", value: "abc", secret: false },
+      { name: "SECRET_KEY", secret: true },
+    ]);
+    const updated = updateAutomation(db, a.id, { env: [{ name: "PLAIN", value: "xyz", secret: false }] });
+    expect(updated!.env).toEqual([{ name: "PLAIN", value: "xyz", secret: false }]);
+  });
+
   it("updates partial fields", () => {
     const a = createAutomation(db, makeInput());
     const updated = updateAutomation(db, a.id, { name: "Renamed", enabled: false });

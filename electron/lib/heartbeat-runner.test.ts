@@ -192,4 +192,50 @@ describe("runAutomation folder plumbing", () => {
     expect(updated.runDir).toBe(expectedDir);
     expect(fs.existsSync(expectedDir)).toBe(true);
   });
+
+  it("materializes .env + manifest and injects env into the run_script handler", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    const automation = createAutomation(db, {
+      workspaceId: "ws1",
+      projectId: "p1",
+      name: "Image brief",
+      instructions: "Make images",
+      scheduleKind: "every",
+      scheduleExpr: "1 hour",
+      nextRunAt: new Date().toISOString(),
+      env: [
+        { name: "MY_TOKEN", value: "abc", secret: false },
+        { name: "SECRET_KEY", secret: true }, // keychain unavailable in tests → unset
+      ],
+    });
+    const run = createAutomationRun(db, automation.id, "running");
+    runToolLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    const autoDir = automationFolderDir(root, automation.id, "P");
+    // Pre-place a probe script so the runScript handler can execute it.
+    fs.mkdirSync(path.join(autoDir, "scripts"), { recursive: true });
+    fs.writeFileSync(
+      path.join(autoDir, "scripts", "probe.js"),
+      "console.log('TOKEN=' + (process.env.MY_TOKEN || 'missing')); console.log('SECRET=' + (process.env.SECRET_KEY || 'unset'));",
+      "utf8",
+    );
+
+    await runAutomation({ db, workspacePath: root }, run, automation);
+
+    // .env materialized with the non-secret only (never the secret name).
+    const envFile = fs.readFileSync(path.join(autoDir, ".env"), "utf8");
+    expect(envFile).toContain('MY_TOKEN="abc"');
+    expect(envFile).not.toContain("SECRET_KEY");
+    // Manifest created (once).
+    expect(fs.existsSync(path.join(autoDir, "manifest.json"))).toBe(true);
+
+    // Invoke the runScript handler with the probe — it must see the resolved env.
+    const loopArgs = runToolLoopMock.mock.calls[0];
+    const runScript = loopArgs[loopArgs.length - 1] as (a: { name: string }) => Promise<string>;
+    const output = await runScript({ name: "probe" });
+    expect(output).toContain("TOKEN=abc");
+    expect(output).toContain("SECRET=unset");
+  });
 });

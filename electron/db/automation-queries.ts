@@ -15,6 +15,17 @@ export interface AutomationRequirement {
   name: string;
 }
 
+/**
+ * An automation env var. Non-secret values are stored inline; secret entries
+ * keep `value` null and the real value lives in the OS keychain (secure-store,
+ * kind "automation"), resolved only in the main process at run time.
+ */
+export interface AutomationEnv {
+  name: string;
+  value?: string | null;
+  secret: boolean;
+}
+
 export interface Automation {
   id: string;
   workspaceId: string;
@@ -40,6 +51,8 @@ export interface Automation {
    * default external-tool approval gating.
    */
   requires: AutomationRequirement[];
+  /** Env vars exposed to scripts; secrets live in the keychain, not here. */
+  env: AutomationEnv[];
   source: "custom" | "community";
   communityId: string | null;
   createdAt: string;
@@ -84,6 +97,7 @@ function toAutomation(r: Row): Automation {
     activeHoursEnd: r.active_hours_end ? String(r.active_hours_end) : null,
     standingRules: parseJson<Array<{ tool: string; target?: string }>>(r.standing_rules, []),
     requires: parseJson<AutomationRequirement[]>(r.requires, []),
+    env: parseJson<AutomationEnv[]>(r.env, []),
     source: r.source as Automation["source"],
     communityId: r.community_id ? String(r.community_id) : null,
     createdAt: String(r.created_at),
@@ -133,6 +147,7 @@ export interface AutomationInput {
   activeHoursEnd?: string | null;
   standingRules?: Array<{ tool: string; target?: string }>;
   requires?: AutomationRequirement[];
+  env?: AutomationEnv[];
   source?: "custom" | "community";
   communityId?: string | null;
 }
@@ -144,8 +159,8 @@ export function createAutomation(db: Database.Database, input: AutomationInput):
     INSERT INTO automations (
       id, workspace_id, project_id, name, description, instructions,
       schedule_kind, schedule_expr, timezone, next_run_at, enabled, max_runs,
-      run_count, approval_mode, active_hours_start, active_hours_end, standing_rules, requires, source, community_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      run_count, approval_mode, active_hours_start, active_hours_end, standing_rules, requires, env, source, community_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, input.workspaceId, input.projectId ?? null, input.name, input.description ?? "",
     input.instructions, input.scheduleKind, input.scheduleExpr, input.timezone ?? null,
@@ -153,6 +168,7 @@ export function createAutomation(db: Database.Database, input: AutomationInput):
     input.runCount ?? 0, input.approvalMode ?? "auto", input.activeHoursStart ?? null,
     input.activeHoursEnd ?? null, JSON.stringify(input.standingRules ?? []),
     JSON.stringify(input.requires ?? []),
+    JSON.stringify(input.env ?? []),
     input.source ?? "custom", input.communityId ?? null, now, now,
   );
   return getAutomationById(db, id)!;
@@ -196,6 +212,7 @@ export function updateAutomation(
     active_hours_end: patch.activeHoursEnd === undefined ? undefined : patch.activeHoursEnd,
     standing_rules: patch.standingRules === undefined ? undefined : JSON.stringify(patch.standingRules),
     requires: patch.requires === undefined ? undefined : JSON.stringify(patch.requires),
+    env: patch.env === undefined ? undefined : JSON.stringify(patch.env),
     source: patch.source,
     community_id: patch.communityId === undefined ? undefined : patch.communityId,
   };

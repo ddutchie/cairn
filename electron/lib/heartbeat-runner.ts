@@ -52,6 +52,8 @@ import {
   type RunScriptArgs,
   type RunScriptHandler,
 } from "./automation-script";
+import { prepareAutomationFolder, resolveAutomationEnv } from "./automation-env";
+import { getSecretValue } from "./secure-store";
 import { toSlug } from "../shared/text-utils";
 
 export interface AutomationRunContext {
@@ -170,6 +172,9 @@ export async function runAutomation(
     outDir = automationOutDir(automationDir);
     runDir = ensureAutomationRunDir(automationDir, run.id);
     updateAutomationRun(db, run.id, { runDir });
+    // Materialize the folder's .env (non-secrets) + a minimal manifest.json
+    // (only created once — never clobbers an agent-authored manifest).
+    prepareAutomationFolder(automationDir, automation);
   } catch (err) {
     console.warn("[heartbeat] failed to prepare automation run folder:", err);
   }
@@ -177,6 +182,11 @@ export async function runAutomation(
   const cleanupRuns = () => {
     try { cleanupOldRunDirs(automationDir); } catch { /* best-effort */ }
   };
+
+  // Resolve the automation's env for this run. Non-secrets come from the row;
+  // secrets are decrypted from the keychain and injected directly into the
+  // run_script child env (never written to the .env file on disk).
+  const resolvedEnv = resolveAutomationEnv(automation, (name) => getSecretValue("automation", automation.id, name));
 
   // ── run_script executor (phase 2) ──────────────────────────────────────────
   // Executes a named script from scripts/ with the run folder as cwd and the
@@ -192,6 +202,8 @@ export async function runAutomation(
             CAIRN_WORKSPACE_DIR: workspacePath,
             CAIRN_PROJECT_DIR: projectName ? path.join(workspacePath, toSlug(projectName)) : workspacePath,
             CAIRN_RUN_ID: run.id,
+            // The automation's env vars — secrets resolved from the keychain.
+            ...resolvedEnv,
           },
           signal: abortCtrl.signal,
         };

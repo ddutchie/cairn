@@ -14,6 +14,21 @@ import { id } from "@/lib/utils";
 
 export type ScheduleKind = "cron" | "every" | "once";
 
+/** An automation env var. Non-secret values inline; secrets live in the keychain. */
+export interface AutomationEnv {
+  name: string;
+  value?: string | null;
+  secret: boolean;
+}
+
+/** Env spec as returned by the env IPC (never reveals secret values). */
+export interface AutomationEnvSpec {
+  name: string;
+  secret: boolean;
+  value?: string;
+  set?: boolean;
+}
+
 export interface Automation {
   id: ID;
   workspaceId: ID;
@@ -37,6 +52,8 @@ export interface Automation {
    * scope. Empty = data-only automation.
    */
   requires: RegistryRequirement[];
+  /** Env vars exposed to scripts; secrets live in the keychain, not here. */
+  env: AutomationEnv[];
   source: "custom" | "community";
   communityId: ID | null;
   createdAt: string;
@@ -86,6 +103,7 @@ export interface AutomationInput {
   activeHoursEnd?: string | null;
   standingRules?: Array<{ tool: string; target?: string }>;
   requires?: RegistryRequirement[];
+  env?: AutomationEnv[];
   /** Provenance when prefilled from the cairn-community catalog. */
   source?: "custom" | "community";
   communityId?: ID | null;

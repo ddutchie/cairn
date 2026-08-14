@@ -18,6 +18,7 @@ import { PendingApprovals } from "./pending-approvals";
 import { ScheduleBuilder } from "./schedule-builder";
 import { BrowseAutomationsContent } from "./browse-automations";
 import { TimePicker } from "@/components/ui/time-picker";
+import { EnvEditor } from "./env-editor";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
 import type { RegistryAutomationEntry, RegistryRequirement, McpServerConfig, CustomServiceConfig } from "@/types";
 
@@ -388,6 +389,7 @@ export function AutomationsView() {
         runs={detail ? runsById[detail.id] ?? [] : []}
         onEdit={detail ? () => { setDetail(null); openEdit(detail); } : undefined}
         onRunNow={detail ? () => void runNow(detail.id) : undefined}
+        onEnvChanged={activeWorkspaceId ? () => void fetchAutomations(activeWorkspaceId) : undefined}
         projectName={detail && detail.projectId ? projectName.get(detail.projectId) ?? null : null}
       />
     </div>
@@ -645,10 +647,11 @@ interface AutomationDetailDialogProps {
   runs: AutomationRun[];
   onEdit?: () => void;
   onRunNow?: () => void;
+  onEnvChanged?: () => void;
   projectName: string | null;
 }
 
-function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, projectName }: AutomationDetailDialogProps) {
+function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, onEnvChanged, projectName }: AutomationDetailDialogProps) {
   const [refreshing, setRefreshing] = useState(false);
   const { fetchRuns, setView } = useCairnStore(useShallow((s) => ({ fetchRuns: s.fetchRuns, setView: s.setView })));
 
@@ -724,6 +727,10 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
               <InfoRow label="Needs" value={automation.requires.map((r) => r.name).join(", ")} />
             )}
             {automation.timezone && <InfoRow label="Timezone" value={automation.timezone} />}
+          </div>
+
+          <div className="rounded-md border border-[var(--border)] px-3 py-2.5">
+            <EnvEditor automationId={automation.id} onChanged={onEnvChanged} />
           </div>
 
           <div>

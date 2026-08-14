@@ -36,9 +36,9 @@ type SecretStore = Record<string, string>;
 
 /**
  * Tool kinds that own secrets. Mirrors ToolType in src/types, plus "llm" for
- * the built-in AI provider API keys (the OpenAI-compatible chat/agent endpoints).
+ * the built-in AI provider API keys and "automation" for automation env secrets.
  */
-export type ToolKind = "mcp" | "service" | "llm";
+export type ToolKind = "mcp" | "service" | "llm" | "automation";
 
 /**
  * Build the canonical reference token for a tool's named secret. The toolType is

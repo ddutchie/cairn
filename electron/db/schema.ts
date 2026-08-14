@@ -1214,6 +1214,18 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE automation_runs ADD COLUMN run_dir TEXT");
     }
   },
+
+  // v47: automations.env — JSON array of automation env vars
+  // [{ name, value?, secret }]. Non-secret values are stored inline; secret
+  // entries keep `value` null and the real value lives in the OS keychain
+  // (secure-store, kind "automation"), resolved only in the main process at
+  // run time. Additive; existing rows get [] via the queries layer.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(automations)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "env")) {
+      db.exec("ALTER TABLE automations ADD COLUMN env TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1253,6 +1265,7 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "active_hours_start", "active_hours_start TEXT");
   ensure("automations", "active_hours_end", "active_hours_end TEXT");
   ensure("automations", "requires", "requires TEXT");
+  ensure("automations", "env", "env TEXT");
   ensure("automation_runs", "run_dir", "run_dir TEXT");
   ensure("mcp_notifications", "target_type", "target_type TEXT");
   ensure("mcp_notifications", "target_id", "target_id TEXT");

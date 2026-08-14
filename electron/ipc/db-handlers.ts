@@ -32,11 +32,14 @@ import {
   listAutomationRuns,
   listRecentAutomationRuns,
   countRunningAutomationRuns,
+  type AutomationEnv,
   type AutomationInput,
 } from "../db/automation-queries";
 import { runAutomationNow } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
+import { isValidEnvName } from "../lib/automation-env";
+import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
@@ -729,6 +732,55 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
     const runId = runAutomationNow({ db: ctx.db, workspacePath: ctx.workspacePath }, id);
     return runId === null ? { skipped: true } : { runId };
+  }));
+
+  // ── Automation env vars ──────────────────────────────────────────────────
+  // Non-secret values are stored inline on the automation row; secret values
+  // live in the OS keychain (kind "automation") and are NEVER returned to the
+  // renderer — only a "set" boolean is exposed.
+  const envSpec = (a: { id: string; env: AutomationEnv[] }) =>
+    a.env.map((e) => e.secret
+      ? { name: e.name, secret: true, set: hasSecret("automation", a.id, e.name) }
+      : { name: e.name, secret: false, value: e.value ?? "" });
+
+  registerIpcHandle("db:automation:env", (_e, { automationId }: { automationId: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, automationId);
+    if (!a) return { error: "Automation not found." };
+    return envSpec(a);
+  }));
+
+  registerIpcHandle("db:automation:env:set", (_e, { automationId, name, value, secret }: { automationId: string; name: string; value: string; secret: boolean }) => handle(() => {
+    if (!isValidEnvName(name)) {
+      return { error: `Invalid env var name "${name}" — use only letters, digits and underscores.` };
+    }
+    const a = getAutomationById(ctx.db, automationId);
+    if (!a) return { error: "Automation not found." };
+    if (secret) {
+      // Secret → keychain only; the row keeps the name + flag with a null value.
+      try {
+        setSecret("automation", automationId, name, value);
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : "Failed to store secret." };
+      }
+      updateAutomation(ctx.db, automationId, {
+        env: [...a.env.filter((e) => e.name !== name), { name, secret: true }],
+      });
+    } else {
+      updateAutomation(ctx.db, automationId, {
+        env: [...a.env.filter((e) => e.name !== name), { name, secret: false, value }],
+      });
+    }
+    const updated = getAutomationById(ctx.db, automationId);
+    return updated ? envSpec(updated) : [];
+  }));
+
+  registerIpcHandle("db:automation:env:delete", (_e, { automationId, name }: { automationId: string; name: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, automationId);
+    if (!a) return { error: "Automation not found." };
+    deleteSecret("automation", automationId, name);
+    updateAutomation(ctx.db, automationId, { env: a.env.filter((e) => e.name !== name) });
+    const updated = getAutomationById(ctx.db, automationId);
+    return updated ? envSpec(updated) : [];
   }));
 
   // Friendly schedule preview — compute the next fire time for a proposed

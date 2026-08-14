@@ -60,6 +60,16 @@ export function automationOutDir(automationDir: string): string {
   return path.join(automationDir, OUT_FOLDER_NAME);
 }
 
+/** `<automation folder>/.env` — non-secret env vars (secrets never hit disk). */
+export function automationEnvFilePath(automationDir: string): string {
+  return path.join(automationDir, ".env");
+}
+
+/** `<automation folder>/manifest.json` — the automation's self-describing spec. */
+export function automationManifestPath(automationDir: string): string {
+  return path.join(automationDir, "manifest.json");
+}
+
 /** `<automation folder>/runs/<runId>/` — the per-run working directory. */
 export function automationRunDir(automationDir: string, runId: string): string {
   return path.join(automationDir, RUNS_FOLDER_NAME, runId);
