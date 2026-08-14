@@ -38,6 +38,7 @@ import {
 import { runAutomationNow } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
+import { automationFolderDir } from "../lib/automation-folder";
 import { isValidEnvName } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
@@ -732,6 +733,15 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
     const runId = runAutomationNow({ db: ctx.db, workspacePath: ctx.workspacePath }, id);
     return runId === null ? { skipped: true } : { runId };
+  }));
+
+  // The automation's folder on disk (<project>/.automations/<id>/) — the dev
+  // agent's cwd when building/testing the automation's scripts.
+  registerIpcHandle("db:automation:folder", (_e, { id }: { id: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, id);
+    if (!a) return { error: "Automation not found." };
+    const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
+    return { folder: automationFolderDir(ctx.workspacePath, a.id, projectName) };
   }));
 
   // ── Automation env vars ──────────────────────────────────────────────────

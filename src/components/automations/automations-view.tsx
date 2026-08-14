@@ -4,8 +4,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity, FileText, Kanban, Sparkles, Plug } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn } from "@/lib/utils";
+import { cn, id } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
+import { buildAutomationDevPrompt } from "@/lib/automation-dev-prompt";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { Input } from "@/components/ui/input";
@@ -85,6 +86,7 @@ export function AutomationsView() {
     activeWorkspaceId, activeProjectId, projects, setView,
     automations, lastRuns, pendingApprovals, runsById,
     fetchAutomations, createAutomation, updateAutomation, deleteAutomation, runNow, fetchRun, fetchRuns,
+    addTerminalSession, setPersistentPiSession, setActiveSession, fetchPiSessionHistory,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId: s.activeProjectId,
@@ -101,6 +103,10 @@ export function AutomationsView() {
     runNow: s.runNow,
     fetchRun: s.fetchRun,
     fetchRuns: s.fetchRuns,
+    addTerminalSession: s.addTerminalSession,
+    setPersistentPiSession: s.setPersistentPiSession,
+    setActiveSession: s.setActiveSession,
+    fetchPiSessionHistory: s.fetchPiSessionHistory,
   })));
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -238,6 +244,65 @@ export function AutomationsView() {
     setDialogOpen(false);
   }
 
+  const [developing, setDeveloping] = useState(false);
+  const [developError, setDevelopError] = useState<string | null>(null);
+
+  /**
+   * Open a pi-agent session scoped to the automation's folder so an agent can
+   * author + test the automation's scripts against the real .env / manifest.
+   * "Run now" then exercises the exact scheduler path end-to-end.
+   */
+  async function develop(a: Automation) {
+    const electron = window.electron;
+    if (!electron) return;
+    setDeveloping(true);
+    setDevelopError(null);
+    try {
+      const res = (await electron.automation.folder(a.id)) as { folder: string };
+      const projectId = a.projectId ?? activeProjectId;
+      if (!projectId) {
+        setDevelopError("This automation is workspace-scoped with no active project. Pick a project first.");
+        return;
+      }
+      const sessionId = id();
+      const now = new Date().toISOString();
+      const taskTitle = `Develop: ${a.name}`;
+      await electron.piAgent.createSession({
+        id: sessionId,
+        projectId,
+        taskTitle,
+        taskId: a.id,
+        cwd: res.folder,
+        mode: "execute",
+        spawnedAt: now,
+      });
+      addTerminalSession({
+        sessionId,
+        taskId: a.id,
+        taskTitle,
+        agentId: "cairn-agent",
+        agentName: "Cairn Agent",
+        projectId,
+        cwd: res.folder,
+        status: "running",
+        exitCode: null,
+        spawnedAt: now,
+        sessionType: "pi",
+        piMessages: [],
+        mode: "execute",
+        initialPrompt: buildAutomationDevPrompt(a),
+      });
+      setPersistentPiSession(sessionId);
+      if (activeProjectId) void fetchPiSessionHistory(activeProjectId);
+      setActiveSession(sessionId);
+      setView("agent");
+    } catch (err) {
+      setDevelopError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeveloping(false);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
       {/* Toolbar */}
@@ -258,6 +323,12 @@ export function AutomationsView() {
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
         <PendingApprovals />
+        {developError && (
+          <div className="rounded-md border border-[var(--danger)]/40 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] px-3 py-2 text-xs text-[var(--danger)] flex items-center gap-2">
+            <span className="flex-1">{developError}</span>
+            <button type="button" onClick={() => setDevelopError(null)} className="hover:text-[var(--text-primary)]">Dismiss</button>
+          </div>
+        )}
         {automations.length === 0 && pendingApprovals.length === 0 && (
           <div className="rounded-lg border border-[var(--border)] p-10 text-center text-sm text-[var(--text-tertiary)]">
             No automations yet. Create one to run scheduled tasks in the background.
@@ -318,6 +389,9 @@ export function AutomationsView() {
                   </div>
                 </button>
                 <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="icon" title="Develop scripts (opens the agent in the automation folder)" disabled={developing} onClick={() => void develop(a)}>
+                    <Sparkles size={13} />
+                  </Button>
                   <Button variant="ghost" size="icon" title="Run now" onClick={() => void runNow(a.id)}>
                     <Play size={13} />
                   </Button>
@@ -389,6 +463,8 @@ export function AutomationsView() {
         runs={detail ? runsById[detail.id] ?? [] : []}
         onEdit={detail ? () => { setDetail(null); openEdit(detail); } : undefined}
         onRunNow={detail ? () => void runNow(detail.id) : undefined}
+        onDevelop={detail ? () => void develop(detail) : undefined}
+        developing={developing}
         onEnvChanged={activeWorkspaceId ? () => void fetchAutomations(activeWorkspaceId) : undefined}
         projectName={detail && detail.projectId ? projectName.get(detail.projectId) ?? null : null}
       />
@@ -647,11 +723,13 @@ interface AutomationDetailDialogProps {
   runs: AutomationRun[];
   onEdit?: () => void;
   onRunNow?: () => void;
+  onDevelop?: () => void;
+  developing?: boolean;
   onEnvChanged?: () => void;
   projectName: string | null;
 }
 
-function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, onEnvChanged, projectName }: AutomationDetailDialogProps) {
+function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, onDevelop, developing, onEnvChanged, projectName }: AutomationDetailDialogProps) {
   const [refreshing, setRefreshing] = useState(false);
   const { fetchRuns, setView } = useCairnStore(useShallow((s) => ({ fetchRuns: s.fetchRuns, setView: s.setView })));
 
@@ -695,6 +773,11 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
       scrollable
       footer={
         <>
+          {onDevelop && (
+            <Button variant="outline" size="sm" onClick={onDevelop} disabled={developing}>
+              <Sparkles size={12} className="mr-1" /> {developing ? "Starting…" : "Develop"}
+            </Button>
+          )}
           {onEdit && (
             <Button variant="outline" size="sm" onClick={onEdit}>
               <Pencil size={12} className="mr-1" /> Edit
