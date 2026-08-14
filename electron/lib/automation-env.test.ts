@@ -10,7 +10,15 @@ import { describe, it, expect } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { isValidEnvName, materializeEnvFile, quoteEnvValue, resolveAutomationEnv, writeAutomationManifest } from "./automation-env";
+import {
+  applyManifestEnv,
+  isValidEnvName,
+  materializeEnvFile,
+  quoteEnvValue,
+  readAutomationManifest,
+  resolveAutomationEnv,
+  writeAutomationManifest,
+} from "./automation-env";
 import type { Automation } from "../db/automation-queries";
 
 function makeAutomation(env: Automation["env"]): Automation {
@@ -130,5 +138,34 @@ describe("writeAutomationManifest", () => {
     fs.writeFileSync(path.join(dir, "manifest.json"), '{"name":"custom","entry":"scripts/x.js"}', "utf8");
     writeAutomationManifest(dir, makeAutomation([{ name: "A", value: "1", secret: false }]));
     expect(JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8")).name).toBe("custom");
+  });
+});
+
+describe("manifest helpers", () => {
+  it("reads an agent-authored manifest and returns null when absent", () => {
+    const dir = tmpDir();
+    expect(readAutomationManifest(dir)).toBeNull();
+    fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ instructions: "Run it", env: [{ name: "K", secret: true }] }));
+    const m = readAutomationManifest(dir);
+    expect(m?.instructions).toBe("Run it");
+    expect(m?.env).toEqual([{ name: "K", secret: true }]);
+  });
+
+  it("merges a manifest env schema over the row env, preserving values + secrets", () => {
+    const existing: Automation["env"] = [
+      { name: "KEEP", value: "abc", secret: false },
+      { name: "SECRET", secret: true },
+      { name: "DROP", value: "x", secret: false },
+    ];
+    const merged = applyManifestEnv(existing, [
+      { name: "KEEP", secret: true }, // flipped to secret, value preserved
+      { name: "SECRET", secret: true },
+      { name: "NEW", secret: false }, // new → empty value
+    ]);
+    expect(merged).toEqual([
+      { name: "KEEP", value: "abc", secret: true },
+      { name: "SECRET", secret: true },
+      { name: "NEW", secret: false, value: "" },
+    ]);
   });
 });

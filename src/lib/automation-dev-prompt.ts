@@ -3,42 +3,61 @@ import type { Automation } from "@/store/slices/automations";
 /**
  * Build the initial prompt for the automation "Develop" session — a pi-agent
  * session scoped to the automation's folder (<project>/.automations/<id>/)
- * that authors and tests the automation's scripts.
+ * that authors the automation's scripts AND its final recipe.
  *
- * The prompt hands the agent everything it needs: the recipe, the layout
- * (scripts/ + .env + manifest.json), the env contract (non-secret values are
- * in .env; secret values are injected only at run time and never written to
- * files), and the run_script contract it must build against.
+ * The agent is the automation builder: it writes `scripts/` for the custom
+ * logic, and edits `manifest.json` to set the final `instructions` (the recipe
+ * that orchestrates connectors + run_script + note writing) and the env schema.
+ * Connectors are tools the automation's own agent calls at run time — the dev
+ * agent must never replicate them in scripts.
  */
 export function buildAutomationDevPrompt(automation: Automation): string {
   const envNames = (automation.env ?? []).map((e) => e.name);
   const requires = (automation.requires ?? []).map((r) => `${r.kind}:${r.name}`);
+  const recipe = automation.instructions.trim();
 
   return [
-    `You are building the scripts for the Cairn automation "${automation.name}".`,
+    `You are building the Cairn automation "${automation.name}" — its scripts AND its recipe.`,
     ``,
-    `The automation runs this recipe on schedule:`,
+    `## The automation`,
+    `It currently runs this recipe on schedule:`,
     ``,
-    automation.instructions.trim(),
+    recipe,
     ``,
     `## Your workspace`,
     `Your working directory IS the automation folder. Layout:`,
     `- \`scripts/\` — where you create the scripts (e.g. \`scripts/generate_images.js\`).`,
-    `- \`manifest.json\` — the automation's spec (name, env schema, connectors). Read it.`,
-    `- \`.env\` — plain (non-secret) env values, already materialized for you.`,
+    `- \`manifest.json\` — the automation's spec. READ it, and EDIT it: it is where you write the final recipe.`,
+    `- \`.env\` — plain (non-secret) env values, already materialized.`,
+    ``,
+    `## Connectors — do NOT replicate them`,
+    requires.length > 0
+      ? `This automation uses: ${requires.join(", ")}. At run time the automation's agent calls these MCP/service tools DIRECTLY as part of the recipe. You must NOT write scripts that wrap, call, or re-implement them — the script would just duplicate what the automation already does.`
+      : `This automation has no connectors.`,
+    ``,
+    `## The division of labour`,
+    `- The RECIPE (manifest.json \`instructions\`) orchestrates: call connectors, then \`run_script\` for custom logic, then write the result as a note.`,
+    `- SCRIPTS do what the tools cannot: image generation, file processing, running CLIs, computing values. A script takes arguments, reads env, writes deliverables to \`CAIRN_OUT_DIR\` (or stdout), and exits 0 on success.`,
+    ``,
+    `## The recipe you must produce`,
+    `Edit \`manifest.json\` and set its \`instructions\` field to the FULL, final recipe — the automation must actually call your script. For example:`,
+    ``,
+    "```json",
+    `"instructions": "Check the latest architectural news with the Tavily connector, then run generate_images with the argument '-prompt <news summary>', then present the findings in a new note."`,
+    "```",
+    ``,
+    `The recipe is what the automation agent follows every run: it should name the connectors, name the \`run_script\` calls, and say how to deliver results.`,
     ``,
     `## Env vars`,
     `${envNames.length > 0
-      ? `The automation exposes these env vars to scripts: ${envNames.join(", ")}.\nPlain values are in \`.env\` (source it or read process.env). Secret values are stored in the OS keychain and injected directly into the script's process.env at RUN time — they are never written to files, so during development they are absent. Write scripts that read them from process.env and degrade gracefully (or log a clear message) when a secret is missing.`
-      : `The automation has no env vars configured.`}`,
+      ? `The automation already exposes: ${envNames.join(", ")}. `
+      : `The automation has no env vars yet. `
+    }If your scripts need configuration (e.g. an API key), add it to \`manifest.json\` under \`env\` as { name, secret } — do NOT invent secrets in scripts. The user fills in values in the Environment editor. Plain values go in \`.env\`; secret values are injected from the OS keychain at run time and are never written to files.`,
     ``,
-    `## The run_script contract`,
-    `At run time the automation calls scripts by NAME from \`scripts/\` (resolved as name, .js/.ts/.sh/.py, and .bat/.cmd/.ps1 on Windows). The working directory at run time is a per-run scratch folder, not this folder. Env always includes CAIRN_OUT_DIR (a durable out/ folder) — copy anything worth keeping there. Keep scripts deterministic, bounded, and non-interactive: no prompts, no long sleeps, exit 0 on success with useful output.`,
+    `## run_script contract (how scripts are called at run time)`,
+    `Scripts are resolved by NAME from \`scripts/\` (name, .js/.ts/.sh/.py, and .bat/.cmd/.ps1 on Windows). The working directory at run time is a per-run scratch folder, NOT this folder. Env always includes CAIRN_OUT_DIR (a durable out/ folder) — copy anything worth keeping there. Keep scripts deterministic, bounded, and non-interactive: no prompts, no long sleeps, exit 0 on success with useful output. Test them here with \`node\` / \`bash\` against \`.env\`.`,
     ``,
-    `## Your task`,
-    `Create and iterate on the script(s) the recipe needs. Test them here with \`node\` / \`bash\` against \`.env\` until they work. Prefer a single well-named script that does one thing and prints structured output.`,
-    `${requires.length > 0 ? `\nThe automation also uses these connectors: ${requires.join(", ")}. The recipe may expect you to fetch input through them at run time.\n` : ""}`,
-    ``,
-    `When you are confident the scripts work, tell the user to open the Automations view and press "Run now" to test the real end-to-end path (that run injects the real secret env vars and uses your scripts as-is).`,
+    `## Finish`,
+    `When the scripts work and manifest.json's \`instructions\` is the full recipe, tell the user to: open the Automations view → this automation's details → "Sync from manifest" (writes your recipe into the automation) → "Run now" (tests the real end-to-end path with your scripts and real secrets).`,
   ].join("\n");
 }

@@ -38,8 +38,8 @@ import {
 import { runAutomationNow } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
-import { automationFolderDir } from "../lib/automation-folder";
-import { isValidEnvName } from "../lib/automation-env";
+import { automationFolderDir, ensureAutomationDir } from "../lib/automation-folder";
+import { applyManifestEnv, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
 
@@ -736,12 +736,45 @@ export function registerDbHandlers(ctx: DbContext): void {
   }));
 
   // The automation's folder on disk (<project>/.automations/<id>/) — the dev
-  // agent's cwd when building/testing the automation's scripts.
+  // agent's cwd when building/testing the automation's scripts. The folder is
+  // CREATED here (scripts/ + out/ + .env + manifest) so a Develop session on a
+  // never-run automation sees a real, populated workspace.
   registerIpcHandle("db:automation:folder", (_e, { id }: { id: string }) => handle(() => {
     const a = getAutomationById(ctx.db, id);
     if (!a) return { error: "Automation not found." };
     const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
-    return { folder: automationFolderDir(ctx.workspacePath, a.id, projectName) };
+    const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
+    try {
+      ensureAutomationDir(folder);
+      prepareAutomationFolder(folder, a);
+    } catch (err) {
+      console.warn("[automation] failed to prepare develop folder:", err);
+    }
+    return { folder };
+  }));
+
+  // Apply the agent-authored manifest.json (instructions / env schema / standing
+  // rules) back onto the automation row — the Develop loop's "write the resulting
+  // automation shape" step.
+  registerIpcHandle("db:automation:syncFromManifest", (_e, { id }: { id: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, id);
+    if (!a) return { error: "Automation not found." };
+    const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
+    const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
+    const manifest = readAutomationManifest(folder);
+    if (!manifest) return { error: "No manifest.json in the automation folder — run Develop first." };
+    const patch: Partial<Omit<AutomationInput, "workspaceId">> = {};
+    if (typeof manifest.instructions === "string" && manifest.instructions.trim()) {
+      patch.instructions = manifest.instructions.trim();
+    }
+    if (Array.isArray(manifest.env)) {
+      patch.env = applyManifestEnv(a.env ?? [], manifest.env);
+    }
+    if (Array.isArray(manifest.standingRules)) {
+      patch.standingRules = manifest.standingRules;
+    }
+    const updated = updateAutomation(ctx.db, id, patch);
+    return updated ?? { error: "Failed to sync automation from manifest." };
   }));
 
   // ── Automation env vars ──────────────────────────────────────────────────

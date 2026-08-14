@@ -238,4 +238,30 @@ describe("runAutomation folder plumbing", () => {
     expect(output).toContain("TOKEN=abc");
     expect(output).toContain("SECRET=unset");
   });
+
+  it("uses the agent-authored manifest instructions as the recipe instead of the row", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    const automation = makeAutomation(db, { projectId: "p1" }); // row recipe = "Summarise today's Linear activity."
+    const run = createAutomationRun(db, automation.id, "running");
+    runToolLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    const autoDir = automationFolderDir(root, automation.id, "P");
+    fs.mkdirSync(autoDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(autoDir, "manifest.json"),
+      JSON.stringify({ instructions: "MANIFEST RECIPE: check the news via the connector, then run generate_images, then write a note." }),
+      "utf8",
+    );
+
+    await runAutomation({ db, workspacePath: root }, run, automation);
+
+    const loopArgs = runToolLoopMock.mock.calls[0];
+    const messages = loopArgs[6] as Array<{ role: string; content: string }>;
+    const userMsg = messages.find((m) => m.role === "user");
+    expect(userMsg?.content).toContain("MANIFEST RECIPE");
+    expect(userMsg?.content).toContain("run generate_images");
+    expect(userMsg?.content).not.toContain("Linear activity");
+  });
 });

@@ -39,25 +39,30 @@ describe("buildAutomationDevPrompt", () => {
     expect(prompt).toContain("scripts/");
     expect(prompt).toContain("manifest.json");
     expect(prompt).toContain(".env");
-    expect(prompt).toContain('press "Run now"');
+    expect(prompt).toContain("Sync from manifest");
   });
 
-  it("lists env var names and the secret handling contract", () => {
-    const prompt = buildAutomationDevPrompt(makeAutomation({
-      env: [
-        { name: "IMG_API_KEY", secret: true },
-        { name: "PLAIN", value: "abc", secret: false },
-      ],
-    }));
-    expect(prompt).toContain("IMG_API_KEY, PLAIN");
-    expect(prompt).toContain("Secret values are stored in the OS keychain");
-    expect(prompt).toContain("never written to files");
+  it("tells the agent to author the final recipe into manifest.json instructions", () => {
+    const prompt = buildAutomationDevPrompt(makeAutomation());
+    expect(prompt).toContain("Edit `manifest.json` and set its `instructions` field");
+    expect(prompt).toContain("run generate_images");
+    expect(prompt).toContain("run_script");
   });
 
-  it("mentions required connectors", () => {
+  it("forbids replicating connectors in scripts", () => {
     const prompt = buildAutomationDevPrompt(makeAutomation({
-      requires: [{ kind: "mcp", name: "browser" }],
+      requires: [{ kind: "mcp", name: "Tavily" }],
     }));
-    expect(prompt).toContain("mcp:browser");
+    expect(prompt).toContain("mcp:Tavily");
+    expect(prompt).toContain("must NOT write scripts that wrap, call, or re-implement them");
+  });
+
+  it("lists env names and instructs env-schema authoring via manifest", () => {
+    const prompt = buildAutomationDevPrompt(makeAutomation({
+      env: [{ name: "IMG_API_KEY", secret: true }],
+    }));
+    expect(prompt).toContain("IMG_API_KEY");
+    expect(prompt).toContain("add it to `manifest.json` under `env`");
+    expect(prompt).toContain("injected from the OS keychain at run time");
   });
 });

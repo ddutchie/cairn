@@ -14,7 +14,7 @@
  */
 
 import fs from "fs";
-import type { Automation } from "../db/automation-queries";
+import type { Automation, AutomationEnv } from "../db/automation-queries";
 import { automationEnvFilePath, automationManifestPath } from "./automation-folder";
 
 /** Valid shell env var names — anything else is rejected at the IPC boundary. */
@@ -95,5 +95,48 @@ export function writeAutomationManifest(automationDir: string, automation: Autom
 export function prepareAutomationFolder(automationDir: string, automation: Automation): void {
   materializeEnvFile(automationDir, automation);
   writeAutomationManifest(automationDir, automation);
+}
+
+// ── Manifest (the agent-authored automation shape) ────────────────────────────
+
+export interface AutomationManifest {
+  name?: string;
+  description?: string;
+  /** The recipe — the automation's instructions, authored by the dev agent. */
+  instructions?: string;
+  /** Env schema (names + secret flags); values live in the row/keychain. */
+  env?: Array<{ name: string; secret?: boolean }>;
+  requires?: Array<{ kind: "mcp" | "service"; name: string }>;
+  standingRules?: Array<{ tool: string; target?: string }>;
+  /** Entry script name (informational). */
+  entry?: string;
+}
+
+/** Read + parse the automation's manifest.json, or null when absent/invalid. */
+export function readAutomationManifest(automationDir: string): AutomationManifest | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(automationManifestPath(automationDir), "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as AutomationManifest) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Merge a manifest env schema over the existing row env: manifest names + secret
+ * flags win; existing values (and keychain-backed secrets) are preserved for
+ * matching names; new names start empty. Returns the env array to persist.
+ */
+export function applyManifestEnv(
+  existing: AutomationEnv[],
+  manifestEnv: Array<{ name: string; secret?: boolean }>,
+): AutomationEnv[] {
+  const byName = new Map(existing.map((e) => [e.name, e]));
+  return manifestEnv.map((m) => {
+    const current = byName.get(m.name);
+    const secret = Boolean(m.secret);
+    if (current) return { ...current, secret };
+    return { name: m.name, secret, value: "" };
+  });
 }
 

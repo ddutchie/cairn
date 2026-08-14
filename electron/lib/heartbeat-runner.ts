@@ -52,7 +52,7 @@ import {
   type RunScriptArgs,
   type RunScriptHandler,
 } from "./automation-script";
-import { prepareAutomationFolder, resolveAutomationEnv } from "./automation-env";
+import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
 import { getSecretValue } from "./secure-store";
 import { toSlug } from "../shared/text-utils";
 
@@ -211,13 +211,24 @@ export async function runAutomation(
       }
     : undefined;
 
+  // The recipe to execute: the agent-authored manifest.json `instructions`
+  // (written during Develop) win over the automation row, so the built script
+  // is actually called end-to-end. Falls back to the row when no manifest.
+  let recipe = automation.instructions;
+  try {
+    const manifest = readAutomationManifest(automationDir);
+    if (manifest?.instructions && manifest.instructions.trim()) recipe = manifest.instructions.trim();
+  } catch {
+    /* fall back to the row */
+  }
+
   // const-narrowed copies so the onUsage closure below keeps string types
   // (TS does not preserve property narrowing into closures).
   const cachedModel = cached.model;
   const cachedBaseUrl = cached.baseUrl;
 
   const req: ChatRequest = {
-    message: automation.instructions,
+    message: recipe,
     threadId: run.id,
     projectId: automation.projectId ?? undefined,
     workspaceId: automation.workspaceId,
@@ -232,7 +243,7 @@ export async function runAutomation(
 
   const messages: OpenAIMessage[] = [
     { role: "system", content: buildSystemPrompt(req) },
-    { role: "user", content: automation.instructions },
+    { role: "user", content: recipe },
   ];
 
   // Connector-aware automation: load the project's attached external tools

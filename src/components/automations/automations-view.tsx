@@ -246,6 +246,8 @@ export function AutomationsView() {
 
   const [developing, setDeveloping] = useState(false);
   const [developError, setDevelopError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   /**
    * Open a pi-agent session scoped to the automation's folder so an agent can
@@ -300,6 +302,23 @@ export function AutomationsView() {
       setDevelopError(err instanceof Error ? err.message : String(err));
     } finally {
       setDeveloping(false);
+    }
+  }
+
+  /** Apply the agent-authored manifest.json (instructions / env schema) to the row. */
+  async function syncFromManifest(a: Automation) {
+    const electron = window.electron;
+    if (!electron) return;
+    setSyncing(true);
+    setSyncStatus(null);
+    try {
+      await electron.automation.syncFromManifest(a.id);
+      if (activeWorkspaceId) await fetchAutomations(activeWorkspaceId);
+      setSyncStatus("Synced the automation's recipe from the manifest.");
+    } catch (err) {
+      setSyncStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -465,6 +484,9 @@ export function AutomationsView() {
         onRunNow={detail ? () => void runNow(detail.id) : undefined}
         onDevelop={detail ? () => void develop(detail) : undefined}
         developing={developing}
+        onSyncFromManifest={detail ? () => void syncFromManifest(detail) : undefined}
+        syncing={syncing}
+        syncStatus={syncStatus}
         onEnvChanged={activeWorkspaceId ? () => void fetchAutomations(activeWorkspaceId) : undefined}
         projectName={detail && detail.projectId ? projectName.get(detail.projectId) ?? null : null}
       />
@@ -725,11 +747,14 @@ interface AutomationDetailDialogProps {
   onRunNow?: () => void;
   onDevelop?: () => void;
   developing?: boolean;
+  onSyncFromManifest?: () => void;
+  syncing?: boolean;
+  syncStatus?: string | null;
   onEnvChanged?: () => void;
   projectName: string | null;
 }
 
-function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, onDevelop, developing, onEnvChanged, projectName }: AutomationDetailDialogProps) {
+function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, onDevelop, developing, onSyncFromManifest, syncing, syncStatus, onEnvChanged, projectName }: AutomationDetailDialogProps) {
   const [refreshing, setRefreshing] = useState(false);
   const { fetchRuns, setView } = useCairnStore(useShallow((s) => ({ fetchRuns: s.fetchRuns, setView: s.setView })));
 
@@ -783,6 +808,11 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
               <Pencil size={12} className="mr-1" /> Edit
             </Button>
           )}
+          {onSyncFromManifest && (
+            <Button variant="outline" size="sm" onClick={onSyncFromManifest} disabled={syncing}>
+              <RefreshCw size={12} className={cn("mr-1", syncing && "animate-spin")} /> {syncing ? "Syncing…" : "Sync from manifest"}
+            </Button>
+          )}
           {onRunNow && (
             <Button variant="accent" size="sm" onClick={onRunNow}>
               <Play size={12} className="mr-1" /> Run now
@@ -796,6 +826,16 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
     >
       {automation && (
         <div className="space-y-4">
+          {syncStatus && (
+            <div className={cn(
+              "rounded-md border px-2.5 py-1.5 text-xs",
+              syncStatus.startsWith("Synced")
+                ? "border-[var(--ok)]/40 bg-[color-mix(in_srgb,var(--ok)_8%,transparent)] text-[var(--ok)]"
+                : "border-[var(--danger)]/40 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] text-[var(--danger)]",
+            )}>
+              {syncStatus}
+            </div>
+          )}
           {automation.description && (
             <p className="text-xs text-[var(--text-secondary)]">{automation.description}</p>
           )}
