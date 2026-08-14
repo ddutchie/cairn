@@ -809,11 +809,25 @@ interface AutomationDetailDialogProps {
 
 function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, onDevelop, developing, onSyncFromManifest, syncing, syncStatus, onEnvChanged, projectName }: AutomationDetailDialogProps) {
   const [refreshing, setRefreshing] = useState(false);
+  const [logFor, setLogFor] = useState<string | null>(null);
+  const [runLog, setRunLog] = useState<unknown | null>(null);
   const { fetchRuns, setView } = useCairnStore(useShallow((s) => ({ fetchRuns: s.fetchRuns, setView: s.setView })));
 
   useEffect(() => {
     if (automation) void fetchRuns(automation.id);
   }, [automation, fetchRuns]);
+
+  async function toggleLog(runId: string) {
+    if (logFor === runId) { setLogFor(null); setRunLog(null); return; }
+    setLogFor(runId);
+    setRunLog(null);
+    try {
+      const res = await window.electron?.automation.runLog(runId) as { log?: unknown } | { error?: string } | undefined;
+      setRunLog(res && "log" in (res ?? {}) ? (res as { log: unknown }).log : (res as { error?: string })?.error ?? null);
+    } catch (err) {
+      setRunLog(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   async function refresh() {
     if (!automation) return;
@@ -946,6 +960,14 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
                   <div className="flex items-center gap-2">
                     <span className={cn("capitalize font-medium", STATUS_COLOR[r.status])}>{r.status}</span>
                     <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt)}</span>
+                    <button
+                      type="button"
+                      onClick={() => void toggleLog(r.id)}
+                      className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+                      title={logFor === r.id ? "Hide run log" : "Show what happened in this run"}
+                    >
+                      <Activity size={11} />
+                    </button>
                   </div>
                   {r.finishedAt && r.status === "done" && (
                     <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt)}</div>
@@ -953,6 +975,7 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
                   {r.error && (
                     <div className="text-[var(--danger)] mt-0.5 break-words">{r.error}</div>
                   )}
+                  {logFor === r.id && <RunLogView log={runLog} />}
                 </div>
               ))}
             </div>
@@ -960,6 +983,67 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
         </div>
       )}
     </ModalShell>
+  );
+}
+
+interface RunLogShape {
+  status?: string;
+  recipe?: string;
+  error?: string | null;
+  tools?: Array<{ name: string; label?: string; ok?: boolean; output?: string; error?: string }>;
+  tokens?: string;
+  thoughts?: string;
+}
+
+/** Renders a run's persisted transcript (run-log.json). */
+function RunLogView({ log }: { log: unknown }) {
+  if (log === null) {
+    return <p className="text-[var(--text-tertiary)] mt-1.5">No run transcript for this run.</p>;
+  }
+  if (typeof log === "string") {
+    return <p className="text-[var(--danger)] mt-1.5">{log}</p>;
+  }
+  const l = log as RunLogShape;
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      {l.recipe && (
+        <div>
+          <div className="text-[var(--text-tertiary)]">Recipe</div>
+          <div className="text-[var(--text-secondary)] whitespace-pre-wrap break-words">{l.recipe}</div>
+        </div>
+      )}
+      {l.error && <div className="text-[var(--danger)]">{l.error}</div>}
+      {(l.tools ?? []).length > 0 && (
+        <div>
+          <div className="text-[var(--text-tertiary)]">Tools ({l.tools!.length})</div>
+          {l.tools!.map((t, i) => (
+            <div key={i} className="mt-1">
+              <div className="flex items-center gap-1.5">
+                <span className={cn("font-mono", t.ok === false ? "text-[var(--danger)]" : "text-[var(--text-primary)]")}>{t.label ?? t.name}</span>
+                {t.ok === false && <span className="text-[var(--danger)]">failed</span>}
+                {t.ok === true && <span className="text-[var(--ok)]">ok</span>}
+              </div>
+              {t.output && (
+                <pre className="mt-0.5 text-[0.65rem] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-32 overflow-y-auto rounded bg-[var(--surface-2)] p-1.5">{t.output}</pre>
+              )}
+              {t.error && <div className="text-[var(--danger)]">{t.error}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+      {l.tokens && (
+        <div>
+          <div className="text-[var(--text-tertiary)]">Assistant output</div>
+          <div className="text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-40 overflow-y-auto">{l.tokens}</div>
+        </div>
+      )}
+      {l.thoughts && (
+        <details>
+          <summary className="text-[var(--text-tertiary)] cursor-pointer">Thinking</summary>
+          <pre className="text-[0.65rem] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-32 overflow-y-auto">{l.thoughts}</pre>
+        </details>
+      )}
+    </div>
   );
 }
 

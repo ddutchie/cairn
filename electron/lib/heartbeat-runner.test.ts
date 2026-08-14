@@ -280,27 +280,30 @@ describe("runAutomation folder plumbing", () => {
     expect(userMsg?.content).not.toContain("Linear activity");
   });
 
-  it("streams live run activity to the provided send sink", async () => {
+  it("streams live run activity and persists a run transcript", async () => {
     const db = makeDb();
     createWorkspace(db, { id: "ws1", name: "W" });
     createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
     const automation = makeAutomation(db, { projectId: "p1" });
     const run = createAutomationRun(db, automation.id, "running");
-    runToolLoopMock.mockResolvedValue({ exhausted: false, content: "final summary", reasoning: "" });
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
     const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
     const send = (channel: string, payload: unknown) => sent.push({ channel, payload: payload as Record<string, unknown> });
 
-    // Capture the loop callbacks so we can fire token/tool events through them.
+    // The loop mock fires the tool/token callbacks DURING the run so they land
+    // in both the live stream and the persisted transcript.
+    runToolLoopMock.mockImplementation((...args: unknown[]) => {
+      const emitToolCall = args[7] as (e: { tool: string; label: string; args: Record<string, unknown> }) => void;
+      const emitToolCallDone = args[12] as (e: { tool: string; ok: boolean; output: string }) => void;
+      const onToken = args[13] as (delta: string) => void;
+      emitToolCall({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
+      onToken("hello ");
+      onToken("world");
+      emitToolCallDone({ tool: "run_script", ok: true, output: "made image" });
+      return Promise.resolve({ exhausted: false, content: "final summary", reasoning: "" });
+    });
+
     await runAutomation({ db, workspacePath: root, send }, run, automation);
-    const loopArgs = runToolLoopMock.mock.calls[0];
-    const emitToolCall = loopArgs[7] as (e: { tool: string; label: string; args: Record<string, unknown> }) => void;
-    const emitToolCallDone = loopArgs[12] as (e: { tool: string; ok: boolean; output: string; error?: string }) => void;
-    const onToken = loopArgs[13] as (delta: string) => void;
-    emitToolCall({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
-    onToken("hello ");
-    onToken("world");
-    emitToolCallDone({ tool: "run_script", ok: true, output: "made image" });
 
     const events = sent.filter((s) => s.channel === "automation:run");
     expect(events.some((e) => e.payload.event === "started")).toBe(true);
@@ -309,5 +312,17 @@ describe("runAutomation folder plumbing", () => {
     expect(events.some((e) => e.payload.event === "tool" && e.payload.tool === "run_script")).toBe(true);
     expect(events.some((e) => e.payload.event === "toolDone" && e.payload.ok === true)).toBe(true);
     expect(events.some((e) => e.payload.event === "finished")).toBe(true);
+
+    // The run transcript is persisted to run-log.json in the run folder.
+    const autoDir = automationFolderDir(root, automation.id, "P");
+    const runDir = automationRunDir(autoDir, run.id);
+    const log = JSON.parse(fs.readFileSync(path.join(runDir, "run-log.json"), "utf8"));
+    expect(log.status).toBe("done");
+    expect(log.recipe).toBe(automation.instructions);
+    expect(log.tokens).toBe("final summary");
+    expect(log.tools).toHaveLength(1);
+    expect(log.tools[0].name).toBe("run_script");
+    expect(log.tools[0].ok).toBe(true);
+    expect(log.tools[0].output).toBe("made image");
   });
 });

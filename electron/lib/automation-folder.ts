@@ -164,3 +164,55 @@ export function listAutomationFolderFiles(automationDir: string): AutomationFold
   walk(automationDir, "", 0);
   return out;
 }
+
+// ── Run transcript (what actually happened in a run) ──────────────────────────
+
+/** One tool call as it happened — args, outcome, output. */
+export interface RunLogTool {
+  name: string;
+  label?: string;
+  args?: Record<string, unknown>;
+  ok?: boolean;
+  output?: string;
+  error?: string;
+}
+
+/** A persisted per-run transcript — the inspectable record of a run. */
+export interface RunLog {
+  automationId: string;
+  runId: string;
+  startedAt: string;
+  finishedAt?: string;
+  /** The recipe actually executed (manifest instructions, else the row). */
+  recipe?: string;
+  /** 'done' | 'exhausted' | 'error'. */
+  status?: string;
+  error?: string | null;
+  /** Streaming assistant tokens accumulated during the run. */
+  tokens?: string;
+  /** Streaming reasoning accumulated during the run. */
+  thoughts?: string;
+  /** Every tool call in order. */
+  tools: RunLogTool[];
+}
+
+/** Write the run transcript into the run folder (best-effort). */
+export function writeRunLog(runDir: string, log: RunLog): void {
+  try {
+    fs.writeFileSync(
+      path.join(runDir, "run-log.json"),
+      `${JSON.stringify(log, null, 2)}\n`,
+      "utf8",
+    );
+  } catch { /* best-effort */ }
+}
+
+/** Read + parse a run's transcript from its folder, or null when absent. */
+export function readRunLog(runDir: string): RunLog | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(runDir, "run-log.json"), "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as RunLog) : null;
+  } catch {
+    return null;
+  }
+}

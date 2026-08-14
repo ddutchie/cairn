@@ -318,6 +318,7 @@ const api = {
     folder: (id: string) => invoke<{ folder: string }>("db:automation:folder", { id }),
     syncFromManifest: (id: string) => invoke("db:automation:syncFromManifest", { id }),
     files: (id: string) => invoke<{ files: Array<{ path: string; size: number; mtimeMs: number }> }>("db:automation:files", { id }),
+    runLog: (runId: string) => invoke<{ log: unknown } | { error: string }>("db:automation:runLog", { runId }),
     /** Live run activity (tokens/tools/thought) for the "watch this run" view. */
     onRunEvent: (cb: (payload: {
       event: "started" | "token" | "thought" | "tool" | "toolDone" | "finished";

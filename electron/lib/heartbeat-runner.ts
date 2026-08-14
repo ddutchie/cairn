@@ -45,6 +45,8 @@ import {
   ensureAutomationDir,
   ensureAutomationRunDir,
   cleanupOldRunDirs,
+  writeRunLog,
+  type RunLog,
 } from "./automation-folder";
 import {
   runAutomationScript,
@@ -339,6 +341,36 @@ export async function runAutomation(
     } catch { /* best-effort */ }
   };
 
+  // Persisted run transcript — the inspectable "what happened" record, written
+  // to <runDir>/run-log.json on completion.
+  const log: RunLog = {
+    automationId: automation.id,
+    runId: run.id,
+    startedAt: new Date().toISOString(),
+    recipe,
+    status: "running",
+    tools: [],
+    tokens: "",
+    thoughts: "",
+  };
+  const logTool = (name: string, label: string | undefined, args: Record<string, unknown> | undefined) => {
+    log.tools.push({ name, label, args });
+  };
+  const logToolDone = (name: string, ok: boolean | undefined, output: string | undefined, error: string | undefined) => {
+    const last = [...log.tools].reverse().find((t) => t.name === name && t.ok === undefined);
+    if (last) {
+      last.ok = ok;
+      last.output = output;
+      last.error = error;
+    }
+  };
+  const finaliseLog = (status: string, error?: string | null) => {
+    log.status = status;
+    log.error = error ?? null;
+    log.finishedAt = new Date().toISOString();
+    if (runDir) writeRunLog(runDir, log);
+  };
+
   // Collect notes/cards the run CREATED or CHANGED so they can be surfaced as
   // navigable artifacts (the loop's emitToolCallDone carries a cairnRef for
   // note/task tools). Only WRITE tools count — get_note/get_task are reads and
@@ -374,6 +406,7 @@ export async function runAutomation(
     messages,
     (e) => {                       // emitToolCall — record + stream the active tool
       currentTool(e.tool);
+      logTool(e.tool, e.label, e.args);
       emitRun("tool", { tool: e.tool, label: e.label, args: e.args, status: "start" });
     },
     abortCtrl.signal,
@@ -400,10 +433,11 @@ export async function runAutomation(
     },
     (e) => {                       // emitToolCallDone — collect artifacts + stream result
       recordArtifact(e.tool, e.cairnRef);
+      logToolDone(e.tool, e.ok, e.output, e.error);
       emitRun("toolDone", { tool: e.tool, ok: e.ok, output: e.output, error: e.error, cairnRef: e.cairnRef });
     },
-    (delta) => emitRun("token", { delta }),   // onToken
-    (delta) => emitRun("thought", { delta }), // onThought
+    (delta) => emitRun("token", { delta }),   // onToken (live stream; final text lands in the log)
+    (delta) => { log.thoughts += delta; emitRun("thought", { delta }); }, // onThought
     extraTools,                      // connector-aware recipes get their attached external tools
     undefined,                       // toolsOverride
     undefined,                       // argMutator
@@ -413,8 +447,10 @@ export async function runAutomation(
     deliverFileHandler,              // deliver_file executor (out/ → attachments for the note)
   );
   emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content });
+  log.tokens = result.content;
 
   if (result.exhausted) {
+    finaliseLog("exhausted", "Reached the step limit; run may be incomplete.");
     updateAutomationRun(db, run.id, {
       status: "done",
       resultNoteId: null,
@@ -432,6 +468,7 @@ export async function runAutomation(
     error: null,
     scratch: finalScratch(),
   });
+  finaliseLog("done");
   insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content), completionTarget());
   cleanupRuns();
 }

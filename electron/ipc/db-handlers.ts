@@ -26,6 +26,7 @@ import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 import {
   createAutomation,
   getAutomationById,
+  getAutomationRunById,
   listAutomations,
   updateAutomation,
   deleteAutomation,
@@ -39,7 +40,7 @@ import { runAutomationNow } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { recordStandingAllowance } from "../lib/automation-approval";
-import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles } from "../lib/automation-folder";
+import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog } from "../lib/automation-folder";
 import { applyManifestEnv, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
@@ -765,6 +766,15 @@ export function registerDbHandlers(ctx: DbContext): void {
     const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
     const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
     return { files: listAutomationFolderFiles(folder) };
+  }));
+
+  // A run's persisted transcript (run-log.json in its run folder).
+  registerIpcHandle("db:automation:runLog", (_e, { runId }: { runId: string }) => handle(() => {
+    const run = getAutomationRunById(ctx.db, runId);
+    if (!run || !run.runDir) return { error: "No run folder for this run." };
+    const log = readRunLog(run.runDir);
+    if (!log) return { error: "No run transcript saved for this run." };
+    return { log };
   }));
 
   // Apply the agent-authored manifest.json (instructions / env schema / standing
