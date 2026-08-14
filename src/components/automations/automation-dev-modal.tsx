@@ -5,6 +5,7 @@ import { FileText, FolderOpen, Play, RefreshCw, Sparkles } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { AgentChatPane } from "@/components/agent/AgentChatPane";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
@@ -55,9 +56,11 @@ export function AutomationDevModal({
       footer={
         <>
           {onStartOver && (
-            <Button variant="ghost" size="sm" onClick={onStartOver} title="Abort this session and start a fresh one">
-              <Sparkles size={12} className="mr-1" /> Start over
-            </Button>
+            <Tooltip content="Abort this session and start a fresh one">
+              <Button variant="ghost" size="sm" onClick={onStartOver}>
+                <Sparkles size={12} className="mr-1" /> Start over
+              </Button>
+            </Tooltip>
           )}
           {onSyncFromManifest && (
             <Button variant="outline" size="sm" onClick={onSyncFromManifest} disabled={syncing}>
@@ -154,7 +157,9 @@ function DevFilesPanel({ automationId }: { automationId: string }) {
               )}
             >
               <FileText size={10} className="shrink-0 text-[var(--text-tertiary)]" />
-              <span className="truncate flex-1 font-mono" title={f.path}>{f.path}</span>
+              <Tooltip content={f.path}>
+                <span className="truncate flex-1 font-mono">{f.path}</span>
+              </Tooltip>
               {changed[f.path] && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0 animate-pulse" />}
             </div>
           ))

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   DialogClose,
 } from "@/components/ui/dialog";
@@ -393,11 +394,11 @@ export function AutomationsView() {
           return (
             <div key={a.id} className={cn("rounded-lg border bg-[var(--surface)] p-4", isRunning ? "border-[var(--accent)]/40" : "border-[var(--border)]")}>
               <div className="flex items-start justify-between gap-3">
-                <button
-                  onClick={() => openDetail(a)}
-                  className="min-w-0 flex-1 text-left group"
-                  title="View automation state"
-                >
+                <Tooltip content="View automation state">
+                  <button
+                    onClick={() => openDetail(a)}
+                    className="min-w-0 flex-1 text-left group"
+                  >
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">
                       {a.name}
@@ -411,13 +412,12 @@ export function AutomationsView() {
                       </span>
                     )}
                     {a.requires.length > 0 && (
-                      <span
-                        className="inline-flex items-center gap-1 text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-secondary)]"
-                        title={`Needs: ${a.requires.map((r) => r.name).join(", ")}`}
-                      >
-                        <Plug size={9} />
-                        {a.requires.map((r) => r.name).join(", ")}
-                      </span>
+                      <Tooltip content={`Needs: ${a.requires.map((r) => r.name).join(", ")}`}>
+                        <span className="inline-flex items-center gap-1 text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-secondary)] cursor-default">
+                          <Plug size={9} />
+                          {a.requires.map((r) => r.name).join(", ")}
+                        </span>
+                      </Tooltip>
                     )}
                   </div>
                   {a.description && (
@@ -438,25 +438,36 @@ export function AutomationsView() {
                       </span>
                     )}
                   </div>
-                </button>
+                  </button>
+                  </Tooltip>
                 <div className="flex items-center gap-1 shrink-0">
                   {isRunning && lastRun && (
-                    <Button variant="ghost" size="icon" title="Watch this run live" onClick={() => { setWatchedAutomation(a); setWatchedRunId(lastRun.id); }}>
-                      <Activity size={13} />
-                    </Button>
+                    <Tooltip content="Watch this run live">
+                      <Button variant="ghost" size="icon" onClick={() => { setWatchedAutomation(a); setWatchedRunId(lastRun.id); }}>
+                        <Activity size={13} />
+                      </Button>
+                    </Tooltip>
                   )}
-                  <Button variant="ghost" size="icon" title="Develop scripts (opens the agent in the automation folder)" disabled={developing} onClick={() => void develop(a)}>
-                    <Sparkles size={13} />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Run now" onClick={() => void runNow(a.id)}>
-                    <Play size={13} />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(a)}>
-                    <Pencil size={13} />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Delete" onClick={() => void deleteAutomation(a.id)}>
-                    <Trash2 size={13} />
-                  </Button>
+                  <Tooltip content="Develop scripts (opens the agent in the automation folder)">
+                    <Button variant="ghost" size="icon" disabled={developing} onClick={() => void develop(a)}>
+                      <Sparkles size={13} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Run now">
+                    <Button variant="ghost" size="icon" onClick={() => void runNow(a.id)}>
+                      <Play size={13} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Edit">
+                    <Button variant="ghost" size="icon" onClick={() => openEdit(a)}>
+                      <Pencil size={13} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Delete">
+                    <Button variant="ghost" size="icon" onClick={() => void deleteAutomation(a.id)}>
+                      <Trash2 size={13} />
+                    </Button>
+                  </Tooltip>
                   <Toggle checked={a.enabled} onCheckedChange={(checked) => void updateAutomation(a.id, { enabled: checked })} />
                 </div>
               </div>
@@ -464,15 +475,15 @@ export function AutomationsView() {
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <span className="text-[0.714rem] text-[var(--text-tertiary)]">Artifacts:</span>
                   {artifacts.map((art) => (
-                    <button
-                      key={art.id}
-                      onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
-                      title={`Open ${art.type === "note" ? "note" : "task"}`}
-                      className="inline-flex items-center gap-1 text-[0.714rem] px-2 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-56"
-                    >
-                      {art.type === "note" ? <FileText size={10} className="shrink-0" /> : <Kanban size={10} className="shrink-0" />}
-                      <span className="truncate">{art.title}</span>
-                    </button>
+                    <Tooltip key={art.id} content={`Open ${art.type === "note" ? "note" : "task"}`}>
+                      <button
+                        onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
+                        className="inline-flex items-center gap-1 text-[0.714rem] px-2 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-56"
+                      >
+                        {art.type === "note" ? <FileText size={10} className="shrink-0" /> : <Kanban size={10} className="shrink-0" />}
+                        <span className="truncate">{art.title}</span>
+                      </button>
+                    </Tooltip>
                   ))}
                 </div>
               )}
@@ -930,15 +941,15 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {artifacts.map((art) => (
-                  <button
-                    key={art.id}
-                    onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
-                    title={`Open ${art.type === "note" ? "note" : "task"}`}
-                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-64"
-                  >
-                    {art.type === "note" ? <FileText size={11} className="shrink-0" /> : <Kanban size={11} className="shrink-0" />}
-                    <span className="truncate">{art.title}</span>
-                  </button>
+                  <Tooltip key={art.id} content={`Open ${art.type === "note" ? "note" : "task"}`}>
+                    <button
+                      onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
+                      className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-64"
+                    >
+                      {art.type === "note" ? <FileText size={11} className="shrink-0" /> : <Kanban size={11} className="shrink-0" />}
+                      <span className="truncate">{art.title}</span>
+                    </button>
+                  </Tooltip>
                 ))}
               </div>
             )}
@@ -960,14 +971,15 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
                   <div className="flex items-center gap-2">
                     <span className={cn("capitalize font-medium", STATUS_COLOR[r.status])}>{r.status}</span>
                     <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt)}</span>
-                    <button
-                      type="button"
-                      onClick={() => void toggleLog(r.id)}
-                      className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
-                      title={logFor === r.id ? "Hide run log" : "Show what happened in this run"}
-                    >
-                      <Activity size={11} />
-                    </button>
+                    <Tooltip content={logFor === r.id ? "Hide run log" : "Show what happened in this run"}>
+                      <button
+                        type="button"
+                        onClick={() => void toggleLog(r.id)}
+                        className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+                      >
+                        <Activity size={11} />
+                      </button>
+                    </Tooltip>
                   </div>
                   {r.finishedAt && r.status === "done" && (
                     <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt)}</div>

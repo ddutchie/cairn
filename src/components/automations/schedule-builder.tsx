@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { TimePicker } from "@/components/ui/time-picker";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Clock } from "lucide-react";
 import type { ScheduleKind } from "@/store/slices/automations";
 
@@ -262,20 +263,20 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, 
               {WEEKDAYS.map((d) => {
                 const active = days.has(d.n);
                 return (
-                  <button
-                    key={d.n}
-                    type="button"
-                    onClick={() => toggleDay(d.n)}
-                    title={d.full}
-                    className={cn(
-                      "px-2 py-1 rounded-md text-xs border transition-colors",
-                      active
-                        ? "bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--accent)]"
-                        : "bg-[var(--surface)] border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)]"
-                    )}
-                  >
+                  <Tooltip key={d.n} content={d.full}>
+                    <button
+                      type="button"
+                      onClick={() => toggleDay(d.n)}
+                      className={cn(
+                        "px-2 py-1 rounded-md text-xs border transition-colors",
+                        active
+                          ? "bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--accent)]"
+                          : "bg-[var(--surface)] border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)]"
+                      )}
+                    >
                     {d.short}
-                  </button>
+                    </button>
+                  </Tooltip>
                 );
               })}
             </div>

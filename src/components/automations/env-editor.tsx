@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, KeyRound, Plus, Trash2, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn, id } from "@/lib/utils";
 import type { AutomationEnvSpec } from "@/store/slices/automations";
 
@@ -136,9 +137,11 @@ export function EnvEditor({
           Environment {visible.length > 0 && `(${visible.length}${secretCount ? ` · ${secretCount} secret` : ""})`}
         </span>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="xs" onClick={() => void load()} disabled={loading || saving} title="Reload">
-            <RefreshCw size={11} className={cn(loading && "animate-spin")} />
-          </Button>
+          <Tooltip content="Reload">
+            <Button variant="ghost" size="xs" onClick={() => void load()} disabled={loading || saving}>
+              <RefreshCw size={11} className={cn(loading && "animate-spin")} />
+            </Button>
+          </Tooltip>
           <Button variant="ghost" size="xs" onClick={addRow} disabled={saving}>
             <Plus size={11} /> Add
           </Button>
@@ -183,37 +186,40 @@ export function EnvEditor({
                 className="flex-1 min-w-0 text-[0.714rem]"
                 spellCheck={false}
               />
-              <button
-                type="button"
-                onClick={() => updateRow(row.key, { secret: !row.secret })}
-                title={row.secret ? "Secret — stored in OS keychain" : "Not secret — plain value"}
-                className={cn(
-                  "flex items-center gap-1 shrink-0 rounded px-1.5 py-1 text-[0.65rem] uppercase tracking-wide border transition-colors",
-                  row.secret
-                    ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
-                )}
-              >
-                {row.secret ? <KeyRound size={10} /> : "plain"}
-              </button>
-              {row.secret && (
+              <Tooltip content={row.secret ? "Secret — stored in OS keychain" : "Not secret — plain value"}>
                 <button
                   type="button"
-                  onClick={() => setReveal((v) => !v)}
-                  title={reveal ? "Hide secret values" : "Reveal secret values"}
-                  className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
+                  onClick={() => updateRow(row.key, { secret: !row.secret })}
+                  className={cn(
+                    "flex items-center gap-1 shrink-0 rounded px-1.5 py-1 text-[0.65rem] uppercase tracking-wide border transition-colors",
+                    row.secret
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+                  )}
                 >
-                  {reveal ? <EyeOff size={12} /> : <Eye size={12} />}
+                  {row.secret ? <KeyRound size={10} /> : "plain"}
                 </button>
+              </Tooltip>
+              {row.secret && (
+                <Tooltip content={reveal ? "Hide secret values" : "Reveal secret values"}>
+                  <button
+                    type="button"
+                    onClick={() => setReveal((v) => !v)}
+                    className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
+                  >
+                    {reveal ? <EyeOff size={12} /> : <Eye size={12} />}
+                  </button>
+                </Tooltip>
               )}
-              <button
-                type="button"
-                onClick={() => removeRow(row.key)}
-                title="Remove"
-                className="text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0"
-              >
-                <Trash2 size={12} />
-              </button>
+              <Tooltip content="Remove">
+                <button
+                  type="button"
+                  onClick={() => removeRow(row.key)}
+                  className="text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </Tooltip>
             </div>
           ))}
           {rows.some((r) => r.removed) && (

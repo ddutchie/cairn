@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { RefreshCw, Loader2, WifiOff, Search, Sparkles, ArrowLeft, ChevronDown, ChevronUp, Plug, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import type { AutomationsFetchResult, RegistryAutomationEntry, RegistryRequirement } from "@/types";
@@ -167,10 +168,12 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void load(true)} disabled={refreshing} title="Refresh from the registry">
-          {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-          Refresh
-        </Button>
+        <Tooltip content="Refresh from the registry">
+          <Button variant="ghost" size="sm" onClick={() => void load(true)} disabled={refreshing}>
+            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            Refresh
+          </Button>
+        </Tooltip>
       </div>
 
       {categories.length > 0 && (
@@ -341,14 +344,14 @@ function RequirementBadges({ requires, statuses }: {
             ? `${r.name} · not attached`
             : `${r.name} · not installed`;
         return (
-          <span
-            key={reqKey(r)}
-            title={attached ? "Connected and attached to this project" : "This connector isn't ready for this project yet"}
-            className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-px text-[0.65rem]", cls)}
-          >
+          <Tooltip key={reqKey(r)} content={attached ? "Connected and attached to this project" : "This connector isn't ready for this project yet"}>
+            <span
+              className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-px text-[0.65rem]", cls)}
+            >
             {attached ? <CheckCircle2 size={9} /> : <AlertTriangle size={9} />}
             {label}
-          </span>
+            </span>
+          </Tooltip>
         );
       })}
     </div>
