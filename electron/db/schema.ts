@@ -1203,6 +1203,17 @@ const MIGRATIONS: Migration[] = [
     add("reasoning_field", "reasoning_field TEXT");
     add("reasoning_model", "reasoning_model TEXT");
   },
+
+  // v46: automation_runs.run_dir — absolute path to the run's per-run working
+  // folder (<project>/.automations/<automationId>/runs/<runId>/), created by
+  // the heartbeat runner so phase-2 run_script has a scratch cwd. NULL for runs
+  // from before the folder plumbing.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(automation_runs)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "run_dir")) {
+      db.exec("ALTER TABLE automation_runs ADD COLUMN run_dir TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1242,6 +1253,7 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "active_hours_start", "active_hours_start TEXT");
   ensure("automations", "active_hours_end", "active_hours_end TEXT");
   ensure("automations", "requires", "requires TEXT");
+  ensure("automation_runs", "run_dir", "run_dir TEXT");
   ensure("mcp_notifications", "target_type", "target_type TEXT");
   ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");

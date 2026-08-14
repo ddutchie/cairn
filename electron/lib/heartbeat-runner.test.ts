@@ -8,11 +8,15 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, saveMcpServer, setToolAttachment } from "../db/queries";
 import { createAutomation, createAutomationRun, getAutomationRunById } from "../db/automation-queries";
+import { automationFolderDir, automationRunDir } from "./automation-folder";
 // vi.mock calls are hoisted above this import, so the static import sees the
 // mocked config-cache / chat-loop / external-tools modules.
 import { runAutomation } from "./heartbeat-runner";
@@ -142,5 +146,42 @@ describe("runAutomation connector requirements", () => {
     const updated = getAutomationRunById(db, run.id)!;
     expect(updated.status).toBe("error");
     expect(updated.error).toMatch(/connector exploded/);
+  });
+});
+
+describe("runAutomation folder plumbing", () => {
+  it("creates a per-run working folder under <project>/.automations/<id>/runs/ and records it on the run row", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    const automation = makeAutomation(db, { projectId: "p1" });
+    const run = createAutomationRun(db, automation.id, "running");
+    runToolLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+
+    await runAutomation({ db, workspacePath: root }, run, automation);
+
+    const updated = getAutomationRunById(db, run.id)!;
+    expect(updated.status).toBe("done");
+    const expectedDir = automationRunDir(automationFolderDir(root, automation.id, "P"), run.id);
+    expect(updated.runDir).toBe(expectedDir);
+    expect(fs.existsSync(expectedDir)).toBe(true);
+  });
+
+  it("records a run folder at the workspace root for workspace-scoped automations", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    const automation = makeAutomation(db, {}); // no project → workspace scope
+    const run = createAutomationRun(db, automation.id, "running");
+    runToolLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+
+    await runAutomation({ db, workspacePath: root }, run, automation);
+
+    const updated = getAutomationRunById(db, run.id)!;
+    expect(updated.status).toBe("done");
+    const expectedDir = automationRunDir(automationFolderDir(root, automation.id, null), run.id);
+    expect(updated.runDir).toBe(expectedDir);
+    expect(fs.existsSync(expectedDir)).toBe(true);
   });
 });

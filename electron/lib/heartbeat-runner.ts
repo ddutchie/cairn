@@ -37,6 +37,7 @@ import {
 import { makeApprovalGate } from "./automation-approval";
 import { getExternalToolDefs, checkRequirements } from "./external-tools";
 import { recordLlmUsage } from "./usage-recorder";
+import { automationFolderDir, ensureAutomationRunDir, cleanupOldRunDirs } from "./automation-folder";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -44,6 +45,13 @@ export interface AutomationRunContext {
 }
 
 const DEFAULT_MAX_STEPS = 10;
+
+/** Project display name from the DB, or null for workspace-scoped automations. */
+function projectNameOf(db: Database.Database, projectId: string | null): string | null {
+  if (!projectId) return null;
+  const row = db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name?: string } | undefined;
+  return row?.name ?? null;
+}
 
 /**
  * Run an automation immediately ("Run now"), bypassing the scheduler's clock.
@@ -129,6 +137,26 @@ export async function runAutomation(
   const apiKey = resolveLlmApiKey(cached.apiKey);
   const provider = (cached.provider ?? (isLocal(cached.baseUrl) ? "localllm" : "openai")) as "openai" | "localllm";
   const abortCtrl = new AbortController();
+
+  // ── Folder plumbing (phase 1) ─────────────────────────────────────────────
+  // Every run gets a working directory under <project>/.automations/<id>/runs/
+  // (dot-prefixed → hidden from the notes browser, file-watcher, and Obsidian).
+  // The path is recorded on the run row for the UI and for phase-2 run_script's
+  // cwd. Best-effort: a filesystem failure records no runDir but never fails
+  // the automation.
+  const projectName = projectNameOf(db, automation.projectId);
+  const automationDir = automationFolderDir(workspacePath, automation.id, projectName);
+  try {
+    const runDir = ensureAutomationRunDir(automationDir, run.id);
+    updateAutomationRun(db, run.id, { runDir });
+  } catch (err) {
+    console.warn("[heartbeat] failed to prepare automation run folder:", err);
+  }
+  // Prune completed run folders at the end of a run (best-effort, keeps KEEP_RUN_DIRS).
+  const cleanupRuns = () => {
+    try { cleanupOldRunDirs(automationDir); } catch { /* best-effort */ }
+  };
+
   // const-narrowed copies so the onUsage closure below keeps string types
   // (TS does not preserve property narrowing into closures).
   const cachedModel = cached.model;
@@ -273,6 +301,7 @@ export async function runAutomation(
       scratch: finalScratch(),
     });
     insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"), completionTarget());
+    cleanupRuns();
     return;
   }
 
@@ -283,6 +312,7 @@ export async function runAutomation(
     scratch: finalScratch(),
   });
   insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content), completionTarget());
+  cleanupRuns();
 }
 
 /**

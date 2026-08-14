@@ -57,6 +57,8 @@ export interface AutomationRun {
   finishedAt: string | null;
   error: string | null;
   scratch: string | null;
+  /** Absolute path to this run's working folder (<project>/.automations/<id>/runs/<runId>/). */
+  runDir: string | null;
   createdAt: string;
 }
 
@@ -99,6 +101,7 @@ function toRun(r: Row): AutomationRun {
     finishedAt: r.finished_at ? String(r.finished_at) : null,
     error: r.error ? String(r.error) : null,
     scratch: r.scratch ? String(r.scratch) : null,
+    runDir: r.run_dir ? String(r.run_dir) : null,
     createdAt: String(r.created_at),
   };
 }
@@ -249,7 +252,7 @@ export function getAutomationRunById(db: Database.Database, id: string): Automat
 export function updateAutomationRun(
   db: Database.Database,
   id: string,
-  patch: Partial<{ status: AutomationRunStatus; resultNoteId: string | null; finishedAt: string | null; error: string | null; scratch: string | null }>,
+  patch: Partial<{ status: AutomationRunStatus; resultNoteId: string | null; finishedAt: string | null; error: string | null; scratch: string | null; runDir: string | null }>,
 ): AutomationRun | null {
   const now = ts();
   const set: string[] = [];
@@ -260,6 +263,7 @@ export function updateAutomationRun(
     finished_at: patch.finishedAt === undefined ? undefined : patch.finishedAt,
     error: patch.error === undefined ? undefined : patch.error,
     scratch: patch.scratch === undefined ? undefined : patch.scratch,
+    run_dir: patch.runDir === undefined ? undefined : patch.runDir,
   };
   for (const [col, val] of Object.entries(fields)) {
     if (val === undefined) continue;
