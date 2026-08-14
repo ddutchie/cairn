@@ -29,6 +29,7 @@ import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
+import { useChatMessageQueue, useQueueDrain } from "@/hooks/useChatMessageQueue";
 import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion } from "@/lib/models-dev";
 import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
@@ -162,12 +163,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Prompts the user queued while the agent was running — sent (FIFO) when the
   // current run finishes. Kept on Stop and drained after errors too. Attachments
   // are queued alongside so staged images/PDFs are never silently dropped.
-  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }[]>([]);
-  const queuedRef = useRef<typeof queued>([]);
-  useEffect(() => { queuedRef.current = queued; }, [queued]);
-  // Collapsed pinned queue: shows just the count by default; expands on click
-  // to list (truncated) messages with remove buttons.
-  const [queueExpanded, setQueueExpanded]         = useState(false);
+  const { queued, queueExpanded, setQueueExpanded, enqueue, removeQueued, clearQueue, drainNext } = useChatMessageQueue<{ id: string; content: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }>();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const lastSessionIdRef = useRef(session.sessionId);
   useEffect(() => {
@@ -175,7 +171,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       lastSessionIdRef.current = session.sessionId;
       // Queued prompts belong to the previous session — drop them so they are
       // never sent into the newly selected session.
-      setQueued([]);
+      clearQueue();
       // Jump to the newest message when switching sessions.
       if (messages.length > 0) {
         virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
@@ -183,7 +179,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     }
     // messages.length in deps is deliberate — the guard above short-circuits
     // so it only scrolls when the session actually changes.
-  }, [session.sessionId, messages.length]);
+  }, [session.sessionId, messages.length, clearQueue]);
   const project     = projects.find((p) => p.id === session.projectId);
 
   const [input, setInput]                         = useState("");
@@ -557,7 +553,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // queued alongside the text so staged images/PDFs are never dropped.
     if (isLoading) {
       if (!trimmed && attachments.length === 0) return;
-      setQueued((prev) => [...prev, { id: id(), content: trimmed, attachments }]);
+      enqueue({ id: id(), content: trimmed, attachments });
       setInput("");
       return;
     }
@@ -644,7 +640,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
        },
     };
     window.electron?.piAgent.prompt(promptPayload);
-  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, setQueued]);
+  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, enqueue]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
@@ -653,20 +649,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Drain the queue: when a run finishes (loading went true → false), send the
   // next queued prompt. Keeps the queue on Stop and drains after errors.
-  const prevLoadingRef = useRef(isLoading);
-  useEffect(() => {
-    const wasLoading = prevLoadingRef.current;
-    prevLoadingRef.current = isLoading;
-    if (wasLoading && !isLoading && queuedRef.current.length > 0) {
-      const [next, ...rest] = queuedRef.current;
-      setQueued(rest);
-      sendPromptRef.current(next.content, next.attachments);
-    }
-  }, [isLoading]);
-
-  const removeQueued = useCallback((qid: string) => {
-    setQueued((prev) => prev.filter((q) => q.id !== qid));
-  }, [setQueued]);
+  useQueueDrain(isLoading, drainNext, (next) => {
+    sendPromptRef.current(next.content, next.attachments);
+  });
 
   // Doom-loop decision: allow → the repeated call runs and the session stops
   // re-pausing; deny → the main loop halts with an error.
@@ -720,7 +705,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // Clearing the conversation must also drop anything queued for it — the
     // drain effect (which fires when handleStop flips isLoading to false) would
     // otherwise immediately send the queued prompts into a cleared session.
-    setQueued([]);
+    clearQueue();
     clearPiMessages(session.sessionId);
     setPiSessionTodos(session.sessionId, []);
     window.electron?.piAgent.clear(session.sessionId);

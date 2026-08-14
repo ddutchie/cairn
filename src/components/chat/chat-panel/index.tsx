@@ -6,6 +6,7 @@ import { Trash2, ChevronDown, ArrowLeftFromLine, Loader2, Clock } from "lucide-r
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
+import { useChatMessageQueue, useQueueDrain, type QueuedMessage } from "@/hooks/useChatMessageQueue";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { ipcAwaitResult } from "@/store/ipc";
 import { resolvePromptContext } from "@/lib/context-resolver";
@@ -119,12 +120,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   // current reply finishes. Each item carries the thread + attachments captured
   // at enqueue time so a thread switch or queued images/PDFs are never lost.
   // Session-scoped; cleared on thread switch.
-  const [queued, setQueued] = useState<{ id: string; content: string; threadId: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }[]>([]);
-  const queuedRef = useRef<typeof queued>([]);
-  useEffect(() => { queuedRef.current = queued; }, [queued]);
-  // Collapsed pinned queue: shows just the count by default; expands on click
-  // to list (truncated) messages with remove buttons.
-  const [queueExpanded, setQueueExpanded] = useState(false);
+  const { queued, queueExpanded, setQueueExpanded, enqueue, removeQueued, clearQueue, drainNext } = useChatMessageQueue<QueuedMessage>();
   const chatCommands = useMemo(
     () => getCommandsForScope("chat", customCommands),
     [customCommands]
@@ -302,34 +298,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const isLoadingRef = useRef(isLoading);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
-  // Drain the queue: when a turn finishes (loading went true → false), send the
-  // next queued message. Keep the queue on Stop (the user only cancels the
-  // in-flight reply) and drain after errors too — any turn ending advances the
-  // queue. Uses handleSendRef so the effect never re-triggers on handleSend
-  // identity changes.
-  const handleSendRef = useRef<(text?: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => void>(() => {});
-  const prevLoadingRef = useRef(isLoading);
-  useEffect(() => {
-    const wasLoading = prevLoadingRef.current;
-    prevLoadingRef.current = isLoading;
-    if (wasLoading && !isLoading && queuedRef.current.length > 0) {
-      const [next, ...rest] = queuedRef.current;
-      setQueued(rest);
-      // Only drain into the thread the message was queued for — a thread switch
-      // in the same commit must not post it into the newly active thread.
-      if (next.threadId === threadId) {
-        handleSendRef.current(next.content, next.attachments);
-      }
-    }
-  }, [isLoading, threadId]);
-
-  const removeQueued = useCallback((qid: string) => {
-    setQueued((prev) => prev.filter((q) => q.id !== qid));
-  }, []);
-
   // A queue belongs to the thread that was active when its messages were
   // written — switching threads drops anything still pending.
-  useEffect(() => { setQueued([]); /* eslint-disable-line react-hooks/set-state-in-effect */ }, [threadId]);
+  useEffect(() => { clearQueue(); }, [threadId, clearQueue]);
 
 
 
@@ -416,7 +387,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     // queued alongside the text so staged images/PDFs are never silently dropped.
     if (isLoadingRef.current) {
       if (!content.trim() && attachments.length === 0) return;
-      setQueued((prev) => [...prev, { id: id(), content, threadId, attachments }]);
+      enqueue({ id: id(), content, threadId, attachments });
       setInput("");
       return;
     }
@@ -557,9 +528,21 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       // per-thread flag. Ignored server-side / here for the localllm provider.
       useSubagents: aiConfig.provider !== "localllm" && (aiConfig.subagentsEnabled ?? false),
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, enqueue]);
 
-  useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
+  // Drain the queue: when a turn finishes (loading went true → false), send the
+  // next queued message. Keep the queue on Stop (the user only cancels the
+  // in-flight reply) and drain after errors too — any turn ending advances the
+  // queue. The sink is refreshed via useLayoutEffect inside the hook, so the
+  // drained send always closes over the LATEST history (including the reply
+  // that just finished) — never a stale pre-reply snapshot.
+  useQueueDrain(isLoading, drainNext, (next) => {
+    // Only drain into the thread the message was queued for — a thread switch
+    // in the same commit must not post it into the newly active thread.
+    if (next.threadId === threadId) {
+      handleSend(next.content, next.attachments);
+    }
+  });
 
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
