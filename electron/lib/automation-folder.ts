@@ -119,3 +119,48 @@ export function cleanupOldRunDirs(automationDir: string, keep: number = KEEP_RUN
   }
   return excess;
 }
+
+// ── File listing (Develop modal) ─────────────────────────────────────────────
+
+export interface AutomationFolderFile {
+  /** Path relative to the automation folder, posix separators. */
+  path: string;
+  size: number;
+  mtimeMs: number;
+}
+
+const MAX_TREE_DEPTH = 4;
+
+/**
+ * Recursively list the automation folder's files (scripts/, manifest.json,
+ * .env, out/) with sizes + mtimes — so the Develop modal can show what the
+ * agent is changing. Per-run `runs/` scratch is skipped (it's ephemeral and
+ * can be large). Best-effort: unreadable entries are skipped.
+ */
+export function listAutomationFolderFiles(automationDir: string): AutomationFolderFile[] {
+  const out: AutomationFolderFile[] = [];
+  const walk = (dir: string, rel: string, depth: number) => {
+    if (depth > MAX_TREE_DEPTH) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name === RUNS_FOLDER_NAME) continue;
+      const full = path.join(dir, e.name);
+      const relPath = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        walk(full, relPath, depth + 1);
+      } else if (e.isFile()) {
+        try {
+          const st = fs.statSync(full);
+          out.push({ path: relPath, size: st.size, mtimeMs: st.mtimeMs });
+        } catch { /* best-effort */ }
+      }
+    }
+  };
+  walk(automationDir, "", 0);
+  return out;
+}

@@ -1226,6 +1226,17 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE automations ADD COLUMN env TEXT");
     }
   },
+
+  // v48: pi_agent_sessions.role — session persona. "default" is the coding
+  // agent; "automation-dev" restricts the toolset to FILE tools only
+  // (read/write/edit/bash/grep/find/ls) so a Develop session can author an
+  // automation's scripts without ever touching notes/tasks/board.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(pi_agent_sessions)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "role")) {
+      db.exec("ALTER TABLE pi_agent_sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'default'");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1267,6 +1278,7 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "requires", "requires TEXT");
   ensure("automations", "env", "env TEXT");
   ensure("automation_runs", "run_dir", "run_dir TEXT");
+  ensure("pi_agent_sessions", "role", "role TEXT NOT NULL DEFAULT 'default'");
   ensure("mcp_notifications", "target_type", "target_type TEXT");
   ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");

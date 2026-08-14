@@ -17,6 +17,7 @@ import {
   automationScriptsDir,
   cleanupOldRunDirs,
   ensureAutomationRunDir,
+  listAutomationFolderFiles,
   projectRootDir,
 } from "./automation-folder";
 
@@ -83,5 +84,25 @@ describe("automation folder fs operations", () => {
   it("returns 0 when runs/ does not exist", () => {
     const root = tmpRoot();
     expect(cleanupOldRunDirs(path.join(root, "nope"), 3)).toBe(0);
+  });
+});
+
+describe("automation folder file listing", () => {
+  it("lists files recursively and skips per-run scratch (runs/)", () => {
+    const root = tmpRoot();
+    const auto = automationFolderDir(root, "aut-1", "P");
+    fs.mkdirSync(path.join(auto, "scripts"), { recursive: true });
+    fs.mkdirSync(path.join(auto, "runs", "run-1"), { recursive: true });
+    fs.writeFileSync(path.join(auto, "manifest.json"), "{}");
+    fs.writeFileSync(path.join(auto, ".env"), "A=1\n");
+    fs.writeFileSync(path.join(auto, "scripts", "gen.js"), "console.log(1)");
+    fs.writeFileSync(path.join(auto, "runs", "run-1", "out.png"), "data");
+
+    const files = listAutomationFolderFiles(auto);
+    const paths = files.map((f) => f.path).sort();
+    expect(paths).toEqual([".env", "manifest.json", "scripts/gen.js"]);
+    const gen = files.find((f) => f.path === "scripts/gen.js")!;
+    expect(gen.size).toBeGreaterThan(0);
+    expect(gen.mtimeMs).toBeGreaterThan(0);
   });
 });

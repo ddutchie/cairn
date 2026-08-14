@@ -339,10 +339,16 @@ export function registerPiAgentHandler(
       ? (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? ""
       : undefined;
 
+    // Session persona (persisted on the row) — "automation-dev" restricts the
+    // toolset to file tools so a Develop session can't touch notes/tasks.
+    const role = sessionRow?.role ?? "default";
+    session.role = role;
+
     const skills = discoverSkills(cwd);
     const systemPrompt = buildPiAgentSystemPrompt({
       projectName, cwd, taskTitle, workspaceId, projectId, mode, planContent,
-      skillsXml: renderSkillsXml(skills)
+      skillsXml: renderSkillsXml(skills),
+      role,
     });
 
     const toolCtx: AgentToolContext = {

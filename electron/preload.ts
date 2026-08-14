@@ -317,6 +317,7 @@ const api = {
     runningCount: () => invoke("db:automation:runningCount"),
     folder: (id: string) => invoke<{ folder: string }>("db:automation:folder", { id }),
     syncFromManifest: (id: string) => invoke("db:automation:syncFromManifest", { id }),
+    files: (id: string) => invoke<{ files: Array<{ path: string; size: number; mtimeMs: number }> }>("db:automation:files", { id }),
     env: {
       get: (automationId: string) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env", { automationId }),
       set: (automationId: string, name: string, value: string, secret: boolean) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env:set", { automationId, name, value, secret }),

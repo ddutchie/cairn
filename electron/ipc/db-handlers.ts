@@ -38,7 +38,7 @@ import {
 import { runAutomationNow } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
-import { automationFolderDir, ensureAutomationDir } from "../lib/automation-folder";
+import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles } from "../lib/automation-folder";
 import { applyManifestEnv, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
@@ -751,6 +751,15 @@ export function registerDbHandlers(ctx: DbContext): void {
       console.warn("[automation] failed to prepare develop folder:", err);
     }
     return { folder };
+  }));
+
+  // File tree of the automation folder — for the Develop modal's "files" panel.
+  registerIpcHandle("db:automation:files", (_e, { id }: { id: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, id);
+    if (!a) return { error: "Automation not found." };
+    const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
+    const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
+    return { files: listAutomationFolderFiles(folder) };
   }));
 
   // Apply the agent-authored manifest.json (instructions / env schema / standing

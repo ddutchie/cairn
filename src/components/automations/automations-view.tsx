@@ -20,6 +20,7 @@ import { ScheduleBuilder } from "./schedule-builder";
 import { BrowseAutomationsContent } from "./browse-automations";
 import { TimePicker } from "@/components/ui/time-picker";
 import { EnvEditor } from "./env-editor";
+import { AutomationDevModal } from "./automation-dev-modal";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
 import type { RegistryAutomationEntry, RegistryRequirement, McpServerConfig, CustomServiceConfig } from "@/types";
 
@@ -86,7 +87,7 @@ export function AutomationsView() {
     activeWorkspaceId, activeProjectId, projects, setView,
     automations, lastRuns, pendingApprovals, runsById,
     fetchAutomations, createAutomation, updateAutomation, deleteAutomation, runNow, fetchRun, fetchRuns,
-    addTerminalSession, setPersistentPiSession, setActiveSession, fetchPiSessionHistory,
+    addTerminalSession,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId: s.activeProjectId,
@@ -104,9 +105,6 @@ export function AutomationsView() {
     fetchRun: s.fetchRun,
     fetchRuns: s.fetchRuns,
     addTerminalSession: s.addTerminalSession,
-    setPersistentPiSession: s.setPersistentPiSession,
-    setActiveSession: s.setActiveSession,
-    fetchPiSessionHistory: s.fetchPiSessionHistory,
   })));
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -246,6 +244,8 @@ export function AutomationsView() {
 
   const [developing, setDeveloping] = useState(false);
   const [developError, setDevelopError] = useState<string | null>(null);
+  const [devAutomation, setDevAutomation] = useState<Automation | null>(null);
+  const [devSessionId, setDevSessionId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
@@ -276,6 +276,7 @@ export function AutomationsView() {
         taskId: a.id,
         cwd: res.folder,
         mode: "execute",
+        role: "automation-dev",
         spawnedAt: now,
       });
       addTerminalSession({
@@ -292,12 +293,13 @@ export function AutomationsView() {
         sessionType: "pi",
         piMessages: [],
         mode: "execute",
+        role: "automation-dev",
         initialPrompt: buildAutomationDevPrompt(a),
       });
-      setPersistentPiSession(sessionId);
-      if (activeProjectId) void fetchPiSessionHistory(activeProjectId);
-      setActiveSession(sessionId);
-      setView("agent");
+      // Open the self-contained dev modal (no view switch). The restricted
+      // "automation-dev" persona has file tools only — it can't touch the board.
+      setDevAutomation(a);
+      setDevSessionId(sessionId);
     } catch (err) {
       setDevelopError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -489,6 +491,15 @@ export function AutomationsView() {
         syncStatus={syncStatus}
         onEnvChanged={activeWorkspaceId ? () => void fetchAutomations(activeWorkspaceId) : undefined}
         projectName={detail && detail.projectId ? projectName.get(detail.projectId) ?? null : null}
+      />
+
+      <AutomationDevModal
+        automation={devAutomation}
+        sessionId={devSessionId}
+        onClose={() => { setDevAutomation(null); setDevSessionId(null); }}
+        onSyncFromManifest={devAutomation ? () => void syncFromManifest(devAutomation) : undefined}
+        syncing={syncing}
+        onRunNow={devAutomation ? () => void runNow(devAutomation.id) : undefined}
       />
     </div>
   );
