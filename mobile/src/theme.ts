@@ -11,6 +11,7 @@ import { Platform, useColorScheme } from "react-native";
 import { useSyncExternalStore, useMemo } from "react";
 import { getMeta, setMeta } from "@/db";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID, ACCENT_PRESETS, type AccentPreset } from "@cairn/shared/ui/accents";
+import { FONT_PRESETS, resolveFontPreset, type FontPreset } from "@cairn/shared/ui/fonts";
 
 export interface Theme {
   background: string;
@@ -310,6 +311,59 @@ export function applyAccentToTheme(base: Theme, accentId: string, isLight: boole
     accentDim: v.dim,
     accentFg: v.fg,
   };
+}
+
+// ── Note-text font preset (user choice, persisted in the device-global meta DB) ─
+
+const FONT_META_KEY = "fontFamily";
+
+// FONT_PRESETS re-exported below so screens (the picker) pull them from "@/theme".
+export { FONT_PRESETS };
+
+let _fontId: string | null = null;
+const _fontListeners = new Set<() => void>();
+
+function readFontFromMeta(): string {
+  try {
+    return getMeta(FONT_META_KEY) ?? resolveFontPreset(undefined).id;
+  } catch {
+    return resolveFontPreset(undefined).id;
+  }
+}
+
+/** Current note-font preset id (cached; reads meta once). */
+export function getFontId(): string {
+  if (_fontId === null) _fontId = readFontFromMeta();
+  return _fontId;
+}
+
+/** Persist + broadcast a new note-font preset id. No-op if unchanged. */
+export function setFontId(id: string): void {
+  const next = resolveFontPreset(id).id; // normalise unknown ids to default
+  if (_fontId === next) return;
+  _fontId = next;
+  try {
+    setMeta(FONT_META_KEY, next);
+  } catch {
+    // best-effort; in-memory value still drives the UI this session
+  }
+  for (const l of _fontListeners) l();
+}
+
+function subscribeFont(cb: () => void): () => void {
+  _fontListeners.add(cb);
+  return () => _fontListeners.delete(cb);
+}
+
+/** Reactive hook: the current note-font preset id. */
+export function useFont(): string {
+  return useSyncExternalStore(subscribeFont, getFontId, getFontId);
+}
+
+/** Resolve the platform's concrete RN font-family string for a font preset id. */
+export function resolveRNFontFamily(fontId: string): string | undefined {
+  const preset: FontPreset = resolveFontPreset(fontId);
+  return Platform.select(preset.rnFamily) ?? preset.rnFamily.default;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, pdfSafeFilename, escapeHtmlText } from "./pdf-template";
+import { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, pdfSafeFilename, escapeHtmlText, DEFAULT_PDF_FONT_FAMILY } from "./pdf-template";
 
 describe("pdfSafeFilename", () => {
   it("strips filesystem-illegal characters, replacing them with underscore", () => {
@@ -53,6 +53,17 @@ describe("buildPdfHtml", () => {
     const html = buildPdfHtml("T", "", "dark");
     expect(html).toContain("#141414"); // DARK_VARS.bg
   });
+
+  it("defaults the body font to the platform sans stack", () => {
+    const html = buildPdfHtml("T", "<p>hi</p>", "light");
+    expect(html).toContain(`font-family: ${DEFAULT_PDF_FONT_FAMILY}`);
+  });
+
+  it("uses the provided font family for the note body", () => {
+    const html = buildPdfHtml("T", "<p>hi</p>", "light", "none", 'Georgia, serif');
+    expect(html).toContain("font-family: Georgia, serif");
+    expect(html).not.toContain(`font-family: ${DEFAULT_PDF_FONT_FAMILY}`);
+  });
 });
 
 describe("buildPdfFooterTemplate", () => {
@@ -74,6 +85,14 @@ describe("buildPdfFooterTemplate", () => {
 
   it("sets border-box sizing so padding stays inside the page width", () => {
     expect(buildPdfFooterTemplate("T")).toContain("box-sizing:border-box");
+  });
+
+  it("defaults the footer font to the platform sans stack", () => {
+    expect(buildPdfFooterTemplate("T")).toContain(DEFAULT_PDF_FONT_FAMILY);
+  });
+
+  it("uses the provided font family in the footer", () => {
+    expect(buildPdfFooterTemplate("T", "light", "Georgia, serif")).toContain("font-family:Georgia, serif");
   });
 });
 

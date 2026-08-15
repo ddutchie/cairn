@@ -57,7 +57,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
           ) : isUser ? (
             m.content ? <Text style={styles.userText}>{m.content}</Text> : null
           ) : (
-            <MarkdownView content={m.content} resolveLinks />
+            <MarkdownView content={m.content} resolveLinks useNoteFont={false} />
           )}
         </View>
 

@@ -549,7 +549,7 @@ const api = {
   revealNote: (noteId: string, projectId: string) => invoke("app:revealNote", { noteId, projectId }),
 
   // ── Export note as PDF ────────────────────────
-  exportNotePdf: (title: string, html: string, options?: { returnBuffer?: boolean; theme?: "light" | "dark" }) =>
+  exportNotePdf: (title: string, html: string, options?: { returnBuffer?: boolean; theme?: "light" | "dark"; fontFamily?: string }) =>
     invoke<{ filePath?: string; pdfBase64?: string } | null>("app:exportNotePdf", { title, html, options }),
 
   // ── Export note / project as Markdown ─────────

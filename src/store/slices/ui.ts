@@ -9,6 +9,7 @@ import { storage } from "@/lib/storage";
 import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
+import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -399,6 +400,23 @@ export function applyFontScale(scale: FontScale): void {
   document.documentElement.style.setProperty("--font-scale", String(scale));
 }
 
+// ── Note-text font family ─────────────────────────────────────────────────────
+
+export type FontFamilyId = "sans" | "serif" | "mono";
+export const FONT_FAMILY_KEY = "fontFamily";
+
+/**
+ * Apply the note-text font by preset id. Sets `--font-note` on `<html>` so the
+ * note editor + `.prose-cairn` preview switch fonts (UI chrome stays on
+ * `--font-sans`). Reads the live `data-theme`-independent CSS var mechanism —
+ * same override approach as `applyFontScale`.
+ */
+export function applyFontFamily(fontId: FontFamilyId): void {
+  if (typeof document === "undefined") return;
+  const preset = resolveFontPreset(fontId);
+  document.documentElement.style.setProperty("--font-note", preset.cssFamily);
+}
+
 // ── Accent colour ─────────────────────────────────────────────────────────────
 
 export const ACCENT_KEY = "accentColor";
@@ -520,6 +538,10 @@ export interface UISlice extends AppUIState {
   fontScale: FontScale;
   setFontScale: (scale: FontScale) => void;
 
+  // Note-text font family
+  fontFamily: FontFamilyId;
+  setFontFamily: (fontId: FontFamilyId) => void;
+
   // View visibility
   hiddenViews: Set<ToggleableView>;
   toggleViewVisibility: (view: ToggleableView) => void;
@@ -632,6 +654,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   theme: "dark" as Theme,
   accentColor: DEFAULT_ACCENT_ID,
   fontScale: DEFAULT_FONT_SCALE, // 1.2 = M (~16.8px)
+  fontFamily: DEFAULT_FONT_ID, // note-text font: sans / serif / mono
   hiddenViews: new Set<ToggleableView>(),
   favoriteModels: new Set<string>(),
   chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
@@ -933,6 +956,13 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     set({ fontScale: scale });
     storage.set(FONT_SCALE_KEY, scale);
     applyFontScale(scale);
+  },
+
+  // ── Note-text font family ─────────────────────
+  setFontFamily(fontId: FontFamilyId) {
+    set({ fontFamily: fontId });
+    storage.set(FONT_FAMILY_KEY, fontId);
+    applyFontFamily(fontId);
   },
 
   // ── Chat panel width ───────────────────────────

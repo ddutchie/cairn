@@ -21,6 +21,7 @@ import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
 import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset, migrateEditorMode, initialLivePreviewOn } from "./note-editor-utils";
 import { useNoteMarkdownComponents } from "./note-markdown-components";
+import { resolveFontPreset } from "../../../shared/ui/fonts";
 import { storage } from "@/lib/storage";
 import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
 
@@ -32,7 +33,7 @@ interface NoteEditorProps {
 type EditorMode = "edit" | "read";
 
 export function NoteEditor({ note, onBack }: NoteEditorProps) {
-  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects, noteChangeMarks, clearNoteChangeMark, notesFullscreen, toggleNotesFullscreen } = useCairnStore(useShallow((s) => ({
+  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects, noteChangeMarks, clearNoteChangeMark, notesFullscreen, toggleNotesFullscreen, fontFamily: fontFamilyId } = useCairnStore(useShallow((s) => ({
     updateNote:        s.updateNote,
     aiConfig:          s.aiConfig,
     activeProjectId:   s.activeProjectId,
@@ -48,6 +49,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     clearNoteChangeMark: s.clearNoteChangeMark,
     notesFullscreen:   s.notesFullscreen,
     toggleNotesFullscreen: s.toggleNotesFullscreen,
+    fontFamily:        s.fontFamily,
   })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
   const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -576,10 +578,15 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       // remap + strip Copy button). See prepareNoteHtmlForPdf.
       const html = prepareNoteHtmlForPdf(raw, theme);
 
+      // Resolve the user's chosen note font to its CSS stack so the exported
+      // PDF uses the same font as the editor/preview (system stacks only —
+      // bundled webfonts won't load in the print engine).
+      const fontFamily = resolveFontPreset(fontFamilyId).cssFamily;
+
       if (isElectron && window.electron?.exportNotePdf) {
-        await window.electron.exportNotePdf(note.title, html, { theme });
+        await window.electron.exportNotePdf(note.title, html, { theme, fontFamily });
       } else if (isMobile && window.electron?.exportNotePdf) {
-        const result = await window.electron.exportNotePdf(note.title, html, { returnBuffer: true, theme });
+        const result = await window.electron.exportNotePdf(note.title, html, { returnBuffer: true, theme, fontFamily });
         if (result?.pdfBase64) {
           const binStr = atob(result.pdfBase64);
           const len = binStr.length;
@@ -617,7 +624,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       console.error("PDF export failed:", err);
       setExportState("idle");
     }
-  }, [note.title]);
+  }, [note.title, fontFamilyId]);
 
   const handleExportMarkdown = useCallback(async () => {
     setShowExportMenu(false);

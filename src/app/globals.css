@@ -98,6 +98,10 @@
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
   --font-display: "New York", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  /* Note-text font — overridden at runtime by applyFontFamily() (sans/serif/mono
+     presets from shared/ui/fonts.ts). Defaults to the UI sans stack so the
+     editor + prose match the chrome until the user picks a note font. */
+  --font-note: var(--font-sans);
 }
 
 *, *::before, *::after {
@@ -451,6 +455,7 @@ select:focus {
   color: var(--text-primary);
   font-size: 0.875rem;
   line-height: 1.7;
+  font-family: var(--font-note, var(--font-sans));
 }
 .prose-cairn h1 { font-size: 1.5rem; font-weight: 700; margin: 1.25rem 0 0.5rem; color: var(--text-primary); }
 .prose-cairn h2 { font-size: 1.2rem; font-weight: 600; margin: 1rem 0 0.4rem; color: var(--text-primary); }

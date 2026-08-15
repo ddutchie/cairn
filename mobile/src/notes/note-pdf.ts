@@ -137,7 +137,12 @@ const SENTINEL_TAG = `\uE000CAIRN${Math.random().toString(36).slice(2, 10)}`;
 const SENTINEL_RE = new RegExp(`${SENTINEL_TAG}(\\d+)\uE001`, "g");
 
 /** Render note markdown to a full PDF-ready HTML document. */
-export function noteMarkdownToPdfHtml(title: string, markdown: string, theme: PdfTheme = "light"): string {
+export function noteMarkdownToPdfHtml(
+  title: string,
+  markdown: string,
+  theme: PdfTheme = "light",
+  fontFamily?: string,
+): string {
   const fragments: string[] = [];
   const stash = (html: string): string => `${SENTINEL_TAG}${fragments.push(html) - 1}\uE001`;
 
@@ -157,7 +162,7 @@ export function noteMarkdownToPdfHtml(title: string, markdown: string, theme: Pd
   // 4. Swap our trusted fragments back in.
   const body = rendered.replace(SENTINEL_RE, (_all, idx: string) => fragments[Number(idx)] ?? "");
   // 5. Wrap in the shared template.
-  return buildPdfHtml(title, body, theme);
+  return buildPdfHtml(title, body, theme, "heading", fontFamily);
 }
 
 export type PdfExportResult =
@@ -169,14 +174,17 @@ export type PdfExportResult =
  * Generate a PDF from a note's markdown and open the system share sheet
  * (which includes Print / Save to Files / AirDrop on iOS). Mirrors the desktop
  * "export as PDF" intent. `theme` should follow the app's current colour scheme.
+ * `fontFamily` is a CSS font-family stack for the note text (system fonts only —
+ * bundled webfonts don't load in expo-print). Defaults to the platform sans.
  */
 export async function exportNoteToPdf(
   title: string,
   markdown: string,
   theme: PdfTheme = "light",
+  fontFamily?: string,
 ): Promise<PdfExportResult> {
   try {
-    const html = noteMarkdownToPdfHtml(title, markdown, theme);
+    const html = noteMarkdownToPdfHtml(title, markdown, theme, fontFamily);
     const { uri } = await Print.printToFileAsync({ html });
 
     // Print writes to a random cache filename; rename it to the note title so

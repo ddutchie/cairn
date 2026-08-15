@@ -25,9 +25,10 @@ import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY } from "./slices/ui";
-import type { FontScale } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY } from "./slices/ui";
+import type { FontScale, FontFamilyId } from "./slices/ui";
 import { DEFAULT_ACCENT_ID } from "../../shared/ui/accents";
+import { DEFAULT_FONT_ID } from "../../shared/ui/fonts";
 import { createWorkspaceSlice } from "./slices/workspace";
 import type { WorkspaceSlice } from "./slices/workspace";
 import { createNotesSlice } from "./slices/notes";
@@ -58,7 +59,7 @@ import { createTerminalSessionsSlice } from "./slices/terminal-sessions";
 import type { TerminalSessionsSlice } from "./slices/terminal-sessions";
 
 // Re-export types used by consumers and constants.ts
-export type { AIConfig, AgentConfig, Theme, FontScale };
+export type { AIConfig, AgentConfig, Theme, FontScale, FontFamilyId };
 export { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG } from "@/lib/constants";
 
 // ── SearchResult (used by SelectorsSlice and components) ─────────────────────
@@ -229,6 +230,11 @@ function restorePersistedTheme(set: PartialSetter): void {
   } else {
     applyFontScale(DEFAULT_FONT_SCALE);
   }
+
+  // Note-text font family: apply the stored preset (falls back to sans).
+  const savedFontFamily = storage.get<FontFamilyId>(FONT_FAMILY_KEY);
+  set({ fontFamily: savedFontFamily ?? DEFAULT_FONT_ID });
+  applyFontFamily(savedFontFamily ?? DEFAULT_FONT_ID);
 }
 
 /**
