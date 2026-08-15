@@ -26,6 +26,17 @@ export interface AutomationEnv {
   secret: boolean;
 }
 
+/**
+ * Normalise env for persistence: a secret's actual value must NEVER reach the
+ * database row (it lives only in the OS keychain, written by the env:set IPC
+ * path). Any secret entry carrying a value is reduced to its marker — so a
+ * stray caller passing { secret: true, value: "..." } can't persist plaintext.
+ * Non-secret entries pass through untouched.
+ */
+export function normalizeEnvForPersistence(env: AutomationEnv[]): AutomationEnv[] {
+  return env.map((e) => (e.secret ? { name: e.name, secret: true } : e));
+}
+
 export interface Automation {
   id: string;
   workspaceId: string;
@@ -97,7 +108,9 @@ function toAutomation(r: Row): Automation {
     activeHoursEnd: r.active_hours_end ? String(r.active_hours_end) : null,
     standingRules: parseJson<Array<{ tool: string; target?: string }>>(r.standing_rules, []),
     requires: parseJson<AutomationRequirement[]>(r.requires, []),
-    env: parseJson<AutomationEnv[]>(r.env, []),
+    // Defensive: a legacy/rogue row that stored a secret value must never
+    // surface it — reduce secret entries to their marker on read too.
+    env: parseJson<AutomationEnv[]>(r.env, []).map((e) => (e.secret ? { name: e.name, secret: true } : e)),
     source: r.source as Automation["source"],
     communityId: r.community_id ? String(r.community_id) : null,
     createdAt: String(r.created_at),
@@ -168,7 +181,7 @@ export function createAutomation(db: Database.Database, input: AutomationInput):
     input.runCount ?? 0, input.approvalMode ?? "auto", input.activeHoursStart ?? null,
     input.activeHoursEnd ?? null, JSON.stringify(input.standingRules ?? []),
     JSON.stringify(input.requires ?? []),
-    JSON.stringify(input.env ?? []),
+    JSON.stringify(normalizeEnvForPersistence(input.env ?? [])),
     input.source ?? "custom", input.communityId ?? null, now, now,
   );
   return getAutomationById(db, id)!;
@@ -212,7 +225,7 @@ export function updateAutomation(
     active_hours_end: patch.activeHoursEnd === undefined ? undefined : patch.activeHoursEnd,
     standing_rules: patch.standingRules === undefined ? undefined : JSON.stringify(patch.standingRules),
     requires: patch.requires === undefined ? undefined : JSON.stringify(patch.requires),
-    env: patch.env === undefined ? undefined : JSON.stringify(patch.env),
+    env: patch.env === undefined ? undefined : JSON.stringify(normalizeEnvForPersistence(patch.env)),
     source: patch.source,
     community_id: patch.communityId === undefined ? undefined : patch.communityId,
   };

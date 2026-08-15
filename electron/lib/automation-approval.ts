@@ -62,9 +62,24 @@ export function standingRuleTarget(tool: string, args: Record<string, unknown>):
 }
 
 /**
+ * Code-executing tools. A standing rule for these WITHOUT a concrete target
+ * (script name / exact command) would be a wildcard grant — it would match
+ * every `run_script`/`bash` call, i.e. permanent auto-approval of arbitrary
+ * execution. The approval inbox's "Always allow" always records a concrete
+ * target (see standingRuleTarget), so a target-less rule can only enter via a
+ * hand/agent-authored manifest — sanitise those on ingest.
+ */
+const CODE_EXEC_TOOLS = new Set([RUN_SCRIPT_TOOL_NAME, "bash"]);
+
+/**
  * Persist an "always allow" decision as a standing rule on the run's automation
  * (deduped by tool + target), so future runs let it through without asking.
  * Used by the approval inbox resolve path; exported for tests.
+ *
+ * Refuses to record a TARGET-LESS rule for a code-executing tool: without a
+ * script/command target that would be a wildcard grant of arbitrary execution,
+ * so an "Always allow" click on a call that carried no derivable target is a
+ * no-op instead of a permanent blanket approval.
  */
 export function recordStandingAllowance(
   db: Database.Database,
@@ -76,21 +91,12 @@ export function recordStandingAllowance(
   const automation = run ? getAutomationById(db, run.automationId) : null;
   if (!automation) return;
   const target = standingRuleTarget(tool, args);
+  if (CODE_EXEC_TOOLS.has(tool) && !target) return;
   const rules = automation.standingRules.filter((r) => !(r.tool === tool && r.target === target));
   updateAutomation(db, automation.id, {
     standingRules: [...rules, { tool, ...(target ? { target } : {}) }],
   });
 }
-
-/**
- * Code-executing tools. A standing rule for these WITHOUT a concrete target
- * (script name / exact command) would be a wildcard grant — it would match
- * every `run_script`/`bash` call, i.e. permanent auto-approval of arbitrary
- * execution. The approval inbox's "Always allow" always records a concrete
- * target (see standingRuleTarget), so a target-less rule can only enter via a
- * hand/agent-authored manifest — sanitise those on ingest.
- */
-const CODE_EXEC_TOOLS = new Set([RUN_SCRIPT_TOOL_NAME, "bash"]);
 
 /**
  * Sanitise a set of standing rules before persisting them (used by the

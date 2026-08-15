@@ -196,15 +196,29 @@ export interface RunLog {
   tools: RunLogTool[];
 }
 
-/** Write the run transcript into the run folder (best-effort). */
+/**
+ * Write the run transcript into the run folder (best-effort).
+ *
+ * Written atomically: content goes to a temp file which is fsynced then renamed
+ * over run-log.json, so a crash mid-write can never leave a partial transcript
+ * at the final path — readRunLog either sees the previous complete log or the
+ * new one, never garbage. Any stale temp is overwritten by the next write.
+ */
 export function writeRunLog(runDir: string, log: RunLog): void {
+  const finalPath = path.join(runDir, "run-log.json");
+  const tmpPath = path.join(runDir, ".run-log.json.tmp");
   try {
-    fs.writeFileSync(
-      path.join(runDir, "run-log.json"),
-      `${JSON.stringify(log, null, 2)}\n`,
-      "utf8",
-    );
-  } catch { /* best-effort */ }
+    fs.writeFileSync(tmpPath, `${JSON.stringify(log, null, 2)}\n`, "utf8");
+    const fd = fs.openSync(tmpPath, "r");
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmpPath, finalPath);
+  } catch {
+    /* best-effort — a stale temp is harmless and overwritten next time */
+  }
 }
 
 /** Read + parse a run's transcript from its folder, or null when absent. */

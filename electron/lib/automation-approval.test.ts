@@ -123,6 +123,30 @@ describe("automation approval gate", () => {
     expect(after.length).toBe(0); // timed out → resolved as denied
   });
 
+  it("fails closed when the run's abort signal fires while waiting", async () => {
+    const item = parkApproval(db, { runId: run.id, tool: "create_task", args: {} });
+    const ctrl = new AbortController();
+    const promise = waitForApproval(db, item.id, 5_000, ctrl.signal);
+    ctrl.abort();
+    const res = await promise;
+    expect(res).toBeNull();
+    const after = listPendingApprovals(db);
+    expect(after.length).toBe(0); // aborted → resolved as denied, not left parked
+  });
+
+  it("refuses to record a target-less standing rule for run_script (no wildcard grants)", () => {
+    // An "Always allow" click on a run_script call with no derivable script
+    // name must NOT persist a blanket rule for every future script.
+    recordStandingAllowance(db, run.id, "run_script", { args: ["-prompt", "x"] });
+    expect(getAutomationById(db, automation.id)!.standingRules).toEqual([]);
+
+    // Concrete targets still record as before.
+    recordStandingAllowance(db, run.id, "run_script", { name: "generate_images" });
+    expect(getAutomationById(db, automation.id)!.standingRules).toEqual([
+      { tool: "run_script", target: "generate_images" },
+    ]);
+  });
+
   it("connector-aware auto automation still gates EXTERNAL tools", async () => {
     const a = makeAutomation("auto", [{ kind: "mcp", name: "Linear" }]);
     const gate = makeApprovalGate(db, run, a)!;

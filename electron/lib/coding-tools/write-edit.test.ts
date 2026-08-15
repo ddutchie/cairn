@@ -18,12 +18,16 @@ describe("coding write/edit containment", () => {
   const setup = () => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-write-"));
     outside = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-outside-"));
-    cleanup = [];
+    cleanup = [
+      () => { try { fs.rmSync(cwd, { recursive: true, force: true }); } catch { /* already gone */ } },
+      () => { try { fs.rmSync(outside, { recursive: true, force: true }); } catch { /* already gone */ } },
+    ];
     return cwd;
   };
 
   afterEach(() => {
     for (const fn of cleanup) fn();
+    cleanup = [];
   });
 
   it("writeTool writes a relative path inside cwd", async () => {

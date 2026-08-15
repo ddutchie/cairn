@@ -45,6 +45,7 @@ import {
   ensureAutomationDir,
   ensureAutomationRunDir,
   cleanupOldRunDirs,
+  readRunLog,
   writeRunLog,
   type RunLog,
 } from "./automation-folder";
@@ -100,18 +101,18 @@ function failRun(ctx: AutomationRunContext, run: AutomationRun, error: string): 
   try {
     const row = getAutomationRunById(db, run.id);
     if (row?.runDir) {
-      writeRunLog(row.runDir, {
+      // Merge the failure into any incrementally-flushed transcript instead of
+      // replacing it — a run that crashed after N tool calls keeps that history.
+      const existing = readRunLog(row.runDir) ?? {
         automationId: row.automationId,
         runId: run.id,
         startedAt: row.startedAt ?? finishedAt,
         recipe: "",
-        status: "error",
-        error,
-        finishedAt,
         tools: [],
         tokens: "",
         thoughts: "",
-      });
+      };
+      writeRunLog(row.runDir, { ...existing, status: "error", error, finishedAt });
     }
   } catch { /* best-effort */ }
   try {

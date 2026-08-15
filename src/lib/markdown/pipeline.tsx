@@ -274,6 +274,14 @@ export function makeRehypeChangedLines(changedLines: number[]): Plugin<[], Root>
 }
 
 /** Minimal HAST → HTML-source serializer (attributes + recursive children). */
+// HTML void elements — no closing tag, even in source. Everything else is
+// non-void and keeps both open+close markup when serialized (so an empty
+// `<text></text>` escapes back faithfully instead of collapsing to `<text>`).
+const VOID_TAGS = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input",
+  "link", "meta", "param", "source", "track", "wbr",
+]);
+
 function serializeHast(node: ElementContent): string {
   if (node.type === "text") return (node as Text).value;
   if (node.type !== "element") return "";
@@ -288,7 +296,9 @@ function serializeHast(node: ElementContent): string {
     })
     .join("");
   const inner = (el.children ?? []).map((c) => serializeHast(c as ElementContent)).join("");
-  return inner ? `<${el.tagName}${attrs}>${inner}</${el.tagName}>` : `<${el.tagName}${attrs}>`;
+  if (inner) return `<${el.tagName}${attrs}>${inner}</${el.tagName}>`;
+  if (VOID_TAGS.has(el.tagName.toLowerCase())) return `<${el.tagName}${attrs}>`;
+  return `<${el.tagName}${attrs}></${el.tagName}>`;
 }
 
 /** Map a few HAST property names back to their HTML attribute spelling. */

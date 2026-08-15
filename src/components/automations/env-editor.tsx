@@ -166,7 +166,7 @@ export function EnvEditor({
           <Button variant="ghost" size="xs" onClick={addRow} disabled={saving}>
             <Plus size={11} /> Add
           </Button>
-          <Button variant="accent" size="xs" onClick={() => void save()} disabled={saving || visible.length === 0}>
+          <Button variant="accent" size="xs" onClick={() => void save()} disabled={saving || (visible.length === 0 && !rows.some((r) => r.removed))}>
             Save env
           </Button>
         </div>

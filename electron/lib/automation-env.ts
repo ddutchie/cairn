@@ -73,11 +73,12 @@ export function materializeEnvFile(automationDir: string, automation: Automation
 /**
  * Write a minimal manifest.json for the automation folder — the self-describing
  * contract the dev agent builds against and the Automations tab renders from.
- * Never overwrites an existing (possibly agent-authored) manifest.
+ * Written with an exclusive create ("wx") so a concurrently created (agent- or
+ * other-writer-authored) manifest is preserved: EEXIST is swallowed, any other
+ * write error propagates to the caller.
  */
 export function writeAutomationManifest(automationDir: string, automation: Automation): void {
   const filePath = automationManifestPath(automationDir);
-  if (fs.existsSync(filePath)) return;
   const manifest = {
     name: automation.name,
     description: automation.description,
@@ -86,9 +87,9 @@ export function writeAutomationManifest(automationDir: string, automation: Autom
     requires: automation.requires,
   };
   try {
-    fs.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  } catch {
-    /* best-effort */
+    fs.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") throw err;
   }
 }
 

@@ -49,9 +49,14 @@ export function RunWatcherModal({
         case "started": setRecipe(e.recipe ?? ""); break;
         case "token": setAssistant((p) => p + (e.delta ?? "")); break;
         case "thought": setThought((p) => p + (e.delta ?? "")); break;
-        case "tool":
-          setTools((p) => [...p, { key: `${e.tool}:${toolSeq.n++}`, name: e.tool ?? "?", label: e.label ?? e.tool ?? "tool", status: "running" }]);
+        case "tool": {
+          // Compute the key + sequence OUTSIDE the updater — React may invoke
+          // updaters twice in StrictMode, so mutating toolSeq.n inside would
+          // skip keys and leave the counter inconsistent.
+          const key = `${e.tool}:${toolSeq.n++}`;
+          setTools((p) => [...p, { key, name: e.tool ?? "?", label: e.label ?? e.tool ?? "tool", status: "running" }]);
           break;
+        }
         case "toolDone":
           setTools((p) => p.map((t) =>
             t.name === e.tool && t.status === "running"

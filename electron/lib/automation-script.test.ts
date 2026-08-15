@@ -55,7 +55,7 @@ describe("resolveScript", () => {
 
   it("rejects unsafe names (path traversal / shell chars)", () => {
     const dir = tmpDir();
-    for (const bad of ["../escape", "../../etc", "a/b", "a;b", "x y", "a b"]) {
+    for (const bad of ["../escape", "../../etc", "a/b", "a;b", "x y", "a b", ".", ".."]) {
       expect(() => resolveScript(dir, bad)).toThrow(/Invalid script name/);
     }
   });
@@ -183,7 +183,7 @@ describe("writeRunFile", () => {
     expect(fs.existsSync(path.join(runDir, "..", "escape.txt"))).toBe(false);
   });
 
-  it("allows POSIX filenames containing backslashes (not a separator on POSIX)", async () => {
+  it.skipIf(process.platform === "win32")("allows POSIX filenames containing backslashes (not a separator on POSIX)", async () => {
     const runDir = tmpDir();
     const res = JSON.parse(await writeRunFile({ path: "a\\..\\b", content: "x" }, { runDir }));
     expect(res.ok).toBe(true);

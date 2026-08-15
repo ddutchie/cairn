@@ -63,8 +63,49 @@ function makeAutomation(db: Database.Database, opts: { projectId?: string; requi
   });
 }
 
+// ── Temp workspace roots (auto-cleaned) ─────────────────────────────────────
+const tempRoots: string[] = [];
+
+/** Create a temp workspace root tracked for cleanup. */
+function makeRoot(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+  tempRoots.push(root);
+  return root;
+}
+
+// ── Named runToolLoop argument accessors ────────────────────────────────────
+// The runner calls runToolLoop with positional args; these accessors name them
+// so tests don't scatter magic indexes (they also read the LAST call, which is
+// the one each test makes).
+const LOOP_ARG = {
+  messages: 6,
+  emitToolCall: 7,
+  emitToolCallDone: 12,
+  onToken: 13,
+  onThought: 14,
+  approvalGate: 18,
+  runScript: 19,
+  writeRunFile: 20,
+  deliverFile: 21,
+} as const;
+
+function lastLoopCall(): unknown[] {
+  return runToolLoopMock.mock.calls[runToolLoopMock.mock.calls.length - 1] ?? [];
+}
+
+const loopMessages = () => lastLoopCall()[LOOP_ARG.messages];
+const loopEmitToolCall = () => lastLoopCall()[LOOP_ARG.emitToolCall];
+const loopEmitToolCallDone = () => lastLoopCall()[LOOP_ARG.emitToolCallDone];
+const loopOnToken = () => lastLoopCall()[LOOP_ARG.onToken];
+const loopRunScript = () => lastLoopCall()[LOOP_ARG.runScript];
+const loopWriteRunFile = () => lastLoopCall()[LOOP_ARG.writeRunFile];
+const loopDeliverFile = () => lastLoopCall()[LOOP_ARG.deliverFile];
+
 afterEach(() => {
   vi.clearAllMocks();
+  for (const root of tempRoots.splice(0)) {
+    try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* already gone */ }
+  }
 });
 
 describe("runAutomation connector requirements", () => {
@@ -157,7 +198,7 @@ describe("runAutomation folder plumbing", () => {
     const automation = makeAutomation(db, { projectId: "p1" });
     const run = createAutomationRun(db, automation.id, "running");
     runToolLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    const root = makeRoot();
 
     await runAutomation({ db, workspacePath: root }, run, automation);
 
@@ -167,24 +208,18 @@ describe("runAutomation folder plumbing", () => {
     expect(updated.runDir).toBe(expectedDir);
     expect(fs.existsSync(expectedDir)).toBe(true);
 
-    // run_script + write_run_file + deliver_file are wired into the loop: the
-    // mock's last three positional args are the handlers, and scripts/ + out/
-    // exist for them.
-    const loopArgs = runToolLoopMock.mock.calls[0];
-    const runScript = loopArgs[loopArgs.length - 3];
-    const writeRunFile = loopArgs[loopArgs.length - 2];
-    const deliverFile = loopArgs[loopArgs.length - 1];
-    expect(typeof runScript).toBe("function");
-    expect(typeof writeRunFile).toBe("function");
-    expect(typeof deliverFile).toBe("function");
+    // run_script + write_run_file + deliver_file are wired into the loop.
+    expect(typeof loopRunScript()).toBe("function");
+    expect(typeof loopWriteRunFile()).toBe("function");
+    expect(typeof loopDeliverFile()).toBe("function");
     const autoDir = automationFolderDir(root, automation.id, "P");
     // The write_run_file handler stages a JSON file inside the RUN folder only.
-    await (writeRunFile as (a: { path: string; content: string }) => Promise<string>)({ path: "stage.json", content: "{}" });
+    await (loopWriteRunFile() as (a: { path: string; content: string }) => Promise<string>)({ path: "stage.json", content: "{}" });
     expect(fs.readFileSync(path.join(expectedDir, "stage.json"), "utf8")).toBe("{}");
     // The deliver_file handler copies an out/ file into workspace attachments.
     fs.mkdirSync(path.join(autoDir, "out"), { recursive: true });
     fs.writeFileSync(path.join(autoDir, "out", "poster.svg"), "<svg/>");
-    const delivered = await (deliverFile as (a: { path: string }) => Promise<string>)({ path: "poster.svg" });
+    const delivered = await (loopDeliverFile() as (a: { path: string }) => Promise<string>)({ path: "poster.svg" });
     expect(delivered).toContain("attachments/");
     expect(fs.existsSync(path.join(root, "attachments", automation.id, "poster.svg"))).toBe(true);
     expect(fs.existsSync(path.join(autoDir, "scripts"))).toBe(true);
@@ -197,7 +232,7 @@ describe("runAutomation folder plumbing", () => {
     const automation = makeAutomation(db, {}); // no project → workspace scope
     const run = createAutomationRun(db, automation.id, "running");
     runToolLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    const root = makeRoot();
 
     await runAutomation({ db, workspacePath: root }, run, automation);
 
@@ -227,7 +262,7 @@ describe("runAutomation folder plumbing", () => {
     });
     const run = createAutomationRun(db, automation.id, "running");
     runToolLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    const root = makeRoot();
     const autoDir = automationFolderDir(root, automation.id, "P");
     // Pre-place a probe script so the runScript handler can execute it.
     fs.mkdirSync(path.join(autoDir, "scripts"), { recursive: true });
@@ -247,9 +282,7 @@ describe("runAutomation folder plumbing", () => {
     expect(fs.existsSync(path.join(autoDir, "manifest.json"))).toBe(true);
 
     // Invoke the runScript handler with the probe — it must see the resolved env.
-    const loopArgs = runToolLoopMock.mock.calls[0];
-    const runScript = loopArgs[loopArgs.length - 3] as (a: { name: string }) => Promise<string>;
-    const output = await runScript({ name: "probe" });
+    const output = await (loopRunScript() as (a: { name: string }) => Promise<string>)({ name: "probe" });
     expect(output).toContain("TOKEN=abc");
     expect(output).toContain("SECRET=unset");
   });
@@ -261,7 +294,7 @@ describe("runAutomation folder plumbing", () => {
     const automation = makeAutomation(db, { projectId: "p1" }); // row recipe = "Summarise today's Linear activity."
     const run = createAutomationRun(db, automation.id, "running");
     runToolLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    const root = makeRoot();
     const autoDir = automationFolderDir(root, automation.id, "P");
     fs.mkdirSync(autoDir, { recursive: true });
     fs.writeFileSync(
@@ -272,8 +305,7 @@ describe("runAutomation folder plumbing", () => {
 
     await runAutomation({ db, workspacePath: root }, run, automation);
 
-    const loopArgs = runToolLoopMock.mock.calls[0];
-    const messages = loopArgs[6] as Array<{ role: string; content: string }>;
+    const messages = loopMessages() as Array<{ role: string; content: string }>;
     const userMsg = messages.find((m) => m.role === "user");
     expect(userMsg?.content).toContain("MANIFEST RECIPE");
     expect(userMsg?.content).toContain("run generate_images");
@@ -286,20 +318,17 @@ describe("runAutomation folder plumbing", () => {
     createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
     const automation = makeAutomation(db, { projectId: "p1" });
     const run = createAutomationRun(db, automation.id, "running");
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    const root = makeRoot();
     const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
     const send = (channel: string, payload: unknown) => sent.push({ channel, payload: payload as Record<string, unknown> });
 
     // The loop mock fires the tool/token callbacks DURING the run so they land
     // in both the live stream and the persisted transcript.
-    runToolLoopMock.mockImplementation((...args: unknown[]) => {
-      const emitToolCall = args[7] as (e: { tool: string; label: string; args: Record<string, unknown> }) => void;
-      const emitToolCallDone = args[12] as (e: { tool: string; ok: boolean; output: string }) => void;
-      const onToken = args[13] as (delta: string) => void;
-      emitToolCall({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
-      onToken("hello ");
-      onToken("world");
-      emitToolCallDone({ tool: "run_script", ok: true, output: "made image" });
+    runToolLoopMock.mockImplementation(() => {
+      (loopEmitToolCall() as (e: { tool: string; label: string; args: Record<string, unknown> }) => void)({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
+      (loopOnToken() as (delta: string) => void)("hello ");
+      (loopOnToken() as (delta: string) => void)("world");
+      (loopEmitToolCallDone() as (e: { tool: string; ok: boolean; output: string }) => void)({ tool: "run_script", ok: true, output: "made image" });
       return Promise.resolve({ exhausted: false, content: "final summary", reasoning: "" });
     });
 
@@ -333,7 +362,7 @@ describe("runAutomation folder plumbing", () => {
     const automation = makeAutomation(db, { projectId: "p1" });
     const run = createAutomationRun(db, automation.id, "running");
     runToolLoopMock.mockResolvedValue({ exhausted: true, content: "incomplete", reasoning: "" });
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    const root = makeRoot();
 
     await runAutomation({ db, workspacePath: root }, run, automation);
 
@@ -351,17 +380,15 @@ describe("runAutomation folder plumbing", () => {
     createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
     const automation = makeAutomation(db, { projectId: "p1" });
     const run = createAutomationRun(db, automation.id, "running");
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    const root = makeRoot();
 
     // Keep the loop pending after firing a tool completion, so we can inspect
     // the on-disk transcript BEFORE the run finishes.
     let resolveLoop!: (v: unknown) => void;
     const loopPromise = new Promise((r) => { resolveLoop = r; });
-    runToolLoopMock.mockImplementation((...args: unknown[]) => {
-      const emitToolCall = args[7] as (e: { tool: string; label: string; args: Record<string, unknown> }) => void;
-      const emitToolCallDone = args[12] as (e: { tool: string; ok: boolean; output: string }) => void;
-      emitToolCall({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
-      emitToolCallDone({ tool: "run_script", ok: true, output: "made image" });
+    runToolLoopMock.mockImplementation(() => {
+      (loopEmitToolCall() as (e: { tool: string; label: string; args: Record<string, unknown> }) => void)({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
+      (loopEmitToolCallDone() as (e: { tool: string; ok: boolean; output: string }) => void)({ tool: "run_script", ok: true, output: "made image" });
       return loopPromise;
     });
 
@@ -387,8 +414,14 @@ describe("runAutomationNow crash recovery (failRun)", () => {
     createWorkspace(db, { id: "ws1", name: "W" });
     createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
     const automation = makeAutomation(db, { projectId: "p1" });
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
-    runToolLoopMock.mockRejectedValue(new Error("provider exploded"));
+    const root = makeRoot();
+    // Emit one completed tool BEFORE the loop rejects, so the incrementally
+    // flushed transcript exists and failRun must preserve it (not replace it).
+    runToolLoopMock.mockImplementation(() => {
+      (loopEmitToolCall() as (e: { tool: string; label: string; args: Record<string, unknown> }) => void)({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
+      (loopEmitToolCallDone() as (e: { tool: string; ok: boolean; output: string }) => void)({ tool: "run_script", ok: true, output: "made image" });
+      return Promise.reject(new Error("provider exploded"));
+    });
     const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
     const send = (channel: string, payload: unknown) => sent.push({ channel, payload: payload as Record<string, unknown> });
 
@@ -404,11 +437,15 @@ describe("runAutomationNow crash recovery (failRun)", () => {
     const updated = getAutomationRunById(db, runId!)!;
     expect(updated.status).toBe("error");
     expect(updated.error).toMatch(/provider exploded/);
-    // A run-log.json was written so the failed run stays inspectable.
+    // A run-log.json was written so the failed run stays inspectable — and it
+    // must RETAIN the tool history flushed before the crash.
     const autoDir = automationFolderDir(root, automation.id, "P");
     const log = JSON.parse(fs.readFileSync(path.join(automationRunDir(autoDir, runId!), "run-log.json"), "utf8"));
     expect(log.status).toBe("error");
     expect(log.error).toMatch(/provider exploded/);
+    expect(log.tools).toHaveLength(1);
+    expect(log.tools[0].name).toBe("run_script");
+    expect(log.tools[0].ok).toBe(true);
     // The finished event was emitted so a watcher doesn't spin forever.
     const finished = sent.find((s) => s.channel === "automation:run" && s.payload.event === "finished");
     expect(finished).toBeTruthy();

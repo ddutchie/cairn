@@ -125,8 +125,13 @@ function DevFilesPanel({ automationId }: { automationId: string }) {
         setChanged(nextChanged);
         setError(null);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
       }
+      // Don't re-arm the poll after the component has been torn down — a
+      // rejected poll that resolves after cleanup must not schedule a timer
+      // that can never be cleared (and would touch state on an unmounted tree).
+      if (cancelled) return;
       timer = setTimeout(poll, 2000);
     };
     void poll();

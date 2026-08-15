@@ -19,6 +19,8 @@ import {
   ensureAutomationRunDir,
   listAutomationFolderFiles,
   projectRootDir,
+  readRunLog,
+  writeRunLog,
 } from "./automation-folder";
 
 function tmpRoot(): string {
@@ -84,6 +86,53 @@ describe("automation folder fs operations", () => {
   it("returns 0 when runs/ does not exist", () => {
     const root = tmpRoot();
     expect(cleanupOldRunDirs(path.join(root, "nope"), 3)).toBe(0);
+  });
+});
+
+describe("run-log transcript (atomic write)", () => {
+  const baseLog = {
+    automationId: "aut-1",
+    runId: "run-1",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    status: "done",
+    tools: [{ name: "run_script" }],
+    tokens: "summary",
+  };
+
+  it("round-trips a written transcript through readRunLog", () => {
+    const root = tmpRoot();
+    const runDir = path.join(root, "run-1");
+    fs.mkdirSync(runDir, { recursive: true });
+    writeRunLog(runDir, baseLog);
+    const log = readRunLog(runDir);
+    expect(log?.status).toBe("done");
+    expect(log?.tools).toEqual([{ name: "run_script" }]);
+  });
+
+  it("readRunLog never consumes a partial transcript from an interrupted write", () => {
+    const root = tmpRoot();
+    const runDir = path.join(root, "run-1");
+    fs.mkdirSync(runDir, { recursive: true });
+    writeRunLog(runDir, baseLog);
+
+    // Simulate a crash mid-write under a naive implementation: a partial write
+    // landing directly on the final path. The atomic writer must have left the
+    // previous complete transcript intact and never expose the garbage.
+    fs.writeFileSync(path.join(runDir, ".run-log.json.tmp"), "{broken");
+    const log = readRunLog(runDir);
+    expect(log?.status).toBe("done");
+
+    // The next write recovers: tmp is overwritten, final is replaced atomically.
+    writeRunLog(runDir, { ...baseLog, status: "exhausted" });
+    expect(readRunLog(runDir)?.status).toBe("exhausted");
+    expect(fs.readFileSync(path.join(runDir, "run-log.json"), "utf8")).toContain('"exhausted"');
+  });
+
+  it("readRunLog returns null when the run folder is empty", () => {
+    const root = tmpRoot();
+    const runDir = path.join(root, "run-1");
+    fs.mkdirSync(runDir, { recursive: true });
+    expect(readRunLog(runDir)).toBeNull();
   });
 });
 

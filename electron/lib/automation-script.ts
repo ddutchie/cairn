@@ -93,6 +93,9 @@ function fmt(bytes: number): string {
  * helpful message when nothing matches or multiple candidates exist.
  */
 export function resolveScript(scriptsDir: string, name: string): ScriptKind {
+  if (name === "." || name === "..") {
+    throw new Error(`Invalid script name "${name}" — must be a real file, not a directory.`);
+  }
   if (!SAFE_NAME.test(name)) {
     throw new Error(`Invalid script name "${name}" — use only letters, digits, dots, dashes, and underscores.`);
   }
@@ -330,6 +333,9 @@ export type WriteRunFileHandler = (args: WriteRunFileArgs) => Promise<string>;
 export async function writeRunFile(args: WriteRunFileArgs, ctx: WriteRunFileContext): Promise<string> {
   const rel = (args.path ?? "").trim();
   if (!rel) throw new Error("write_run_file requires a path");
+  if (rel === "." || rel === "..") {
+    throw new Error(`Invalid path "${rel}" — must be a relative file path inside the run folder.`);
+  }
   if (path.isAbsolute(rel) || rel.includes("\0") || rel.split(PATH_SEP_RE).includes("..")) {
     throw new Error(`Invalid path "${rel}" — must be a relative path inside the run folder.`);
   }
@@ -396,6 +402,9 @@ const MAX_DELIVERED_BYTES = 25 * 1024 * 1024;
 export async function deliverFile(args: DeliverFileArgs, ctx: DeliverFileContext): Promise<string> {
   const rel = (args.path ?? "").trim();
   if (!rel) throw new Error("deliver_file requires a path");
+  if (rel === "." || rel === "..") {
+    throw new Error(`Invalid path "${rel}" — must be a relative file path inside CAIRN_OUT_DIR.`);
+  }
   if (path.isAbsolute(rel) || rel.includes("\0") || rel.split(PATH_SEP_RE).includes("..")) {
     throw new Error(`Invalid path "${rel}" — must be a relative path inside CAIRN_OUT_DIR.`);
   }

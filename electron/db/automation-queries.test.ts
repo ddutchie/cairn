@@ -85,6 +85,33 @@ describe("automation CRUD", () => {
     expect(updated!.env).toEqual([{ name: "PLAIN", value: "xyz", secret: false }]);
   });
 
+  it("never persists a secret value to the row, even if a caller passes one", () => {
+    // A stray caller passing { secret: true, value: "plaintext" } must not have
+    // that plaintext survive in the database (secrets live in the keychain).
+    const a = createAutomation(db, makeInput({
+      env: [
+        { name: "API_KEY", secret: true, value: "super-secret" },
+        { name: "PLAIN", secret: false, value: "ok" },
+      ],
+    }));
+    // Read path: no value returned for the secret.
+    expect(getAutomationById(db, a.id)!.env).toEqual([
+      { name: "API_KEY", secret: true },
+      { name: "PLAIN", value: "ok", secret: false },
+    ]);
+    // Raw row: the serialized env contains no secret value.
+    const row = db.prepare("SELECT env FROM automations WHERE id = ?").get(a.id) as { env: string };
+    expect(row.env).toContain('"name":"API_KEY","secret":true');
+    expect(row.env).not.toContain("super-secret");
+
+    // Same defence on update.
+    updateAutomation(db, a.id, { env: [{ name: "TOKEN", secret: true, value: "leak-me" }] });
+    const updated = getAutomationById(db, a.id)!;
+    expect(updated.env).toEqual([{ name: "TOKEN", secret: true }]);
+    const row2 = db.prepare("SELECT env FROM automations WHERE id = ?").get(a.id) as { env: string };
+    expect(row2.env).not.toContain("leak-me");
+  });
+
   it("updates partial fields", () => {
     const a = createAutomation(db, makeInput());
     const updated = updateAutomation(db, a.id, { name: "Renamed", enabled: false });

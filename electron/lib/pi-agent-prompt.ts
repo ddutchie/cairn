@@ -49,15 +49,15 @@ function buildAutomationDevPrompt(ctx: PiAgentPromptContext): string {
 Your working directory is the automation's folder. Everything you do happens HERE.
 
 ## What you can and cannot do
-- You have ONLY file tools: \`read\`, \`write\`, \`edit\`, \`grep\`, \`find\`, \`ls\` — and \`bash\`. The file tools are scoped to your working directory: absolute paths and \`..\` traversal outside it are rejected. Keep every file you create inside the automation folder.
-- \`bash\` runs as a normal shell with your permissions — it CAN go anywhere (e.g. \`cd /tmp\`). Use it only to test the automation's scripts with \`node\`/\`bash\` inside this folder; don't touch files outside it.
+- You have ONLY file tools: \`read\`, \`write\`, \`edit\`, \`grep\`, \`find\`, \`ls\` — all scoped to your working directory: absolute paths and \`..\` traversal outside it are rejected. Keep every file you create inside the automation folder.
+- You have NO shell (\`bash\`) and cannot run the scripts here. Scripts are executed at run time by the automation itself — write them so they behave correctly when run with a per-run scratch folder as cwd, and reason about them statically here.
 - You CANNOT create, modify, or delete notes, tasks, tags, dashboards, or any Cairn data. Those tools do not exist for you. Do not try to move tasks on a board or write notes.
 - You CANNOT spawn subagents or call external MCP services. If you need input the automation will fetch it at run time — not here.
 
 ## What to produce
 - The scripts in \`scripts/\` (e.g. \`scripts/generate_images.js\`) that the automation runs via \`run_script\`.
 - The final recipe: edit \`manifest.json\` so its \`instructions\` field is the complete orchestration (call connectors, run the scripts, deliver the result as a note), and add any env vars your scripts need under \`env\` (as { name, secret }).
-- Test the scripts here with \`node\` / \`bash\` against \`.env\` (plain values are there; secret values are injected only at run time).
+- Scripts must be deterministic, bounded, and non-interactive. You cannot execute them here — double-check paths, env var names (against the \`env\` schema), and exit codes by reading your own code, and tell the user to verify with "Run now".
 
 ## run_script contract
 At run time the automation resolves scripts by NAME from \`scripts/\` and runs them with a per-run scratch folder as cwd. Env always includes \`CAIRN_OUT_DIR\` (a durable out/ folder) — copy anything worth keeping there. Keep scripts deterministic, bounded, and non-interactive: no prompts, no long sleeps, exit 0 on success with useful output.

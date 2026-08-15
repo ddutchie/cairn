@@ -376,8 +376,8 @@ import { getExternalToolDefs, executeExternalTool, isExternalToolName, externalT
 /** Session persona — drives the offered toolset. */
 export type AgentSessionRole = "default" | "automation-dev";
 
-/** Tools available to the "automation-dev" persona — FILE tools only. */
-const AUTOMATION_DEV_TOOLS = new Set(["read", "write", "edit", "bash", "grep", "find", "ls"]);
+/** Tools available to the "automation-dev" persona — FILE tools only, no shell. */
+const AUTOMATION_DEV_TOOLS = new Set(["read", "write", "edit", "grep", "find", "ls"]);
 
 export function getAllToolDefs(
   mode: "plan" | "execute" = "execute",
@@ -387,8 +387,9 @@ export function getAllToolDefs(
   role: AgentSessionRole = "default",
 ) {
   // The automation-builder persona: file tools only, scoped to the automation
-  // folder. No Cairn data tools, no board writes, no subagents, no external
-  // connectors — a Develop session can only create files and run commands.
+  // folder. No bash/shell (a Develop session can only create files — scripts
+  // are executed at run time, not here), no Cairn data tools, no board writes,
+  // no subagents, no external connectors.
   if (role === "automation-dev") {
     return CODING_TOOL_DEFS.filter((t) => AUTOMATION_DEV_TOOLS.has(t.function.name));
   }

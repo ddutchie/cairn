@@ -187,12 +187,16 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   const handleClear = useCallback(() => {
     if (!threadId) return;
+    // Drop queued messages FIRST: stopping the stream flips isLoading to false,
+    // which fires the queue-drain — a pending prompt must not be sent into a
+    // just-cleared thread.
+    clearQueue();
     if (isLoading) stopStream();
     // Drop any in-flight questions form too — it belongs to this thread and
     // would otherwise linger after the transcript is cleared.
     clearQuestions();
     clearThreadMessages(threadId);
-  }, [threadId, isLoading, stopStream, clearThreadMessages, clearQuestions]);
+  }, [threadId, isLoading, stopStream, clearThreadMessages, clearQuestions, clearQueue]);
 
   const handleArchiveChat = useCallback(async () => {
     if (!threadId) return;

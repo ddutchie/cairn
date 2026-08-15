@@ -100,9 +100,10 @@ export class HeartbeatScheduler {
     const nowIso = new Date(this.opts.now?.() ?? Date.now()).toISOString();
     // Fail-closed sweep: any pending approval parked longer than the approval
     // timeout (e.g. by a run whose process died before it could be resolved) is
-    // marked expired so it doesn't sit in the inbox forever.
+    // marked expired so it doesn't sit in the inbox forever. Cutoff derives from
+    // the same injected clock as the tick so tests control one source of time.
     try {
-      expireStaleApprovals(db, new Date(Date.now() - APPROVAL_TIMEOUT_MS).toISOString());
+      expireStaleApprovals(db, new Date(new Date(nowIso).getTime() - APPROVAL_TIMEOUT_MS).toISOString());
     } catch { /* best-effort */ }
     const due = listDueAutomations(db, nowIso);
     for (const automation of due) {

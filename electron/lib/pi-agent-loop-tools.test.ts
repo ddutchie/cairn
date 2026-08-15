@@ -2,11 +2,11 @@
  * pi-agent toolset — persona-driven tool restrictions.
  *
  * The "automation-dev" persona (used by the automation Develop modal) must be
- * restricted to FILE tools only: read/write/edit/bash/grep/find/ls. No Cairn
- * data tools (create_task / ensure_note / …), no todowrite, no subagents, no
- * external connectors — a Develop session can only author files and run
- * commands inside the automation folder, so it can never touch the user's
- * board or notes.
+ * restricted to FILE tools only: read/write/edit/grep/find/ls. No shell
+ * (bash), no Cairn data tools (create_task / ensure_note / …), no todowrite,
+ * no subagents, no external connectors — a Develop session can only author
+ * files inside the automation folder, so it can never touch the user's board
+ * or notes or run arbitrary commands.
  */
 
 import { describe, it, expect } from "vitest";
@@ -17,6 +17,7 @@ function toolNames(role: "default" | "automation-dev"): string[] {
 }
 
 const FILE_TOOLS = ["read", "write", "edit", "bash", "grep", "find", "ls"];
+const DEV_FILE_TOOLS = FILE_TOOLS.filter((t) => t !== "bash");
 
 describe("getAllToolDefs persona", () => {
   it("default persona offers file tools AND Cairn data tools", () => {
@@ -27,9 +28,10 @@ describe("getAllToolDefs persona", () => {
     expect(names.has("todowrite")).toBe(true);
   });
 
-  it("automation-dev persona offers file tools only", () => {
+  it("automation-dev persona offers file tools only (and no shell)", () => {
     const names = new Set(toolNames("automation-dev"));
-    for (const t of FILE_TOOLS) expect(names.has(t)).toBe(true);
+    for (const t of DEV_FILE_TOOLS) expect(names.has(t)).toBe(true);
+    expect(names.has("bash")).toBe(false);
   });
 
   it("automation-dev persona excludes every Cairn data / side-effecting tool", () => {

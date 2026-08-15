@@ -265,6 +265,15 @@ export function registerPiAgentHandler(
       broadcastEvent(channel, payload);
     };
 
+    // Reject a second prompt for a session whose loop is already running —
+    // starting a new loop would replace session.abortCtrl mid-flight and leave
+    // the is-running state inconsistent. The renderer queues prompts while busy,
+    // so this is a defensive guard, not the normal path.
+    if (runningLoops.has(sessionId)) {
+      send("pi-agent:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before sending another prompt." });
+      return;
+    }
+
     // Runtime-validate staged attachments BEFORE they are persisted into the
     // session or turned into content parts — a malformed/oversized data URL must
     // never reach the provider (or the transcript).
@@ -361,7 +370,9 @@ export function registerPiAgentHandler(
 
     // Session persona (persisted on the row) — "automation-dev" restricts the
     // toolset to file tools so a Develop session can't touch notes/tasks.
-    const role = sessionRow?.role ?? "default";
+    // Validated: an unknown persisted value fails closed to the restricted
+    // persona rather than the unrestricted default.
+    const role = q.normalizeSessionRole(sessionRow?.role);
     session.role = role;
 
     const skills = discoverSkills(cwd);
@@ -389,6 +400,13 @@ export function registerPiAgentHandler(
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
     };
+
+    // Same concurrency guard as pi-agent:prompt — a plan approval is also a
+    // loop run and must never stack on an in-flight loop for this session.
+    if (runningLoops.has(sessionId)) {
+      send("pi-agent:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before approving the plan." });
+      return;
+    }
 
     if (req.config?.provider === "localllm") {
       send("pi-agent:error", {
@@ -463,8 +481,14 @@ export function registerPiAgentHandler(
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
       : "Project";
 
+    // Restore the persisted persona for this session (e.g. "automation-dev" for
+    // a Develop session) so plan approval can't silently broaden its toolset.
+    const sessionRow = q.getPiSessionById(ctx.db, sessionId);
+    const role = q.normalizeSessionRole(sessionRow?.role);
+    session.role = role;
+
     const skills = discoverSkills(cwd);
-    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, skillsXml: renderSkillsXml(skills) });
+    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, skillsXml: renderSkillsXml(skills), role });
 
     const toolCtx: AgentToolContext = {
       cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
@@ -643,10 +667,14 @@ export function registerPiAgentHandler(
       if (history.length > 0) {
         // getLlmHistory now returns the full AgentMessage objects (role, content,
         // tool_calls, tool_call_id, etc.) so multi-turn context is fully restored.
+        // Restore the persisted persona too so a subsequent prompt/approval keeps
+        // the session's tool restrictions (validated, failing closed).
+        const sessionRow = q.getPiSessionById(ctx.db, sessionId);
         sessions.set(sessionId, {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           messages: history as any[],
           abortCtrl: new AbortController(),
+          role: q.normalizeSessionRole(sessionRow?.role),
         });
       }
     } catch (e) {
