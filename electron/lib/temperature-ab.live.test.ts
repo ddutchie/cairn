@@ -86,7 +86,7 @@ interface Sample {
   latencyMs: number;
 }
 
-async function runOnce(model: string, prompt: { system: string; user: string }, temperature: number | undefined): Promise<Sample> {
+async function runOnce(model: string, prompt: { id: string; system: string; user: string }, temperature: number | undefined): Promise<Sample> {
   const messages: OpenAIMessage[] = [
     { role: "system", content: prompt.system },
     { role: "user", content: prompt.user },
