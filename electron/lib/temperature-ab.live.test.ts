@@ -4,7 +4,9 @@
  *
  * Compares OLD behaviour (`temperature: 0.3` forced on every request) against
  * NEW behaviour (`temperature` omitted → vendor default) on the same prompts,
- * over the real opencode zen Responses endpoint:
+ * over the real opencode zen Responses endpoint, plus an explicit `1.0`
+ * control (the vendor default for GLM-5.x) to confirm that "omit" really does
+ * mean the vendor default and to measure what forcing it explicitly does:
  *
  *   CAIRN_LIVE_TESTS=1 \
  *   TEST_LLM_OCGO_BASE_URL=https://opencode.ai/zen/go/v1 \
@@ -14,8 +16,7 @@
  *
  * Focus models (per the research):
  *   - gpt-5.6-luna  → models.dev `temperature: false` (vendor manages sampling).
- *   - glm-5.2       → `temperature: true` but vendor default is 1.0; forcing
- *     0.3 makes it more deterministic than intended.
+ *   - glm-5.2       → `temperature: true` but vendor default is 1.0.
  *   - deepseek-v4-flash → coding model; DeepSeek recommends 0.0 for coding.
  *
  * Each config runs N times per prompt so the *reliability* signal (did the
@@ -32,8 +33,19 @@ import type { OpenAIMessage } from "./llm";
 const BASE_URL = (process.env.TEST_LLM_OCGO_BASE_URL || "https://opencode.ai/zen/go/v1").trim().replace(/\/+$/, "");
 const API_KEY = process.env.TEST_LLM_OCGO_KEY?.trim() || "";
 
-const FOCUS = ["gpt-5.6-luna", "glm-5.2", "deepseek-v4-flash"];
+// Restrict the model set via TEST_LLM_OCGO_A_B_MODELS (comma-separated) to
+// keep a run short, e.g. just glm-5.2 for a focused three-way comparison.
+const FOCUS = (process.env.TEST_LLM_OCGO_A_B_MODELS || "gpt-5.6-luna,glm-5.2,deepseek-v4-flash")
+  .split(",").map((s) => s.trim()).filter(Boolean);
 const N = 3;
+
+// old:0.3 = legacy forced value; omit = new Auto (field dropped); 1.0 = the
+// explicit vendor default for GLM-5.x (control for what "omit" should mean).
+const CONFIGS: Array<{ label: string; value: number | undefined }> = [
+  { label: "old:0.3", value: 0.3 },
+  { label: "new:omit", value: undefined },
+  { label: "ctl:1.0", value: 1.0 },
+];
 
 const PROMPTS: Array<{ id: string; system: string; user: string }> = [
   {
@@ -120,11 +132,10 @@ interface Agg {
   retries: number;
   toolCalls: number;
   meanLat: number;
-  samples: Sample[];
 }
 
 function aggregate(samples: Sample[]): Agg {
-  const agg: Agg = { stop: 0, incomplete: 0, length: 0, httpErr: 0, retries: 0, toolCalls: 0, meanLat: 0, samples };
+  const agg: Agg = { stop: 0, incomplete: 0, length: 0, httpErr: 0, retries: 0, toolCalls: 0, meanLat: 0 };
   for (const s of samples) {
     if (s.status !== 200) { agg.httpErr += 1; continue; }
     if (s.finishReason === "stop") agg.stop += 1;
@@ -138,7 +149,7 @@ function aggregate(samples: Sample[]): Agg {
   return agg;
 }
 
-describe.skipIf(!LIVE_TESTS_ENABLED)("temperature A/B — 0.3 (old) vs omitted (new)", () => {
+describe.skipIf(!LIVE_TESTS_ENABLED)("temperature A/B — 0.3 vs omit vs 1.0", () => {
   let up = false;
   beforeAll(async () => {
     up = await endpointUp(BASE_URL, API_KEY);
@@ -151,22 +162,22 @@ describe.skipIf(!LIVE_TESTS_ENABLED)("temperature A/B — 0.3 (old) vs omitted (
     }
 
     const line = (s: string) => console.log(s);
-    line(`\n${"MODEL".padEnd(18)} ${"PROMPT".padEnd(13)} ${"CFG".padEnd(11)} ${"stop".padEnd(5)} ${"incompl".padEnd(8)} ${"len".padEnd(4)} ${"HTTP!".padEnd(6)} ${"retry".padEnd(6)} ${"toolOK".padEnd(7)} ${"meanMs".padEnd(7)}`);
+    line(`\n${"MODEL".padEnd(18)} ${"PROMPT".padEnd(13)} ${"CFG".padEnd(9)} ${"stop".padEnd(5)} ${"incompl".padEnd(8)} ${"len".padEnd(4)} ${"HTTP!".padEnd(6)} ${"retry".padEnd(6)} ${"toolOK".padEnd(7)} ${"meanMs".padEnd(7)}`);
     line("-".repeat(96));
 
     for (const model of FOCUS) {
       for (const prompt of PROMPTS) {
-        const oldSamples: Sample[] = [];
-        const newSamples: Sample[] = [];
-        for (let i = 0; i < N; i++) oldSamples.push(await runOnce(model, prompt, 0.3));
-        for (let i = 0; i < N; i++) newSamples.push(await runOnce(model, prompt, undefined));
-        const oldA = aggregate(oldSamples);
-        const newA = aggregate(newSamples);
-
-        const fmt = (a: Agg) =>
-          `${String(a.stop).padEnd(5)} ${String(a.incomplete).padEnd(8)} ${String(a.length).padEnd(4)} ${String(a.httpErr).padEnd(6)} ${String(a.retries).padEnd(6)} ${String(a.toolCalls).padEnd(7)} ${a.meanLat.toFixed(0).padEnd(7)}`;
-        line(`${model.padEnd(18)} ${prompt.id.padEnd(13)} ${"old:0.3".padEnd(11)} ${fmt(oldA)}`);
-        line(`${"".padEnd(18)} ${"".padEnd(13)} ${"new:omit".padEnd(11)} ${fmt(newA)}`);
+        const aggs: Array<[string, Agg]> = [];
+        for (const cfg of CONFIGS) {
+          const samples: Sample[] = [];
+          for (let i = 0; i < N; i++) samples.push(await runOnce(model, prompt, cfg.value));
+          aggs.push([cfg.label, aggregate(samples)]);
+        }
+        for (const [label, a] of aggs) {
+          const fmt = (a: Agg) =>
+            `${String(a.stop).padEnd(5)} ${String(a.incomplete).padEnd(8)} ${String(a.length).padEnd(4)} ${String(a.httpErr).padEnd(6)} ${String(a.retries).padEnd(6)} ${String(a.toolCalls).padEnd(7)} ${a.meanLat.toFixed(0).padEnd(7)}`;
+          line(`${model.padEnd(18)} ${prompt.id.padEnd(13)} ${label.padEnd(9)} ${fmt(a)}`);
+        }
       }
       line("-".repeat(96));
     }
