@@ -269,6 +269,38 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     if (isActive) textareaRef.current?.focus();
   }, [isActive]);
 
+  // Restore the busy state when this pane (re)mounts. isLoading is local state,
+  // so a session that kept working while its UI was unmounted (e.g. the
+  // automation Develop modal closed mid-run) would otherwise come back showing
+  // an idle input. The main process tracks the live loop (`pi-agent:is-running`)
+  // — poll it once on mount. When it reports not-running, any assistant message
+  // the previous mount left in a streaming state (it unmounted before
+  // pi-agent:done) is stale — finalise it so no ghost bubble lingers.
+  //
+  // Declared BEFORE the initial-prompt effect on purpose: on a genuinely fresh
+  // mount the session isn't in `firedInitialPrompts` yet, which means THIS mount
+  // is about to fire its initial prompt and `sendPrompt` owns the busy state —
+  // querying here would race (and could clobber) it. Only once the session has
+  // fired a prompt in the past (a resume) is the main-process state authoritative.
+  useEffect(() => {
+    if (!firedInitialPrompts.has(session.sessionId)) return;
+    let cancelled = false;
+    const sync = async () => {
+      const running = (await window.electron?.piAgent.isRunning(session.sessionId)) ?? false;
+      if (cancelled) return;
+      setIsLoading(running);
+      if (!running) {
+        finalisePiMessage(session.sessionId);
+        setRetryInfo(null);
+        setPendingQuestions(null);
+        setPendingQuestionCallId(null);
+        setDoomLoop(null);
+      }
+    };
+    void sync();
+    return () => { cancelled = true; };
+  }, [session.sessionId, finalisePiMessage]);
+
   // Fire initialPrompt once when the session is loaded (set by SpawnAgentModal).
   // Uses a ref so we always call the current sendPrompt (not a stale closure).
   // Tracks fired session IDs in a Set ref to ensure we only queue this once per session
@@ -555,6 +587,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // Attachment-only submissions are valid (an image/PDF with no caption), so
     // only block when there is NEITHER text NOR attachments.
     if ((!trimmed && attachments.length === 0) || !session.cwd) return;
+
+    // Mark the session as "has fired a prompt" so a later remount of this pane
+    // knows to poll the main process for the live busy state instead of showing
+    // an idle input (sessions without an initialPrompt never reach the
+    // firedInitialPrompts Set otherwise).
+    firedInitialPrompts.add(session.sessionId);
 
     // A run is already in progress — queue this prompt instead of interrupting.
     // The queue drains (FIFO) when the current run finishes. Attachments are

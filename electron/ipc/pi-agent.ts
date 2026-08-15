@@ -36,6 +36,14 @@ import { createDeltaBatcher } from "../lib/delta-batcher";
 
 const sessions = new Map<string, PiAgentSession>();
 
+/**
+ * Session IDs with a runAgentLoop currently in flight. The renderer polls this
+ * via `pi-agent:is-running` when a pane (re)mounts so a session that kept
+ * working while its UI was closed (e.g. the automation Develop modal) comes
+ * back already showing the busy state, instead of briefly looking idle.
+ */
+const runningLoops = new Set<string>();
+
 // ── Debounced history persistence ─────────────────────────────────────────────
 // saveLlmHistory is a synchronous (better-sqlite3) transaction that
 // JSON-serialises every message in the session — on a long turn that's a
@@ -138,6 +146,7 @@ async function runSession(
   send: (channel: string, payload: unknown) => void,
 ): Promise<void> {
   const { sessionId } = toolCtx;
+  runningLoops.add(sessionId);
 
   // Reuse existing transformer to preserve cachedSummary across prompts.
   // Signal is read live from session.abortCtrl inside the transformer.
@@ -191,6 +200,7 @@ async function runSession(
       onRetry:        (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
       transformContext: session.compactionTransformer,
       onDone: () => {
+        runningLoops.delete(sessionId);
         tokens.flush();
         thoughts.flush();
         // Persist off the done-delivery path (see scheduleHistorySave).
@@ -198,6 +208,7 @@ async function runSession(
         send("pi-agent:done", { sessionId });
       },
       onError: (error) => {
+        runningLoops.delete(sessionId);
         tokens.flush();
         thoughts.flush();
         scheduleHistorySave(ctx.db, sessionId, session.messages, "exited");
@@ -214,6 +225,7 @@ async function runSession(
     // A crashed loop must still resolve the turn: flush buffered tokens,
     // persist the (exited) session, and send a terminal error so the renderer
     // never stays stuck in its loading state.
+    runningLoops.delete(sessionId);
     tokens.flush();
     thoughts.flush();
     scheduleHistorySave(ctx.db, sessionId, session.messages, "exited");
@@ -228,6 +240,14 @@ export function registerPiAgentHandler(
 ): void {
   // Read db/workspacePath from ctx at call-time so workspace reinitialise is transparent
   const getWin = ctx.getWin;
+
+  // ── pi-agent:is-running ──────────────────────────────────────────────────
+  // Invoke-style query so a (re)mounting AgentChatPane can restore its busy
+  // state from the main process — the loop's lifecycle lives here, not in the
+  // renderer's local state.
+  registerIpcHandle("pi-agent:is-running", (_event, { sessionId }: { sessionId: string }) => {
+    return runningLoops.has(sessionId);
+  });
 
   // ── pi-agent:abort ────────────────────────────────────────────────────────
   registerIpcOn("pi-agent:abort", (_event, { sessionId }: { sessionId: string }) => {

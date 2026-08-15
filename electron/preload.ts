@@ -980,6 +980,8 @@ const api = {
   piAgent: {
     /** Send a prompt to an existing or new session. Fire-and-forget. */
     prompt: (req: unknown) => ipcRenderer.send("pi-agent:prompt", req),
+    /** Whether a runAgentLoop is currently in flight for this session. */
+    isRunning: (sessionId: string) => invoke<boolean>("pi-agent:is-running", { sessionId }),
     /** Abort the current in-flight turn for this session. */
     abort: (sessionId: string) => ipcRenderer.send("pi-agent:abort", { sessionId }),
     /** Clear message history for a session (start fresh). */
