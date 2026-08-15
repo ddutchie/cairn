@@ -24,6 +24,7 @@ import { runToolLoop } from "./chat-loop";
 import { getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
 import { buildSystemPrompt, TOOLS, type ChatRequest } from "./tools";
+import { resolveTemperatureForModel } from "./model-pricing";
 import { insertNotification } from "../mcp/db";
 import {
   bumpAutomationRunCount,
@@ -302,7 +303,9 @@ export async function runAutomation(
       model: cached.model,
       apiKey: cached.apiKey,
       maxSteps: cached.maxSteps ?? DEFAULT_MAX_STEPS,
-      temperature: cached.temperature ?? 0.3,
+      // Gate on the model capability: never send temperature to a model that
+      // declares `temperature: false`, even if a stale cached value lingers.
+      temperature: resolveTemperatureForModel(cached.model, cached.temperature),
     },
   };
 

@@ -319,7 +319,10 @@ export function registerPiAgentHandler(
         model: reqConfig?.model || cached.model,
         apiKey: cached.apiKey,
         maxSteps: reqConfig?.maxSteps || cached.maxSteps,
-        temperature: reqConfig?.temperature || cached.temperature,
+        // Temperature is renderer-authoritative (it resolves the capability gate
+        // and the plan-mode override). Never fall back to a cached 0.3: an
+        // explicit 0 must survive, and unset/unsupported must stay omitted.
+        temperature: reqConfig?.temperature,
         maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
       };
@@ -335,7 +338,9 @@ export function registerPiAgentHandler(
       model:       reqConfig?.model       || "gpt-5.6-luna",
       apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    reqConfig?.maxSteps    ?? 20,
-      temperature: reqConfig?.temperature ?? 0.3,
+      // The renderer resolved the effective temperature (capability-gated;
+      // undefined = omit → vendor default).
+      temperature: reqConfig?.temperature,
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
       isReasoningModel: reqConfig?.isReasoningModel,
@@ -437,7 +442,10 @@ export function registerPiAgentHandler(
         model: reqConfig?.model || cached.model,
         apiKey: cached.apiKey,
         maxSteps: reqConfig?.maxSteps || cached.maxSteps,
-        temperature: reqConfig?.temperature || cached.temperature,
+        // Temperature is renderer-authoritative (it resolves the capability gate
+        // and the plan-mode override). Never fall back to a cached 0.3: an
+        // explicit 0 must survive, and unset/unsupported must stay omitted.
+        temperature: reqConfig?.temperature,
         maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
       };
@@ -453,7 +461,9 @@ export function registerPiAgentHandler(
       model:       reqConfig?.model       || "gpt-5.6-luna",
       apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    reqConfig?.maxSteps    ?? 20,
-      temperature: reqConfig?.temperature ?? 0.3,
+      // The renderer resolved the effective temperature (capability-gated;
+      // undefined = omit → vendor default).
+      temperature: reqConfig?.temperature,
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
       isReasoningModel: reqConfig?.isReasoningModel,

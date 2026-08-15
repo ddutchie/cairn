@@ -57,8 +57,12 @@ export interface AgentLLMConfig {
   apiKey: string;
   /** Maximum tool-call iterations per turn. Defaults to 20. */
   maxSteps: number;
-  /** Sampling temperature. Plan mode overrides this to 0.1 for determinism. */
-  temperature: number;
+  /**
+   * Sampling temperature. Undefined = omit the field (the vendor's own default
+   * applies); never sent to models that declare `temperature: false`. The
+   * renderer already resolves the effective value (plan mode → 0.1).
+   */
+  temperature?: number;
   /** Maximum automatic retries on transient errors (429/5xx). Defaults to 3. */
   maxRetries?: number;
   /** Base delay in ms for exponential backoff. Doubles each attempt. Defaults to 2000. */
@@ -673,8 +677,11 @@ export async function runAgentLoop(
   // under its native field, but only to the SAME model that produced it.
   const currentModelKey = `${baseUrl}::${model}`;
 
-  // Plan mode always uses 0.1 for deterministic analysis regardless of user setting
-  const temperature = mode === "plan" ? 0.1 : (configTemp ?? 0.3);
+  // Plan mode always uses 0.1 for deterministic analysis. The renderer already
+  // resolved the effective temperature (including the plan-mode override and
+  // the models.dev capability gate), so an undefined value here means "omit" —
+  // the vendor's own sampling default applies.
+  const temperature = configTemp;
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
     callbacks.onError("No API key configured. Set one in Settings → AI & Chat.");
     return;

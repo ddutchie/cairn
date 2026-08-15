@@ -536,6 +536,9 @@ const api = {
     /** Push the models.dev per-1M pricing map (used for cost estimation). */
     setPricing: (map: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }>) =>
       invoke<{ ok: boolean }>("app:modelPricing", map),
+    /** Push model ids that declare they don't support temperature control. */
+    setNoTemperatureModels: (ids: string[]) =>
+      invoke<{ ok: boolean }>("app:noTemperatureModels", ids),
   },
 
   // ── App paths ─────────────────────────────────

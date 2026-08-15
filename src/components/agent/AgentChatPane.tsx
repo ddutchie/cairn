@@ -30,7 +30,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import { useChatMessageQueue, useQueueDrain } from "@/hooks/useChatMessageQueue";
-import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion } from "@/lib/models-dev";
+import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion, effectiveTemperatureForModel } from "@/lib/models-dev";
 import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
 import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
@@ -679,7 +679,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,
          maxSteps:    agentConfig.maxSteps    ?? 30,
-         temperature: agentConfig.temperature ?? 0.3,
+         // Plan mode always uses 0.1 for deterministic analysis; otherwise the
+         // user's setting. Auto/unset or unsupported → omitted (vendor default).
+         temperature: effectiveTemperatureForModel(
+           agentConfig.model,
+           session.mode === "plan" ? 0.1 : agentConfig.temperature,
+         ),
           // The agent's real context limit — drives the sliding-window pruner
           // (and compaction) so long contexts are trimmed at the model's window,
           // not a hardcoded 128K default.
@@ -797,7 +802,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,
         maxSteps:    agentConfig.maxSteps    ?? 30,
-         temperature: agentConfig.temperature ?? 0.3,
+         // Same effective-temperature resolution as the prompt path.
+         temperature: effectiveTemperatureForModel(agentConfig.model, agentConfig.temperature),
          contextWindow: agentConfig.contextLimit,
          maxTokens:   resolveMaxOutputTokens(
            agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,

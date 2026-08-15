@@ -3,10 +3,29 @@
  * lookup. The endpoint (or a gateway) may prepend a `provider:` prefix to the
  * model id — e.g. `merge:deepseek/deepseek-v4-flash` or `merge:deepseek-v4-flash`.
  * We must strip that so the underlying model still resolves in the catalog.
+ *
+ * Also covers the effective-temperature resolver: the models.dev `temperature`
+ * capability gate (never send to a model that declares it unsupported) and the
+ * Auto/omit default (no user value → undefined → field omitted → vendor default).
  */
 
-import { describe, expect, it } from "vitest";
-import { normalizeId } from "./models-dev";
+import { describe, expect, it, beforeEach } from "vitest";
+import { normalizeId, effectiveTemperatureForModel, setModelInfoCacheForTest } from "./models-dev";
+import type { ModelInfo } from "../../shared/models/model-catalog";
+
+const stub = (temperature: boolean | null): ModelInfo => ({
+  context: 128000,
+  maxOutput: 32000,
+  input: 1,
+  output: 2,
+  cacheRead: null,
+  cacheWrite: null,
+  modes: ["text"],
+  toolCall: true,
+  reasoning: true,
+  temperature,
+  provider: "test",
+});
 
 describe("normalizeId", () => {
   it("strips a bare provider prefix with a slash path", () => {
@@ -63,5 +82,37 @@ describe("normalizeId", () => {
   it("still resolves the documented gateway/proxy shapes", () => {
     expect(normalizeId("playground-claude-opus-4-8")).toBe("claude-opus-4-8");
     expect(normalizeId("us.anthropic.claude-opus-4-7")).toBe("claude-opus-4-7");
+  });
+});
+
+describe("effectiveTemperatureForModel", () => {
+  beforeEach(() => {
+    setModelInfoCacheForTest(null);
+  });
+
+  it("never sends temperature to a model that declares it unsupported", () => {
+    setModelInfoCacheForTest({ "gpt-5.6-luna": stub(false) });
+    // Even an explicit user value must not be sent — the model manages sampling.
+    expect(effectiveTemperatureForModel("gpt-5.6-luna", 0.3)).toBeUndefined();
+    expect(effectiveTemperatureForModel("gpt-5.6-luna", 0)).toBeUndefined();
+    expect(effectiveTemperatureForModel("gpt-5.6-luna", undefined)).toBeUndefined();
+  });
+
+  it("honours an explicit user value for a model that supports temperature", () => {
+    setModelInfoCacheForTest({ "glm-5.2": stub(true) });
+    expect(effectiveTemperatureForModel("glm-5.2", 0.3)).toBe(0.3);
+    expect(effectiveTemperatureForModel("glm-5.2", 0)).toBe(0);
+  });
+
+  it("omits the field when the user hasn't set a temperature (Auto)", () => {
+    setModelInfoCacheForTest({ "glm-5.2": stub(true) });
+    expect(effectiveTemperatureForModel("glm-5.2", undefined)).toBeUndefined();
+    expect(effectiveTemperatureForModel("glm-5.2", null)).toBeUndefined();
+  });
+
+  it("is permissive for unknown models: honour explicit, omit when unset", () => {
+    // No cache seeded → model unknown.
+    expect(effectiveTemperatureForModel("unknown-model", 0.5)).toBe(0.5);
+    expect(effectiveTemperatureForModel("unknown-model", undefined)).toBeUndefined();
   });
 });

@@ -34,12 +34,13 @@ describe("parseModelCatalog", () => {
             modalities: { input: ["text", "image", "pdf"] },
             tool_call: true,
             reasoning: true,
+            temperature: false,
           },
         },
       },
       anthropic: {
         models: {
-          "claude-4": { limit: { context: 1000000 } },
+          "claude-4": { limit: { context: 1000000 }, temperature: true },
         },
       },
     });
@@ -53,6 +54,7 @@ describe("parseModelCatalog", () => {
       modes: ["text", "image", "pdf"],
       toolCall: true,
       reasoning: true,
+      temperature: false,
       provider: "openai",
     });
     expect(map["claude-4"]).toEqual({
@@ -65,6 +67,7 @@ describe("parseModelCatalog", () => {
       modes: [],
       toolCall: null,
       reasoning: null,
+      temperature: true,
       provider: "anthropic",
     });
   });
@@ -83,6 +86,7 @@ describe("parseModelCatalog", () => {
       modes: [],
       toolCall: null,
       reasoning: null,
+      temperature: null,
       provider: "deepseek",
     });
   });
@@ -206,7 +210,7 @@ describe("normalizeContextLimit", () => {
 
 describe("normalizeModelInfo", () => {
   it("passes well-formed entries through unchanged", () => {
-    const info = { context: 1000, maxOutput: 8000, input: 1, output: 2, cacheRead: 3, cacheWrite: 4, modes: ["text"], toolCall: true, reasoning: true, provider: "x" };
+    const info = { context: 1000, maxOutput: 8000, input: 1, output: 2, cacheRead: 3, cacheWrite: 4, modes: ["text"], toolCall: true, reasoning: true, temperature: true, provider: "x" };
     expect(normalizeModelInfo(info as never)).toEqual(info);
   });
 

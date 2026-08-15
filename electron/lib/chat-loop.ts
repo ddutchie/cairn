@@ -102,7 +102,8 @@ export async function runToolLoop(
   deliverFile?: DeliverFileHandler,
 ): Promise<RunToolLoopResult> {
   const maxSteps    = req.config?.maxSteps    ?? 30;
-  const temperature = req.config?.temperature ?? 0.3;
+  // Renderer-resolved effective temperature; undefined = omit (vendor default).
+  const temperature = req.config?.temperature;
   // Max output tokens. Undefined/0 → Auto: send a generous 32K cap (mirroring
   // opencode) so reasoning models can finish naturally. A positive value is the
   // user's deliberate cap. Two failure modes are avoided by never omitting the

@@ -316,7 +316,7 @@ export const useCairnStore = create<CairnStore>()(
           model: savedConfig.model || DEFAULT_AGENT_CONFIG.model,
           apiKey: savedConfig.apiKey || DEFAULT_AGENT_CONFIG.apiKey,
           maxSteps: savedConfig.maxSteps || DEFAULT_AGENT_CONFIG.maxSteps,
-          temperature: savedConfig.temperature || DEFAULT_AGENT_CONFIG.temperature,
+          temperature: savedConfig.temperature ?? DEFAULT_AGENT_CONFIG.temperature,
           contextLimit: savedConfig.contextLimit || DEFAULT_AGENT_CONFIG.contextLimit,
           autoApprove: DEFAULT_AGENT_CONFIG.autoApprove,
         };
@@ -427,7 +427,7 @@ export const useCairnStore = create<CairnStore>()(
           model: (configRecord.model as string) || DEFAULT_AGENT_CONFIG.model,
           apiKey: (configRecord.apiKey as string) || DEFAULT_AGENT_CONFIG.apiKey,
           maxSteps: (configRecord.maxSteps as number) || DEFAULT_AGENT_CONFIG.maxSteps,
-          temperature: (configRecord.temperature as number) || DEFAULT_AGENT_CONFIG.temperature,
+          temperature: (configRecord.temperature as number) ?? DEFAULT_AGENT_CONFIG.temperature,
           contextLimit: (configRecord.contextLimit as number) || DEFAULT_AGENT_CONFIG.contextLimit,
           autoApprove: DEFAULT_AGENT_CONFIG.autoApprove,
         };

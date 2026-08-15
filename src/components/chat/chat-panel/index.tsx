@@ -31,6 +31,7 @@ import {
   getModelCatalogVersion,
   prewarmModelCatalog,
   subscribeModelCatalog,
+  effectiveTemperatureForModel,
 } from "@/lib/models-dev";
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
@@ -512,7 +513,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         model:       aiConfig.model       || undefined,
         apiKey:      aiConfig.apiKey      || undefined,
         maxSteps:    aiConfig.maxSteps    ?? 30,
-        temperature: aiConfig.temperature ?? 0.3,
+        // Auto (unset) or a model that doesn't support temperature → omitted,
+        // so the vendor's own sampling default applies (see effectiveTemperatureForModel).
+        temperature: effectiveTemperatureForModel(aiConfig.model, aiConfig.temperature),
         // Max output tokens: Auto sends a generous 32K cap (bounded by the
         // model's declared output limit) so the model can finish naturally — a
         // manual value is a deliberate user cost/latency ceiling.

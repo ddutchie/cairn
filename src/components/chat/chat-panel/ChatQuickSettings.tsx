@@ -45,6 +45,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
 
   const maxSteps = aiConfig.maxSteps ?? 30;
   const temperature = aiConfig.temperature ?? 0.3;
+  const temperatureAuto = aiConfig.temperature == null;
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -106,7 +107,18 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
           <label className="block space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[0.714rem] text-[var(--text-secondary)]">Temperature</span>
-              <span className="text-[0.643rem] text-[var(--text-tertiary)]">{temperature.toFixed(2)}</span>
+              {temperatureAuto ? (
+                <button
+                  onClick={() => setAIConfig({ temperature: 0.3 })}
+                  disabled={disabled}
+                  title="Auto — the model uses its own default. Tap to set 0.3."
+                  className="text-[0.643rem] text-[var(--accent)] hover:underline disabled:opacity-50"
+                >
+                  Auto
+                </button>
+              ) : (
+                <span className="text-[0.643rem] text-[var(--text-tertiary)]">{temperature.toFixed(2)}</span>
+              )}
             </div>
             <input
               type="range"

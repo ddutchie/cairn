@@ -90,6 +90,22 @@ export function AISettings() {
     return () => { cancelled = true; };
   }, [model, provider]);
 
+  // Whether the selected model supports temperature control (models.dev
+  // `temperature`). false = the vendor manages sampling internally, so a
+  // client-forced value is ignored and nothing is sent. null/undefined = unknown.
+  const [temperatureCapability, setTemperatureCapability] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (provider === "localllm") { setTemperatureCapability(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
+    let cancelled = false;
+    const id = (model ?? "").trim();
+    if (!id) { setTemperatureCapability(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
+    modelInfoForModel(id).then((info) => {
+      if (cancelled) return;
+      setTemperatureCapability(info?.temperature ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [model, provider]);
+
   // Shared Max-steps control — rendered after the provider-specific block for
   // both providers (passed into the Llama console so its position is unchanged).
   const maxStepsRow = (
@@ -192,7 +208,15 @@ export function AISettings() {
             {/* Temperature */}
             <StepperSettingsRow
               label="Temperature"
-              description="Sampling temperature for chat & inline AI (0–1). Lower = more deterministic, higher = more creative."
+              description={
+                aiConfig.temperature == null
+                  ? temperatureCapability === false
+                    ? `Auto: no temperature is sent for "${model}" — models.dev reports it doesn't support temperature control, so the model manages sampling itself.`
+                    : `Auto: no temperature is sent, so "${model}" uses its own default (e.g. GLM defaults to 1.0). Set a value to override for models that support it.`
+                  : temperatureCapability === false
+                    ? `"${model}" doesn't support temperature control (per models.dev) — this value is ignored and nothing is sent.`
+                    : `Sent to "${model}" when it supports temperature. Lower = more deterministic, higher = more creative. Tap Auto to let the model use its own default.`
+              }
               icon="thermometer"
               value={aiConfig.temperature ?? 0.3}
               onChange={(v) => updateAIConfig({ temperature: v })}
@@ -200,6 +224,10 @@ export function AISettings() {
               min={0}
               max={1}
               step={0.05}
+              autoActive={aiConfig.temperature == null}
+              onAuto={() => updateAIConfig({ temperature: undefined })}
+              autoSuppressesValue
+              suppressedPlaceholder="Auto"
             />
 
             {/* Context window — auto-detected from models.dev, with manual override */}
