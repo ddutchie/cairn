@@ -26,17 +26,23 @@ import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 import {
   createAutomation,
   getAutomationById,
+  getAutomationRunById,
   listAutomations,
   updateAutomation,
   deleteAutomation,
   listAutomationRuns,
   listRecentAutomationRuns,
   countRunningAutomationRuns,
+  type AutomationEnv,
   type AutomationInput,
 } from "../db/automation-queries";
 import { runAutomationNow } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
+import { recordStandingAllowance } from "../lib/automation-approval";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
+import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog } from "../lib/automation-folder";
+import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
+import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
@@ -727,8 +733,115 @@ export function registerDbHandlers(ctx: DbContext): void {
     handle(() => checkRequirements(ctx.db, workspaceId, projectId ?? "", requires)),
   );
   registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
-    const runId = runAutomationNow({ db: ctx.db, workspacePath: ctx.workspacePath }, id);
+    const runId = runAutomationNow({
+      db: ctx.db,
+      workspacePath: ctx.workspacePath,
+      send: (channel, payload) => broadcastEvent(channel, payload),
+    }, id);
     return runId === null ? { skipped: true } : { runId };
+  }));
+
+  // The automation's folder on disk (<project>/.automations/<id>/) — the dev
+  // agent's cwd when building/testing the automation's scripts. The folder is
+  // CREATED here (scripts/ + out/ + .env + manifest) so a Develop session on a
+  // never-run automation sees a real, populated workspace.
+  registerIpcHandle("db:automation:folder", (_e, { id }: { id: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, id);
+    if (!a) return { error: "Automation not found." };
+    const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
+    const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
+    try {
+      ensureAutomationDir(folder);
+      prepareAutomationFolder(folder, a);
+    } catch (err) {
+      console.warn("[automation] failed to prepare develop folder:", err);
+    }
+    return { folder };
+  }));
+
+  // File tree of the automation folder — for the Develop modal's "files" panel.
+  registerIpcHandle("db:automation:files", (_e, { id }: { id: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, id);
+    if (!a) return { error: "Automation not found." };
+    const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
+    const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
+    return { files: listAutomationFolderFiles(folder) };
+  }));
+
+  // A run's persisted transcript (run-log.json in its run folder).
+  registerIpcHandle("db:automation:runLog", (_e, { runId }: { runId: string }) => handle(() => {
+    const run = getAutomationRunById(ctx.db, runId);
+    if (!run || !run.runDir) return { error: "No run folder for this run." };
+    const log = readRunLog(run.runDir);
+    if (!log) return { error: "No run transcript saved for this run." };
+    return { log };
+  }));
+
+  // Apply the agent-authored manifest.json (instructions / env schema / standing
+  // rules) back onto the automation row — the Develop loop's "write the resulting
+  // automation shape" step.
+  registerIpcHandle("db:automation:syncFromManifest", (_e, { id }: { id: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, id);
+    if (!a) return { error: "Automation not found." };
+    const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
+    const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
+    const manifest = readAutomationManifest(folder);
+    if (!manifest) return { error: "No manifest.json in the automation folder — run Develop first." };
+    // Map the manifest onto the row: instructions / env / standing rules
+    // (sanitised — target-less run_script/bash rules are dropped) / requires.
+    const { patch, dropped } = applyManifestToAutomation(a, manifest);
+    const updated = updateAutomation(ctx.db, id, patch);
+    if (!updated) return { error: "Failed to sync automation from manifest." };
+    return { automation: updated, dropped };
+  }));
+
+  // ── Automation env vars ──────────────────────────────────────────────────
+  // Non-secret values are stored inline on the automation row; secret values
+  // live in the OS keychain (kind "automation") and are NEVER returned to the
+  // renderer — only a "set" boolean is exposed.
+  const envSpec = (a: { id: string; env: AutomationEnv[] }) =>
+    a.env.map((e) => e.secret
+      ? { name: e.name, secret: true, set: hasSecret("automation", a.id, e.name) }
+      : { name: e.name, secret: false, value: e.value ?? "" });
+
+  registerIpcHandle("db:automation:env", (_e, { automationId }: { automationId: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, automationId);
+    if (!a) return { error: "Automation not found." };
+    return envSpec(a);
+  }));
+
+  registerIpcHandle("db:automation:env:set", (_e, { automationId, name, value, secret }: { automationId: string; name: string; value: string; secret: boolean }) => handle(() => {
+    if (!isValidEnvName(name)) {
+      return { error: `Invalid env var name "${name}" — use only letters, digits and underscores.` };
+    }
+    const a = getAutomationById(ctx.db, automationId);
+    if (!a) return { error: "Automation not found." };
+    if (secret) {
+      // Secret → keychain only; the row keeps the name + flag with a null value.
+      try {
+        setSecret("automation", automationId, name, value);
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : "Failed to store secret." };
+      }
+      updateAutomation(ctx.db, automationId, {
+        env: [...a.env.filter((e) => e.name !== name), { name, secret: true }],
+      });
+    } else {
+      updateAutomation(ctx.db, automationId, {
+        env: [...a.env.filter((e) => e.name !== name), { name, secret: false, value }],
+      });
+    }
+    const updated = getAutomationById(ctx.db, automationId);
+    return updated ? envSpec(updated) : [];
+  }));
+
+  registerIpcHandle("db:automation:env:delete", (_e, { automationId, name }: { automationId: string; name: string }) => handle(() => {
+    const a = getAutomationById(ctx.db, automationId);
+    if (!a) return { error: "Automation not found." };
+    deleteSecret("automation", automationId, name);
+    updateAutomation(ctx.db, automationId, { env: a.env.filter((e) => e.name !== name) });
+    const updated = getAutomationById(ctx.db, automationId);
+    return updated ? envSpec(updated) : [];
   }));
 
   // Friendly schedule preview — compute the next fire time for a proposed
@@ -744,7 +857,15 @@ export function registerDbHandlers(ctx: DbContext): void {
 
   // ── Approval inbox ──────────────────────────────
   registerIpcHandle("db:approval:listPending", (_e, { limit }: { limit?: number }) => handle(() => listPendingApprovals(ctx.db, limit)));
-  registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => resolveApproval(ctx.db, id, resolution)));
+  registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => {
+    const resolved = resolveApproval(ctx.db, id, resolution);
+    // "Always allow" must persist across runs: write a standing rule on the
+    // owning automation so the gate lets it through next time without asking.
+    if (resolution === "approved_always" && resolved?.runId) {
+      recordStandingAllowance(ctx.db, resolved.runId, resolved.tool, resolved.args);
+    }
+    return resolved;
+  }));
   registerIpcHandle("db:approval:count", () => handle(() => countPendingApprovals(ctx.db)));
 
   // ── In-app notification center ─────────────────

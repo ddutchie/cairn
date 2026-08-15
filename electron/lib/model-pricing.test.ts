@@ -3,7 +3,14 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { setModelPricing, pricePerMillion, estimateCostUsd } from "./model-pricing";
+import {
+  setModelPricing,
+  setNoTemperatureModels,
+  supportsTemperature,
+  resolveTemperatureForModel,
+  pricePerMillion,
+  estimateCostUsd,
+} from "./model-pricing";
 
 const PRICING = {
   "deepseek-v4-flash": { input: 0.04, output: 0.12 },
@@ -80,5 +87,35 @@ describe("model-pricing", () => {
     setModelPricing({});
     expect(pricePerMillion("gpt-4o")).toBeNull();
     expect(estimateCostUsd("gpt-4o", 1000, 100)).toBeUndefined();
+  });
+});
+
+describe("temperature capability gate", () => {
+  beforeEach(() => setNoTemperatureModels(["gpt-5.6-luna", "claude-opus-4-7", "gpt-5.6"]));
+
+  it("is permissive for unknown models", () => {
+    expect(supportsTemperature("totally-unknown-model")).toBe(true);
+    expect(resolveTemperatureForModel("totally-unknown-model", 0.3)).toBe(0.3);
+  });
+
+  it("never sends temperature to a model that declares it unsupported", () => {
+    expect(supportsTemperature("gpt-5.6-luna")).toBe(false);
+    expect(resolveTemperatureForModel("gpt-5.6-luna", 0.3)).toBeUndefined();
+    expect(resolveTemperatureForModel("gpt-5.6-luna", 0)).toBeUndefined();
+  });
+
+  it("passes the requested value through for supporting/unknown models", () => {
+    expect(resolveTemperatureForModel("glm-5.2", 0.5)).toBe(0.5);
+    expect(resolveTemperatureForModel("glm-5.2", undefined)).toBeUndefined();
+  });
+
+  it("fuzzy-matches gateway ids that embed an unsupported model id", () => {
+    expect(supportsTemperature("playground-gpt-5.6-luna")).toBe(false);
+    expect(supportsTemperature("openai/gpt-5.6")).toBe(false);
+  });
+
+  it("clears the gate when given an empty list", () => {
+    setNoTemperatureModels([]);
+    expect(supportsTemperature("gpt-5.6-luna")).toBe(true);
   });
 });

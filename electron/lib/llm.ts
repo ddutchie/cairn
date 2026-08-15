@@ -7,6 +7,7 @@ import { pdfTokenEstimate } from "../../shared/models/pdf-attach";
 import { recordLlmUsage, extractCost, extractCacheTokens } from "./usage-recorder";
 import type { UsageSource } from "../db/usage-queries";
 import { buildResponsesBody, parseResponsesOutput } from "./responses";
+import { resolveTemperatureForModel } from "./model-pricing";
 
 /**
  * Normalise a user-supplied base URL by stripping trailing slashes.
@@ -266,7 +267,9 @@ export async function callLLM(
       model: config.model,
       messages,
       maxTokens: opts.maxTokens ?? 4096,
-      temperature: opts.temperature ?? 0.4,
+      // Gate on the model capability: a model that declares `temperature: false`
+      // (GPT-5.x, Claude 5, …) never gets a temperature, even a default.
+      temperature: resolveTemperatureForModel(config.model, opts.temperature ?? 0.4),
       reasoningEffort: opts.reasoningEffort,
       stream,
     });
@@ -322,7 +325,8 @@ export async function callLLM(
     model: config.model,
     messages,
     max_tokens: opts.maxTokens ?? 4096,
-    temperature: opts.temperature ?? 0.4,
+    // Gate on the model capability (see responses path above).
+    temperature: resolveTemperatureForModel(config.model, opts.temperature ?? 0.4),
     // Stream by default to prevent proxy connection drop timeouts (e.g.
     // gateway/reverse proxy limits on blocking sync calls returning 504
     // Gateway Time-out). Callers that need a clean final message (one-shots)
@@ -436,7 +440,7 @@ export async function* streamCompletion(
     model: config.model,
     messages,
     max_tokens: 4096,
-    temperature: 0.3,
+    temperature: resolveTemperatureForModel(config.model, 0.3),
     stream: true,
   };
   if (tools && tools.length > 0) {

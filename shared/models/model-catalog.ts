@@ -34,6 +34,13 @@ export interface ModelInfo {  /** Context window in tokens (limit.context). */
   toolCall: boolean | null;
   /** Whether the model is a reasoning/thinking model (models.dev `reasoning`). */
   reasoning: boolean | null;
+  /**
+   * Whether the model supports temperature control (models.dev `temperature`).
+   * Frontier reasoning models increasingly declare `temperature: false` — the
+   * vendor manages sampling internally, so a client-forced value is ignored at
+   * best. Null when unknown.
+   */
+  temperature: boolean | null;
   /** models.dev provider slug that owns the catalog entry (drives the logo). */
   provider: string | null;
 }
@@ -301,6 +308,7 @@ export function normalizeModelInfo(info: ModelInfo | null | undefined): ModelInf
     modes,
     toolCall: typeof info.toolCall === "boolean" ? info.toolCall : null,
     reasoning: typeof info.reasoning === "boolean" ? info.reasoning : null,
+    temperature: typeof info.temperature === "boolean" ? info.temperature : null,
     provider: typeof info.provider === "string" ? info.provider : null,
   };
 }
@@ -322,6 +330,7 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
         modalities?: { input?: unknown };
         tool_call?: unknown;
         reasoning?: unknown;
+        temperature?: unknown;
       };
       const readNum = (v: unknown): number | null =>
         typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -338,6 +347,7 @@ export function parseModelCatalog(catalog: unknown): Record<string, ModelInfo> {
         modes: inModes,
         toolCall: typeof m.tool_call === "boolean" ? m.tool_call : null,
         reasoning: typeof m.reasoning === "boolean" ? m.reasoning : null,
+        temperature: typeof m.temperature === "boolean" ? m.temperature : null,
         provider: slug,
       };
     }

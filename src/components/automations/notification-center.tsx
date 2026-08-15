@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Bell, Check, CheckCheck, Zap, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -162,9 +163,11 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
                   )}
                 </div>
                 {!n.read && (
-                  <Button variant="ghost" size="icon" title="Dismiss" className="shrink-0" onClick={(e) => { e.stopPropagation(); void markNotificationRead(n.id); }}>
-                    <Check size={12} />
-                  </Button>
+                  <Tooltip content="Dismiss">
+                    <Button variant="ghost" size="icon" className="shrink-0" onClick={(e) => { e.stopPropagation(); void markNotificationRead(n.id); }}>
+                      <Check size={12} />
+                    </Button>
+                  </Tooltip>
                 )}
               </div>
             );
@@ -174,9 +177,11 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
 
       {/* Footer */}
       <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-[var(--border-subtle)]">
-        <Button variant="ghost" size="xs" onClick={() => void clearNotifications()} disabled={notifications.length === 0} title="Remove all notifications">
-          <Trash2 size={11} className="mr-1 text-[var(--text-tertiary)]" /> Clear all
-        </Button>
+        <Tooltip content="Remove all notifications">
+          <Button variant="ghost" size="xs" onClick={() => void clearNotifications()} disabled={notifications.length === 0}>
+            <Trash2 size={11} className="mr-1 text-[var(--text-tertiary)]" /> Clear all
+          </Button>
+        </Tooltip>
         <button type="button" onClick={onClose} className="text-[0.625rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">Close</button>
       </div>
     </div>

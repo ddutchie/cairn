@@ -1203,6 +1203,40 @@ const MIGRATIONS: Migration[] = [
     add("reasoning_field", "reasoning_field TEXT");
     add("reasoning_model", "reasoning_model TEXT");
   },
+
+  // v46: automation_runs.run_dir — absolute path to the run's per-run working
+  // folder (<project>/.automations/<automationId>/runs/<runId>/), created by
+  // the heartbeat runner so phase-2 run_script has a scratch cwd. NULL for runs
+  // from before the folder plumbing.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(automation_runs)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "run_dir")) {
+      db.exec("ALTER TABLE automation_runs ADD COLUMN run_dir TEXT");
+    }
+  },
+
+  // v47: automations.env — JSON array of automation env vars
+  // [{ name, value?, secret }]. Non-secret values are stored inline; secret
+  // entries keep `value` null and the real value lives in the OS keychain
+  // (secure-store, kind "automation"), resolved only in the main process at
+  // run time. Additive; existing rows get [] via the queries layer.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(automations)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "env")) {
+      db.exec("ALTER TABLE automations ADD COLUMN env TEXT");
+    }
+  },
+
+  // v48: pi_agent_sessions.role — session persona. "default" is the coding
+  // agent; "automation-dev" restricts the toolset to FILE tools only
+  // (read/write/edit/bash/grep/find/ls) so a Develop session can author an
+  // automation's scripts without ever touching notes/tasks/board.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(pi_agent_sessions)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "role")) {
+      db.exec("ALTER TABLE pi_agent_sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'default'");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1242,6 +1276,9 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "active_hours_start", "active_hours_start TEXT");
   ensure("automations", "active_hours_end", "active_hours_end TEXT");
   ensure("automations", "requires", "requires TEXT");
+  ensure("automations", "env", "env TEXT");
+  ensure("automation_runs", "run_dir", "run_dir TEXT");
+  ensure("pi_agent_sessions", "role", "role TEXT NOT NULL DEFAULT 'default'");
   ensure("mcp_notifications", "target_type", "target_type TEXT");
   ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");

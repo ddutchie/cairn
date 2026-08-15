@@ -183,6 +183,20 @@ const FEATURES = [
       "Multimodal Over Responses: Image and PDF attachments map to the native image/file input items on Responses-based providers.",
     ],
   },
+  {
+    id: "v2.7.4-automation-mini-app",
+    version: "v2.7.4",
+    title: "Automation Mini-App",
+    category: "Automations",
+    description:
+      "Turn a scheduled automation into a tiny app. Build its scripts with a built-in Develop agent, configure env vars and keychain-only secrets, and watch every run — and its full transcript — live.",
+    highlights: [
+      "Develop Mode: Spawn a restricted agent that authors your automation's scripts, manifest recipe, and env schema in place, with a live Files panel.",
+      "Env & Secrets: Add non-secret env vars (written to .env for the agent) or secrets that live only in your OS keychain and never touch disk.",
+      "Run Scripts: Automations can execute named scripts in a per-run working folder, gated behind approvals with script-scoped 'always allow' rules.",
+      "Live Run Transcript: Watch a run as it happens — tokens, thinking, tool calls — and replay the full run-log afterwards.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

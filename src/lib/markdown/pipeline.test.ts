@@ -85,6 +85,32 @@ describe("markdown pipeline: custom elements survive rehypeEscapeUnknownTags", (
     expect(allText(tree)).toContain("<repo>");
   });
 
+  it("escapes a stray SVG <text> outside an <svg> to literal text (was: React crash)", () => {
+    const tree = toHast("Agent replied: <text>hello</text>");
+    expect(tagNames(tree)).not.toContain("text");
+    expect(allText(tree)).toContain("<text>hello</text>");
+  });
+
+  it("preserves the closing tag when escaping an EMPTY non-void element", () => {
+    // `<text></text>` must come back as-is — not collapse to `<text>`.
+    const tree = toHast("A raw <text></text> in a reply");
+    expect(tagNames(tree)).not.toContain("text");
+    expect(allText(tree)).toContain("<text></text>");
+  });
+
+  it("keeps an escaped empty element's attributes alongside its closing tag", () => {
+    const tree = toHast('<repo mode="x"></repo> here');
+    expect(tagNames(tree)).not.toContain("repo");
+    const text = allText(tree);
+    expect(text).toContain('<repo mode="x"></repo>');
+  });
+
+  it("keeps SVG <text> children when nested inside an <svg>", () => {
+    const tree = toHast('<svg width="10" height="10"><text x="1" y="2">Hi</text></svg>');
+    expect(tagNames(tree)).toContain("svg");
+    expect(tagNames(tree)).toContain("text");
+  });
+
   it("resolves multiple wikilinks in one paragraph", () => {
     const tree = toHast("See [[Alpha]] and [[Beta Note]].");
     const titles: string[] = [];

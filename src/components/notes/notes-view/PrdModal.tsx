@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useCairnStore } from "@/store";
 import { useChatStream } from "@/hooks/useChatStream";
+import { effectiveTemperatureForModel } from "@/lib/models-dev";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { cn, prettifyToolLabel } from "@/lib/utils";
@@ -97,7 +98,8 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
         model:       aiConfig.model       || "gpt-5.6-luna",
         apiKey:      aiConfig.apiKey      || "",
         maxSteps:    aiConfig.maxSteps    ?? 30,
-        temperature: aiConfig.temperature ?? 0.3,
+        // Auto/unset or unsupported → omitted (vendor default applies).
+        temperature: effectiveTemperatureForModel(aiConfig.model, aiConfig.temperature),
       },
       systemPrompt: buildPrdSystemPrompt(projectId),
     });

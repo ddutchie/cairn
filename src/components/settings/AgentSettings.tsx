@@ -462,6 +462,20 @@ export function AgentSettings() {
     return () => { cancelled = true; };
   }, [modelAgent]);
 
+  // Whether the agent model supports temperature control (models.dev `temperature`).
+  // false = vendor manages sampling internally; nothing is sent.
+  const [temperatureCapabilityAgent, setTemperatureCapabilityAgent] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const mid = (modelAgent ?? "").trim();
+    if (!mid) { setTemperatureCapabilityAgent(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
+    modelInfoForModel(mid).then((info) => {
+      if (cancelled) return;
+      setTemperatureCapabilityAgent(info?.temperature ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [modelAgent]);
+
   async function handleSaveAgent(agent: Omit<CodingAgent, "createdAt" | "updatedAt">) {
     await saveAgent(agent);
     setAdding(false);
@@ -515,7 +529,15 @@ export function AgentSettings() {
         {/* Temperature */}
         <StepperSettingsRow
           label="Temperature"
-          description="Sampling temperature for the agent (0–1). Lower = more deterministic. Plan mode always uses 0.1 regardless of this setting."
+          description={
+            temperatureAgent == null
+              ? temperatureCapabilityAgent === false
+                ? `Auto: no temperature is sent for "${modelAgent}" — models.dev reports it doesn't support temperature control. Plan mode always uses 0.1 regardless of this setting.`
+                : `Auto: no temperature is sent, so "${modelAgent}" uses its own default. Plan mode always uses 0.1 regardless of this setting. Set a value to override for models that support it.`
+              : temperatureCapabilityAgent === false
+                ? `"${modelAgent}" doesn't support temperature control (per models.dev) — this value is ignored and nothing is sent. Plan mode always uses 0.1 regardless of this setting.`
+                : `Sampling temperature for the agent (0–1). Lower = more deterministic. Plan mode always uses 0.1 regardless of this setting. Tap Auto to let the model use its own default.`
+          }
           icon="thermometer"
           value={temperatureAgent ?? 0.3}
           onChange={(v) => updateAgent({ temperature: v })}
@@ -523,6 +545,10 @@ export function AgentSettings() {
           min={0}
           max={1}
           step={0.05}
+          autoActive={temperatureAgent == null}
+          onAuto={() => updateAgent({ temperature: undefined })}
+          autoSuppressesValue
+          suppressedPlaceholder="Auto"
         />
 
         {/* Context window */}

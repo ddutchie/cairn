@@ -1000,6 +1000,8 @@ export interface TerminalSession {
   initialPrompt?: string;
   lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
   mode?: "plan" | "execute";
+  /** Session persona — "automation-dev" restricts the toolset to file tools. */
+  role?: "default" | "automation-dev";
   planNoteId?: string;
   /** Explicit plan approval choice for this session, if one was made. */
   autoApprove?: boolean;

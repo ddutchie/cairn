@@ -25,6 +25,20 @@ import { extractExternalRef } from "./external-ref";
 import { externalOutputError } from "./tool-result";
 import { traceTool } from "./tool-trace";
 import { parseToolArgs } from "./parse-tool-args";
+import {
+  RUN_SCRIPT_TOOL_NAME,
+  runScriptToolDefinition,
+  WRITE_RUN_FILE_TOOL_NAME,
+  writeRunFileToolDefinition,
+  DELIVER_FILE_TOOL_NAME,
+  deliverFileToolDefinition,
+  type RunScriptArgs,
+  type RunScriptHandler,
+  type WriteRunFileArgs,
+  type WriteRunFileHandler,
+  type DeliverFileArgs,
+  type DeliverFileHandler,
+} from "./automation-script";
 
 export type RunToolLoopResult =
   | { exhausted: true; content: string; reasoning: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string }
@@ -68,9 +82,28 @@ export async function runToolLoop(
    * a "Blocked: …" result is fed back to the model so it can adjust/stop.
    */
   approvalGate?: (name: string, args: Record<string, unknown>) => Promise<{ allow: boolean; reason?: string }>,
+  /**
+   * Optional run_script executor (heartbeat runner). When provided, the
+   * `run_script` tool is offered to the model and its calls are routed here;
+   * when absent the tool is not advertised and calling it fails cleanly.
+   */
+  runScript?: RunScriptHandler,
+  /**
+   * Optional write_run_file executor (heartbeat runner) — writes files inside
+   * the run's working folder so the data-only agent can stage input for
+   * scripts. Offered only when provided.
+   */
+  writeRunFile?: WriteRunFileHandler,
+  /**
+   * Optional deliver_file executor (heartbeat runner) — copies an out/ file
+   * into <workspace>/attachments/<automationId>/ so notes can embed generated
+   * images. Offered only when provided.
+   */
+  deliverFile?: DeliverFileHandler,
 ): Promise<RunToolLoopResult> {
   const maxSteps    = req.config?.maxSteps    ?? 30;
-  const temperature = req.config?.temperature ?? 0.3;
+  // Renderer-resolved effective temperature; undefined = omit (vendor default).
+  const temperature = req.config?.temperature;
   // Max output tokens. Undefined/0 → Auto: send a generous 32K cap (mirroring
   // opencode) so reasoning models can finish naturally. A positive value is the
   // user's deliberate cap. Two failure modes are avoided by never omitting the
@@ -78,9 +111,16 @@ export async function runToolLoop(
   // 4096) that truncates mid-tool-call, and the old hardcoded 4096 guillotined
   // "thinking" models mid-reasoning, yielding empty content that tripped a 400.
   const maxTokens   = req.config?.maxTokens && req.config.maxTokens > 0 ? req.config.maxTokens : AUTO_OUTPUT_TOKEN_CAP;
-  // Built-in tools (or a caller-supplied override) + any external tools in scope.
+  // Built-in tools (or a caller-supplied override) + run_script/write_run_file
+  // (automation only) + any external tools in scope.
   const baseTools = toolsOverride ?? TOOLS;
-  const combinedTools = extraTools.length > 0 ? [...baseTools, ...extraTools] : baseTools;
+  const withAutomationTools = [
+    ...baseTools,
+    ...(runScript ? [runScriptToolDefinition] : []),
+    ...(writeRunFile ? [writeRunFileToolDefinition] : []),
+    ...(deliverFile ? [deliverFileToolDefinition] : []),
+  ];
+  const combinedTools = extraTools.length > 0 ? [...withAutomationTools, ...extraTools] : withAutomationTools;
   let accumulatedContent = "";
   let accumulatedReasoning = "";
   // Responses-only: condensed reasoning summary, when the provider emits one
@@ -524,6 +564,44 @@ export async function runToolLoop(
             emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: reason });
             return { call, content: JSON.stringify({ error: reason }), abort: true };
           }
+        }
+        if (call.function.name === DELIVER_FILE_TOOL_NAME) {
+          // Copy an out/ file into workspace attachments so the note can embed it.
+          emitToolCall({ tool: call.function.name, label: `Delivering ${String((args as Partial<DeliverFileArgs>).path ?? "file")}`, args, callId: call.id });
+          if (!deliverFile) {
+            const message = `"${DELIVER_FILE_TOOL_NAME}" is not available in this session.`;
+            emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: message });
+            return { call, content: JSON.stringify({ error: message }) };
+          }
+          const output = await deliverFile(args as unknown as DeliverFileArgs);
+          emitToolCallDone?.({ tool: call.function.name, callId: call.id, output, ok: true });
+          return { call, content: output };
+        }
+        if (call.function.name === WRITE_RUN_FILE_TOOL_NAME) {
+          // Agent→script data bridge: write a file inside the run's working
+          // folder. Missing handler → clean failure, never a crash.
+          emitToolCall({ tool: call.function.name, label: `Writing ${String((args as Partial<WriteRunFileArgs>).path ?? "file")}`, args, callId: call.id });
+          if (!writeRunFile) {
+            const message = `"${WRITE_RUN_FILE_TOOL_NAME}" is not available in this session.`;
+            emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: message });
+            return { call, content: JSON.stringify({ error: message }) };
+          }
+          const output = await writeRunFile(args as unknown as WriteRunFileArgs);
+          emitToolCallDone?.({ tool: call.function.name, callId: call.id, output, ok: true });
+          return { call, content: output };
+        }
+        if (call.function.name === RUN_SCRIPT_TOOL_NAME) {
+          // Named-script execution — only offered to automation runs that
+          // supplied a handler. Absent handler → clean failure, never a crash.
+          emitToolCall({ tool: call.function.name, label: `Running ${String((args as Partial<RunScriptArgs>).name ?? "script")}`, args, callId: call.id });
+          if (!runScript) {
+            const message = `"${RUN_SCRIPT_TOOL_NAME}" is not available in this session.`;
+            emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: message });
+            return { call, content: JSON.stringify({ error: message }) };
+          }
+          const output = await runScript(args as unknown as RunScriptArgs);
+          emitToolCallDone?.({ tool: call.function.name, callId: call.id, output, ok: true });
+          return { call, content: output };
         }
         if (isExternalToolName(call.function.name)) {
           // MCP server / custom service tool — route to the external executor.

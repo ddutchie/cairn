@@ -315,6 +315,36 @@ const api = {
     recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) => invoke("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
     runNow: (id: string) => invoke("db:automation:runNow", { id }),
     runningCount: () => invoke("db:automation:runningCount"),
+    folder: (id: string) => invoke<{ folder: string }>("db:automation:folder", { id }),
+    syncFromManifest: (id: string) => invoke("db:automation:syncFromManifest", { id }),
+    files: (id: string) => invoke<{ files: Array<{ path: string; size: number; mtimeMs: number }> }>("db:automation:files", { id }),
+    runLog: (runId: string) => invoke<{ log: unknown } | { error: string }>("db:automation:runLog", { runId }),
+    /** Live run activity (tokens/tools/thought) for the "watch this run" view. */
+    onRunEvent: (cb: (payload: {
+      event: "started" | "token" | "thought" | "tool" | "toolDone" | "finished";
+      automationId: string;
+      runId: string;
+      delta?: string;
+      tool?: string;
+      label?: string;
+      args?: Record<string, unknown>;
+      status?: "start" | "end";
+      ok?: boolean;
+      output?: string;
+      error?: string;
+      recipe?: string;
+      content?: string;
+      exhausted?: boolean;
+    }) => void) => {
+      const handler = (_e: unknown, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("automation:run", handler);
+      return () => { ipcRenderer.removeListener("automation:run", handler); };
+    },
+    env: {
+      get: (automationId: string) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env", { automationId }),
+      set: (automationId: string, name: string, value: string, secret: boolean) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env:set", { automationId, name, value, secret }),
+      delete: (automationId: string, name: string) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env:delete", { automationId, name }),
+    },
     /** Installed/attached status per required connector (New Automation browse guard). */
     checkRequirements: (workspaceId: string, projectId: string, requires: Array<{ kind: "mcp" | "service"; name: string }>) =>
       invoke<Array<{ kind: "mcp" | "service"; name: string; installed: boolean; attached: boolean }>>("db:automation:checkRequirements", { workspaceId, projectId, requires }),
@@ -506,6 +536,9 @@ const api = {
     /** Push the models.dev per-1M pricing map (used for cost estimation). */
     setPricing: (map: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }>) =>
       invoke<{ ok: boolean }>("app:modelPricing", map),
+    /** Push model ids that declare they don't support temperature control. */
+    setNoTemperatureModels: (ids: string[]) =>
+      invoke<{ ok: boolean }>("app:noTemperatureModels", ids),
   },
 
   // ── App paths ─────────────────────────────────
@@ -950,6 +983,8 @@ const api = {
   piAgent: {
     /** Send a prompt to an existing or new session. Fire-and-forget. */
     prompt: (req: unknown) => ipcRenderer.send("pi-agent:prompt", req),
+    /** Whether a runAgentLoop is currently in flight for this session. */
+    isRunning: (sessionId: string) => invoke<boolean>("pi-agent:is-running", { sessionId }),
     /** Abort the current in-flight turn for this session. */
     abort: (sessionId: string) => ipcRenderer.send("pi-agent:abort", { sessionId }),
     /** Clear message history for a session (start fresh). */

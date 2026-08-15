@@ -4,12 +4,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity, FileText, Kanban, Sparkles, Plug } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn } from "@/lib/utils";
+import { cn, id } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
+import { buildAutomationDevPrompt } from "@/lib/automation-dev-prompt";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   DialogClose,
 } from "@/components/ui/dialog";
@@ -18,6 +20,9 @@ import { PendingApprovals } from "./pending-approvals";
 import { ScheduleBuilder } from "./schedule-builder";
 import { BrowseAutomationsContent } from "./browse-automations";
 import { TimePicker } from "@/components/ui/time-picker";
+import { EnvEditor } from "./env-editor";
+import { AutomationDevModal } from "./automation-dev-modal";
+import { RunWatcherModal } from "./run-watcher-modal";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
 import type { RegistryAutomationEntry, RegistryRequirement, McpServerConfig, CustomServiceConfig } from "@/types";
 
@@ -43,6 +48,7 @@ const STATUS_COLOR: Record<string, string> = {
   running: "text-[var(--accent)]",
   pending: "text-[var(--text-secondary)]",
   skipped: "text-[var(--text-tertiary)]",
+  exhausted: "text-[var(--warning)]",
   error: "text-[var(--danger)]",
   denied: "text-[var(--danger)]",
 };
@@ -84,6 +90,12 @@ export function AutomationsView() {
     activeWorkspaceId, activeProjectId, projects, setView,
     automations, lastRuns, pendingApprovals, runsById,
     fetchAutomations, createAutomation, updateAutomation, deleteAutomation, runNow, fetchRun, fetchRuns,
+    addTerminalSession,
+    terminalSessions,
+    removeTerminalSession,
+    automationDevSessions,
+    registerAutomationDevSession,
+    clearAutomationDevSession,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId: s.activeProjectId,
@@ -100,6 +112,12 @@ export function AutomationsView() {
     runNow: s.runNow,
     fetchRun: s.fetchRun,
     fetchRuns: s.fetchRuns,
+    addTerminalSession: s.addTerminalSession,
+    terminalSessions: s.terminalSessions,
+    removeTerminalSession: s.removeTerminalSession,
+    automationDevSessions: s.automationDevSessions,
+    registerAutomationDevSession: s.registerAutomationDevSession,
+    clearAutomationDevSession: s.clearAutomationDevSession,
   })));
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -237,6 +255,118 @@ export function AutomationsView() {
     setDialogOpen(false);
   }
 
+  const [developing, setDeveloping] = useState(false);
+  const [developError, setDevelopError] = useState<string | null>(null);
+  const [devAutomation, setDevAutomation] = useState<Automation | null>(null);
+  const [devSessionId, setDevSessionId] = useState<string | null>(null);
+  const [watchedAutomation, setWatchedAutomation] = useState<Automation | null>(null);
+  const [watchedRunId, setWatchedRunId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+
+  /**
+   * Open (or REOPEN) the self-contained dev modal for an automation. If a dev
+   * session is still running for it, reopening reuses it so in-flight work is
+   * never lost; `forceNew` aborts the old session and starts a fresh one. The
+   * restricted "automation-dev" persona has file tools only — it can't touch
+   * the board.
+   */
+  async function develop(a: Automation, forceNew = false) {
+    const electron = window.electron;
+    if (!electron) return;
+    setDeveloping(true);
+    setDevelopError(null);
+    try {
+      const res = (await electron.automation.folder(a.id)) as { folder: string };
+      if (!forceNew) {
+        const existing = automationDevSessions[a.id];
+        if (existing && terminalSessions.some((t) => t.sessionId === existing)) {
+          setDevAutomation(a);
+          setDevSessionId(existing);
+          return;
+        }
+      }
+      const projectId = a.projectId ?? activeProjectId;
+      if (!projectId) {
+        setDevelopError("This automation is workspace-scoped with no active project. Pick a project first.");
+        return;
+      }
+      if (forceNew) {
+        const stale = automationDevSessions[a.id];
+        if (stale && terminalSessions.some((t) => t.sessionId === stale)) {
+          electron.piAgent.destroy(stale);
+          removeTerminalSession(stale);
+        }
+        clearAutomationDevSession(a.id);
+      }
+      const sessionId = id();
+      const now = new Date().toISOString();
+      const taskTitle = `Develop: ${a.name}`;
+      await electron.piAgent.createSession({
+        id: sessionId,
+        projectId,
+        taskTitle,
+        taskId: a.id,
+        cwd: res.folder,
+        mode: "execute",
+        role: "automation-dev",
+        spawnedAt: now,
+      });
+      addTerminalSession({
+        sessionId,
+        taskId: a.id,
+        taskTitle,
+        agentId: "cairn-agent",
+        agentName: "Cairn Agent",
+        projectId,
+        cwd: res.folder,
+        status: "running",
+        exitCode: null,
+        spawnedAt: now,
+        sessionType: "pi",
+        piMessages: [],
+        mode: "execute",
+        role: "automation-dev",
+        initialPrompt: buildAutomationDevPrompt(a),
+      });
+      registerAutomationDevSession(a.id, sessionId);
+      setDevAutomation(a);
+      setDevSessionId(sessionId);
+    } catch (err) {
+      setDevelopError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeveloping(false);
+    }
+  }
+
+  /** Apply the agent-authored manifest.json (instructions / env schema) to the row. */
+  async function syncFromManifest(a: Automation) {
+    const electron = window.electron;
+    if (!electron) return;
+    setSyncing(true);
+    setSyncStatus(null);
+    try {
+      const result = (await electron.automation.syncFromManifest(a.id)) as
+        | { automation?: Automation; dropped?: string[]; error?: string }
+        | undefined;
+      if (result?.error) {
+        setSyncStatus(result.error);
+        return;
+      }
+      if (activeWorkspaceId) await fetchAutomations(activeWorkspaceId);
+      const dropped = result?.dropped ?? [];
+      setSyncStatus(
+        dropped.length > 0
+          ? `Synced the recipe — skipped ${dropped.length} unsafe standing rule${dropped.length === 1 ? "" : "s"}: ${dropped.join("; ")}`
+          : "Synced the automation's recipe from the manifest.",
+      );
+    } catch (err) {
+      setSyncStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
       {/* Toolbar */}
@@ -257,6 +387,12 @@ export function AutomationsView() {
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
         <PendingApprovals />
+        {developError && (
+          <div className="rounded-md border border-[var(--danger)]/40 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] px-3 py-2 text-xs text-[var(--danger)] flex items-center gap-2">
+            <span className="flex-1">{developError}</span>
+            <button type="button" onClick={() => setDevelopError(null)} className="hover:text-[var(--text-primary)]">Dismiss</button>
+          </div>
+        )}
         {automations.length === 0 && pendingApprovals.length === 0 && (
           <div className="rounded-lg border border-[var(--border)] p-10 text-center text-sm text-[var(--text-tertiary)]">
             No automations yet. Create one to run scheduled tasks in the background.
@@ -270,11 +406,11 @@ export function AutomationsView() {
           return (
             <div key={a.id} className={cn("rounded-lg border bg-[var(--surface)] p-4", isRunning ? "border-[var(--accent)]/40" : "border-[var(--border)]")}>
               <div className="flex items-start justify-between gap-3">
-                <button
-                  onClick={() => openDetail(a)}
-                  className="min-w-0 flex-1 text-left group"
-                  title="View automation state"
-                >
+                <Tooltip content="View automation state">
+                  <button
+                    onClick={() => openDetail(a)}
+                    className="min-w-0 flex-1 text-left group"
+                  >
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">
                       {a.name}
@@ -288,13 +424,12 @@ export function AutomationsView() {
                       </span>
                     )}
                     {a.requires.length > 0 && (
-                      <span
-                        className="inline-flex items-center gap-1 text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-secondary)]"
-                        title={`Needs: ${a.requires.map((r) => r.name).join(", ")}`}
-                      >
-                        <Plug size={9} />
-                        {a.requires.map((r) => r.name).join(", ")}
-                      </span>
+                      <Tooltip content={`Needs: ${a.requires.map((r) => r.name).join(", ")}`}>
+                        <span className="inline-flex items-center gap-1 text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-secondary)] cursor-default">
+                          <Plug size={9} />
+                          {a.requires.map((r) => r.name).join(", ")}
+                        </span>
+                      </Tooltip>
                     )}
                   </div>
                   {a.description && (
@@ -315,17 +450,36 @@ export function AutomationsView() {
                       </span>
                     )}
                   </div>
-                </button>
+                  </button>
+                  </Tooltip>
                 <div className="flex items-center gap-1 shrink-0">
-                  <Button variant="ghost" size="icon" title="Run now" onClick={() => void runNow(a.id)}>
-                    <Play size={13} />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(a)}>
-                    <Pencil size={13} />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Delete" onClick={() => void deleteAutomation(a.id)}>
-                    <Trash2 size={13} />
-                  </Button>
+                  {isRunning && lastRun && (
+                    <Tooltip content="Watch this run live">
+                      <Button variant="ghost" size="icon" onClick={() => { setWatchedAutomation(a); setWatchedRunId(lastRun.id); }}>
+                        <Activity size={13} />
+                      </Button>
+                    </Tooltip>
+                  )}
+                  <Tooltip content="Develop scripts (opens the agent in the automation folder)">
+                    <Button variant="ghost" size="icon" disabled={developing} onClick={() => void develop(a)}>
+                      <Sparkles size={13} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Run now">
+                    <Button variant="ghost" size="icon" onClick={() => void runNow(a.id)}>
+                      <Play size={13} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Edit">
+                    <Button variant="ghost" size="icon" onClick={() => openEdit(a)}>
+                      <Pencil size={13} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Delete">
+                    <Button variant="ghost" size="icon" onClick={() => void deleteAutomation(a.id)}>
+                      <Trash2 size={13} />
+                    </Button>
+                  </Tooltip>
                   <Toggle checked={a.enabled} onCheckedChange={(checked) => void updateAutomation(a.id, { enabled: checked })} />
                 </div>
               </div>
@@ -333,15 +487,15 @@ export function AutomationsView() {
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <span className="text-[0.714rem] text-[var(--text-tertiary)]">Artifacts:</span>
                   {artifacts.map((art) => (
-                    <button
-                      key={art.id}
-                      onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
-                      title={`Open ${art.type === "note" ? "note" : "task"}`}
-                      className="inline-flex items-center gap-1 text-[0.714rem] px-2 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-56"
-                    >
-                      {art.type === "note" ? <FileText size={10} className="shrink-0" /> : <Kanban size={10} className="shrink-0" />}
-                      <span className="truncate">{art.title}</span>
-                    </button>
+                    <Tooltip key={art.id} content={`Open ${art.type === "note" ? "note" : "task"}`}>
+                      <button
+                        onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
+                        className="inline-flex items-center gap-1 text-[0.714rem] px-2 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-56"
+                      >
+                        {art.type === "note" ? <FileText size={10} className="shrink-0" /> : <Kanban size={10} className="shrink-0" />}
+                        <span className="truncate">{art.title}</span>
+                      </button>
+                    </Tooltip>
                   ))}
                 </div>
               )}
@@ -388,7 +542,29 @@ export function AutomationsView() {
         runs={detail ? runsById[detail.id] ?? [] : []}
         onEdit={detail ? () => { setDetail(null); openEdit(detail); } : undefined}
         onRunNow={detail ? () => void runNow(detail.id) : undefined}
+        onDevelop={detail ? () => void develop(detail) : undefined}
+        developing={developing}
+        onSyncFromManifest={detail ? () => void syncFromManifest(detail) : undefined}
+        syncing={syncing}
+        syncStatus={syncStatus}
+        onEnvChanged={activeWorkspaceId ? () => void fetchAutomations(activeWorkspaceId) : undefined}
         projectName={detail && detail.projectId ? projectName.get(detail.projectId) ?? null : null}
+      />
+
+      <AutomationDevModal
+        automation={devAutomation}
+        sessionId={devSessionId}
+        onClose={() => { setDevAutomation(null); setDevSessionId(null); }}
+        onSyncFromManifest={devAutomation ? () => void syncFromManifest(devAutomation) : undefined}
+        syncing={syncing}
+        onRunNow={devAutomation ? () => void runNow(devAutomation.id) : undefined}
+        onStartOver={devAutomation ? () => void develop(devAutomation, true) : undefined}
+      />
+
+      <RunWatcherModal
+        automation={watchedAutomation}
+        runId={watchedRunId}
+        onClose={() => { setWatchedAutomation(null); setWatchedRunId(null); }}
       />
     </div>
   );
@@ -504,7 +680,7 @@ function AutomationDialog({
       ) : (
         <div className="space-y-4">
           <p className="text-xs text-[var(--text-tertiary)]">
-            The agent runs these instructions on schedule using your AI connection. It can only touch notes, tasks, tags and boards — no shell.
+            The agent runs these instructions on schedule using your AI connection. It works on notes, tasks, tags and boards, and can run scripts you build for it in the Develop modal — script runs are always approved first.
           </p>
           {!editing && (
             <Button variant="outline" size="sm" className="w-full justify-center" onClick={() => setBrowse(true)}>
@@ -580,7 +756,7 @@ function AutomationDialog({
               ? "Write actions park in the approval inbox and the run waits for your decision."
               : requires.length > 0
                 ? "External connector calls are still gated behind the approval inbox — only data tools run freely."
-                : "Only data tools run — no shell or file edits either way."}
+                : "Data tools run freely; running your scripts (run_script) is always gated behind the approval inbox."}
           </span>
         </label>
         {requires.length > 0 && (
@@ -645,16 +821,36 @@ interface AutomationDetailDialogProps {
   runs: AutomationRun[];
   onEdit?: () => void;
   onRunNow?: () => void;
+  onDevelop?: () => void;
+  developing?: boolean;
+  onSyncFromManifest?: () => void;
+  syncing?: boolean;
+  syncStatus?: string | null;
+  onEnvChanged?: () => void;
   projectName: string | null;
 }
 
-function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, projectName }: AutomationDetailDialogProps) {
+function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunNow, onDevelop, developing, onSyncFromManifest, syncing, syncStatus, onEnvChanged, projectName }: AutomationDetailDialogProps) {
   const [refreshing, setRefreshing] = useState(false);
+  const [logFor, setLogFor] = useState<string | null>(null);
+  const [runLog, setRunLog] = useState<unknown | null>(null);
   const { fetchRuns, setView } = useCairnStore(useShallow((s) => ({ fetchRuns: s.fetchRuns, setView: s.setView })));
 
   useEffect(() => {
     if (automation) void fetchRuns(automation.id);
   }, [automation, fetchRuns]);
+
+  async function toggleLog(runId: string) {
+    if (logFor === runId) { setLogFor(null); setRunLog(null); return; }
+    setLogFor(runId);
+    setRunLog(null);
+    try {
+      const res = await window.electron?.automation.runLog(runId) as { log?: unknown } | { error?: string } | undefined;
+      setRunLog(res && "log" in (res ?? {}) ? (res as { log: unknown }).log : (res as { error?: string })?.error ?? null);
+    } catch (err) {
+      setRunLog(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   async function refresh() {
     if (!automation) return;
@@ -692,9 +888,19 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
       scrollable
       footer={
         <>
+          {onDevelop && (
+            <Button variant="outline" size="sm" onClick={onDevelop} disabled={developing}>
+              <Sparkles size={12} className="mr-1" /> {developing ? "Starting…" : "Develop"}
+            </Button>
+          )}
           {onEdit && (
             <Button variant="outline" size="sm" onClick={onEdit}>
               <Pencil size={12} className="mr-1" /> Edit
+            </Button>
+          )}
+          {onSyncFromManifest && (
+            <Button variant="outline" size="sm" onClick={onSyncFromManifest} disabled={syncing}>
+              <RefreshCw size={12} className={cn("mr-1", syncing && "animate-spin")} /> {syncing ? "Syncing…" : "Sync from manifest"}
             </Button>
           )}
           {onRunNow && (
@@ -710,6 +916,16 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
     >
       {automation && (
         <div className="space-y-4">
+          {syncStatus && (
+            <div className={cn(
+              "rounded-md border px-2.5 py-1.5 text-xs",
+              syncStatus.startsWith("Synced")
+                ? "border-[var(--ok)]/40 bg-[color-mix(in_srgb,var(--ok)_8%,transparent)] text-[var(--ok)]"
+                : "border-[var(--danger)]/40 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] text-[var(--danger)]",
+            )}>
+              {syncStatus}
+            </div>
+          )}
           {automation.description && (
             <p className="text-xs text-[var(--text-secondary)]">{automation.description}</p>
           )}
@@ -726,6 +942,10 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
             {automation.timezone && <InfoRow label="Timezone" value={automation.timezone} />}
           </div>
 
+          <div className="rounded-md border border-[var(--border)] px-3 py-2.5">
+            <EnvEditor automationId={automation.id} onChanged={onEnvChanged} />
+          </div>
+
           <div>
             <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] block mb-2">Artifacts</span>
             {artifacts.length === 0 ? (
@@ -733,15 +953,15 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {artifacts.map((art) => (
-                  <button
-                    key={art.id}
-                    onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
-                    title={`Open ${art.type === "note" ? "note" : "task"}`}
-                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-64"
-                  >
-                    {art.type === "note" ? <FileText size={11} className="shrink-0" /> : <Kanban size={11} className="shrink-0" />}
-                    <span className="truncate">{art.title}</span>
-                  </button>
+                  <Tooltip key={art.id} content={`Open ${art.type === "note" ? "note" : "task"}`}>
+                    <button
+                      onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
+                      className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-64"
+                    >
+                      {art.type === "note" ? <FileText size={11} className="shrink-0" /> : <Kanban size={11} className="shrink-0" />}
+                      <span className="truncate">{art.title}</span>
+                    </button>
+                  </Tooltip>
                 ))}
               </div>
             )}
@@ -763,13 +983,23 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
                   <div className="flex items-center gap-2">
                     <span className={cn("capitalize font-medium", STATUS_COLOR[r.status])}>{r.status}</span>
                     <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt)}</span>
+                    <Tooltip content={logFor === r.id ? "Hide run log" : "Show what happened in this run"}>
+                      <button
+                        type="button"
+                        onClick={() => void toggleLog(r.id)}
+                        className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+                      >
+                        <Activity size={11} />
+                      </button>
+                    </Tooltip>
                   </div>
-                  {r.finishedAt && r.status === "done" && (
+                  {(r.status === "done" || r.status === "exhausted") && r.finishedAt && (
                     <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt)}</div>
                   )}
                   {r.error && (
                     <div className="text-[var(--danger)] mt-0.5 break-words">{r.error}</div>
                   )}
+                  {logFor === r.id && <RunLogView log={runLog} />}
                 </div>
               ))}
             </div>
@@ -777,6 +1007,67 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
         </div>
       )}
     </ModalShell>
+  );
+}
+
+interface RunLogShape {
+  status?: string;
+  recipe?: string;
+  error?: string | null;
+  tools?: Array<{ name: string; label?: string; ok?: boolean; output?: string; error?: string }>;
+  tokens?: string;
+  thoughts?: string;
+}
+
+/** Renders a run's persisted transcript (run-log.json). */
+function RunLogView({ log }: { log: unknown }) {
+  if (log === null) {
+    return <p className="text-[var(--text-tertiary)] mt-1.5">No run transcript for this run.</p>;
+  }
+  if (typeof log === "string") {
+    return <p className="text-[var(--danger)] mt-1.5">{log}</p>;
+  }
+  const l = log as RunLogShape;
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      {l.recipe && (
+        <div>
+          <div className="text-[var(--text-tertiary)]">Recipe</div>
+          <div className="text-[var(--text-secondary)] whitespace-pre-wrap break-words">{l.recipe}</div>
+        </div>
+      )}
+      {l.error && <div className="text-[var(--danger)]">{l.error}</div>}
+      {(l.tools ?? []).length > 0 && (
+        <div>
+          <div className="text-[var(--text-tertiary)]">Tools ({l.tools!.length})</div>
+          {l.tools!.map((t, i) => (
+            <div key={i} className="mt-1">
+              <div className="flex items-center gap-1.5">
+                <span className={cn("font-mono", t.ok === false ? "text-[var(--danger)]" : "text-[var(--text-primary)]")}>{t.label ?? t.name}</span>
+                {t.ok === false && <span className="text-[var(--danger)]">failed</span>}
+                {t.ok === true && <span className="text-[var(--ok)]">ok</span>}
+              </div>
+              {t.output && (
+                <pre className="mt-0.5 text-[0.65rem] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-32 overflow-y-auto rounded bg-[var(--surface-2)] p-1.5">{t.output}</pre>
+              )}
+              {t.error && <div className="text-[var(--danger)]">{t.error}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+      {l.tokens && (
+        <div>
+          <div className="text-[var(--text-tertiary)]">Assistant output</div>
+          <div className="text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-40 overflow-y-auto">{l.tokens}</div>
+        </div>
+      )}
+      {l.thoughts && (
+        <details>
+          <summary className="text-[var(--text-tertiary)] cursor-pointer">Thinking</summary>
+          <pre className="text-[0.65rem] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-32 overflow-y-auto">{l.thoughts}</pre>
+        </details>
+      )}
+    </div>
   );
 }
 

@@ -9,7 +9,7 @@
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { queryUsageOverview, queryRecentUsage, clearLlmUsage, type UsageQueryFilter, type UsageSource } from "../db/usage-queries";
-import { setModelPricing } from "../lib/model-pricing";
+import { setModelPricing, setNoTemperatureModels } from "../lib/model-pricing";
 
 export interface UsageRangeArgs {
   workspaceId?: string;
@@ -27,6 +27,15 @@ export function registerUsageHandlers(ctx: DbContext): void {
   registerIpcHandle("app:modelPricing", (_e, map: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }> | null) => {
     return handle(() => {
       setModelPricing(map);
+      return { ok: true };
+    });
+  });
+
+  // Model ids models.dev marks `temperature: false` — the request builders must
+  // never send a temperature to these (the vendor manages sampling internally).
+  registerIpcHandle("app:noTemperatureModels", (_e, ids: string[] | null) => {
+    return handle(() => {
+      setNoTemperatureModels(ids);
       return { ok: true };
     });
   });

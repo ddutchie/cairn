@@ -228,6 +228,41 @@ export function getModelInfo(modelId: string): ModelInfo | null {
 }
 
 /**
+ * Test-only seam: seed the in-memory catalog cache so resolver/derived helpers
+ * can be unit-tested without fetching from the network.
+ */
+export function setModelInfoCacheForTest(map: Record<string, ModelInfo> | null): void {
+  memoryCache = map;
+}
+
+/**
+ * The temperature to actually SEND for a model, given the user's configured
+ * value. Mirrors opencode's capability gate:
+ *
+ *  - A model models.dev marks `temperature: false` (frontier reasoning models —
+ *    GPT-5.x, Claude 5, Kimi K3, …) manages sampling internally, so we NEVER
+ *    send a temperature to it, not even a user override — the vendor ignores it
+ *    at best and the model was trained without it.
+ *  - Otherwise (supported or unknown → permissive), the user's explicit value
+ *    is honoured.
+ *  - When the user hasn't set one (undefined/null), `undefined` is returned so
+ *    the request builder OMITS the field and the vendor's own default applies
+ *    (e.g. GLM-5.2 defaults to 1.0; DeepSeek recommends 0.0 for coding).
+ *
+ * Returns undefined = "omit from the request".
+ */
+export function effectiveTemperatureForModel(
+  modelId: string,
+  userTemperature?: number | null,
+): number | undefined {
+  const info = getModelInfo(modelId);
+  if (info?.temperature === false) return undefined;
+  return typeof userTemperature === "number" && Number.isFinite(userTemperature)
+    ? userTemperature
+    : undefined;
+}
+
+/**
  * Resolve PRICED model info: the exact/normalized lookup first, then the same
  * fuzzy match desktop's model-pricing `pricePerMillion` uses (a gateway/proxy id
  * that embeds a catalog id as a whole token, e.g. "opencode-go/deepseek-v4-flash"
@@ -326,6 +361,20 @@ export function getModelPricingMap(): Record<string, {
   return out;
 }
 
+/**
+ * Model ids that models.dev marks `temperature: false` — the main process
+ * request builders must never send a temperature to these. Returns ids as-is
+ * (catalog keys). Unknown models stay permissive on the main side.
+ */
+export function getNoTemperatureModels(): string[] {
+  const src = memoryCache ?? loadCache() ?? {};
+  const out: string[] = [];
+  for (const [id, info] of Object.entries(src)) {
+    if (info.temperature === false) out.push(id);
+  }
+  return out;
+}
+
 /** Push the pricing map to the Electron main process (usage recorder). */
 export function pushModelPricingToMain(): void {
   if (typeof window === "undefined" || !window.electron?.usage?.setPricing) return;
@@ -335,6 +384,13 @@ export function pushModelPricingToMain(): void {
     window.electron.usage.setPricing(getModelPricingMap()).catch(() => {});
   } catch {
     // best-effort (e.g. no IPC bridge yet)
+  }
+  // Also push the no-temperature model set so main-side builders (one-shots,
+  // automations) gate temperature on the model capability like the renderer.
+  try {
+    window.electron.usage?.setNoTemperatureModels?.(getNoTemperatureModels()).catch(() => {});
+  } catch {
+    // best-effort
   }
 }
 

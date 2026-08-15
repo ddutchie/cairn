@@ -9,6 +9,7 @@
 
 import { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
+import { forgetSessionPrompts } from "../../lib/agent-prompt-guard";
 
 import type {
   TokenBreakdown,
@@ -124,6 +125,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   },
 
   removeTerminalSession(sessionId) {
+    forgetSessionPrompts(sessionId);
     set((s) => {
       const remaining = s.terminalSessions.filter((t) => t.sessionId !== sessionId);
       const nextActive =

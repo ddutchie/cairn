@@ -18,11 +18,13 @@
  */
 
 import type Database from "better-sqlite3";
+import path from "path";
 import type { OpenAIMessage } from "./llm";
 import { runToolLoop } from "./chat-loop";
 import { getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
 import { buildSystemPrompt, TOOLS, type ChatRequest } from "./tools";
+import { resolveTemperatureForModel } from "./model-pricing";
 import { insertNotification } from "../mcp/db";
 import {
   bumpAutomationRunCount,
@@ -37,13 +39,87 @@ import {
 import { makeApprovalGate } from "./automation-approval";
 import { getExternalToolDefs, checkRequirements } from "./external-tools";
 import { recordLlmUsage } from "./usage-recorder";
+import {
+  automationFolderDir,
+  automationOutDir,
+  automationScriptsDir,
+  ensureAutomationDir,
+  ensureAutomationRunDir,
+  cleanupOldRunDirs,
+  readRunLog,
+  writeRunLog,
+  type RunLog,
+} from "./automation-folder";
+import {
+  runAutomationScript,
+  writeRunFile,
+  deliverFile,
+  type AutomationScriptContext,
+  type RunScriptArgs,
+  type RunScriptHandler,
+  type WriteRunFileArgs,
+  type WriteRunFileHandler,
+  type DeliverFileArgs,
+  type DeliverFileHandler,
+} from "./automation-script";
+import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
+import { getSecretValue } from "./secure-store";
+import { toSlug } from "../shared/text-utils";
 
 export interface AutomationRunContext {
   db: Database.Database;
   workspacePath: string;
+  /**
+   * Optional IPC sink for live run activity (automation:run:* events). When
+   * absent (tests), the runner records everything to the run row but streams
+   * nothing.
+   */
+  send?: (channel: string, payload: unknown) => void;
 }
 
 const DEFAULT_MAX_STEPS = 10;
+
+/** Project display name from the DB, or null for workspace-scoped automations. */
+function projectNameOf(db: Database.Database, projectId: string | null): string | null {
+  if (!projectId) return null;
+  const row = db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name?: string } | undefined;
+  return row?.name ?? null;
+}
+
+/**
+ * Fail a run outside the normal completion path (a throw inside runAutomation,
+ * or a connector-tool assembly failure). Sets the terminal error status, writes
+ * a minimal run-log.json when a run folder exists so a crashed run stays
+ * inspectable, and emits the `automation:run` `finished` event so the run
+ * watcher never spins forever. Never throws.
+ */
+function failRun(ctx: AutomationRunContext, run: AutomationRun, error: string): void {
+  const { db } = ctx;
+  const finishedAt = new Date().toISOString();
+  try {
+    updateAutomationRun(db, run.id, { status: "error", error, finishedAt });
+  } catch { /* best-effort */ }
+  try {
+    const row = getAutomationRunById(db, run.id);
+    if (row?.runDir) {
+      // Merge the failure into any incrementally-flushed transcript instead of
+      // replacing it — a run that crashed after N tool calls keeps that history.
+      const existing = readRunLog(row.runDir) ?? {
+        automationId: row.automationId,
+        runId: run.id,
+        startedAt: row.startedAt ?? finishedAt,
+        recipe: "",
+        tools: [],
+        tokens: "",
+        thoughts: "",
+      };
+      writeRunLog(row.runDir, { ...existing, status: "error", error, finishedAt });
+    }
+  } catch { /* best-effort */ }
+  try {
+    ctx.send?.("automation:run", { event: "finished", automationId: run.automationId, runId: run.id, exhausted: false, error });
+  } catch { /* best-effort */ }
+}
 
 /**
  * Run an automation immediately ("Run now"), bypassing the scheduler's clock.
@@ -65,14 +141,9 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
     } catch (err) {
       // runAutomation normally sets its own terminal status, but if it throws
       // (e.g. a provider/network failure inside runToolLoop) transition the run
-      // out of running so it doesn't block later runs / report a phantom run.
-      try {
-        updateAutomationRun(db, run.id, {
-          status: "error",
-          error: err instanceof Error ? err.message : String(err),
-          finishedAt: new Date().toISOString(),
-        });
-      } catch { /* ignore */ }
+      // out of running so it doesn't block later runs / report a phantom run,
+      // persist a run-log.json, and emit `finished` so watchers close cleanly.
+      failRun(ctx, run, err instanceof Error ? err.message : String(err));
     }
   })().catch(() => {});
   return runId;
@@ -129,13 +200,101 @@ export async function runAutomation(
   const apiKey = resolveLlmApiKey(cached.apiKey);
   const provider = (cached.provider ?? (isLocal(cached.baseUrl) ? "localllm" : "openai")) as "openai" | "localllm";
   const abortCtrl = new AbortController();
+
+  // ── Folder plumbing (phase 1/2) ───────────────────────────────────────────
+  // Every run gets a working directory under <project>/.automations/<id>/runs/
+  // (dot-prefixed → hidden from the notes browser, file-watcher, and Obsidian).
+  // scripts/ + out/ are ensured once; the per-run folder is recorded on the run
+  // row and is the cwd for run_script. Best-effort: a filesystem failure records
+  // no runDir but never fails the automation.
+  const projectName = projectNameOf(db, automation.projectId);
+  const automationDir = automationFolderDir(workspacePath, automation.id, projectName);
+  let runDir: string | null = null;
+  let scriptsDir: string | null = null;
+  let outDir: string | null = null;
+  try {
+    ensureAutomationDir(automationDir);
+    scriptsDir = automationScriptsDir(automationDir);
+    outDir = automationOutDir(automationDir);
+    runDir = ensureAutomationRunDir(automationDir, run.id);
+    updateAutomationRun(db, run.id, { runDir });
+    // Materialize the folder's .env (non-secrets) + a minimal manifest.json
+    // (only created once — never clobbers an agent-authored manifest).
+    prepareAutomationFolder(automationDir, automation);
+  } catch (err) {
+    console.warn("[heartbeat] failed to prepare automation run folder:", err);
+  }
+  // Prune completed run folders at the end of a run (best-effort, keeps KEEP_RUN_DIRS).
+  const cleanupRuns = () => {
+    try { cleanupOldRunDirs(automationDir); } catch { /* best-effort */ }
+  };
+
+  // Resolve the automation's env for this run. Non-secrets come from the row;
+  // secrets are decrypted from the keychain and injected directly into the
+  // run_script child env (never written to the .env file on disk).
+  const resolvedEnv = resolveAutomationEnv(automation, (name) => getSecretValue("automation", automation.id, name));
+
+  // ── run_script executor (phase 2) ──────────────────────────────────────────
+  // Executes a named script from scripts/ with the run folder as cwd and the
+  // durable out/ folder exposed via CAIRN_OUT_DIR. Only offered to the model
+  // when the folders exist (a filesystem failure degrades to data-only runs).
+  const runScript: RunScriptHandler | undefined = scriptsDir && outDir && runDir
+    ? async (scriptArgs: RunScriptArgs) => {
+        const scriptCtx: AutomationScriptContext = {
+          scriptsDir,
+          cwd: runDir!,
+          outDir,
+          env: {
+            CAIRN_WORKSPACE_DIR: workspacePath,
+            CAIRN_PROJECT_DIR: projectName ? path.join(workspacePath, toSlug(projectName)) : workspacePath,
+            CAIRN_RUN_ID: run.id,
+            // The automation's env vars — secrets resolved from the keychain.
+            ...resolvedEnv,
+          },
+          signal: abortCtrl.signal,
+        };
+        return runAutomationScript(scriptArgs, scriptCtx);
+      }
+    : undefined;
+
+  // ── write_run_file executor ────────────────────────────────────────────────
+  // The agent→script data bridge: the agent (data-only) can't write files, so
+  // this writes into the RUN folder only — staging connector results as JSON
+  // for run_script to consume (-input <file>). Bounded to the ephemeral run
+  // dir; offered only when the run folder exists.
+  const writeRunFileHandler: WriteRunFileHandler | undefined = runDir
+    ? async (fileArgs: WriteRunFileArgs) => writeRunFile(fileArgs, { runDir })
+    : undefined;
+
+  // ── deliver_file executor ───────────────────────────────────────────────────
+  // Copies a generated out/ file into <workspace>/attachments/<automationId>/
+  // (served by the asset:// protocol) so the delivered note can embed images.
+  const deliverFileHandler: DeliverFileHandler | undefined = outDir
+    ? async (fileArgs: DeliverFileArgs) => deliverFile(fileArgs, {
+        outDir,
+        workspacePath,
+        automationId: automation.id,
+      })
+    : undefined;
+
+  // The recipe to execute: the agent-authored manifest.json `instructions`
+  // (written during Develop) win over the automation row, so the built script
+  // is actually called end-to-end. Falls back to the row when no manifest.
+  let recipe = automation.instructions;
+  try {
+    const manifest = readAutomationManifest(automationDir);
+    if (manifest?.instructions && manifest.instructions.trim()) recipe = manifest.instructions.trim();
+  } catch {
+    /* fall back to the row */
+  }
+
   // const-narrowed copies so the onUsage closure below keeps string types
   // (TS does not preserve property narrowing into closures).
   const cachedModel = cached.model;
   const cachedBaseUrl = cached.baseUrl;
 
   const req: ChatRequest = {
-    message: automation.instructions,
+    message: recipe,
     threadId: run.id,
     projectId: automation.projectId ?? undefined,
     workspaceId: automation.workspaceId,
@@ -144,13 +303,15 @@ export async function runAutomation(
       model: cached.model,
       apiKey: cached.apiKey,
       maxSteps: cached.maxSteps ?? DEFAULT_MAX_STEPS,
-      temperature: cached.temperature ?? 0.3,
+      // Gate on the model capability: never send temperature to a model that
+      // declares `temperature: false`, even if a stale cached value lingers.
+      temperature: resolveTemperatureForModel(cached.model, cached.temperature),
     },
   };
 
   const messages: OpenAIMessage[] = [
     { role: "system", content: buildSystemPrompt(req) },
-    { role: "user", content: automation.instructions },
+    { role: "user", content: recipe },
   ];
 
   // Connector-aware automation: load the project's attached external tools
@@ -176,11 +337,7 @@ export async function runAutomation(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[heartbeat] failed to assemble external tools:", err);
-      updateAutomationRun(db, run.id, {
-        status: "error",
-        finishedAt: new Date().toISOString(),
-        error: `Failed to load required connector tools: ${message}`,
-      });
+      failRun(ctx, run, `Failed to load required connector tools: ${message}`);
       insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, `Failed to load required connector tools: ${message}`);
       return;
     }
@@ -199,6 +356,54 @@ export async function runAutomation(
       scratch.currentTool = tool;
       updateAutomationRun(db, run.id, { scratch: JSON.stringify(scratch) });
     } catch { /* best-effort */ }
+  };
+
+  // Live run activity streamed to the renderer (the "watch this run" view).
+  // Best-effort: no send sink (tests) → nothing streams, the run still records.
+  const emitRun = (event: string, payload: Record<string, unknown>) => {
+    try {
+      ctx.send?.("automation:run", {
+        event,
+        automationId: automation.id,
+        runId: run.id,
+        ...payload,
+      });
+    } catch { /* best-effort */ }
+  };
+
+  // Persisted run transcript — the inspectable "what happened" record, written
+  // to <runDir>/run-log.json on completion.
+  const log: RunLog = {
+    automationId: automation.id,
+    runId: run.id,
+    startedAt: new Date().toISOString(),
+    recipe,
+    status: "running",
+    tools: [],
+    tokens: "",
+    thoughts: "",
+  };
+  const logTool = (name: string, label: string | undefined, args: Record<string, unknown> | undefined) => {
+    log.tools.push({ name, label, args });
+  };
+  const logToolDone = (name: string, ok: boolean | undefined, output: string | undefined, error: string | undefined) => {
+    const last = [...log.tools].reverse().find((t) => t.name === name && t.ok === undefined);
+    if (last) {
+      last.ok = ok;
+      last.output = output;
+      last.error = error;
+    }
+  };
+  // Write the running transcript to disk after each completed tool, so a crash
+  // mid-run (or an app quit) keeps the transcript-so-far instead of losing it —
+  // startup recovery can then show exactly how far the run got. Cheap enough at
+  // per-tool granularity (synchronous, small JSON).
+  const flushLog = () => { if (runDir) writeRunLog(runDir, log); };
+  const finaliseLog = (status: string, error?: string | null) => {
+    log.status = status;
+    log.error = error ?? null;
+    log.finishedAt = new Date().toISOString();
+    flushLog();
   };
 
   // Collect notes/cards the run CREATED or CHANGED so they can be surfaced as
@@ -225,6 +430,7 @@ export async function runAutomation(
       ? { type: artifacts[0].type, id: artifacts[0].id }
       : { type: "automation", id: automation.id };
 
+  emitRun("started", { recipe });
   const result = await runToolLoop(
     db,
     req,
@@ -233,7 +439,11 @@ export async function runAutomation(
     cached.model,
     apiKey,
     messages,
-    (e) => currentTool(e.tool),     // emitToolCall — record the active tool
+    (e) => {                       // emitToolCall — record + stream the active tool
+      currentTool(e.tool);
+      logTool(e.tool, e.label, e.args);
+      emitRun("tool", { tool: e.tool, label: e.label, args: e.args, status: "start" });
+    },
     abortCtrl.signal,
     undefined,                       // getWin
     provider,
@@ -256,23 +466,35 @@ export async function runAutomation(
         costUsd,
       });
     },
-    (e) => recordArtifact(e.tool, e.cairnRef), // emitToolCallDone — collect created/changed notes/cards
-    undefined,                       // onToken
-    undefined,                       // onThought
+    (e) => {                       // emitToolCallDone — collect artifacts + stream result
+      recordArtifact(e.tool, e.cairnRef);
+      logToolDone(e.tool, e.ok, e.output, e.error);
+      flushLog(); // incremental transcript — survives a crash mid-run
+      emitRun("toolDone", { tool: e.tool, ok: e.ok, output: e.output, error: e.error, cairnRef: e.cairnRef });
+    },
+    (delta) => emitRun("token", { delta }),   // onToken (live stream; final text lands in the log)
+    (delta) => { log.thoughts += delta; emitRun("thought", { delta }); }, // onThought
     extraTools,                      // connector-aware recipes get their attached external tools
     undefined,                       // toolsOverride
     undefined,                       // argMutator
-    makeApprovalGate(db, run, automation),
+    makeApprovalGate(db, run, automation, abortCtrl.signal),
+    runScript,                       // run_script executor (scripts/ + run cwd + out/)
+    writeRunFileHandler,             // write_run_file executor (agent→script data bridge)
+    deliverFileHandler,              // deliver_file executor (out/ → attachments for the note)
   );
+  emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content });
+  log.tokens = result.content;
 
   if (result.exhausted) {
+    finaliseLog("exhausted", "Reached the step limit; run may be incomplete.");
     updateAutomationRun(db, run.id, {
-      status: "done",
+      status: "exhausted",
       resultNoteId: null,
       error: "Reached the step limit; run may be incomplete.",
       scratch: finalScratch(),
     });
     insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"), completionTarget());
+    cleanupRuns();
     return;
   }
 
@@ -282,7 +504,9 @@ export async function runAutomation(
     error: null,
     scratch: finalScratch(),
   });
+  finaliseLog("done");
   insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content), completionTarget());
+  cleanupRuns();
 }
 
 /**

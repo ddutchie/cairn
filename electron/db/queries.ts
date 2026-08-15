@@ -1591,6 +1591,7 @@ export interface PiSessionRow {
   status: "running" | "exited";
   spawnedAt: string;
   updatedAt: string;
+  role: "default" | "automation-dev";
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1606,18 +1607,32 @@ function toPiSession(row: any): PiSessionRow {
     status:      (row.status ?? "running") as "running" | "exited",
     spawnedAt:   row.spawned_at as string,
     updatedAt:   row.updated_at as string,
+    role:        normalizeSessionRole(row.role),
   };
+}
+
+/**
+ * Validate a persisted session persona. Absent → "default" (existing behavior);
+ * a known value → itself; an unknown/corrupt value FAILS CLOSED to the
+ * restricted "automation-dev" persona so an unvalidated session can never
+ * default to the unrestricted toolset.
+ */
+export function normalizeSessionRole(raw: unknown): "default" | "automation-dev" {
+  if (raw === "default") return "default";
+  if (raw === "automation-dev") return "automation-dev";
+  return raw === undefined || raw === null ? "default" : "automation-dev";
 }
 
 export function createPiSession(
   db: Database.Database,
-  session: { id: string; projectId: string; taskTitle: string; taskId?: string | null; cwd: string; mode: "plan" | "execute"; spawnedAt: string },
+  session: { id: string; projectId: string; taskTitle: string; taskId?: string | null; cwd: string; mode: "plan" | "execute"; spawnedAt: string; role?: "default" | "automation-dev" },
 ): PiSessionRow {
   const now = ts();
+  const role = normalizeSessionRole(session.role);
   db.prepare(`
-    INSERT INTO pi_agent_sessions (id, project_id, task_title, task_id, cwd, mode, status, spawned_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)
-  `).run(session.id, session.projectId, session.taskTitle, session.taskId ?? null, session.cwd, session.mode, session.spawnedAt, now);
+    INSERT INTO pi_agent_sessions (id, project_id, task_title, task_id, cwd, mode, role, status, spawned_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)
+  `).run(session.id, session.projectId, session.taskTitle, session.taskId ?? null, session.cwd, session.mode, role, session.spawnedAt, now);
   return getPiSessionById(db, session.id)!;
 }
 

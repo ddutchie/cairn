@@ -22,6 +22,7 @@ import { Bell, Loader2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 import { SyncStatusIndicator } from "./sync-status-indicator";
 
 export function TitleBar() {
@@ -79,35 +80,40 @@ export function TitleBar() {
       {/* Right zone: running-automations icon + notification bell + live sync status (no-drag so they're clickable) */}
       <div className="flex items-center gap-1 pr-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {runningAutomationCount > 0 && (
-          <button
-            onClick={() => setView("automations")}
-            className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
-            title={`${runningAutomationCount} automation${runningAutomationCount === 1 ? "" : "s"} running`}
-            aria-label="Automations running"
-          >
-            <Loader2 size={14} className="animate-spin" />
-          </button>
+          <Tooltip side="bottom" content={`${runningAutomationCount} automation${runningAutomationCount === 1 ? "" : "s"} running`}>
+            <button
+              onClick={() => setView("automations")}
+              className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
+              aria-label="Automations running"
+            >
+              <Loader2 size={14} className="animate-spin" />
+            </button>
+          </Tooltip>
         )}
-        <button
-          onClick={() => setNotificationOpen(!notificationOpen)}
-          data-notification-toggle
-          className={cn(
-            "relative flex items-center justify-center w-7 h-7 rounded-md transition-colors",
-            notificationUnreadCount > 0
-              ? "text-[var(--accent)] hover:bg-[var(--surface-2)]"
-              : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
-          )}
-          title={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
-          aria-label={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
-          aria-expanded={notificationOpen}
+        <Tooltip
+          side="bottom"
+          content={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
         >
-          <Bell
-            size={14}
+          <button
+            onClick={() => setNotificationOpen(!notificationOpen)}
+            data-notification-toggle
             className={cn(
-              notificationUnreadCount > 0 && "animate-bell-wobble fill-[var(--accent)]"
+              "relative flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+              notificationUnreadCount > 0
+                ? "text-[var(--accent)] hover:bg-[var(--surface-2)]"
+                : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
             )}
-          />
-        </button>
+            aria-label={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
+            aria-expanded={notificationOpen}
+          >
+            <Bell
+              size={14}
+              className={cn(
+                notificationUnreadCount > 0 && "animate-bell-wobble fill-[var(--accent)]"
+              )}
+            />
+          </button>
+        </Tooltip>
         <SyncStatusIndicator />
       </div>
 

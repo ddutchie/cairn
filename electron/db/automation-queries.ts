@@ -15,6 +15,28 @@ export interface AutomationRequirement {
   name: string;
 }
 
+/**
+ * An automation env var. Non-secret values are stored inline; secret entries
+ * keep `value` null and the real value lives in the OS keychain (secure-store,
+ * kind "automation"), resolved only in the main process at run time.
+ */
+export interface AutomationEnv {
+  name: string;
+  value?: string | null;
+  secret: boolean;
+}
+
+/**
+ * Normalise env for persistence: a secret's actual value must NEVER reach the
+ * database row (it lives only in the OS keychain, written by the env:set IPC
+ * path). Any secret entry carrying a value is reduced to its marker — so a
+ * stray caller passing { secret: true, value: "..." } can't persist plaintext.
+ * Non-secret entries pass through untouched.
+ */
+export function normalizeEnvForPersistence(env: AutomationEnv[]): AutomationEnv[] {
+  return env.map((e) => (e.secret ? { name: e.name, secret: true } : e));
+}
+
 export interface Automation {
   id: string;
   workspaceId: string;
@@ -40,13 +62,15 @@ export interface Automation {
    * default external-tool approval gating.
    */
   requires: AutomationRequirement[];
+  /** Env vars exposed to scripts; secrets live in the keychain, not here. */
+  env: AutomationEnv[];
   source: "custom" | "community";
   communityId: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export type AutomationRunStatus = "pending" | "running" | "done" | "denied" | "error" | "skipped";
+export type AutomationRunStatus = "pending" | "running" | "done" | "exhausted" | "denied" | "error" | "skipped";
 
 export interface AutomationRun {
   id: string;
@@ -57,6 +81,8 @@ export interface AutomationRun {
   finishedAt: string | null;
   error: string | null;
   scratch: string | null;
+  /** Absolute path to this run's working folder (<project>/.automations/<id>/runs/<runId>/). */
+  runDir: string | null;
   createdAt: string;
 }
 
@@ -82,6 +108,7 @@ function toAutomation(r: Row): Automation {
     activeHoursEnd: r.active_hours_end ? String(r.active_hours_end) : null,
     standingRules: parseJson<Array<{ tool: string; target?: string }>>(r.standing_rules, []),
     requires: parseJson<AutomationRequirement[]>(r.requires, []),
+    env: parseEnv(r.env),
     source: r.source as Automation["source"],
     communityId: r.community_id ? String(r.community_id) : null,
     createdAt: String(r.created_at),
@@ -99,6 +126,7 @@ function toRun(r: Row): AutomationRun {
     finishedAt: r.finished_at ? String(r.finished_at) : null,
     error: r.error ? String(r.error) : null,
     scratch: r.scratch ? String(r.scratch) : null,
+    runDir: r.run_dir ? String(r.run_dir) : null,
     createdAt: String(r.created_at),
   };
 }
@@ -110,6 +138,29 @@ function parseJson<T>(raw: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Parse the persisted env JSON defensively. The column is a JSON array, but a
+ * corrupt/legacy row may hold a valid-JSON non-array (which a bare cast would
+ * then crash on) or contain null/invalid entries. Requires an array and filters
+ * to well-formed entries, redacting any secret value on read.
+ */
+function parseEnv(raw: unknown): AutomationEnv[] {
+  const parsed = parseJson<unknown>(raw, null);
+  if (!Array.isArray(parsed)) return [];
+  const out: AutomationEnv[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const rec = entry as { name?: unknown; secret?: unknown; value?: unknown };
+    if (typeof rec.name !== "string" || !rec.name) continue;
+    if (rec.secret === true) {
+      out.push({ name: rec.name, secret: true });
+    } else {
+      out.push({ name: rec.name, secret: false, value: typeof rec.value === "string" ? rec.value : undefined });
+    }
+  }
+  return out;
 }
 
 export interface AutomationInput {
@@ -130,6 +181,7 @@ export interface AutomationInput {
   activeHoursEnd?: string | null;
   standingRules?: Array<{ tool: string; target?: string }>;
   requires?: AutomationRequirement[];
+  env?: AutomationEnv[];
   source?: "custom" | "community";
   communityId?: string | null;
 }
@@ -141,8 +193,8 @@ export function createAutomation(db: Database.Database, input: AutomationInput):
     INSERT INTO automations (
       id, workspace_id, project_id, name, description, instructions,
       schedule_kind, schedule_expr, timezone, next_run_at, enabled, max_runs,
-      run_count, approval_mode, active_hours_start, active_hours_end, standing_rules, requires, source, community_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      run_count, approval_mode, active_hours_start, active_hours_end, standing_rules, requires, env, source, community_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, input.workspaceId, input.projectId ?? null, input.name, input.description ?? "",
     input.instructions, input.scheduleKind, input.scheduleExpr, input.timezone ?? null,
@@ -150,6 +202,7 @@ export function createAutomation(db: Database.Database, input: AutomationInput):
     input.runCount ?? 0, input.approvalMode ?? "auto", input.activeHoursStart ?? null,
     input.activeHoursEnd ?? null, JSON.stringify(input.standingRules ?? []),
     JSON.stringify(input.requires ?? []),
+    JSON.stringify(normalizeEnvForPersistence(input.env ?? [])),
     input.source ?? "custom", input.communityId ?? null, now, now,
   );
   return getAutomationById(db, id)!;
@@ -193,6 +246,7 @@ export function updateAutomation(
     active_hours_end: patch.activeHoursEnd === undefined ? undefined : patch.activeHoursEnd,
     standing_rules: patch.standingRules === undefined ? undefined : JSON.stringify(patch.standingRules),
     requires: patch.requires === undefined ? undefined : JSON.stringify(patch.requires),
+    env: patch.env === undefined ? undefined : JSON.stringify(normalizeEnvForPersistence(patch.env)),
     source: patch.source,
     community_id: patch.communityId === undefined ? undefined : patch.communityId,
   };
@@ -249,7 +303,7 @@ export function getAutomationRunById(db: Database.Database, id: string): Automat
 export function updateAutomationRun(
   db: Database.Database,
   id: string,
-  patch: Partial<{ status: AutomationRunStatus; resultNoteId: string | null; finishedAt: string | null; error: string | null; scratch: string | null }>,
+  patch: Partial<{ status: AutomationRunStatus; resultNoteId: string | null; finishedAt: string | null; error: string | null; scratch: string | null; runDir: string | null }>,
 ): AutomationRun | null {
   const now = ts();
   const set: string[] = [];
@@ -260,6 +314,7 @@ export function updateAutomationRun(
     finished_at: patch.finishedAt === undefined ? undefined : patch.finishedAt,
     error: patch.error === undefined ? undefined : patch.error,
     scratch: patch.scratch === undefined ? undefined : patch.scratch,
+    run_dir: patch.runDir === undefined ? undefined : patch.runDir,
   };
   for (const [col, val] of Object.entries(fields)) {
     if (val === undefined) continue;
@@ -271,7 +326,7 @@ export function updateAutomationRun(
   // Auto-set finished_at only when this update transitions the run to a
   // terminal status and the caller didn't supply its own timestamp. Scratch /
   // currentTool updates during a running run must NOT stamp finished_at.
-  const TERMINAL = new Set<AutomationRunStatus>(["done", "denied", "error", "skipped"]);
+  const TERMINAL = new Set<AutomationRunStatus>(["done", "exhausted", "denied", "error", "skipped"]);
   const autoFinish = patch.finishedAt === undefined && patch.status !== undefined && TERMINAL.has(patch.status);
   const sql = `UPDATE automation_runs SET ${set.join(", ")}${autoFinish ? ", finished_at = COALESCE(finished_at, ?)" : ""} WHERE id = ?`;
   db.prepare(sql).run(...(autoFinish ? [...params, now, id] : [...params, id]));
@@ -352,6 +407,30 @@ export function countRunningAutomationRuns(db: Database.Database): number {
     .prepare("SELECT COUNT(*) AS n FROM automation_runs WHERE status IN ('pending','running')")
     .get() as { n: number };
   return r.n;
+}
+
+/**
+ * Mark every run still stuck in 'pending'/'running' as interrupted. Runs are
+ * only in-flight while the app is open — if the process died mid-run (crash,
+ * quit during a turn, dev reload) the row stays 'running' forever, and the
+ * scheduler's skip-on-overlap guard then blocks that automation from ever
+ * firing again. Called once at startup (and on workspace reinitialise) to
+ * recover them. Returns the number of runs recovered.
+ */
+export function recoverInterruptedRuns(
+  db: Database.Database,
+  error = "Interrupted — the app closed while this run was in flight.",
+): number {
+  const rows = db
+    .prepare("SELECT id FROM automation_runs WHERE status IN ('pending','running')")
+    .all() as Row[];
+  if (rows.length === 0) return 0;
+  const update = db.prepare(
+    "UPDATE automation_runs SET status = 'error', error = ?, finished_at = ? WHERE id = ?",
+  );
+  const now = ts();
+  for (const r of rows) update.run(error, now, r.id);
+  return rows.length;
 }
 
 /** Increment the automation's run_count. */

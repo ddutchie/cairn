@@ -36,6 +36,14 @@ import { createDeltaBatcher } from "../lib/delta-batcher";
 
 const sessions = new Map<string, PiAgentSession>();
 
+/**
+ * Session IDs with a runAgentLoop currently in flight. The renderer polls this
+ * via `pi-agent:is-running` when a pane (re)mounts so a session that kept
+ * working while its UI was closed (e.g. the automation Develop modal) comes
+ * back already showing the busy state, instead of briefly looking idle.
+ */
+const runningLoops = new Set<string>();
+
 // ── Debounced history persistence ─────────────────────────────────────────────
 // saveLlmHistory is a synchronous (better-sqlite3) transaction that
 // JSON-serialises every message in the session — on a long turn that's a
@@ -138,6 +146,7 @@ async function runSession(
   send: (channel: string, payload: unknown) => void,
 ): Promise<void> {
   const { sessionId } = toolCtx;
+  runningLoops.add(sessionId);
 
   // Reuse existing transformer to preserve cachedSummary across prompts.
   // Signal is read live from session.abortCtrl inside the transformer.
@@ -191,6 +200,7 @@ async function runSession(
       onRetry:        (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
       transformContext: session.compactionTransformer,
       onDone: () => {
+        runningLoops.delete(sessionId);
         tokens.flush();
         thoughts.flush();
         // Persist off the done-delivery path (see scheduleHistorySave).
@@ -198,6 +208,7 @@ async function runSession(
         send("pi-agent:done", { sessionId });
       },
       onError: (error) => {
+        runningLoops.delete(sessionId);
         tokens.flush();
         thoughts.flush();
         scheduleHistorySave(ctx.db, sessionId, session.messages, "exited");
@@ -214,6 +225,7 @@ async function runSession(
     // A crashed loop must still resolve the turn: flush buffered tokens,
     // persist the (exited) session, and send a terminal error so the renderer
     // never stays stuck in its loading state.
+    runningLoops.delete(sessionId);
     tokens.flush();
     thoughts.flush();
     scheduleHistorySave(ctx.db, sessionId, session.messages, "exited");
@@ -228,6 +240,14 @@ export function registerPiAgentHandler(
 ): void {
   // Read db/workspacePath from ctx at call-time so workspace reinitialise is transparent
   const getWin = ctx.getWin;
+
+  // ── pi-agent:is-running ──────────────────────────────────────────────────
+  // Invoke-style query so a (re)mounting AgentChatPane can restore its busy
+  // state from the main process — the loop's lifecycle lives here, not in the
+  // renderer's local state.
+  registerIpcHandle("pi-agent:is-running", (_event, { sessionId }: { sessionId: string }) => {
+    return runningLoops.has(sessionId);
+  });
 
   // ── pi-agent:abort ────────────────────────────────────────────────────────
   registerIpcOn("pi-agent:abort", (_event, { sessionId }: { sessionId: string }) => {
@@ -244,6 +264,15 @@ export function registerPiAgentHandler(
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
     };
+
+    // Reject a second prompt for a session whose loop is already running —
+    // starting a new loop would replace session.abortCtrl mid-flight and leave
+    // the is-running state inconsistent. The renderer queues prompts while busy,
+    // so this is a defensive guard, not the normal path.
+    if (runningLoops.has(sessionId)) {
+      send("pi-agent:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before sending another prompt." });
+      return;
+    }
 
     // Runtime-validate staged attachments BEFORE they are persisted into the
     // session or turned into content parts — a malformed/oversized data URL must
@@ -290,7 +319,10 @@ export function registerPiAgentHandler(
         model: reqConfig?.model || cached.model,
         apiKey: cached.apiKey,
         maxSteps: reqConfig?.maxSteps || cached.maxSteps,
-        temperature: reqConfig?.temperature || cached.temperature,
+        // Temperature is renderer-authoritative (it resolves the capability gate
+        // and the plan-mode override). Never fall back to a cached 0.3: an
+        // explicit 0 must survive, and unset/unsupported must stay omitted.
+        temperature: reqConfig?.temperature,
         maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
       };
@@ -306,7 +338,9 @@ export function registerPiAgentHandler(
       model:       reqConfig?.model       || "gpt-5.6-luna",
       apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    reqConfig?.maxSteps    ?? 20,
-      temperature: reqConfig?.temperature ?? 0.3,
+      // The renderer resolved the effective temperature (capability-gated;
+      // undefined = omit → vendor default).
+      temperature: reqConfig?.temperature,
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
       isReasoningModel: reqConfig?.isReasoningModel,
@@ -339,10 +373,18 @@ export function registerPiAgentHandler(
       ? (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? ""
       : undefined;
 
+    // Session persona (persisted on the row) — "automation-dev" restricts the
+    // toolset to file tools so a Develop session can't touch notes/tasks.
+    // Validated: an unknown persisted value fails closed to the restricted
+    // persona rather than the unrestricted default.
+    const role = q.normalizeSessionRole(sessionRow?.role);
+    session.role = role;
+
     const skills = discoverSkills(cwd);
     const systemPrompt = buildPiAgentSystemPrompt({
       projectName, cwd, taskTitle, workspaceId, projectId, mode, planContent,
-      skillsXml: renderSkillsXml(skills)
+      skillsXml: renderSkillsXml(skills),
+      role,
     });
 
     const toolCtx: AgentToolContext = {
@@ -363,6 +405,13 @@ export function registerPiAgentHandler(
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
     };
+
+    // Same concurrency guard as pi-agent:prompt — a plan approval is also a
+    // loop run and must never stack on an in-flight loop for this session.
+    if (runningLoops.has(sessionId)) {
+      send("pi-agent:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before approving the plan." });
+      return;
+    }
 
     if (req.config?.provider === "localllm") {
       send("pi-agent:error", {
@@ -393,7 +442,10 @@ export function registerPiAgentHandler(
         model: reqConfig?.model || cached.model,
         apiKey: cached.apiKey,
         maxSteps: reqConfig?.maxSteps || cached.maxSteps,
-        temperature: reqConfig?.temperature || cached.temperature,
+        // Temperature is renderer-authoritative (it resolves the capability gate
+        // and the plan-mode override). Never fall back to a cached 0.3: an
+        // explicit 0 must survive, and unset/unsupported must stay omitted.
+        temperature: reqConfig?.temperature,
         maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
       };
@@ -409,7 +461,9 @@ export function registerPiAgentHandler(
       model:       reqConfig?.model       || "gpt-5.6-luna",
       apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    reqConfig?.maxSteps    ?? 20,
-      temperature: reqConfig?.temperature ?? 0.3,
+      // The renderer resolved the effective temperature (capability-gated;
+      // undefined = omit → vendor default).
+      temperature: reqConfig?.temperature,
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
       isReasoningModel: reqConfig?.isReasoningModel,
@@ -437,8 +491,14 @@ export function registerPiAgentHandler(
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
       : "Project";
 
+    // Restore the persisted persona for this session (e.g. "automation-dev" for
+    // a Develop session) so plan approval can't silently broaden its toolset.
+    const sessionRow = q.getPiSessionById(ctx.db, sessionId);
+    const role = q.normalizeSessionRole(sessionRow?.role);
+    session.role = role;
+
     const skills = discoverSkills(cwd);
-    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, skillsXml: renderSkillsXml(skills) });
+    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, skillsXml: renderSkillsXml(skills), role });
 
     const toolCtx: AgentToolContext = {
       cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
@@ -454,6 +514,17 @@ export function registerPiAgentHandler(
   // history and returns the result. The renderer shows a status message.
   registerIpcOn("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number } }) => {
     const { sessionId } = req;
+    // A running loop is reading session.messages live — replacing them mid-run
+    // would desync its in-flight context. The renderer only sends /compact
+    // when idle, so this is a defensive guard.
+    if (runningLoops.has(sessionId)) {
+      broadcastEvent("pi-agent:compact-result", {
+        sessionId,
+        messageCount: 0,
+        summary: "Can't compact while the agent is working — try again when it finishes.",
+      });
+      return;
+    }
     const session = sessions.get(sessionId);
     if (!session || session.messages.length === 0) return;
 
@@ -559,6 +630,13 @@ export function registerPiAgentHandler(
   // Also resets the compaction transformer so the new conversation starts
   // with a fresh cachedSummary.
   registerIpcOn("pi-agent:clear", (_event, { sessionId }: { sessionId: string }) => {
+    // Same guard as the other session mutators: replacing messages while a loop
+    // is running would desync its in-flight context. The renderer stops the run
+    // before clearing, so this is defensive.
+    if (runningLoops.has(sessionId)) {
+      broadcastEvent("pi-agent:error", { sessionId, error: "Can't clear while the agent is working — stop the run first." });
+      return;
+    }
     const session = sessions.get(sessionId);
     if (session) {
       session.messages = [];
@@ -617,10 +695,14 @@ export function registerPiAgentHandler(
       if (history.length > 0) {
         // getLlmHistory now returns the full AgentMessage objects (role, content,
         // tool_calls, tool_call_id, etc.) so multi-turn context is fully restored.
+        // Restore the persisted persona too so a subsequent prompt/approval keeps
+        // the session's tool restrictions (validated, failing closed).
+        const sessionRow = q.getPiSessionById(ctx.db, sessionId);
         sessions.set(sessionId, {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           messages: history as any[],
           abortCtrl: new AbortController(),
+          role: q.normalizeSessionRole(sessionRow?.role),
         });
       }
     } catch (e) {

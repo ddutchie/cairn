@@ -27,7 +27,7 @@ const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
 // ── Git Bash detection on Windows ─────────────────────────────────────────────
 // Prevents spawning WSL bash (which is the default "bash" in C:\Windows\System32)
 // and instead uses the native Git Bash shell.
-function getBashExecutable(): string {
+export function getBashExecutable(): string {
   if (process.platform !== "win32") {
     return "bash";
   }
@@ -98,11 +98,11 @@ function getBashExecutable(): string {
 
 const trackedPids = new Set<number>();
 
-function trackPid(pid: number): void { trackedPids.add(pid); }
-function untrackPid(pid: number): void { trackedPids.delete(pid); }
+export function trackPid(pid: number): void { trackedPids.add(pid); }
+export function untrackPid(pid: number): void { trackedPids.delete(pid); }
 
 /** Kill a process and all its children cross-platform. */
-function killProcessTree(pid: number): void {
+export function killProcessTree(pid: number): void {
   if (process.platform === "win32") {
     try {
       spawn("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore", detached: true });

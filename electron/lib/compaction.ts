@@ -21,6 +21,7 @@ import type { AgentLLMConfig, AgentMessage, AgentToolResultMsg, PiAgentSession }
 import { postChatCompletions, type OpenAIMessage } from "./llm";
 import { recordLlmUsage, extractCost } from "./usage-recorder";
 import { buildResponsesBody } from "./responses";
+import { resolveTemperatureForModel } from "./model-pricing";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -145,7 +146,7 @@ export async function generateSummary(
           model,
           messages: summaryMessages,
           maxTokens: SUMMARY_MAX_TOKENS,
-          temperature: 0.1,
+          temperature: resolveTemperatureForModel(model, 0.1),
           reasoningEffort,
           stream: true,
           // A strict third-party Responses endpoint may reject `include` and
@@ -159,7 +160,7 @@ export async function generateSummary(
           // with "unknown parameter system".
           messages: summaryMessages,
           max_tokens: SUMMARY_MAX_TOKENS,
-          temperature: 0.1, // deterministic summary
+          temperature: resolveTemperatureForModel(model, 0.1), // deterministic summary
           // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
           stream: true,
           // Summary is a direct transform — skip reasoning for ~2x speed, like the

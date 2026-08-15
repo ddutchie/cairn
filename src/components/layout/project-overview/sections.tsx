@@ -23,6 +23,7 @@ const RUN_STATUS_COLOR: Record<AutomationRunWithAutomation["status"], string> = 
   running: "text-[var(--accent)]",
   pending: "text-[var(--text-secondary)]",
   skipped: "text-[var(--text-tertiary)]",
+  exhausted: "text-[var(--warning)]",
   error: "text-[var(--danger)]",
   denied: "text-[var(--danger)]",
 };

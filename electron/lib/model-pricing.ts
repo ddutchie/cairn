@@ -1,10 +1,11 @@
 /**
- * Cairn — models.dev pricing cache (main process).
+ * Cairn — models.dev pricing + temperature-capability cache (main process).
  *
  * The renderer owns the models.dev catalog (fetched once per run, cached in
  * localStorage). It pushes a compact `modelId → pricing` map (USD per 1M
- * tokens) over IPC once the catalog loads; this module holds it and lets the
- * usage recorder estimate cost for providers that don't report it.
+ * tokens) and a `modelId → temperature-supported` map over IPC once the
+ * catalog loads; this module holds them and lets the usage recorder estimate
+ * cost and the request builders honour each model's temperature capability.
  */
 
 export interface ModelPrice {
@@ -18,8 +19,55 @@ export interface ModelPrice {
 
 let pricing: Record<string, ModelPrice> | null = null;
 
+/** Model ids that models.dev marks `temperature: false` (never send temperature). */
+let noTemperature: Set<string> | null = null;
+
 export function setModelPricing(map: Record<string, ModelPrice> | null): void {
   pricing = map && Object.keys(map).length > 0 ? map : null;
+}
+
+/** Record which model ids declare they do NOT support temperature control. */
+export function setNoTemperatureModels(ids: string[] | null): void {
+  noTemperature = ids && ids.length > 0 ? new Set(ids) : null;
+}
+
+/**
+ * Whether a model accepts temperature control. Unknown models are permissive
+ * (true) — only models models.dev explicitly marks `temperature: false` are
+ * rejected, mirroring how the renderer's attachment gates stay permissive for
+ * models the catalog can't resolve.
+ */
+export function supportsTemperature(model: string): boolean {
+  if (!noTemperature || !model) return true;
+  if (noTemperature.has(model)) return false;
+  // Fuzzy match for gateway ids that embed the catalog id as a whole token,
+  // mirroring pricePerMillion's resolution.
+  const base = model.toLowerCase();
+  const boundary = (s: string, start: number) => start === 0 || /[-/:._]/.test(s[start - 1] ?? "");
+  for (const catId of noTemperature) {
+    const nid = catId.toLowerCase();
+    if (nid && base.endsWith(nid) && boundary(base, base.length - nid.length)) return false;
+    if (nid.endsWith(base) && boundary(nid, nid.length - base.length)) return false;
+  }
+  // Retry with trailing qualifier segments stripped (region / date / reasoning
+  // suffixes) — same fallback as pricePerMillion.
+  let candidate = model;
+  for (let i = 0; i < 3; i++) {
+    const next = candidate.replace(/[-:.][a-z0-9]+$/i, "");
+    if (next === candidate || !next) break;
+    candidate = next;
+    if (noTemperature.has(candidate)) return false;
+  }
+  return true;
+}
+
+/**
+ * The temperature to actually SEND for a model: `undefined` (omit → vendor
+ * default) for models that declare they don't support it, otherwise the
+ * requested value as-is. Unknown models are permissive.
+ */
+export function resolveTemperatureForModel(model: string, requested: number | undefined): number | undefined {
+  return supportsTemperature(model) ? requested : undefined;
 }
 
 /** USD per 1M tokens for a model id, or null when unknown. */

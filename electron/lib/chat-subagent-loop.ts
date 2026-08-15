@@ -28,6 +28,7 @@ import { parseToolArgs } from "./parse-tool-args";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 import { recordLlmUsage, extractCost, extractCacheTokens } from "./usage-recorder";
 import { buildResponsesBody, responsesToCompletionsShape } from "./responses";
+import { resolveTemperatureForModel } from "./model-pricing";
 
 /** Loosely-typed OpenAI function tool — the synthetic dispatch tools ("research",
  *  "write") aren't in the schema-derived `typeof TOOLS` union, so we widen. */
@@ -408,13 +409,13 @@ async function forceFinalAnswer(
     let transport = await resolveTransport(cfg.baseUrl, cfg.apiKey);
     const buildBody = () =>
       transport.mode === "responses"
-        ? buildResponsesBody({ model: cfg.model, messages: nudged, maxTokens, temperature: 0.2, stream: false, toolChoice: "none" })
+        ? buildResponsesBody({ model: cfg.model, messages: nudged, maxTokens, temperature: resolveTemperatureForModel(cfg.model, 0.2), stream: false, toolChoice: "none" })
         : {
             model: cfg.model,
             messages: nudged,
             tool_choice: "none",
             ...(maxTokens ? { max_tokens: maxTokens } : {}),
-            temperature: 0.2,
+            temperature: resolveTemperatureForModel(cfg.model, 0.2),
             stream: false,
           };
     let response = await fetch(transport.endpoint(cfg.baseUrl), {
@@ -538,7 +539,8 @@ export async function runDispatchLoop(
   ];
 
   const maxSteps = req.config?.maxSteps ?? 12;
-  const temperature = req.config?.temperature ?? 0.3;
+  // Renderer-resolved effective temperature; undefined = omit (vendor default).
+  const temperature = req.config?.temperature;
   let finalContent = "";
   let finalReasoning = "";
 

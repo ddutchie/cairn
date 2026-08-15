@@ -14,6 +14,21 @@ import { id } from "@/lib/utils";
 
 export type ScheduleKind = "cron" | "every" | "once";
 
+/** An automation env var. Non-secret values inline; secrets live in the keychain. */
+export interface AutomationEnv {
+  name: string;
+  value?: string | null;
+  secret: boolean;
+}
+
+/** Env spec as returned by the env IPC (never reveals secret values). */
+export interface AutomationEnvSpec {
+  name: string;
+  secret: boolean;
+  value?: string;
+  set?: boolean;
+}
+
 export interface Automation {
   id: ID;
   workspaceId: ID;
@@ -37,13 +52,15 @@ export interface Automation {
    * scope. Empty = data-only automation.
    */
   requires: RegistryRequirement[];
+  /** Env vars exposed to scripts; secrets live in the keychain, not here. */
+  env: AutomationEnv[];
   source: "custom" | "community";
   communityId: ID | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export type AutomationRunStatus = "pending" | "running" | "done" | "denied" | "error" | "skipped";
+export type AutomationRunStatus = "pending" | "running" | "done" | "exhausted" | "denied" | "error" | "skipped";
 
 export interface AutomationRun {
   id: ID;
@@ -86,6 +103,7 @@ export interface AutomationInput {
   activeHoursEnd?: string | null;
   standingRules?: Array<{ tool: string; target?: string }>;
   requires?: RegistryRequirement[];
+  env?: AutomationEnv[];
   /** Provenance when prefilled from the cairn-community catalog. */
   source?: "custom" | "community";
   communityId?: ID | null;
@@ -130,6 +148,12 @@ export interface AutomationsSlice {
   pendingApprovalCount: number;
   /** Number of automation runs currently in flight (title-bar running bar). */
   runningAutomationCount: number;
+  /**
+   * automationId → active Develop session id. Lets "Develop" REOPEN a running
+   * dev session for an automation instead of spawning a fresh one (so closing
+   * the dev modal never orphans in-flight work).
+   */
+  automationDevSessions: Record<ID, ID>;
 
   fetchAutomations: (workspaceId: ID) => Promise<void>;
   createAutomation: (input: AutomationInput) => Promise<Automation | null>;
@@ -142,6 +166,8 @@ export interface AutomationsSlice {
   fetchPendingApprovals: () => Promise<void>;
   fetchApprovalCount: () => Promise<void>;
   fetchRunningCount: () => Promise<void>;
+  registerAutomationDevSession: (automationId: ID, sessionId: ID) => void;
+  clearAutomationDevSession: (automationId: ID) => void;
   resolveApprovalItem: (id: ID, resolution: ApprovalResolution) => Promise<void>;
   startApprovalPolling: () => void;
   stopApprovalPolling: () => void;
@@ -165,6 +191,20 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   pendingApprovals: [],
   pendingApprovalCount: 0,
   runningAutomationCount: 0,
+  automationDevSessions: {},
+
+  registerAutomationDevSession(automationId, sessionId) {
+    set((s) => ({ automationDevSessions: { ...s.automationDevSessions, [automationId]: sessionId } }));
+  },
+
+  clearAutomationDevSession(automationId) {
+    set((s) => {
+      if (!(automationId in s.automationDevSessions)) return s;
+      const next = { ...s.automationDevSessions };
+      delete next[automationId];
+      return { automationDevSessions: next };
+    });
+  },
 
   async fetchAutomations(workspaceId) {
     if (typeof window === "undefined" || !window.electron?.automation) return;

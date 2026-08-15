@@ -57,8 +57,12 @@ export interface AgentLLMConfig {
   apiKey: string;
   /** Maximum tool-call iterations per turn. Defaults to 20. */
   maxSteps: number;
-  /** Sampling temperature. Plan mode overrides this to 0.1 for determinism. */
-  temperature: number;
+  /**
+   * Sampling temperature. Undefined = omit the field (the vendor's own default
+   * applies); never sent to models that declare `temperature: false`. The
+   * renderer already resolves the effective value (plan mode → 0.1).
+   */
+  temperature?: number;
   /** Maximum automatic retries on transient errors (429/5xx). Defaults to 3. */
   maxRetries?: number;
   /** Base delay in ms for exponential backoff. Doubles each attempt. Defaults to 2000. */
@@ -202,6 +206,12 @@ export interface AgentLoopCallbacks {
 export interface PiAgentSession {
   messages: AgentMessage[];
   abortCtrl: AbortController;
+  /**
+   * Session persona. "default" is the coding agent (file + Cairn data tools);
+   * "automation-dev" restricts the toolset to FILE tools only so a Develop
+   * session can author an automation's scripts without touching notes/tasks.
+   */
+  role?: AgentSessionRole;
   /** Most recent prompt_tokens count from the last onUsage callback. Updated each turn. */
   lastPromptTokens?: number;
   /** Accumulated completion tokens across all rounds in the current turn. */
@@ -367,12 +377,26 @@ const PLAN_MODE_ALLOWED = new Set([
 import { TOOLS as ALL_CAIRN_TOOLS } from "./tools";
 import { getExternalToolDefs, executeExternalTool, isExternalToolName, externalToolLabel } from "./external-tools";
 
-function getAllToolDefs(
+/** Session persona — drives the offered toolset. */
+export type AgentSessionRole = "default" | "automation-dev";
+
+/** Tools available to the "automation-dev" persona — FILE tools only, no shell. */
+const AUTOMATION_DEV_TOOLS = new Set(["read", "write", "edit", "grep", "find", "ls"]);
+
+export function getAllToolDefs(
   mode: "plan" | "execute" = "execute",
   skills: SkillMeta[] = [],
   externalDefs: typeof ALL_CAIRN_TOOLS = [],
   isSubagent = false,
+  role: AgentSessionRole = "default",
 ) {
+  // The automation-builder persona: file tools only, scoped to the automation
+  // folder. No bash/shell (a Develop session can only create files — scripts
+  // are executed at run time, not here), no Cairn data tools, no board writes,
+  // no subagents, no external connectors.
+  if (role === "automation-dev") {
+    return CODING_TOOL_DEFS.filter((t) => AUTOMATION_DEV_TOOLS.has(t.function.name));
+  }
   const cairnSubset = ALL_CAIRN_TOOLS.filter((t) => CAIRN_TOOL_NAMES.has(t.function.name));
   // Only include the skill tool when at least one skill is available
   const skillDef = skills.length > 0 ? [makeSkillToolDefinition(skills)] : [];
@@ -626,7 +650,7 @@ export async function runAgentLoop(
       console.error("[agent] failed to assemble external tools:", err);
     }
   }
-  const allTools = getAllToolDefs(mode, toolCtx.skills ?? [], externalDefs, usageSource === "pi-subagent");
+  const allTools = getAllToolDefs(mode, toolCtx.skills ?? [], externalDefs, usageSource === "pi-subagent", session.role ?? "default");
   // The exact set of tool names offered to the model this turn — used to reject
   // hallucinated / out-of-mode tool calls before execution.
   const allowedToolNames = new Set(allTools.map((t) => t.function.name));
@@ -653,8 +677,11 @@ export async function runAgentLoop(
   // under its native field, but only to the SAME model that produced it.
   const currentModelKey = `${baseUrl}::${model}`;
 
-  // Plan mode always uses 0.1 for deterministic analysis regardless of user setting
-  const temperature = mode === "plan" ? 0.1 : (configTemp ?? 0.3);
+  // Plan mode always uses 0.1 for deterministic analysis. The renderer already
+  // resolved the effective temperature (including the plan-mode override and
+  // the models.dev capability gate), so an undefined value here means "omit" —
+  // the vendor's own sampling default applies.
+  const temperature = configTemp;
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
     callbacks.onError("No API key configured. Set one in Settings → AI & Chat.");
     return;

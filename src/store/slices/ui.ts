@@ -271,8 +271,12 @@ export interface AIConfig {
   apiKey: string;
   /** Maximum tool-call rounds per chat message. Lower = fewer API calls = lower cost. */
   maxSteps: number;
-  /** LLM sampling temperature (0–1). Lower = more deterministic. Applied to the agent loop. */
-  temperature: number;
+  /**
+   * LLM sampling temperature (0–1). Absent = Auto: the request OMITS the field so
+   * the model's own default applies (and it's never sent to models that declare
+   * `temperature: false`). Lower = more deterministic.
+   */
+  temperature?: number;
   /** Context window size in tokens. Used to render the context usage ring. */
   contextLimit: number;
   /**
@@ -331,8 +335,12 @@ export interface AgentConfig {
   apiKey: string;
   /** Maximum tool-call rounds per chat message. */
   maxSteps: number;
-  /** LLM sampling temperature (0–1). Lower = more deterministic. */
-  temperature: number;
+  /**
+   * LLM sampling temperature (0–1). Absent = Auto: the request OMITS the field so
+   * the model's own default applies (and it's never sent to models that declare
+   * `temperature: false`). Plan mode always uses 0.1 regardless.
+   */
+  temperature?: number;
   /** Context window size in tokens. Used to render the context usage ring. */
   contextLimit: number;
   /**

@@ -29,7 +29,9 @@ import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
-import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion } from "@/lib/models-dev";
+import { useChatMessageQueue, useQueueDrain } from "@/hooks/useChatMessageQueue";
+import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion, effectiveTemperatureForModel } from "@/lib/models-dev";
+import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
 import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
@@ -113,6 +115,14 @@ interface AgentChatPaneProps {
   isActive: boolean;
 }
 
+/**
+ * Session IDs whose initial prompt has already been fired. Module-level (NOT a
+ * component ref) so the guard survives AgentChatPane remounts — the pane is
+ * conditionally rendered (e.g. dropped when the active project has no
+ * codeDirectory) and a ref would reset, letting the same session's initial
+ * prompt fire again and re-spawn a task that was already started.
+ */
+
 export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Actions — stable Zustand references, never trigger re-renders
   const addPiMessage             = useCairnStore((s) => s.addPiMessage);
@@ -162,12 +172,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Prompts the user queued while the agent was running — sent (FIFO) when the
   // current run finishes. Kept on Stop and drained after errors too. Attachments
   // are queued alongside so staged images/PDFs are never silently dropped.
-  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }[]>([]);
-  const queuedRef = useRef<typeof queued>([]);
-  useEffect(() => { queuedRef.current = queued; }, [queued]);
-  // Collapsed pinned queue: shows just the count by default; expands on click
-  // to list (truncated) messages with remove buttons.
-  const [queueExpanded, setQueueExpanded]         = useState(false);
+  const { queued, queueExpanded, setQueueExpanded, enqueue, removeQueued, clearQueue, drainNext } = useChatMessageQueue<{ id: string; content: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }>();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const lastSessionIdRef = useRef(session.sessionId);
   useEffect(() => {
@@ -175,7 +180,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       lastSessionIdRef.current = session.sessionId;
       // Queued prompts belong to the previous session — drop them so they are
       // never sent into the newly selected session.
-      setQueued([]);
+      clearQueue();
       // Jump to the newest message when switching sessions.
       if (messages.length > 0) {
         virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
@@ -183,7 +188,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     }
     // messages.length in deps is deliberate — the guard above short-circuits
     // so it only scrolls when the session actually changes.
-  }, [session.sessionId, messages.length]);
+  }, [session.sessionId, messages.length, clearQueue]);
   const project     = projects.find((p) => p.id === session.projectId);
 
   const [input, setInput]                         = useState("");
@@ -241,7 +246,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Always-current reference to sendPrompt — lets the initialPrompt effect
   // call it after mount without capturing a stale closure.
   const sendPromptRef   = useRef<(text: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => void>(() => {});
-  const firedSessions   = useRef(new Set<string>());
 
   // Scroll to bottom on new messages / streaming growth, and whenever the
   // Scroll to the very END of the virtualized content when the pane becomes
@@ -265,6 +269,48 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     if (isActive) textareaRef.current?.focus();
   }, [isActive]);
 
+  // Restore the busy state when this pane (re)mounts. isLoading is local state,
+  // so a session that kept working while its UI was unmounted (e.g. the
+  // automation Develop modal closed mid-run) would otherwise come back showing
+  // an idle input. The main process tracks the live loop (`pi-agent:is-running`)
+  // — poll it once on mount. When it reports not-running, any assistant message
+  // the previous mount left in a streaming state (it unmounted before
+  // pi-agent:done) is stale — finalise it so no ghost bubble lingers.
+  //
+  // Declared BEFORE the initial-prompt effect on purpose: on a genuinely fresh
+  // mount the session hasn't fired a prompt yet, which means THIS mount is about
+  // to fire its initial prompt and `sendPrompt` owns the busy state — querying
+  // here would race (and could clobber) it. Only once the session has fired a
+  // prompt in the past (a resume) is the main-process state authoritative.
+  useEffect(() => {
+    if (!hasPromptFired(session.sessionId)) return;
+    let cancelled = false;
+    const sync = async () => {
+      // Settle before polling: a prompt fired on this very mount (initial
+      // prompt or queue drain) is in flight to the main process, and is-running
+      // could read false in the split second before runningLoops is populated —
+      // which would wrongly flip the input to idle and finalise a live bubble.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const running = (await window.electron?.piAgent.isRunning(session.sessionId)) ?? false;
+      if (cancelled) return;
+      if (running) {
+        setIsLoading(true);
+        return;
+      }
+      // Not running: anything still streaming is stale — the loop ended while
+      // this pane was unmounted (pi-agent:done was missed). Finalise it so no
+      // ghost bubble lingers, and show the idle input.
+      setIsLoading(false);
+      finalisePiMessage(session.sessionId);
+      setRetryInfo(null);
+      setPendingQuestions(null);
+      setPendingQuestionCallId(null);
+      setDoomLoop(null);
+    };
+    void sync();
+    return () => { cancelled = true; };
+  }, [session.sessionId, finalisePiMessage]);
+
   // Fire initialPrompt once when the session is loaded (set by SpawnAgentModal).
   // Uses a ref so we always call the current sendPrompt (not a stale closure).
   // Tracks fired session IDs in a Set ref to ensure we only queue this once per session
@@ -272,9 +318,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const { sessionId: initialSessionId, initialPrompt } = session;
   useEffect(() => {
     if (!initialPrompt) return;
-    if (firedSessions.current.has(initialSessionId)) return;
+    if (hasPromptFired(initialSessionId)) return;
 
-    firedSessions.current.add(initialSessionId);
+    markPromptFired(initialSessionId);
     // Defer 100ms so IPC listeners registered in the effect below are fully live.
     setTimeout(() => sendPromptRef.current(initialPrompt), 100);
   }, [initialSessionId, initialPrompt]);
@@ -552,12 +598,18 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // only block when there is NEITHER text NOR attachments.
     if ((!trimmed && attachments.length === 0) || !session.cwd) return;
 
+    // Mark the session as "has fired a prompt" so a later remount of this pane
+    // knows to poll the main process for the live busy state instead of showing
+    // an idle input (sessions without an initialPrompt never get marked
+    // otherwise).
+    markPromptFired(session.sessionId);
+
     // A run is already in progress — queue this prompt instead of interrupting.
     // The queue drains (FIFO) when the current run finishes. Attachments are
     // queued alongside the text so staged images/PDFs are never dropped.
     if (isLoading) {
       if (!trimmed && attachments.length === 0) return;
-      setQueued((prev) => [...prev, { id: id(), content: trimmed, attachments }]);
+      enqueue({ id: id(), content: trimmed, attachments });
       setInput("");
       return;
     }
@@ -627,7 +679,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,
          maxSteps:    agentConfig.maxSteps    ?? 30,
-         temperature: agentConfig.temperature ?? 0.3,
+         // Plan mode always uses 0.1 for deterministic analysis; otherwise the
+         // user's setting. Auto/unset or unsupported → omitted (vendor default).
+         temperature: effectiveTemperatureForModel(
+           agentConfig.model,
+           session.mode === "plan" ? 0.1 : agentConfig.temperature,
+         ),
           // The agent's real context limit — drives the sliding-window pruner
           // (and compaction) so long contexts are trimmed at the model's window,
           // not a hardcoded 128K default.
@@ -644,7 +701,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
        },
     };
     window.electron?.piAgent.prompt(promptPayload);
-  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, setQueued]);
+  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, enqueue]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
@@ -653,20 +710,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Drain the queue: when a run finishes (loading went true → false), send the
   // next queued prompt. Keeps the queue on Stop and drains after errors.
-  const prevLoadingRef = useRef(isLoading);
-  useEffect(() => {
-    const wasLoading = prevLoadingRef.current;
-    prevLoadingRef.current = isLoading;
-    if (wasLoading && !isLoading && queuedRef.current.length > 0) {
-      const [next, ...rest] = queuedRef.current;
-      setQueued(rest);
-      sendPromptRef.current(next.content, next.attachments);
-    }
-  }, [isLoading]);
-
-  const removeQueued = useCallback((qid: string) => {
-    setQueued((prev) => prev.filter((q) => q.id !== qid));
-  }, [setQueued]);
+  useQueueDrain(isLoading, drainNext, (next) => {
+    sendPromptRef.current(next.content, next.attachments);
+  });
 
   // Doom-loop decision: allow → the repeated call runs and the session stops
   // re-pausing; deny → the main loop halts with an error.
@@ -720,7 +766,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // Clearing the conversation must also drop anything queued for it — the
     // drain effect (which fires when handleStop flips isLoading to false) would
     // otherwise immediately send the queued prompts into a cleared session.
-    setQueued([]);
+    clearQueue();
     clearPiMessages(session.sessionId);
     setPiSessionTodos(session.sessionId, []);
     window.electron?.piAgent.clear(session.sessionId);
@@ -756,7 +802,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,
         maxSteps:    agentConfig.maxSteps    ?? 30,
-         temperature: agentConfig.temperature ?? 0.3,
+         // Same effective-temperature resolution as the prompt path.
+         temperature: effectiveTemperatureForModel(agentConfig.model, agentConfig.temperature),
          contextWindow: agentConfig.contextLimit,
          maxTokens:   resolveMaxOutputTokens(
            agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,
