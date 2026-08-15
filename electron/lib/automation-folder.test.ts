@@ -7,7 +7,7 @@
  * pruned keeping the newest N.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -126,6 +126,29 @@ describe("run-log transcript (atomic write)", () => {
     writeRunLog(runDir, { ...baseLog, status: "exhausted" });
     expect(readRunLog(runDir)?.status).toBe("exhausted");
     expect(fs.readFileSync(path.join(runDir, "run-log.json"), "utf8")).toContain('"exhausted"');
+  });
+
+  it("a failed rename leaves the previously seeded transcript readable and unchanged", () => {
+    const root = tmpRoot();
+    const runDir = path.join(root, "run-1");
+    fs.mkdirSync(runDir, { recursive: true });
+    writeRunLog(runDir, baseLog);
+
+    // Inject a failure at the rename step: the temp file has been fully written
+    // and fsynced but the atomic swap throws. The seeded run-log.json must
+    // survive exactly as it was — a failed write never corrupts the final path.
+    const renameSpy = vi.spyOn(fs, "renameSync").mockImplementationOnce(() => {
+      throw new Error("EIO: simulated rename failure");
+    });
+    writeRunLog(runDir, { ...baseLog, status: "exhausted" });
+    renameSpy.mockRestore();
+
+    expect(readRunLog(runDir)?.status).toBe("done"); // unchanged
+    expect(fs.readFileSync(path.join(runDir, "run-log.json"), "utf8")).toContain('"done"');
+
+    // Recovery: a subsequent successful write replaces the transcript normally.
+    writeRunLog(runDir, { ...baseLog, status: "exhausted" });
+    expect(readRunLog(runDir)?.status).toBe("exhausted");
   });
 
   it("readRunLog returns null when the run folder is empty", () => {

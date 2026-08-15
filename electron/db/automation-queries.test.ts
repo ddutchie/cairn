@@ -112,6 +112,32 @@ describe("automation CRUD", () => {
     expect(row2.env).not.toContain("leak-me");
   });
 
+  it("reads a corrupt env column defensively (non-array JSON or null entries)", () => {
+    // A valid-JSON but non-array value must not crash toAutomation — it reads
+    // as no env vars.
+    const a = createAutomation(db, makeInput());
+    db.prepare("UPDATE automations SET env = ? WHERE id = ?").run('{"name":"oops","secret":true}', a.id);
+    expect(getAutomationById(db, a.id)!.env).toEqual([]);
+
+    // An array containing null/invalid entries: the valid entries survive and
+    // secrets stay redacted; junk is dropped.
+    db.prepare("UPDATE automations SET env = ? WHERE id = ?").run(
+      JSON.stringify([
+        null,
+        "junk",
+        { name: "SECRET", secret: true, value: "plaintext-in-row" },
+        { name: "PLAIN", secret: false, value: "ok" },
+        { name: 42 },
+        {},
+      ]),
+      a.id,
+    );
+    expect(getAutomationById(db, a.id)!.env).toEqual([
+      { name: "SECRET", secret: true },
+      { name: "PLAIN", secret: false, value: "ok" },
+    ]);
+  });
+
   it("updates partial fields", () => {
     const a = createAutomation(db, makeInput());
     const updated = updateAutomation(db, a.id, { name: "Renamed", enabled: false });

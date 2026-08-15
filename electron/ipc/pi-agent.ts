@@ -504,6 +504,17 @@ export function registerPiAgentHandler(
   // history and returns the result. The renderer shows a status message.
   registerIpcOn("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number } }) => {
     const { sessionId } = req;
+    // A running loop is reading session.messages live — replacing them mid-run
+    // would desync its in-flight context. The renderer only sends /compact
+    // when idle, so this is a defensive guard.
+    if (runningLoops.has(sessionId)) {
+      broadcastEvent("pi-agent:compact-result", {
+        sessionId,
+        messageCount: 0,
+        summary: "Can't compact while the agent is working — try again when it finishes.",
+      });
+      return;
+    }
     const session = sessions.get(sessionId);
     if (!session || session.messages.length === 0) return;
 
@@ -609,6 +620,13 @@ export function registerPiAgentHandler(
   // Also resets the compaction transformer so the new conversation starts
   // with a fresh cachedSummary.
   registerIpcOn("pi-agent:clear", (_event, { sessionId }: { sessionId: string }) => {
+    // Same guard as the other session mutators: replacing messages while a loop
+    // is running would desync its in-flight context. The renderer stops the run
+    // before clearing, so this is defensive.
+    if (runningLoops.has(sessionId)) {
+      broadcastEvent("pi-agent:error", { sessionId, error: "Can't clear while the agent is working — stop the run first." });
+      return;
+    }
     const session = sessions.get(sessionId);
     if (session) {
       session.messages = [];

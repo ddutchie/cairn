@@ -108,9 +108,7 @@ function toAutomation(r: Row): Automation {
     activeHoursEnd: r.active_hours_end ? String(r.active_hours_end) : null,
     standingRules: parseJson<Array<{ tool: string; target?: string }>>(r.standing_rules, []),
     requires: parseJson<AutomationRequirement[]>(r.requires, []),
-    // Defensive: a legacy/rogue row that stored a secret value must never
-    // surface it — reduce secret entries to their marker on read too.
-    env: parseJson<AutomationEnv[]>(r.env, []).map((e) => (e.secret ? { name: e.name, secret: true } : e)),
+    env: parseEnv(r.env),
     source: r.source as Automation["source"],
     communityId: r.community_id ? String(r.community_id) : null,
     createdAt: String(r.created_at),
@@ -140,6 +138,29 @@ function parseJson<T>(raw: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Parse the persisted env JSON defensively. The column is a JSON array, but a
+ * corrupt/legacy row may hold a valid-JSON non-array (which a bare cast would
+ * then crash on) or contain null/invalid entries. Requires an array and filters
+ * to well-formed entries, redacting any secret value on read.
+ */
+function parseEnv(raw: unknown): AutomationEnv[] {
+  const parsed = parseJson<unknown>(raw, null);
+  if (!Array.isArray(parsed)) return [];
+  const out: AutomationEnv[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const rec = entry as { name?: unknown; secret?: unknown; value?: unknown };
+    if (typeof rec.name !== "string" || !rec.name) continue;
+    if (rec.secret === true) {
+      out.push({ name: rec.name, secret: true });
+    } else {
+      out.push({ name: rec.name, secret: false, value: typeof rec.value === "string" ? rec.value : undefined });
+    }
+  }
+  return out;
 }
 
 export interface AutomationInput {
