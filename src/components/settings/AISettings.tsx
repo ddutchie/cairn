@@ -98,7 +98,7 @@ export function AISettings() {
     if (provider === "localllm") { setTemperatureCapability(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
     let cancelled = false;
     const id = (model ?? "").trim();
-    if (!id) { setTemperatureCapability(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
+    if (!id) { setTemperatureCapability(null); return; }
     modelInfoForModel(id).then((info) => {
       if (cancelled) return;
       setTemperatureCapability(info?.temperature ?? null);
