@@ -20,6 +20,7 @@ import {
   listAutomationFolderFiles,
   projectRootDir,
   readRunLog,
+  removeAutomationDir,
   writeRunLog,
 } from "./automation-folder";
 
@@ -86,6 +87,23 @@ describe("automation folder fs operations", () => {
   it("returns 0 when runs/ does not exist", () => {
     const root = tmpRoot();
     expect(cleanupOldRunDirs(path.join(root, "nope"), 3)).toBe(0);
+  });
+
+  it("removes an automation's whole folder recursively", () => {
+    const root = tmpRoot();
+    const auto = automationFolderDir(root, "aut-1", "P");
+    ensureAutomationRunDir(auto, "run-1");
+    fs.mkdirSync(automationScriptsDir(auto), { recursive: true });
+    fs.writeFileSync(path.join(automationScriptsDir(auto), "deploy.sh"), "#!/bin/sh\n");
+    fs.writeFileSync(path.join(auto, "manifest.json"), "{}");
+
+    expect(removeAutomationDir(auto)).toBe(true);
+    expect(fs.existsSync(auto)).toBe(false);
+  });
+
+  it("reports the folder as gone when it never existed", () => {
+    const root = tmpRoot();
+    expect(removeAutomationDir(path.join(root, "nope"))).toBe(true);
   });
 });
 
