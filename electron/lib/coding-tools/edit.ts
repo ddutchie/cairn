@@ -8,9 +8,9 @@
  */
 
 import fs from "fs";
-import path from "path";
 import { withFileMutex } from "./file-mutex";
 import { assertNotSecretFile } from "./secrets";
+import { resolveContainedPath } from "./workspace-path";
 
 export interface EditEntry {
   oldText: string;
@@ -176,7 +176,13 @@ export async function editTool(args: EditArgs, cwd: string): Promise<string> {
     throw new Error("edit: edits array must not be empty");
   }
 
-  const filePath = path.isAbsolute(args.path) ? args.path : path.join(cwd, args.path);
+  // Same containment contract as read/grep/find/ls: resolve against cwd and
+  // reject absolute paths / `..` traversal / symlinks that escape the working
+  // directory (e.g. the automation folder for a Develop session).
+  const filePath = resolveContainedPath(cwd, args.path);
+  if (!filePath) {
+    throw new Error(`Path "${args.path}" escapes the working directory — files can only be edited inside it.`);
+  }
   assertNotSecretFile(filePath);
 
   return withFileMutex(filePath, async () => {

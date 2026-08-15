@@ -12,6 +12,7 @@ import os from "os";
 import path from "path";
 import {
   applyManifestEnv,
+  applyManifestToAutomation,
   isValidEnvName,
   materializeEnvFile,
   quoteEnvValue,
@@ -167,5 +168,66 @@ describe("manifest helpers", () => {
       { name: "SECRET", secret: true },
       { name: "NEW", secret: false, value: "" },
     ]);
+  });
+});
+
+describe("applyManifestToAutomation (syncFromManifest mapping)", () => {
+  const base = makeAutomation([]);
+
+  it("applies instructions, env schema, and sanitised standing rules", () => {
+    const { patch, dropped } = applyManifestToAutomation(base, {
+      instructions: "  New recipe  ",
+      env: [{ name: "K", secret: true }],
+      standingRules: [
+        { tool: "run_script", target: "gen.js" },
+        { tool: "run_script" }, // wildcard grant → dropped
+        { tool: "bash" },       // wildcard grant → dropped
+        { tool: "create_task" },
+      ],
+    });
+    expect(patch.instructions).toBe("New recipe");
+    expect(patch.env).toEqual([{ name: "K", secret: true, value: "" }]);
+    expect(patch.standingRules).toEqual([
+      { tool: "run_script", target: "gen.js" },
+      { tool: "create_task" },
+    ]);
+    expect(dropped.length).toBe(2);
+  });
+
+  it("preserves existing env values/secrets for names kept by the manifest", () => {
+    const a = makeAutomation([{ name: "KEEP", value: "abc", secret: false }]);
+    const { patch } = applyManifestToAutomation(a, {
+      env: [{ name: "KEEP", secret: true }, { name: "NEW", secret: false }],
+    });
+    expect(patch.env).toEqual([
+      { name: "KEEP", value: "abc", secret: true },
+      { name: "NEW", secret: false, value: "" },
+    ]);
+  });
+
+  it("syncs declared connector requirements, sanitised + deduped", () => {
+    const { patch } = applyManifestToAutomation(base, {
+      requires: [
+        { kind: "mcp", name: "Linear" },
+        { kind: "mcp", name: "Linear" },
+        { kind: "service", name: "Web Search" },
+        { kind: "bogus", name: "x" } as never,
+        { kind: "mcp", name: "  " },
+        null as never,
+      ],
+    });
+    expect(patch.requires).toEqual([
+      { kind: "mcp", name: "Linear" },
+      { kind: "service", name: "Web Search" },
+    ]);
+  });
+
+  it("ignores a missing/blank instructions field and empty arrays", () => {
+    const { patch, dropped } = applyManifestToAutomation(base, {});
+    expect(patch.instructions).toBeUndefined();
+    expect(patch.standingRules).toBeUndefined();
+    expect(patch.requires).toBeUndefined();
+    expect(patch.env).toBeUndefined();
+    expect(dropped).toEqual([]);
   });
 });

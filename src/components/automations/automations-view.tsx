@@ -48,6 +48,7 @@ const STATUS_COLOR: Record<string, string> = {
   running: "text-[var(--accent)]",
   pending: "text-[var(--text-secondary)]",
   skipped: "text-[var(--text-tertiary)]",
+  exhausted: "text-[var(--warning)]",
   error: "text-[var(--danger)]",
   denied: "text-[var(--danger)]",
 };
@@ -345,9 +346,20 @@ export function AutomationsView() {
     setSyncing(true);
     setSyncStatus(null);
     try {
-      await electron.automation.syncFromManifest(a.id);
+      const result = (await electron.automation.syncFromManifest(a.id)) as
+        | { automation?: Automation; dropped?: string[]; error?: string }
+        | undefined;
+      if (result?.error) {
+        setSyncStatus(result.error);
+        return;
+      }
       if (activeWorkspaceId) await fetchAutomations(activeWorkspaceId);
-      setSyncStatus("Synced the automation's recipe from the manifest.");
+      const dropped = result?.dropped ?? [];
+      setSyncStatus(
+        dropped.length > 0
+          ? `Synced the recipe — skipped ${dropped.length} unsafe standing rule${dropped.length === 1 ? "" : "s"}: ${dropped.join("; ")}`
+          : "Synced the automation's recipe from the manifest.",
+      );
     } catch (err) {
       setSyncStatus(err instanceof Error ? err.message : String(err));
     } finally {
@@ -668,7 +680,7 @@ function AutomationDialog({
       ) : (
         <div className="space-y-4">
           <p className="text-xs text-[var(--text-tertiary)]">
-            The agent runs these instructions on schedule using your AI connection. It can only touch notes, tasks, tags and boards — no shell.
+            The agent runs these instructions on schedule using your AI connection. It works on notes, tasks, tags and boards, and can run scripts you build for it in the Develop modal — script runs are always approved first.
           </p>
           {!editing && (
             <Button variant="outline" size="sm" className="w-full justify-center" onClick={() => setBrowse(true)}>
@@ -744,7 +756,7 @@ function AutomationDialog({
               ? "Write actions park in the approval inbox and the run waits for your decision."
               : requires.length > 0
                 ? "External connector calls are still gated behind the approval inbox — only data tools run freely."
-                : "Only data tools run — no shell or file edits either way."}
+                : "Data tools run freely; running your scripts (run_script) is always gated behind the approval inbox."}
           </span>
         </label>
         {requires.length > 0 && (
@@ -981,7 +993,7 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
                       </button>
                     </Tooltip>
                   </div>
-                  {r.finishedAt && r.status === "done" && (
+                  {(r.status === "done" || r.status === "exhausted") && r.finishedAt && (
                     <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt)}</div>
                   )}
                   {r.error && (

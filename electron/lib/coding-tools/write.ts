@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import { withFileMutex } from "./file-mutex";
 import { assertNotSecretFile } from "./secrets";
+import { resolveContainedPath } from "./workspace-path";
 
 export interface WriteArgs {
   path: string;
@@ -15,7 +16,13 @@ export interface WriteArgs {
 }
 
 export async function writeTool(args: WriteArgs, cwd: string): Promise<string> {
-  const filePath = path.isAbsolute(args.path) ? args.path : path.join(cwd, args.path);
+  // Same containment contract as read/grep/find/ls: resolve against cwd and
+  // reject absolute paths / `..` traversal / symlinks that escape the working
+  // directory (e.g. the automation folder for a Develop session).
+  const filePath = resolveContainedPath(cwd, args.path);
+  if (!filePath) {
+    throw new Error(`Path "${args.path}" escapes the working directory — files can only be written inside it.`);
+  }
   assertNotSecretFile(filePath);
 
   return withFileMutex(filePath, async () => {

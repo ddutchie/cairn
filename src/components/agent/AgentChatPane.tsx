@@ -31,6 +31,7 @@ import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import { useChatMessageQueue, useQueueDrain } from "@/hooks/useChatMessageQueue";
 import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion } from "@/lib/models-dev";
+import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
 import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
@@ -121,7 +122,6 @@ interface AgentChatPaneProps {
  * codeDirectory) and a ref would reset, letting the same session's initial
  * prompt fire again and re-spawn a task that was already started.
  */
-const firedInitialPrompts = new Set<string>();
 
 export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Actions — stable Zustand references, never trigger re-renders
@@ -278,24 +278,34 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // pi-agent:done) is stale — finalise it so no ghost bubble lingers.
   //
   // Declared BEFORE the initial-prompt effect on purpose: on a genuinely fresh
-  // mount the session isn't in `firedInitialPrompts` yet, which means THIS mount
-  // is about to fire its initial prompt and `sendPrompt` owns the busy state —
-  // querying here would race (and could clobber) it. Only once the session has
-  // fired a prompt in the past (a resume) is the main-process state authoritative.
+  // mount the session hasn't fired a prompt yet, which means THIS mount is about
+  // to fire its initial prompt and `sendPrompt` owns the busy state — querying
+  // here would race (and could clobber) it. Only once the session has fired a
+  // prompt in the past (a resume) is the main-process state authoritative.
   useEffect(() => {
-    if (!firedInitialPrompts.has(session.sessionId)) return;
+    if (!hasPromptFired(session.sessionId)) return;
     let cancelled = false;
     const sync = async () => {
+      // Settle before polling: a prompt fired on this very mount (initial
+      // prompt or queue drain) is in flight to the main process, and is-running
+      // could read false in the split second before runningLoops is populated —
+      // which would wrongly flip the input to idle and finalise a live bubble.
+      await new Promise((resolve) => setTimeout(resolve, 150));
       const running = (await window.electron?.piAgent.isRunning(session.sessionId)) ?? false;
       if (cancelled) return;
-      setIsLoading(running);
-      if (!running) {
-        finalisePiMessage(session.sessionId);
-        setRetryInfo(null);
-        setPendingQuestions(null);
-        setPendingQuestionCallId(null);
-        setDoomLoop(null);
+      if (running) {
+        setIsLoading(true);
+        return;
       }
+      // Not running: anything still streaming is stale — the loop ended while
+      // this pane was unmounted (pi-agent:done was missed). Finalise it so no
+      // ghost bubble lingers, and show the idle input.
+      setIsLoading(false);
+      finalisePiMessage(session.sessionId);
+      setRetryInfo(null);
+      setPendingQuestions(null);
+      setPendingQuestionCallId(null);
+      setDoomLoop(null);
     };
     void sync();
     return () => { cancelled = true; };
@@ -308,9 +318,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const { sessionId: initialSessionId, initialPrompt } = session;
   useEffect(() => {
     if (!initialPrompt) return;
-    if (firedInitialPrompts.has(initialSessionId)) return;
+    if (hasPromptFired(initialSessionId)) return;
 
-    firedInitialPrompts.add(initialSessionId);
+    markPromptFired(initialSessionId);
     // Defer 100ms so IPC listeners registered in the effect below are fully live.
     setTimeout(() => sendPromptRef.current(initialPrompt), 100);
   }, [initialSessionId, initialPrompt]);
@@ -590,9 +600,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     // Mark the session as "has fired a prompt" so a later remount of this pane
     // knows to poll the main process for the live busy state instead of showing
-    // an idle input (sessions without an initialPrompt never reach the
-    // firedInitialPrompts Set otherwise).
-    firedInitialPrompts.add(session.sessionId);
+    // an idle input (sessions without an initialPrompt never get marked
+    // otherwise).
+    markPromptFired(session.sessionId);
 
     // A run is already in progress — queue this prompt instead of interrupting.
     // The queue drains (FIFO) when the current run finishes. Attachments are

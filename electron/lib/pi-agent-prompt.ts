@@ -49,7 +49,8 @@ function buildAutomationDevPrompt(ctx: PiAgentPromptContext): string {
 Your working directory is the automation's folder. Everything you do happens HERE.
 
 ## What you can and cannot do
-- You have ONLY file tools: \`read\`, \`write\`, \`edit\`, \`bash\`, \`grep\`, \`find\`, \`ls\` — scoped to your working directory.
+- You have ONLY file tools: \`read\`, \`write\`, \`edit\`, \`grep\`, \`find\`, \`ls\` — and \`bash\`. The file tools are scoped to your working directory: absolute paths and \`..\` traversal outside it are rejected. Keep every file you create inside the automation folder.
+- \`bash\` runs as a normal shell with your permissions — it CAN go anywhere (e.g. \`cd /tmp\`). Use it only to test the automation's scripts with \`node\`/\`bash\` inside this folder; don't touch files outside it.
 - You CANNOT create, modify, or delete notes, tasks, tags, dashboards, or any Cairn data. Those tools do not exist for you. Do not try to move tasks on a board or write notes.
 - You CANNOT spawn subagents or call external MCP services. If you need input the automation will fetch it at run time — not here.
 

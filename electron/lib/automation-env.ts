@@ -14,8 +14,9 @@
  */
 
 import fs from "fs";
-import type { Automation, AutomationEnv } from "../db/automation-queries";
+import type { Automation, AutomationEnv, AutomationInput } from "../db/automation-queries";
 import { automationEnvFilePath, automationManifestPath } from "./automation-folder";
+import { sanitizeStandingRules } from "./automation-approval";
 
 /** Valid shell env var names — anything else is rejected at the IPC boundary. */
 export const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -138,5 +139,45 @@ export function applyManifestEnv(
     if (current) return { ...current, secret };
     return { name: m.name, secret, value: "" };
   });
+}
+
+export interface ManifestSyncResult {
+  /** The fields to write back onto the automation row. */
+  patch: Partial<Omit<AutomationInput, "workspaceId">>;
+  /** Human-readable reasons for anything in the manifest that was skipped. */
+  dropped: string[];
+}
+
+/**
+ * Map an agent-authored manifest.json onto the automation row: instructions,
+ * env schema, standing rules (sanitised — target-less run_script/bash rules are
+ * dropped, they'd be wildcard execution grants), and required connectors.
+ * Pure + unit-tested; the sync IPC handler just applies the result.
+ */
+export function applyManifestToAutomation(
+  automation: Automation,
+  manifest: AutomationManifest,
+): ManifestSyncResult {
+  const patch: Partial<Omit<AutomationInput, "workspaceId">> = {};
+  const dropped: string[] = [];
+  if (typeof manifest.instructions === "string" && manifest.instructions.trim()) {
+    patch.instructions = manifest.instructions.trim();
+  }
+  if (Array.isArray(manifest.env)) {
+    patch.env = applyManifestEnv(automation.env ?? [], manifest.env);
+  }
+  if (Array.isArray(manifest.standingRules)) {
+    const sanitised = sanitizeStandingRules(manifest.standingRules);
+    patch.standingRules = sanitised.rules;
+    dropped.push(...sanitised.dropped);
+  }
+  if (Array.isArray(manifest.requires)) {
+    const seen = new Set<string>();
+    patch.requires = manifest.requires
+      .filter((r) => r && (r.kind === "mcp" || r.kind === "service") && typeof r.name === "string" && r.name.trim())
+      .map((r) => ({ kind: r.kind, name: r.name.trim() }))
+      .filter((r) => (seen.has(`${r.kind}:${r.name}`) ? false : (seen.add(`${r.kind}:${r.name}`), true)));
+  }
+  return { patch, dropped };
 }
 

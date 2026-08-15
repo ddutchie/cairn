@@ -214,6 +214,15 @@ export async function executeTool(
       return executeMcpTool(db, workspacePath, name, args);
     }
     case "ask_questions": {
+      // Headless (automation) runs have no window to render the inline form
+      // into — returning a fake success would make the model continue as if the
+      // user answered. Fail loudly so it falls back to reasonable assumptions
+      // and mentions them in its summary.
+      if (!getWin?.()) {
+        return {
+          error: "ask_questions is not available in a background/headless run — there is no user to answer. Make reasonable assumptions and continue, and note them in your summary.",
+        };
+      }
       return { ok: true, questions: args.questions };
     }
     case "suggest_connections": {

@@ -19,7 +19,7 @@ import { createAutomation, createAutomationRun, getAutomationRunById } from "../
 import { automationFolderDir, automationRunDir } from "./automation-folder";
 // vi.mock calls are hoisted above this import, so the static import sees the
 // mocked config-cache / chat-loop / external-tools modules.
-import { runAutomation } from "./heartbeat-runner";
+import { runAutomation, runAutomationNow } from "./heartbeat-runner";
 
 const { runToolLoopMock, getExternalToolDefsMock } = vi.hoisted(() => ({
   runToolLoopMock: vi.fn(),
@@ -324,5 +324,94 @@ describe("runAutomation folder plumbing", () => {
     expect(log.tools[0].name).toBe("run_script");
     expect(log.tools[0].ok).toBe(true);
     expect(log.tools[0].output).toBe("made image");
+  });
+
+  it("records an exhausted run as 'exhausted' (row + transcript), not 'done'", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    const automation = makeAutomation(db, { projectId: "p1" });
+    const run = createAutomationRun(db, automation.id, "running");
+    runToolLoopMock.mockResolvedValue({ exhausted: true, content: "incomplete", reasoning: "" });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+
+    await runAutomation({ db, workspacePath: root }, run, automation);
+
+    const updated = getAutomationRunById(db, run.id)!;
+    expect(updated.status).toBe("exhausted");
+    expect(updated.error).toMatch(/step limit/i);
+    const autoDir = automationFolderDir(root, automation.id, "P");
+    const log = JSON.parse(fs.readFileSync(path.join(automationRunDir(autoDir, run.id), "run-log.json"), "utf8"));
+    expect(log.status).toBe("exhausted");
+  });
+
+  it("flushes the transcript incrementally as tools complete (survives a crash mid-run)", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    const automation = makeAutomation(db, { projectId: "p1" });
+    const run = createAutomationRun(db, automation.id, "running");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+
+    // Keep the loop pending after firing a tool completion, so we can inspect
+    // the on-disk transcript BEFORE the run finishes.
+    let resolveLoop!: (v: unknown) => void;
+    const loopPromise = new Promise((r) => { resolveLoop = r; });
+    runToolLoopMock.mockImplementation((...args: unknown[]) => {
+      const emitToolCall = args[7] as (e: { tool: string; label: string; args: Record<string, unknown> }) => void;
+      const emitToolCallDone = args[12] as (e: { tool: string; ok: boolean; output: string }) => void;
+      emitToolCall({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
+      emitToolCallDone({ tool: "run_script", ok: true, output: "made image" });
+      return loopPromise;
+    });
+
+    const pending = runAutomation({ db, workspacePath: root }, run, automation);
+    await new Promise((r) => setTimeout(r, 20));
+    const autoDir = automationFolderDir(root, automation.id, "P");
+    const runDir = automationRunDir(autoDir, run.id);
+    const midLog = JSON.parse(fs.readFileSync(path.join(runDir, "run-log.json"), "utf8"));
+    expect(midLog.status).toBe("running");
+    expect(midLog.tools).toHaveLength(1);
+    expect(midLog.tools[0].ok).toBe(true);
+
+    resolveLoop({ exhausted: false, content: "final", reasoning: "" });
+    await pending;
+    const doneLog = JSON.parse(fs.readFileSync(path.join(runDir, "run-log.json"), "utf8"));
+    expect(doneLog.status).toBe("done");
+  });
+});
+
+describe("runAutomationNow crash recovery (failRun)", () => {
+  it("records a throwing run as error with a run-log.json and a finished event", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    const automation = makeAutomation(db, { projectId: "p1" });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "heartbeat-run-"));
+    runToolLoopMock.mockRejectedValue(new Error("provider exploded"));
+    const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
+    const send = (channel: string, payload: unknown) => sent.push({ channel, payload: payload as Record<string, unknown> });
+
+    const runId = runAutomationNow({ db, workspacePath: root, send }, automation.id);
+    expect(runId).toBeTruthy();
+    // Wait for the async IIFE to settle.
+    for (let i = 0; i < 100; i++) {
+      const row = getAutomationRunById(db, runId!)!;
+      if (row.status !== "running") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    const updated = getAutomationRunById(db, runId!)!;
+    expect(updated.status).toBe("error");
+    expect(updated.error).toMatch(/provider exploded/);
+    // A run-log.json was written so the failed run stays inspectable.
+    const autoDir = automationFolderDir(root, automation.id, "P");
+    const log = JSON.parse(fs.readFileSync(path.join(automationRunDir(autoDir, runId!), "run-log.json"), "utf8"));
+    expect(log.status).toBe("error");
+    expect(log.error).toMatch(/provider exploded/);
+    // The finished event was emitted so a watcher doesn't spin forever.
+    const finished = sent.find((s) => s.channel === "automation:run" && s.payload.event === "finished");
+    expect(finished).toBeTruthy();
+    expect(finished!.payload.error).toMatch(/provider exploded/);
   });
 });

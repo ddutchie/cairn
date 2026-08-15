@@ -59,7 +59,7 @@ export interface Automation {
   updatedAt: string;
 }
 
-export type AutomationRunStatus = "pending" | "running" | "done" | "denied" | "error" | "skipped";
+export type AutomationRunStatus = "pending" | "running" | "done" | "exhausted" | "denied" | "error" | "skipped";
 
 export interface AutomationRun {
   id: string;
@@ -292,7 +292,7 @@ export function updateAutomationRun(
   // Auto-set finished_at only when this update transitions the run to a
   // terminal status and the caller didn't supply its own timestamp. Scratch /
   // currentTool updates during a running run must NOT stamp finished_at.
-  const TERMINAL = new Set<AutomationRunStatus>(["done", "denied", "error", "skipped"]);
+  const TERMINAL = new Set<AutomationRunStatus>(["done", "exhausted", "denied", "error", "skipped"]);
   const autoFinish = patch.finishedAt === undefined && patch.status !== undefined && TERMINAL.has(patch.status);
   const sql = `UPDATE automation_runs SET ${set.join(", ")}${autoFinish ? ", finished_at = COALESCE(finished_at, ?)" : ""} WHERE id = ?`;
   db.prepare(sql).run(...(autoFinish ? [...params, now, id] : [...params, id]));

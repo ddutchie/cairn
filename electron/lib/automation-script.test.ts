@@ -114,6 +114,19 @@ describe("runAutomationScript", () => {
       .rejects.toThrow(/exited with code 3/);
   });
 
+  it("does not leak the parent process env into the script", async () => {
+    const dir = tmpDir();
+    const SECRET_KEY = "super-secret-app-env";
+    process.env.CAIRN_TEST_LEAK = SECRET_KEY;
+    try {
+      writeScript(dir, "env.js", "console.log('leak=' + (process.env.CAIRN_TEST_LEAK || 'absent'));");
+      const output = await runAutomationScript({ name: "env" }, baseCtx(dir));
+      expect(output).toContain("leak=absent");
+    } finally {
+      delete process.env.CAIRN_TEST_LEAK;
+    }
+  });
+
   it("times out and kills the process", async () => {
     const dir = tmpDir();
     writeScript(dir, "slow.js", "setTimeout(() => {}, 5000);");
@@ -169,6 +182,13 @@ describe("writeRunFile", () => {
     }
     expect(fs.existsSync(path.join(runDir, "..", "escape.txt"))).toBe(false);
   });
+
+  it("allows POSIX filenames containing backslashes (not a separator on POSIX)", async () => {
+    const runDir = tmpDir();
+    const res = JSON.parse(await writeRunFile({ path: "a\\..\\b", content: "x" }, { runDir }));
+    expect(res.ok).toBe(true);
+    expect(fs.readFileSync(path.join(runDir, "a\\..\\b"), "utf8")).toBe("x");
+  });
 });
 
 describe("deliverFile", () => {
@@ -190,5 +210,14 @@ describe("deliverFile", () => {
     fs.mkdirSync(outDir, { recursive: true });
     await expect(deliverFile({ path: "../x.svg" }, { outDir, workspacePath: ws, automationId: "aut-1" })).rejects.toThrow();
     await expect(deliverFile({ path: "missing.svg" }, { outDir, workspacePath: ws, automationId: "aut-1" })).rejects.toThrow(/not found/);
+  });
+
+  it("rejects files over the attachment size cap", async () => {
+    const ws = tmpDir();
+    const outDir = path.join(ws, "out");
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(path.join(outDir, "huge.bin"), Buffer.alloc(25 * 1024 * 1024 + 1));
+    await expect(deliverFile({ path: "huge.bin" }, { outDir, workspacePath: ws, automationId: "aut-1" })).rejects.toThrow(/attachment limit/);
+    expect(fs.existsSync(path.join(ws, "attachments"))).toBe(false);
   });
 });

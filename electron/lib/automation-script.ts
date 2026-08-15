@@ -71,6 +71,14 @@ type ScriptKind =
 /** Script names are strictly bounded — no paths, no traversal, no shell chars. */
 const SAFE_NAME = /^[\w.-]+$/;
 
+/**
+ * Path separators for escape checking. Split only on the characters the host
+ * platform actually treats as separators — on POSIX a backslash is a legal
+ * filename character, so `a\..\b` must NOT be read as an escape attempt (the
+ * path.resolve containment check below is the real guard).
+ */
+const PATH_SEP_RE = process.platform === "win32" ? /[\\/]/ : /[/]/;
+
 const DEFAULT_TIMEOUT_MS = 120_000;
 const UPDATE_THROTTLE_MS = 150;
 
@@ -121,13 +129,41 @@ function nodeCommand(): { cmd: string; electronAsNode: boolean } {
 
 // ── Execution ─────────────────────────────────────────────────────────────────
 
+/**
+ * Minimal host env to pass through to run_script children. The full
+ * process.env is deliberately NOT inherited — the app's own env may carry
+ * secrets (e.g. an LLM API key exported when Cairn was launched), and a script
+ * shouldn't be able to read those. Interpreter resolution needs PATH/PATHEXT +
+ * Windows system vars; the automation's own env vars are layered on by
+ * buildSpawn.
+ */
+const INHERITED_ENV_KEYS = [
+  "PATH", "PATHEXT", "COMSPEC",
+  "HOME", "USERPROFILE",
+  "TEMP", "TMP", "TMPDIR",
+  "LANG", "LC_ALL", "LC_CTYPE",
+  "SystemRoot", "SYSTEMROOT", "SYSTEMDRIVE",
+  "ProgramData", "ProgramFiles", "ProgramFiles(x86)",
+  "OS", "SHELL", "USER", "LOGNAME",
+  "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+];
+
+function inheritedEnv(): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const key of INHERITED_ENV_KEYS) {
+    const v = process.env[key];
+    if (v !== undefined) out[key] = v;
+  }
+  return out;
+}
+
 /** Build the spawn command + env for a resolved script kind. */
 function buildSpawn(
   script: ScriptKind,
   scriptArgs: string[],
   env: Record<string, string>,
 ): { cmd: string; args: string[]; env: NodeJS.ProcessEnv } {
-  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env };
+  const childEnv: NodeJS.ProcessEnv = { ...inheritedEnv(), ...env };
   switch (script.kind) {
     case "node":
     case "node-ts": {
@@ -294,7 +330,7 @@ export type WriteRunFileHandler = (args: WriteRunFileArgs) => Promise<string>;
 export async function writeRunFile(args: WriteRunFileArgs, ctx: WriteRunFileContext): Promise<string> {
   const rel = (args.path ?? "").trim();
   if (!rel) throw new Error("write_run_file requires a path");
-  if (path.isAbsolute(rel) || rel.includes("\0") || rel.split(/[\\/]/).includes("..")) {
+  if (path.isAbsolute(rel) || rel.includes("\0") || rel.split(PATH_SEP_RE).includes("..")) {
     throw new Error(`Invalid path "${rel}" — must be a relative path inside the run folder.`);
   }
   const root = path.resolve(ctx.runDir);
@@ -353,12 +389,14 @@ export interface DeliverFileContext {
 export type DeliverFileHandler = (args: DeliverFileArgs) => Promise<string>;
 
 const ATTACHMENT_NAME_RE = /^[^/\\\0]+$/;
+/** Cap on delivered attachments — matches the chat/notes attachment limit. */
+const MAX_DELIVERED_BYTES = 25 * 1024 * 1024;
 
 /** Copy an out/ file into <workspace>/attachments/<automationId>/ and return its reference. */
 export async function deliverFile(args: DeliverFileArgs, ctx: DeliverFileContext): Promise<string> {
   const rel = (args.path ?? "").trim();
   if (!rel) throw new Error("deliver_file requires a path");
-  if (path.isAbsolute(rel) || rel.includes("\0") || rel.split(/[\\/]/).includes("..")) {
+  if (path.isAbsolute(rel) || rel.includes("\0") || rel.split(PATH_SEP_RE).includes("..")) {
     throw new Error(`Invalid path "${rel}" — must be a relative path inside CAIRN_OUT_DIR.`);
   }
   const outRoot = path.resolve(ctx.outDir);
@@ -368,6 +406,13 @@ export async function deliverFile(args: DeliverFileArgs, ctx: DeliverFileContext
   }
   if (!fs.existsSync(src)) {
     throw new Error(`File not found in CAIRN_OUT_DIR: ${rel}`);
+  }
+  // A runaway script copying unbounded data into attachments/ must fail loudly.
+  const size = fs.statSync(src).size;
+  if (size > MAX_DELIVERED_BYTES) {
+    throw new Error(
+      `deliver_file: "${rel}" is ${(size / (1024 * 1024)).toFixed(1)} MB — exceeds the ${MAX_DELIVERED_BYTES / (1024 * 1024)} MB attachment limit.`,
+    );
   }
   const name = args.name ?? path.basename(src);
   if (!ATTACHMENT_NAME_RE.test(name)) {

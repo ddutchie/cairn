@@ -60,7 +60,7 @@ export interface Automation {
   updatedAt: string;
 }
 
-export type AutomationRunStatus = "pending" | "running" | "done" | "denied" | "error" | "skipped";
+export type AutomationRunStatus = "pending" | "running" | "done" | "exhausted" | "denied" | "error" | "skipped";
 
 export interface AutomationRun {
   id: ID;

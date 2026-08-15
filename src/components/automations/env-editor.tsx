@@ -30,6 +30,9 @@ export function EnvEditor({
     value: string;
     set: boolean;
     removed: boolean;
+    /** How the row was loaded — lets save() tell a toggle/clear from a new row. */
+    originalSecret: boolean;
+    originalValue: string;
   }
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -56,6 +59,8 @@ export function EnvEditor({
         value: s.secret ? "" : (s.value ?? ""),
         set: Boolean(s.set),
         removed: false,
+        originalSecret: s.secret,
+        originalValue: s.secret ? "" : (s.value ?? ""),
       })));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -67,7 +72,7 @@ export function EnvEditor({
   useEffect(() => { void load(); /* eslint-disable-line react-hooks/set-state-in-effect */ }, [load]);
 
   const addRow = () => {
-    setRows((prev) => [...prev, { key: id(), name: "", secret: false, value: "", set: false, removed: false }]);
+    setRows((prev) => [...prev, { key: id(), name: "", secret: false, value: "", set: false, removed: false, originalSecret: false, originalValue: "" }]);
   };
 
   const updateRow = (key: string, patch: Partial<Row>) => {
@@ -112,8 +117,24 @@ export function EnvEditor({
         if (row.removed) continue;
         const name = row.name.trim();
         if (!name) continue;
-        if (row.secret && !row.value.trim()) continue; // blank secret keeps existing value
-        const res = await window.electron.automation.env.set(automationId, name, row.value, row.secret);
+        if (row.secret) {
+          if (!row.value.trim()) continue; // blank secret keeps existing value
+          const res = await window.electron.automation.env.set(automationId, name, row.value, true);
+          if ("error" in (res ?? {})) {
+            setError((res as { error: string }).error);
+            return;
+          }
+          continue;
+        }
+        // Non-secret row: purge any keychain secret that may linger under the
+        // same name (e.g. a secret→plain toggle), then either write the plain
+        // value or remove the var entirely when the value is blank — a plain
+        // "" is dropped at run time anyway, so persisting it is a silent no-op.
+        if (row.originalSecret || row.value === "") {
+          await window.electron.automation.env.delete(automationId, name);
+        }
+        if (row.value === "") continue;
+        const res = await window.electron.automation.env.set(automationId, name, row.value, false);
         if ("error" in (res ?? {})) {
           setError((res as { error: string }).error);
           return;

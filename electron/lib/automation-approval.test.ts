@@ -5,7 +5,7 @@ import { applySchema } from "../db/schema";
 import { createWorkspace, createProject } from "../db/queries";
 import { createAutomation, createAutomationRun, getAutomationById, type Automation, type AutomationRun } from "../db/automation-queries";
 import { listPendingApprovals, parkApproval, resolveApproval } from "../db/approval-queries";
-import { makeApprovalGate, waitForApproval, isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance } from "./automation-approval";
+import { makeApprovalGate, waitForApproval, isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance, sanitizeStandingRules } from "./automation-approval";
 
 let db: Database.Database;
 let automation: Automation;
@@ -234,6 +234,51 @@ describe("automation approval gate", () => {
       const res = await gate("create_task", { title: "Anything" });
       expect(res.allow).toBe(true);
       expect(listPendingApprovals(db).length).toBe(0);
+    });
+  });
+
+  describe("sanitizeStandingRules (manifest sync)", () => {
+    it("rejects target-less run_script / bash rules (the wildcard grant)", () => {
+      const { rules, dropped } = sanitizeStandingRules([
+        { tool: "run_script" },
+        { tool: "bash" },
+        { tool: "run_script", target: "generate_images" },
+      ]);
+      expect(rules).toEqual([{ tool: "run_script", target: "generate_images" }]);
+      expect(dropped.length).toBe(2);
+      expect(dropped[0]).toContain("run_script");
+      expect(dropped[1]).toContain("bash");
+    });
+
+    it("keeps target-less data-tool rules (matching how the inbox records them)", () => {
+      const { rules, dropped } = sanitizeStandingRules([
+        { tool: "create_task" },
+        { tool: "todowrite" },
+      ]);
+      expect(rules).toEqual([{ tool: "create_task" }, { tool: "todowrite" }]);
+      expect(dropped).toEqual([]);
+    });
+
+    it("drops malformed / unknown entries", () => {
+      const { rules, dropped } = sanitizeStandingRules([
+        null,
+        42,
+        { target: "no-tool" },
+        { tool: "   " },
+        { tool: "bash", target: "npm test" },
+      ]);
+      expect(rules).toEqual([{ tool: "bash", target: "npm test" }]);
+      expect(dropped.length).toBe(4);
+    });
+
+    it("trims rule targets", () => {
+      const { rules } = sanitizeStandingRules([{ tool: "run_script", target: "  gen.js  " }]);
+      expect(rules).toEqual([{ tool: "run_script", target: "gen.js" }]);
+    });
+
+    it("returns empty rules for non-array input", () => {
+      expect(sanitizeStandingRules(undefined)).toEqual({ rules: [], dropped: [] });
+      expect(sanitizeStandingRules({ tool: "run_script" })).toEqual({ rules: [], dropped: [] });
     });
   });
 });

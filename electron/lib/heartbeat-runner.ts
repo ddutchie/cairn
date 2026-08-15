@@ -85,6 +85,41 @@ function projectNameOf(db: Database.Database, projectId: string | null): string 
 }
 
 /**
+ * Fail a run outside the normal completion path (a throw inside runAutomation,
+ * or a connector-tool assembly failure). Sets the terminal error status, writes
+ * a minimal run-log.json when a run folder exists so a crashed run stays
+ * inspectable, and emits the `automation:run` `finished` event so the run
+ * watcher never spins forever. Never throws.
+ */
+function failRun(ctx: AutomationRunContext, run: AutomationRun, error: string): void {
+  const { db } = ctx;
+  const finishedAt = new Date().toISOString();
+  try {
+    updateAutomationRun(db, run.id, { status: "error", error, finishedAt });
+  } catch { /* best-effort */ }
+  try {
+    const row = getAutomationRunById(db, run.id);
+    if (row?.runDir) {
+      writeRunLog(row.runDir, {
+        automationId: row.automationId,
+        runId: run.id,
+        startedAt: row.startedAt ?? finishedAt,
+        recipe: "",
+        status: "error",
+        error,
+        finishedAt,
+        tools: [],
+        tokens: "",
+        thoughts: "",
+      });
+    }
+  } catch { /* best-effort */ }
+  try {
+    ctx.send?.("automation:run", { event: "finished", automationId: run.automationId, runId: run.id, exhausted: false, error });
+  } catch { /* best-effort */ }
+}
+
+/**
  * Run an automation immediately ("Run now"), bypassing the scheduler's clock.
  * Applies the same skip-on-overlap guard, creates a run row, and delegates to
  * runAutomation. Returns the created run id (or null when skipped).
@@ -104,14 +139,9 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
     } catch (err) {
       // runAutomation normally sets its own terminal status, but if it throws
       // (e.g. a provider/network failure inside runToolLoop) transition the run
-      // out of running so it doesn't block later runs / report a phantom run.
-      try {
-        updateAutomationRun(db, run.id, {
-          status: "error",
-          error: err instanceof Error ? err.message : String(err),
-          finishedAt: new Date().toISOString(),
-        });
-      } catch { /* ignore */ }
+      // out of running so it doesn't block later runs / report a phantom run,
+      // persist a run-log.json, and emit `finished` so watchers close cleanly.
+      failRun(ctx, run, err instanceof Error ? err.message : String(err));
     }
   })().catch(() => {});
   return runId;
@@ -303,11 +333,7 @@ export async function runAutomation(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[heartbeat] failed to assemble external tools:", err);
-      updateAutomationRun(db, run.id, {
-        status: "error",
-        finishedAt: new Date().toISOString(),
-        error: `Failed to load required connector tools: ${message}`,
-      });
+      failRun(ctx, run, `Failed to load required connector tools: ${message}`);
       insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, `Failed to load required connector tools: ${message}`);
       return;
     }
@@ -364,11 +390,16 @@ export async function runAutomation(
       last.error = error;
     }
   };
+  // Write the running transcript to disk after each completed tool, so a crash
+  // mid-run (or an app quit) keeps the transcript-so-far instead of losing it —
+  // startup recovery can then show exactly how far the run got. Cheap enough at
+  // per-tool granularity (synchronous, small JSON).
+  const flushLog = () => { if (runDir) writeRunLog(runDir, log); };
   const finaliseLog = (status: string, error?: string | null) => {
     log.status = status;
     log.error = error ?? null;
     log.finishedAt = new Date().toISOString();
-    if (runDir) writeRunLog(runDir, log);
+    flushLog();
   };
 
   // Collect notes/cards the run CREATED or CHANGED so they can be surfaced as
@@ -434,6 +465,7 @@ export async function runAutomation(
     (e) => {                       // emitToolCallDone — collect artifacts + stream result
       recordArtifact(e.tool, e.cairnRef);
       logToolDone(e.tool, e.ok, e.output, e.error);
+      flushLog(); // incremental transcript — survives a crash mid-run
       emitRun("toolDone", { tool: e.tool, ok: e.ok, output: e.output, error: e.error, cairnRef: e.cairnRef });
     },
     (delta) => emitRun("token", { delta }),   // onToken (live stream; final text lands in the log)
@@ -441,7 +473,7 @@ export async function runAutomation(
     extraTools,                      // connector-aware recipes get their attached external tools
     undefined,                       // toolsOverride
     undefined,                       // argMutator
-    makeApprovalGate(db, run, automation),
+    makeApprovalGate(db, run, automation, abortCtrl.signal),
     runScript,                       // run_script executor (scripts/ + run cwd + out/)
     writeRunFileHandler,             // write_run_file executor (agent→script data bridge)
     deliverFileHandler,              // deliver_file executor (out/ → attachments for the note)
@@ -452,7 +484,7 @@ export async function runAutomation(
   if (result.exhausted) {
     finaliseLog("exhausted", "Reached the step limit; run may be incomplete.");
     updateAutomationRun(db, run.id, {
-      status: "done",
+      status: "exhausted",
       resultNoteId: null,
       error: "Reached the step limit; run may be incomplete.",
       scratch: finalScratch(),

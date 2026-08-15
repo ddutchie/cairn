@@ -38,10 +38,10 @@ import {
 } from "../db/automation-queries";
 import { runAutomationNow } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
-import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { recordStandingAllowance } from "../lib/automation-approval";
+import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog } from "../lib/automation-folder";
-import { applyManifestEnv, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
+import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
 
@@ -787,18 +787,12 @@ export function registerDbHandlers(ctx: DbContext): void {
     const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
     const manifest = readAutomationManifest(folder);
     if (!manifest) return { error: "No manifest.json in the automation folder — run Develop first." };
-    const patch: Partial<Omit<AutomationInput, "workspaceId">> = {};
-    if (typeof manifest.instructions === "string" && manifest.instructions.trim()) {
-      patch.instructions = manifest.instructions.trim();
-    }
-    if (Array.isArray(manifest.env)) {
-      patch.env = applyManifestEnv(a.env ?? [], manifest.env);
-    }
-    if (Array.isArray(manifest.standingRules)) {
-      patch.standingRules = manifest.standingRules;
-    }
+    // Map the manifest onto the row: instructions / env / standing rules
+    // (sanitised — target-less run_script/bash rules are dropped) / requires.
+    const { patch, dropped } = applyManifestToAutomation(a, manifest);
     const updated = updateAutomation(ctx.db, id, patch);
-    return updated ?? { error: "Failed to sync automation from manifest." };
+    if (!updated) return { error: "Failed to sync automation from manifest." };
+    return { automation: updated, dropped };
   }));
 
   // ── Automation env vars ──────────────────────────────────────────────────

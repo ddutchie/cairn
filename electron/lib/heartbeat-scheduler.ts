@@ -26,6 +26,8 @@ import {
   type Automation,
   type AutomationRun,
 } from "../db/automation-queries";
+import { expireStaleApprovals } from "../db/approval-queries";
+import { APPROVAL_TIMEOUT_MS } from "./automation-approval";
 
 export interface HeartbeatSchedulerOptions {
   /** Live DB accessor — re-read every tick so workspace reinitialise is transparent. */
@@ -96,6 +98,12 @@ export class HeartbeatScheduler {
     const db = this.opts.dbGetter();
     if (!db) return;
     const nowIso = new Date(this.opts.now?.() ?? Date.now()).toISOString();
+    // Fail-closed sweep: any pending approval parked longer than the approval
+    // timeout (e.g. by a run whose process died before it could be resolved) is
+    // marked expired so it doesn't sit in the inbox forever.
+    try {
+      expireStaleApprovals(db, new Date(Date.now() - APPROVAL_TIMEOUT_MS).toISOString());
+    } catch { /* best-effort */ }
     const due = listDueAutomations(db, nowIso);
     for (const automation of due) {
       try {
