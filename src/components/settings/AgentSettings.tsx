@@ -541,7 +541,7 @@ export function AgentSettings() {
           icon="thermometer"
           value={temperatureAgent ?? 0.3}
           onChange={(v) => updateAgent({ temperature: v })}
-          presets={[0.1, 0.3, 0.5, 0.7]}
+          presets={[0.1, 0.3, 0.5, 0.7, 1.0]}
           min={0}
           max={1}
           step={0.05}

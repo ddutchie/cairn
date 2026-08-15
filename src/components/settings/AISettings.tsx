@@ -220,7 +220,7 @@ export function AISettings() {
               icon="thermometer"
               value={aiConfig.temperature ?? 0.3}
               onChange={(v) => updateAIConfig({ temperature: v })}
-              presets={[0.1, 0.3, 0.5, 0.7]}
+              presets={[0.1, 0.3, 0.5, 0.7, 1.0]}
               min={0}
               max={1}
               step={0.05}

@@ -10,6 +10,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { Toggle } from "@/components/ui/toggle";
 
 const MAX_STEPS_PRESETS = [10, 20, 30, 50, 1000] as const;
+const TEMPERATURE_PRESETS = [0.1, 0.3, 0.5, 0.7, 1.0] as const;
 
 /**
  * In-chat quick-settings popover. Surfaces the handful of AI settings people
@@ -104,33 +105,44 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
           </div>
 
           {/* Temperature */}
-          <label className="block space-y-1">
+          <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[0.714rem] text-[var(--text-secondary)]">Temperature</span>
-              {temperatureAuto ? (
-                <button
-                  onClick={() => setAIConfig({ temperature: 0.3 })}
-                  disabled={disabled}
-                  title="Auto — the model uses its own default. Tap to set 0.3."
-                  className="text-[0.643rem] text-[var(--accent)] hover:underline disabled:opacity-50"
-                >
-                  Auto
-                </button>
-              ) : (
-                <span className="text-[0.643rem] text-[var(--text-tertiary)]">{temperature.toFixed(2)}</span>
-              )}
+              <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+                {temperatureAuto ? "Auto (model default)" : temperature.toFixed(2)}
+              </span>
             </div>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={temperature}
-              onChange={(e) => setAIConfig({ temperature: parseFloat(e.target.value) })}
-              disabled={disabled}
-              className="w-full accent-[var(--accent)] disabled:opacity-50"
-            />
-          </label>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setAIConfig({ temperature: undefined })}
+                disabled={disabled}
+                title="Auto — no temperature is sent; the model uses its own default."
+                className={cn(
+                  "flex-1 px-1 py-0.5 text-[0.643rem] rounded border transition-colors disabled:opacity-50",
+                  temperatureAuto
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
+                )}
+              >
+                Auto
+              </button>
+              {TEMPERATURE_PRESETS.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setAIConfig({ temperature: n })}
+                  disabled={disabled}
+                  className={cn(
+                    "flex-1 px-1 py-0.5 text-[0.643rem] rounded border transition-colors disabled:opacity-50",
+                    !temperatureAuto && temperature === n
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Subagents (cloud only) */}
           {subagentsSupported && (
