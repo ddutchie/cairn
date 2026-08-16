@@ -25,7 +25,8 @@ import type { OpenAIConfig } from "../ai-config";
 import { contextLimitForModel } from "../models-dev";
 import { estimatePromptTokens } from "../token-breakdown";
 import { countTextTokens } from "../tokens";
-import { mapMessage, mapTools, makeOpenAIProvider } from "./openai";
+import { mapMessage, mapTools } from "./openai-body";
+import { makeOpenAIProvider } from "./openai";
 import type { AiTool, ChatProvider, ChatUsage, StreamEvent, UIMessage } from "./types";
 
 interface ToolAccum {

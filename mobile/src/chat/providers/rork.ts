@@ -17,7 +17,7 @@
 import { fetch as expoFetch } from "expo/fetch";
 import { countTextTokens } from "../tokens";
 import { estimatePromptTokens } from "../token-breakdown";
-import { newRunId, type AiTool, type ChatProvider, type ChatUsage, type StreamEvent, type UIMessage } from "./types";
+import { newRunId, type AiTool, type ChatProvider, type ChatUsage, type StreamEvent, type StreamOptions, type UIMessage } from "./types";
 
 /** The build-time-injected Rork base URL, or null if not configured. */
 export function rorkBaseUrl(): string | null {
@@ -40,6 +40,7 @@ async function* streamRork(
   messages: UIMessage[],
   tools: Record<string, AiTool>,
   signal?: AbortSignal,
+  _options?: StreamOptions,
 ): AsyncGenerator<StreamEvent> {
   const base = rorkBaseUrl();
   if (!base) {

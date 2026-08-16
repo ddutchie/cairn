@@ -21,15 +21,15 @@ import {
 import { toolsForAgent, allToolMap } from "./tools";
 import { computeBreakdown, scaleBreakdown } from "./token-breakdown";
 import { MAX_PERSONALITY_PROMPT_CHARS } from "@cairn/shared/chat/registry-schema";
-import { getChatPersonalityId } from "./ai-config";
+import { getChatPersonalityId, getChatMaxSteps, getChatTemperature } from "./ai-config";
 import { getCachedPersonalitiesManifest } from "./personalities-registry";
 
 // Max model round-trips per user turn. Each turn is one model call; a turn that
 // requests tools runs them all, then loops for the model's follow-up (which sees
 // the outputs). Introspective research chains many single-tool reads (get note →
-// search → get note range → …), so this must be generous — matched to the
+// search → get note range → …), so this must be generous. Read per-run so a
+// change in AI settings applies to the next chat. DEFAULT_MAX_STEPS mirrors the
 // desktop default (DEFAULT_AGENT_CONFIG.maxSteps in src/lib/constants.ts).
-const MAX_TURNS = 30;
 
 export interface AgentEvent {
   type: "text-delta" | "reasoning-delta" | "reasoning-summary-delta" | "tool-start" | "tool" | "usage" | "final" | "error";
@@ -191,7 +191,13 @@ export async function runAgent(
     return msg;
   }
 
-  for (let turn = 0; turn < MAX_TURNS; turn++) {
+  // Model behavior knobs from AI settings (applied this run so a change made
+  // mid-session takes effect on the next send). Temperature is forwarded to the
+  // provider (omitted when Auto); maxSteps bounds the tool loop here.
+  const maxSteps = getChatMaxSteps();
+  const streamOptions = { temperature: getChatTemperature(), maxSteps };
+
+  for (let turn = 0; turn < maxSteps; turn++) {
     // Build the assistant message we're producing this turn.
     const assistant: UIMessage = { id: msgId(), role: "assistant", parts: [] };
     let text = "";
@@ -207,7 +213,7 @@ export async function runAgent(
     usage = undefined;
 
     try {
-      for await (const ev of provider.stream(conversation, tools, signal)) {
+      for await (const ev of provider.stream(conversation, tools, signal, streamOptions)) {
         if (ev.type === "text-delta" && typeof (ev as { delta?: string }).delta === "string") {
           const delta = (ev as { delta: string }).delta;
           text += delta;
@@ -334,7 +340,7 @@ export async function runAgent(
   // limit MUST be reported even if an earlier turn produced partial text — a
   // bare `finalText || …` would silently swallow the notice and pass the
   // half-finished answer off as complete.
-  const limitNote = `I reached the maximum of ${MAX_TURNS} steps. Any changes made have been saved — try a more focused request.`;
+  const limitNote = `I reached the maximum of ${maxSteps} steps. Any changes made have been saved — try a more focused request.`;
   const msg = finalText ? `${finalText}\n\n${limitNote}` : limitNote;
   onEvent?.({ type: "final", text: msg, reasoning: reasoning || undefined, reasoningSummary: reasoningSummary || undefined, usage: withBreakdown(usage) });
   return msg;
@@ -354,7 +360,8 @@ export async function runTextAction(
   const conversation: UIMessage[] = [userMessage(prompt)];
   let text = "";
   const provider = await resolveProvider();
-  for await (const ev of provider.stream(conversation, {}, signal)) {
+  const streamOptions = { temperature: getChatTemperature() };
+  for await (const ev of provider.stream(conversation, {}, signal, streamOptions)) {
     if (ev.type === "text-delta" && typeof (ev as { delta?: string }).delta === "string") {
       const delta = (ev as { delta: string }).delta;
       text += delta;

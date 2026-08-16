@@ -47,6 +47,7 @@ import {
   type ChatProvider,
   type FilePart,
   type StreamEvent,
+  type StreamOptions,
   type TextPart,
   type ToolPart,
   type UIMessage,
@@ -388,6 +389,7 @@ function makeStreamApple(server: boolean) {
     messages: UIMessage[],
     tools: Record<string, AiTool>,
     signal?: AbortSignal,
+    _options?: StreamOptions,
   ): AsyncGenerator<StreamEvent> {
     if (!AppleLlm) {
       throw new AppleLLMError(

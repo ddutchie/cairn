@@ -132,6 +132,18 @@ export interface ChatUsage {
   cacheCreationTokens?: number;
 }
 
+/**
+ * Per-run model behaviour knobs threaded from the settings UI down to the
+ * provider. All optional — absent = provider/model default (matches desktop's
+ * "Auto" semantics: omit the field rather than send a value).
+ */
+export interface StreamOptions {
+  /** Sampling temperature 0–1. Absent = omit the field (model default). */
+  temperature?: number;
+  /** Max model round-trips per user turn (agent loop budget). */
+  maxSteps?: number;
+}
+
 /** A provider streams normalised events for a turn. */
 export interface ChatProvider {
   /** Human label for diagnostics / the settings UI. */
@@ -141,6 +153,7 @@ export interface ChatProvider {
     messages: UIMessage[],
     tools: Record<string, AiTool>,
     signal?: AbortSignal,
+    options?: StreamOptions,
   ): AsyncGenerator<StreamEvent>;
 }
 

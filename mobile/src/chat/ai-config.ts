@@ -55,6 +55,9 @@ export type ProviderPref = "rork" | "openai" | "apple";
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 export const DEFAULT_OPENAI_MODEL = "gpt-5.6-luna";
 
+/** Default max model round-trips per user turn (mirrors desktop DEFAULT_AGENT_CONFIG.maxSteps). */
+export const DEFAULT_MAX_STEPS = 30;
+
 export interface OpenAIConfig {
   baseUrl: string;
   model: string;
@@ -410,6 +413,39 @@ export function setOpenAIEndpoint(baseUrl: string, model: string, contextLimit?:
   setSetting(KEY_BASE_URL, baseUrl.trim());
   setSetting(KEY_MODEL, model.trim());
   setSetting(KEY_CONTEXT, contextLimit && contextLimit > 0 ? String(Math.floor(contextLimit)) : "");
+}
+
+// ── Model behavior knobs (temperature / max steps) ─────────────────────────────
+// Device-global, provider-independent (desktop parity: the chat quick-settings
+// apply to whatever backend is active). Absent = "Auto" (omit / model default).
+
+const KEY_TEMPERATURE = "ai.model.temperature"; // 0–1, or absent = Auto
+const KEY_MAX_STEPS = "ai.model.maxSteps"; // model round-trips per user turn
+
+/** The user's sampling temperature (0–1), or undefined for Auto (omit). */
+export function getChatTemperature(): number | undefined {
+  const raw = getSetting(KEY_TEMPERATURE)?.trim();
+  if (!raw) return undefined;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : undefined;
+}
+
+/** Persist the sampling temperature; pass undefined for Auto (omit the field). */
+export function setChatTemperature(value: number | undefined): void {
+  setSetting(KEY_TEMPERATURE, value != null && value >= 0 && value <= 1 ? String(value) : "");
+}
+
+/** The max model round-trips per user turn (default 30, desktop parity). */
+export function getChatMaxSteps(): number {
+  const raw = getSetting(KEY_MAX_STEPS)?.trim();
+  if (!raw) return DEFAULT_MAX_STEPS;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_STEPS;
+}
+
+/** Persist the max steps (must be ≥1). */
+export function setChatMaxSteps(value: number): void {
+  setSetting(KEY_MAX_STEPS, value >= 1 ? String(Math.floor(value)) : "");
 }
 
 // ── Per-endpoint model-list cache ─────────────────────────────────────────────
