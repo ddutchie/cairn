@@ -604,7 +604,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   }, []);
 
   return (
-    <div className="flex flex-1 flex-col min-h-0 overflow-hidden bg-[var(--surface)]">
+    <div className="chat-themed flex flex-1 flex-col min-h-0 overflow-hidden">
       {/* Sub-header / toolbar */}
       <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
         {popoutMode ? (

@@ -10,6 +10,7 @@ import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
+import { resolveChatTheme, chatThemeFontStack, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -417,6 +418,46 @@ export function applyFontFamily(fontId: FontFamilyId): void {
   document.documentElement.style.setProperty("--font-note", preset.cssFamily);
 }
 
+// ── Chat theme ────────────────────────────────────────────────────────────────
+
+export const CHAT_THEME_KEY = "chatTheme";
+
+/**
+ * Apply the chat theme by preset id. Sets the chat CSS vars + a `data-chat-theme`
+ * attribute on `<html>` so the chat surface (panel bg, bubbles, composer, chat
+ * font) switches look while the rest of the app stays on global tokens.
+ * `extras` overlays fetched community themes for id resolution.
+ *
+ * The mode (dark/light) is read from the live `data-theme` attribute (same as
+ * `applyAccent`), so it must be re-run after `applyTheme` flips modes.
+ */
+export function applyChatTheme(themeId: string, extras: ChatThemePreset[] = []): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  const preset = resolveChatTheme(themeId, extras);
+  const mode: "dark" | "light" = root.getAttribute("data-theme") === "light" ? "light" : "dark";
+  const v = preset[mode];
+
+  root.style.setProperty("--chat-bg", v.bg);
+  root.style.setProperty("--chat-user", v.userBubble);
+  root.style.setProperty("--chat-user-fg", v.userBubbleFg);
+  root.style.setProperty("--chat-ai", v.aiBubble);
+  root.style.setProperty("--chat-font", chatThemeFontStack(preset));
+  if (v.gradient) {
+    root.style.setProperty("--chat-bg-from", v.gradient[0]);
+    root.style.setProperty("--chat-bg-to", v.gradient[1]);
+  } else {
+    root.style.removeProperty("--chat-bg-from");
+    root.style.removeProperty("--chat-bg-to");
+  }
+  if (v.aiText) root.style.setProperty("--chat-ai-text", v.aiText);
+  else root.style.removeProperty("--chat-ai-text");
+
+  // data attribute drives the gradient/pattern/bubble CSS in globals.css.
+  root.setAttribute("data-chat-bgtype", preset.bgType);
+  root.setAttribute("data-chat-bubble", preset.bubbleStyle);
+}
+
 // ── Accent colour ─────────────────────────────────────────────────────────────
 
 export const ACCENT_KEY = "accentColor";
@@ -461,6 +502,8 @@ export function applyTheme(theme: Theme): void {
       document.documentElement.setAttribute("data-theme", e.matches ? "light" : "dark");
       // Accent variants differ per theme — re-resolve when the OS flips.
       applyAccent(storage.get<string>(ACCENT_KEY) ?? DEFAULT_ACCENT_ID);
+      // Chat theme palettes are per-mode too.
+      applyChatTheme(storage.get<string>(CHAT_THEME_KEY) ?? DEFAULT_CHAT_THEME_ID);
     };
     mq.addEventListener("change", handler);
     _systemMq = mq;
@@ -472,6 +515,8 @@ export function applyTheme(theme: Theme): void {
 
   // The active data-theme just changed; re-resolve the accent trio for it.
   applyAccent(storage.get<string>(ACCENT_KEY) ?? DEFAULT_ACCENT_ID);
+  // ...and the chat-theme palette for the new mode.
+  applyChatTheme(storage.get<string>(CHAT_THEME_KEY) ?? DEFAULT_CHAT_THEME_ID);
 }
 
 // ── Slice interface ───────────────────────────────────────────────────────────
@@ -541,6 +586,10 @@ export interface UISlice extends AppUIState {
   // Note-text font family
   fontFamily: FontFamilyId;
   setFontFamily: (fontId: FontFamilyId) => void;
+
+  // Chat theme (id string — may be a built-in or a community theme id)
+  chatTheme: string;
+  setChatTheme: (themeId: string) => void;
 
   // View visibility
   hiddenViews: Set<ToggleableView>;
@@ -655,6 +704,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   accentColor: DEFAULT_ACCENT_ID,
   fontScale: DEFAULT_FONT_SCALE, // 1.2 = M (~16.8px)
   fontFamily: DEFAULT_FONT_ID, // note-text font: sans / serif / mono
+  chatTheme: DEFAULT_CHAT_THEME_ID, // chat theme: built-in or community id
   hiddenViews: new Set<ToggleableView>(),
   favoriteModels: new Set<string>(),
   chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
@@ -963,6 +1013,13 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     set({ fontFamily: fontId });
     storage.set(FONT_FAMILY_KEY, fontId);
     applyFontFamily(fontId);
+  },
+
+  // ── Chat theme ────────────────────────────────
+  setChatTheme(themeId: string) {
+    set({ chatTheme: themeId });
+    storage.set(CHAT_THEME_KEY, themeId);
+    applyChatTheme(themeId);
   },
 
   // ── Chat panel width ───────────────────────────

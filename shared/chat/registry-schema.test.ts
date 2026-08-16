@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseManifest, parseProvidersManifest, parseAutomationsManifest } from "./registry-schema";
+import { parseManifest, parseProvidersManifest, parseAutomationsManifest, parseChatThemesManifest } from "./registry-schema";
 
 /**
  * Minimal envelope for a services-only manifest. parseManifest drops individual
@@ -302,5 +302,68 @@ describe("registry-schema pre-registered-client flags", () => {
     expect(m.services).toHaveLength(1);
     expect(m.services[0].definition.oauth?.clientId).toBe("123.456");
     expect(m.services[0].definition.oauth?.redirectUri).toBe("http://127.0.0.1:48123/callback");
+  });
+});
+
+describe("registry-schema chat themes manifest", () => {
+  const validTheme = {
+    id: "ocean",
+    author: "cairn",
+    version: "1.0.0",
+    tags: ["chat", "theme"],
+    blurb: "Deep teal gradient.",
+    definition: {
+      name: "Ocean",
+      description: "Teal→blue gradient.",
+      font: "sans",
+      bgType: "gradient",
+      bubbleStyle: "glass",
+      dark: {
+        bg: "#071318",
+        gradient: ["#071318", "#0a1f33"],
+        userBubble: "#2dd4bf",
+        userBubbleFg: "#04231f",
+        aiBubble: "rgba(20,52,66,0.75)",
+      },
+      light: {
+        bg: "#eefaf9",
+        gradient: ["#eefaf9", "#e6f1fc"],
+        userBubble: "#0a7568",
+        userBubbleFg: "#ffffff",
+        aiBubble: "rgba(255,255,255,0.85)",
+      },
+    },
+  };
+
+  function manifestWith(themes: unknown[]) {
+    return { version: 1, updatedAt: "2026-01-01T00:00:00.000Z", themes };
+  }
+
+  it("parses a valid themes manifest", () => {
+    const m = parseChatThemesManifest(manifestWith([validTheme]));
+    expect(m.themes).toHaveLength(1);
+    expect(m.themes[0].id).toBe("ocean");
+    expect(m.themes[0].definition.font).toBe("sans");
+    expect(m.themes[0].definition.dark.gradient).toEqual(["#071318", "#0a1f33"]);
+  });
+
+  it("drops a malformed entry without blanking the catalog", () => {
+    const bad = { ...validTheme, definition: { ...validTheme.definition, font: "comic-sans" } };
+    const m = parseChatThemesManifest(manifestWith([bad, validTheme]));
+    expect(m.themes).toHaveLength(1);
+    expect(m.themes[0].id).toBe("ocean");
+  });
+
+  it("rejects an invalid envelope", () => {
+    expect(() => parseChatThemesManifest({ version: "x" })).toThrow();
+  });
+
+  it("enforces dark+light presence", () => {
+    const missingLight = {
+      ...validTheme,
+      definition: { ...validTheme.definition, light: undefined },
+    };
+    const m = parseChatThemesManifest(manifestWith([missingLight]));
+    expect(m.themes).toHaveLength(0);
   });
 });

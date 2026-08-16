@@ -102,6 +102,17 @@
      presets from shared/ui/fonts.ts). Defaults to the UI sans stack so the
      editor + prose match the chrome until the user picks a note font. */
   --font-note: var(--font-sans);
+  /* Chat theme tokens — set by applyChatTheme() (shared/ui/chat-themes.ts).
+     Defaults = the "default" preset so an unset theme renders exactly as today:
+     surface bg, accent user bubble, surface-2 AI bubble. */
+  --chat-bg: var(--surface);
+  --chat-bg-from: var(--surface);
+  --chat-bg-to: var(--surface);
+  --chat-user: var(--accent);
+  --chat-user-fg: var(--accent-fg);
+  --chat-ai: var(--surface-2);
+  --chat-ai-text: var(--text-secondary);
+  --chat-font: var(--font-sans);
 }
 
 *, *::before, *::after {
@@ -518,6 +529,56 @@ select:focus {
 [data-md-preview-portal] .prose-cairn h3 { font-size: calc(1rem * var(--preview-scale)); }
 [data-md-preview-portal] .prose-cairn table { font-size: calc(0.8rem * var(--preview-scale)); }
 [data-md-preview-portal] .prose-cairn pre code { font-size: calc(0.8rem * var(--preview-scale)); }
+
+/* ── Chat theme ───────────────────────────────────────────────────────────── */
+/* The chat surface (panel + bubbles + composer + chat message text) is themed
+   independently of the global tokens via the --chat-* vars + data-chat-* attrs
+   set by applyChatTheme(). Defaults (--chat-* falling back to surface/accent)
+   reproduce today's rendering; non-default themes swap the vars.
+
+   The .chat-themed surface scopes the overrides so nothing outside the chat
+   panel is affected. Bubbles use their dedicated var; the message-area bg is
+   a gradient when the theme declares one. */
+[data-chat-bgtype="gradient"] .chat-themed {
+  background: linear-gradient(160deg, var(--chat-bg-from), var(--chat-bg-to));
+}
+[data-chat-bgtype="pattern"] .chat-themed {
+  background-color: var(--chat-bg);
+  background-image:
+    repeating-linear-gradient(0deg, color-mix(in srgb, #ffffff 4%, transparent) 0 1px, transparent 1px 4px);
+}
+.chat-themed { background: var(--chat-bg); font-family: var(--chat-font); }
+
+.chat-bubble-user {
+  background: var(--chat-user);
+  color: var(--chat-user-fg);
+}
+.chat-bubble-ai {
+  background: var(--chat-ai);
+  color: var(--chat-ai-text);
+  border: 1px solid var(--border);
+}
+/* Outlined bubble style: transparent fill, tinted borders (Terminal / Forest). */
+[data-chat-bubble="outlined"] .chat-bubble-ai {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--chat-ai-text) 45%, transparent);
+  color: var(--chat-ai-text);
+}
+[data-chat-bubble="outlined"] .chat-bubble-user {
+  background: color-mix(in srgb, var(--chat-user) 18%, transparent);
+  color: var(--chat-user-fg);
+  border: 1px solid color-mix(in srgb, var(--chat-user) 60%, transparent);
+}
+/* Glass bubble style: translucent fills (Midnight / Ocean). */
+[data-chat-bubble="glass"] .chat-bubble-ai {
+  background: var(--chat-ai);
+  border-color: color-mix(in srgb, #ffffff 25%, transparent);
+  backdrop-filter: blur(8px);
+}
+[data-chat-bubble="glass"] .chat-bubble-user {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--chat-user) 82%, #ffffff), var(--chat-user));
+  border: 1px solid color-mix(in srgb, #ffffff 25%, transparent);
+}
 
 /* ── CodeMirror 6 search panel ───────────────────────────────────────────── */
 /* Global overrides — EditorView.theme() alone can lose to CM6's base sheet. */

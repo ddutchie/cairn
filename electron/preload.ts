@@ -122,6 +122,23 @@ interface PersonalitiesManifest {
 interface PersonalitiesFetchResult {
   manifest: PersonalitiesManifest; fromCache: boolean; cachedAt?: string; error?: string;
 }
+interface RegistryThemeMode {
+  bg: string; gradient?: [string, string]; userBubble: string; userBubbleFg: string;
+  aiBubble: string; aiText?: string;
+}
+interface RegistryThemeEntry extends RegistryEntryMeta {
+  definition: {
+    name: string; description?: string; font: "sans" | "serif" | "mono";
+    bgType: "solid" | "gradient" | "pattern"; bubbleStyle: "filled" | "glass" | "outlined";
+    dark: RegistryThemeMode; light: RegistryThemeMode;
+  };
+}
+interface ChatThemesManifest {
+  version: number; updatedAt: string; themes: RegistryThemeEntry[];
+}
+interface ChatThemesFetchResult {
+  manifest: ChatThemesManifest; fromCache: boolean; cachedAt?: string; error?: string;
+}
 // ── Inline types for the codebase index / Architecture tab ──────────────────
 interface CodebaseSymbol {
   id: string; file_id: string; name: string; kind: string; line: number;
@@ -958,6 +975,10 @@ const api = {
     fetchPersonalities: () => invoke<PersonalitiesFetchResult>("registry:fetchPersonalities"),
     /** Force a network refresh of the personalities manifest. */
     refreshPersonalities: () => invoke<PersonalitiesFetchResult>("registry:refreshPersonalities"),
+    /** Community chat themes (separate themes.json manifest). Cache-first. */
+    fetchChatThemes: () => invoke<ChatThemesFetchResult>("registry:fetchChatThemes"),
+    /** Force a network refresh of the chat themes manifest. */
+    refreshChatThemes: () => invoke<ChatThemesFetchResult>("registry:refreshChatThemes"),
   },
 
   // ── Git operations (Agent Git tab) ────────────

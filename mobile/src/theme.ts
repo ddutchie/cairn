@@ -12,6 +12,7 @@ import { useSyncExternalStore, useMemo } from "react";
 import { getMeta, setMeta } from "@/db";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID, ACCENT_PRESETS, type AccentPreset } from "@cairn/shared/ui/accents";
 import { FONT_PRESETS, resolveFontPreset, type FontPreset } from "@cairn/shared/ui/fonts";
+import { resolveChatTheme, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "@cairn/shared/ui/chat-themes";
 
 export interface Theme {
   background: string;
@@ -36,6 +37,18 @@ export interface Theme {
   nodeProject: string;
   /** Modal/sheet backdrop dimming colour (already includes its own alpha). */
   scrim: string;
+  /** Chat surface tokens (from the active chat theme). */
+  chatBg: string;
+  /** Gradient stops for the chat background when the theme uses one. */
+  chatGradient?: [string, string];
+  chatBgType: "solid" | "gradient" | "pattern";
+  chatBubbleStyle: "filled" | "glass" | "outlined";
+  chatUser: string;
+  chatUserFg: string;
+  chatAi: string;
+  chatAiText: string;
+  /** RN font-family string for chat text (theme's bundled font). */
+  chatFont: string | undefined;
 }
 
 export const darkTheme: Theme = {
@@ -58,6 +71,14 @@ export const darkTheme: Theme = {
   info: "#60a5fa",
   nodeProject: "#a78bfa",
   scrim: "rgba(0,0,0,0.5)",
+  chatBg: "#141414",
+  chatBgType: "solid",
+  chatBubbleStyle: "filled",
+  chatUser: "#8faf6f",
+  chatUserFg: "#131c0b",
+  chatAi: "#1a1a1a",
+  chatAiText: "#9e9a94",
+  chatFont: undefined,
 };
 
 export const lightTheme: Theme = {
@@ -84,6 +105,14 @@ export const lightTheme: Theme = {
   info: "#2563eb",
   nodeProject: "#7c5cd6",
   scrim: "rgba(0,0,0,0.4)",
+  chatBg: "#ffffff",
+  chatBgType: "solid",
+  chatBubbleStyle: "filled",
+  chatUser: "#5c7a3f",
+  chatUserFg: "#ffffff",
+  chatAi: "#f0eeeb",
+  chatAiText: "#4a4744",
+  chatFont: undefined,
 };
 
 /** Priority colours — re-exported from shared so desktop + mobile match. */
@@ -232,15 +261,17 @@ export const hasTabBarSearchField =
 
 
 /** Returns the theme for the current system colour scheme, with the user's
- *  chosen accent preset overlaid. Reactive to both the system scheme and
- *  in-app accent changes. */
+ *  chosen accent preset + chat theme overlaid. Reactive to the system scheme
+ *  and in-app accent/theme changes. */
 export function useTheme(): Theme {
   const scheme = useColorScheme();
   const accentId = useAccent();
+  const chatThemeId = useChatTheme();
   return useMemo(() => {
     const base = scheme === "light" ? lightTheme : darkTheme;
-    return applyAccentToTheme(base, accentId, scheme === "light");
-  }, [scheme, accentId]);
+    const withAccent = applyAccentToTheme(base, accentId, scheme === "light");
+    return applyChatThemeToTheme(withAccent, chatThemeId, scheme === "light");
+  }, [scheme, accentId, chatThemeId]);
 }
 
 /** True when the current system colour scheme is dark (default when unset). */
@@ -364,6 +395,72 @@ export function useFont(): string {
 export function resolveRNFontFamily(fontId: string): string | undefined {
   const preset: FontPreset = resolveFontPreset(fontId);
   return Platform.select(preset.rnFamily) ?? preset.rnFamily.default;
+}
+
+// ── Chat theme (user choice, persisted in the device-global meta DB) ──────────
+
+const CHAT_THEME_META_KEY = "chatTheme";
+
+// Re-exported below so screens (the picker) pull them from "@/theme".
+export { DEFAULT_CHAT_THEME_ID };
+export type { ChatThemePreset };
+
+let _chatThemeId: string | null = null;
+const _chatThemeListeners = new Set<() => void>();
+
+function readChatThemeFromMeta(): string {
+  try {
+    return getMeta(CHAT_THEME_META_KEY) ?? DEFAULT_CHAT_THEME_ID;
+  } catch {
+    return DEFAULT_CHAT_THEME_ID;
+  }
+}
+
+/** Current chat-theme id (cached; reads meta once). */
+export function getChatThemeId(): string {
+  if (_chatThemeId === null) _chatThemeId = readChatThemeFromMeta();
+  return _chatThemeId;
+}
+
+/** Persist + broadcast a new chat-theme id. No-op if unchanged. */
+export function setChatThemeId(id: string): void {
+  const next = resolveChatTheme(id).id; // normalise unknown ids to default
+  if (_chatThemeId === next) return;
+  _chatThemeId = next;
+  try {
+    setMeta(CHAT_THEME_META_KEY, next);
+  } catch {
+    // best-effort; in-memory value still drives the UI this session
+  }
+  for (const l of _chatThemeListeners) l();
+}
+
+function subscribeChatTheme(cb: () => void): () => void {
+  _chatThemeListeners.add(cb);
+  return () => _chatThemeListeners.delete(cb);
+}
+
+/** Reactive hook: the current chat-theme id. */
+export function useChatTheme(): string {
+  return useSyncExternalStore(subscribeChatTheme, getChatThemeId, getChatThemeId);
+}
+
+/** Overlay a chat theme's palette + font onto a theme object. */
+export function applyChatThemeToTheme(base: Theme, themeId: string, isLight: boolean): Theme {
+  const preset: ChatThemePreset = resolveChatTheme(themeId);
+  const v = isLight ? preset.light : preset.dark;
+  return {
+    ...base,
+    chatBg: v.bg,
+    chatGradient: v.gradient,
+    chatBgType: preset.bgType,
+    chatBubbleStyle: preset.bubbleStyle,
+    chatUser: v.userBubble,
+    chatUserFg: v.userBubbleFg,
+    chatAi: v.aiBubble,
+    chatAiText: v.aiText ?? (isLight ? "#4a4744" : "#9e9a94"),
+    chatFont: resolveRNFontFamily(preset.font),
+  };
 }
 
 /**

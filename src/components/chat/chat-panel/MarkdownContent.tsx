@@ -106,29 +106,30 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
     return preprocessMarkdown(content, notes, cards, cwd);
   }, [content, notes, cards, cwd]);
 
-  // The user bubble has an accent background. All text there renders in the
-  // accent-foreground token (`--accent-fg`), which is theme-aware and meets AA
-  // contrast on the accent surface (plain `text-white` fails AA on the dark
-  // accent). Chrome (borders, code/table backgrounds) use accent-fg alpha via
-  // color-mix. Assistant bubbles keep the dark surface tokens.
-  const strongColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
-  const headingColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
-  const listColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-secondary)]";
+  // The user bubble has a themed background. All text there renders in the
+  // bubble's foreground token (`--chat-user-fg`, falling back to the accent-foreground
+  // so the default theme keeps today's behaviour), which is theme-aware and meets
+  // AA contrast on the bubble surface. Chrome (borders, code/table backgrounds)
+  // use bubble-fg alpha via color-mix. Assistant bubbles keep the dark surface tokens.
+  const bubbleFg = "var(--chat-user-fg, var(--accent-fg))";
+  const strongColor = isUser ? `text-[${bubbleFg}]` : "text-[var(--text-primary)]";
+  const headingColor = isUser ? `text-[${bubbleFg}]` : "text-[var(--text-primary)]";
+  const listColor = isUser ? `text-[${bubbleFg}]` : "text-[var(--text-secondary)]";
   const codeClass = isUser
-    ? "bg-[color-mix(in_srgb,var(--accent-fg)_20%,transparent)] text-[var(--accent-fg)]"
+    ? `bg-[color-mix(in_srgb,var(--chat-user-fg,var(--accent-fg))_20%,transparent)] text-[${bubbleFg}]`
     : "bg-[var(--surface-3)] text-[var(--text-primary)]";
   const quoteClass = isUser
-    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)] text-[color-mix(in_srgb,var(--accent-fg)_85%,transparent)]"
+    ? `border-[color-mix(in_srgb,var(--chat-user-fg,var(--accent-fg))_40%,transparent)] text-[color-mix(in_srgb,var(--chat-user-fg,var(--accent-fg))_85%,transparent)]`
     : "border-[var(--accent)] text-[var(--text-tertiary)]";
-  // Table / rule chrome — re-themed against the accent bubble for the user path.
+  // Table / rule chrome — re-themed against the user bubble for the user path.
   const ruleBorder = isUser
-    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
+    ? `border-[color-mix(in_srgb,var(--chat-user-fg,var(--accent-fg))_40%,transparent)]`
     : "border-[var(--border)]";
   const thClass = isUser
-    ? "text-[var(--accent-fg)] bg-[color-mix(in_srgb,var(--accent-fg)_15%,transparent)] border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
+    ? `text-[${bubbleFg}] bg-[color-mix(in_srgb,var(--chat-user-fg,var(--accent-fg))_15%,transparent)] border-[color-mix(in_srgb,var(--chat-user-fg,var(--accent-fg))_40%,transparent)]`
     : "text-[var(--text-primary)] bg-[var(--surface-2)] border-[var(--border)]";
   const tdClass = isUser
-    ? "text-[var(--accent-fg)] border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
+    ? `text-[${bubbleFg}] border-[color-mix(in_srgb,var(--chat-user-fg,var(--accent-fg))_40%,transparent)]`
     : "text-[var(--text-secondary)] border-[var(--border)]";
 
   return (

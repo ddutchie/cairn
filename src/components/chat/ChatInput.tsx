@@ -452,6 +452,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
             disabled={disabled}
             className={cn(
               "flex-1 bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none py-1.5 leading-relaxed resize-none overflow-y-auto max-h-32 disabled:opacity-60",
+              "font-[var(--chat-font)]",
               isOverview ? "text-sm min-h-[36px]" : "text-xs min-h-[32px]"
             )}
           />

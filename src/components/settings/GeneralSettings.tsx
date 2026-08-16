@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { ViewVisibilitySettings } from "./ViewVisibilitySettings";
 import { AccentPicker } from "@/components/ui/accent-picker";
+import { ChatThemePicker } from "@/components/ui/chat-theme-picker";
 import { FONT_PRESETS } from "../../../shared/ui/fonts";
 
 const FONT_SCALE_OPTIONS: { value: FontScale; label: string; description: string }[] = [
@@ -73,6 +74,9 @@ export function GeneralSettings() {
       </SettingsRow>
       <SettingsRow label="Accent color" description="The highlight color used across the app">
         <AccentPicker className="w-48" />
+      </SettingsRow>
+      <SettingsRow label="Chat theme" description="The look of the chat surface — background, bubbles, and chat font">
+        <ChatThemePicker className="w-52" />
       </SettingsRow>
       <SettingsRow label="Font size" description="Scale the UI text up or down">
         <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">

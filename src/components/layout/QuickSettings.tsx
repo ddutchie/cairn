@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
 import { AccentPicker } from "@/components/ui/accent-picker";
+import { ChatThemePicker } from "@/components/ui/chat-theme-picker";
 import { FONT_PRESETS } from "../../../shared/ui/fonts";
 
 // ── Theme options ─────────────────────────────────────────────────────────────
@@ -83,6 +84,14 @@ export function QuickSettings() {
         <DropdownMenuLabel className="mt-2">Accent color</DropdownMenuLabel>
         <div className="px-1 pb-2">
           <AccentPicker variant="grid" className="w-full" />
+        </div>
+
+        <DropdownMenuSeparator />
+
+        {/* Chat theme */}
+        <DropdownMenuLabel className="mt-2">Chat theme</DropdownMenuLabel>
+        <div className="px-1 pb-2">
+          <ChatThemePicker variant="grid" className="w-full" />
         </div>
 
         <DropdownMenuSeparator />

@@ -25,10 +25,11 @@ import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY, applyChatTheme, CHAT_THEME_KEY } from "./slices/ui";
 import type { FontScale, FontFamilyId } from "./slices/ui";
 import { DEFAULT_ACCENT_ID } from "../../shared/ui/accents";
 import { DEFAULT_FONT_ID } from "../../shared/ui/fonts";
+import { DEFAULT_CHAT_THEME_ID } from "../../shared/ui/chat-themes";
 import { createWorkspaceSlice } from "./slices/workspace";
 import type { WorkspaceSlice } from "./slices/workspace";
 import { createNotesSlice } from "./slices/notes";
@@ -235,6 +236,12 @@ function restorePersistedTheme(set: PartialSetter): void {
   const savedFontFamily = storage.get<FontFamilyId>(FONT_FAMILY_KEY);
   set({ fontFamily: savedFontFamily ?? DEFAULT_FONT_ID });
   applyFontFamily(savedFontFamily ?? DEFAULT_FONT_ID);
+
+  // Chat theme: apply the stored theme id (falls back to default). Runs after
+  // theme + accent so applyChatTheme reads the correct data-theme mode.
+  const savedChatTheme = storage.get<string>(CHAT_THEME_KEY);
+  set({ chatTheme: savedChatTheme ?? DEFAULT_CHAT_THEME_ID });
+  applyChatTheme(savedChatTheme ?? DEFAULT_CHAT_THEME_ID);
 }
 
 /**

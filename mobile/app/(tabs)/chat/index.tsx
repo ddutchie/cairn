@@ -9,6 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea } from "react-native-keyboard-controller";
+import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Settings2 } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
@@ -439,7 +440,12 @@ export default function ChatScreen() {
           onPress={toolbarPress(() => router.push("/settings/ai"))}
         />
       </Stack.Toolbar>
-      <View style={{ flex: 1 }}>
+      <LinearGradient
+        colors={t.chatGradient ?? [t.chatBg, t.chatBg]}
+        start={{ x: 0.1, y: 0.1 }}
+        end={{ x: 0.9, y: 0.9 }}
+        style={{ flex: 1 }}
+      >
         {/* Full-height chat scroll: messages scroll BEHIND the sticky composer
             and the translucent native tab bar. KeyboardChatScrollView manages
             the keyboard lift natively via content inset (keyboardLiftBehavior
@@ -546,7 +552,7 @@ export default function ChatScreen() {
           allowImages={allowImages}
           queuedCount={queued.length}
         />
-      </View>
+      </LinearGradient>
     </TabScreen>
   );
 }

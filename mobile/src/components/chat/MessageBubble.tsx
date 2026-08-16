@@ -57,7 +57,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
           ) : isUser ? (
             m.content ? <Text style={styles.userText}>{m.content}</Text> : null
           ) : (
-            <MarkdownView content={m.content} resolveLinks useNoteFont={false} />
+            <MarkdownView content={m.content} resolveLinks useNoteFont={false} fontFamilyOverride={t.chatFont} />
           )}
         </View>
 
@@ -83,9 +83,10 @@ function makeStyles(t: Theme) {
     colUser: { alignItems: "flex-end" },
 
     bubble: { maxWidth: "94%", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14 },
-    aiBubble: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderTopLeftRadius: 4, alignSelf: "flex-start" },
-    userBubble: { backgroundColor: t.accent, borderTopRightRadius: 4, alignSelf: "flex-end" },
-    userText: { ...typeScale.body, lineHeight: 21, color: t.accentFg },
+    aiBubble: { backgroundColor: t.chatAi, borderWidth: 1, borderColor: t.border, borderTopLeftRadius: 4, alignSelf: "flex-start" },
+    userBubble: { backgroundColor: t.chatUser, borderTopRightRadius: 4, alignSelf: "flex-end" },
+    userText: { ...typeScale.body, lineHeight: 21, color: t.chatUserFg },
+    aiText: { ...typeScale.body, lineHeight: 21, color: t.chatAiText },
     bubbleImages: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },
     bubbleImg: { width: 120, height: 120, borderRadius: 8, backgroundColor: t.surface3 },
     copyBtn: { alignSelf: "flex-start", padding: 2, opacity: 0.6 },

@@ -66,6 +66,7 @@ export function MarkdownView({
   onHeadingLayout,
   resolveLinks = false,
   useNoteFont = true,
+  fontFamilyOverride,
 }: {
   content: string;
   /** When provided, task-list checkboxes become interactive. */
@@ -84,11 +85,17 @@ export function MarkdownView({
    *  messages set this false so chat keeps the system font — matching desktop,
    *  where chat bubbles don't use the note font. */
   useNoteFont?: boolean;
+  /** Explicit font-family override — takes precedence over note-font. Used by
+   *  chat bubbles to apply the chat THEME's bundled font. */
+  fontFamilyOverride?: string;
 }) {
   const t = useTheme();
   const router = useRouter();
   const fontId = useFont();
-  const fontFamily = useMemo(() => (useNoteFont ? resolveRNFontFamily(fontId) : undefined), [useNoteFont, fontId]);
+  const fontFamily = useMemo(() => {
+    if (fontFamilyOverride) return fontFamilyOverride;
+    return useNoteFont ? resolveRNFontFamily(fontId) : undefined;
+  }, [fontFamilyOverride, useNoteFont, fontId]);
   const styles = useMemo(() => markdownStyles(t, fontFamily), [t, fontFamily]);
 
   // Resolve a wikilink target: the inner text of [[X]] may be an exact note/card

@@ -263,6 +263,51 @@ export interface PersonalitiesManifest {
   personalities: RegistryPersonalityEntry[];
 }
 
+/**
+ * A community chat theme — a full distinct look for the chat surface (font +
+ * background treatment + bubble style + dark/light palette). Kept in a SEPARATE
+ * manifest (themes.json) so new themes ship without an app update. Rendered
+ * data-driven (CSS vars on desktop, theme fields + LinearGradient on mobile) so
+ * it is pure JSON — no code execution.
+ */
+export interface RegistryThemeEntry extends RegistryEntryMeta {
+  definition: {
+    /** Display name shown in the theme picker. */
+    name: string;
+    /** One line shown in the picker. */
+    description?: string;
+    /** Bundled chat font (one of the fonts.ts preset ids). */
+    font: "sans" | "serif" | "mono";
+    /** Background treatment. */
+    bgType: "solid" | "gradient" | "pattern";
+    /** Bubble style. */
+    bubbleStyle: "filled" | "glass" | "outlined";
+    dark: {
+      bg: string;
+      gradient?: [string, string];
+      userBubble: string;
+      userBubbleFg: string;
+      aiBubble: string;
+      aiText?: string;
+    };
+    light: {
+      bg: string;
+      gradient?: [string, string];
+      userBubble: string;
+      userBubbleFg: string;
+      aiBubble: string;
+      aiText?: string;
+    };
+  };
+}
+
+/** The parsed cairn-community CHAT THEMES manifest (themes.json). */
+export interface ChatThemesManifest {
+  version: number;
+  updatedAt: string;
+  themes: RegistryThemeEntry[];
+}
+
 // ── validation (mirrors cairn-community/schema.json) ────────────────────────
 
 const headers = z.record(z.string(), z.string()).optional();
@@ -544,4 +589,48 @@ export function parsePersonalitiesManifest(raw: unknown): PersonalitiesManifest 
       return r.success ? [r.data] : [];
     }),
   } as PersonalitiesManifest;
+}
+
+// ── chat themes manifest (themes.json) ────────────────────────────────────────
+
+const themeMode = z.object({
+  bg: z.string().min(3).max(32),
+  gradient: z.tuple([z.string().min(3).max(32), z.string().min(3).max(32)]).optional(),
+  userBubble: z.string().min(3).max(32),
+  userBubbleFg: z.string().min(3).max(32),
+  aiBubble: z.string().min(3).max(32),
+  aiText: z.string().min(3).max(32).optional(),
+});
+
+const themeDefinition = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  font: z.enum(["sans", "serif", "mono"]),
+  bgType: z.enum(["solid", "gradient", "pattern"]),
+  bubbleStyle: z.enum(["filled", "glass", "outlined"]),
+  dark: themeMode,
+  light: themeMode,
+});
+
+const themeEntry = z.object({ ...entryMeta, definition: themeDefinition }).passthrough();
+
+// Envelope-only validation; entries validated individually in
+// parseChatThemesManifest so one bad entry can't blank the catalog.
+const chatThemesManifestSchema = z.object({
+  version: z.number(),
+  updatedAt: z.string(),
+  themes: z.array(z.unknown()),
+});
+
+/** Parse + validate an unknown payload into a ChatThemesManifest, or throw. */
+export function parseChatThemesManifest(raw: unknown): ChatThemesManifest {
+  const m = chatThemesManifestSchema.parse(raw);
+  return {
+    version: m.version,
+    updatedAt: m.updatedAt,
+    themes: m.themes.flatMap((e) => {
+      const r = themeEntry.safeParse(e);
+      return r.success ? [r.data] : [];
+    }),
+  } as ChatThemesManifest;
 }
