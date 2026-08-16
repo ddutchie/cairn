@@ -15,6 +15,7 @@ import {
   parseChatThemesManifest,
   type ChatThemesManifest,
 } from "@cairn/shared/chat/registry-schema";
+import { manifestToChatThemes, type ChatThemePreset } from "@cairn/shared/ui/chat-themes";
 import { getMeta, setMeta } from "../db";
 
 /** Same source of truth as the desktop CHAT_THEMES_URL. */
@@ -54,6 +55,23 @@ export function getCachedThemesManifest(): ChatThemesManifest | null {
 /** ISO timestamp of the last successful themes-manifest fetch, or null. */
 export function getThemesFetchedAt(): string | null {
   return getMeta(META_FETCHED_AT);
+}
+
+// Memo of the cached manifest converted to preset form, keyed by the raw JSON
+// string it was parsed from (same pattern as the manifest memo above). Used by
+// the theme store so a community theme id resolves even before a fetch.
+let _memoPresetsRaw: string | null = null;
+let _memoPresets: ChatThemePreset[] = [];
+
+/** The cached community themes as presets ([] when nothing fetched / corrupt). */
+export function getCachedThemePresets(): ChatThemePreset[] {
+  const raw = getMeta(META_MANIFEST);
+  if (raw !== _memoPresetsRaw) {
+    const manifest = getCachedThemesManifest();
+    _memoPresets = manifest ? manifestToChatThemes(manifest.themes) : [];
+    _memoPresetsRaw = raw;
+  }
+  return _memoPresets;
 }
 
 /**

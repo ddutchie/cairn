@@ -13,6 +13,7 @@ import { getMeta, setMeta } from "@/db";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID, ACCENT_PRESETS, type AccentPreset } from "@cairn/shared/ui/accents";
 import { FONT_PRESETS, resolveFontPreset, type FontPreset } from "@cairn/shared/ui/fonts";
 import { resolveChatTheme, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "@cairn/shared/ui/chat-themes";
+import { getCachedThemePresets } from "@/chat/themes-registry";
 
 export interface Theme {
   background: string;
@@ -424,11 +425,12 @@ export function getChatThemeId(): string {
 
 /** Persist + broadcast a new chat-theme id. No-op if unchanged. */
 export function setChatThemeId(id: string): void {
-  const next = resolveChatTheme(id).id; // normalise unknown ids to default
-  if (_chatThemeId === next) return;
-  _chatThemeId = next;
+  // Store the id as-is (a built-in OR a community theme id) — normalization to
+  // the default only happens at RESOLVE time, when the id matches nothing.
+  if (_chatThemeId === id) return;
+  _chatThemeId = id;
   try {
-    setMeta(CHAT_THEME_META_KEY, next);
+    setMeta(CHAT_THEME_META_KEY, id);
   } catch {
     // best-effort; in-memory value still drives the UI this session
   }
@@ -447,7 +449,9 @@ export function useChatTheme(): string {
 
 /** Overlay a chat theme's palette + font onto a theme object. */
 export function applyChatThemeToTheme(base: Theme, themeId: string, isLight: boolean): Theme {
-  const preset: ChatThemePreset = resolveChatTheme(themeId);
+  // Resolve against built-ins + any cached community themes so a community id
+  // renders (falls back to the default when the id matches nothing).
+  const preset: ChatThemePreset = resolveChatTheme(themeId, getCachedThemePresets());
   const v = isLight ? preset.light : preset.dark;
   return {
     ...base,

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
 import { Check } from "lucide-react-native";
 import { PressableScale } from "@/components/PressableScale";
@@ -19,9 +19,11 @@ import {
   type Theme,
 } from "@/theme";
 import {
-  CHAT_THEME_PRESETS,
+  allChatThemes,
+  manifestToChatThemes,
   type ChatThemePreset,
 } from "@cairn/shared/ui/chat-themes";
+import { getCachedThemePresets, fetchChatThemesManifest } from "@/chat/themes-registry";
 
 /**
  * Appearance settings — accent colour, note-text font, and chat theme. Presented
@@ -35,6 +37,39 @@ export default function AppearanceSettingsScreen() {
   const fontId = useFont();
   const chatThemeId = useChatTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
+
+  // Community chat themes: seed from the on-device cache (works offline) and
+  // kick off a background refresh so new catalog themes appear without an app
+  // update. Same pattern as the chat personalities picker.
+  const [communityThemes, setCommunityThemes] = useState<ChatThemePreset[]>(() =>
+    getCachedThemePresets(),
+  );
+  const [themesLoaded, setThemesLoaded] = useState(getCachedThemePresets().length > 0);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { manifest, error } = await fetchChatThemesManifest();
+        if (!cancelled) {
+          if (manifest) setCommunityThemes(manifestToChatThemes(manifest.themes));
+          setThemesLoaded(true);
+          if (error) console.warn("[appearance] community themes fetch failed", error);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setThemesLoaded(true);
+          console.warn("[appearance] community themes fetch failed", err);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Built-ins (always available) + community themes, deduped by id.
+  const allThemes = useMemo(() => allChatThemes(communityThemes), [communityThemes]);
+  const communityCount = communityThemes.length;
 
   return (
     <ScrollView
@@ -122,8 +157,9 @@ export default function AppearanceSettingsScreen() {
           accent colour and note font.
         </Text>
         <View style={styles.list}>
-          {CHAT_THEME_PRESETS.map((preset) => {
+          {allThemes.map((preset) => {
             const active = preset.id === chatThemeId;
+            const isCommunity = preset.community === true;
             return (
               <PressableScale
                 key={preset.id}
@@ -138,7 +174,10 @@ export default function AppearanceSettingsScreen() {
               >
                 <ChatThemeMiniPreview theme={preset} isDark={isDark} />
                 <View style={styles.rowMain}>
-                  <Text style={styles.rowTitle}>{preset.name}</Text>
+                  <Text style={styles.rowTitle}>
+                    {preset.name}
+                    {isCommunity && <Text style={styles.rowCommunity}> · Community</Text>}
+                  </Text>
                   <Text style={styles.rowSub} numberOfLines={1}>
                     {preset.description}
                   </Text>
@@ -147,6 +186,9 @@ export default function AppearanceSettingsScreen() {
               </PressableScale>
             );
           })}
+          {!themesLoaded && communityCount === 0 && (
+            <Text style={styles.rowSub}>Loading community themes…</Text>
+          )}
         </View>
       </View>
     </ScrollView>
@@ -210,6 +252,7 @@ function makeStyles(t: Theme) {
     fontSample: { ...typeScale.title, minWidth: 32, textAlign: "center" },
     rowMain: { flex: 1, gap: 2 },
     rowTitle: { ...typeScale.control, color: t.textPrimary },
+    rowCommunity: { ...typeScale.caption, color: t.accent },
     rowSub: { ...typeScale.caption, color: t.textSecondary },
   });
 }
