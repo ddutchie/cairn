@@ -139,9 +139,10 @@ function makeStyles(t: Theme) {
     bubble: { maxWidth: "94%", paddingHorizontal: 12, paddingVertical: 10 },
     aiBubble: { backgroundColor: t.chatAi, borderWidth: 1, borderColor: t.border, alignSelf: "flex-start" },
     userBubble: { backgroundColor: t.chatUser, alignSelf: "flex-end" },
-    // Glass: translucent fill + a soft light border (iOS gives the native blur
-    // via the translucent colour; Android renders the tinted fill).
-    aiBubbleGlass: { backgroundColor: withAlpha(t.chatAi, 0.72), borderWidth: 1, borderColor: withAlpha("#ffffff", 0.22), alignSelf: "flex-start" },
+    // Glass: translucent fill + a theme-derived border (adapts across light/dark
+    // and community themes; iOS gives the native blur via the translucent colour,
+    // Android renders the tinted fill).
+    aiBubbleGlass: { backgroundColor: withAlpha(t.chatAi, 0.72), borderWidth: 1, borderColor: withAlpha(t.border, 0.22), alignSelf: "flex-start" },
     userBubbleGlass: { backgroundColor: withAlpha(t.chatUser, 0.78), alignSelf: "flex-end" },
     // Outlined: transparent fill + tinted border, text stays the theme token.
     aiBubbleOutlined: { backgroundColor: "transparent", borderWidth: 1, borderColor: withAlpha(t.chatAiText, 0.45), alignSelf: "flex-start" },
