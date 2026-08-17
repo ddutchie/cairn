@@ -60,7 +60,7 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
           </div>
         )}
         {hasContent ? (
-          <div className="px-3 py-2.5 rounded-xl rounded-tl-sm text-xs leading-relaxed bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] max-w-full">
+          <div className="chat-bubble-ai px-3 py-2.5 rounded-xl rounded-tl-sm text-xs leading-relaxed max-w-full">
             <MarkdownContent content={streamingContent} />
             <StreamingCursor />
           </div>

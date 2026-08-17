@@ -614,8 +614,13 @@ select:focus {
   background: linear-gradient(135deg, color-mix(in srgb, var(--chat-user) 82%, #ffffff), var(--chat-user));
   border: 1px solid color-mix(in srgb, #ffffff 25%, transparent);
 }
-/* Bubble corner radius presets (the bubbles carry a 2px tail corner via the
-   rounded-tr-sm/rounded-tl-sm classes — preserved below each radius). */
+/* Bubble corner radius presets. sm/md keep the 2px tail corner on the speaker
+   side (via the rounded-tr-sm/rounded-tl-sm classes the bubbles carry). "pill"
+   is a generous chunky radius — NOT a 999px value: a huge fixed radius on a
+   wide chat bubble gets its horizontal radii clamped to half the (large) width,
+   producing an elliptical "oval" end instead of a capsule. A finite value (≈half
+   the height of a single-line bubble) reads as a pill on normal bubbles and can
+   never oval. sm/md keep the speaker-side tail; pill is symmetric. */
 [data-chat-radius="sm"] .chat-bubble-user,
 [data-chat-radius="sm"] .chat-bubble-ai { border-radius: 6px; }
 [data-chat-radius="sm"] .chat-bubble-user { border-top-right-radius: 2px; }
@@ -625,9 +630,9 @@ select:focus {
 [data-chat-radius="md"] .chat-bubble-user { border-top-right-radius: 2px; }
 [data-chat-radius="md"] .chat-bubble-ai { border-top-left-radius: 2px; }
 [data-chat-radius="pill"] .chat-bubble-user,
-[data-chat-radius="pill"] .chat-bubble-ai { border-radius: 999px; }
-[data-chat-radius="pill"] .chat-bubble-user { border-top-right-radius: 8px; }
-[data-chat-radius="pill"] .chat-bubble-ai { border-top-left-radius: 8px; }
+[data-chat-radius="pill"] .chat-bubble-ai { border-radius: 20px; }
+[data-chat-radius="pill"] .chat-bubble-user { border-top-right-radius: 20px; }
+[data-chat-radius="pill"] .chat-bubble-ai { border-top-left-radius: 20px; }
 /* Bubble shadows. */
 [data-chat-shadow="subtle"] .chat-bubble-user,
 [data-chat-shadow="subtle"] .chat-bubble-ai { box-shadow: 0 2px 8px rgba(0,0,0,0.18); }

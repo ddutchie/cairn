@@ -32,9 +32,15 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
     setTimeout(() => setCopied(false), 1500);
   };
 
-  // Bubble corner radius from the theme's radius knob (sm/md/pill), keeping the
-  // little tail corner on the speaker side.
-  const radius = t.chatRadius === "pill" ? 999 : t.chatRadius === "sm" ? 6 : 14;
+  // Bubble corner radius from the theme's radius knob. sm/md keep the little
+  // tail corner on the speaker side. "pill" is a generous chunky radius (20),
+  // NOT a 999 value: a huge fixed radius on a wide chat bubble gets its corner
+  // radii clamped to half the width, producing an elliptical "oval" end. 20 reads
+  // as a pill on normal bubbles and can never oval. sm/md keep the tail; pill is
+  // symmetric.
+  const pill = t.chatRadius === "pill";
+  const radius = pill ? 20 : t.chatRadius === "sm" ? 6 : 14;
+  const tail = pill ? radius : 4;
   const shadow = t.chatShadow === "strong"
     ? { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 }
     : t.chatShadow === "subtle"
@@ -56,7 +62,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
         <View
           style={[
             styles.bubble,
-            { borderRadius: radius, borderTopLeftRadius: isUser ? radius : 4, borderTopRightRadius: isUser ? 4 : radius },
+            { borderRadius: radius, borderTopLeftRadius: isUser ? radius : tail, borderTopRightRadius: isUser ? tail : radius },
             isUser ? styles.userBubble : styles.aiBubble,
             shadow ?? null,
           ]}
