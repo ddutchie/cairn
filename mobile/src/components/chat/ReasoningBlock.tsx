@@ -13,15 +13,19 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
 export function ReasoningBlock({ text, summary, streaming, hasContent }: { text: string; summary?: string; streaming?: boolean; hasContent?: boolean }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const [open, setOpen] = useState(false);
-  // Expanded while thinking, unless the answer has started (auto-collapse).
-  const expanded = open || (!!streaming && !hasContent);
+  // `open` is the user's manual override: true = force expanded, false = force
+  // collapsed, null = auto (follow the stream). Using an explicit override (not
+  // just `open || ...`) lets the user COLLAPSE while the model is still thinking
+  // — a plain `open || (streaming && !hasContent)` can never be turned off until
+  // the answer starts, so the panel would stay stuck open.
+  const [override, setOverride] = useState<boolean | null>(null);
+  const expanded = override !== null ? override : !!streaming && !hasContent;
   const collapsedText = summary && summary.trim() ? summary.trim() : null;
   return (
     <View style={styles.reasoning}>
       <Pressable
         style={styles.reasoningHeader}
-        onPress={() => setOpen((v) => !v)}
+        onPress={() => setOverride((v) => (v === null ? !expanded : !v))}
         hitSlop={6}
         accessibilityRole="button"
         accessibilityLabel={expanded ? "Hide reasoning" : "Show reasoning"}
