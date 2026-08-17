@@ -10,7 +10,7 @@ import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
-import { resolveChatTheme, chatThemeFontStack, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
+import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -442,20 +442,26 @@ export function applyChatTheme(themeId: string, extras: ChatThemePreset[] = []):
   root.style.setProperty("--chat-user", v.userBubble);
   root.style.setProperty("--chat-user-fg", v.userBubbleFg);
   root.style.setProperty("--chat-ai", v.aiBubble);
+  root.style.setProperty("--chat-ai-text", v.aiText);
   root.style.setProperty("--chat-font", chatThemeFontStack(preset));
-  if (v.gradient) {
-    root.style.setProperty("--chat-bg-from", v.gradient[0]);
-    root.style.setProperty("--chat-bg-to", v.gradient[1]);
-  } else {
-    root.style.removeProperty("--chat-bg-from");
-    root.style.removeProperty("--chat-bg-to");
-  }
-  if (v.aiText) root.style.setProperty("--chat-ai-text", v.aiText);
-  else root.style.removeProperty("--chat-ai-text");
+  root.style.setProperty("--chat-font-weight", String(chatThemeFontWeightValue(preset)));
+  root.style.setProperty("--chat-tracking", `${preset.tracking}px`);
+  root.style.setProperty("--chat-line-height", String(preset.lineHeight));
 
-  // data attribute drives the gradient/pattern/bubble CSS in globals.css.
+  // Multi-stop gradient: the two old vars are replaced by a single stop-list
+  // string (`--chat-gradient`) so any number of stops renders.
+  if (preset.bgType === "gradient" && v.stops.length >= 2) {
+    root.style.setProperty("--chat-gradient", v.stops.join(", "));
+  } else {
+    root.style.removeProperty("--chat-gradient");
+  }
+
+  // data attributes drive the gradient/pattern/bubble/radius/shadow CSS.
   root.setAttribute("data-chat-bgtype", preset.bgType);
+  root.setAttribute("data-chat-pattern", preset.pattern);
   root.setAttribute("data-chat-bubble", preset.bubbleStyle);
+  root.setAttribute("data-chat-radius", preset.radius);
+  root.setAttribute("data-chat-shadow", preset.shadow);
 }
 
 // ── Accent colour ─────────────────────────────────────────────────────────────

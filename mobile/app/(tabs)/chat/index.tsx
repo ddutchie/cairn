@@ -35,6 +35,7 @@ import { loadInitialChat, type UiMessage } from "@/chat/history";
 import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { Composer } from "@/components/chat/Composer";
+import { ChatPatternOverlay } from "@/components/chat/ChatPatternOverlay";
 import { safeToolOutput } from "@/chat/tool-output";
 import { fetchManifest } from "@/chat/registry";
 
@@ -440,12 +441,16 @@ export default function ChatScreen() {
           onPress={toolbarPress(() => router.push("/settings/ai"))}
         />
       </Stack.Toolbar>
-      <LinearGradient
-        colors={t.chatGradient ?? [t.chatBg, t.chatBg]}
-        start={{ x: 0.1, y: 0.1 }}
-        end={{ x: 0.9, y: 0.9 }}
-        style={{ flex: 1 }}
-      >
+      <View style={{ flex: 1, backgroundColor: t.chatBg }}>
+        {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
+          <LinearGradient
+            colors={t.chatStops as [string, string, ...string[]]}
+            start={{ x: 0.1, y: 0.1 }}
+            end={{ x: 0.9, y: 0.9 }}
+            style={StyleSheet.absoluteFill}
+          />
+        ) : null}
+        {t.chatBgType === "pattern" ? <ChatPatternOverlay pattern={t.chatPattern} /> : null}
         {/* Full-height chat scroll: messages scroll BEHIND the sticky composer
             and the translucent native tab bar. KeyboardChatScrollView manages
             the keyboard lift natively via content inset (keyboardLiftBehavior
@@ -552,7 +557,7 @@ export default function ChatScreen() {
           allowImages={allowImages}
           queuedCount={queued.length}
         />
-      </LinearGradient>
+      </View>
     </TabScreen>
   );
 }

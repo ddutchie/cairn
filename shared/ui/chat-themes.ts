@@ -5,8 +5,11 @@
  * style), NOT hue swaps — the global accent preset already owns "pick a
  * highlight colour". Each preset bundles a chat font (from the fonts.ts presets,
  * applied to chat text only, independent of the note-font setting), a
- * background treatment (solid / gradient / scanline pattern), a bubble style
- * (filled / glass / outlined), and a dark/light palette.
+ * background treatment (solid / gradient / pattern), a bubble style (filled /
+ * glass / outlined), dark/light palettes, and typography knobs.
+ *
+ * The shape is FIXED and required — this shipped pre-release, so every theme
+ * (built-in or community) declares all fields; nothing is optional-with-default.
  *
  * Distribution: built-ins below are always available (zero network). Additional
  * themes ship via cairn-community as a `themes.json` manifest (see
@@ -15,10 +18,10 @@
  * rendering is data-driven on both platforms (CSS vars on desktop, theme fields
  * + LinearGradient on mobile).
  *
- * IMPORTANT — the theme is rendered by BOTH the app and PDF? No: chat themes are
- * on-screen only (PDF export stays theme-agnostic). Fonts are restricted to the
- * 3 system stacks (no webfont bundling), backgrounds to solid/gradient/scanline,
- * so a theme is pure JSON — safe to hot-load from the community catalog.
+ * IMPORTANT — chat themes are on-screen only (PDF export stays theme-agnostic).
+ * Fonts are restricted to the 3 system stacks (no webfont bundling), backgrounds
+ * to solid/gradient/named-patterns, so a theme is pure JSON — safe to hot-load
+ * from the community catalog.
  */
 
 import { FONT_PRESETS } from "./fonts";
@@ -30,20 +33,36 @@ export type ChatBgType = "solid" | "gradient" | "pattern";
 /** Per-theme bubble treatment. */
 export type ChatBubbleStyle = "filled" | "glass" | "outlined";
 
-/** One mode's palette. `gradient` present only when bgType === "gradient". */
+/** Chat-text font weight. */
+export type ChatFontWeight = "regular" | "medium";
+
+/** Named background patterns (rendered when bgType === "pattern"). */
+export type ChatPattern = "none" | "scanlines" | "dots" | "grid" | "crosshatch" | "diagonal" | "noise";
+
+/** Bubble corner-radius preset. */
+export type ChatRadius = "sm" | "md" | "pill";
+
+/** Bubble shadow intensity. */
+export type ChatShadow = "none" | "subtle" | "strong";
+
+/**
+ * One mode's palette. `stops` is the background: a single color for solid /
+ * pattern themes, or 2+ gradient stops for gradients. `bg` is the base color
+ * (stops[0]) used as the fallback / pattern base / solid fill.
+ */
 export interface ChatThemeMode {
-  /** Solid background colour (or the scanline pattern's base colour). */
+  /** Base background colour — solid fill, pattern base, or first gradient stop. */
   bg: string;
-  /** Gradient stops [from, to] when bgType === "gradient". */
-  gradient?: [string, string];
+  /** Background stops: [color] for solid/pattern, or 2+ for gradients. */
+  stops: string[];
   /** User-bubble fill. */
   userBubble: string;
   /** Text on the user bubble (AA-chosen per palette). */
   userBubbleFg: string;
   /** AI-bubble fill (may be an rgba/translucent value for glass themes). */
   aiBubble: string;
-  /** Optional override for outlined/glass AI text (e.g. phosphor green). */
-  aiText?: string;
+  /** AI-bubble text colour (phosphor green for terminal, etc.). */
+  aiText: string;
 }
 
 export interface ChatThemePreset {
@@ -56,10 +75,22 @@ export interface ChatThemePreset {
   /** The chat font this theme bundles (id from fonts.ts). Applied to chat
    *  text only — independent of the global note-font setting. */
   font: "sans" | "serif" | "mono";
+  /** Chat-text weight ("regular" = 400, "medium" = 500). */
+  fontWeight: ChatFontWeight;
+  /** Letter-spacing in px applied to chat text (0 = default tracking). */
+  tracking: number;
+  /** Line-height multiplier applied to chat text (1 = platform default). */
+  lineHeight: number;
   /** Background treatment. */
   bgType: ChatBgType;
+  /** Named pattern — only rendered when bgType === "pattern". */
+  pattern: ChatPattern;
   /** Bubble style. */
   bubbleStyle: ChatBubbleStyle;
+  /** Bubble corner-radius preset. */
+  radius: ChatRadius;
+  /** Bubble shadow intensity. */
+  shadow: ChatShadow;
   /** Whether this theme came from the community catalog (not a built-in). */
   community?: boolean;
   dark: ChatThemeMode;
@@ -79,35 +110,65 @@ export const CHAT_THEME_PRESETS: ChatThemePreset[] = [
     name: "Default",
     description: "System sans · solid · filled — the classic Cairn look.",
     font: "sans",
+    fontWeight: "regular",
+    tracking: 0,
+    lineHeight: 1,
     bgType: "solid",
+    pattern: "none",
     bubbleStyle: "filled",
-    dark: { bg: "#141414", userBubble: "#8faf6f", userBubbleFg: "#131c0b", aiBubble: "#1a1a1a" },
-    light: { bg: "#ffffff", userBubble: "#5c7a3f", userBubbleFg: "#ffffff", aiBubble: "#f0eeeb" },
+    radius: "md",
+    shadow: "none",
+    dark: {
+      bg: "#141414", stops: ["#141414"], userBubble: "#8faf6f", userBubbleFg: "#131c0b",
+      aiBubble: "#1a1a1a", aiText: "#9e9a94",
+    },
+    light: {
+      bg: "#ffffff", stops: ["#ffffff"], userBubble: "#5c7a3f", userBubbleFg: "#ffffff",
+      aiBubble: "#f0eeeb", aiText: "#4a4744",
+    },
   },
   {
     id: "paper",
     name: "Paper",
     description: "Serif · warm cream · soft filled — editorial reading.",
     font: "serif",
+    fontWeight: "regular",
+    tracking: 0,
+    lineHeight: 1,
     bgType: "solid",
+    pattern: "none",
     bubbleStyle: "filled",
-    dark: { bg: "#1c1915", userBubble: "#c9a06b", userBubbleFg: "#241608", aiBubble: "#26211a" },
-    light: { bg: "#faf6ee", userBubble: "#9a6a1f", userBubbleFg: "#ffffff", aiBubble: "#f3ede1" },
+    radius: "md",
+    shadow: "subtle",
+    dark: {
+      bg: "#1c1915", stops: ["#1c1915"], userBubble: "#c9a06b", userBubbleFg: "#241608",
+      aiBubble: "#26211a", aiText: "#c9c2b6",
+    },
+    light: {
+      bg: "#faf6ee", stops: ["#faf6ee"], userBubble: "#9a6a1f", userBubbleFg: "#ffffff",
+      aiBubble: "#f3ede1", aiText: "#6b655c",
+    },
   },
   {
     id: "terminal",
     name: "Terminal",
     description: "Mono · charcoal-green scanlines · outlined.",
     font: "mono",
+    fontWeight: "regular",
+    tracking: 0,
+    lineHeight: 1,
     bgType: "pattern",
+    pattern: "scanlines",
     bubbleStyle: "outlined",
+    radius: "sm",
+    shadow: "none",
     dark: {
-      bg: "#0d1210", userBubble: "#7ba05a", userBubbleFg: "#0c1208", aiBubble: "#17211b",
-      aiText: "#9fd47f",
+      bg: "#0d1210", stops: ["#0d1210"], userBubble: "#7ba05a", userBubbleFg: "#0c1208",
+      aiBubble: "#17211b", aiText: "#9fd47f",
     },
     light: {
-      bg: "#eef2e8", userBubble: "#557a34", userBubbleFg: "#ffffff", aiBubble: "#e2e8d8",
-      aiText: "#2f5d1e",
+      bg: "#eef2e8", stops: ["#eef2e8"], userBubble: "#557a34", userBubbleFg: "#ffffff",
+      aiBubble: "#e2e8d8", aiText: "#2f5d1e",
     },
   },
   {
@@ -115,15 +176,23 @@ export const CHAT_THEME_PRESETS: ChatThemePreset[] = [
     name: "Midnight",
     description: "Sans · indigo→violet gradient · glass.",
     font: "sans",
+    fontWeight: "regular",
+    tracking: 0,
+    lineHeight: 1,
     bgType: "gradient",
+    pattern: "none",
     bubbleStyle: "glass",
+    radius: "md",
+    shadow: "subtle",
     dark: {
-      bg: "#0b0d14", gradient: ["#0b0d14", "#1a1430"],
+      bg: "#0b0d14", stops: ["#0b0d14", "#1a1430"],
       userBubble: "#6b8fe0", userBubbleFg: "#0d1430", aiBubble: "rgba(38,44,78,0.75)",
+      aiText: "#b9c2e8",
     },
     light: {
-      bg: "#eef1f8", gradient: ["#eef1f8", "#e4e7f7"],
+      bg: "#eef1f8", stops: ["#eef1f8", "#e4e7f7"],
       userBubble: "#3a5fd6", userBubbleFg: "#ffffff", aiBubble: "rgba(255,255,255,0.85)",
+      aiText: "#2a3159",
     },
   },
   {
@@ -131,15 +200,23 @@ export const CHAT_THEME_PRESETS: ChatThemePreset[] = [
     name: "Aurora",
     description: "Sans · pink→purple gradient · vivid filled.",
     font: "sans",
+    fontWeight: "medium",
+    tracking: 0,
+    lineHeight: 1,
     bgType: "gradient",
+    pattern: "none",
     bubbleStyle: "filled",
+    radius: "md",
+    shadow: "strong",
     dark: {
-      bg: "#1a0f24", gradient: ["#1a0f24", "#2a0f33"],
+      bg: "#1a0f24", stops: ["#1a0f24", "#2a0f33"],
       userBubble: "#ff5f8f", userBubbleFg: "#2a0f33", aiBubble: "#2a1a36",
+      aiText: "#f0c6d8",
     },
     light: {
-      bg: "#fdf0f6", gradient: ["#fdf0f6", "#f5e4f4"],
+      bg: "#fdf0f6", stops: ["#fdf0f6", "#f5e4f4"],
       userBubble: "#c23373", userBubbleFg: "#ffffff", aiBubble: "#ffffff",
+      aiText: "#7a2d4e",
     },
   },
 ];
@@ -192,6 +269,11 @@ export function chatThemeFontStack(preset: ChatThemePreset): string {
   return font ? font.cssFamily : (FONT_PRESETS[0]?.cssFamily ?? "system-ui, sans-serif");
 }
 
+/** CSS/RN font-weight value for a theme's fontWeight knob. */
+export function chatThemeFontWeightValue(preset: ChatThemePreset): number {
+  return preset.fontWeight === "medium" ? 500 : 400;
+}
+
 /**
  * Convert a validated community registry theme entry into the renderer's
  * ChatThemePreset shape so `resolveChatTheme`/`allChatThemes` can consume
@@ -204,8 +286,14 @@ export function registryThemeToPreset(entry: RegistryThemeEntry): ChatThemePrese
     name: d.name,
     description: d.description ?? entry.blurb ?? "",
     font: d.font,
+    fontWeight: d.fontWeight,
+    tracking: d.tracking,
+    lineHeight: d.lineHeight,
     bgType: d.bgType,
+    pattern: d.pattern,
     bubbleStyle: d.bubbleStyle,
+    radius: d.radius,
+    shadow: d.shadow,
     community: true,
     dark: d.dark,
     light: d.light,

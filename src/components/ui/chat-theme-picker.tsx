@@ -66,8 +66,8 @@ function ThemePreview({ theme, size = "md" }: { theme: ChatThemePreset; size?: "
     typeof document !== "undefined" &&
     document.documentElement.getAttribute("data-theme") === "light";
   const v = theme[isLight ? "light" : "dark"];
-  const gradient = v.gradient
-    ? `linear-gradient(160deg, ${v.gradient[0]}, ${v.gradient[1]})`
+  const gradient = v.stops.length >= 2
+    ? `linear-gradient(160deg, ${v.stops.join(", ")})`
     : v.bg;
 
   return (

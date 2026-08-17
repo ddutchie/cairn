@@ -1310,6 +1310,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
 /** Small preview of a chat theme: bg (solid/gradient/pattern) + two bubbles. */
 function ChatThemeMiniPreview({ theme, isDark }: { theme: ChatThemePreset; isDark: boolean }) {
   const v = isDark ? theme.dark : theme.light;
+  const stops = v.stops.length >= 2 ? v.stops : [v.bg, v.bg];
   return (
     <View
       style={{
@@ -1320,20 +1321,20 @@ function ChatThemeMiniPreview({ theme, isDark }: { theme: ChatThemePreset; isDar
         borderColor: "rgba(128,128,128,0.4)",
         padding: 3,
         gap: 3,
-        backgroundColor: v.gradient ? v.gradient[0] : v.bg,
+        backgroundColor: v.bg,
       }}
     >
-      {v.gradient ? (
+      {theme.bgType === "gradient" && (
         <View
           style={[StyleSheet.absoluteFill, {
             borderRadius: 8,
             borderWidth: 1,
             borderColor: "rgba(128,128,128,0.4)",
-            backgroundColor: v.gradient[1],
+            backgroundColor: stops[stops.length - 1],
             opacity: 0.5,
           }]}
         />
-      ) : null}
+      )}
       <View style={{ alignSelf: "flex-start", width: "55%", height: 7, borderRadius: 3, backgroundColor: v.aiBubble, borderWidth: 1, borderColor: "rgba(128,128,128,0.3)" }} />
       <View style={{ alignSelf: "flex-end", width: "55%", height: 7, borderRadius: 3, backgroundColor: v.userBubble }} />
     </View>

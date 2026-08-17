@@ -123,13 +123,17 @@ interface PersonalitiesFetchResult {
   manifest: PersonalitiesManifest; fromCache: boolean; cachedAt?: string; error?: string;
 }
 interface RegistryThemeMode {
-  bg: string; gradient?: [string, string]; userBubble: string; userBubbleFg: string;
-  aiBubble: string; aiText?: string;
+  bg: string; stops: string[]; userBubble: string; userBubbleFg: string;
+  aiBubble: string; aiText: string;
 }
 interface RegistryThemeEntry extends RegistryEntryMeta {
   definition: {
     name: string; description?: string; font: "sans" | "serif" | "mono";
-    bgType: "solid" | "gradient" | "pattern"; bubbleStyle: "filled" | "glass" | "outlined";
+    fontWeight: "regular" | "medium"; tracking: number; lineHeight: number;
+    bgType: "solid" | "gradient" | "pattern";
+    pattern: "none" | "scanlines" | "dots" | "grid" | "crosshatch" | "diagonal" | "noise";
+    bubbleStyle: "filled" | "glass" | "outlined";
+    radius: "sm" | "md" | "pill"; shadow: "none" | "subtle" | "strong";
     dark: RegistryThemeMode; light: RegistryThemeMode;
   };
 }

@@ -268,7 +268,8 @@ export interface PersonalitiesManifest {
  * background treatment + bubble style + dark/light palette). Kept in a SEPARATE
  * manifest (themes.json) so new themes ship without an app update. Rendered
  * data-driven (CSS vars on desktop, theme fields + LinearGradient on mobile) so
- * it is pure JSON — no code execution.
+ * it is pure JSON — no code execution. The shape is REQUIRED in full (nothing
+ * optional) — this shipped pre-release, so every theme declares every knob.
  */
 export interface RegistryThemeEntry extends RegistryEntryMeta {
   definition: {
@@ -278,25 +279,39 @@ export interface RegistryThemeEntry extends RegistryEntryMeta {
     description?: string;
     /** Bundled chat font (one of the fonts.ts preset ids). */
     font: "sans" | "serif" | "mono";
+    /** Chat-text weight ("regular" = 400, "medium" = 500). */
+    fontWeight: "regular" | "medium";
+    /** Letter-spacing in px applied to chat text. */
+    tracking: number;
+    /** Line-height multiplier applied to chat text (1 = platform default). */
+    lineHeight: number;
     /** Background treatment. */
     bgType: "solid" | "gradient" | "pattern";
+    /** Named pattern — rendered only when bgType === "pattern". */
+    pattern: "none" | "scanlines" | "dots" | "grid" | "crosshatch" | "diagonal" | "noise";
     /** Bubble style. */
     bubbleStyle: "filled" | "glass" | "outlined";
+    /** Bubble corner-radius preset. */
+    radius: "sm" | "md" | "pill";
+    /** Bubble shadow intensity. */
+    shadow: "none" | "subtle" | "strong";
     dark: {
+      /** Base background colour (stops[0]): solid fill, pattern base, or first gradient stop. */
       bg: string;
-      gradient?: [string, string];
+      /** Background stops: [color] for solid/pattern, 2+ for gradient. */
+      stops: string[];
       userBubble: string;
       userBubbleFg: string;
       aiBubble: string;
-      aiText?: string;
+      aiText: string;
     };
     light: {
       bg: string;
-      gradient?: [string, string];
+      stops: string[];
       userBubble: string;
       userBubbleFg: string;
       aiBubble: string;
-      aiText?: string;
+      aiText: string;
     };
   };
 }
@@ -595,24 +610,37 @@ export function parsePersonalitiesManifest(raw: unknown): PersonalitiesManifest 
 
 const themeMode = z.object({
   bg: z.string().min(3).max(32),
-  gradient: z.tuple([z.string().min(3).max(32), z.string().min(3).max(32)]).optional(),
+  stops: z.array(z.string().min(3).max(32)).min(1),
   userBubble: z.string().min(3).max(32),
   userBubbleFg: z.string().min(3).max(32),
   aiBubble: z.string().min(3).max(32),
-  aiText: z.string().min(3).max(32).optional(),
+  aiText: z.string().min(3).max(32),
 });
 
 const themeDefinition = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   font: z.enum(["sans", "serif", "mono"]),
+  fontWeight: z.enum(["regular", "medium"]),
+  tracking: z.number().min(0).max(8),
+  lineHeight: z.number().min(0.8).max(3),
   bgType: z.enum(["solid", "gradient", "pattern"]),
+  pattern: z.enum(["none", "scanlines", "dots", "grid", "crosshatch", "diagonal", "noise"]),
   bubbleStyle: z.enum(["filled", "glass", "outlined"]),
+  radius: z.enum(["sm", "md", "pill"]),
+  shadow: z.enum(["none", "subtle", "strong"]),
   dark: themeMode,
   light: themeMode,
 });
+// A gradient theme must declare 2+ stops; solid/pattern themes are single-stop.
+const themeDefinitionRefined = themeDefinition.refine(
+  (d) =>
+    (d.bgType === "gradient" && d.dark.stops.length >= 2 && d.light.stops.length >= 2) ||
+    (d.bgType !== "gradient" && d.dark.stops.length === 1 && d.light.stops.length === 1),
+  { message: "gradient themes need 2+ stops in both modes; solid/pattern themes need exactly 1" }
+);
 
-const themeEntry = z.object({ ...entryMeta, definition: themeDefinition }).passthrough();
+const themeEntry = z.object({ ...entryMeta, definition: themeDefinitionRefined }).passthrough();
 
 // Envelope-only validation; entries validated individually in
 // parseChatThemesManifest so one bad entry can't blank the catalog.

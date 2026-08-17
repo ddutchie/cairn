@@ -12,7 +12,7 @@ import { useSyncExternalStore, useMemo } from "react";
 import { getMeta, setMeta } from "@/db";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID, ACCENT_PRESETS, type AccentPreset } from "@cairn/shared/ui/accents";
 import { FONT_PRESETS, resolveFontPreset, type FontPreset } from "@cairn/shared/ui/fonts";
-import { resolveChatTheme, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "@cairn/shared/ui/chat-themes";
+import { resolveChatTheme, chatThemeFontWeightValue, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "@cairn/shared/ui/chat-themes";
 import { getCachedThemePresets } from "@/chat/themes-registry";
 
 export interface Theme {
@@ -40,9 +40,11 @@ export interface Theme {
   scrim: string;
   /** Chat surface tokens (from the active chat theme). */
   chatBg: string;
-  /** Gradient stops for the chat background when the theme uses one. */
-  chatGradient?: [string, string];
+  /** Background stops: [color] for solid/pattern, or 2+ for gradients. */
+  chatStops: [string, ...string[]];
   chatBgType: "solid" | "gradient" | "pattern";
+  /** Named pattern rendered when chatBgType === "pattern". */
+  chatPattern: "none" | "scanlines" | "dots" | "grid" | "crosshatch" | "diagonal" | "noise";
   chatBubbleStyle: "filled" | "glass" | "outlined";
   chatUser: string;
   chatUserFg: string;
@@ -50,6 +52,16 @@ export interface Theme {
   chatAiText: string;
   /** RN font-family string for chat text (theme's bundled font). */
   chatFont: string | undefined;
+  /** Chat-text font weight (400/500) from the theme's fontWeight knob. */
+  chatFontWeight: number;
+  /** Letter-spacing in px applied to chat text. */
+  chatTracking: number;
+  /** Line-height multiplier applied to chat text (1 = platform default). */
+  chatLineHeight: number;
+  /** Bubble corner-radius preset. */
+  chatRadius: "sm" | "md" | "pill";
+  /** Bubble shadow intensity. */
+  chatShadow: "none" | "subtle" | "strong";
 }
 
 export const darkTheme: Theme = {
@@ -73,13 +85,20 @@ export const darkTheme: Theme = {
   nodeProject: "#a78bfa",
   scrim: "rgba(0,0,0,0.5)",
   chatBg: "#141414",
+  chatStops: ["#141414"],
   chatBgType: "solid",
+  chatPattern: "none",
   chatBubbleStyle: "filled",
   chatUser: "#8faf6f",
   chatUserFg: "#131c0b",
   chatAi: "#1a1a1a",
   chatAiText: "#9e9a94",
   chatFont: undefined,
+  chatFontWeight: 400,
+  chatTracking: 0,
+  chatLineHeight: 1,
+  chatRadius: "md",
+  chatShadow: "none",
 };
 
 export const lightTheme: Theme = {
@@ -107,13 +126,20 @@ export const lightTheme: Theme = {
   nodeProject: "#7c5cd6",
   scrim: "rgba(0,0,0,0.4)",
   chatBg: "#ffffff",
+  chatStops: ["#ffffff"],
   chatBgType: "solid",
+  chatPattern: "none",
   chatBubbleStyle: "filled",
   chatUser: "#5c7a3f",
   chatUserFg: "#ffffff",
   chatAi: "#f0eeeb",
   chatAiText: "#4a4744",
   chatFont: undefined,
+  chatFontWeight: 400,
+  chatTracking: 0,
+  chatLineHeight: 1,
+  chatRadius: "md",
+  chatShadow: "none",
 };
 
 /** Priority colours — re-exported from shared so desktop + mobile match. */
@@ -456,14 +482,20 @@ export function applyChatThemeToTheme(base: Theme, themeId: string, isLight: boo
   return {
     ...base,
     chatBg: v.bg,
-    chatGradient: v.gradient,
+    chatStops: v.stops as [string, ...string[]],
     chatBgType: preset.bgType,
+    chatPattern: preset.pattern,
     chatBubbleStyle: preset.bubbleStyle,
     chatUser: v.userBubble,
     chatUserFg: v.userBubbleFg,
     chatAi: v.aiBubble,
-    chatAiText: v.aiText ?? (isLight ? "#4a4744" : "#9e9a94"),
+    chatAiText: v.aiText,
     chatFont: resolveRNFontFamily(preset.font),
+    chatFontWeight: chatThemeFontWeightValue(preset),
+    chatTracking: preset.tracking,
+    chatLineHeight: preset.lineHeight,
+    chatRadius: preset.radius,
+    chatShadow: preset.shadow,
   };
 }
 

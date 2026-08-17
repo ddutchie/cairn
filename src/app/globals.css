@@ -106,13 +106,15 @@
      Defaults = the "default" preset so an unset theme renders exactly as today:
      surface bg, accent user bubble, surface-2 AI bubble. */
   --chat-bg: var(--surface);
-  --chat-bg-from: var(--surface);
-  --chat-bg-to: var(--surface);
+  --chat-gradient: unset;
   --chat-user: var(--accent);
   --chat-user-fg: var(--accent-fg);
   --chat-ai: var(--surface-2);
   --chat-ai-text: var(--text-secondary);
   --chat-font: var(--font-sans);
+  --chat-font-weight: 400;
+  --chat-tracking: 0px;
+  --chat-line-height: 1;
 }
 
 *, *::before, *::after {
@@ -540,14 +542,41 @@ select:focus {
    panel is affected. Bubbles use their dedicated var; the message-area bg is
    a gradient when the theme declares one. */
 [data-chat-bgtype="gradient"] .chat-themed {
-  background: linear-gradient(160deg, var(--chat-bg-from), var(--chat-bg-to));
+  background: linear-gradient(160deg, var(--chat-gradient));
 }
-[data-chat-bgtype="pattern"] .chat-themed {
+/* Pattern backgrounds: named patterns rendered over the base bg colour. */
+[data-chat-bgtype="pattern"][data-chat-pattern="scanlines"] .chat-themed {
   background-color: var(--chat-bg);
   background-image:
     repeating-linear-gradient(0deg, color-mix(in srgb, #ffffff 4%, transparent) 0 1px, transparent 1px 4px);
 }
-.chat-themed { background: var(--chat-bg); font-family: var(--chat-font); }
+[data-chat-bgtype="pattern"][data-chat-pattern="dots"] .chat-themed {
+  background-color: var(--chat-bg);
+  background-image: radial-gradient(color-mix(in srgb, #ffffff 6%, transparent) 1px, transparent 1.5px);
+  background-size: 7px 7px;
+}
+[data-chat-bgtype="pattern"][data-chat-pattern="grid"] .chat-themed {
+  background-color: var(--chat-bg);
+  background-image:
+    repeating-linear-gradient(0deg, color-mix(in srgb, #ffffff 4%, transparent) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, #ffffff 4%, transparent) 0 1px, transparent 1px 16px);
+}
+[data-chat-bgtype="pattern"][data-chat-pattern="crosshatch"] .chat-themed {
+  background-color: var(--chat-bg);
+  background-image:
+    repeating-linear-gradient(45deg, color-mix(in srgb, #ffffff 4%, transparent) 0 1px, transparent 1px 8px),
+    repeating-linear-gradient(-45deg, color-mix(in srgb, #ffffff 4%, transparent) 0 1px, transparent 1px 8px);
+}
+[data-chat-bgtype="pattern"][data-chat-pattern="diagonal"] .chat-themed {
+  background-color: var(--chat-bg);
+  background-image:
+    repeating-linear-gradient(45deg, color-mix(in srgb, #ffffff 4%, transparent) 0 1px, transparent 1px 8px);
+}
+[data-chat-bgtype="pattern"][data-chat-pattern="noise"] .chat-themed {
+  background-color: var(--chat-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+.chat-themed { background: var(--chat-bg); font-family: var(--chat-font); font-weight: var(--chat-font-weight); letter-spacing: var(--chat-tracking); }
 
 .chat-bubble-user {
   background: var(--chat-user);
@@ -558,6 +587,12 @@ select:focus {
   color: var(--chat-ai-text);
   border: 1px solid var(--border);
 }
+/* Chat message text line-height scales with the theme knob (default 1 = the
+   Tailwind leading-relaxed baked into the bubbles). Applies to the bubble
+   container and the markdown-rendered paragraphs/lists inside it. */
+.chat-bubble-user, .chat-bubble-ai { line-height: calc(1.625 * var(--chat-line-height)); }
+.chat-bubble-user p, .chat-bubble-ai p,
+.chat-bubble-user li, .chat-bubble-ai li { line-height: calc(1.625 * var(--chat-line-height)); }
 /* Outlined bubble style: transparent fill, tinted borders (Terminal / Forest). */
 [data-chat-bubble="outlined"] .chat-bubble-ai {
   background: transparent;
@@ -579,6 +614,25 @@ select:focus {
   background: linear-gradient(135deg, color-mix(in srgb, var(--chat-user) 82%, #ffffff), var(--chat-user));
   border: 1px solid color-mix(in srgb, #ffffff 25%, transparent);
 }
+/* Bubble corner radius presets (the bubbles carry a 2px tail corner via the
+   rounded-tr-sm/rounded-tl-sm classes — preserved below each radius). */
+[data-chat-radius="sm"] .chat-bubble-user,
+[data-chat-radius="sm"] .chat-bubble-ai { border-radius: 6px; }
+[data-chat-radius="sm"] .chat-bubble-user { border-top-right-radius: 2px; }
+[data-chat-radius="sm"] .chat-bubble-ai { border-top-left-radius: 2px; }
+[data-chat-radius="md"] .chat-bubble-user,
+[data-chat-radius="md"] .chat-bubble-ai { border-radius: 12px; }
+[data-chat-radius="md"] .chat-bubble-user { border-top-right-radius: 2px; }
+[data-chat-radius="md"] .chat-bubble-ai { border-top-left-radius: 2px; }
+[data-chat-radius="pill"] .chat-bubble-user,
+[data-chat-radius="pill"] .chat-bubble-ai { border-radius: 999px; }
+[data-chat-radius="pill"] .chat-bubble-user { border-top-right-radius: 8px; }
+[data-chat-radius="pill"] .chat-bubble-ai { border-top-left-radius: 8px; }
+/* Bubble shadows. */
+[data-chat-shadow="subtle"] .chat-bubble-user,
+[data-chat-shadow="subtle"] .chat-bubble-ai { box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+[data-chat-shadow="strong"] .chat-bubble-user,
+[data-chat-shadow="strong"] .chat-bubble-ai { box-shadow: 0 6px 20px rgba(0,0,0,0.28); }
 
 /* ── CodeMirror 6 search panel ───────────────────────────────────────────── */
 /* Global overrides — EditorView.theme() alone can lose to CM6's base sheet. */

@@ -316,21 +316,29 @@ describe("registry-schema chat themes manifest", () => {
       name: "Ocean",
       description: "Teal→blue gradient.",
       font: "sans",
+      fontWeight: "regular",
+      tracking: 0,
+      lineHeight: 1,
       bgType: "gradient",
+      pattern: "none",
       bubbleStyle: "glass",
+      radius: "md",
+      shadow: "subtle",
       dark: {
         bg: "#071318",
-        gradient: ["#071318", "#0a1f33"],
+        stops: ["#071318", "#0a1f33"],
         userBubble: "#2dd4bf",
         userBubbleFg: "#04231f",
         aiBubble: "rgba(20,52,66,0.75)",
+        aiText: "#9be7dd",
       },
       light: {
         bg: "#eefaf9",
-        gradient: ["#eefaf9", "#e6f1fc"],
+        stops: ["#eefaf9", "#e6f1fc"],
         userBubble: "#0a7568",
         userBubbleFg: "#ffffff",
         aiBubble: "rgba(255,255,255,0.85)",
+        aiText: "#0a3d36",
       },
     },
   };
@@ -344,7 +352,10 @@ describe("registry-schema chat themes manifest", () => {
     expect(m.themes).toHaveLength(1);
     expect(m.themes[0].id).toBe("ocean");
     expect(m.themes[0].definition.font).toBe("sans");
-    expect(m.themes[0].definition.dark.gradient).toEqual(["#071318", "#0a1f33"]);
+    expect(m.themes[0].definition.fontWeight).toBe("regular");
+    expect(m.themes[0].definition.pattern).toBe("none");
+    expect(m.themes[0].definition.radius).toBe("md");
+    expect(m.themes[0].definition.dark.stops).toEqual(["#071318", "#0a1f33"]);
   });
 
   it("drops a malformed entry without blanking the catalog", () => {
