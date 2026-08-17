@@ -68,11 +68,15 @@ function makeStreamer(config: OpenAIConfig) {
       });
 
     let res = await send(body);
-    // A 400 may mean the gateway rejected `stream_options`; retry once without
-    // it (we just lose server-reported usage, falling back to no ring).
-    if (res.status === 400 && "stream_options" in body) {
+    // A 400 may mean the gateway rejected fields it doesn't support — the
+    // `stream_options` usage request and/or an explicit `temperature` on a model
+    // that rejects it. Retry once without both (we lose server-reported usage
+    // and fall back to the client estimate; temperature falls back to the
+    // model's own default for this one retry).
+    if (res.status === 400 && ("stream_options" in body || "temperature" in body)) {
       const rest = { ...body };
       delete rest.stream_options;
+      delete rest.temperature;
       res = await send(rest);
     }
     if (!res.ok || !res.body) {

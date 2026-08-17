@@ -95,10 +95,7 @@ export function ProviderList({
         <BottomSheetHeader
           title="Saved providers"
           onCancel={() => setOpen(false)}
-          onDone={() => {
-            setOpen(false);
-            onAdd();
-          }}
+          onDone={() => setOpen(false)}
         />
         <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetBody}>
           {providers.length === 0 && (

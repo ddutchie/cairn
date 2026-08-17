@@ -163,11 +163,14 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
           </blockquote>
         ),
         a: ({ href, children }) => {
+          // User-bubble links use the chat foreground token (with accent-fg
+          // fallback), matching bubbleFg — on a non-default theme the user
+          // bubble text colour isn't the global accent foreground.
           const linkClass = isUser
-            ? "inline-flex items-center text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_85%,transparent)] underline font-medium cursor-pointer"
+            ? `inline-flex items-center text-[${bubbleFg}] hover:text-[color-mix(in_srgb,${bubbleFg}_85%,transparent)] underline font-medium cursor-pointer`
             : "inline-flex items-center text-[var(--accent)] hover:underline font-medium cursor-pointer";
           const fallbackClass = isUser
-            ? "text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_85%,transparent)] underline"
+            ? `text-[${bubbleFg}] hover:text-[color-mix(in_srgb,${bubbleFg}_85%,transparent)] underline`
             : "text-[var(--accent)] hover:underline";
 
           if (href?.startsWith("cairn://note/")) {

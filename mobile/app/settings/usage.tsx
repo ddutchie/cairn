@@ -16,8 +16,8 @@ export default function UsageSettingsScreen() {
     <>
       <Stack.Screen options={{ title: "Usage" }} />
       <ScrollView
-        style={styles.flex}
-        contentContainerStyle={[styles.body, { backgroundColor: t.surface }]}
+        style={[styles.flex, { backgroundColor: t.surface }]}
+        contentContainerStyle={styles.body}
         contentInsetAdjustmentBehavior="automatic"
       >
         <UsageBody />

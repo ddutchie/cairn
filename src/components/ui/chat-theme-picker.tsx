@@ -85,7 +85,7 @@ function ThemePreview({ theme, size = "md" }: { theme: ChatThemePreset; size?: "
     >
       <span
         className="self-start h-[6px] w-1/2 rounded-[3px] border"
-        style={{ background: v.aiBubble, borderColor: "rgba(128,128,128,0.3)" }}
+        style={{ background: v.aiBubble, borderColor: "color-mix(in srgb, var(--border) 60%, transparent)" }}
       />
       <span
         className="self-end h-[6px] w-1/2 rounded-[3px]"

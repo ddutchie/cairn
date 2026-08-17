@@ -47,6 +47,21 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
       ? { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.16, shadowRadius: 5, elevation: 3 }
       : null;
 
+  // Bubble surface depends on the theme's bubble style: filled = solid
+  // t.chatUser / t.chatAi, glass = translucent fill (blur handled natively on
+  // iOS via the translucent colour), outlined = transparent fill + tinted border.
+  const bubbleSurface = isUser
+    ? t.chatBubbleStyle === "glass"
+      ? styles.userBubbleGlass
+      : t.chatBubbleStyle === "outlined"
+        ? styles.userBubbleOutlined
+        : styles.userBubble
+    : t.chatBubbleStyle === "glass"
+      ? styles.aiBubbleGlass
+      : t.chatBubbleStyle === "outlined"
+        ? styles.aiBubbleOutlined
+        : styles.aiBubble;
+
   return (
     <View style={[styles.row, isUser && styles.rowUser]}>
       {/* Avatar */}
@@ -63,7 +78,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
           style={[
             styles.bubble,
             { borderRadius: radius, borderTopLeftRadius: isUser ? radius : tail, borderTopRightRadius: isUser ? tail : radius },
-            isUser ? styles.userBubble : styles.aiBubble,
+            bubbleSurface,
             shadow ?? null,
           ]}
         >
@@ -123,6 +138,13 @@ function makeStyles(t: Theme) {
     bubble: { maxWidth: "94%", paddingHorizontal: 12, paddingVertical: 10 },
     aiBubble: { backgroundColor: t.chatAi, borderWidth: 1, borderColor: t.border, alignSelf: "flex-start" },
     userBubble: { backgroundColor: t.chatUser, alignSelf: "flex-end" },
+    // Glass: translucent fill + a soft light border (iOS gives the native blur
+    // via the translucent colour; Android renders the tinted fill).
+    aiBubbleGlass: { backgroundColor: withAlpha(t.chatAi, 0.72), borderWidth: 1, borderColor: withAlpha("#ffffff", 0.22), alignSelf: "flex-start" },
+    userBubbleGlass: { backgroundColor: withAlpha(t.chatUser, 0.78), alignSelf: "flex-end" },
+    // Outlined: transparent fill + tinted border, text stays the theme token.
+    aiBubbleOutlined: { backgroundColor: "transparent", borderWidth: 1, borderColor: withAlpha(t.chatAiText, 0.45), alignSelf: "flex-start" },
+    userBubbleOutlined: { backgroundColor: withAlpha(t.chatUser, 0.18), borderWidth: 1, borderColor: withAlpha(t.chatUser, 0.6), alignSelf: "flex-end" },
     userText: { ...typeScale.body, color: t.chatUserFg },
     aiText: { ...typeScale.body, color: t.chatAiText },
     bubbleImages: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },

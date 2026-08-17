@@ -89,10 +89,16 @@ export function UsageBody({ width }: { width?: number }) {
   }, [history]);
 
   const byModel = useMemo(() => {
-    const map = new Map<string, { model: string; prompt: number; completion: number; cacheRead: number; cost: number; estimated: boolean; count: number }>();
+    // Match the chart's 14-day window so the "last 14 days" label is accurate.
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - 13);
+    const cutoffIso = cutoff.toISOString().slice(0, 10);
+    const map = new Map<string, { key: string; model: string; prompt: number; completion: number; cacheRead: number; cost: number; estimated: boolean; count: number }>();
     for (const r of history) {
+      if (r.createdAt.slice(0, 10) < cutoffIso) continue;
       const key = `${r.provider}::${r.model}`;
-      const m = map.get(key) ?? { model: r.model, prompt: 0, completion: 0, cacheRead: 0, cost: 0, estimated: false, count: 0 };
+      const m = map.get(key) ?? { key, model: r.model, prompt: 0, completion: 0, cacheRead: 0, cost: 0, estimated: false, count: 0 };
       m.prompt += r.promptTokens;
       m.completion += r.completionTokens;
       m.cacheRead += r.cacheReadTokens;
@@ -172,7 +178,7 @@ export function UsageBody({ width }: { width?: number }) {
             </View>
             <View style={styles.byModelList}>
               {visibleModels.map((m) => (
-                <View key={m.model} style={styles.byModelRow}>
+                <View key={m.key} style={styles.byModelRow}>
                   <View style={styles.byModelTop}>
                     <View style={styles.byModelName}>
                       <ModelGlyph model={m.model} />
@@ -243,48 +249,60 @@ export function UsageBody({ width }: { width?: number }) {
 // ── Stat card ────────────────────────────────────────────────────────────────
 
 function Stat({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStatStyles(t), [t]);
   return (
-    <View style={stylesStat.card}>
-      <Text style={[stylesStat.value, color ? { color } : null]} numberOfLines={1}>{value}</Text>
-      <Text style={stylesStat.label}>{label}</Text>
-      {sub ? <Text style={stylesStat.sub}>{sub}</Text> : null}
+    <View style={styles.card}>
+      <Text style={[styles.value, color ? { color } : null]} numberOfLines={1}>{value}</Text>
+      <Text style={styles.label}>{label}</Text>
+      {sub ? <Text style={styles.sub}>{sub}</Text> : null}
     </View>
   );
 }
-const stylesStat = StyleSheet.create({
-  card: { flex: 1, minWidth: "30%", gap: 2 },
-  value: { ...typeScale.title, color: "#a09c96", fontVariant: ["tabular-nums"] },
-  label: { ...typeScale.caption, color: "#66635f" },
-  sub: { ...typeScale.micro, color: "#66635f" },
-});
+function makeStatStyles(t: Theme) {
+  return StyleSheet.create({
+    card: { flex: 1, minWidth: "30%", gap: 2 },
+    value: { ...typeScale.title, color: t.textSecondary, fontVariant: ["tabular-nums"] },
+    label: { ...typeScale.caption, color: t.textTertiary },
+    sub: { ...typeScale.micro, color: t.textTertiary },
+  });
+}
 
 function MetricButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const t = useTheme();
+  const styles = useMemo(() => makeMetricButtonStyles(t), [t]);
   return (
-    <Pressable style={[stylesMBtn.btn, active && stylesMBtn.active]} onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: active }}>
-      <Text style={[stylesMBtn.text, active && stylesMBtn.activeText]}>{label}</Text>
+    <Pressable style={[styles.btn, active && styles.active]} onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: active }}>
+      <Text style={[styles.text, active && styles.activeText]}>{label}</Text>
     </Pressable>
   );
 }
-const stylesMBtn = StyleSheet.create({
-  btn: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999, backgroundColor: "#1a1a1a", borderWidth: 1, borderColor: "#2a2a2a" },
-  active: { backgroundColor: "#8faf6f", borderColor: "#8faf6f" },
-  text: { ...typeScale.caption, color: "#9e9a94" },
-  activeText: { color: "#131c0b", fontWeight: "600" },
-});
+function makeMetricButtonStyles(t: Theme) {
+  return StyleSheet.create({
+    btn: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border },
+    active: { backgroundColor: t.accent, borderColor: t.accent },
+    text: { ...typeScale.caption, color: t.textSecondary },
+    activeText: { color: t.accentFg, fontWeight: "600" },
+  });
+}
 
 function LegendDot({ color, label }: { color: string; label: string }) {
+  const t = useTheme();
+  const styles = useMemo(() => makeLegendStyles(t), [t]);
   return (
-    <View style={stylesLegend.row}>
-      <View style={[stylesLegend.dot, { backgroundColor: color }]} />
-      <Text style={stylesLegend.label}>{label}</Text>
+    <View style={styles.row}>
+      <View style={[styles.dot, { backgroundColor: color }]} />
+      <Text style={styles.label}>{label}</Text>
     </View>
   );
 }
-const stylesLegend = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: 5 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  label: { ...typeScale.micro, color: "#9e9a94" },
-});
+function makeLegendStyles(t: Theme) {
+  return StyleSheet.create({
+    row: { flexDirection: "row", alignItems: "center", gap: 5 },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+    label: { ...typeScale.micro, color: t.textSecondary },
+  });
+}
 
 function ModelGlyph({ model }: { model: string }) {
   const provider = getLogoProvider(model);
@@ -371,9 +389,11 @@ function UsageLineChart({
     gridLines.push({ v: PAD_T + innerH - (k * stepVal) / max * innerH, label: formatCompact(Math.round(k * stepVal)) });
   }
 
-  const line = (d: "input" | "output", m: number) =>
+  // Build an SVG path from a per-point value accessor (input/output for tokens,
+  // cost or requests for those metrics) scaled to the given axis max.
+  const line = (pick: (p: (typeof series)[number]) => number, m: number) =>
     series
-      .map((p, i) => `${i === 0 ? "M" : "L"}${x(i)},${yFor(d === "input" ? p.input : p.output, m)}`)
+      .map((p, i) => `${i === 0 ? "M" : "L"}${x(i)},${yFor(pick(p), m)}`)
       .join(" ");
 
   return (
@@ -387,11 +407,16 @@ function UsageLineChart({
       {/* Input + output lines (tokens) or cost / requests lines */}
       {metric === "tokens" ? (
         <>
-          <Path d={line("input", iMax)} fill="none" stroke={t.accent} strokeWidth={2} />
-          <Path d={line("output", iMax)} fill="none" stroke={t.info} strokeWidth={2} />
+          <Path d={line((p) => p.input, iMax)} fill="none" stroke={t.accent} strokeWidth={2} />
+          <Path d={line((p) => p.output, iMax)} fill="none" stroke={t.info} strokeWidth={2} />
         </>
       ) : (
-        <Path d={line("input", metric === "cost" ? cMax : rMax)} fill="none" stroke={t.accent} strokeWidth={2} />
+        <Path
+          d={line((p) => (metric === "cost" ? p.cost : p.requests), metric === "cost" ? cMax : rMax)}
+          fill="none"
+          stroke={t.accent}
+          strokeWidth={2}
+        />
       )}
       {/* X labels */}
       {series.map((d, i) => {
@@ -468,6 +493,3 @@ function makeStyles(t: Theme) {
     clearText: { ...typeScale.caption, color: t.danger },
   });
 }
-
-// Keep the chart-side styles module-scoped (they don't depend on the theme).
-void niceCeil;

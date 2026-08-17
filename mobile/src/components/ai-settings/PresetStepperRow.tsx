@@ -47,6 +47,7 @@ export function PresetStepperRow({
           <Pressable
             style={[styles.chip, autoActive && styles.chipActive]}
             onPress={onAuto}
+            hitSlop={6}
             accessibilityRole="button"
             accessibilityState={{ selected: autoActive }}
           >
@@ -60,6 +61,7 @@ export function PresetStepperRow({
               key={n}
               style={[styles.chip, active && styles.chipActive]}
               onPress={() => onChange(n)}
+              hitSlop={6}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
             >

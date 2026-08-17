@@ -15,13 +15,17 @@ import type { ChatPattern } from "@cairn/shared/ui/chat-themes";
 export function ChatPatternOverlay({ pattern }: { pattern: ChatPattern }) {
   const id = "cairn-chat-pattern";
 
-  // Deterministic pseudo-noise: a fixed 8x8 grid of tiny specks at seeded
-  // positions (mulberry32 seeded by the pattern id) so the same theme renders
-  // identically every time — no Math.random on the render path.
+  // Deterministic pseudo-noise: a fixed set of tiny specks at seeded positions
+  // (mulberry32 seeded by the pattern id) so the same theme renders identically
+  // every time — no Math.random on the render path. The PRNG state is held
+  // OUTSIDE the closure so it advances between calls (a fresh seed per call
+  // would emit the same value every time and stack every speck in one spot).
   const noiseSpecks = useMemo(() => {
     const seed = 0x5eed ^ [...pattern].reduce((a, c) => a + c.charCodeAt(0), 0);
+    let state = seed;
     const rnd = () => {
-      let t = (seed + 0x6d2b79f5) | 0;
+      state = (state + 0x6d2b79f5) | 0;
+      let t = state;
       t = Math.imul(t ^ (t >>> 15), t | 1);
       t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;

@@ -490,8 +490,17 @@ export function applyChatTheme(themeId: string, extras: ChatThemePreset[] = []):
   const v = preset[mode];
 
   root.style.setProperty("--chat-bg", v.bg);
-  root.style.setProperty("--chat-user", v.userBubble);
-  root.style.setProperty("--chat-user-fg", v.userBubbleFg);
+  // The default preset's user bubble IS the accent colour (byte-matches today's
+  // rendering), so it must track the user's chosen accent — not the hardcoded
+  // default-accent palette in the preset. Non-default themes use their static
+  // palette.
+  if (preset.id === DEFAULT_CHAT_THEME_ID) {
+    root.style.setProperty("--chat-user", "var(--accent)");
+    root.style.setProperty("--chat-user-fg", "var(--accent-fg)");
+  } else {
+    root.style.setProperty("--chat-user", v.userBubble);
+    root.style.setProperty("--chat-user-fg", v.userBubbleFg);
+  }
   root.style.setProperty("--chat-ai", v.aiBubble);
   root.style.setProperty("--chat-ai-text", v.aiText);
   root.style.setProperty("--chat-font", chatThemeFontStack(preset));

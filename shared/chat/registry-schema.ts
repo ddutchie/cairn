@@ -633,11 +633,21 @@ const themeDefinition = z.object({
   light: themeMode,
 });
 // A gradient theme must declare 2+ stops; solid/pattern themes are single-stop.
+// In every mode, the base `bg` colour must equal `stops[0]` — both renderers use
+// `bg` as the solid/pattern base or the first gradient stop, so an inconsistency
+// would render a different base than the theme intends.
 const themeDefinitionRefined = themeDefinition.refine(
-  (d) =>
-    (d.bgType === "gradient" && d.dark.stops.length >= 2 && d.light.stops.length >= 2) ||
-    (d.bgType !== "gradient" && d.dark.stops.length === 1 && d.light.stops.length === 1),
-  { message: "gradient themes need 2+ stops in both modes; solid/pattern themes need exactly 1" }
+  (d) => {
+    const stopsOk =
+      (d.bgType === "gradient" && d.dark.stops.length >= 2 && d.light.stops.length >= 2) ||
+      (d.bgType !== "gradient" && d.dark.stops.length === 1 && d.light.stops.length === 1);
+    const bgOk = d.dark.bg === d.dark.stops[0] && d.light.bg === d.light.stops[0];
+    return stopsOk && bgOk;
+  },
+  {
+    message:
+      "gradient themes need 2+ stops in both modes (solid/pattern exactly 1), and each mode's bg must equal stops[0]",
+  }
 );
 
 const themeEntry = z.object({ ...entryMeta, definition: themeDefinitionRefined }).passthrough();

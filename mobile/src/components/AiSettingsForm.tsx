@@ -14,6 +14,7 @@ import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight,
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme, useIsDark, useChatTheme, setChatThemeId } from "@/theme";
+import { LinearGradient } from "expo-linear-gradient";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { getCachedPersonalitiesManifest, fetchPersonalitiesManifest } from "@/chat/personalities-registry";
@@ -1309,6 +1310,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
 
 /** Small preview of a chat theme: bg (solid/gradient/pattern) + two bubbles. */
 function ChatThemeMiniPreview({ theme, isDark }: { theme: ChatThemePreset; isDark: boolean }) {
+  const t = useTheme();
   const v = isDark ? theme.dark : theme.light;
   const stops = v.stops.length >= 2 ? v.stops : [v.bg, v.bg];
   return (
@@ -1318,24 +1320,21 @@ function ChatThemeMiniPreview({ theme, isDark }: { theme: ChatThemePreset; isDar
         height: 34,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: "rgba(128,128,128,0.4)",
+        borderColor: t.border,
         padding: 3,
         gap: 3,
         backgroundColor: v.bg,
       }}
     >
       {theme.bgType === "gradient" && (
-        <View
-          style={[StyleSheet.absoluteFill, {
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: "rgba(128,128,128,0.4)",
-            backgroundColor: stops[stops.length - 1],
-            opacity: 0.5,
-          }]}
+        <LinearGradient
+          colors={stops as [string, string, ...string[]]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: 8, borderWidth: 1, borderColor: t.border, opacity: 0.6 }]}
         />
       )}
-      <View style={{ alignSelf: "flex-start", width: "55%", height: 7, borderRadius: 3, backgroundColor: v.aiBubble, borderWidth: 1, borderColor: "rgba(128,128,128,0.3)" }} />
+      <View style={{ alignSelf: "flex-start", width: "55%", height: 7, borderRadius: 3, backgroundColor: v.aiBubble, borderWidth: 1, borderColor: t.border }} />
       <View style={{ alignSelf: "flex-end", width: "55%", height: 7, borderRadius: 3, backgroundColor: v.userBubble }} />
     </View>
   );

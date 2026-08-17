@@ -27,7 +27,7 @@ import { estimatePromptTokens } from "../token-breakdown";
 import { countTextTokens } from "../tokens";
 import { mapMessage, mapTools } from "./openai-body";
 import { makeOpenAIProvider } from "./openai";
-import type { AiTool, ChatProvider, ChatUsage, StreamEvent, UIMessage } from "./types";
+import type { AiTool, ChatProvider, ChatUsage, StreamEvent, StreamOptions, UIMessage } from "./types";
 
 interface ToolAccum {
   id: string;
@@ -40,6 +40,7 @@ function makeResponsesStreamer(config: OpenAIConfig) {
     messages: UIMessage[],
     tools: Record<string, AiTool>,
     signal?: AbortSignal,
+    options?: StreamOptions,
   ): AsyncGenerator<StreamEvent> {
     // Reuse the shared request builder: it maps messages → input items and
     // flattens the `{ type:"function", function:{…} }` tool defs.
@@ -64,9 +65,10 @@ function makeResponsesStreamer(config: OpenAIConfig) {
     if (!res.ok || !res.body) {
       // 404/405 means the endpoint doesn't serve /responses (or dropped it) —
       // fall back to the Chat Completions streaming path for this call instead
-      // of throwing. Other failures still surface as errors.
+      // of throwing, preserving the selected temperature / other stream options.
+      // Other failures still surface as errors.
       if (isEndpointNotFound(res.status)) {
-        yield* makeOpenAIProvider(config).stream(messages, tools, signal);
+        yield* makeOpenAIProvider(config).stream(messages, tools, signal, options);
         return;
       }
       const detail = res.ok ? "no response body" : `HTTP ${res.status}`;

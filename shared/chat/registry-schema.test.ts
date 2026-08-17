@@ -365,6 +365,35 @@ describe("registry-schema chat themes manifest", () => {
     expect(m.themes[0].id).toBe("ocean");
   });
 
+  it("drops a solid theme that declares 2 stops (cross-field stop-count rule)", () => {
+    const solidTheme = {
+      ...validTheme,
+      definition: {
+        ...validTheme.definition,
+        bgType: "solid",
+        pattern: "none",
+        dark: { ...validTheme.definition.dark, stops: [validTheme.definition.dark.stops[0], "#123456"] },
+        light: { ...validTheme.definition.light, stops: [validTheme.definition.light.stops[0], "#654321"] },
+      },
+    };
+    const m = parseChatThemesManifest(manifestWith([solidTheme, validTheme]));
+    expect(m.themes).toHaveLength(1);
+    expect(m.themes[0].id).toBe("ocean");
+  });
+
+  it("drops a theme whose bg does not match its first stop", () => {
+    const badBg = {
+      ...validTheme,
+      definition: {
+        ...validTheme.definition,
+        dark: { ...validTheme.definition.dark, bg: "#000000" },
+      },
+    };
+    const m = parseChatThemesManifest(manifestWith([badBg, validTheme]));
+    expect(m.themes).toHaveLength(1);
+    expect(m.themes[0].id).toBe("ocean");
+  });
+
   it("rejects an invalid envelope", () => {
     expect(() => parseChatThemesManifest({ version: "x" })).toThrow();
   });
