@@ -10,7 +10,7 @@ import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
-import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
+import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, manifestToChatThemes, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -423,10 +423,61 @@ export function applyFontFamily(fontId: FontFamilyId): void {
 export const CHAT_THEME_KEY = "chatTheme";
 
 /**
+ * Cached community chat themes (fetched from the cairn-community themes.json
+ * manifest). Populated by the theme picker when it loads the catalog; consulted
+ * by `applyChatTheme`/`resolveChatTheme` so a stored community theme id resolves
+ * even outside the picker (app boot, theme flip, ChatQuickSettings).
+ */
+let _communityChatThemes: ChatThemePreset[] = [];
+
+/** Store the fetched community chat-theme presets for id resolution. */
+export function setCommunityChatThemes(presets: ChatThemePreset[]): void {
+  _communityChatThemes = presets;
+}
+
+/**
+ * Fetch the community chat-themes catalog, cache it for id resolution, and
+ * re-apply the active theme if it's a community id. Called at app boot (so a
+ * stored community theme applies without opening a picker) and by the picker
+ * after it refreshes. Soft-fails: no catalog, no problem.
+ */
+export async function fetchAndCacheCommunityChatThemes(): Promise<void> {
+  const api = typeof window !== "undefined" ? window.electron?.registry : undefined;
+  if (!api?.fetchChatThemes) return;
+  try {
+    const cached = await api.fetchChatThemes();
+    let manifest = cached?.manifest;
+    try {
+      const fresh = await api.refreshChatThemes?.();
+      if (fresh?.manifest && fresh.manifest.themes.length > 0) {
+        manifest = fresh.manifest;
+      }
+    } catch {
+      /* soft — keep the cached result on a network failure */
+    }
+    if (!manifest) return;
+    const presets = manifestToChatThemes(manifest.themes);
+    setCommunityChatThemes(presets);
+    // If the stored/active theme is a community id, re-apply it now that it can
+    // resolve — otherwise it silently fell back to the default.
+    const active = typeof document !== "undefined"
+      ? (storage.get<string>(CHAT_THEME_KEY) ?? DEFAULT_CHAT_THEME_ID)
+      : DEFAULT_CHAT_THEME_ID;
+    if (presets.some((p) => p.id === active)) {
+      applyChatTheme(active, presets);
+    }
+  } catch {
+    /* soft — community themes are optional */
+  }
+}
+
+/**
  * Apply the chat theme by preset id. Sets the chat CSS vars + a `data-chat-theme`
  * attribute on `<html>` so the chat surface (panel bg, bubbles, composer, chat
  * font) switches look while the rest of the app stays on global tokens.
- * `extras` overlays fetched community themes for id resolution.
+ * `extras` overlays fetched community themes for id resolution (merged with the
+ * module-level community cache, so callers that don't have the catalog handy —
+ * app boot, theme flip — still resolve community ids).
  *
  * The mode (dark/light) is read from the live `data-theme` attribute (same as
  * `applyAccent`), so it must be re-run after `applyTheme` flips modes.
@@ -434,7 +485,7 @@ export const CHAT_THEME_KEY = "chatTheme";
 export function applyChatTheme(themeId: string, extras: ChatThemePreset[] = []): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
-  const preset = resolveChatTheme(themeId, extras);
+  const preset = resolveChatTheme(themeId, [..._communityChatThemes, ...extras]);
   const mode: "dark" | "light" = root.getAttribute("data-theme") === "light" ? "light" : "dark";
   const v = preset[mode];
 

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
+import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
 import { historyManager, ownWriteGuard } from "@/lib/history";
@@ -158,6 +159,14 @@ export default function Home() {
     startNotificationPolling();
     return () => stopNotificationPolling();
   }, [startNotificationPolling, stopNotificationPolling]);
+
+  // Fetch + cache the community chat-themes catalog at boot so a stored
+  // community theme id applies immediately (it otherwise falls back to the
+  // default until a theme picker mounts). Soft-fails; the pickers refresh on
+  // open too.
+  useEffect(() => {
+    void fetchAndCacheCommunityChatThemes();
+  }, []);
 
   useEffect(() => {
     const electron = window.electron;

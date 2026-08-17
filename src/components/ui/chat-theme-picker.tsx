@@ -17,6 +17,7 @@
 import React, { useEffect, useState } from "react";
 import { ChevronsUpDown, Check, Loader2 } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -40,34 +41,23 @@ function useCommunityThemes(): { themes: ChatThemePreset[]; loaded: boolean } {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Cache-first for an instant paint, then ALWAYS background-refresh and
+      // prefer the fresh manifest. This self-heals a stale cache (e.g. one
+      // written with an older themes.json shape, whose entries parse to
+      // nothing) AND surfaces newly-published community themes without a
+      // manual refresh — the manifest is tiny, so the extra round-trip is
+      // negligible. The shared helper also caches for id resolution + re-applies
+      // the active theme when it's a community id.
+      await fetchAndCacheCommunityChatThemes();
+      if (cancelled) return;
       const api = typeof window !== "undefined" ? window.electron?.registry : undefined;
-      if (!api?.fetchChatThemes) return;
-      try {
-        // Cache-first for an instant paint, then ALWAYS background-refresh and
-        // prefer the fresh manifest. This self-heals a stale cache (e.g. one
-        // written with an older themes.json shape, whose entries parse to
-        // nothing) AND surfaces newly-published community themes without a
-        // manual refresh — the manifest is tiny, so the extra round-trip is
-        // negligible.
-        const cached = await api.fetchChatThemes();
-        let manifest = cached?.manifest;
-        try {
-          const fresh = await api.refreshChatThemes?.();
-          if (fresh?.manifest && fresh.manifest.themes.length > 0) {
-            manifest = fresh.manifest;
-          }
-        } catch {
-          /* soft — keep the cached result on a network failure */
-        }
-        if (!cancelled && manifest) {
-          setExtras(manifestToChatThemes(manifest.themes));
-        }
-      } catch {
-        /* soft — community themes are optional */
-      } finally {
-        if (!cancelled) setLoaded(true);
+      const cached = api ? await api.fetchChatThemes().catch(() => null) : null;
+      if (!cancelled && cached?.manifest) {
+        setExtras(manifestToChatThemes(cached.manifest.themes));
       }
-    })();
+    })().finally(() => {
+      if (!cancelled) setLoaded(true);
+    });
     return () => {
       cancelled = true;
     };
