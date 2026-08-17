@@ -94,6 +94,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
           ) : isUser ? (
             m.content ? (
               <Text style={[styles.userText, {
+                fontFamily: t.chatFont,
                 fontWeight: t.chatFontWeight as 400 | 500,
                 letterSpacing: t.chatTracking,
                 lineHeight: Math.round(21 * t.chatLineHeight),
