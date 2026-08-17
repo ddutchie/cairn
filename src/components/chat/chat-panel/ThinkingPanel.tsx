@@ -1,36 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown, Brain } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { StreamingCursor } from "./message-ui";
-
-/**
- * Persisted manual collapse across remounts. The thinking panel lives inside a
- * Virtuoso-rendered Footer / message item that can remount while the model is
- * streaming (each token re-renders the tree). A plain `useState` override resets
- * to null on a remount, which would pop a user-collapsed panel back open the
- * instant the next reasoning token arrives — so the manual open/collapse choice
- * is stashed at module scope keyed by the reasoning text's opening (stable for a
- * given thinking run). Capped to avoid unbounded growth.
- */
-const manualOverrides = new Map<string, boolean>();
-const OVERRIDE_KEY_LEN = 60;
-const OVERRIDE_MAP_MAX = 64;
-function overrideKey(text: string): string {
-  return text.slice(0, OVERRIDE_KEY_LEN);
-}
-function readOverride(key: string): boolean | null {
-  return manualOverrides.has(key) ? manualOverrides.get(key)! : null;
-}
-function writeOverride(key: string, value: boolean | null): void {
-  if (value === null) manualOverrides.delete(key);
-  else manualOverrides.set(key, value);
-  if (manualOverrides.size > OVERRIDE_MAP_MAX) {
-    const first = manualOverrides.keys().next().value;
-    if (first !== undefined) manualOverrides.delete(first);
-  }
-}
 
 interface ThinkingPanelProps {
   /** Reasoning text. When non-empty the panel renders; when empty it's null. */
@@ -56,9 +29,11 @@ interface ThinkingPanelProps {
  * Collapsible "Thinking" panel for model reasoning text.
  *
  * Behaviour:
- *  - Streaming: expanded by default so the user sees the reasoning flow live.
- *    Auto-collapses the instant the first content token arrives.
- *    User can re-expand at any time.
+ *  - Streaming: expanded by default so the user sees the reasoning flow live,
+ *    and the body auto-scrolls to the newest reasoning. Auto-collapses the
+ *    instant the first content token arrives. The user can collapse/expand at
+ *    any time — the manual override is a plain state toggle that sticks for the
+ *    life of the (stable, non-remounting) streaming panel.
  *  - Final/persisted: rendered collapsed by default with a chevron toggle.
  *
  * The panel renders nothing when `text` is empty (models that don't expose
@@ -70,32 +45,12 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
   streaming = false,
   companionContent,
 }: ThinkingPanelProps) {
-  // `override` is null (auto) or a user-forced expanded/collapsed value.
-  // Whether the panel is expanded while thinking is DERIVED (`thinking`) when
-  // no override is set, so a remount mid-stream can never flash it open — the
-  // old `useState(streaming)` + auto-collapse/re-expand effects re-opened the
-  // panel on every mount and flickered with each content token (Virtuoso
-  // remounts items as their height changes).
-  const [override, setOverride] = useState<boolean | null>(() => readOverride(overrideKey(text)));
+  const [override, setOverride] = useState<boolean | null>(null);
   const hasText = Boolean(text);
   // Expanded while the model is actively thinking (reasoning present, answer
   // not yet started) unless the user has overridden it.
   const thinking = streaming && hasText && !companionContent;
   const expanded = override !== null ? override : thinking;
-
-  // Persist a manual override across remounts (see module docs). Read back any
-  // stored value on mount, and write through on every change so a remount
-  // honours the user's collapse even mid-stream.
-  useEffect(() => {
-    setOverride((prev) => prev ?? readOverride(overrideKey(text)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(() => {
-    const key = overrideKey(text);
-    if (override !== null) writeOverride(key, override);
-    else if (!hasText) writeOverride(key, null); // turn ended — drop the choice
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [override, text]);
 
   // Reset the manual override when text clears (new turn) so a fresh thinking
   // cycle auto-expands again and auto-collapses with companionContent.
@@ -103,13 +58,21 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
     if (!text) setOverride(null);
   }, [text]);
 
+  // Auto-scroll the reasoning body to the newest text while the model is still
+  // thinking, so the live trace stays visible without manual scrolling.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (expanded && thinking && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [text, expanded, thinking]);
+
   // Nothing to render when the model produced neither raw reasoning nor a summary.
   if (!text && !(summary && summary.trim())) return null;
 
   const handleToggle = () => {
-    const next = expanded ? false : true;
-    setOverride(next);
-    writeOverride(overrideKey(text), next);
+    // Invert the current state into an explicit override so it sticks.
+    setOverride(expanded ? false : true);
   };
 
   const collapsedText = summary && summary.trim() ? summary.trim() : text;
@@ -141,6 +104,7 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
       </button>
       {expanded && (
         <div
+          ref={bodyRef}
           className="px-3 py-2 border-t text-[0.786rem] leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto overscroll-contain"
           style={{ borderTopColor: "color-mix(in srgb, var(--border) 50%, transparent)" }}
         >

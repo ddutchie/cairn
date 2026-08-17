@@ -697,7 +697,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             </div>
           ),
           Footer: () => (
-            <div className={cn("px-3 py-3 space-y-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+            <div className={cn("px-3 py-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
               {pendingQuestions && (
                 <QuestionForm
                   questions={pendingQuestions}
@@ -705,14 +705,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
                   disabled={isLoading && !pendingQuestions}
                 />
               )}
-              {isLoading && subagents.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  {subagents.map((sub) => (
-                    <ChatSubagentBlock key={sub.childId} sub={sub} />
-                  ))}
-                </div>
-              )}
-              {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} connectors={connectorMap} />}
             </div>
           ),
         }}
@@ -726,6 +718,26 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           </div>
         )}
       />
+
+      {/* Live streaming indicator — rendered OUTSIDE the Virtuoso so it has a
+          stable DOM position that never remounts while tokens stream in. Inside
+          the Virtuoso Footer, the inline components prop creates a new Footer
+          component every render, so Virtuoso remounted it (and the thinking
+          panel with it) on each token — resetting its scroll and collapsing a
+          user-collapsed panel. Pinned here, the thinking panel keeps its state
+          and scroll, and auto-scrolls to the newest reasoning. */}
+      {isLoading && (
+        <div className={cn("shrink-0", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
+          {subagents.length > 0 && (
+            <div className="flex flex-col gap-1 px-3">
+              {subagents.map((sub) => (
+                <ChatSubagentBlock key={sub.childId} sub={sub} />
+              ))}
+            </div>
+          )}
+          <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} connectors={connectorMap} />
+        </div>
+      )}
 
       {/* Input */}
       {(isLoading || queued.length > 0) && (

@@ -47,20 +47,4 @@ describe("ThinkingPanel expanded state", () => {
     rerender(<ThinkingPanel streaming text="step by step" companionContent="The answer" />);
     expect(expanded()).toBe(false);
   });
-
-  it("keeps a user's collapse while still thinking even across a remount", async () => {
-    const user = userEvent.setup();
-    // Unique reasoning text so the persisted-override key doesn't collide with
-    // other tests (the module-scoped override survives remounts).
-    const text = "remount collapse reasoning trace";
-    const { unmount } = render(<ThinkingPanel streaming text={text} companionContent="" />);
-    expect(expanded()).toBe(true);
-    await user.click(screen.getByRole("button"));
-    expect(expanded()).toBe(false);
-    unmount();
-
-    // A fresh mount (Virtuoso remount mid-stream) must honour the persisted choice.
-    render(<ThinkingPanel streaming text={text} companionContent="" />);
-    expect(expanded()).toBe(false);
-  });
 });
