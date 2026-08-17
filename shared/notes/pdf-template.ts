@@ -14,6 +14,9 @@
  */
 export type PdfTheme = "light" | "dark";
 
+/** Default CSS font-family stack used when no font preset is chosen. */
+export const DEFAULT_PDF_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
 /**
  * Strip characters that are invalid in filenames on macOS/Windows/iOS and
  * collapse to a safe base name, so an exported PDF is named after its note
@@ -78,6 +81,13 @@ export function buildPdfHtml(
    *   title in a repeating page footer via printToPDF's headerTemplate/footerTemplate.
    */
   titleMode: "heading" | "none" = "heading",
+  /**
+   * CSS font-family stack for the note body text. Defaults to the platform
+   * sans stack (matches historical behaviour). Only SYSTEM font stacks are
+   * guaranteed to resolve in the OS print engine — bundled webfonts (e.g.
+   * Geist) won't load, so the stack should carry system fallbacks.
+   */
+  fontFamily: string = DEFAULT_PDF_FONT_FAMILY,
 ): string {
   const v = theme === "dark" ? DARK_VARS : LIGHT_VARS;
   return `<!DOCTYPE html>
@@ -107,7 +117,7 @@ ${theme === "dark" ? `  background: ${v.bg};` : ""}
 }
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: ${fontFamily};
   background: ${v.bg};
   color: ${v.textPrimary};
   /* Ensure nothing overflows the page width */
@@ -230,7 +240,7 @@ ${titleMode === "heading" ? `<h1 class="pdf-title">${escapeHtmlText(title)}</h1>
  * `.totalPages`, `.date`, `.url`). Font size must be set explicitly and small,
  * and colours are constrained by print rendering — we use a muted grey.
  */
-export function buildPdfFooterTemplate(title: string, theme: PdfTheme = "light"): string {
+export function buildPdfFooterTemplate(title: string, theme: PdfTheme = "light", fontFamily: string = DEFAULT_PDF_FONT_FAMILY): string {
   const color = theme === "dark" ? DARK_VARS.textSecondary : LIGHT_VARS.textSecondary;
   const safeTitle = escapeHtmlText(title);
   // box-sizing:border-box so the 100% width includes the 2.2cm horizontal
@@ -238,7 +248,7 @@ export function buildPdfFooterTemplate(title: string, theme: PdfTheme = "light")
   // inherit the main document's global border-box rule, so without this the
   // padded footer overflows the page box and the right-aligned page number can
   // be clipped.
-  return `<div style="box-sizing:border-box;width:100%;font-size:8px;color:${color};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:0 2.2cm;display:flex;align-items:center;justify-content:space-between;">
+  return `<div style="box-sizing:border-box;width:100%;font-size:8px;color:${color};font-family:${fontFamily};padding:0 2.2cm;display:flex;align-items:center;justify-content:space-between;">
   <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">${safeTitle}</span>
   <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
 </div>`;

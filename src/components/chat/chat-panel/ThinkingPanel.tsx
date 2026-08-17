@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown, Brain } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { StreamingCursor } from "./message-ui";
@@ -29,9 +29,11 @@ interface ThinkingPanelProps {
  * Collapsible "Thinking" panel for model reasoning text.
  *
  * Behaviour:
- *  - Streaming: expanded by default so the user sees the reasoning flow live.
- *    Auto-collapses the instant the first content token arrives.
- *    User can re-expand at any time.
+ *  - Streaming: expanded by default so the user sees the reasoning flow live,
+ *    and the body auto-scrolls to the newest reasoning. Auto-collapses the
+ *    instant the first content token arrives. The user can collapse/expand at
+ *    any time — the manual override is a plain state toggle that sticks for the
+ *    life of the (stable, non-remounting) streaming panel.
  *  - Final/persisted: rendered collapsed by default with a chevron toggle.
  *
  * The panel renders nothing when `text` is empty (models that don't expose
@@ -43,12 +45,6 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
   streaming = false,
   companionContent,
 }: ThinkingPanelProps) {
-  // `override` is null (auto) or a user-forced expanded/collapsed value.
-  // Whether the panel is expanded while thinking is DERIVED (`thinking`) when
-  // no override is set, so a remount mid-stream can never flash it open — the
-  // old `useState(streaming)` + auto-collapse/re-expand effects re-opened the
-  // panel on every mount and flickered with each content token (Virtuoso
-  // remounts items as their height changes).
   const [override, setOverride] = useState<boolean | null>(null);
   const hasText = Boolean(text);
   // Expanded while the model is actively thinking (reasoning present, answer
@@ -62,11 +58,20 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
     if (!text) setOverride(null);
   }, [text]);
 
+  // Auto-scroll the reasoning body to the newest text while the model is still
+  // thinking, so the live trace stays visible without manual scrolling.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (expanded && thinking && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [text, expanded, thinking]);
+
   // Nothing to render when the model produced neither raw reasoning nor a summary.
   if (!text && !(summary && summary.trim())) return null;
 
   const handleToggle = () => {
-    // Set the override to the inverse of the current expanded state.
+    // Invert the current state into an explicit override so it sticks.
     setOverride(expanded ? false : true);
   };
 
@@ -98,7 +103,11 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
         />
       </button>
       {expanded && (
-        <div className="px-3 py-2 border-t text-[0.786rem] leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto" style={{ borderTopColor: "color-mix(in srgb, var(--border) 50%, transparent)" }}>
+        <div
+          ref={bodyRef}
+          className="px-3 py-2 border-t text-[0.786rem] leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto overscroll-contain"
+          style={{ borderTopColor: "color-mix(in srgb, var(--border) 50%, transparent)" }}
+        >
           <MarkdownContent content={bodyText} />
           {thinking && <StreamingCursor />}
         </div>

@@ -25,11 +25,12 @@ export function registerPdfExportHandler(ctx: DbContext): void {
     "app:exportNotePdf",
     (
       _e,
-      { title, html, options }: { title: string; html: string; options?: { returnBuffer?: boolean; theme?: PdfTheme } }
+      { title, html, options }: { title: string; html: string; options?: { returnBuffer?: boolean; theme?: PdfTheme; fontFamily?: string } }
     ) =>
       handle(async () => {
         const returnBuffer = options?.returnBuffer ?? false;
         const theme = options?.theme ?? "light";
+        const fontFamily = options?.fontFamily;
         const safeTitle = sanitizeFilename(title);
 
         let savePath = "";
@@ -46,7 +47,7 @@ export function registerPdfExportHandler(ctx: DbContext): void {
           savePath = filePath;
         }
 
-        const fullHtml = buildPdfHtml(title, html, theme, "none");
+        const fullHtml = buildPdfHtml(title, html, theme, "none", fontFamily);
 
         // Open a hidden window, load the HTML, print to PDF, then close
         const printWin = new BrowserWindow({
@@ -63,7 +64,7 @@ export function registerPdfExportHandler(ctx: DbContext): void {
             // Running footer: note title (left) + page number (right) on every page.
             displayHeaderFooter: true,
             headerTemplate: buildPdfHeaderTemplate(),
-            footerTemplate: buildPdfFooterTemplate(title, theme),
+            footerTemplate: buildPdfFooterTemplate(title, theme, fontFamily),
             // Explicit margins so the footer has room. Values in inches:
             // ~0.79in ≈ 2cm top, ~0.59in ≈ 1.5cm bottom, ~0.87in ≈ 2.2cm sides.
             // (Electron 21 removed the old marginsType enum — the object form

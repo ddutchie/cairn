@@ -11,6 +11,9 @@ import { Platform, useColorScheme } from "react-native";
 import { useSyncExternalStore, useMemo } from "react";
 import { getMeta, setMeta } from "@/db";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID, ACCENT_PRESETS, type AccentPreset } from "@cairn/shared/ui/accents";
+import { FONT_PRESETS, resolveFontPreset, type FontPreset } from "@cairn/shared/ui/fonts";
+import { resolveChatTheme, chatThemeFontWeightValue, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "@cairn/shared/ui/chat-themes";
+import { getCachedThemePresets } from "@/chat/themes-registry";
 
 export interface Theme {
   background: string;
@@ -35,6 +38,30 @@ export interface Theme {
   nodeProject: string;
   /** Modal/sheet backdrop dimming colour (already includes its own alpha). */
   scrim: string;
+  /** Chat surface tokens (from the active chat theme). */
+  chatBg: string;
+  /** Background stops: [color] for solid/pattern, or 2+ for gradients. */
+  chatStops: [string, ...string[]];
+  chatBgType: "solid" | "gradient" | "pattern";
+  /** Named pattern rendered when chatBgType === "pattern". */
+  chatPattern: "none" | "scanlines" | "dots" | "grid" | "crosshatch" | "diagonal" | "noise";
+  chatBubbleStyle: "filled" | "glass" | "outlined";
+  chatUser: string;
+  chatUserFg: string;
+  chatAi: string;
+  chatAiText: string;
+  /** RN font-family string for chat text (theme's bundled font). */
+  chatFont: string | undefined;
+  /** Chat-text font weight (400/500) from the theme's fontWeight knob. */
+  chatFontWeight: number;
+  /** Letter-spacing in px applied to chat text. */
+  chatTracking: number;
+  /** Line-height multiplier applied to chat text (1 = platform default). */
+  chatLineHeight: number;
+  /** Bubble corner-radius preset. */
+  chatRadius: "sm" | "md" | "pill";
+  /** Bubble shadow intensity. */
+  chatShadow: "none" | "subtle" | "strong";
 }
 
 export const darkTheme: Theme = {
@@ -57,6 +84,21 @@ export const darkTheme: Theme = {
   info: "#60a5fa",
   nodeProject: "#a78bfa",
   scrim: "rgba(0,0,0,0.5)",
+  chatBg: "#141414",
+  chatStops: ["#141414"],
+  chatBgType: "solid",
+  chatPattern: "none",
+  chatBubbleStyle: "filled",
+  chatUser: "#8faf6f",
+  chatUserFg: "#131c0b",
+  chatAi: "#1a1a1a",
+  chatAiText: "#9e9a94",
+  chatFont: undefined,
+  chatFontWeight: 400,
+  chatTracking: 0,
+  chatLineHeight: 1,
+  chatRadius: "md",
+  chatShadow: "none",
 };
 
 export const lightTheme: Theme = {
@@ -83,6 +125,21 @@ export const lightTheme: Theme = {
   info: "#2563eb",
   nodeProject: "#7c5cd6",
   scrim: "rgba(0,0,0,0.4)",
+  chatBg: "#ffffff",
+  chatStops: ["#ffffff"],
+  chatBgType: "solid",
+  chatPattern: "none",
+  chatBubbleStyle: "filled",
+  chatUser: "#5c7a3f",
+  chatUserFg: "#ffffff",
+  chatAi: "#f0eeeb",
+  chatAiText: "#4a4744",
+  chatFont: undefined,
+  chatFontWeight: 400,
+  chatTracking: 0,
+  chatLineHeight: 1,
+  chatRadius: "md",
+  chatShadow: "none",
 };
 
 /** Priority colours — re-exported from shared so desktop + mobile match. */
@@ -231,15 +288,17 @@ export const hasTabBarSearchField =
 
 
 /** Returns the theme for the current system colour scheme, with the user's
- *  chosen accent preset overlaid. Reactive to both the system scheme and
- *  in-app accent changes. */
+ *  chosen accent preset + chat theme overlaid. Reactive to the system scheme
+ *  and in-app accent/theme changes. */
 export function useTheme(): Theme {
   const scheme = useColorScheme();
   const accentId = useAccent();
+  const chatThemeId = useChatTheme();
   return useMemo(() => {
     const base = scheme === "light" ? lightTheme : darkTheme;
-    return applyAccentToTheme(base, accentId, scheme === "light");
-  }, [scheme, accentId]);
+    const withAccent = applyAccentToTheme(base, accentId, scheme === "light");
+    return applyChatThemeToTheme(withAccent, chatThemeId, scheme === "light");
+  }, [scheme, accentId, chatThemeId]);
 }
 
 /** True when the current system colour scheme is dark (default when unset). */
@@ -309,6 +368,134 @@ export function applyAccentToTheme(base: Theme, accentId: string, isLight: boole
     accentHover: v.hover,
     accentDim: v.dim,
     accentFg: v.fg,
+  };
+}
+
+// ── Note-text font preset (user choice, persisted in the device-global meta DB) ─
+
+const FONT_META_KEY = "fontFamily";
+
+// FONT_PRESETS re-exported below so screens (the picker) pull them from "@/theme".
+export { FONT_PRESETS };
+
+let _fontId: string | null = null;
+const _fontListeners = new Set<() => void>();
+
+function readFontFromMeta(): string {
+  try {
+    return getMeta(FONT_META_KEY) ?? resolveFontPreset(undefined).id;
+  } catch {
+    return resolveFontPreset(undefined).id;
+  }
+}
+
+/** Current note-font preset id (cached; reads meta once). */
+export function getFontId(): string {
+  if (_fontId === null) _fontId = readFontFromMeta();
+  return _fontId;
+}
+
+/** Persist + broadcast a new note-font preset id. No-op if unchanged. */
+export function setFontId(id: string): void {
+  const next = resolveFontPreset(id).id; // normalise unknown ids to default
+  if (_fontId === next) return;
+  _fontId = next;
+  try {
+    setMeta(FONT_META_KEY, next);
+  } catch {
+    // best-effort; in-memory value still drives the UI this session
+  }
+  for (const l of _fontListeners) l();
+}
+
+function subscribeFont(cb: () => void): () => void {
+  _fontListeners.add(cb);
+  return () => _fontListeners.delete(cb);
+}
+
+/** Reactive hook: the current note-font preset id. */
+export function useFont(): string {
+  return useSyncExternalStore(subscribeFont, getFontId, getFontId);
+}
+
+/** Resolve the platform's concrete RN font-family string for a font preset id. */
+export function resolveRNFontFamily(fontId: string): string | undefined {
+  const preset: FontPreset = resolveFontPreset(fontId);
+  return Platform.select(preset.rnFamily) ?? preset.rnFamily.default;
+}
+
+// ── Chat theme (user choice, persisted in the device-global meta DB) ──────────
+
+const CHAT_THEME_META_KEY = "chatTheme";
+
+// Re-exported below so screens (the picker) pull them from "@/theme".
+export { DEFAULT_CHAT_THEME_ID };
+export type { ChatThemePreset };
+
+let _chatThemeId: string | null = null;
+const _chatThemeListeners = new Set<() => void>();
+
+function readChatThemeFromMeta(): string {
+  try {
+    return getMeta(CHAT_THEME_META_KEY) ?? DEFAULT_CHAT_THEME_ID;
+  } catch {
+    return DEFAULT_CHAT_THEME_ID;
+  }
+}
+
+/** Current chat-theme id (cached; reads meta once). */
+export function getChatThemeId(): string {
+  if (_chatThemeId === null) _chatThemeId = readChatThemeFromMeta();
+  return _chatThemeId;
+}
+
+/** Persist + broadcast a new chat-theme id. No-op if unchanged. */
+export function setChatThemeId(id: string): void {
+  // Store the id as-is (a built-in OR a community theme id) — normalization to
+  // the default only happens at RESOLVE time, when the id matches nothing.
+  if (_chatThemeId === id) return;
+  _chatThemeId = id;
+  try {
+    setMeta(CHAT_THEME_META_KEY, id);
+  } catch {
+    // best-effort; in-memory value still drives the UI this session
+  }
+  for (const l of _chatThemeListeners) l();
+}
+
+function subscribeChatTheme(cb: () => void): () => void {
+  _chatThemeListeners.add(cb);
+  return () => _chatThemeListeners.delete(cb);
+}
+
+/** Reactive hook: the current chat-theme id. */
+export function useChatTheme(): string {
+  return useSyncExternalStore(subscribeChatTheme, getChatThemeId, getChatThemeId);
+}
+
+/** Overlay a chat theme's palette + font onto a theme object. */
+export function applyChatThemeToTheme(base: Theme, themeId: string, isLight: boolean): Theme {
+  // Resolve against built-ins + any cached community themes so a community id
+  // renders (falls back to the default when the id matches nothing).
+  const preset: ChatThemePreset = resolveChatTheme(themeId, getCachedThemePresets());
+  const v = isLight ? preset.light : preset.dark;
+  return {
+    ...base,
+    chatBg: v.bg,
+    chatStops: v.stops as [string, ...string[]],
+    chatBgType: preset.bgType,
+    chatPattern: preset.pattern,
+    chatBubbleStyle: preset.bubbleStyle,
+    chatUser: v.userBubble,
+    chatUserFg: v.userBubbleFg,
+    chatAi: v.aiBubble,
+    chatAiText: v.aiText,
+    chatFont: resolveRNFontFamily(preset.font),
+    chatFontWeight: chatThemeFontWeightValue(preset),
+    chatTracking: preset.tracking,
+    chatLineHeight: preset.lineHeight,
+    chatRadius: preset.radius,
+    chatShadow: preset.shadow,
   };
 }
 

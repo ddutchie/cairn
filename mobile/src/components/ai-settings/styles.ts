@@ -14,6 +14,12 @@ export function makeAiSettingsStyles(t: Theme) {
     loadingBox: { paddingVertical: 48, alignItems: "center" },
     body: { flex: 1 },
     bodyContent: { padding: 18, gap: 8 },
+    // Native segmented-control tab bar (3-tab AI settings).
+    tabBar: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 2 },
+    // Chat-theme rows (Tuning tab) — reuse the nav-row card look.
+    list: { gap: 8 },
+    themeRowActive: { borderColor: t.accent, backgroundColor: t.accentDim },
+    themeCommunityTag: { ...typeScale.caption, color: t.accent },
 
     sectionLabel: {
       ...typeScale.overline,
@@ -222,23 +228,7 @@ export function makeAiSettingsStyles(t: Theme) {
     creditsValue: { ...typeScale.control, color: t.textPrimary, fontWeight: "600" },
     creditsSub: { ...typeScale.caption, color: t.textSecondary },
 
-    // Saved-provider switcher chips.
-    providerChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
-    providerChip: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      maxWidth: "100%",
-      backgroundColor: t.surface2,
-      borderWidth: 1,
-      borderColor: t.border,
-      borderRadius: 9,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-    },
-    providerChipActive: { backgroundColor: t.accent, borderColor: t.accent },
-    providerChipText: { ...typeScale.control, color: t.textSecondary, flexShrink: 1 },
-    providerChipTextActive: { color: t.accentFg, fontWeight: "600" },
+    // "Add provider" row inside the saved-providers dropdown sheet.
     providerAddChip: {
       flexDirection: "row",
       alignItems: "center",

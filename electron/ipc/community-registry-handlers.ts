@@ -19,6 +19,8 @@ import {
   refreshAutomationsManifest,
   fetchPersonalitiesManifest,
   refreshPersonalitiesManifest,
+  fetchChatThemesManifest,
+  refreshChatThemesManifest,
 } from "../lib/community-registry";
 
 export function registerCommunityRegistryHandlers(): void {
@@ -34,4 +36,8 @@ export function registerCommunityRegistryHandlers(): void {
   // Personalities live in a SEPARATE manifest (personalities.json), same rationale.
   registerIpcHandle("registry:fetchPersonalities", () => handle(() => fetchPersonalitiesManifest()));
   registerIpcHandle("registry:refreshPersonalities", () => handle(() => refreshPersonalitiesManifest()));
+  // Chat themes live in a SEPARATE manifest (themes.json), same rationale — new
+  // themes ship without an app update.
+  registerIpcHandle("registry:fetchChatThemes", () => handle(() => fetchChatThemesManifest()));
+  registerIpcHandle("registry:refreshChatThemes", () => handle(() => refreshChatThemesManifest()));
 }

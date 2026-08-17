@@ -6,12 +6,15 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
+  StyleSheet,
 } from "react-native";
-import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
+import SegmentedControl from "@react-native-segmented-control/segmented-control";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, ChevronUp, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
-import { useTheme } from "@/theme";
+import { useTheme, useIsDark, useChatTheme, setChatThemeId } from "@/theme";
+import { LinearGradient } from "expo-linear-gradient";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { getCachedPersonalitiesManifest, fetchPersonalitiesManifest } from "@/chat/personalities-registry";
@@ -42,6 +45,10 @@ import {
   toggleFavoriteModel,
   getChatPersonalityId,
   setChatPersonalityId,
+  getChatTemperature,
+  setChatTemperature,
+  getChatMaxSteps,
+  setChatMaxSteps,
   type ProviderPref,
   type SavedProvider,
 } from "@/chat/ai-config";
@@ -49,8 +56,7 @@ import { isRorkAvailable } from "@/chat/providers/rork";import {
   isAppleProviderAvailable,
   isAppleServerProviderAvailable,
   isAppleDevEnabled,
-} from "@/chat/providers/apple";
-import {
+} from "@/chat/providers/apple";import {
   appleLlmUnavailableReason,
   appleServerUnavailableReason,
   appleQuotaStatus,
@@ -72,11 +78,19 @@ import { useAiSettingsStyles } from "./ai-settings/styles";
 import { SegmentButton } from "./ai-settings/SegmentButton";
 import { Field } from "./ai-settings/Field";
 import { QuotaBar } from "./ai-settings/QuotaBar";
+import { PresetStepperRow } from "./ai-settings/PresetStepperRow";
+import { UsageBody } from "./ai-settings/UsageBody";
 import { ProviderList, type ResolvedProviderLogo } from "./ai-settings/ProviderList";
 import {
   getCachedProvidersManifest,
   fetchProvidersManifest,
 } from "@/chat/providers-registry";
+import { getCachedThemePresets, fetchChatThemesManifest } from "@/chat/themes-registry";
+import {
+  allChatThemes,
+  manifestToChatThemes,
+  type ChatThemePreset,
+} from "@cairn/shared/ui/chat-themes";
 import type { ProvidersManifest } from "@cairn/shared/chat/registry-schema";
 
 /** Normalize an endpoint URL for keyed matching (trailing slash + case). */
@@ -126,6 +140,7 @@ function formatCredits(n: number): string {
  */
 export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const t = useTheme();
+  const isDark = useIsDark();
   const styles = useAiSettingsStyles();
 
   // Warm the models.dev catalog + re-render rows once it arrives (cost/logo/
@@ -224,6 +239,16 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [personalityId, setPersonalityId] = useState(() => getChatPersonalityId());
   const [personalityManifest, setPersonalityManifest] = useState(() => getCachedPersonalitiesManifest());
   const [personalityRefreshing, setPersonalityRefreshing] = useState(false);
+  // 3-tab layout: setup (provider + model) / tuning (settings + theme) / usage.
+  // "setup" persists on Save (Done); "tuning" and "usage" are live/read-only.
+  const [tab, setTab] = useState(0);
+  // Model-behavior knobs (live-apply, desktop parity) — temperature "Auto" =
+  // undefined (omit the field); max steps default 30.
+  const [temperature, setTemperature] = useState<number | undefined>(() => getChatTemperature());
+  const [maxSteps, setMaxSteps] = useState(() => getChatMaxSteps());
+  // Community chat themes for the Theme section (cache-first + background fetch).
+  const [communityThemes, setCommunityThemes] = useState<ChatThemePreset[]>(() => getCachedThemePresets());
+  const chatThemeId = useChatTheme();
   // Which personality row is expanded to show its appended prompt.
   const [expandedPersonality, setExpandedPersonality] = useState<string | null>(null);
   // Model discovery via GET {base}/models.
@@ -503,6 +528,39 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     setPersonalityOpen(false);
   };
 
+  // Community chat themes for the Theme section: seed from the on-device cache
+  // (works offline) then refresh in the background so new catalog themes appear
+  // without an app update.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { manifest } = await fetchChatThemesManifest();
+        if (!cancelled && manifest) setCommunityThemes(manifestToChatThemes(manifest.themes));
+      } catch {
+        /* soft — cached themes still render */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const allThemes = useMemo(() => allChatThemes(communityThemes), [communityThemes]);
+
+  // Model-behavior knobs apply live (desktop quick-settings parity).
+  const chooseTemperature = (v: number | undefined) => {
+    setChatTemperature(v);
+    setTemperature(v);
+    haptics.selection();
+  };
+  const chooseMaxSteps = (v: number) => {
+    setChatMaxSteps(v);
+    setMaxSteps(v);
+    haptics.selection();
+  };
+  const chooseChatTheme = (id: string) => {
+    setChatThemeId(id);
+    haptics.selection();
+  };
+
   const save = async () => {
     setSaving(true);
     try {
@@ -648,6 +706,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           icon={ICON_CHECK}
           variant="done"
           disabled={saving}
+          hidden={tab !== 0}
           accessibilityLabel="Save AI settings"
           onPress={toolbarPress(save)}
         >
@@ -660,11 +719,28 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
             <ActivityIndicator color={t.textTertiary} />
           </View>
         ) : (
+          <>
+          {/* 3-tab layout (native segmented control, iOS/Android). "Setup" holds
+              provider + model and saves on Done; "Tuning" (settings + theme) and
+              "Usage" are live/read-only. */}
+          <View style={styles.tabBar}>
+            <SegmentedControl
+              style={{ height: 36 }}
+              tintColor={t.accent}
+              fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
+              activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
+              values={["Setup", "Tuning", "Usage"]}
+              selectedIndex={tab}
+              onChange={(e) => setTab(e.nativeEvent.selectedSegmentIndex)}
+            />
+          </View>
           <ScrollView
             style={styles.body}
             contentContainerStyle={styles.bodyContent}
             keyboardShouldPersistTaps="handled"
           >
+          {tab === 0 && (
+            <>
             {showChooser ? (
               <>
                 <Text style={styles.sectionLabel}>Provider</Text>
@@ -1061,62 +1137,110 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               <ChevronRight size={18} color={t.textTertiary} />
             </Pressable>
             ) : null}
+            </>
+          )}
+          {tab === 1 && (
+            <>
+              {/* Model behavior knobs — live-apply (desktop quick-settings parity). */}
+              <Text style={styles.sectionLabel}>Model settings</Text>
+              <PresetStepperRow
+                label="Temperature"
+                description={temperature == null
+                  ? "Auto: no temperature is sent — the model uses its own default."
+                  : "Sent when the model supports it. Lower = more deterministic, higher = more creative. Tap Auto to let the model decide."}
+                value={temperature ?? 0.3}
+                onChange={chooseTemperature}
+                presets={[0.1, 0.3, 0.5, 0.7, 1.0]}
+                autoActive={temperature == null}
+                onAuto={() => chooseTemperature(undefined)}
+              />
+              <PresetStepperRow
+                label="Max steps"
+                description="Tool-call rounds the chat can take per message. Increase for complex multi-tool tasks."
+                value={maxSteps}
+                onChange={chooseMaxSteps}
+                presets={[10, 20, 30, 50, 1000]}
+                formatPreset={(n) => (n === 1000 ? "∞" : String(n))}
+              />
 
-            <Pressable
-              style={styles.navRow}
-              onPress={() => {
-                haptics.selection();
-                openPersonalities();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Choose a chat personality"
-            >
-              <Brain size={16} color={t.textSecondary} />
-              <View style={styles.navRowMain}>
-                <Text style={styles.navRowTitle}>Chat personality</Text>
-                <Text style={styles.navRowSub}>
-                  {personalityId
-                    ? personalityManifest?.personalities.find((p) => p.id === personalityId)?.definition.name ?? "Selected"
-                    : "Layer behavioral rules onto the assistant — e.g. Caveman, Grill Me. Off by default."}
-                </Text>
-              </View>
-              <ChevronRight size={18} color={t.textTertiary} />
-            </Pressable>
+              <Pressable
+                style={styles.navRow}
+                onPress={() => {
+                  haptics.selection();
+                  openPersonalities();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Choose a chat personality"
+              >
+                <Brain size={16} color={t.textSecondary} />
+                <View style={styles.navRowMain}>
+                  <Text style={styles.navRowTitle}>Chat personality</Text>
+                  <Text style={styles.navRowSub}>
+                    {personalityId
+                      ? personalityManifest?.personalities.find((p) => p.id === personalityId)?.definition.name ?? "Selected"
+                      : "Layer behavioral rules onto the assistant — e.g. Caveman, Grill Me. Off by default."}
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={t.textTertiary} />
+              </Pressable>
 
-            <Pressable
-              style={styles.navRow}
-              onPress={() => {
-                haptics.selection();
-                router.push("/settings/tools");
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Open Tools & Services"
-            >
-              <Wrench size={16} color={t.textSecondary} />
-              <View style={styles.navRowMain}>
-                <Text style={styles.navRowTitle}>Tools &amp; Services</Text>
-                <Text style={styles.navRowSub}>Connect web search (Tavily, Brave) and other services, and choose which tools the assistant can use.</Text>
-              </View>
-              <ChevronRight size={18} color={t.textTertiary} />
-            </Pressable>
+              <Pressable
+                style={styles.navRow}
+                onPress={() => {
+                  haptics.selection();
+                  router.push("/settings/tools");
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Open Tools & Services"
+              >
+                <Wrench size={16} color={t.textSecondary} />
+                <View style={styles.navRowMain}>
+                  <Text style={styles.navRowTitle}>Tools &amp; Services</Text>
+                  <Text style={styles.navRowSub}>Connect web search (Tavily, Brave) and other services, and choose which tools the assistant can use.</Text>
+                </View>
+                <ChevronRight size={18} color={t.textTertiary} />
+              </Pressable>
 
-            <Pressable
-              style={styles.navRow}
-              onPress={() => {
-                haptics.selection();
-                router.push("/settings/usage" as Href);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Open chat usage"
-            >
-              <Wallet size={16} color={t.textSecondary} />
-              <View style={styles.navRowMain}>
-                <Text style={styles.navRowTitle}>Usage</Text>
-                <Text style={styles.navRowSub}>Tokens and cost for your chat messages on this device.</Text>
+              <Text style={styles.sectionLabel}>Chat theme</Text>
+              <Text style={styles.compatHint}>
+                The look of the chat surface — background, bubbles, and chat font. Independent of
+                accent and note font.
+              </Text>
+              <View style={styles.list}>
+                {allThemes.map((preset) => {
+                  const active = preset.id === chatThemeId;
+                  const isCommunity = preset.community === true;
+                  return (
+                    <Pressable
+                      key={preset.id}
+                      style={[styles.navRow, active && styles.themeRowActive]}
+                      onPress={() => chooseChatTheme(preset.id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={preset.name}
+                    >
+                      <ChatThemeMiniPreview theme={preset} isDark={isDark} />
+                      <View style={styles.navRowMain}>
+                        <Text style={styles.navRowTitle}>
+                          {preset.name}
+                          {isCommunity ? <Text style={styles.themeCommunityTag}> · Community</Text> : null}
+                        </Text>
+                        <Text style={styles.navRowSub} numberOfLines={1}>{preset.description}</Text>
+                      </View>
+                      {active && <Check size={16} color={t.accent} />}
+                    </Pressable>
+                  );
+                })}
               </View>
-              <ChevronRight size={18} color={t.textTertiary} />
-            </Pressable>
+            </>
+          )}
+          {tab === 2 && (
+            <>
+              <UsageBody />
+            </>
+          )}
           </ScrollView>
+          </>
         )}
 
         <BottomSheet
@@ -1180,6 +1304,38 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
             )}
           </ScrollView>
         </BottomSheet>
+    </View>
+  );
+}
+
+/** Small preview of a chat theme: bg (solid/gradient/pattern) + two bubbles. */
+function ChatThemeMiniPreview({ theme, isDark }: { theme: ChatThemePreset; isDark: boolean }) {
+  const t = useTheme();
+  const v = isDark ? theme.dark : theme.light;
+  const stops = v.stops.length >= 2 ? v.stops : [v.bg, v.bg];
+  return (
+    <View
+      style={{
+        width: 44,
+        height: 34,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: t.border,
+        padding: 3,
+        gap: 3,
+        backgroundColor: v.bg,
+      }}
+    >
+      {theme.bgType === "gradient" && (
+        <LinearGradient
+          colors={stops as [string, string, ...string[]]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: 8, borderWidth: 1, borderColor: t.border, opacity: 0.6 }]}
+        />
+      )}
+      <View style={{ alignSelf: "flex-start", width: "55%", height: 7, borderRadius: 3, backgroundColor: v.aiBubble, borderWidth: 1, borderColor: t.border }} />
+      <View style={{ alignSelf: "flex-end", width: "55%", height: 7, borderRadius: 3, backgroundColor: v.userBubble }} />
     </View>
   );
 }

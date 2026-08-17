@@ -8,21 +8,26 @@ import {
   useAccent,
   setAccentId,
   useIsDark,
+  useFont,
+  setFontId,
+  resolveRNFontFamily,
   ACCENT_PRESETS,
+  FONT_PRESETS,
   type as typeScale,
   type Theme,
 } from "@/theme";
 
 /**
- * Appearance settings — currently the accent-colour picker. Presented as a
- * modal from the Projects header (right of the Sync button). The rest of the
- * theme (light/dark) follows the system scheme, matching the app's existing
- * behaviour, so this screen focuses on the one thing the user can choose.
+ * Appearance settings — accent colour + note-text font. Presented as a modal
+ * from the Projects header (right of the Sync button). Light/dark follows the
+ * system scheme, so this screen covers the things the user can choose. (The
+ * chat theme lives in AI settings → Tuning.)
  */
 export default function AppearanceSettingsScreen() {
   const t = useTheme();
   const isDark = useIsDark();
   const accentId = useAccent();
+  const fontId = useFont();
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
@@ -66,6 +71,43 @@ export default function AppearanceSettingsScreen() {
           })}
         </View>
       </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Note font</Text>
+        <Text style={styles.sectionHint}>
+          Font used for note text — the editor, preview, and PDF export. UI stays on the system
+          font.
+        </Text>
+        <View style={styles.list}>
+          {FONT_PRESETS.map((preset) => {
+            const active = preset.id === fontId;
+            return (
+              <PressableScale
+                key={preset.id}
+                style={[styles.row, active && styles.rowActive]}
+                onPress={() => {
+                  haptics.selection();
+                  setFontId(preset.id);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={preset.name}
+              >
+                <Text style={[styles.fontSample, { fontFamily: resolveRNFontFamily(preset.id), color: t.textPrimary }]}>
+                  Aa
+                </Text>
+                <View style={styles.rowMain}>
+                  <Text style={styles.rowTitle}>{preset.name}</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>
+                    {preset.description}
+                  </Text>
+                </View>
+                {active && <Check size={18} color={t.accent} />}
+              </PressableScale>
+            );
+          })}
+        </View>
+      </View>
     </ScrollView>
   );
 }
@@ -91,6 +133,7 @@ function makeStyles(t: Theme) {
     },
     rowActive: { borderColor: t.accent, backgroundColor: t.accentDim },
     swatch: { width: 26, height: 26, borderRadius: 999, borderWidth: 1 },
+    fontSample: { ...typeScale.title, minWidth: 32, textAlign: "center" },
     rowMain: { flex: 1, gap: 2 },
     rowTitle: { ...typeScale.control, color: t.textPrimary },
     rowSub: { ...typeScale.caption, color: t.textSecondary },

@@ -6,12 +6,13 @@ import { Trash2, ChevronDown, ArrowLeftFromLine, Loader2, Clock } from "lucide-r
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
+import type { ChatToolCall, PendingQuestion } from "@/hooks/useChatStream";
 import { useChatMessageQueue, useQueueDrain, type QueuedMessage } from "@/hooks/useChatMessageQueue";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { ipcAwaitResult } from "@/store/ipc";
 import { resolvePromptContext } from "@/lib/context-resolver";
 
-import type { ChatHistoryEntry } from "@/types";
+import type { ChatHistoryEntry, ChatSubagent } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatInputArea } from "../ChatInputArea";
@@ -21,7 +22,7 @@ import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SuggestedPrompts } from "./SuggestedPrompts";
 import { ToolCallIndicator } from "./ToolCallIndicator";
-import { useCommunityConnectorMap } from "./connector-context";
+import { useCommunityConnectorMap, type ChatConnectorMeta } from "./connector-context";
 import { QuestionForm } from "./QuestionForm";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { getCommandsForScope } from "@/lib/slash-commands";
@@ -71,6 +72,75 @@ interface ChatPanelProps {
   prefill?: { text: string; autoSend?: boolean } | null;
   onPrefillConsumed?: () => void;
   popoutMode?: boolean;
+}
+
+/**
+ * Streaming Footer context.
+ *
+ * The Virtuoso `components.Footer` must be a STABLE module-scope reference: an
+ * inline arrow function gets a new identity every render, so Virtuoso
+ * unmounts/remounts the whole Footer (and the streaming thinking panel inside
+ * it) on every streamed token — resetting its scroll and any collapse/expand.
+ * So we render a stable Footer component that consumes this context, and
+ * ChatPanel re-renders it reactively via the provider value. The Footer lives
+ * INSIDE the Virtuoso scroller, so it grows downward in the scroll flow with
+ * the list's padding.
+ */
+interface StreamingFooterValue {
+  isLoading: boolean;
+  pendingQuestions: PendingQuestion[] | null;
+  subagents: ChatSubagent[];
+  toolCalls: ChatToolCall[];
+  streamingContent: string;
+  streamingThought: string;
+  connectorMap: Record<string, ChatConnectorMeta> | undefined;
+  activeView: string;
+  handleSend: ((text?: string, attachments?: never[]) => void) | null;
+}
+const StreamingFooterContext = React.createContext<StreamingFooterValue>({
+  isLoading: false,
+  pendingQuestions: null,
+  subagents: [],
+  toolCalls: [],
+  streamingContent: "",
+  streamingThought: "",
+  connectorMap: undefined,
+  activeView: "",
+  handleSend: null,
+});
+
+/** Stable Footer — rendered inside the Virtuoso so it grows downward in the
+ *  scroll flow with the list's padding, but never remounts while streaming
+ *  (consumes the context above, so it re-renders on each token reactively). */
+function ChatFooter() {
+  const s = React.useContext(StreamingFooterContext);
+  const handleSend = s.handleSend;
+  return (
+    <div className={cn("px-3 py-3 space-y-3", s.activeView === "chat" && "max-w-3xl mx-auto w-full")}>
+      {s.isLoading && s.subagents.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {s.subagents.map((sub) => (
+            <ChatSubagentBlock key={sub.childId} sub={sub} />
+          ))}
+        </div>
+      )}
+      {s.isLoading && (
+        <ToolCallIndicator
+          toolCalls={s.toolCalls}
+          streamingContent={s.streamingContent}
+          streamingThought={s.streamingThought}
+          connectors={s.connectorMap}
+        />
+      )}
+      {s.pendingQuestions && handleSend && (
+        <QuestionForm
+          questions={s.pendingQuestions}
+          onSubmit={(text) => handleSend(text)}
+          disabled={s.isLoading}
+        />
+      )}
+    </div>
+  );
 }
 
 export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelProps = {}) {
@@ -604,7 +674,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   }, []);
 
   return (
-    <div className="flex flex-1 flex-col min-h-0 overflow-hidden bg-[var(--surface)]">
+    <div className="chat-themed flex flex-1 flex-col min-h-0 overflow-hidden">
       {/* Sub-header / toolbar */}
       <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
         {popoutMode ? (
@@ -678,54 +748,52 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       </div>
 
       {/* Messages — virtualized so long threads never balloon the DOM; only the
-          items near the viewport are mounted no matter how far you scroll. */}
-      <Virtuoso
-        ref={chatVirtuosoRef}
-        className="flex-1 min-h-0"
-        data={messages}
-        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-        followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
-        components={{
-          EmptyPlaceholder: () => (
-            <div className={cn("px-3 py-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-              <SuggestedPrompts
-                onSend={handleSend}
-                disabled={isLoading || !threadId}
-                prompts={activeView === "graph" ? graphPrompts : undefined}
-                subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
+          items near the viewport are mounted no matter how far you scroll. The
+          StreamingFooterContext feeds the stable Footer (see ChatFooter) so the
+          streaming indicator stays inside the scroller, growing downward. */}
+      <StreamingFooterContext.Provider
+        value={{
+          isLoading,
+          pendingQuestions,
+          subagents,
+          toolCalls,
+          streamingContent,
+          streamingThought,
+          connectorMap,
+          activeView,
+          handleSend,
+        }}
+      >
+        <Virtuoso
+          ref={chatVirtuosoRef}
+          className="flex-1 min-h-0"
+          data={messages}
+          initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+          followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
+          components={{
+            EmptyPlaceholder: () => (
+              <div className={cn("px-3 py-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+                <SuggestedPrompts
+                  onSend={handleSend}
+                  disabled={isLoading || !threadId}
+                  prompts={activeView === "graph" ? graphPrompts : undefined}
+                  subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
+                />
+              </div>
+            ),
+            Footer: ChatFooter,
+          }}
+          itemContent={(_index, message) => (
+            <div className={cn("px-3 py-1.5", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+              <ChatMessageBubble
+                message={message}
+                onRetry={!isLoading ? handleRetry : undefined}
+                connectors={connectorMap}
               />
             </div>
-          ),
-          Footer: () => (
-            <div className={cn("px-3 py-3 space-y-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-              {pendingQuestions && (
-                <QuestionForm
-                  questions={pendingQuestions}
-                  onSubmit={(text) => handleSend(text)}
-                  disabled={isLoading && !pendingQuestions}
-                />
-              )}
-              {isLoading && subagents.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  {subagents.map((sub) => (
-                    <ChatSubagentBlock key={sub.childId} sub={sub} />
-                  ))}
-                </div>
-              )}
-              {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} connectors={connectorMap} />}
-            </div>
-          ),
-        }}
-        itemContent={(_index, message) => (
-          <div className={cn("px-3 py-1.5", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-            <ChatMessageBubble
-              message={message}
-              onRetry={!isLoading ? handleRetry : undefined}
-              connectors={connectorMap}
-            />
-          </div>
-        )}
-      />
+          )}
+        />
+      </StreamingFooterContext.Provider>
 
       {/* Input */}
       {(isLoading || queued.length > 0) && (

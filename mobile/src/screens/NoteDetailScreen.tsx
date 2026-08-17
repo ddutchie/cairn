@@ -26,9 +26,10 @@ import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings"
 import { exportNoteToPdf } from "@/notes/note-pdf";
 import { haptics, toolbarPress } from "@/haptics";
 import { extractHeadings } from "@cairn/shared/notes/toc";
+import { resolveFontPreset } from "@cairn/shared/ui/fonts";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
-import { useTheme, useIsDark, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
+import { useTheme, useIsDark, useFont, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 /**
  * Note viewer / editor. A leaf screen (navigates only back), so both its routes
@@ -44,6 +45,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
   const router = useRouter();
   const t = useTheme();
   const isDark = useIsDark();
+  const fontId = useFont();
   const insets = useSafeAreaInsets();
   // Bottom padding so the note body scrolls clear of the bottom safe area.
   // `insets.bottom` already includes the native tab bar on a tab screen (see
@@ -166,11 +168,11 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
       Alert.alert("Export failed", md.error);
       return;
     }
-    const res = await exportNoteToPdf(md.title, md.markdown, isDark ? "dark" : "light");
+    const res = await exportNoteToPdf(md.title, md.markdown, isDark ? "dark" : "light", resolveFontPreset(fontId).cssFamily);
     if (!res.ok) {
       Alert.alert("PDF export failed", res.error);
     }
-  }, [note, isDark]);
+  }, [note, isDark, fontId]);
 
   if (!note) {
     return <NotFound label="Note" />;

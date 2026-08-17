@@ -23,10 +23,12 @@ import {
   parseProvidersManifest,
   parseAutomationsManifest,
   parsePersonalitiesManifest,
+  parseChatThemesManifest,
   type CommunityManifest,
   type ProvidersManifest,
   type AutomationsManifest,
   type PersonalitiesManifest,
+  type ChatThemesManifest,
 } from "../../shared/chat/registry-schema";
 
 // Manifest TYPES + Zod validation now live in shared/chat/registry-schema.ts so
@@ -37,14 +39,16 @@ export type {
   ProvidersManifest,
   AutomationsManifest,
   PersonalitiesManifest,
+  ChatThemesManifest,
   RegistryMcpEntry,
   RegistryServiceEntry,
   RegistryProviderEntry,
   RegistryAutomationEntry,
   RegistryPersonalityEntry,
+  RegistryThemeEntry,
   RegistryEntryMeta,
 } from "../../shared/chat/registry-schema";
-export { parseManifest, parseProvidersManifest, parseAutomationsManifest, parsePersonalitiesManifest } from "../../shared/chat/registry-schema";
+export { parseManifest, parseProvidersManifest, parseAutomationsManifest, parsePersonalitiesManifest, parseChatThemesManifest } from "../../shared/chat/registry-schema";
 
 export interface RegistryFetchResult {
   manifest: CommunityManifest;
@@ -74,6 +78,13 @@ export interface PersonalitiesFetchResult {
   error?: string;
 }
 
+export interface ChatThemesFetchResult {
+  manifest: ChatThemesManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
 const MANIFEST_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/manifest.json";
 const PROVIDERS_URL =
@@ -82,10 +93,13 @@ const AUTOMATIONS_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/automations.json";
 const PERSONALITIES_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/personalities.json";
+const CHAT_THEMES_URL =
+  "https://raw.githubusercontent.com/ddutchie/cairn-community/main/themes.json";
 const CACHE_FILE = "community-registry.json";
 const PROVIDERS_CACHE_FILE = "community-providers.json";
 const AUTOMATIONS_CACHE_FILE = "community-automations.json";
 const PERSONALITIES_CACHE_FILE = "community-personalities.json";
+const CHAT_THEMES_CACHE_FILE = "community-themes.json";
 const FETCH_TIMEOUT_MS = 10_000;
 
 // ── generic cache + fetch core (shared by both manifests) ───────────────────
@@ -313,16 +327,37 @@ export function refreshPersonalitiesManifest(): Promise<PersonalitiesFetchResult
   return fetchPersonalitiesManifest({ force: true });
 }
 
+// ── chat themes manifest ──────────────────────────────────────────────────────
+
+const CHAT_THEMES_SPEC: FetchSpec<ChatThemesManifest> = {
+  url: CHAT_THEMES_URL,
+  file: CHAT_THEMES_CACHE_FILE,
+  parse: parseChatThemesManifest,
+  empty: { version: 1, updatedAt: "", themes: [] },
+};
+
+/** Fetch the community CHAT THEMES manifest (cache-first; see fetchManifest). */
+export function fetchChatThemesManifest(opts?: { force?: boolean }): Promise<ChatThemesFetchResult> {
+  return fetchGeneric(CHAT_THEMES_SPEC, opts);
+}
+
+/** Force a network refresh of the chat themes manifest. */
+export function refreshChatThemesManifest(): Promise<ChatThemesFetchResult> {
+  return fetchChatThemesManifest({ force: true });
+}
+
 /** Exposed for tests. */
 export const __test = {
   MANIFEST_URL,
   PROVIDERS_URL,
   AUTOMATIONS_URL,
   PERSONALITIES_URL,
+  CHAT_THEMES_URL,
   CACHE_FILE,
   PROVIDERS_CACHE_FILE,
   AUTOMATIONS_CACHE_FILE,
   PERSONALITIES_CACHE_FILE,
+  CHAT_THEMES_CACHE_FILE,
   cachePath: () => cacheFilePath(CACHE_FILE),
   readCache: () => readCacheFile(CACHE_FILE, parseManifest),
   writeCache: (env: CacheEnvelope<CommunityManifest>) => writeCacheFile(CACHE_FILE, env),
@@ -338,4 +373,8 @@ export const __test = {
   readPersonalitiesCache: () => readCacheFile(PERSONALITIES_CACHE_FILE, parsePersonalitiesManifest),
   writePersonalitiesCache: (env: CacheEnvelope<PersonalitiesManifest>) =>
     writeCacheFile(PERSONALITIES_CACHE_FILE, env),
+  chatThemesCachePath: () => cacheFilePath(CHAT_THEMES_CACHE_FILE),
+  readChatThemesCache: () => readCacheFile(CHAT_THEMES_CACHE_FILE, parseChatThemesManifest),
+  writeChatThemesCache: (env: CacheEnvelope<ChatThemesManifest>) =>
+    writeCacheFile(CHAT_THEMES_CACHE_FILE, env),
 };

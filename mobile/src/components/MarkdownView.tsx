@@ -15,7 +15,7 @@ import {
   Quote,
   type LucideIcon,
 } from "lucide-react-native";
-import { useTheme, withAlpha, surfaceTint, type Theme } from "@/theme";
+import { useTheme, useFont, resolveRNFontFamily, withAlpha, surfaceTint, type Theme } from "@/theme";
 import { findNoteIdByTitle, findCardIdByTitle, liveNoteTitleById, liveCardTitleById } from "@/db/queries";
 import { CodeBlock } from "@/components/CodeBlock";
 import {
@@ -65,6 +65,11 @@ export function MarkdownView({
   onChangeContent,
   onHeadingLayout,
   resolveLinks = false,
+  useNoteFont = true,
+  fontFamilyOverride,
+  fontWeightOverride,
+  trackingOverride,
+  lineHeightOverride,
 }: {
   content: string;
   /** When provided, task-list checkboxes become interactive. */
@@ -79,10 +84,31 @@ export function MarkdownView({
    *  Cards become linkable too. Off by default (plain note bodies keep the
    *  cheap title-encoded form, resolved on tap). Turn on for chat. */
   resolveLinks?: boolean;
+  /** When true (default), note text uses the user's chosen note font. Chat
+   *  messages set this false so chat keeps the system font — matching desktop,
+   *  where chat bubbles don't use the note font. */
+  useNoteFont?: boolean;
+  /** Explicit font-family override — takes precedence over note-font. Used by
+   *  chat bubbles to apply the chat THEME's bundled font. */
+  fontFamilyOverride?: string;
+  /** Chat-theme font weight (400/500) applied to body text. */
+  fontWeightOverride?: number;
+  /** Chat-theme letter-spacing in px applied to body text. */
+  trackingOverride?: number;
+  /** Chat-theme line-height multiplier applied to body text (1 = default). */
+  lineHeightOverride?: number;
 }) {
   const t = useTheme();
   const router = useRouter();
-  const styles = useMemo(() => markdownStyles(t), [t]);
+  const fontId = useFont();
+  const fontFamily = useMemo(() => {
+    if (fontFamilyOverride) return fontFamilyOverride;
+    return useNoteFont ? resolveRNFontFamily(fontId) : undefined;
+  }, [fontFamilyOverride, useNoteFont, fontId]);
+  const styles = useMemo(
+    () => markdownStyles(t, fontFamily, fontWeightOverride, trackingOverride, lineHeightOverride),
+    [t, fontFamily, fontWeightOverride, trackingOverride, lineHeightOverride],
+  );
 
   // Resolve a wikilink target: the inner text of [[X]] may be an exact note/card
   // ID (preferred — the assistant emits [[id]] which we render as the title, so
@@ -749,19 +775,29 @@ function hasParentType(parents: ASTNode[], type: string): boolean {
 // ── Styles ── tuned to match the desktop .prose-cairn spec (globals.css:357).
 // Desktop base is 0.875rem @ line-height 1.7; headings h1 1.5rem/700,
 // h2 1.2rem/600, h3 1rem/600; tight paragraph/list margins.
-function markdownStyles(t: Theme) {
+function markdownStyles(t: Theme, fontFamily?: string, fontWeightOverride?: number, trackingOverride?: number, lineHeightOverride?: number) {
   const mono = "Menlo";
   const BASE = 15;
-  const LINE = BASE * 1.7;
+  const LINE = Math.round(BASE * 1.7 * (lineHeightOverride ?? 1));
+  const body: TextStyle = {
+    color: t.textPrimary, fontSize: BASE, lineHeight: LINE, fontFamily,
+    fontWeight: fontWeightOverride as TextStyle["fontWeight"],
+    letterSpacing: trackingOverride,
+  };
+  const headingBase: TextStyle = {
+    fontFamily,
+    fontWeight: fontWeightOverride === 500 ? "600" as const : "700" as const,
+    letterSpacing: trackingOverride,
+  };
   return {
-    body: { color: t.textPrimary, fontSize: BASE, lineHeight: LINE },
-    heading1: { color: t.textPrimary, fontSize: 24, fontWeight: "700" as const, marginTop: 20, marginBottom: 8, lineHeight: 30 },
-    heading2: { color: t.textPrimary, fontSize: 20, fontWeight: "600" as const, marginTop: 16, marginBottom: 6, lineHeight: 26 },
-    heading3: { color: t.textPrimary, fontSize: 17, fontWeight: "600" as const, marginTop: 12, marginBottom: 4, lineHeight: 23 },
-    heading4: { color: t.textPrimary, fontSize: 15, fontWeight: "600" as const, marginTop: 10, marginBottom: 4 },
-    heading5: { color: t.textSecondary, fontSize: 14, fontWeight: "600" as const, marginTop: 8 },
-    heading6: { color: t.textSecondary, fontSize: 13, fontWeight: "600" as const, marginTop: 8 },
-    paragraph: { color: t.textPrimary, marginTop: 8, marginBottom: 8, lineHeight: LINE },
+    body,
+    heading1: { ...headingBase, color: t.textPrimary, fontSize: 24, marginTop: 20, marginBottom: 8, lineHeight: Math.round(30 * (lineHeightOverride ?? 1)) },
+    heading2: { ...headingBase, color: t.textPrimary, fontSize: 20, marginTop: 16, marginBottom: 6, lineHeight: Math.round(26 * (lineHeightOverride ?? 1)) },
+    heading3: { ...headingBase, color: t.textPrimary, fontSize: 17, marginTop: 12, marginBottom: 4, lineHeight: Math.round(23 * (lineHeightOverride ?? 1)) },
+    heading4: { ...headingBase, color: t.textPrimary, fontSize: 15, marginTop: 10, marginBottom: 4 },
+    heading5: { ...headingBase, color: t.textSecondary, fontSize: 14, marginTop: 8 },
+    heading6: { ...headingBase, color: t.textSecondary, fontSize: 13, marginTop: 8 },
+    paragraph: { color: t.textPrimary, marginTop: 8, marginBottom: 8, lineHeight: LINE, fontFamily, fontWeight: fontWeightOverride as TextStyle["fontWeight"], letterSpacing: trackingOverride },
     strong: { fontWeight: "600" as const, color: t.textPrimary },
     em: { fontStyle: "italic" as const },
     s: { textDecorationLine: "line-through" as const, color: t.textTertiary },

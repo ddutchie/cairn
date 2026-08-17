@@ -197,6 +197,34 @@ const FEATURES = [
       "Live Run Transcript: Watch a run as it happens — tokens, thinking, tool calls — and replay the full run-log afterwards.",
     ],
   },
+  {
+    id: "v2.7.5-note-fonts",
+    version: "v2.7.5",
+    title: "Note Fonts",
+    category: "Appearance",
+    description:
+      "Pick the font for your note text — Sans, Serif, or Mono — and it carries through the editor, the preview, and PDF exports. UI stays on the system font.",
+    highlights: [
+      "Three Presets: Sans (default), Serif for a reading-friendly editorial feel, and Mono for a focused typewriter mode.",
+      "Editor + Preview: Your note text re-renders instantly in the chosen font across desktop and mobile.",
+      "PDF Pass-Through: Exported PDFs use the same font, so your exports carry your personal style.",
+      "Quick Access: Switch fonts from Settings or the quick-settings popover, right next to font size.",
+    ],
+  },
+  {
+    id: "v2.7.5-chat-themes",
+    version: "v2.7.5",
+    title: "Chat Themes",
+    category: "Appearance",
+    description:
+      "Re-skin the chat surface with full distinct looks — each theme bundles its own chat font, background treatment, bubble style, and a dark/light palette. More themes arrive from the community catalog, no app update needed.",
+    highlights: [
+      "Five Built-ins: Default, Paper (serif), Terminal (mono + scanlines), Midnight (gradient + glass), and Aurora (vivid gradient).",
+      "Full Looks: Themes change the chat background, bubbles, and font together — not just a hue swap.",
+      "Community Themes: New looks ship through cairn-community and appear on the next catalog refresh.",
+      "Quick Access: Switch themes from Settings or the quick-settings popover, independent of accent and note font.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

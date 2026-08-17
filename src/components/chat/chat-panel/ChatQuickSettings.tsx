@@ -2,12 +2,13 @@
 
 import React, { useState, useCallback } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { Settings2, GitBranch, ExternalLink } from "lucide-react";
+import { Settings2, GitBranch, ExternalLink, ChevronRight } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Toggle } from "@/components/ui/toggle";
+import { ChatThemePicker } from "@/components/ui/chat-theme-picker";
 
 const MAX_STEPS_PRESETS = [10, 20, 30, 50, 1000] as const;
 const TEMPERATURE_PRESETS = [0.1, 0.3, 0.5, 0.7, 1.0] as const;
@@ -34,6 +35,11 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
   );
 
   const [open, setOpen] = useState(false);
+  // The chat-theme grid is the only section with its own scroll/height (built-ins
+  // + community swatches), so it collapses under a chevron to keep the popover
+  // compact. Defaults open on first use; the toggle is just for when you want it
+  // out of the way.
+  const [themesOpen, setThemesOpen] = useState(true);
 
   const provider = aiConfig.provider ?? "openai";
   const subagentsSupported = provider !== "localllm";
@@ -142,6 +148,24 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Chat theme — collapsible because the swatch grid (built-ins +
+              community themes) is the tallest section. */}
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={() => setThemesOpen((v) => !v)}
+              aria-expanded={themesOpen}
+              className="flex w-full items-center justify-between rounded px-0.5 py-0.5 text-[0.714rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              <span>Chat theme</span>
+              <ChevronRight
+                size={12}
+                className={cn("text-[var(--text-tertiary)] transition-transform", themesOpen && "rotate-90")}
+              />
+            </button>
+            {themesOpen && <ChatThemePicker variant="grid" className="w-full" />}
           </div>
 
           {/* Subagents (cloud only) */}

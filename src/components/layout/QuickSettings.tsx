@@ -5,10 +5,10 @@
  * Rendered as a Radix DropdownMenu so it dismisses on outside click / Escape.
  */
 
-import React from "react";
-import { Settings2, Sun, Moon, Monitor } from "lucide-react";
+import React, { useState } from "react";
+import { Settings2, Sun, Moon, Monitor, ChevronRight } from "lucide-react";
 import { useCairnStore } from "@/store";
-import type { Theme, FontScale } from "@/store/slices/ui";
+import type { Theme, FontScale, FontFamilyId } from "@/store/slices/ui";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -19,6 +19,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
 import { AccentPicker } from "@/components/ui/accent-picker";
+import { ChatThemePicker } from "@/components/ui/chat-theme-picker";
+import { cn } from "@/lib/utils";
+import { FONT_PRESETS } from "../../../shared/ui/fonts";
 
 // ── Theme options ─────────────────────────────────────────────────────────────
 
@@ -38,6 +41,13 @@ const FONT_SCALES: SegmentedControlOption<FontScale>[] = [
   { value: 1.4, label: "XL" },
 ];
 
+// ── Note-text font options ────────────────────────────────────────────────────
+
+const NOTE_FONTS: SegmentedControlOption<FontFamilyId>[] = FONT_PRESETS.map((p) => ({
+  value: p.id as FontFamilyId,
+  label: p.name,
+}));
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function QuickSettings() {
@@ -45,6 +55,11 @@ export function QuickSettings() {
   const setTheme = useCairnStore((s) => s.setTheme);
   const fontScale = useCairnStore((s) => s.fontScale);
   const setFontScale = useCairnStore((s) => s.setFontScale);
+  const fontFamily = useCairnStore((s) => s.fontFamily);
+  const setFontFamily = useCairnStore((s) => s.setFontFamily);
+  // Chat-theme grid is the tallest section (built-ins + community swatches), so
+  // it collapses under a chevron to keep the popover compact.
+  const [chatThemesOpen, setChatThemesOpen] = useState(true);
 
   return (
     <DropdownMenu>
@@ -77,13 +92,48 @@ export function QuickSettings() {
 
         <DropdownMenuSeparator />
 
+        {/* Chat theme — collapsible: the swatch grid is the tallest section. */}
+        <button
+          type="button"
+          onClick={() => setChatThemesOpen((v) => !v)}
+          aria-expanded={chatThemesOpen}
+          className={cn(
+            "mt-2 flex w-full items-center justify-between rounded px-1 py-0.5 text-[0.643rem] font-semibold uppercase tracking-wide",
+            "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors",
+          )}
+        >
+          Chat theme
+          <ChevronRight
+            size={12}
+            className={cn("transition-transform", chatThemesOpen && "rotate-90")}
+          />
+        </button>
+        {chatThemesOpen && (
+          <div className="px-1 pb-2 pt-1">
+            <ChatThemePicker variant="grid" className="w-full" />
+          </div>
+        )}
+
+        <DropdownMenuSeparator />
+
         {/* Font scale */}
         <DropdownMenuLabel className="mt-2">Font size</DropdownMenuLabel>
-        <div className="px-1 pb-1">
+        <div className="px-1 pb-2">
           <SegmentedControl
             options={FONT_SCALES}
             value={fontScale}
             onChange={setFontScale}
+            className="w-full text-[0.714rem]"
+          />
+        </div>
+
+        {/* Note font */}
+        <DropdownMenuLabel className="mt-2">Note font</DropdownMenuLabel>
+        <div className="px-1 pb-1">
+          <SegmentedControl
+            options={NOTE_FONTS}
+            value={fontFamily}
+            onChange={setFontFamily}
             className="w-full text-[0.714rem]"
           />
         </div>

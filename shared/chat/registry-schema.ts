@@ -263,6 +263,66 @@ export interface PersonalitiesManifest {
   personalities: RegistryPersonalityEntry[];
 }
 
+/**
+ * A community chat theme — a full distinct look for the chat surface (font +
+ * background treatment + bubble style + dark/light palette). Kept in a SEPARATE
+ * manifest (themes.json) so new themes ship without an app update. Rendered
+ * data-driven (CSS vars on desktop, theme fields + LinearGradient on mobile) so
+ * it is pure JSON — no code execution. The shape is REQUIRED in full (nothing
+ * optional) — this shipped pre-release, so every theme declares every knob.
+ */
+export interface RegistryThemeEntry extends RegistryEntryMeta {
+  definition: {
+    /** Display name shown in the theme picker. */
+    name: string;
+    /** One line shown in the picker. */
+    description?: string;
+    /** Bundled chat font (one of the fonts.ts preset ids). */
+    font: "sans" | "serif" | "mono";
+    /** Chat-text weight ("regular" = 400, "medium" = 500). */
+    fontWeight: "regular" | "medium";
+    /** Letter-spacing in px applied to chat text. */
+    tracking: number;
+    /** Line-height multiplier applied to chat text (1 = platform default). */
+    lineHeight: number;
+    /** Background treatment. */
+    bgType: "solid" | "gradient" | "pattern";
+    /** Named pattern — rendered only when bgType === "pattern". */
+    pattern: "none" | "scanlines" | "dots" | "grid" | "crosshatch" | "diagonal" | "noise";
+    /** Bubble style. */
+    bubbleStyle: "filled" | "glass" | "outlined";
+    /** Bubble corner-radius preset. */
+    radius: "sm" | "md" | "pill";
+    /** Bubble shadow intensity. */
+    shadow: "none" | "subtle" | "strong";
+    dark: {
+      /** Base background colour (stops[0]): solid fill, pattern base, or first gradient stop. */
+      bg: string;
+      /** Background stops: [color] for solid/pattern, 2+ for gradient. */
+      stops: string[];
+      userBubble: string;
+      userBubbleFg: string;
+      aiBubble: string;
+      aiText: string;
+    };
+    light: {
+      bg: string;
+      stops: string[];
+      userBubble: string;
+      userBubbleFg: string;
+      aiBubble: string;
+      aiText: string;
+    };
+  };
+}
+
+/** The parsed cairn-community CHAT THEMES manifest (themes.json). */
+export interface ChatThemesManifest {
+  version: number;
+  updatedAt: string;
+  themes: RegistryThemeEntry[];
+}
+
 // ── validation (mirrors cairn-community/schema.json) ────────────────────────
 
 const headers = z.record(z.string(), z.string()).optional();
@@ -544,4 +604,71 @@ export function parsePersonalitiesManifest(raw: unknown): PersonalitiesManifest 
       return r.success ? [r.data] : [];
     }),
   } as PersonalitiesManifest;
+}
+
+// ── chat themes manifest (themes.json) ────────────────────────────────────────
+
+const themeMode = z.object({
+  bg: z.string().min(3).max(32),
+  stops: z.array(z.string().min(3).max(32)).min(1),
+  userBubble: z.string().min(3).max(32),
+  userBubbleFg: z.string().min(3).max(32),
+  aiBubble: z.string().min(3).max(32),
+  aiText: z.string().min(3).max(32),
+});
+
+const themeDefinition = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  font: z.enum(["sans", "serif", "mono"]),
+  fontWeight: z.enum(["regular", "medium"]),
+  tracking: z.number().min(0).max(8),
+  lineHeight: z.number().min(0.8).max(3),
+  bgType: z.enum(["solid", "gradient", "pattern"]),
+  pattern: z.enum(["none", "scanlines", "dots", "grid", "crosshatch", "diagonal", "noise"]),
+  bubbleStyle: z.enum(["filled", "glass", "outlined"]),
+  radius: z.enum(["sm", "md", "pill"]),
+  shadow: z.enum(["none", "subtle", "strong"]),
+  dark: themeMode,
+  light: themeMode,
+});
+// A gradient theme must declare 2+ stops; solid/pattern themes are single-stop.
+// In every mode, the base `bg` colour must equal `stops[0]` — both renderers use
+// `bg` as the solid/pattern base or the first gradient stop, so an inconsistency
+// would render a different base than the theme intends.
+const themeDefinitionRefined = themeDefinition.refine(
+  (d) => {
+    const stopsOk =
+      (d.bgType === "gradient" && d.dark.stops.length >= 2 && d.light.stops.length >= 2) ||
+      (d.bgType !== "gradient" && d.dark.stops.length === 1 && d.light.stops.length === 1);
+    const bgOk = d.dark.bg === d.dark.stops[0] && d.light.bg === d.light.stops[0];
+    return stopsOk && bgOk;
+  },
+  {
+    message:
+      "gradient themes need 2+ stops in both modes (solid/pattern exactly 1), and each mode's bg must equal stops[0]",
+  }
+);
+
+const themeEntry = z.object({ ...entryMeta, definition: themeDefinitionRefined }).passthrough();
+
+// Envelope-only validation; entries validated individually in
+// parseChatThemesManifest so one bad entry can't blank the catalog.
+const chatThemesManifestSchema = z.object({
+  version: z.number(),
+  updatedAt: z.string(),
+  themes: z.array(z.unknown()),
+});
+
+/** Parse + validate an unknown payload into a ChatThemesManifest, or throw. */
+export function parseChatThemesManifest(raw: unknown): ChatThemesManifest {
+  const m = chatThemesManifestSchema.parse(raw);
+  return {
+    version: m.version,
+    updatedAt: m.updatedAt,
+    themes: m.themes.flatMap((e) => {
+      const r = themeEntry.safeParse(e);
+      return r.success ? [r.data] : [];
+    }),
+  } as ChatThemesManifest;
 }

@@ -123,7 +123,7 @@ function buildTheme() {
     "&": {
       height: "100%",
       fontSize: "0.875rem",
-      fontFamily: "var(--font-sans, ui-sans-serif, system-ui, sans-serif)",
+      fontFamily: "var(--font-note, var(--font-sans, ui-sans-serif, system-ui, sans-serif))",
       background: "transparent",
       color: "var(--text-primary)",
     },

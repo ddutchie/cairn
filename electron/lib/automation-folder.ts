@@ -83,6 +83,21 @@ export function ensureAutomationDir(automationDir: string): string {
   return automationDir;
 }
 
+/**
+ * Remove an automation's entire folder from disk (scripts/, out/, .env,
+ * manifest.json, per-run transcripts + scratch). Best-effort: returns true when
+ * the folder is gone (or never existed), false when it still exists — an
+ * unremovable folder (permissions, an open handle) must never crash a delete.
+ */
+export function removeAutomationDir(automationDir: string): boolean {
+  try {
+    fs.rmSync(automationDir, { recursive: true, force: true });
+  } catch {
+    return fs.existsSync(automationDir) === false;
+  }
+  return fs.existsSync(automationDir) === false;
+}
+
 /** Create the run's working directory (and parents) and return its path. */
 export function ensureAutomationRunDir(automationDir: string, runId: string): string {
   const dir = automationRunDir(automationDir, runId);

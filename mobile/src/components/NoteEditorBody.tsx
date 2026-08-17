@@ -3,7 +3,7 @@ import { TextInput, StyleSheet } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import type { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
-import { useTheme, type as typeScale } from "@/theme";
+import { useTheme, useFont, resolveRNFontFamily, type as typeScale } from "@/theme";
 
 type Fmt = ReturnType<typeof useNoteFormattingToolbar>;
 
@@ -11,8 +11,9 @@ type Fmt = ReturnType<typeof useNoteFormattingToolbar>;
  * The Markdown note-editing surface shared by the new-note composer
  * (`app/note/new.tsx`) and the note detail screen's editing mode
  * (`NoteDetailScreen`): a keyboard-aware scroll view with a title input, a
- * monospace body input, a keyboard-sticky `NoteEditorToolbar`, and the wikilink
- * picker sheet — all wired to the same `useNoteFormattingToolbar` result.
+ * body input (font follows the user's note-font preset), a keyboard-sticky
+ * `NoteEditorToolbar`, and the wikilink picker sheet — all wired to the same
+ * `useNoteFormattingToolbar` result.
  *
  * The two call sites differ only in `bottomInset` (a nested note detail adds the
  * tab-bar height) and an optional `header` (the new-note composer shows the
@@ -40,6 +41,8 @@ export function NoteEditorBody({
   autoFocus?: boolean;
 }) {
   const t = useTheme();
+  const fontId = useFont();
+  const fontFamily = resolveRNFontFamily(fontId);
   const bodyRef = useRef<TextInput>(null);
 
   return (
@@ -62,7 +65,7 @@ export function NoteEditorBody({
         />
         <TextInput
           ref={bodyRef}
-          style={[styles.bodyInput, { color: t.textPrimary }]}
+          style={[styles.bodyInput, { color: t.textPrimary, fontFamily }]}
           value={body}
           onChangeText={onBody}
           selection={fmt.selection}
@@ -97,5 +100,5 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { padding: 18, paddingBottom: 64 },
   titleInput: { ...typeScale.display, padding: 0 },
-  bodyInput: { ...typeScale.body, marginTop: 16, fontFamily: "Menlo", minHeight: 320 },
+  bodyInput: { ...typeScale.body, marginTop: 16, minHeight: 320 },
 });

@@ -4,12 +4,14 @@ import React, { useState } from "react";
 import { Sun, Moon, Monitor, CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useCairnStore, type Theme, type FontScale } from "@/store";
+import { useCairnStore, type Theme, type FontScale, type FontFamilyId } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { ViewVisibilitySettings } from "./ViewVisibilitySettings";
 import { AccentPicker } from "@/components/ui/accent-picker";
+import { ChatThemePicker } from "@/components/ui/chat-theme-picker";
+import { FONT_PRESETS } from "../../../shared/ui/fonts";
 
 const FONT_SCALE_OPTIONS: { value: FontScale; label: string; description: string }[] = [
   { value: 1,   label: "XS", description: "100%" },
@@ -20,7 +22,7 @@ const FONT_SCALE_OPTIONS: { value: FontScale; label: string; description: string
 ];
 
 export function GeneralSettings() {
-  const { workspaces, theme, setTheme, fontScale, setFontScale, updateWorkspace, selectAndInitWorkspace } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, updateWorkspace: s.updateWorkspace, selectAndInitWorkspace: s.selectAndInitWorkspace })));
+  const { workspaces, theme, setTheme, fontScale, setFontScale, fontFamily, setFontFamily, updateWorkspace, selectAndInitWorkspace } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, fontFamily: s.fontFamily, setFontFamily: s.setFontFamily, updateWorkspace: s.updateWorkspace, selectAndInitWorkspace: s.selectAndInitWorkspace })));
   const workspace = workspaces[0];
 
   const themeOptions: { value: Theme; label: string; icon: React.ReactNode }[] = [
@@ -73,6 +75,9 @@ export function GeneralSettings() {
       <SettingsRow label="Accent color" description="The highlight color used across the app">
         <AccentPicker className="w-48" />
       </SettingsRow>
+      <SettingsRow label="Chat theme" description="The look of the chat surface — background, bubbles, and chat font">
+        <ChatThemePicker className="w-52" />
+      </SettingsRow>
       <SettingsRow label="Font size" description="Scale the UI text up or down">
         <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
           {FONT_SCALE_OPTIONS.map((opt) => (
@@ -88,6 +93,25 @@ export function GeneralSettings() {
               )}
             >
               {opt.label}
+            </button>
+          ))}
+        </div>
+      </SettingsRow>
+      <SettingsRow label="Note font" description="Font used for note text (editor, preview, and PDF export)">
+        <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
+          {FONT_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              onClick={() => setFontFamily(preset.id as FontFamilyId)}
+              title={preset.description}
+              className={cn(
+                "flex items-center justify-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                fontFamily === preset.id
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
+              )}
+            >
+              {preset.name}
             </button>
           ))}
         </div>
