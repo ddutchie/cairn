@@ -17,7 +17,14 @@ import { estimateCostUsd } from "./model-pricing";
 
 let activeDb: Database.Database | null = null;
 
-/** Point the recorder at the current app DB. Call with the DbContext's db. */
+/**
+ * Point the recorder at the current app DB.
+ *
+ * Called from `registerIpcHandlers` at boot AND from `reinitialise()` when the
+ * workspace folder changes — this module-level handle is the one place that
+ * can't read `DbContext` lazily (recordLlmUsage is called from deep inside the
+ * streaming loop with no ctx in scope), so it must be re-pointed explicitly.
+ */
 export function initUsageRecorder(db: Database.Database | null): void {
   activeDb = db;
 }

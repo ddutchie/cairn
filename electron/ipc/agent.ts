@@ -24,6 +24,7 @@ import path from "path";
 import os from "os";
 import { execFile } from "child_process";
 import type { Database } from "better-sqlite3";
+import type { DbContext } from "./result-helpers";
 import * as nodePty from "node-pty";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
@@ -146,23 +147,24 @@ function isVisibleInTree(name: string): boolean {
   return !HIDDEN_TREE_ENTRIES.has(name);
 }
 
-export function registerAgentHandlers(db: Database): void {
+/** Reads `ctx.db` at call time so a workspace swap (`reinitialise`) is transparent. */
+export function registerAgentHandlers(ctx: DbContext): void {
   // ── Coding agent CRUD ────────────────────────────────────────────────────
 
   registerIpcHandle("agent:getCodingAgents", () =>
-    handle(() => q.getCodingAgents(db))
+    handle(() => q.getCodingAgents(ctx.db))
   );
 
   registerIpcHandle("agent:saveCodingAgent", (_e, agent: Parameters<typeof q.saveCodingAgent>[1]) =>
-    handle(() => q.saveCodingAgent(db, agent))
+    handle(() => q.saveCodingAgent(ctx.db, agent))
   );
 
   registerIpcHandle("agent:deleteCodingAgent", (_e, { id }: { id: string }) =>
-    handle(() => q.deleteCodingAgent(db, id))
+    handle(() => q.deleteCodingAgent(ctx.db, id))
   );
 
   registerIpcHandle("agent:setDefaultAgent", (_e, { id }: { id: string }) =>
-    handle(() => q.setDefaultCodingAgent(db, id))
+    handle(() => q.setDefaultCodingAgent(ctx.db, id))
   );
 
   // Note: code_directory is now saved via db:project:update (the generic project
@@ -172,7 +174,7 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:readDir", (_e, { dirPath }: { dirPath: string }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, dirPath);
+      const realPath = await assertWithinCodeDirectory(ctx.db, dirPath);
       const entries = await fs.promises.readdir(realPath, { withFileTypes: true });
       return entries
         .filter((e) => isVisibleInTree(e.name))
@@ -191,7 +193,7 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:searchFiles", (_e, { dirPath, query }: { dirPath: string; query: string }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, dirPath);
+      const realPath = await assertWithinCodeDirectory(ctx.db, dirPath);
       const q = query.toLowerCase();
       const results: { name: string; path: string; relativePath: string }[] = [];
       const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", "dist-electron", "dist-mcp", "dist-app", "out", ".cache", "coverage", "__pycache__", ".venv", "venv"]);
@@ -224,14 +226,14 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:readFile", (_e, { filePath }: { filePath: string }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, filePath);
+      const realPath = await assertWithinCodeDirectory(ctx.db, filePath);
       return fs.promises.readFile(realPath, "utf-8");
     })
   );
 
   registerIpcHandle("agent:readFileBase64", (_e, { filePath }: { filePath: string }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, filePath);
+      const realPath = await assertWithinCodeDirectory(ctx.db, filePath);
       const buf = await fs.promises.readFile(realPath);
       const ext = path.extname(realPath).slice(1).toLowerCase();
       const mime =
@@ -251,7 +253,7 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:writeFile", (_e, { filePath, content }: { filePath: string; content: string }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, filePath, true);
+      const realPath = await assertWithinCodeDirectory(ctx.db, filePath, true);
       await fs.promises.writeFile(realPath, content, "utf-8");
     })
   );
@@ -275,52 +277,52 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:codebaseOverview", (_e, { folder }: { folder: string }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, folder);
-      return q.getCodebaseOverview(db, realPath);
+      const realPath = await assertWithinCodeDirectory(ctx.db, folder);
+      return q.getCodebaseOverview(ctx.db, realPath);
     })
   );
 
   registerIpcHandle("agent:codebaseGraph", (_e, { folder }: { folder: string }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, folder);
-      return q.getCodebaseGraph(db, realPath);
+      const realPath = await assertWithinCodeDirectory(ctx.db, folder);
+      return q.getCodebaseGraph(ctx.db, realPath);
     })
   );
 
   registerIpcHandle("agent:codebaseModuleGraph", (_e, { folder, depth }: { folder: string; depth?: number }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, folder);
-      return q.getCodebaseModuleGraph(db, realPath, depth ?? 1);
+      const realPath = await assertWithinCodeDirectory(ctx.db, folder);
+      return q.getCodebaseModuleGraph(ctx.db, realPath, depth ?? 1);
     })
   );
 
   registerIpcHandle("agent:codebaseFileSymbols", (_e, { filePath }: { filePath: string }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, filePath);
-      return q.getCodebaseFileSymbols(db, realPath);
+      const realPath = await assertWithinCodeDirectory(ctx.db, filePath);
+      return q.getCodebaseFileSymbols(ctx.db, realPath);
     })
   );
 
   registerIpcHandle("agent:codebaseRelations", (_e, { name, folder }: { name: string; folder?: string }) =>
     handle(async () => {
-      const scoped = folder ? await assertWithinCodeDirectory(db, folder) : undefined;
-      return q.getCodebaseRelations(db, name, scoped);
+      const scoped = folder ? await assertWithinCodeDirectory(ctx.db, folder) : undefined;
+      return q.getCodebaseRelations(ctx.db, name, scoped);
     })
   );
 
   registerIpcHandle("agent:codebaseReindex", (_e, { folder }: { folder: string }) =>
     handle(async () => {
-      const realPath = await assertWithinCodeDirectory(db, folder);
-      await indexCodebase(db, realPath);
-      return q.getCodebaseOverview(db, realPath);
+      const realPath = await assertWithinCodeDirectory(ctx.db, folder);
+      await indexCodebase(ctx.db, realPath);
+      return q.getCodebaseOverview(ctx.db, realPath);
     })
   );
 
   registerIpcHandle("agent:codebaseReindexFile", (_e, { folder, filePath }: { folder: string; filePath: string }) =>
     handle(async () => {
-      const realFolder = await assertWithinCodeDirectory(db, folder);
-      const realFile = await assertWithinCodeDirectory(db, filePath);
-      return reindexFile(db, realFolder, realFile);
+      const realFolder = await assertWithinCodeDirectory(ctx.db, folder);
+      const realFile = await assertWithinCodeDirectory(ctx.db, filePath);
+      return reindexFile(ctx.db, realFolder, realFile);
     })
   );
 
@@ -329,7 +331,7 @@ export function registerAgentHandlers(db: Database): void {
   registerIpcHandle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
     handle(async () => {
       // Validate cwd is within project code directory boundaries and get real path
-      const realPath = await assertWithinCodeDirectory(db, cwd);
+      const realPath = await assertWithinCodeDirectory(ctx.db, cwd);
 
       // Validate realPath exists and is a directory
       try {
@@ -457,7 +459,7 @@ export function registerAgentHandlers(db: Database): void {
   }) => {
     return handle(async () => {
       // Security: assert project code directory boundaries and validate cwd
-      const realCwd = await assertWithinCodeDirectory(db, payload.cwd);
+      const realCwd = await assertWithinCodeDirectory(ctx.db, payload.cwd);
       try {
         const stat = await fs.promises.stat(realCwd);
         if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
@@ -466,7 +468,7 @@ export function registerAgentHandlers(db: Database): void {
       }
 
       // Load agent config
-      const agent = q.getCodingAgentById(db, payload.agentId);
+      const agent = q.getCodingAgentById(ctx.db, payload.agentId);
       if (!agent) throw new Error(`Agent not found: ${payload.agentId}`);
 
       // Security: validate binaryPath
@@ -592,7 +594,7 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:spawnShell", async (event, payload: { cwd: string }) => {
     return handle(async () => {
-      const realCwd = await assertWithinCodeDirectory(db, payload.cwd);
+      const realCwd = await assertWithinCodeDirectory(ctx.db, payload.cwd);
       try {
         const stat = await fs.promises.stat(realCwd);
         if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
@@ -643,7 +645,7 @@ export function registerAgentHandlers(db: Database): void {
       const filterChecks = await Promise.all(
         attempts.map(async (attempt) => {
           try {
-            await assertWithinCodeDirectory(db, attempt.cwd);
+            await assertWithinCodeDirectory(ctx.db, attempt.cwd);
             return true;
           } catch {
             return false;

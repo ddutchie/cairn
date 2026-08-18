@@ -10,13 +10,9 @@ import { StepChooseFolder } from "./StepChooseFolder";
 import { StepWorkspaceDetails } from "./StepWorkspaceDetails";
 import { StepAppearance } from "./StepAppearance";
 import { StepAISetup } from "./StepAISetup";
-import { StepMCP } from "./StepMCP";
-import { StepEmbeddings } from "./StepEmbeddings";
-import { StepViews } from "./StepViews";
 import { StepCreateProject } from "./StepCreateProject";
 import { StepImportedProjects, type ImportedProject } from "./StepImportedProjects";
 import { StepDone } from "./StepDone";
-import type { ToggleableView } from "@/store/slices/ui";
 
 type ImportPreview = Awaited<ReturnType<NonNullable<typeof window.electron>["probeWorkspaceFolder"]>>;
 
@@ -31,7 +27,7 @@ interface Props {
 // ── Onboarding wizard ─────────────────────────────────────────────────────────
 
 export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props) {
-  const { createWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, aiConfig, setAIConfig, setAgentConfig, hiddenViews, setHiddenViews, createProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, hiddenViews: s.hiddenViews, setHiddenViews: s.setHiddenViews, createProject: s.createProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
+  const { createWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, fontFamily, setFontFamily, aiConfig, setAIConfig, setAgentConfig, createProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, fontFamily: s.fontFamily, setFontFamily: s.setFontFamily, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, createProject: s.createProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
 
   // ── Wizard step ──────────────────────────────────────────────────────────────
   const [step, setStep] = useState<OnboardingStep>(initialStep);
@@ -52,17 +48,6 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   const [importedProjects, setImportedProjects] = useState<ImportedProject[]>([]);
   // Visible on the imported-projects summary when a rollback/undo fails.
   const [rollbackError, setRollbackError] = useState<string | null>(null);
-
-  // ── View visibility (local copy; committed when user hits Next on StepViews) ─
-  const [localHidden, setLocalHidden] = useState<Set<ToggleableView>>(new Set(hiddenViews));
-
-  function toggleLocalView(view: ToggleableView) {
-    setLocalHidden((prev) => {
-      const next = new Set(prev);
-      if (next.has(view)) { next.delete(view); } else { next.add(view); }
-      return next;
-    });
-  }
 
   // ── First project ───────────────────────────────────────────────────────────
   const [projectName, setProjectName] = useState("");
@@ -90,10 +75,6 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   const [apiKey, setApiKey]       = useState(aiConfig.apiKey || "");
   const [model, setModel]         = useState(aiConfig.model || "gpt-5.6-luna");
 
-  // ── Embeddings ───────────────────────────────────────────────────────────────
-  const [embEnabled, setEmbEnabled] = useState(false);
-  const [embModelId, setEmbModelId] = useState("Xenova/bge-small-en-v1.5");
-
   // Pre-populate folder path when skipping the folder-picker step
   useEffect(() => {
     if (initialStep !== "choose-folder") {
@@ -105,17 +86,6 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialStep]);
-
-  // Hydrate embeddings settings if a previous session saved them
-  useEffect(() => {
-    const e = window.electron?.embeddings;
-    if (!e?.getSettings) return;
-    e.getSettings().then((s) => {
-      if (!s) return;
-      if (typeof s.enabled === "boolean") setEmbEnabled(s.enabled);
-      if (typeof s.modelId === "string" && s.modelId) setEmbModelId(s.modelId);
-    }).catch(() => {});
-  }, []);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -175,6 +145,9 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         // Best-effort — onboarding shouldn't block on the rescan.
         setImportedProjects([]);
       }
+      // Appearance → AI → land. MCP, embeddings, and view visibility were
+      // removed from the required flow (they live in Settings and none blocks
+      // first use); appearance stays as it's low-friction first-impression.
       setStep("appearance");
     } finally {
       setSubmitting(false);
@@ -212,23 +185,9 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     if (provider !== "localllm") {
       setAgentConfig({ baseUrl, apiKey, model });
     }
-    setStep("mcp");
-  }
-
-  async function handleSaveEmbeddings() {
-    const e = window.electron?.embeddings;
-    const rt = window.electron?.runtime;
-    if (e?.saveSettings) {
-      try {
-        await e.saveSettings({ enabled: embEnabled, modelId: embModelId });
-        if (embEnabled && rt?.embeddings.setDefault) {
-          await rt.embeddings.setDefault(embModelId);
-        }
-      } catch {
-        // Best-effort — wizard shouldn't block on this
-      }
-    }
-    setStep("views");
+    // If the vault scan already created projects, show a summary of them instead
+    // of prompting the user to create their first project.
+    setStep(importedProjects.length > 0 ? "imported-projects" : "create-project");
   }
 
   // ── Routing ───────────────────────────────────────────────────────────────────
@@ -274,8 +233,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       <StepAppearance
         theme={theme}
         fontScale={fontScale}
+        fontFamily={fontFamily}
         onThemeChange={setTheme}
         onFontScaleChange={setFontScale}
+        onFontFamilyChange={setFontFamily}
         onNext={() => setStep("ai-setup")}
       />
     );
@@ -300,51 +261,13 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     );
   }
 
-  if (step === "mcp") {
-    return (
-      <StepMCP
-        onBack={() => setStep("ai-setup")}
-        onNext={() => setStep("embeddings")}
-      />
-    );
-  }
-
-  if (step === "embeddings") {
-    return (
-      <StepEmbeddings
-        enabled={embEnabled}
-        modelId={embModelId}
-        onEnabledChange={setEmbEnabled}
-        onModelIdChange={setEmbModelId}
-        onBack={() => setStep("mcp")}
-        onNext={handleSaveEmbeddings}
-      />
-    );
-  }
-
-  if (step === "views") {
-    return (
-      <StepViews
-        hidden={localHidden}
-        onToggle={toggleLocalView}
-        onBack={() => setStep("embeddings")}
-        onNext={() => {
-          setHiddenViews([...localHidden]);
-          // If the vault scan already created projects, show a summary of them
-          // instead of prompting the user to create their first project.
-          setStep(importedProjects.length > 0 ? "imported-projects" : "create-project");
-        }}
-      />
-    );
-  }
-
   if (step === "create-project") {
     return (
       <StepCreateProject
         name={projectName}
         icon={projectIcon}
         submitting={creatingProject}
-        onBack={() => setStep("views")}
+        onBack={() => setStep("ai-setup")}
         onNameChange={setProjectName}
         onIconChange={setProjectIcon}
         onSubmit={handleCreateProject}
@@ -359,7 +282,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         projects={importedProjects}
         busy={submitting}
         error={rollbackError}
-        onBack={() => setStep("views")}
+        onBack={() => setStep("ai-setup")}
         onContinue={() => setStep("done")}
         onUndo={handleRollbackImport}
       />

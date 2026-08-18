@@ -7,10 +7,9 @@
  * Registered as: registerIpcOn("chat:stream", ...)
  */
 
-import type { BrowserWindow } from "electron";
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { broadcastToChat } from "../chat-popout";
-import type Database from "better-sqlite3";
+import type { DbContext } from "./result-helpers";
 import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown, isSendableMessage } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { getExternalToolDefs } from "../lib/external-tools";
@@ -72,7 +71,17 @@ function resolveAIConfig(config?: {
 export type { LLMConfig } from "../lib/llm";
 export { callLLM } from "../lib/llm";
 
-export function registerChatHandler(db: Database.Database, workspacePath: string, getWin?: () => BrowserWindow | null): void {
+/**
+ * Registers the chat streaming channels.
+ *
+ * Reads `db` / `workspacePath` from `ctx` at CALL time, never at registration
+ * time, so `reinitialise()` swapping the workspace is transparent. Capturing
+ * them by value here is what previously left a freshly-onboarded workspace's
+ * chat bound to the throwaway boot DB until the app was restarted.
+ */
+export function registerChatHandler(ctx: DbContext): void {
+  const getWin = ctx.getWin;
+
   registerIpcHandle("chat:compactThread", async (_event, req: {
     messages: Array<{ role: string; content: string }>;
     threadId?: string;
@@ -209,7 +218,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     // this workspace/project. Failures degrade to no external tools.
     let externalDefs: typeof TOOLS = [];
     try {
-      externalDefs = (await getExternalToolDefs(db, req.workspaceId ?? "", req.projectId ?? "")) as typeof TOOLS;
+      externalDefs = (await getExternalToolDefs(ctx.db, req.workspaceId ?? "", req.projectId ?? "")) as typeof TOOLS;
     } catch (err) {
       console.error("[chat] failed to assemble external tools:", err);
     }
@@ -278,7 +287,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       const { runDispatchLoop } = await import("../lib/chat-subagent-loop");
       try {
         const dispatchResult = await runDispatchLoop(
-          db, req, workspacePath, { baseUrl, model, apiKey, provider },
+          ctx.db, req, ctx.workspacePath, { baseUrl, model, apiKey, provider },
           getWin,
           {
             signal: abortCtrl.signal,
@@ -366,7 +375,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     let loopResult: Awaited<ReturnType<typeof runToolLoop>>;
     try {
       loopResult = await runToolLoop(
-        db, req, workspacePath, baseUrl, model, apiKey, messages,
+        ctx.db, req, ctx.workspacePath, baseUrl, model, apiKey, messages,
         emitToolCall, abortCtrl.signal, getWin, provider, addUsage,
         emitToolCallDone,
         (delta) => {
@@ -418,7 +427,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
                 // Write the recovered provider-reported cost back onto this
                 // turn's recorded usage rows (they were persisted during the
                 // loop, when the provider's inline cost wasn't known yet).
-                applyRecoveredTurnCost(db, req.threadId, turnStart, diff);
+                applyRecoveredTurnCost(ctx.db, req.threadId, turnStart, diff);
               }
             }
           }

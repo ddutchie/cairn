@@ -24,14 +24,49 @@ import {
   codebase_get_file_symbols
 } from "./codebase";
 import { getUserStyle } from "../../db/queries";
+import {
+  RELATIONSHIP_AFFECTING_TOOLS,
+  collectEntityIds,
+  collectPreDeleteEntityIds,
+  refreshRelationshipsFor,
+} from "./relationships";
 
+/**
+ * Execute one MCP tool.
+ *
+ * Wraps `dispatchTool` so that any tool which mutates a note or card also
+ * refreshes the derived `relationship_cache`. The Electron IPC write path does
+ * this on every mutation; without it here, MCP-side writes leave the knowledge
+ * graph's auto-edges describing the previous state of the workspace (a
+ * DB-persisted staleness that outlives an MCP restart).
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
+  // Some tools (delete_project) destroy the rows whose cache we must invalidate,
+  // so capture those ids BEFORE dispatch — they're unrecoverable afterwards.
+  const preDeleteIds = RELATIONSHIP_AFFECTING_TOOLS.has(toolName)
+    ? collectPreDeleteEntityIds(db, toolName, args)
+    : [];
+
+  const result = dispatchTool(db, workspacePath, toolName, args);
+
+  if (RELATIONSHIP_AFFECTING_TOOLS.has(toolName)) {
+    const failed = typeof result === "object" && result !== null && "error" in result;
+    if (!failed) {
+      refreshRelationshipsFor(db, [...preDeleteIds, ...collectEntityIds(args, result)]);
+    }
+  }
+
+  return result;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function dispatchTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
   const snap = getSnapshot(db);
 
   switch (toolName) {
     case "get_cairn_context":
-      return getCairnContext(db, snap, args);
+      return getCairnContext(db, snap, args, workspacePath);
 
     case "get_project_context_pack":
       return getProjectContextPack(db, snap, args);

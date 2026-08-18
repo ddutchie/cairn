@@ -45,7 +45,7 @@ export const IDEA_FLOW_RULES = {
   ],
 };
 
-export function getCairnContext(db: Database.Database, snap: Snapshot, _args: Record<string, any>) {
+export function getCairnContext(db: Database.Database, snap: Snapshot, _args: Record<string, any>, workspacePath?: string) {
   const workspaces = snap.workspaces.map((w) => ({ id: w.id, name: w.name }));
   const projects = snap.projects
     .filter((p) => !p.archivedAt)
@@ -71,6 +71,13 @@ export function getCairnContext(db: Database.Database, snap: Snapshot, _args: Re
     workspaces,
     projects,
     tags: snap.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, workspaceId: t.workspaceId })),
+    // Which files this server is actually bound to. A long-running MCP process
+    // and the desktop app can end up on different workspaces (the app can swap
+    // folders in place), and without this the only way to tell was `lsof`.
+    runtime: {
+      dbPath: db.name,
+      ...(workspacePath ? { workspacePath } : {}),
+    },
     conventions: {
       notes: "Raw markdown in 'content'. Plain text for search/embeddings is derived automatically — do not set any separate text field.",
       dashboards: "Use create_dashboard to create an HTML dashboard rendered in a sandboxed iframe inside Cairn. The 'html' field must be a complete, self-contained HTML document. Use inline CSS and JS only — no external URLs. The window.cairn.query(tool, args) API is available for live data from read-only tools.",

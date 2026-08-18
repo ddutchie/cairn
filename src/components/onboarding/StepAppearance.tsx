@@ -2,15 +2,19 @@
 
 import { Sun, Moon, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Theme, FontScale } from "@/store/slices/ui";
-import { applyTheme, applyFontScale } from "@/store/slices/ui";
+import type { Theme, FontScale, FontFamilyId } from "@/store/slices/ui";
+import { applyTheme, applyFontScale, applyFontFamily } from "@/store/slices/ui";
+import { FONT_PRESETS, resolveFontPreset } from "../../../shared/ui/fonts";
+import { AccentPicker } from "@/components/ui/accent-picker";
 import { Shell, NavRow, FONT_OPTS } from "./shared";
 
 interface Props {
   theme: Theme;
   fontScale: FontScale;
+  fontFamily: FontFamilyId;
   onThemeChange: (t: Theme) => void;
   onFontScaleChange: (s: FontScale) => void;
+  onFontFamilyChange: (id: FontFamilyId) => void;
   onNext: () => void;
 }
 
@@ -20,7 +24,7 @@ const THEME_OPTS: { value: Theme; label: string; icon: React.ReactNode; desc: st
   { value: "dark",   label: "Dark",   icon: <Moon size={16} />,    desc: "Easy on the eyes" },
 ];
 
-export function StepAppearance({ theme, fontScale, onThemeChange, onFontScaleChange, onNext }: Props) {
+export function StepAppearance({ theme, fontScale, fontFamily, onThemeChange, onFontScaleChange, onFontFamilyChange, onNext }: Props) {
   function handleTheme(t: Theme) {
     onThemeChange(t);
     applyTheme(t);
@@ -31,13 +35,20 @@ export function StepAppearance({ theme, fontScale, onThemeChange, onFontScaleCha
     applyFontScale(s);
   }
 
+  function handleFontFamily(id: FontFamilyId) {
+    onFontFamilyChange(id);
+    applyFontFamily(id);
+  }
+
+  const noteFontStack = resolveFontPreset(fontFamily).cssFamily;
+
   return (
     <Shell step="appearance">
       <div className="w-full max-w-md bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 flex flex-col gap-6">
         <div>
           <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-0.5">Make it yours</h2>
           <p className="text-xs text-[var(--text-tertiary)]">
-            Choose a theme and text size. You can always change these in Settings.
+            Choose a theme, text size, and note font. You can always change these in Settings.
           </p>
         </div>
 
@@ -65,6 +76,12 @@ export function StepAppearance({ theme, fontScale, onThemeChange, onFontScaleCha
           </div>
         </div>
 
+        {/* Accent colour — reads/writes the store + applies live itself */}
+        <div>
+          <p className="text-xs font-medium text-[var(--text-secondary)] mb-2.5">Accent color</p>
+          <AccentPicker variant="grid" className="w-full" />
+        </div>
+
         {/* Font size */}
         <div>
           <p className="text-xs font-medium text-[var(--text-secondary)] mb-2.5">Text size</p>
@@ -88,11 +105,41 @@ export function StepAppearance({ theme, fontScale, onThemeChange, onFontScaleCha
               </button>
             ))}
           </div>
+        </div>
 
-          {/* Live preview */}
-          <p className="mt-3 text-[var(--text-secondary)] text-sm leading-relaxed px-1">
+        {/* Note font */}
+        <div>
+          <p className="text-xs font-medium text-[var(--text-secondary)] mb-2.5">Note font</p>
+          <div className="grid grid-cols-3 gap-2">
+            {FONT_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                aria-pressed={fontFamily === preset.id}
+                onClick={() => handleFontFamily(preset.id as FontFamilyId)}
+                title={preset.description}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-all",
+                  fontFamily === preset.id
+                    ? "border-[var(--accent)] bg-[var(--accent-dim)] text-[var(--accent)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                )}
+              >
+                <span style={{ fontFamily: preset.cssFamily, fontSize: "1.15rem", lineHeight: 1, fontWeight: 600 }}>
+                  Ag
+                </span>
+                <span className="text-[0.65rem] font-medium">{preset.name}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Live preview — rendered in the chosen note font */}
+          <p
+            className="mt-3 text-[var(--text-secondary)] text-sm leading-relaxed px-1"
+            style={{ fontFamily: noteFontStack }}
+          >
             The quick brown fox jumps over the lazy dog.{" "}
-            <span className="text-[var(--accent)] font-medium">Notes · Board · Insights</span>
+            <span className="text-[var(--accent)] font-medium">This is how your notes will read.</span>
           </p>
         </div>
 

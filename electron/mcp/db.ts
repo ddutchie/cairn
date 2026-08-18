@@ -80,27 +80,87 @@ export function getConfigBasePath(): string {
   }
 }
 
-export function findDbPathFromWorkspaceConfig(): string | null {
+/**
+ * Candidate Electron userData directory names, in *most-recently-written* order.
+ *
+ * A machine can legitimately have several: `Cairn` (packaged app), `cairn`, and
+ * `Electron` (dev — Electron's default userData name when productName isn't
+ * applied). A fixed probe order silently binds the MCP to whichever one happens
+ * to come first in the list, which is how a dev session could end up reading the
+ * *packaged* app's workspace (and vice versa). Ordering by the config file's
+ * mtime instead means we follow whichever Cairn the user actually used last.
+ */
+function configCandidatesByRecency(): string[] {
   const base = getConfigBasePath();
-  const names = ["Cairn", "cairn", "Electron"];
-  for (const name of names) {
-    const configPath = path.join(base, name, "workspace-config.json");
-    if (!fs.existsSync(configPath)) continue;
-    try {
-      const raw = fs.readFileSync(configPath, "utf-8");
-      const config = JSON.parse(raw) as { workspacePath?: string };
-      if (typeof config.workspacePath === "string" && config.workspacePath.length > 0) {
-        const dbPath = path.join(config.workspacePath, "cairn.db");
-        if (fs.existsSync(dbPath)) return dbPath;
-      }
-    } catch { /* ignore */ }
+  return ["Cairn", "cairn", "Electron"]
+    .map((name) => {
+      const configPath = path.join(base, name, "workspace-config.json");
+      let mtime = -1;
+      try { mtime = fs.statSync(configPath).mtimeMs; } catch { /* absent */ }
+      return { configPath, mtime };
+    })
+    .filter((c) => c.mtime >= 0)
+    .sort((a, b) => b.mtime - a.mtime)
+    .map((c) => c.configPath);
+}
+
+function readWorkspacePathFromConfig(configPath: string): string | null {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8")) as { workspacePath?: string };
+    if (typeof cfg.workspacePath === "string" && cfg.workspacePath.length > 0) {
+      return cfg.workspacePath;
+    }
+  } catch { /* unreadable / malformed */ }
+  return null;
+}
+
+/**
+ * Explicit override: `CAIRN_DB_PATH=/path/to/cairn.db`.
+ *
+ * Lets an agent host (or a test) pin the MCP to a specific workspace instead of
+ * inferring it from the app's config, which matters because the standalone
+ * binary is expected to run while Cairn is closed.
+ */
+function dbPathFromEnv(): string | null {
+  const raw = process.env.CAIRN_DB_PATH?.trim();
+  if (!raw) return null;
+  // Accept either the db file itself or the workspace folder containing it.
+  const candidates = [raw, path.join(raw, "cairn.db")];
+  for (const c of candidates) {
+    try { if (fs.statSync(c).isFile()) return c; } catch { /* keep looking */ }
+  }
+  return null;
+}
+
+export function findDbPathFromWorkspaceConfig(): string | null {
+  const resolved = resolveWorkspaceFromConfig();
+  return resolved ? resolved.dbPath : null;
+}
+
+/**
+ * Select the single config candidate whose `workspacePath` is non-empty AND
+ * whose `cairn.db` exists, in recency order. Returns both the db path and the
+ * workspace folder so `findDbPath` and `findWorkspacePath` can never diverge
+ * (previously `findWorkspacePath` accepted the first non-empty `workspacePath`
+ * even if its db was missing, while `findDbPath` skipped to an older candidate —
+ * so note writes could land in a different folder than the db being read).
+ */
+function resolveWorkspaceFromConfig(): { dbPath: string; workspacePath: string } | null {
+  for (const configPath of configCandidatesByRecency()) {
+    const workspacePath = readWorkspacePathFromConfig(configPath);
+    if (!workspacePath) continue;
+    const dbPath = path.join(workspacePath, "cairn.db");
+    if (fs.existsSync(dbPath)) return { dbPath, workspacePath };
   }
   return null;
 }
 
 export function findDbPath(): string | null {
-  const fromConfig = findDbPathFromWorkspaceConfig();
-  if (fromConfig) return fromConfig;
+  const fromEnv = dbPathFromEnv();
+  if (fromEnv) return fromEnv;
+
+  const fromConfig = resolveWorkspaceFromConfig();
+  if (fromConfig) return fromConfig.dbPath;
 
   const base = getConfigBasePath();
   const names = ["Cairn", "cairn", "Electron"];
@@ -125,17 +185,17 @@ export function findDbPath(): string | null {
 }
 
 export function findWorkspacePath(dbPath: string): string {
-  const base = getConfigBasePath();
-  for (const name of ["Cairn", "cairn", "Electron"]) {
-    const configPath = path.join(base, name, "workspace-config.json");
-    if (!fs.existsSync(configPath)) continue;
-    try {
-      const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8")) as { workspacePath?: string };
-      if (typeof cfg.workspacePath === "string" && cfg.workspacePath.length > 0) {
-        return cfg.workspacePath;
-      }
-    } catch { /* ignore */ }
-  }
+  // An explicit CAIRN_DB_PATH wins — its containing folder IS the workspace, and
+  // deferring to a config file here would point note writes somewhere else.
+  if (dbPathFromEnv()) return path.dirname(dbPath);
+
+  // Use the SAME candidate the db was resolved from (both non-empty workspacePath
+  // and an existing cairn.db) so the workspace folder and the db never diverge.
+  const resolved = resolveWorkspaceFromConfig();
+  if (resolved) return resolved.workspacePath;
+
+  // Legacy fallback (findDbPath's workspace-count scan): the db path has no
+  // config-declared folder, so the workspace is the db's own directory.
   return path.dirname(dbPath);
 }
 
