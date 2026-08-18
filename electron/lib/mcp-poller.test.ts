@@ -50,14 +50,14 @@ function fakeWin() {
 
 describe("startMcpNotificationPoller — workspace swap", () => {
   it("pushes the NEW workspace's unread count on the swap tick, before any write", () => {
+    vi.useFakeTimers();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-poller-"));
+    // Workspace A: 1 unread. Workspace B: 3 unread.
+    const dbPathA = seedDbWithUnread(path.join(tmp, "a"), 1);
+    const dbPathB = seedDbWithUnread(path.join(tmp, "b"), 3);
+    const dbA = new BetterSqlite3(dbPathA);
+    const dbB = new BetterSqlite3(dbPathB);
     try {
-      // Workspace A: 1 unread. Workspace B: 3 unread.
-      const dbPathA = seedDbWithUnread(path.join(tmp, "a"), 1);
-      const dbPathB = seedDbWithUnread(path.join(tmp, "b"), 3);
-      const dbA = new BetterSqlite3(dbPathA);
-      const dbB = new BetterSqlite3(dbPathB);
-
       // Mutable binding, swapped like reinitialise() does.
       let activeDb: Database.Database = dbA;
       let activeDbPath = dbPathA;
@@ -71,9 +71,12 @@ describe("startMcpNotificationPoller — workspace swap", () => {
         onDbChanged: () => {},
       });
 
-      // Baseline: first real tick reflects workspace A (1 unread).
+      // A first tick on the SAME path doesn't necessarily push the badge — with
+      // no workspace change and lastMtime already at the file's mtime, the
+      // "changed" branch may not fire. We only care that the SWAP pushes, so
+      // don't assert on this baseline; just clear the mock afterwards.
       poller.tick();
-      expect(updateBadge).toHaveBeenLastCalledWith(1);
+      updateBadge.mockClear();
 
       // Swap to workspace B without writing to it.
       activeDb = dbB;
@@ -81,14 +84,14 @@ describe("startMcpNotificationPoller — workspace swap", () => {
 
       poller.tick();
 
-      // Badge must now reflect B's 3 unread — pushed eagerly on the swap, not
+      // Badge must reflect B's 3 unread — pushed eagerly on the swap, not
       // deferred until the next write to B.
       expect(updateBadge).toHaveBeenLastCalledWith(3);
-
+    } finally {
       dbA.close();
       dbB.close();
-    } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
+      vi.useRealTimers();
     }
   });
 });

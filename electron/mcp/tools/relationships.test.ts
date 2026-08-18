@@ -64,25 +64,31 @@ describe("collectPreDeleteEntityIds", () => {
 });
 
 describe("delete_project invalidates the deleted entities' relationship cache", () => {
-  it("removes cache rows referencing the deleted project's notes/cards", () => {
+  it("removes cache rows referencing the deleted project's notes and cards", () => {
     const note = createNote(db, { id: "note-orphan", workspaceId: "ws1", projectId: "proj1", title: "Orphan", content: "x" });
-    // A surviving note in another project that co-mentions the doomed one.
-    const survivor = createNote(db, { id: "note-survivor", workspaceId: "ws1", projectId: "proj2", title: "Survivor", content: "y" });
-    seedCacheRow(note.id, survivor.id);
+    // A task card in the doomed project, with its own cached edge.
+    const col = createColumn(db, { id: "col-1", workspaceId: "ws1", projectId: "proj1", name: "Todo", type: "todo" });
+    const card = createCard(db, { id: "card-orphan", workspaceId: "ws1", projectId: "proj1", columnId: col.id, title: "Doomed card" });
+    // Survivors in another project that reference the doomed note + card.
+    const survivorNote = createNote(db, { id: "note-survivor", workspaceId: "ws1", projectId: "proj2", title: "Survivor", content: "y" });
+    const survivorCol = createColumn(db, { id: "col-2", workspaceId: "ws1", projectId: "proj2", name: "Todo", type: "todo" });
+    const survivorCard = createCard(db, { id: "card-survivor", workspaceId: "ws1", projectId: "proj2", columnId: survivorCol.id, title: "Survivor card" });
+    seedCacheRow(note.id, survivorNote.id);
+    seedCacheRow(card.id, survivorCard.id);
 
-    // Sanity: the edge exists before the delete.
+    // Sanity: both edges exist before the delete.
     const before = db
-      .prepare("SELECT COUNT(*) AS n FROM relationship_cache WHERE source_id = ? OR target_id = ?")
-      .get(note.id, note.id) as { n: number };
-    expect(before.n).toBe(1);
+      .prepare("SELECT COUNT(*) AS n FROM relationship_cache WHERE source_id IN (?, ?) OR target_id IN (?, ?)")
+      .get(note.id, card.id, note.id, card.id) as { n: number };
+    expect(before.n).toBe(2);
 
     const result = executeTool(db, tmpDir, "delete_project", { projectId: "proj1" });
     expect(result && typeof result === "object" && "error" in (result as object)).toBe(false);
 
-    // The doomed note is gone AND its cache edge was invalidated.
+    // Both the doomed note's AND the doomed card's cache edges were invalidated.
     const after = db
-      .prepare("SELECT COUNT(*) AS n FROM relationship_cache WHERE source_id = ? OR target_id = ?")
-      .get(note.id, note.id) as { n: number };
+      .prepare("SELECT COUNT(*) AS n FROM relationship_cache WHERE source_id IN (?, ?) OR target_id IN (?, ?)")
+      .get(note.id, card.id, note.id, card.id) as { n: number };
     expect(after.n).toBe(0);
   });
 });
