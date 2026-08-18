@@ -19,8 +19,10 @@ import { getUnreadMcpNotifications, getActiveMcpWrites, pruneMcpNotifications } 
 import { countPendingApprovals } from "../db/approval-queries";
 
 export interface McpPollerOptions {
-  db: Database.Database;
-  dbPath: string;
+  /** Live getter — the handle is swapped by `reinitialise()` on workspace change. */
+  getDb: () => Database.Database;
+  /** Live getter — the DB path changes with the workspace. */
+  getDbPath: () => string;
   win: BrowserWindow;
   updateBadge: (count: number) => void;
   onDbChanged: () => void;
@@ -32,13 +34,14 @@ export interface McpPoller {
 }
 
 export function startMcpNotificationPoller({
-  db,
-  dbPath,
+  getDb,
+  getDbPath,
   win,
   updateBadge,
   onDbChanged,
 }: McpPollerOptions): McpPoller {
-  const walPath = dbPath + "-wal";
+  let dbPath = getDbPath();
+  let walPath = dbPath + "-wal";
   let lastMtime = 0;
   // Notification ids already shown as an OS toast (dedupe across WAL ticks).
   const toastedIds = new Set<string>();
@@ -63,7 +66,7 @@ export function startMcpNotificationPoller({
     // so a parked approval never silently disappears even if notifications were
     // marked read. The renderer bell gets the notifications-only count.
     let approvalCount = 0;
-    try { approvalCount = countPendingApprovals(db); } catch { /* db transient */ }
+    try { approvalCount = countPendingApprovals(getDb()); } catch { /* db transient */ }
     updateBadge(count + approvalCount);
     if (count !== lastUnread) {
       lastUnread = count;
@@ -72,6 +75,21 @@ export function startMcpNotificationPoller({
   }
 
   function check() {
+    const db = getDb();
+    // The workspace can be swapped in place (`reinitialise()`), which points us
+    // at a different cairn.db. Re-target the WAL watch and re-baseline the mtime
+    // so the first tick after a swap isn't misread as "changed" (or, worse, so
+    // we don't keep watching the abandoned workspace's WAL forever).
+    const currentPath = getDbPath();
+    if (currentPath !== dbPath) {
+      dbPath = currentPath;
+      walPath = dbPath + "-wal";
+      lastMtime = 0;
+      prevLocked = new Set<string>();
+      try {
+        lastMtime = fs.statSync(fs.existsSync(walPath) ? walPath : dbPath).mtimeMs;
+      } catch { /* db not yet created */ }
+    }
     // Retention: prune old notifications once a day (30d / 1000 rows cap).
     if (Date.now() - lastPruneTs >= PRUNE_INTERVAL_MS) {
       lastPruneTs = Date.now();

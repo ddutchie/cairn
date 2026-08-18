@@ -11,9 +11,8 @@
  */
 
 import { registerIpcHandle } from "./registry";
-import { handle } from "./result-helpers";
+import { handle, type DbContext } from "./result-helpers";
 import { broadcastEvent } from "./registry";
-import type { Database } from "better-sqlite3";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
 import * as secrets from "../lib/secure-store";
@@ -123,10 +122,11 @@ function serviceOAuthConfigChanged(
   );
 }
 
-export function registerToolsHandlers(db: Database): void {
+/** Reads `ctx.db` at call time so a workspace swap (`reinitialise`) is transparent. */
+export function registerToolsHandlers(ctx: DbContext): void {
   // ── MCP servers ──────────────────────────────────────────────────────────
   registerIpcHandle("tools:listMcpServers", (_e, { workspaceId }: { workspaceId: string }) =>
-    handle(() => q.getMcpServers(db, workspaceId))
+    handle(() => q.getMcpServers(ctx.db, workspaceId))
   );
 
   registerIpcHandle("tools:saveMcpServer", (_e, server: SaveMcpArgs) =>
@@ -137,20 +137,20 @@ export function registerToolsHandlers(db: Database): void {
       // issued for the old authorization server / config. Clear them so the id
       // only preserves OAuth state when the auth config is unchanged.
       if (server.id) {
-        const prev = q.getMcpServerById(db, server.id);
+        const prev = q.getMcpServerById(ctx.db, server.id);
         if (prev && oauthConfigChanged(prev, server)) {
           mcpOauth.signOut(id);
           mcpOauth.cancelServerAuth(id); // tear down loopback listener + deep-link attempt
           void mcpClient.dispose(id);
         }
       }
-      return q.saveMcpServer(db, { ...server, id, headers: sanitizeHeaders(server.headers) });
+      return q.saveMcpServer(ctx.db, { ...server, id, headers: sanitizeHeaders(server.headers) });
     })
   );
 
   registerIpcHandle("tools:deleteMcpServer", (_e, { id }: { id: string }) =>
     handle(() => {
-      q.deleteMcpServer(db, id);
+      q.deleteMcpServer(ctx.db, id);
       mcpOauth.cancelServerAuth(id); // drop any in-flight OAuth attempt (loopback + deep-link)
       secrets.deleteToolSecrets("mcp", id); // purge keychain credentials + OAuth tokens
       void mcpClient.dispose(id); // drop any live connection
@@ -160,7 +160,7 @@ export function registerToolsHandlers(db: Database): void {
   // Settings "test connection": connect + listTools, then disconnect.
   registerIpcHandle("tools:testMcp", (_e, { id }: { id: string }) =>
     handle(() => {
-      const server = q.getMcpServerById(db, id);
+      const server = q.getMcpServerById(ctx.db, id);
       if (!server) throw new Error("MCP server not found");
       return mcpClient.testConnection({
         id: server.id,
@@ -180,7 +180,7 @@ export function registerToolsHandlers(db: Database): void {
   // enable/disable checklist in Settings. Keeps the cached connection alive.
   registerIpcHandle("tools:listMcpTools", (_e, { id }: { id: string }) =>
     handle(() => {
-      const server = q.getMcpServerById(db, id);
+      const server = q.getMcpServerById(ctx.db, id);
       if (!server) throw new Error("MCP server not found");
       return mcpClient.listToolsDetailed({
         id: server.id,
@@ -203,7 +203,7 @@ export function registerToolsHandlers(db: Database): void {
   // event to the renderer so Settings can refresh the connection state.
   registerIpcHandle("tools:startMcpAuth", (_e, { id }: { id: string }) =>
     handle(() => {
-      const server = q.getMcpServerById(db, id);
+      const server = q.getMcpServerById(ctx.db, id);
       if (!server) throw new Error("MCP server not found");
       if (server.authMode !== "oauth") throw new Error("Server is not configured for OAuth");
       return mcpOauth.startServerAuth(
@@ -243,7 +243,7 @@ export function registerToolsHandlers(db: Database): void {
 
   // ── Custom HTTP services ─────────────────────────────────────────────────
   registerIpcHandle("tools:listServices", (_e, { workspaceId }: { workspaceId: string }) =>
-    handle(() => q.getCustomServices(db, workspaceId))
+    handle(() => q.getCustomServices(ctx.db, workspaceId))
   );
 
   registerIpcHandle("tools:saveService", (_e, service: SaveServiceArgs) =>
@@ -253,19 +253,19 @@ export function registerToolsHandlers(db: Database): void {
       // artefacts (tokens + client registration) no longer apply — clear them so
       // the id only preserves OAuth state when the auth config is unchanged.
       if (service.id) {
-        const prev = q.getCustomServiceById(db, service.id);
+        const prev = q.getCustomServiceById(ctx.db, service.id);
         if (prev && serviceOAuthConfigChanged(prev, service)) {
           mcpOauth.signOut(id, "service");
           mcpOauth.cancelServiceAuth(id);
         }
       }
-      return q.saveCustomService(db, { ...service, id, headers: sanitizeHeaders(service.headers) });
+      return q.saveCustomService(ctx.db, { ...service, id, headers: sanitizeHeaders(service.headers) });
     })
   );
 
   registerIpcHandle("tools:deleteService", (_e, { id }: { id: string }) =>
     handle(() => {
-      q.deleteCustomService(db, id);
+      q.deleteCustomService(ctx.db, id);
       mcpOauth.signOut(id, "service"); // purge keychain OAuth tokens/registration
       mcpOauth.cancelServiceAuth(id); // drop any in-flight sign-in
       secrets.deleteToolSecrets("service", id); // purge any keychain header credentials
@@ -278,7 +278,7 @@ export function registerToolsHandlers(db: Database): void {
     "tools:testService",
     (_e, { id, sampleArgs }: { id: string; sampleArgs?: Record<string, unknown> }) =>
       handle(() => {
-        const svc = q.getCustomServiceById(db, id);
+        const svc = q.getCustomServiceById(ctx.db, id);
         if (!svc) throw new Error("Service not found");
         return services.testService(
           {
@@ -302,7 +302,7 @@ export function registerToolsHandlers(db: Database): void {
   // tools:oauthCallback event, same as MCP servers.
   registerIpcHandle("tools:startServiceAuth", (_e, { id }: { id: string }) =>
     handle(() => {
-      const svc = q.getCustomServiceById(db, id);
+      const svc = q.getCustomServiceById(ctx.db, id);
       if (!svc) throw new Error("Service not found");
       if (svc.authMode !== "oauth") throw new Error("Service is not configured for OAuth");
       return mcpOauth.startServiceAuth(
@@ -339,15 +339,15 @@ export function registerToolsHandlers(db: Database): void {
 
   // ── Per-project attachments ──────────────────────────────────────────────
   registerIpcHandle("tools:listAttachments", (_e, { projectId }: { projectId: string }) =>
-    handle(() => q.getToolAttachments(db, projectId))
+    handle(() => q.getToolAttachments(ctx.db, projectId))
   );
 
   registerIpcHandle("tools:setAttachment", (_e, a: Parameters<typeof q.setToolAttachment>[1]) =>
-    handle(() => q.setToolAttachment(db, a))
+    handle(() => q.setToolAttachment(ctx.db, a))
   );
 
   registerIpcHandle("tools:clearAttachment", (_e, a: Parameters<typeof q.clearToolAttachment>[1]) =>
-    handle(() => q.clearToolAttachment(db, a))
+    handle(() => q.clearToolAttachment(ctx.db, a))
   );
 
   // ── Secrets (OS keychain) ────────────────────────────────────────────────

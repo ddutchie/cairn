@@ -528,6 +528,10 @@ export const useCairnStore = create<CairnStore>()(
         }
       }
 
+      const nextWorkspaceId = isRefresh
+        ? (current.activeWorkspaceId ?? snap.workspaces?.[0]?.id ?? null)
+        : (snap.workspaces?.[0]?.id ?? null);
+
       set({
         workspaces: reconcileById(current.workspaces, snap.workspaces ?? []),
         projects: reconcileById(current.projects, snap.projects ?? []),
@@ -539,9 +543,7 @@ export const useCairnStore = create<CairnStore>()(
         // Chat (threads + messages) lives in localStorage and is managed by the
         // store directly — never overwrite it from the SQLite snapshot, which
         // doesn't include chat data. Doing so would zero out in-flight messages.
-        activeWorkspaceId: isRefresh
-          ? (current.activeWorkspaceId ?? snap.workspaces?.[0]?.id ?? null)
-          : (snap.workspaces?.[0]?.id ?? null),
+        activeWorkspaceId: nextWorkspaceId,
         activeProjectId: isRefresh
           ? (current.activeProjectId ?? snap.projects?.[0]?.id ?? null)
           : (() => {
@@ -559,8 +561,13 @@ export const useCairnStore = create<CairnStore>()(
       // aren't in the snapshot above. On the initial hydrate, read them back so
       // conversations survive restarts + app updates — Chromium localStorage
       // (the only other copy) can be cleared or relocated by an update. On a
-      // refresh hydrate we skip this to avoid clobbering in-flight chat state.
-      if (!isRefresh) {
+      // refresh hydrate we normally skip this to avoid clobbering in-flight chat
+      // state — EXCEPT when the active workspace actually changed (onboarding
+      // finishing, or Settings → change folder), because the threads in memory
+      // then belong to a different workspace's DB and would never be replaced.
+      // loadChatFromDb merges in-memory-wins, so this can't drop a live message.
+      const workspaceChanged = isRefresh && nextWorkspaceId !== current.activeWorkspaceId;
+      if (!isRefresh || workspaceChanged) {
         const wsId = get().activeWorkspaceId;
         if (wsId) {
           void get().loadChatFromDb(wsId);

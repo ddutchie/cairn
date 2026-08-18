@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import fs from "fs";
 import path from "path";
 import { registerIpcHandle } from "./registry";
-import { handle } from "./result-helpers";
+import { handle, type DbContext } from "./result-helpers";
 import type { Database } from "better-sqlite3";
 
 function getExecEnv() {
@@ -109,11 +109,12 @@ function gitSafe(args: string[], cwd: string, timeout = 15_000): Promise<{ stdou
   });
 }
 
-export function registerGitHandlers(db: Database): void {
+/** Reads `ctx.db` at call time so a workspace swap (`reinitialise`) is transparent. */
+export function registerGitHandlers(ctx: DbContext): void {
   // ── git status ──────────────────────────────────────────────────────────
   registerIpcHandle("git:status", (_e, { cwd }: { cwd: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       const branch = (await gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).stdout || "HEAD";
       const porcelain = await git(["status", "--porcelain=v1", "-z"], cwd);
       const parts = porcelain ? porcelain.split("\0") : [];
@@ -159,7 +160,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git branches ─────────────────────────────────────────────────────────
   registerIpcHandle("git:branches", (_e, { cwd }: { cwd: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       const current = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
       const output = await git(["branch", "-a"], cwd);
       const branches = output.split("\n").filter(Boolean).map((line) => ({
@@ -173,7 +174,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git checkout / create branch ─────────────────────────────────────────
   registerIpcHandle("git:checkout", (_e, { cwd, branch, create }: { cwd: string; branch: string; create?: boolean }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       if (branch.startsWith("-")) {
         throw new Error(`Invalid branch name: ${branch}`);
       }
@@ -190,7 +191,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git stage ────────────────────────────────────────────────────────────
   registerIpcHandle("git:stage", (_e, { cwd, files, all }: { cwd: string; files?: string[]; all?: boolean }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       if (all) {
         await git(["add", "--", "."], cwd);
       } else if (files && files.length > 0) {
@@ -209,7 +210,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git unstage ──────────────────────────────────────────────────────────
   registerIpcHandle("git:unstage", (_e, { cwd, files, all }: { cwd: string; files?: string[]; all?: boolean }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       if (all) {
         await git(["reset", "HEAD", "--", "."], cwd);
       } else if (files && files.length > 0) {
@@ -228,7 +229,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git commit ───────────────────────────────────────────────────────────
   registerIpcHandle("git:commit", (_e, { cwd, message, body, autoStage }: { cwd: string; message: string; body?: string; autoStage?: boolean }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       if (autoStage) {
         await git(["add", "--", "."], cwd);
       }
@@ -242,7 +243,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git push ─────────────────────────────────────────────────────────────
   registerIpcHandle("git:push", (_e, { cwd, setUpstream }: { cwd: string; setUpstream?: boolean }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
       const args = ["push"];
       if (setUpstream) args.push("-u", "origin", branch);
@@ -255,7 +256,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git log ──────────────────────────────────────────────────────────────
   registerIpcHandle("git:log", (_e, { cwd, count = 20 }: { cwd: string; count?: number }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       let clampedCount = 20;
       if (typeof count === "number" && Number.isFinite(count)) {
         clampedCount = Math.max(1, Math.min(100, count));
@@ -272,7 +273,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git diff (for commit message generation) ───────────────────────────
   registerIpcHandle("git:diff", (_e, { cwd, staged }: { cwd: string; staged?: boolean }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       const args = staged ? ["diff", "--cached", "--unified=3"] : ["diff", "HEAD", "--unified=3"];
       const result = await gitSafe(args, cwd);
       if (result.status !== 0) {
@@ -286,7 +287,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git diffBranch (diff of current branch against a base branch) ──────
   registerIpcHandle("git:diffBranch", (_e, { cwd, baseBranch }: { cwd: string; baseBranch: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       if (baseBranch.startsWith("-")) {
         throw new Error(`Invalid branch name: ${baseBranch}`);
       }
@@ -307,7 +308,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git diffFile (stat + full diff for one file) ───────────────────────
   registerIpcHandle("git:diffFile", (_e, { cwd, filePath, staged }: { cwd: string; filePath: string; staged?: boolean }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       if (!isSafePathspec(filePath) || !isPathWithinCwd(cwd, filePath)) {
         throw new Error(`Access denied: path is outside the code directory: ${filePath}`);
       }
@@ -343,7 +344,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git createPr ─────────────────────────────────────────────────────────
   registerIpcHandle("git:createPr", (_e, { cwd, title, body, base }: { cwd: string; title: string; body?: string; base?: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
       let hasGh = false;
       try {
@@ -385,7 +386,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git prStatus (check if a PR exists for the current branch) ───────────
   registerIpcHandle("git:prStatus", (_e, { cwd }: { cwd: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       let hasGh = false;
       try {
         await new Promise<void>((resolve, reject) => {
@@ -433,7 +434,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git stash / stash pop ───────────────────────────────────────────────
   registerIpcHandle("git:stash", (_e, { cwd, action }: { cwd: string; action: "push" | "pop" | "list" }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       const allowedActions = ["push", "pop", "list"];
       if (!allowedActions.includes(action)) {
         throw new Error(`Invalid stash action: ${action}`);
@@ -450,7 +451,7 @@ export function registerGitHandlers(db: Database): void {
   // ── git discard (discard changes in a file) ─────────────────────────────
   registerIpcHandle("git:discard", (_e, { cwd, filePath }: { cwd: string; filePath: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, cwd);
+      assertWithinCodeDirectory(ctx.db, cwd);
       if (!isSafePathspec(filePath) || !isPathWithinCwd(cwd, filePath)) {
         throw new Error(`Access denied: path is outside the code directory: ${filePath}`);
       }

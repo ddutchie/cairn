@@ -16,8 +16,9 @@
  * probe attempts per session.
  */
 
-import type { BrowserWindow, IpcMainEvent } from "electron";
+import type { IpcMainEvent } from "electron";
 import type { Database } from "better-sqlite3";
+import type { DbContext } from "./result-helpers";
 import { registerIpcOn } from "./registry";
 import { getCachedConfig } from "../lib/config-cache";
 import { isLocalEndpoint, normaliseBaseUrl, buildApiUrl } from "../lib/llm";
@@ -389,10 +390,8 @@ function sanitizeArgsForRenderer(args: Record<string, unknown>): Record<string, 
   return clone;
 }
 
-export function registerToolBuilderHandlers(
-  db: Database,
-  _getWin?: () => BrowserWindow | null
-): void {
+/** Reads `ctx.db` at call time so a workspace swap (`reinitialise`) is transparent. */
+export function registerToolBuilderHandlers(ctx: DbContext): void {
   registerIpcOn(
     "tool-builder:prompt",
     (event: IpcMainEvent, { sessionId, workspaceId, message, secret }: {
@@ -446,7 +445,7 @@ export function registerToolBuilderHandlers(
       const send = (channel: string, payload: unknown) => {
         if (!sender.isDestroyed()) sender.send(channel, payload);
       };
-      void runBuilderLoop(session, db, send);
+      void runBuilderLoop(session, ctx.db, send);
     }
   );
 

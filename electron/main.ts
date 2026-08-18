@@ -45,6 +45,7 @@ import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
 import { runBootSequence } from "./splash/boot-sequence";
 import { registerChatPopoutHandlers } from "./chat-popout";
+import { initUsageRecorder } from "./lib/usage-recorder";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
 
 const isDev = !app.isPackaged;
@@ -265,11 +266,11 @@ app.whenReady().then(async () => {
   // Register IPC handlers before boot sequence (boot calls reindexNotes,
   // runAllPendingMigrations, etc. which need handler-level model resolution).
   registerIpcHandlers(ctx);
-  registerAgentHandlers(ctx.db);
-  registerToolsHandlers(ctx.db);
-  registerToolBuilderHandlers(ctx.db, ctx.getWin);
+  registerAgentHandlers(ctx);
+  registerToolsHandlers(ctx);
+  registerToolBuilderHandlers(ctx);
   registerCommunityRegistryHandlers();
-  registerGitHandlers(ctx.db);
+  registerGitHandlers(ctx);
   registerPiAgentHandler(ctx);
   registerChatPopoutHandlers();
 
@@ -367,6 +368,12 @@ app.whenReady().then(async () => {
     ctx.db = newDb;
     ctx.workspacePath = newWorkspacePath;
 
+    // The usage recorder holds its own module-level handle (it's called from
+    // deep inside the streaming loop, with no ctx in scope), so it must be
+    // re-pointed explicitly. Everything else in electron/ipc/* reads ctx.db at
+    // call time, and the MCP poller re-targets itself from ctx on its next tick.
+    initUsageRecorder(newDb);
+
     // Re-arm DB hygiene (auto-vacuum + periodic reclaim) for the new DB.
     const { runStartupHygiene } = await import("./lib/db-hygiene");
     runStartupHygiene(newDb);
@@ -418,8 +425,8 @@ app.whenReady().then(async () => {
 
   // ── MCP notification poller ───────────────────────────────────────────
   const poller = startMcpNotificationPoller({
-    db: ctx.db,
-    dbPath: initialDbPath,
+    getDb: () => ctx.db,
+    getDbPath: () => getDbPathForWorkspace(ctx.workspacePath),
     win,
     updateBadge,
     onDbChanged: notifyDbChanged,

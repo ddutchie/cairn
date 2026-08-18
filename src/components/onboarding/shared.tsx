@@ -13,18 +13,18 @@ export type OnboardingStep =
   | "workspace-details"
   | "appearance"
   | "ai-setup"
-  | "mcp"
-  | "embeddings"
-  | "views"
   | "create-project"
   | "imported-projects"
   | "done";
 
-/** Steps that show the progress dots (post-workspace steps only). The
- *  create-project and imported-projects steps are mutually exclusive
- *  alternatives that occupy the SAME slot, so only create-project appears here;
- *  imported-projects is normalised to it in Shell. */
-export const PROGRESS_STEPS: OnboardingStep[] = ["appearance", "ai-setup", "mcp", "embeddings", "views", "create-project", "done"];
+/** Steps that show the progress dots. The create-project and imported-projects
+ *  steps are mutually exclusive alternatives that occupy the SAME slot, so only
+ *  create-project appears here; imported-projects is normalised to it in Shell.
+ *
+ *  MCP, embeddings, and view-visibility were removed from the required flow
+ *  (v2.7.6) — none blocks first use and all live in Settings — so the wizard is
+ *  folder → workspace → appearance → AI → land, and these dots reflect that. */
+export const PROGRESS_STEPS: OnboardingStep[] = ["appearance", "ai-setup", "create-project", "done"];
 
 // ── Font scale options ────────────────────────────────────────────────────────
 

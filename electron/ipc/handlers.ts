@@ -65,7 +65,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   // Point the LLM usage recorder at the current DB (swapped on workspace change).
   initUsageRecorder(ctx.db);
   registerDbHandlers(ctx);
-  registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
+  registerChatHandler(ctx);
   registerChatDbHandlers(ctx);
   registerUserStyleHandlers(ctx);
   registerPiSessionHandlers(ctx);
@@ -329,7 +329,9 @@ export function registerAppHandlers(
   const syncHandlers = require("../sync/sync-handlers");
   syncHandlers.registerSyncHandlers(
     {
-      db: ctx.db,
+      // Live getter, not a snapshot — `reinitialise()` swaps ctx.db on workspace
+      // change and a captured handle would keep reading the abandoned DB.
+      get db() { return ctx.db; },
       getWin: ctx.getWin,
       // Apply a conflict resolution to the DB row AND its .md file, mirroring the
       // db:note:update / db:note:delete handlers (echo-suppressed so the file

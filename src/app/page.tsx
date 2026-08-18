@@ -385,7 +385,7 @@ export default function Home() {
     const initialStep =
       onboardingState === "workspace" ? "choose-folder" :
       onboardingState === "create"    ? "workspace-details" :
-      "appearance"; // "dev" — skip straight to appearance
+      "appearance"; // "dev" — skip the workspace steps straight to the config flow
 
     return (
       <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
