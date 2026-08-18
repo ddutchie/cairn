@@ -27,6 +27,7 @@ import { getUserStyle } from "../../db/queries";
 import {
   RELATIONSHIP_AFFECTING_TOOLS,
   collectEntityIds,
+  collectPreDeleteEntityIds,
   refreshRelationshipsFor,
 } from "./relationships";
 
@@ -41,11 +42,19 @@ import {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
+  // Some tools (delete_project) destroy the rows whose cache we must invalidate,
+  // so capture those ids BEFORE dispatch — they're unrecoverable afterwards.
+  const preDeleteIds = RELATIONSHIP_AFFECTING_TOOLS.has(toolName)
+    ? collectPreDeleteEntityIds(db, toolName, args)
+    : [];
+
   const result = dispatchTool(db, workspacePath, toolName, args);
 
   if (RELATIONSHIP_AFFECTING_TOOLS.has(toolName)) {
     const failed = typeof result === "object" && result !== null && "error" in result;
-    if (!failed) refreshRelationshipsFor(db, collectEntityIds(args, result));
+    if (!failed) {
+      refreshRelationshipsFor(db, [...preDeleteIds, ...collectEntityIds(args, result)]);
+    }
   }
 
   return result;

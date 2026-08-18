@@ -115,13 +115,14 @@ export function StepAppearance({ theme, fontScale, fontFamily, onThemeChange, on
               <button
                 key={preset.id}
                 type="button"
+                aria-pressed={fontFamily === preset.id}
                 onClick={() => handleFontFamily(preset.id as FontFamilyId)}
                 title={preset.description}
                 className={cn(
                   "flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-all",
                   fontFamily === preset.id
                     ? "border-[var(--accent)] bg-[var(--accent-dim)] text-[var(--accent)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
                 )}
               >
                 <span style={{ fontFamily: preset.cssFamily, fontSize: "1.15rem", lineHeight: 1, fontWeight: 600 }}>

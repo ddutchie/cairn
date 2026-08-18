@@ -84,6 +84,36 @@ export function collectEntityIds(
 }
 
 /**
+ * Entity ids that must be captured BEFORE a tool runs, because the tool deletes
+ * the rows they belong to (so they can't be recovered afterwards).
+ *
+ * `delete_project` cascades into its notes + task cards (queries.deleteProject),
+ * but `relationship_cache` has no FK, so those entities' cached edges would be
+ * orphaned. Collect their ids here so `refreshRelationshipsFor` can invalidate
+ * them after the delete. Returns [] for every other tool.
+ */
+export function collectPreDeleteEntityIds(
+  db: Database.Database,
+  toolName: string,
+  args: Record<string, unknown>,
+): string[] {
+  if (toolName !== "delete_project") return [];
+  const projectId = args.projectId;
+  if (typeof projectId !== "string" || projectId.length === 0) return [];
+  try {
+    const noteIds = db
+      .prepare("SELECT id FROM notes WHERE project_id = ?")
+      .all(projectId) as Array<{ id: string }>;
+    const cardIds = db
+      .prepare("SELECT id FROM task_cards WHERE project_id = ?")
+      .all(projectId) as Array<{ id: string }>;
+    return [...noteIds, ...cardIds].map((r) => r.id);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Invalidate and recompute the auto-relationship edges touching `entityIds`.
  *
  * Ids that aren't notes or cards (project ids, tag ids, flow node ids) simply

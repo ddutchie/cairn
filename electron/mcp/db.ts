@@ -133,11 +133,24 @@ function dbPathFromEnv(): string | null {
 }
 
 export function findDbPathFromWorkspaceConfig(): string | null {
+  const resolved = resolveWorkspaceFromConfig();
+  return resolved ? resolved.dbPath : null;
+}
+
+/**
+ * Select the single config candidate whose `workspacePath` is non-empty AND
+ * whose `cairn.db` exists, in recency order. Returns both the db path and the
+ * workspace folder so `findDbPath` and `findWorkspacePath` can never diverge
+ * (previously `findWorkspacePath` accepted the first non-empty `workspacePath`
+ * even if its db was missing, while `findDbPath` skipped to an older candidate —
+ * so note writes could land in a different folder than the db being read).
+ */
+function resolveWorkspaceFromConfig(): { dbPath: string; workspacePath: string } | null {
   for (const configPath of configCandidatesByRecency()) {
     const workspacePath = readWorkspacePathFromConfig(configPath);
     if (!workspacePath) continue;
     const dbPath = path.join(workspacePath, "cairn.db");
-    if (fs.existsSync(dbPath)) return dbPath;
+    if (fs.existsSync(dbPath)) return { dbPath, workspacePath };
   }
   return null;
 }
@@ -146,8 +159,8 @@ export function findDbPath(): string | null {
   const fromEnv = dbPathFromEnv();
   if (fromEnv) return fromEnv;
 
-  const fromConfig = findDbPathFromWorkspaceConfig();
-  if (fromConfig) return fromConfig;
+  const fromConfig = resolveWorkspaceFromConfig();
+  if (fromConfig) return fromConfig.dbPath;
 
   const base = getConfigBasePath();
   const names = ["Cairn", "cairn", "Electron"];
@@ -176,10 +189,13 @@ export function findWorkspacePath(dbPath: string): string {
   // deferring to a config file here would point note writes somewhere else.
   if (dbPathFromEnv()) return path.dirname(dbPath);
 
-  for (const configPath of configCandidatesByRecency()) {
-    const workspacePath = readWorkspacePathFromConfig(configPath);
-    if (workspacePath) return workspacePath;
-  }
+  // Use the SAME candidate the db was resolved from (both non-empty workspacePath
+  // and an existing cairn.db) so the workspace folder and the db never diverge.
+  const resolved = resolveWorkspaceFromConfig();
+  if (resolved) return resolved.workspacePath;
+
+  // Legacy fallback (findDbPath's workspace-count scan): the db path has no
+  // config-declared folder, so the workspace is the db's own directory.
   return path.dirname(dbPath);
 }
 

@@ -31,6 +31,8 @@ export interface McpPollerOptions {
 export interface McpPoller {
   /** No-op for backward compatibility — the unread count is DB-derived now. */
   resetCount: () => void;
+  /** Run one poll tick synchronously. Exposed for tests; the interval calls it. */
+  tick: () => void;
 }
 
 export function startMcpNotificationPoller({
@@ -89,6 +91,13 @@ export function startMcpNotificationPoller({
       try {
         lastMtime = fs.statSync(fs.existsSync(walPath) ? walPath : dbPath).mtimeMs;
       } catch { /* db not yet created */ }
+      // We just re-baselined lastMtime to the new file's current mtime, so the
+      // `mtime > lastMtime` branch below won't fire until the NEXT write to the
+      // new workspace. Push its unread count now so the badge reflects the new
+      // workspace immediately instead of showing the old one's until something
+      // writes. Force a broadcast by resetting lastUnread first.
+      lastUnread = -1;
+      try { pushUnread(getUnreadMcpNotifications(db).length); } catch { /* db transient */ }
     }
     // Retention: prune old notifications once a day (30d / 1000 rows cap).
     if (Date.now() - lastPruneTs >= PRUNE_INTERVAL_MS) {
@@ -145,5 +154,6 @@ export function startMcpNotificationPoller({
 
   return {
     resetCount: () => { /* no-op — count is DB-derived */ },
+    tick: check,
   };
 }

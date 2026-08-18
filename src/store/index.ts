@@ -528,9 +528,17 @@ export const useCairnStore = create<CairnStore>()(
         }
       }
 
+      // On a refresh, keep the currently-active workspace ONLY if it still
+      // exists in the snapshot (another window may have deleted it); otherwise
+      // fall back to the first snapshot workspace. On a cold hydrate, always
+      // take the first snapshot workspace.
+      const snapWorkspaces = snap.workspaces ?? [];
+      const currentWsStillExists =
+        current.activeWorkspaceId != null &&
+        snapWorkspaces.some((w: { id: string }) => w.id === current.activeWorkspaceId);
       const nextWorkspaceId = isRefresh
-        ? (current.activeWorkspaceId ?? snap.workspaces?.[0]?.id ?? null)
-        : (snap.workspaces?.[0]?.id ?? null);
+        ? (currentWsStillExists ? current.activeWorkspaceId : (snapWorkspaces[0]?.id ?? null))
+        : (snapWorkspaces[0]?.id ?? null);
 
       set({
         workspaces: reconcileById(current.workspaces, snap.workspaces ?? []),
@@ -545,7 +553,15 @@ export const useCairnStore = create<CairnStore>()(
         // doesn't include chat data. Doing so would zero out in-flight messages.
         activeWorkspaceId: nextWorkspaceId,
         activeProjectId: isRefresh
-          ? (current.activeProjectId ?? snap.projects?.[0]?.id ?? null)
+          ? (() => {
+              // Same snapshot-membership guard as the workspace above: a
+              // preserved project id that no longer exists (deleted elsewhere)
+              // must not stick — fall back to the first snapshot project.
+              const cur = current.activeProjectId;
+              const stillExists =
+                cur != null && snap.projects?.some((p: { id: string }) => p.id === cur);
+              return stillExists ? cur : (snap.projects?.[0]?.id ?? null);
+            })()
           : (() => {
               const saved = storage.get<string>(ACTIVE_PROJECT_KEY);
               const valid =
