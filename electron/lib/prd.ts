@@ -29,7 +29,10 @@ export async function generatePrd(
 
   let prdMarkdown: string;
   try {
-    prdMarkdown = await callLLM(llmConfig, systemPrompt, userPrompt, {
+    const { runOneShot } = await import("../cordis/one-shot");
+    prdMarkdown = await runOneShot({
+      systemPrompt, userPrompt,
+      config: llmConfig,
       source: "prd",
       projectId: args.projectId,
       workspaceId: project.workspaceId,
