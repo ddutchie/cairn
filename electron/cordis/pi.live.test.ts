@@ -57,4 +57,40 @@ describe("runCordisLoop (gated on CORDIS_LIVE=1)", () => {
     console.log("PERSISTED messages:", msgs.length, "usage rows:", usageRows.n);
     expect(usageRows.n).toBeGreaterThan(0);
   });
+
+  it("streams token deltas live and carries prior-turn context (history)", async () => {
+    if (process.env.CORDIS_LIVE !== "1") return;
+    const db = makeDb();
+    initUsageRecorder(db);
+    const tokens: string[] = [];
+    const thoughts: string[] = [];
+    // The answer ("Zephyr") only exists in the prior turn — the model must use
+    // the replayed history (folded into the system prompt) to answer correctly.
+    const req: ChatRequest = {
+      message: "What is the secret codeword I told you? Reply with just the word.",
+      threadId: "thr-live-hist",
+      projectId: "pj",
+      workspaceId: "ws",
+      history: [
+        { role: "user", content: "Remember this: the secret codeword is Zephyr." },
+        { role: "assistant", content: "Got it — I'll remember the codeword is Zephyr." },
+      ],
+    };
+    const result = await runCordisLoop({
+      db,
+      req,
+      workspacePath: "/tmp",
+      llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "", provider: "openai" },
+      signal: undefined,
+      onToken: (d) => tokens.push(d),
+      onThought: (d) => thoughts.push(d),
+    });
+    console.log("HISTORY RESULT:", JSON.stringify(result), "deltas:", tokens.length);
+    // Context carried: the model recovered the codeword from replayed history.
+    expect(result.content.toLowerCase()).toContain("zephyr");
+    // Live streaming: onToken fired with incremental deltas (not one final blob),
+    // and the concatenated deltas equal the final content.
+    expect(tokens.length).toBeGreaterThan(0);
+    expect(tokens.join("")).toBe(result.content);
+  });
 });

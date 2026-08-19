@@ -23,6 +23,7 @@ import type { Database } from "better-sqlite3";
 
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, CAIRN_DB } from "./cairn-plugins";
+import { buildSystemPrompt, withPersonality } from "../lib/tools";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 
@@ -67,7 +68,10 @@ async function getContext(): Promise<Context> {
     const ctx = new Context();
     await ctx.plugin(sessionPlugin);
     await ctx.plugin(llmPlugin);
-    await ctx.plugin(systemPromptPlugin, { persona: "" });
+    // Cairn owns the whole system prompt (buildSystemPrompt), so suppress dsh's
+    // built-in harness identity — the per-request persona section (registered in
+    // each agent's setup) is the only identity the model sees.
+    await ctx.plugin(systemPromptPlugin, { persona: "", includeHarnessIdentity: false });
     await ctx.plugin(agentPlugin);
     await ctx.plugin(toolsPlugin, { mode: "native" });
     await ctx.plugin(agentLoopPlugin, { agents: [] });
@@ -211,6 +215,43 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   const sessionId = SessionId(`chat-${req.threadId}-${Date.now()}`);
   const selection = { provider: "cairn", model: llmConfig.model };
 
+  // Cairn's full system prompt (identity + tool rules + date), with the active
+  // personality layered on. Injected as the persona section so the model gets
+  // project/workspace context and behaviour on the FIRST message, not just after
+  // a follow-up. buildSystemPrompt honours req.systemPrompt when the caller set one.
+  const baseSystem = withPersonality(buildSystemPrompt(req), req.personality);
+
+  // Fold prior conversation into the system prompt as a transcript. dsh sessions
+  // are created fresh per turn (a new sessionId each call), so without this the
+  // model loses all context from earlier turns — which is exactly the "it only
+  // worked on the second message" symptom. Replaying raw events into the session
+  // would have to satisfy dsh's surface/seq invariants; a transcript block is
+  // robust and needs no dsh-internal bookkeeping.
+  const history = (req.history ?? [])
+    .filter((h) => (h.role === "user" || h.role === "assistant") && typeof h.content === "string" && h.content.trim())
+    .map((h) => `${h.role === "user" ? "User" : "Assistant"}: ${(h.content as string).trim()}`);
+  const systemText = history.length
+    ? `${baseSystem}\n\n## Conversation so far\n${history.join("\n\n")}`
+    : baseSystem;
+
+  // Live-stream text + reasoning deltas as they arrive on the MAIN session
+  // (subagent children are handled by cairnSubagentPlugin). We also keep a
+  // running buffer as the durable return value / fallback if no deltas fired.
+  let liveText = "";
+  let liveReasoning = "";
+  const streamDisposer = (ctx as unknown as { on: (ev: string, fn: (s: unknown, e: SessionEvent) => void) => () => void }).on(
+    "session/event",
+    (session, event) => {
+      if ((session as { header?: { origin?: string } }).header?.origin === "subagent") return;
+      if ((session as { id?: unknown }).id !== sessionId) return;
+      if (event.type !== "assistant/chunk") return;
+      const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
+      if (!c?.text) return;
+      if (c.type === "text-delta") { liveText += c.text; opts.onToken?.(c.text); }
+      else if (c.type === "reasoning-delta") { liveReasoning += c.text; opts.onThought?.(c.text); }
+    },
+  );
+
   try {
     const { agent } = await ctx.agentLoop.createAgent(ctx, {
       sessionId,
@@ -218,6 +259,12 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
       agentOptions: { provider: selection.provider, model: selection.model },
       setup: (agentCtx) => {
         installModelSelection(agentCtx, { current: selection, assembled: undefined });
+        // The persona slot is the first section the model reads; Cairn's prompt
+        // fully replaces the (suppressed) harness identity.
+        if (systemText) {
+          (agentCtx as unknown as { systemPrompt: { section: (s: { name: string; order: number; text: string }) => void } })
+            .systemPrompt.section({ name: "deployment:persona", order: 0, text: systemText });
+        }
       },
     });
 
@@ -232,9 +279,12 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     );
     await agent.whenIdle();
 
-    const { text, reasoning, pt, ct, rt } = collect(agent.session.events, firstSeq);
-    if (opts.onToken) opts.onToken(text);
-    if (opts.onThought) opts.onThought(reasoning);
+    const collected = collect(agent.session.events, firstSeq);
+    const pt = collected.pt, ct = collected.ct, rt = collected.rt;
+    // Prefer the live-streamed buffers; fall back to the post-hoc collection if
+    // deltas never fired (e.g. a provider that only emits a final message).
+    const text = liveText || collected.text;
+    const reasoning = liveReasoning || collected.reasoning;
     if (opts.onUsage && (pt > 0 || ct > 0)) opts.onUsage(pt, ct, rt);
 
     return {
@@ -243,6 +293,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
       reasoning,
     };
   } finally {
+    try { streamDisposer(); } catch { /* noop */ }
     toolDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
     pluginDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
   }
