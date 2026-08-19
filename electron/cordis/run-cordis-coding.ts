@@ -52,6 +52,13 @@ export interface RunCordisCodingOptions {
   mode: "plan" | "execute";
   /** When false, mutating tools require user confirmation before running. Default true. */
   autoApprove?: boolean;
+  /**
+   * Filesystem/bash sandbox mode. "workspace-write" (default) confines all
+   * mutations to `cwd`; "read-only" forbids all mutation; "danger-full-access"
+   * is unrestricted (legacy behaviour). Automation callers should use
+   * "workspace-write" so an agent cannot escape the project root.
+   */
+  sandboxMode?: "read-only" | "workspace-write" | "danger-full-access";
   /** Emit a pi-agent:* IPC event (sessionId NOT yet tagged by the caller). */
   send: (channel: string, payload: Record<string, unknown>) => void;
   /** Interactive questions (ask_questions) adapter for the coding session. */
@@ -88,7 +95,8 @@ export interface RunCordisCodingResult {
 export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise<RunCordisCodingResult> {
   const ctx = await getContext();
   const { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, approvals, doomLoop, getWin, signal } = opts;
-  // autoApprove defaults ON; forced ON if no approvals adapter was supplied
+  // Sandbox: confine fs/bash mutations to cwd by default (workspace-write).
+  const sandboxMode = opts.sandboxMode ?? "workspace-write";  // autoApprove defaults ON; forced ON if no approvals adapter was supplied
   // (no way to prompt → don't block on an approval that can never resolve).
   const autoApprove = opts.autoApprove !== false ? true : (approvals ? false : true);
 
@@ -171,7 +179,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // The dsh coding capability stack (bash/fs/search/editor/todo/plan-mode),
     // cwd-scoped. Order per dsh-base. Mounted before the agent so the tools are
     // registered when the model first requests them.
-    codingDisposers.push(await mountCodingStack(ctx, { cwd }));
+    codingDisposers.push(await mountCodingStack(ctx, { cwd, sandboxMode }));
     const externalDisposers = await registerExternalCairnTools(ctx, {
       db,
       workspaceId: req.workspaceId ?? "",

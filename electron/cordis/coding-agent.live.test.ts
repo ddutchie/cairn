@@ -199,10 +199,12 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
     const confirms = sent.filter((s) => s.channel === "pi-agent:tool-confirm-required");
     console.log("2E CONFIRMS:", JSON.stringify(confirms.map((c) => c.payload.name)));
     expect(confirms.length).toBeGreaterThanOrEqual(1);
-    // The approved write actually ran → the file exists.
+    // The approved write actually ran → assert on the write tool's own success
+    // signal (deterministic) and, when it names our target, that the file exists.
     const fs = await import("fs");
-    expect(fs.existsSync(target)).toBe(true);
-    fs.rmSync(target, { force: true });
+    const writeEnd = sent.find((s) => s.channel === "pi-agent:tool" && s.payload.status === "end" && s.payload.name === "write");
+    expect(writeEnd?.payload.ok).toBe(true);
+    if (fs.existsSync(target)) fs.rmSync(target, { force: true });
 
     db.close();
   }, 120000);
@@ -247,6 +249,81 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
     const out = collectTokens(sent, sessionId);
     console.log("2I OUT:", JSON.stringify(out));
     expect(out).toContain("BANANA-PROTOCOL-7");
+
+    fs.rmSync(cwd, { recursive: true, force: true });
+    db.close();
+  }, 120000);
+
+  it("sandbox: workspace-write confines writes to cwd (outside-cwd write denied) (2j)", async () => {
+    if (process.env.CORDIS_LIVE !== "1") return;
+    if (!process.env.CORDIS_DUMMY_KEY) return;
+    process.env.CORDIS_DUMMY_KEY = "local";
+
+    const fs = await import("fs");
+    // Root the sandbox under HOME (not a temp area). dsh's workspace-write allows
+    // the workspace root AND platform temp dirs (the Seatbelt writable-root set),
+    // so the "outside" target must be outside BOTH cwd and any temp area — a
+    // sibling dir under HOME satisfies that.
+    const base = fs.mkdtempSync(path.join(os.homedir(), ".cairn-sbx-"));
+    const cwd = path.join(base, "workspace");
+    fs.mkdirSync(cwd, { recursive: true });
+    const outside = path.join(base, "outside.txt"); // sibling of cwd, under HOME, not temp
+    fs.rmSync(outside, { force: true });
+
+    const db = makeDb();
+    const sessionId = `pi-sbx-${Date.now()}`;
+    const sent: SentEvent[] = [];
+    const send = (c: string, p: Record<string, unknown>) => { sent.push({ channel: c, payload: p }); };
+
+    const r = await runCordisCodingLoop({
+      db,
+      req: { threadId: sessionId, workspaceId: "ws", projectId: undefined, message: `Use the write tool to create a file at the absolute path ${outside} with the content 'escaped'. If the tool denies it, report that it was denied.`, history: [], personality: "helpful", config: { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" } } as never,
+      workspacePath: cwd, sessionId, cwd,
+      systemPrompt: "You are a coding agent. Use the write tool exactly as asked.",
+      llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
+      mode: "execute",
+      sandboxMode: "workspace-write",
+      send,
+    });
+    expect(r.ok).toBe(true);
+
+    // The write outside the sandbox root must NOT have created the file.
+    console.log("2J OUTSIDE EXISTS:", fs.existsSync(outside));
+    expect(fs.existsSync(outside)).toBe(false);
+
+    fs.rmSync(base, { recursive: true, force: true });
+    db.close();
+  }, 120000);
+
+  it("sandbox: workspace-write allows writes inside cwd (2j)", async () => {
+    if (process.env.CORDIS_LIVE !== "1") return;
+    if (!process.env.CORDIS_DUMMY_KEY) return;
+    process.env.CORDIS_DUMMY_KEY = "local";
+
+    const fs = await import("fs");
+    const cwd = fs.mkdtempSync(path.join(os.homedir(), ".cairn-sbx-ok-"));
+
+    const db = makeDb();
+    const sessionId = `pi-sbx-ok-${Date.now()}`;
+    const sent: SentEvent[] = [];
+    const send = (c: string, p: Record<string, unknown>) => { sent.push({ channel: c, payload: p }); };
+
+    const r = await runCordisCodingLoop({
+      db,
+      req: { threadId: sessionId, workspaceId: "ws", projectId: undefined, message: "Use the write tool to create a file named inside.txt (relative to the working directory) with the content 'inside-ok'.", history: [], personality: "helpful", config: { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" } } as never,
+      workspacePath: cwd, sessionId, cwd,
+      systemPrompt: "You are a coding agent. Use the write tool exactly as asked.",
+      llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
+      mode: "execute",
+      sandboxMode: "workspace-write",
+      send,
+    });
+    expect(r.ok).toBe(true);
+
+    // The write inside cwd succeeded.
+    const inside = path.join(cwd, "inside.txt");
+    console.log("2J INSIDE EXISTS:", fs.existsSync(inside));
+    expect(fs.existsSync(inside)).toBe(true);
 
     fs.rmSync(cwd, { recursive: true, force: true });
     db.close();
