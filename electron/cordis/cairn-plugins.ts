@@ -21,6 +21,8 @@ import type Database from "better-sqlite3";
 import { addChatMessage, upsertChatThread } from "../db/queries";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
+import { saveSessionTodos, getSessionTodos } from "../db/queries";
+import { resultContentError } from "../lib/tool-result";
 
 /** Service key under which cairnDbPlugin provides the Database handle. */
 export const CAIRN_DB = "cairnDb";
@@ -381,5 +383,219 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
       completionTokens: completion,
       reasoningTokens: reasoning,
     });
+  });
+}
+
+// ── cairn-coding ──────────────────────────────────────────────────────────────
+// Bridge the MAIN coding session's dsh events onto Cairn's `pi-agent:*` IPC
+// vocabulary so the renderer's AgentChatPane works unchanged over the Cordis
+// engine (Phase 1.5 step 2b). Sibling to cairnSubagentPlugin (which handles
+// child `origin:'subagent'` sessions); this one owns the parent session's
+// token/thought/tool/usage/step/done/error stream plus the note-updated / todos
+// / plan-note side effects. It is scoped to a single parent sessionId and
+// ignores subagent children (those are bridged by cairnSubagentPlugin).
+
+export interface CairnCodingConfig {
+  /** The parent coding session id — scopes every emitted event (the caller's id). */
+  sessionId: string;
+  /**
+   * The dsh session id to MATCH events against (the loop's attempt session id).
+   * Separate from `sessionId` because the loop mints a fresh dsh id per attempt.
+   */
+  matchSessionId: string;
+  /** Current agent mode — drives plan-note detection. */
+  mode: "plan" | "execute";
+  /** Emit a `pi-agent:*` IPC event to the renderer (sessionId NOT yet tagged). */
+  send: (channel: string, payload: Record<string, unknown>) => void;
+  /** Resolve/abort when the parent turn completes — used by the loop await. */
+  signal?: AbortSignal;
+}
+
+/** The dsh `todo/write` snapshot payload (TodoItem[]). */
+interface DshTodoWrite {
+  todos?: Array<{ content: string; status: string }>;
+}
+
+/**
+ * Map the parent coding session's `session/event` stream to `pi-agent:*` events.
+ * Mirrors the built-in runSession() wiring in electron/ipc/pi-agent.ts, but
+ * driven entirely from dsh events (the dsh agent loop runs the model↔tools loop
+ * internally — we only translate what it emits).
+ *
+ * Emitted channels (payloads match the built-in contract exactly):
+ *   pi-agent:token/{delta}, pi-agent:thought/{delta},
+ *   pi-agent:usage/{promptTokens,completionTokens,reasoningTokens},
+ *   pi-agent:tools-ready/{}, pi-agent:tool/{name,label,args,callId,status,ok,output},
+ *   pi-agent:step/{}, pi-agent:done/{}, pi-agent:error/{error},
+ *   pi-agent:note-updated/{noteId,content}, pi-agent:todos/{todos},
+ *   pi-agent:plan-note/{noteId}
+ *
+ * Token/reasoning deltas are streamed live; the final assistant/message only
+ * fills gaps (never re-emits streamed content — same guard as cairnSubagentPlugin).
+ */
+export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void {
+  const { sessionId, matchSessionId, mode, send, signal } = config;
+
+  // Track per-callId tool names (parallel calls to different tools resolve by callId).
+  const callName = new Map<string, string>();
+  const callLabel = new Map<string, string>();
+  // Set when the first tool/call of the session is seen — emit tools-ready once.
+  let toolsReadyFired = false;
+  // Whether we've seen a turn/start past the first (dsh emits one per step).
+  let firstTurnStarted = false;
+  // Delays: streamed deltas must not be re-emitted by the final assistant/message.
+  const streamedText = new Set<string>();
+  const streamedReasoning = new Set<string>();
+  // Terminal-guard: emit done/error exactly once per turn.
+  let ended = false;
+
+  const emit = (channel: string, payload: Record<string, unknown>) => send(channel, { sessionId, ...payload });
+
+  const finish = (kind: "done" | "error", error?: string) => {
+    if (ended) return;
+    ended = true;
+    if (kind === "done") emit("pi-agent:done", {});
+    else emit("pi-agent:error", { error: error ?? "Agent error" });
+  };
+  if (signal?.aborted) finish("done");
+
+  ctx.on("session/event", (session: Session, event: SessionEvent) => {
+    // Only the parent session (this loop's dsh attempt id) — children are bridged
+    // by cairnSubagentPlugin.
+    if (String((session as { id?: unknown }).id) !== matchSessionId) return;
+    const seq = event.seq;
+
+    // ── Step boundary ────────────────────────────────────────────────────────
+    // dsh opens a durable turn per step. The builtin fires onStepStart for every
+    // step after the first so the renderer finalises the previous assistant
+    // message. Map the first turn/start as tools/stream start and later ones as
+    // step boundaries.
+    if (event.type === "turn/start") {
+      if (!firstTurnStarted) firstTurnStarted = true;
+      else emit("pi-agent:step", {});
+      return;
+    }
+
+    // ── Token / reasoning deltas ─────────────────────────────────────────────
+    if (event.type === "assistant/chunk") {
+      const c = (event.data as { chunk?: { type?: string; text?: string; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }).chunk;
+      if (!c) return;
+      if (c.type === "text-delta" && c.text) {
+        streamedText.add(sessionId);
+        emit("pi-agent:token", { delta: c.text });
+        return;
+      }
+      if (c.type === "reasoning-delta" && c.text) {
+        streamedReasoning.add(sessionId);
+        emit("pi-agent:thought", { delta: c.text });
+        return;
+      }
+      if (c.type === "usage" && c.usage) {
+        emit("pi-agent:usage", {
+          promptTokens: c.usage.inputTokens ?? 0,
+          completionTokens: c.usage.outputTokens ?? 0,
+          reasoningTokens: c.usage.reasoningTokens ?? 0,
+        });
+        return;
+      }
+      return;
+    }
+
+    // ── Tool call (model's request, before execution) ────────────────────────
+    if (event.type === "tool/call") {
+      if (!toolsReadyFired) {
+        toolsReadyFired = true;
+        emit("pi-agent:tools-ready", {});
+      }
+      const d = event.data as { name: string; arguments?: string; callId?: string };
+      if (d.callId) callName.set(d.callId, d.name);
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(d.arguments ?? "{}") as Record<string, unknown>; } catch { /* keep {} */ }
+      const callId = d.callId ?? `${d.name}:${seq}`;
+      const label = d.name;
+      callLabel.set(callId, label);
+      // "pending" chip (same as builtin onToolPending) — frontend treats it as a
+      // running chip immediately, matching the streaming pending-state UX.
+      emit("pi-agent:tool", { name: d.name, label, args, callId, status: "pending" });
+      return;
+    }
+
+    // ── Tool result (after execution) ────────────────────────────────────────
+    if (event.type === "tool/result") {
+      const msg = (event.data as { message?: { source?: { callId?: string }; content?: Array<{ type?: string; isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } }).message;
+      const callId = msg?.source?.callId;
+      const block = msg?.content?.[0];
+      const isError = block?.isError === true;
+      const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
+      const name = callId ? (callName.get(callId) ?? "tool") : "tool";
+      const label = callId ? (callLabel.get(callId) ?? name) : name;
+      // ok = !isError and not a Cairn `{error:…}` return (same detection as builtin).
+      const ok = !isError && resultContentError(output) === undefined;
+      emit("pi-agent:tool", {
+        name, label, callId, status: "end", ok,
+        output: isError ? undefined : output,
+        args: undefined,
+      });
+
+      // ── note-updated: after a note-write tool, push fresh note content so the
+      // plan task list updates live (mirrors builtin NOTE_WRITE_TOOLS handling).
+      const db = getDb(ctx);
+      if (ok && db && ["ensure_note", "patch_note", "append_to_note"].includes(name)) {
+        try {
+          const parsed = JSON.parse(output) as { id?: string };
+          if (parsed?.id) {
+            const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
+            if (row) emit("pi-agent:note-updated", { noteId: parsed.id, content: row.content ?? "" });
+          }
+        } catch { /* non-JSON output — ignore */ }
+      }
+
+      // ── plan-note: in plan mode, notify the renderer when the agent writes the PRD note.
+      if (mode === "plan" && ok && name === "ensure_note") {
+        try {
+          const parsed = JSON.parse(output) as { id?: string };
+          if (parsed?.id) emit("pi-agent:plan-note", { noteId: parsed.id });
+        } catch { /* non-JSON output — ignore */ }
+      }
+
+      // ── todos: the dsh `todo_write` tool writes `todo/write` snapshots; map
+      // the latest to Cairn's pi_session_todos + emit pi-agent:todos.
+      if (name === "todo_write" && db) {
+        try {
+          const parsed = JSON.parse(output) as DshTodoWrite;
+          const list = Array.isArray(parsed.todos)
+            ? parsed.todos.map((t) => ({
+                content: t.content,
+                status: (t.status === "in_progress" || t.status === "completed" || t.status === "pending" ? t.status : "pending") as "pending" | "in_progress" | "completed",
+                priority: "medium" as const,
+              }))
+            : [];
+          saveSessionTodos(db, sessionId, list);
+          emit("pi-agent:todos", { todos: getSessionTodos(db, sessionId) });
+        } catch { /* non-critical */ }
+      }
+      return;
+    }
+
+    // ── Final assistant message: fill text/reasoning gaps only ───────────────
+    if (event.type === "assistant/message") {
+      if (!streamedText.has(sessionId)) {
+        const text = eventText(event);
+        if (text) emit("pi-agent:token", { delta: text });
+      }
+      if (!streamedReasoning.has(sessionId)) {
+        const { reasoning } = eventReasoning(event);
+        if (reasoning) emit("pi-agent:thought", { delta: reasoning });
+      }
+      return;
+    }
+
+    // ── Turn end: map completion to done/error ───────────────────────────────
+    if (event.type === "turn/end") {
+      const reason = (event.data as { reason?: { kind?: string } }).reason?.kind;
+      if (reason === "completed") finish("done");
+      else finish("error", reason ? `Agent turn ended abnormally (${reason})` : "Agent turn ended abnormally");
+      return;
+    }
   });
 }

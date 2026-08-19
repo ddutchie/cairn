@@ -74,7 +74,7 @@ let contextReady: Promise<Context> | null = null;
 let piAiDisposer: (() => void) | null = null;
 let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" } | null = null;
 
-async function getContext(): Promise<Context> {
+export async function getContext(): Promise<Context> {
   if (sharedCtx) return sharedCtx;
   if (contextReady) return contextReady;
   contextReady = (async () => {
@@ -109,8 +109,7 @@ async function getContext(): Promise<Context> {
  * "cairn" is registered once; if the endpoint/model changed, dispose the old
  * route first (the pi-ai plugin owns a configurable-provider directory + route).
  */
-async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" }): Promise<void> {
-  const same =
+export async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" }): Promise<void> {  const same =
     piAiDisposer &&
     lastPiAiConfig &&
     lastPiAiConfig.baseUrl === config.baseUrl &&
