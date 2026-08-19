@@ -195,6 +195,42 @@ Only `pi_agent_llm_history` is dead on Cordis — everything else stays.
 | `shared/models/pdf-attach.ts` `buildAttachmentParts` | **Builtin wire-format only** — Cordis uses `CairnAttachmentStore` + `buildCordisUserContent` | Stop calling `buildAttachmentParts` on Cordis (already done); keep `validateAttachmentDataUrl`/`supportsPdfInput`/`pdfTokenEstimate`/`MAX_ATTACHMENT_BYTES` for renderer/mobile/token accounting |
 | `electron/preload.ts` `pi-agent:*` / `chat:*` channels | **Keep all** — contract is engine-agnostic | Keep; only the implementation behind them becomes cordis-only |
 
+#### 2e — One-shot LLM calls (not blocking Phase 2 deletion, but tracked here)
+
+Phase 2a–2d removes the **loop** files (`chat-loop.ts:54 runToolLoop`, `pi-agent-loop.ts:628 runAgentLoop`, `compaction.ts:250 buildCompactionTransformer`). The **one-shot** callers below do NOT import those loops — they call `electron/lib/llm.ts:184 callLLM` / `llm.ts:168 postChatCompletions` directly, so deleting the loops does not break them. They are *not* the last remaining work for the loop deletion, but they are the last remaining **builtin transport** usage and should be migrated so the whole app goes through `dsh-llm-pi-ai` + `resolveTransport`.
+
+| One-shot caller | File:line | What it does | Cordis replacement |
+|---|---|---|---|
+| `chat:compactThread` | `electron/ipc/chat.ts:90-115` → `electron/lib/compaction.ts:120 generateSummary` | Single `stream:true` LLM call that summarises a thread (`SUMMARIZATION_SYSTEM_PROMPT`, 7-section user prompt, `source:"summary"`) | Keep as-is for now (one-shot thread summariser, not an agent turn). Optional: `await ctx.llm.stream({ provider:"cairn", model, messages:[system,user], maxTokens:4096 })` via `dsh-llm` `LlmRuntime` (`node_modules/@deepseek-ai/dsh-llm/lib/types/index.d.ts:32 ctx.llm.stream`) — same `resolveTransport` probe, no tool loop |
+| `user-style:generate` (non-streaming) | `electron/ipc/user-style-handlers.ts:112-151` → `llm.ts:184 callLLM({stream:false, reasoningEffort:"none", temperature:0.3→0.1})` | One-shot style guide without tools (fallback when `generateStream` not available) | Optional: `ctx.llm.stream` single-turn; keep the `isUsableGuide` retry gate |
+| `ai:generateCommitMessage` | `electron/ipc/ai-handlers.ts:195-217:213` `callLLM(..., source:"commit-message")` | Diff → conventional-commit SUBJECT/BODY | `ctx.llm.stream` |
+| `ai:generatePrDescription` | `electron/ipc/ai-handlers.ts:220-243:239` `callLLM(..., source:"pr-description")` | Branch diff → PR title/description | `ctx.llm.stream` |
+| `ai:explainArchitecture` | `electron/ipc/ai-handlers.ts:250-272:268` `callLLM(..., source:"explain")` | Codebase summary → OVERVIEW/MODULES | `ctx.llm.stream` |
+| `ai:generatePrd` → `generatePrd` | `electron/ipc/ai-handlers.ts:173` → `electron/lib/prd.ts:32 callLLM(..., source:"prd")` | Requirements → PRD note | `ctx.llm.stream` then `createNote` |
+| `db:flow:node:summarize` | `electron/ipc/flow-handlers.ts:104-242:229` `callLLM(..., source:"flow-ai-summary")` | BFS reachable IdeaFlow nodes → summary written to `idea_flow_nodes.data` | `ctx.llm.stream` with `projectId/workspaceId` scoping |
+| `spawn_tasks_from_note` (tool executor) | `electron/ipc/chat-executor.ts:238-296:250` `callLLM` inside `executeTool` | Note content → JSON tasks array → `create_task` + linking | `ctx.llm.stream` inside the tool, or keep as-is until `registerCairnTools` owns it fully |
+
+**Pattern to migrate one-shots** — mechanical, same `resolveTransport` + `ensurePiAiAdapter` the loops use:
+```ts
+// Before (builtin):
+const text = await callLLM({ baseUrl, model, apiKey }, systemPrompt, userPrompt,
+  { source:"commit-message", temperature:0.3, maxTokens:4096 });
+
+// After (Cordis single-turn):
+const ctx = await getContext(); // shared Cordis ctx, already has pi-ai adapter + attachments
+await ensurePiAiAdapter(ctx, { baseUrl, model, apiKey, api: apiFor(transport.mode) });
+let text = "";
+for await (const chunk of ctx.llm.stream({ provider:"cairn", model, messages:[
+  { role:"system", content: systemPrompt },
+  { role:"user", content: userPrompt },
+]})) {
+  if (chunk.type === "text-delta" && chunk.text) text += chunk.text;
+}
+```
+Keep `recordLlmUsage` / `calculatePromptBreakdown` calls — they are transport-agnostic.
+
+**Sequencing:** do NOT block Phase 2c (loop deletion) on one-shots. One-shots survive the deletion. Migrate them as **Phase 2e** after the loops are gone, one handler at a time, with the same soak gate. `chat:compactThread` can stay on `generateSummary` longest because `dsh-compaction-basic` already handles agent compaction separately.
+
 #### Verification checklist (run after every Phase 2 PR)
 
 ```
