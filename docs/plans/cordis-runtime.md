@@ -210,24 +210,26 @@ Phase 2a–2d removes the **loop** files (`chat-loop.ts:54 runToolLoop`, `pi-age
 | `db:flow:node:summarize` | `electron/ipc/flow-handlers.ts:104-242:229` `callLLM(..., source:"flow-ai-summary")` | BFS reachable IdeaFlow nodes → summary written to `idea_flow_nodes.data` | `ctx.llm.stream` with `projectId/workspaceId` scoping |
 | `spawn_tasks_from_note` (tool executor) | `electron/ipc/chat-executor.ts:238-296:250` `callLLM` inside `executeTool` | Note content → JSON tasks array → `create_task` + linking | `ctx.llm.stream` inside the tool, or keep as-is until `registerCairnTools` owns it fully |
 
-**Pattern to migrate one-shots** — mechanical, same `resolveTransport` + `ensurePiAiAdapter` the loops use:
+**Port: `electron/cordis/one-shot.ts`** — thin helper, not a Cordis plugin. `ctx.llm` (`dsh-llm` `LlmRuntime` at `run-cordis-loop.ts:158`) already *is* the one-shot surface; wrapping it in a `Service`/`apply` adds lifecycle with no benefit (one-shots are request-scoped, not context-scoped). The helper below is what Phase 2e ports each caller to — `provider:"cairn"` is the internal pi-ai route that forwards the user's selected `baseUrl`/`model` (OpenAI, Anthropic, Ollama, etc. via `run-cordis-loop.ts:188` registration), not a vendor lock-in.
+
+`electron/cordis/one-shot.ts:10` `export async function runOneShot(ctx, { systemPrompt, userPrompt, config:{baseUrl,model,apiKey}, source, maxTokens, temperature, signal })`:
+- `await ensurePiAiAdapter(ctx, { baseUrl, model, apiKey, api: apiFor((await resolveTransport(baseUrl, apiKey)).mode) })` — same probe the loops use
+- `for await (const c of ctx.llm.stream({ provider:"cairn", model, messages:[{role:"system",content:systemPrompt},{role:"user",content:userPrompt}], maxTokens }))` accumulate `c.type==="text-delta"` + `recordLlmUsage` — transport-agnostic, keep `calculatePromptBreakdown`
+
+**Pattern to migrate one-shots** — mechanical, via the helper above (same `resolveTransport` + `ensurePiAiAdapter` the loops use):
 ```ts
 // Before (builtin):
 const text = await callLLM({ baseUrl, model, apiKey }, systemPrompt, userPrompt,
   { source:"commit-message", temperature:0.3, maxTokens:4096 });
 
-// After (Cordis single-turn):
-const ctx = await getContext(); // shared Cordis ctx, already has pi-ai adapter + attachments
-await ensurePiAiAdapter(ctx, { baseUrl, model, apiKey, api: apiFor(transport.mode) });
-let text = "";
-for await (const chunk of ctx.llm.stream({ provider:"cairn", model, messages:[
-  { role:"system", content: systemPrompt },
-  { role:"user", content: userPrompt },
-]})) {
-  if (chunk.type === "text-delta" && chunk.text) text += chunk.text;
-}
+// After (Cordis single-turn via helper):
+import { runOneShot } from "../cordis/one-shot";
+import { getContext } from "../cordis/run-cordis-loop";
+const text = await runOneShot(await getContext(), { systemPrompt, userPrompt,
+  config:{ baseUrl, model, apiKey }, source:"commit-message", temperature:0.3, maxTokens:4096, signal });
+// Helper internally does: ensurePiAiAdapter + ctx.llm.stream({provider:"cairn", model, messages}) + text-delta accumulation + recordLlmUsage
 ```
-Keep `recordLlmUsage` / `calculatePromptBreakdown` calls — they are transport-agnostic.
+Keep `recordLlmUsage` / `calculatePromptBreakdown` — helper keeps them, they are transport-agnostic.
 
 **Sequencing:** do NOT block Phase 2c (loop deletion) on one-shots. One-shots survive the deletion. Migrate them as **Phase 2e** after the loops are gone, one handler at a time, with the same soak gate. `chat:compactThread` can stay on `generateSummary` longest because `dsh-compaction-basic` already handles agent compaction separately.
 
