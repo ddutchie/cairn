@@ -814,6 +814,27 @@ export function registerPiAgentHandler(
     // Explicit session clearing wipes persisted todos too (the todowrite
     // replacement contract otherwise leaves them until the next write).
     q.saveSessionTodos(ctx.db, sessionId, []);
+    // Cordis path: also clear the dsh jsonl transcript so a resumed session
+    // doesn't see old messages. The builtin path's pi_agent_llm_history is
+    // already cleared above (session.messages = []); for Cordis the transcript
+    // lives in <userData>/sessions/<sessionId>.jsonl via
+    // dsh-session-persistence-jsonl. Best-effort: delete the file if it exists.
+    try {
+      const { default: fs } = require("node:fs");
+      const { default: path } = require("node:path");
+      // sessionRoot is set via setSessionRoot from main (app.getPath("userData") + "/sessions")
+      // Fall back to the same default getContext() uses.
+      const root = process.env.CAIRN_SESSION_ROOT || path.join(process.cwd(), ".cairn-sessions");
+      const file = path.join(root, `${sessionId}.jsonl`);
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+      // Also drop any in-memory dsh agent that still holds the old session.
+      // The shared Cordis ctx is lazy — if it exists, try to remove the agent.
+      const { getContext } = require("../cordis/run-cordis-loop");
+      getContext().then((c: unknown) => {
+        const maybeAgents = (c as { agents?: { get?: (id: string) => unknown; delete?: (id: string) => void } })?.agents;
+        try { maybeAgents?.delete?.(sessionId); } catch { /* ignore */ }
+      }).catch(() => {});
+    } catch { /* best-effort */ }
   });
 
   // ── pi-agent:destroy ──────────────────────────────────────────────────────
