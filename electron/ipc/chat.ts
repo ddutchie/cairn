@@ -360,17 +360,10 @@ export function registerChatHandler(ctx: DbContext): void {
       return;
     }
 
-    // ── Cordis engine ───────────────────────────────────────────────────────
-    // Cordis is the default engine (dsh agent loop). The built-in loop is the
-    // FROZEN FALLBACK: reachable only via CAIRN_ENGINE=builtin (or for the
-    // on-device local LLM, which the cordis adapter doesn't cover yet). Subagent
-    // mode routes through cordis too — the model spawns dsh subagents via the
-    // subagent tool (cairn-subagent maps them to chat:subagent* IPC).
-    const engine = process.env.CAIRN_ENGINE === "builtin" ? "builtin" : "cordis";
-    if (process.env.CAIRN_ENGINE === "builtin") {
-      console.warn("[chat] builtin engine is deprecated and will be removed — CAIRN_ENGINE=builtin is for rollback only");
-    }
-    if (engine === "cordis" && provider !== "localllm") {
+    // ── Cordis engine (only path for non-local models) ─────────────────────
+    // The on-device local LLM (localllm) still uses the builtin loop — the
+    // cordis adapter doesn't cover it yet. Everything else is Cordis.
+    if (provider !== "localllm") {
       const { runCordisLoop } = await import("../cordis/run-cordis-loop");
       const tokens = createDeltaBatcher((delta) => send("chat:token", { delta }));
       const thoughts = createDeltaBatcher((delta) => send("chat:thought", { delta }));

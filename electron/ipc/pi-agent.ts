@@ -170,18 +170,11 @@ async function runSession(
 ): Promise<void> {
   const { sessionId } = toolCtx;
 
-  // ── Cordis engine (default) ───────────────────────────────────────────────
-  // The coding agent runs on the dsh agent loop unless CAIRN_ENGINE=builtin (or
-  // the on-device local LLM, which the cordis adapter doesn't cover). All the
-  // capability parity — plan mode, HITL approvals, doom-loop, skills, sandbox,
-  // attachments, compaction, retries — lives in runCordisCodingLoop + its
-  // plugins; this branch only bridges the pending-map IPC + lifecycle.
-  const engine = process.env.CAIRN_ENGINE === "builtin" ? "builtin" : "cordis";
-  if (cordis && engine === "cordis" && llmConfig.provider !== "localllm") {
+  // ── Cordis engine (only path for non-local models) ──────────────────────
+  // The on-device local LLM (localllm) still uses the builtin loop — the
+  // cordis adapter doesn't cover it yet. Everything else is Cordis.
+  if (cordis && llmConfig.provider !== "localllm") {
     return runCordisCodingSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send, cordis);
-  }
-  if (process.env.CAIRN_ENGINE === "builtin") {
-    console.warn("[pi-agent] builtin engine is deprecated and will be removed — CAIRN_ENGINE=builtin is for rollback only");
   }
 
   runningLoops.add(sessionId);
