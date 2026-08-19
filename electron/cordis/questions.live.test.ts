@@ -29,7 +29,7 @@ describe("cairn-questions (gated on CORDIS_LIVE=1)", () => {
     const pending = new Map<string, (t: string) => void>();
 
     const req: ChatRequest = {
-      message: "Before answering, you MUST call the ask_questions tool to ask the user for their favorite color (a single question). After they answer, reply with exactly: 'Your favorite color is <color>.'",
+      message: "testing the question tool — please ask me a couple of questions about my favorite color and animal, then tell me both back to me.",
       threadId: "thr-q-1",
       projectId: "pj",
       workspaceId: "ws",
@@ -48,10 +48,19 @@ describe("cairn-questions (gated on CORDIS_LIVE=1)", () => {
           // resolve the pending request with a structured answer JSON.
           if (channel === "chat:tool-call" && payload.tool === "ask_questions") {
             const requestId = String(payload.callId);
-            const questions = (payload.args as { questions?: Array<{ id: string }> }).questions ?? [];
-            const answers = questions.map((q) => ({ id: q.id, selected: [], custom: "teal" }));
-            // Answer on the next tick, mimicking a user submitting the form.
-            setTimeout(() => pending.get(requestId)?.(JSON.stringify({ answers })), 10);
+            const questions = (payload.args as { questions?: Array<{ id: string; label?: string }> }).questions ?? [];
+            // Distinct answer per question so the assertion proves the model
+            // actually READ the returned answers (has context of them), not just
+            // that the tool ran. Color→"chartreuse", animal→"axolotl".
+            const answers = questions.map((q) => {
+              const key = `${q.id} ${q.label ?? ""}`.toLowerCase();
+              const custom = key.includes("animal") ? "axolotl" : "chartreuse";
+              return { id: q.id, selected: [], custom };
+            });
+            // Answer after a delay, mimicking a real user taking time to fill the
+            // form (not an instant reply) — catches the turn ending before the
+            // blocking tool result comes back.
+            setTimeout(() => pending.get(requestId)?.(JSON.stringify({ answers })), 2500);
           }
         },
         registerPending: (requestId, resolve) => {
@@ -74,9 +83,15 @@ describe("cairn-questions (gated on CORDIS_LIVE=1)", () => {
     console.log("QUESTION SHAPE:", JSON.stringify(firstQs[0]));
     expect(firstQs.length).toBeGreaterThanOrEqual(1);
     expect(typeof firstQs[0].id).toBe("string");
-    expect(typeof firstQs[0].label).toBe("string");
-    expect(typeof firstQs[0].prompt).toBe("string");
-    // The model used the same-turn answer ("teal") to complete its reply.
-    expect(result.content.toLowerCase()).toContain("teal");
+    // Questions carry Cairn's fields (label/prompt), NOT dsh's {question,header}
+    // remap that produced an empty, un-fillable form. label/prompt are what the
+    // renderer shows; at least one must be present (models vary which they fill).
+    expect(typeof firstQs[0].label === "string" || typeof firstQs[0].prompt === "string").toBe(true);
+    expect(firstQs[0].question).toBeUndefined();
+    // The model CONTINUED in the same turn and USED the returned answers — proof
+    // it had context of them (the reported bug: "if I ask what I answered it has
+    // no context"). At least one distinct answer must appear in the final reply.
+    const reply = result.content.toLowerCase();
+    expect(reply.includes("chartreuse") || reply.includes("axolotl")).toBe(true);
   }, 90000);
 });

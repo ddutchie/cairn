@@ -149,7 +149,15 @@ export function registerCairnTools(ctx: import("@deepseek-ai/cordis").Context, e
   const disposers: Array<() => void> = [];
   for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS) as Array<[string, { description: string; schema: z.ZodType }]>) {
     try {
-      const def = buildCairnTool(name, description, schema, exec, ctx);
+      // In the Cordis engine, ask_questions BLOCKS and returns the user's actual
+      // answers (via ctx.userQuestions.ask()) — unlike the built-in loop where it
+      // echoes and the answer arrives as a new turn. Override the description so
+      // the model waits for and USES the returned answers in the same turn,
+      // instead of writing a "fill them in and submit" sign-off and stopping.
+      const desc = name === "ask_questions"
+        ? "Ask the user a structured list of clarifying questions via an inline form and WAIT for their answers. This tool BLOCKS: it returns the user's answers as the tool result ({ok:true, answers:[{id, custom}]}). Do NOT write a closing message telling the user to fill in a form — just call the tool, then continue using the answers it returns to complete the task in the same turn."
+        : description;
+      const def = buildCairnTool(name, desc, schema, exec, ctx);
       disposers.push(ctx.tools.register(def));
     } catch (err) {
       // eslint-disable-next-line no-console
