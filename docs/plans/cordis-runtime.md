@@ -80,9 +80,30 @@ Cairn Electron main (in-process, no subprocess, no protocol bridge)
 - [ ] `cairn-external-tools` — user MCP servers + custom services onto `ctx.tools`.
 - [ ] Fix bundle-guard + native-deps-guard (allowlist esprima/@google/genai/koffi) + accept ~5.4mb footprint; verify win32-arm64 packaging.
 
+### Phase 1.5 — Port the CODING AGENT to Cordis (NEXT — the real Phase-2 blocker)
+
+The chat loop is ported. The **coding agent** (`electron/ipc/pi-agent.ts` + `electron/lib/pi-agent-loop.ts`, driven by `runAgentLoop`) is still 100% on the built-in stack and is far richer than chat (plan mode, HITL approvals, doom-loop, retries, compaction, skills, stateful sessions, cwd/bash/fs tools). It CANNOT be deleted until ported. This phase builds `runCordisCodingLoop` + a `cairn-coding` bridge, mirroring the `pi-agent:*` IPC contract exactly (renderer + mobile stay unchanged).
+
+**Contract to preserve (from the audit):** `pi-agent:*` IPC — inbound `prompt/abort/approve-plan/compact-now/set-mode/respond-tool/respond-doom-loop/respond-questions/clear/destroy/preview-prompt/restore-context/is-running`; outbound `token/thought/tools-ready/tool/tool-confirm-required/doom-loop/note-updated/todos/step/usage/retry/compact/compact-result/done/error/plan-note/mode-change/ask-questions/subagent`.
+
+Sub-steps (roughly in order):
+- [ ] **2a — Coding toolset mount.** Wire dsh coding tools: `dsh-tool-bash`(+`dsh-bash-local`+`dsh-subprocess-local`+`dsh-shell-env`), `dsh-tool-fs`(+`dsh-fs-local`/`dsh-fs-sandbox`), `dsh-tool-fs-search`, `dsh-tool-str-replace-editor`, `dsh-tool-todo`. Proven to mount on rc.8 in `coding.live.test.ts`. Decide 1:1 map onto Cairn's `read/write/edit/bash/grep/find/ls/todowrite` vs reuse Cairn's coding-tools bodies as registered tools.
+- [ ] **2b — cairn-coding bridge plugin.** Map dsh session/tool/turn events → the `pi-agent:*` IPC vocabulary (token/thought/tool/step/usage/note-updated/todos/plan-note/mode-change). Sibling to `cairn-subagent`.
+- [ ] **2c — Sessions + persistence.** Keep Cairn's `pi_agent_sessions` metadata + `pi_agent_llm_history` (JSON) + display transcript + `pi_session_todos` (no dsh equivalent for SQLite display/todos). Decide dsh jsonl persistence vs Cairn's `saveLlmHistory`/`getLlmHistory`. Stateful `sessions` Map + `runningLoops` + `is-running` stay Cairn-side (or a long-lived per-session Cordis agent).
+- [ ] **2d — Plan mode.** `dsh-plan-mode` for the plan/execute gate + read-only PLAN_MODE_ALLOWED toolset; bridge `set-mode`/`approve-plan`/`plan-note`/`mode-change`; reuse Cairn's plan-note PRD prompt via `cairn-system-prompt`.
+- [ ] **2e — Approvals (HITL).** `dsh-user-approval` + `dsh-permission-presets`. Bridge `tool-confirm-required` ⇄ `respond-tool` (+grant session/command) + `autoApprove` bypass. Author the `automation-dev` file-only-no-shell preset.
+- [ ] **2f — Doom-loop.** No dsh package — reimplement Cairn's rolling `recentToolCalls` + `toolCallSignature` + `DOOM_LOOP_THRESHOLD=3` as a pre-execute hook; bridge `doom-loop` ⇄ `respond-doom-loop`.
+- [ ] **2g — Questions.** `ask_questions` → `pi-agent:ask-questions` ⇄ `respond-questions` (answer string becomes the tool result same turn). `dsh-user-questions` is installed-but-undeclared — adopt it or keep Cairn's interception.
+- [ ] **2h — Compaction + retries.** `dsh-compaction-basic` for 80%-context auto-compaction + `/compact` (`compact-now`/`compact`/`compact-result`), or keep Cairn's `buildCompactionTransformer`. Retries via `dsh-llm-retry` → `pi-agent:retry`.
+- [ ] **2i — Skills.** `dsh-skill-local` is MISSING (unpublished). Keep Cairn's `discoverSkills`/`renderSkillsXml` + `skill` tool as a `cairn-skills` plugin over the fs.
+- [ ] **2j — Sandbox/cwd.** `dsh-fs-sandbox` + `dsh-sandbox-local`/`-policy` scoped to the request `cwd` (`{mode, workspaceRoot}`); preserve the automation-dev traversal restriction.
+- [ ] **2k — Missing deps.** Add `dsh-user-questions`, `dsh-attachment` to package.json before relying on them; re-verify guards + win32-arm64 packaging.
+- [ ] Gate behind `CAIRN_ENGINE` like chat; live-test each capability before flipping the coding default.
+
 ### Phase 2 — Delete the old loops (parity gate met)
-- [ ] Once chat/subagent/usage/reasoning parity is proven in production, **delete** `chat-loop.ts`, `chat-subagent-loop.ts`, `pi-agent-loop.ts`, and the toggle.
-- [ ] Retire the old `electron/lib/chat-loop.ts`/`pi-agent-loop.ts`/`chat-subagent-loop.ts` and their IPC handlers.
+- [ ] Once BOTH chat AND coding parity are proven in production, **delete** `chat-loop.ts`, `chat-subagent-loop.ts`, `pi-agent-loop.ts`, and the toggle.
+- [ ] Also port the small remaining built-in callers: `user-style-handlers.ts` (`runToolLoop`) and the automation heartbeat runner.
+- [ ] Retire the old loops and their IPC handlers.
 
 ### Phase 3 — In-app user plugins (the big unlock, 3–6 weeks)
 Users write/install Cordis plugins inside Cairn.

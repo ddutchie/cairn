@@ -11,52 +11,25 @@ import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 
-// Default-export plugin objects (have .apply/.inject/.name)
-import planModePlugin from "@deepseek-ai/dsh-plan-mode";
-import sandboxLocalPlugin from "@deepseek-ai/dsh-sandbox-local";
-import sandboxPolicyPlugin from "@deepseek-ai/dsh-sandbox-policy";
-import fsSandboxPlugin from "@deepseek-ai/dsh-fs-sandbox";
-// Named-export plugin objects
-import { apply as fsObsApply, name as fsObsName } from "@deepseek-ai/dsh-fs-observation-policy";
-import { apply as toolBashApply, inject as toolBashInject, name as toolBashName } from "@deepseek-ai/dsh-tool-bash";
-import { apply as toolFsApply, inject as toolFsInject, name as toolFsName } from "@deepseek-ai/dsh-tool-fs";
-import { apply as toolFsSearchApply, inject as toolFsSearchInject, name as toolFsSearchName } from "@deepseek-ai/dsh-tool-fs-search";
-import { apply as toolStrApply, inject as toolStrInject, name as toolStrName } from "@deepseek-ai/dsh-tool-str-replace-editor";
-import { apply as toolTodoApply, inject as toolTodoInject, name as toolTodoName } from "@deepseek-ai/dsh-tool-todo";
-import { apply as shellEnvApply, inject as shellEnvInject, name as shellEnvName } from "@deepseek-ai/dsh-shell-env";
-import { apply as agentInstApply, name as agentInstName } from "@deepseek-ai/dsh-agent-instructions";
-import subprocessLocalPlugin from "@deepseek-ai/dsh-subprocess-local";
-import bashLocalPlugin from "@deepseek-ai/dsh-bash-local";
+import { mountCodingStack } from "./cordis-coding-tools";
 
 const BASE = process.env.CORDIS_TEST_BASE_URL ?? "http://localhost:3042/v1";
 const MODEL = process.env.CORDIS_TEST_MODEL ?? "claude-sonnet-4-5";
 
 describe("cordis coding stack (gated on CORDIS_LIVE=1)", () => {
-  it("mounts coding tools and runs a bash turn", async () => {
+  it("mounts coding tools via mountCodingStack and runs a bash turn", async () => {
     if (process.env.CORDIS_LIVE !== "1") return;
     const ctx = new Context();
     await ctx.plugin(sessionPlugin);
     await ctx.plugin(llmPlugin);
-    await ctx.plugin(systemPromptPlugin, { persona: "" });
+    await ctx.plugin(systemPromptPlugin, { persona: "", includeHarnessIdentity: false });
     await ctx.plugin(agentPlugin);
     await ctx.plugin(toolsPlugin, { mode: "native" });
-    // capability stack (dsh-base order)
+
+    // The extracted coding capability stack (step 2a).
+    const disposeCoding = await mountCodingStack(ctx, { cwd: "/tmp" });
+
     const plug = ctx.plugin.bind(ctx) as unknown as (p: unknown, c?: unknown) => Promise<unknown>;
-    await plug(sandboxLocalPlugin);
-    await plug(sandboxPolicyPlugin, { mode: "danger-full-access", workspaceRoot: "/tmp" });
-    await plug(fsSandboxPlugin, { cwd: "/tmp" });
-    await plug({ apply: fsObsApply, name: fsObsName });
-    await plug(planModePlugin, { section: "You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Explore first. Do not edit files or run mutations." });
-    await plug(subprocessLocalPlugin);
-    await plug(bashLocalPlugin);
-    await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
-    await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
-    await plug({ apply: toolFsApply, inject: toolFsInject as never, name: toolFsName }, { readLimit: 2000, readMaxLineLength: 2000, readMaxBytes: 51200, readStreamMinSize: 10485760 });
-    await plug({ apply: toolFsSearchApply, inject: toolFsSearchInject as never, name: toolFsSearchName }, { globMaxResults: 1000, grepMaxMatches: 500, grepMaxLineBytes: 4096, searchMetaMaxBytes: 10000, rawOutputMaxBytes: 100000, graceMs: 100, stderrMaxBytes: 10000, timeoutMs: 30000, sampleOverCapGlobResults: false });
-    await plug({ apply: toolStrApply, inject: toolStrInject as never, name: toolStrName }, { maxOutputChars: 16000 });
-    await plug({ apply: toolTodoApply, inject: toolTodoInject as never, name: toolTodoName }, { allowParallelInProgress: true });
-    await plug({ apply: agentInstApply, name: agentInstName }, { maxBytes: 65536, maxSourceBytes: 500000 });
-    // model adapter
     await plug({ name: llmPiAiName, inject: llmPiAiInject as never, apply: llmPiAiApply }, {
       providers: { cairn: { api: "openai-responses", baseURL: BASE, displayName: "Cairn", models: [{ id: MODEL, contextWindow: 262144, maxTokens: 8192 }], apiKeyEnv: "CORDIS_DUMMY_KEY" } },
     });
@@ -87,6 +60,7 @@ describe("cordis coding stack (gated on CORDIS_LIVE=1)", () => {
       if (e.type === "tool/call") { if (String((e.data as any).name).includes("bash")) bashCalled = true; }
     }
     console.log("CODING FINAL:", finalText);
+    disposeCoding();
     expect(bashCalled).toBe(true);
     expect(finalText).toContain("hello-cordis");
   });
