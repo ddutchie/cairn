@@ -347,12 +347,13 @@ export function registerChatHandler(ctx: DbContext): void {
     }
 
     // ── Cordis engine ───────────────────────────────────────────────────────
-    // Opt-in: when the saved AI config selects the Cordis (dsh) agent loop,
-    // route the turn through runCordisLoop instead of the built-in runToolLoop.
-    // Tokens/thoughts/tool chips stream through the same IPC events so the
-    // renderer is unchanged. Subagent mode is not yet supported on this engine.
-    const engine = getCachedConfig().aiConfig?.engine === "cordis" ? "cordis" : "builtin";
-    if (engine === "cordis" && !req.useSubagents && provider !== "localllm") {
+    // Cordis is the default engine (dsh agent loop). The built-in loop is the
+    // FROZEN FALLBACK: reachable only via CAIRN_ENGINE=builtin (or for the
+    // on-device local LLM, which the cordis adapter doesn't cover yet). Subagent
+    // mode routes through cordis too — the model spawns dsh subagents via the
+    // subagent tool (cairn-subagent maps them to chat:subagent* IPC).
+    const engine = process.env.CAIRN_ENGINE === "builtin" ? "builtin" : "cordis";
+    if (engine === "cordis" && provider !== "localllm") {
       const { runCordisLoop } = await import("../cordis/run-cordis-loop");
       const tokens = createDeltaBatcher((delta) => send("chat:token", { delta }));
       const thoughts = createDeltaBatcher((delta) => send("chat:thought", { delta }));
