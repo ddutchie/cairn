@@ -57,10 +57,31 @@ Cairn Electron main (in-process, no subprocess, no protocol bridge)
 
 ## 4. Phased rollout
 
-### Phase 0 — Stabilize the dependency baseline (0.5–1 week)
-- [ ] Get the canonical coherent version snapshot: `git clone` dsh repo, read the top-level `package.json` / lockfile, record the exact package→version matrix that bootstraps a working tree (npm install by hand in a temp dir).
-- [ ] Vendor the missing packages if they stay unpublished (`dsh-environment`, `dsh-bash-env`, `dsh-tasks`, `dsh-skill-local`) — or wait for the publish set to complete; decide based on dsh's release cadence.
-- [ ] Decide npm vs. vendored source: prefer npm deps; fall back to vendoring like dsh vendors cordis (they proved the pattern).
+### Phase 0 — Stabilize the dependency baseline (DONE 2026-08-19)
+- [x] **Core tree installs and runs at a coherent snapshot.** dsh repo at `0.1.0-rc.7`; the full core set (25 packages) is published at `0.1.0-rc.7` + framework `@deepseek-ai/cordis@4.0.1` (stable). `npm install` of the 25-package set resolves in plain Node with no conflicts (see the pinned matrix below).
+- [x] **Real agent loop proven.** Harness at `scratch/dsh-full/harness.mjs` mounts session/llm/system-prompt/agent/tools/agent-loop and drives a real `Agent` through `ctx.agentLoop.createAgent` with a custom `LlmAdapter` against the Rork bridge: user → tool-call → execute → result → assistant → `turn/end: completed`.
+- [x] **5 packages remain unpublished on npm:** `dsh-environment`, `dsh-bash-env`, `dsh-tasks`, `dsh-skill-local`, `dsh-cordis` (the `dsh-base` bundle is not installable as a result). None are needed for the Phase 1 core engine; `dsh-bash-env`/`dsh-tasks`/`dsh-environment` are needed for some Phase 2 capability plugins. Decision: **adopt core via npm now; revisit capability packages as upstream publishes them** — do not vendor yet, keep the 5-6 core packages on npm and track upstream.
+
+**Pinned snapshot (commit this matrix):**
+```
+@deepseek-ai/cordis@4.0.1  (framework, stable)
+@deepseek-ai/dsh-agent@0.1.0-rc.7
+@deepseek-ai/dsh-agent-default-model@0.1.0-rc.7
+@deepseek-ai/dsh-agent-loop@0.1.0-rc.7
+@deepseek-ai/dsh-invariants@0.1.0-rc.7
+@deepseek-ai/dsh-llm@0.1.0-rc.7
+@deepseek-ai/dsh-llm-pi-ai@0.1.0-rc.7
+@deepseek-ai/dsh-llm-retry@0.1.0-rc.7
+@deepseek-ai/dsh-scope@0.1.0-rc.7
+@deepseek-ai/dsh-session@0.1.0-rc.7
+@deepseek-ai/dsh-session-persistence-jsonl@0.1.0-rc.7
+@deepseek-ai/dsh-system-prompt@0.1.0-rc.7
+@deepseek-ai/dsh-tools@0.1.0-rc.7
+(+ Phase 2 capability set: dsh-plan-mode, dsh-permission-presets, dsh-user-approval,
+   dsh-sandbox-local, dsh-fs-*, dsh-bash-sandbox, dsh-tool-*, dsh-commands,
+   dsh-compaction-basic, dsh-token-meter — all 0.1.0-rc.7)
+```
+**Key API facts learned (for Phase 1):** mount plugins by `await ctx.plugin(plugin, config)` (returns an awaitable fiber); register tools with `ctx.tools.register(defineTool({...}))` (mandatory typed output schema + render); register a provider with `ctx.llm.registerAdapter(providers, LlmAdapter)`; the loop service is `ctx.agentLoop.createAgent(ctx, { sessionId, meta, agentOptions, setup })`; `setup` may return void; agent events surface via `agent.session.events` (assistant/message, tool/call, tool/result, turn/end). Chunk data must be strictly JSON-serializable — never emit `undefined` fields in usage/tool-call chunks.
 
 ### Phase 1 — Core engine swap behind a toggle (2–3 weeks)
 - [ ] `cairn-llm` — implement the dsh-llm adapter for Cairn's existing providers (reuse `electron/lib/llm-transport.ts`, `llm-stream.ts`, `llm.ts`). The spike proves the seam.
