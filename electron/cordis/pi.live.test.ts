@@ -3,6 +3,8 @@ import Database from "better-sqlite3";
 
 import { applySchema } from "../db/schema";
 import { runCordisLoop } from "./run-cordis-loop";
+import { getChatThreads, getChatMessages } from "../db/queries";
+import { initUsageRecorder } from "../lib/usage-recorder";
 import type { ChatRequest } from "../lib/tools";
 
 const BASE = process.env.CORDIS_TEST_BASE_URL ?? "http://localhost:3042/v1";
@@ -28,6 +30,9 @@ describe("runCordisLoop (gated on CORDIS_LIVE=1)", () => {
   it("drives a tool-calling turn through the dsh agent loop", async () => {
     if (process.env.CORDIS_LIVE !== "1") return;
     const db = makeDb();
+    // Point the usage recorder at this in-memory DB so cairn-usage writes are
+    // visible (in production the cairnDb handle == the recorder's activeDb).
+    initUsageRecorder(db);
     const tokens: string[] = [];
     const req: ChatRequest = { message: "Use the get_active_context tool and report the project name.", threadId: "thr-live-2", projectId: "pj", workspaceId: "ws" };
     const result = await runCordisLoop({
@@ -41,5 +46,15 @@ describe("runCordisLoop (gated on CORDIS_LIVE=1)", () => {
     console.log("RUN-CORDIS-LOOP RESULT:", JSON.stringify(result));
     console.log("RUN-CORDIS-LOOP TOKENS:", tokens.join(""));
     expect(result.content.length).toBeGreaterThan(0);
+
+    // cairn-session plugin persisted the thread + messages; cairn-usage wrote
+    // an llm_usage row. This proves the plugin wiring against real session events.
+    const threads = getChatThreads(db, "ws");
+    expect(threads.map((t) => t.id)).toContain("thr-live-2");
+    const msgs = getChatMessages(db, "thr-live-2");
+    expect(msgs.length).toBeGreaterThanOrEqual(1);
+    const usageRows = db.prepare("SELECT COUNT(*) AS n FROM llm_usage WHERE session_id = 'thr-live-2'").get() as { n: number };
+    console.log("PERSISTED messages:", msgs.length, "usage rows:", usageRows.n);
+    expect(usageRows.n).toBeGreaterThan(0);
   });
 });

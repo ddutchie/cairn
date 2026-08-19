@@ -19,6 +19,7 @@ import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { Database } from "better-sqlite3";
 
 import { registerCairnTools } from "./cairn-tools";
+import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, CAIRN_DB } from "./cairn-plugins";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 
@@ -154,8 +155,32 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     api: "openai-responses",
   });
 
+  // Cairn's own plugins: cairn-db owns the handle, cairn-session persists
+  // messages, cairn-usage records usage. Mounted per call (lightweight event
+  // listeners); disposed in finally.
+  const pluginDisposers: Array<() => void> = [];
+  const mount = async (plugin: unknown, config: unknown): Promise<void> => {
+    const fiber = ctx.plugin(plugin as never, config as never);
+    pluginDisposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
+    await fiber;
+  };
+  await mount(cairnDbPlugin, { db });
+  await mount(cairnSessionPlugin, {
+    threadId: req.threadId,
+    workspaceId: req.workspaceId ?? "",
+    projectId: req.projectId,
+  });
+  await mount(cairnUsagePlugin, {
+    threadId: req.threadId,
+    workspaceId: req.workspaceId ?? "",
+    projectId: req.projectId,
+    provider: llmConfig.provider,
+    model: llmConfig.model,
+    baseUrl: llmConfig.baseUrl,
+  });
+
   const toolDisposers = registerCairnTools(ctx, {
-    db,
+    getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
     req,
     workspacePath,
     llmConfig,
@@ -200,5 +225,6 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     };
   } finally {
     toolDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
+    pluginDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
   }
 }

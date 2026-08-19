@@ -29,7 +29,8 @@ type VNode =
   | { type: "json"; required?: true; description?: string };
 
 interface ExecutionCtx {
-  db: Database;
+  /** Resolve the Cairn Database handle (normally from the cairnDb service). */
+  getDb: () => Database;
   req: ChatRequest;
   workspacePath: string;
   llmConfig: LLMConfig;
@@ -110,7 +111,7 @@ export function buildCairnTool(
     },
     async execute(args) {
       const out = await executeTool(
-        exec.db,
+        exec.getDb(),
         exec.req,
         exec.workspacePath,
         exec.llmConfig,
