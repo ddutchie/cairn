@@ -54,6 +54,7 @@ const DEFAULT_PLAN_SECTION =
  */
 export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): Promise<() => void> {
   const { cwd, sandboxMode = "danger-full-access", planModeSection = DEFAULT_PLAN_SECTION } = opts;
+  console.log(`[cordis-coding] mountCodingStack start cwd=${cwd} sandbox=${sandboxMode}`);
   const disposers: Array<() => void> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
     const name = (plugin as { name?: string })?.name ?? (plugin as { apply?: { name?: string } })?.apply?.name ?? "unknown";
