@@ -271,6 +271,81 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
   });
 }
 
+// ── cairn-questions ───────────────────────────────────────────────────────────
+export interface CairnQuestionsConfig {
+  /** Emit a Cairn IPC event to the renderer (threadId tagged by the caller). */
+  send: (channel: string, payload: Record<string, unknown>) => void;
+  /**
+   * Register a resolver for one pending question request; returns a disposer.
+   * The IPC handler calls the stored resolver when the renderer answers.
+   */
+  registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void;
+  signal?: AbortSignal;
+}
+
+/** dsh question item → Cairn ask_questions tool arg shape (renderer form). */
+interface DshQuestionItem { id: string; question: string; detail?: string; header?: string; options?: Array<{ label: string; description?: string }>; multiSelect?: boolean }
+
+/** dsh AskUserQuestionAnswer shape returned by the provider. */
+interface DshAnswer { answers: Array<{ id: string; selected: string[]; custom?: string }> }
+/** The subset of ctx.userQuestions the provider registration needs. */
+interface UserQuestionsSeam {
+  registerProvider: (p: { ask: (req: { questions: DshQuestionItem[]; signal?: AbortSignal }) => Promise<DshAnswer> }) => () => void;
+}
+
+/**
+ * Bridge the dsh user-questions seam (ctx.userQuestions) to Cairn's renderer
+ * question form. Registers the single UI provider: ask() maps dsh questions to
+ * the `ask_questions` IPC shape the renderer already renders, sends it, blocks
+ * until the renderer answers (via registerPending), then maps the answer text
+ * back to dsh's structured AskUserQuestionAnswer. This gives the coding agent
+ * and chat a blocking, same-turn question flow without the unpublished
+ * dsh-tool-ask-user package.
+ */
+export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig): void {
+  const { send, registerPending, signal } = config;
+  const uq = (ctx as unknown as { userQuestions?: UserQuestionsSeam }).userQuestions;
+  if (!uq) return;
+
+  uq.registerProvider({
+    ask: async (request) => {
+      const requestId = `q-${newId()}`;
+      // Present in the renderer's PendingQuestion shape (question/header/options
+      // {label,description}/multiple/custom). callId lets the renderer answer.
+      const questions = request.questions.map((q) => ({
+        id: q.id,
+        question: q.question,
+        header: q.header,
+        detail: q.detail,
+        options: (q.options ?? []).map((o) => ({ label: o.label, description: o.description ?? "" })),
+        multiple: q.multiSelect === true,
+      }));
+      send("chat:tool-call", { tool: "ask_questions", label: `Asking ${questions.length} question${questions.length === 1 ? "" : "s"}`, callId: requestId, args: { questions } });
+
+      const answersText = await new Promise<string>((resolve) => {
+        const dispose = registerPending(requestId, (text) => { dispose(); resolve(text); });
+        const onAbort = () => { dispose(); resolve('{"cancelled":true,"answers":[]}'); };
+        if (request.signal?.aborted || signal?.aborted) onAbort();
+        request.signal?.addEventListener?.("abort", onAbort, { once: true });
+        signal?.addEventListener?.("abort", onAbort, { once: true });
+      });
+
+      // The renderer answers with either free-text (per question) or a JSON blob
+      // {answers:[{id,selected[],custom?}]}. Map both back to dsh's structure.
+      try {
+        const parsed = JSON.parse(answersText) as { answers?: Array<{ id?: string; selected?: string[]; custom?: string }> };
+        if (Array.isArray(parsed.answers)) {
+          return { answers: parsed.answers.map((a, i) => ({ id: a.id ?? request.questions[i]?.id ?? String(i), selected: a.selected ?? [], custom: a.custom })) };
+        }
+      } catch { /* fall through to plain-text */ }
+      // Plain text: attribute to the first question as a custom answer.
+      return { answers: request.questions.map((q, i) => ({ id: q.id, selected: [], custom: i === 0 ? answersText : undefined })) };
+    },
+  });
+}
+// Cordis gates ctx.userQuestions behind an explicit injection declaration.
+cairnQuestionsPlugin.inject = ["userQuestions"];
+
 // ── cairn-usage ─────────────────────────────────────────────────────────────
 export interface CairnUsageConfig {
   threadId: string;

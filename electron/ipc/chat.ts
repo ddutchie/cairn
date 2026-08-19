@@ -27,6 +27,11 @@ import { createDeltaBatcher } from "../lib/delta-batcher";
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
 
+// Pending ask_questions requests (Cordis engine): the cairn-questions provider
+// blocks on ask() and stores its resolver here keyed by requestId; the renderer
+// answers via chat:answer-questions, which resolves it (same-turn answer flow).
+const pendingChatQuestions = new Map<string, (answersText: string) => void>();
+
 function resolveAIConfig(config?: {
   provider?: string;
   baseUrl?: string;
@@ -116,6 +121,15 @@ export function registerChatHandler(ctx: DbContext): void {
       ctrl.abort();
       abortControllers.delete(event.sender.id);
     }
+  });
+
+  // chat:answer-questions — the renderer's answer to a blocking ask_questions
+  // (Cordis engine). Resolves the pending provider promise so the tool result
+  // (the answers) is fed back to the model in the same turn. answers is the
+  // JSON blob {answers:[{id,selected[],custom?}]} or plain text.
+  registerIpcOn("chat:answer-questions", (_event, req: { requestId: string; answers: string }) => {
+    const resolve = pendingChatQuestions.get(req.requestId);
+    if (resolve) resolve(req.answers ?? "");
   });
 
   // chat:stream — fire-and-forget (registerIpcOn, not handle).
@@ -372,6 +386,13 @@ export function registerChatHandler(ctx: DbContext): void {
           emitToolCallDone,
           getWin,
           sendSubagent: (channel, payload) => send(channel, payload),
+          questions: {
+            send: (channel, payload) => send(channel, payload),
+            registerPending: (requestId, resolve) => {
+              pendingChatQuestions.set(requestId, resolve);
+              return () => pendingChatQuestions.delete(requestId);
+            },
+          },
         });
         flushStream();
         if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);

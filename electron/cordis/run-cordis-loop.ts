@@ -17,12 +17,13 @@ import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import subagentServicePlugin from "@deepseek-ai/dsh-subagent";
+import userQuestionsService from "@deepseek-ai/dsh-user-questions";
 import { apply as spawnProviderApply, inject as spawnProviderInject, name as spawnProviderName } from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolSubagentName } from "@deepseek-ai/dsh-tool-subagent";
 import type { Database } from "better-sqlite3";
 
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
-import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnSystemPromptPlugin, CAIRN_DB } from "./cairn-plugins";
+import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnSystemPromptPlugin, cairnQuestionsPlugin, CAIRN_DB } from "./cairn-plugins";
 import { buildSystemPrompt, withPersonality } from "../lib/tools";
 import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
@@ -50,6 +51,17 @@ export interface RunCordisLoopOptions {
   emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void;
   /** Emit a live subagent trace event (threadId tagged by the caller). */
   sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
+  /**
+   * Interactive questions (ask_questions) via the dsh user-questions seam.
+   * `send` emits the question IPC to the renderer; `registerPending` stores a
+   * resolver keyed by requestId that the caller's IPC answer-handler invokes
+   * with the answer text. When omitted, ask_questions falls back to the shared
+   * echo executor (no blocking).
+   */
+  questions?: {
+    send: (channel: string, payload: Record<string, unknown>) => void;
+    registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void;
+  };
   getWin?: () => Electron.BrowserWindow | null;
   signal?: AbortSignal;
 }
@@ -75,6 +87,12 @@ async function getContext(): Promise<Context> {
     await ctx.plugin(systemPromptPlugin, { persona: "", includeHarnessIdentity: false });
     await ctx.plugin(agentPlugin);
     await ctx.plugin(toolsPlugin, { mode: "native" });
+    // dsh user-questions capability seam (ctx.userQuestions): lets a tool pause
+    // the turn until the human answers. The model-facing tool (dsh-tool-ask-user)
+    // is unpublished, so Cairn keeps its own `ask_questions` tool whose body
+    // calls ctx.userQuestions.ask(); cairnQuestionsPlugin registers the provider
+    // that bridges ask() ⇄ the renderer form. Mounted before the agent loop.
+    await ctx.plugin(userQuestionsService);
     await ctx.plugin(agentLoopPlugin, { agents: [] });
     // Subagent capability stack (dsh-base order): service → spawn provider → tool.
     await ctx.plugin(subagentServicePlugin);
@@ -210,6 +228,13 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   });
   if (opts.sendSubagent) {
     await mount(cairnSubagentPlugin, { send: opts.sendSubagent });
+  }
+  if (opts.questions) {
+    await mount(cairnQuestionsPlugin, {
+      send: opts.questions.send,
+      registerPending: opts.questions.registerPending,
+      signal,
+    });
   }
 
   // Cairn's full system prompt (identity + tool rules + date), personality

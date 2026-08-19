@@ -84,6 +84,7 @@
     "@deepseek-ai/dsh-tool-todo": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-user-approval": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-user-questions": "^0.1.0-rc.8",
     "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@radix-ui/react-context-menu": "^2.2.16",

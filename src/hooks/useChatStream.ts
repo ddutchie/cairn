@@ -81,9 +81,13 @@ export interface UseChatStreamResult {
   subagents: ChatSubagent[];
   /** Non-null when the agent has called ask_questions — cleared on submit or done. */
   pendingQuestions: PendingQuestion[] | null;
+  /** The blocking request id for pendingQuestions (Cordis engine), else undefined. */
+  pendingQuestionCallId: string | undefined;
   sendStream: (req: ChatStreamRequest) => void;
   stopStream: () => void;
   clearQuestions: () => void;
+  /** Answer a blocking ask_questions same-turn; returns false if not blocking. */
+  answerQuestions: (answers: string) => boolean;
 }
 
 export function useChatStream(threadId: string | null): UseChatStreamResult {
@@ -102,6 +106,11 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   // unanswered form when the user switches away and back.
   const [pendingQuestionsByThread, setPendingQuestionsByThread] =
     useState<Record<string, PendingQuestion[]>>({});
+  // The blocking ask_questions request id (callId), per thread, for the Cordis
+  // engine. When set, the form answers via chat:answer-questions (same-turn);
+  // when null (built-in engine), the form answers by starting a new user turn.
+  const [pendingQuestionCallIdByThread, setPendingQuestionCallIdByThread] =
+    useState<Record<string, string | undefined>>({});
   const [subagents, setSubagents] = useState<ChatSubagent[]>([]);
 
   const threadIdRef  = useRef<string | null>(null);
@@ -120,6 +129,8 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     threadId && pendingQuestionsByThread[threadId]
       ? pendingQuestionsByThread[threadId]
       : null;
+  const pendingQuestionCallId =
+    threadId ? pendingQuestionCallIdByThread[threadId] : undefined;
 
   useEffect(() => {
     const electron = window.electron;
@@ -143,6 +154,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         const forThread = e.threadId ?? threadIdRef.current;
         if (forThread) {
           setPendingQuestionsByThread((prev) => ({ ...prev, [forThread]: qs }));
+          setPendingQuestionCallIdByThread((prev) => ({ ...prev, [forThread]: e.callId }));
         }
       } else {
         if (e.tool === "suggest_connections") {
@@ -381,11 +393,30 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       delete next[tid];
       return next;
     });
+    setPendingQuestionCallIdByThread((prev) => {
+      if (!(tid in prev)) return prev;
+      const next = { ...prev };
+      delete next[tid];
+      return next;
+    });
   }
 
   function clearQuestions() {
     clearQuestionsForThread(threadId);
   }
 
-  return { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions };
+  // Answer a blocking ask_questions (Cordis engine): resolve the paused tool via
+  // chat:answer-questions so the answers feed back in the same turn, then clear
+  // the form. `answers` is a JSON blob {answers:[{id,selected[],custom?}]} or
+  // plain text. Returns true when it dispatched a blocking answer (a callId was
+  // present); false lets the caller fall back to a new-turn send (built-in).
+  function answerQuestions(answers: string): boolean {
+    const callId = threadId ? pendingQuestionCallIdByThread[threadId] : undefined;
+    if (!callId) return false;
+    window.electron?.chat?.answerQuestions?.({ requestId: callId, answers });
+    clearQuestionsForThread(threadId);
+    return true;
+  }
+
+  return { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, pendingQuestionCallId, sendStream, stopStream, clearQuestions, answerQuestions };
 }

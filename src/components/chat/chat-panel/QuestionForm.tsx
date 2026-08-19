@@ -11,10 +11,16 @@ interface QuestionFormProps {
   questions: PendingQuestion[];
   /** Called with a formatted answer string ready to send as a user message. */
   onSubmit: (answersText: string) => void;
+  /**
+   * Called with structured answers (JSON blob) for the blocking Cordis flow.
+   * When it returns true it handled the submit (same-turn answer); when false
+   * or absent, the form falls back to onSubmit(text) (built-in new-turn).
+   */
+  onSubmitStructured?: (answersJson: string) => boolean;
   disabled?: boolean;
 }
 
-export function QuestionForm({ questions, onSubmit, disabled = false }: QuestionFormProps) {
+export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled = false }: QuestionFormProps) {
   const [answers, setAnswers]   = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [mod] = useState(() => modKey());
@@ -24,6 +30,14 @@ export function QuestionForm({ questions, onSubmit, disabled = false }: Question
   function handleSubmit() {
     if (!allFilled || submitted || disabled) return;
     setSubmitted(true);
+    // Structured answers keyed by question id (free-text → custom) for the
+    // blocking Cordis path; the model reads these as the tool result.
+    if (onSubmitStructured) {
+      const json = JSON.stringify({
+        answers: questions.map((q) => ({ id: q.id, selected: [], custom: answers[q.id]?.trim() ?? "" })),
+      });
+      if (onSubmitStructured(json)) return;
+    }
     const text = questions
       .map((q) => `**${q.label}:** ${answers[q.id]?.trim() ?? ""}`)
       .join("\n");

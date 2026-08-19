@@ -392,6 +392,7 @@ const api = {
     // Fire-and-forget. Listen with onToken / onDone / onToolCall.
     stream: (req: unknown) => ipcRenderer.send("chat:stream", req),
     abort: () => ipcRenderer.send("chat:abort"),
+    answerQuestions: (req: { requestId: string; answers: string }) => ipcRenderer.send("chat:answer-questions", req),
     onToken: (cb: (e: { delta: string; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { delta: string; threadId?: string }) => cb(e);

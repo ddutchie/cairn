@@ -96,6 +96,8 @@ interface StreamingFooterValue {
   connectorMap: Record<string, ChatConnectorMeta> | undefined;
   activeView: string;
   handleSend: ((text?: string, attachments?: never[]) => void) | null;
+  /** Answer a blocking ask_questions same-turn (Cordis); false = not blocking. */
+  answerQuestions?: (answersJson: string) => boolean;
 }
 const StreamingFooterContext = React.createContext<StreamingFooterValue>({
   isLoading: false,
@@ -136,6 +138,7 @@ function ChatFooter() {
         <QuestionForm
           questions={s.pendingQuestions}
           onSubmit={(text) => handleSend(text)}
+          onSubmitStructured={s.answerQuestions}
           disabled={s.isLoading}
         />
       )}
@@ -210,7 +213,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const allowImages = supportsImageInput(getModelInfo(aiConfig.model));
   const allowPdf = supportsPdfInput(getModelInfo(aiConfig.model));
 
-  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions, answerQuestions } = useChatStream(threadId);
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -762,6 +765,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           connectorMap,
           activeView,
           handleSend,
+          answerQuestions,
         }}
       >
         <Virtuoso

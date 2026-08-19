@@ -89,6 +89,7 @@ export function buildCairnTool(
   description: string,
   schema: z.ZodType,
   exec: ExecutionCtx,
+  ctx?: import("@deepseek-ai/cordis").Context,
 ): ToolDefinition {
   const jsonSchema = z.toJSONSchema(schema, { target: "draft-07" }) as Record<string, unknown>;
   const params = (jsonSchema.properties ?? {}) as Record<string, unknown>;
@@ -110,6 +111,22 @@ export function buildCairnTool(
       render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }],
     },
     async execute(args) {
+      // ask_questions routes through the dsh user-questions seam so the turn
+      // BLOCKS until the human answers and the answers become this tool's result
+      // (same-turn), instead of the shared executor's synchronous echo. The
+      // cairnQuestionsPlugin provider bridges ask() ⇄ the renderer form.
+      if (name === "ask_questions" && ctx) {
+        const uq = (ctx as unknown as { userQuestions?: { ask: (req: { questions: unknown[] }) => Promise<{ answers: unknown[] }> } }).userQuestions;
+        const raw = (args as { questions?: unknown[] }).questions ?? [];
+        if (uq && Array.isArray(raw) && raw.length > 0) {
+          try {
+            const answer = await uq.ask({ questions: raw as never });
+            return { ok: true, answers: answer.answers } as never;
+          } catch (err) {
+            return { ok: false, error: `ask_questions failed: ${(err as Error)?.message ?? String(err)}` } as never;
+          }
+        }
+      }
       const out = await executeTool(
         exec.getDb(),
         exec.req,
@@ -132,7 +149,7 @@ export function registerCairnTools(ctx: import("@deepseek-ai/cordis").Context, e
   const disposers: Array<() => void> = [];
   for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS) as Array<[string, { description: string; schema: z.ZodType }]>) {
     try {
-      const def = buildCairnTool(name, description, schema, exec);
+      const def = buildCairnTool(name, description, schema, exec, ctx);
       disposers.push(ctx.tools.register(def));
     } catch (err) {
       // eslint-disable-next-line no-console
