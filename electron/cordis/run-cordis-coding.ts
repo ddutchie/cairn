@@ -192,6 +192,11 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // The `skill` tool (loads a SKILL.md body on demand). No-op when no skills.
     toolDisposers.push(...registerSkillTool(ctx, skills));
 
+    try {
+      const toolNames = (ctx as unknown as { tools: { list: () => Array<{ name: string }> } }).tools?.list?.().map((t) => t.name).sort() ?? [];
+      console.log(`[cordis-coding] cwd=${cwd} sandbox=${sandboxMode} provider=${llmConfig.provider ?? "openai"} model=${llmConfig.model} baseUrl=${llmConfig.baseUrl} tools=${toolNames.length} [${toolNames.join(", ")}] skills=${skills.length}`);
+    } catch { /* best-effort diagnostic */ }
+
     const selection = { provider: "cairn", model: llmConfig.model };
     // Stable dsh session id = the caller's pi sessionId. With dsh jsonl
     // persistence mounted, createAgent with a stable id auto-RESUMES the

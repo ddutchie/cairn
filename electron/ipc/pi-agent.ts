@@ -312,10 +312,11 @@ async function runCordisCodingSession(
     history: [],
     personality: payload.personality ?? "helpful",
     images: payload.images,
-    config: { provider: "openai", baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
+    config: { provider: llmConfig.provider ?? "openai", baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
   };
 
   try {
+    console.log(`[pi-agent/cordis] session=${sessionId} cwd=${toolCtx.cwd} provider=${llmConfig.provider ?? "openai"} model=${llmConfig.model} baseUrl=${llmConfig.baseUrl} mode=${mode} autoApprove=${payload.autoApprove} sandbox=${payload.sandboxMode}`);
     await runCordisCodingLoop({
       db: ctx.db,
       req: req as never,
@@ -323,7 +324,7 @@ async function runCordisCodingSession(
       sessionId,
       cwd: toolCtx.cwd,
       systemPrompt,
-      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: "openai" },
+      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: llmConfig.provider ?? "openai" },
       mode,
       autoApprove: payload.autoApprove,
       sandboxMode: payload.sandboxMode,
