@@ -25,6 +25,44 @@ import { newId } from "../db/utils";
 /** Service key under which cairnDbPlugin provides the Database handle. */
 export const CAIRN_DB = "cairnDb";
 
+// ── cairn-system-prompt ───────────────────────────────────────────────────────
+export interface CairnSystemPromptConfig {
+  /**
+   * The fully-assembled Cairn system prompt for this turn: identity + tool
+   * rules + date (buildSystemPrompt), personality layered on (withPersonality),
+   * and any prior conversation folded in as a transcript. Registered as the
+   * first prompt section the model reads.
+   */
+  systemText: string;
+}
+
+/**
+ * Registers Cairn's per-turn system prompt as an ordered prompt section on the
+ * Cordis tree, mirroring how dsh's own capability plugins (tool-fs, tool-web,
+ * …) contribute prompt guidance via `ctx.systemPrompt.section()`. Mounted per
+ * call (the prompt is per-request: date, personality, project context,
+ * history), so it's disposed with the turn's fiber like the other cairn-*
+ * plugins — no inline `setup()` wiring in the loop.
+ *
+ * The section name is distinct from dsh's reserved `deployment:persona` (which
+ * the system-prompt plugin owns and we leave empty), and its low order places
+ * Cairn's identity first. dsh suppresses its own harness identity
+ * (includeHarnessIdentity:false), so this is the only identity the model sees.
+ */
+export function cairnSystemPromptPlugin(ctx: Context, config: CairnSystemPromptConfig): void {
+  const { systemText } = config;
+  if (!systemText) return;
+  // Unique section name per mount: the plugin is mounted per turn on the shared
+  // context, and dsh throws on a duplicate section name — so two overlapping
+  // turns would collide on a fixed name. The disposer (tied to this fiber)
+  // removes it when the turn ends.
+  const name = `cairn:system:${newId()}`;
+  (ctx as unknown as { systemPrompt: { section: (s: { name: string; order: number; text: string }) => void } })
+    .systemPrompt.section({ name, order: -100, text: systemText });
+}
+// Cordis gates `ctx.systemPrompt` behind an explicit injection declaration.
+cairnSystemPromptPlugin.inject = ["systemPrompt"];
+
 // ── cairn-db ────────────────────────────────────────────────────────────────
 export interface CairnDbConfig {
   db: Database.Database;
@@ -36,7 +74,13 @@ export interface CairnDbConfig {
  * Database stays in electron/db/client.ts (ABI rules); this plugin just
  * carries the already-built handle.
  */
-export function cairnDbPlugin(ctx: Context, config: CairnDbConfig): () => void {
+export function cairnDbPlugin(ctx: Context, config: CairnDbConfig): (() => void) | void {
+  // Idempotent: the plugin is mounted per turn on the shared context, and its
+  // disposer runs asynchronously — a back-to-back turn (or a test) can re-mount
+  // before teardown settles. `provide` throws on a duplicate key, so skip when
+  // the handle is already present (it's the same singleton db either way).
+  const existing = (ctx as unknown as { get: (name: string) => unknown }).get(CAIRN_DB);
+  if (existing) return;
   return ctx.provide(CAIRN_DB, config.db);
 }
 

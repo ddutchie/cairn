@@ -22,7 +22,7 @@ import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolS
 import type { Database } from "better-sqlite3";
 
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
-import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, CAIRN_DB } from "./cairn-plugins";
+import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnSystemPromptPlugin, CAIRN_DB } from "./cairn-plugins";
 import { buildSystemPrompt, withPersonality } from "../lib/tools";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
@@ -167,15 +167,15 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   const ctx = await getContext();
   const { db, req, workspacePath, llmConfig, signal } = opts;
 
-  // Use the completions protocol: on the Rork bridge (and most OpenAI-compatible
-  // endpoints) reasoning streams as `reasoning-delta` chunks under completions,
-  // whereas `openai-responses` only surfaces reasoning in the final message — so
-  // completions is what makes the thinking block populate live.
+  // Use the responses protocol for the Rork bridge. Reasoning does not stream as
+  // reasoning-delta chunks under responses (it arrives only in the final message
+  // block), so the collect()/live-listener fallback surfaces it to the thinking
+  // panel. (Flip to "openai-completions" for endpoints that stream reasoning.)
   await ensurePiAiAdapter(ctx, {
     baseUrl: llmConfig.baseUrl,
     model: llmConfig.model,
     apiKey: llmConfig.apiKey,
-    api: "openai-completions",
+    api: "openai-responses",
   });
 
   // Cairn's own plugins: cairn-db owns the handle, cairn-session persists
@@ -205,6 +205,24 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     await mount(cairnSubagentPlugin, { send: opts.sendSubagent });
   }
 
+  // Cairn's full system prompt (identity + tool rules + date), personality
+  // layered on, with prior conversation folded in as a transcript. dsh creates a
+  // fresh session per turn (a new sessionId each call), so this transcript is
+  // what carries context across turns — without it the model loses everything
+  // from earlier turns (the "only worked on the second message" symptom).
+  // Replaying raw events into the session would have to satisfy dsh's
+  // surface/seq invariants; a transcript is robust and needs no bookkeeping.
+  // Mounted as a plugin (like the other cairn-* plugins) rather than inline in
+  // the agent's setup(); cairnSystemPromptPlugin registers it as a prompt section.
+  const baseSystem = withPersonality(buildSystemPrompt(req), req.personality);
+  const history = (req.history ?? [])
+    .filter((h) => (h.role === "user" || h.role === "assistant") && typeof h.content === "string" && h.content.trim())
+    .map((h) => `${h.role === "user" ? "User" : "Assistant"}: ${(h.content as string).trim()}`);
+  const systemText = history.length
+    ? `${baseSystem}\n\n## Conversation so far\n${history.join("\n\n")}`
+    : baseSystem;
+  await mount(cairnSystemPromptPlugin, { systemText });
+
   const toolDisposers = registerCairnTools(ctx, {
     getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
     req,
@@ -224,25 +242,6 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
 
   const sessionId = SessionId(`chat-${req.threadId}-${Date.now()}`);
   const selection = { provider: "cairn", model: llmConfig.model };
-
-  // Cairn's full system prompt (identity + tool rules + date), with the active
-  // personality layered on. Injected as the persona section so the model gets
-  // project/workspace context and behaviour on the FIRST message, not just after
-  // a follow-up. buildSystemPrompt honours req.systemPrompt when the caller set one.
-  const baseSystem = withPersonality(buildSystemPrompt(req), req.personality);
-
-  // Fold prior conversation into the system prompt as a transcript. dsh sessions
-  // are created fresh per turn (a new sessionId each call), so without this the
-  // model loses all context from earlier turns — which is exactly the "it only
-  // worked on the second message" symptom. Replaying raw events into the session
-  // would have to satisfy dsh's surface/seq invariants; a transcript block is
-  // robust and needs no dsh-internal bookkeeping.
-  const history = (req.history ?? [])
-    .filter((h) => (h.role === "user" || h.role === "assistant") && typeof h.content === "string" && h.content.trim())
-    .map((h) => `${h.role === "user" ? "User" : "Assistant"}: ${(h.content as string).trim()}`);
-  const systemText = history.length
-    ? `${baseSystem}\n\n## Conversation so far\n${history.join("\n\n")}`
-    : baseSystem;
 
   // Live-stream text + reasoning deltas as they arrive on the MAIN session
   // (subagent children are handled by cairnSubagentPlugin). We also keep a
@@ -281,12 +280,6 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
       agentOptions: { provider: selection.provider, model: selection.model },
       setup: (agentCtx) => {
         installModelSelection(agentCtx, { current: selection, assembled: undefined });
-        // The persona slot is the first section the model reads; Cairn's prompt
-        // fully replaces the (suppressed) harness identity.
-        if (systemText) {
-          (agentCtx as unknown as { systemPrompt: { section: (s: { name: string; order: number; text: string }) => void } })
-            .systemPrompt.section({ name: "deployment:persona", order: 0, text: systemText });
-        }
       },
     });
 
