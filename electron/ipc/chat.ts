@@ -370,6 +370,7 @@ export function registerChatHandler(ctx: DbContext): void {
           emitToolCall,
           emitToolCallDone,
           getWin,
+          sendSubagent: (channel, payload) => send(channel, payload),
         });
         flushStream();
         if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);

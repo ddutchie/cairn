@@ -121,6 +121,97 @@ export function cairnSessionPlugin(ctx: Context, config: CairnSessionConfig): vo
   });
 }
 
+// ── cairn-subagent ───────────────────────────────────────────────────────────
+export interface CairnSubagentConfig {
+  /** Emit a Cairn IPC event (threadId already tagged by the caller). */
+  send: (channel: string, payload: Record<string, unknown>) => void;
+}
+
+/**
+ * Map dsh subagent children (sessions with header.origin === 'subagent') onto
+ * Cairn's `chat:subagent*` IPC vocabulary so the renderer's live subagent
+ * traces work over the dsh engine. dsh subagents are general child agents with
+ * their own session logs; the role label is the child's delegation label.
+ */
+export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): void {
+  const { send } = config;
+  const started = new Set<string>();
+  const callName = new Map<string, string>();
+
+  ctx.on("session/event", (session: Session, event: SessionEvent) => {
+    const isChild = (session as { header?: { origin?: string } }).header?.origin === "subagent";
+    if (!isChild) return;
+
+    const childId = String(session.id);
+    const seq = event.seq;
+
+    if (event.type === "user/message") {
+      if (!started.has(childId)) {
+        started.add(childId);
+        const label = (event.data as { message?: { content?: Array<{ type: string; text?: string }> } }).message?.content
+          ?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("").slice(0, 60) ?? "subagent";
+        send("chat:subagent", { status: "start", childId, role: label || "subagent", instruction: label });
+      }
+      return;
+    }
+
+    if (event.type === "assistant/chunk") {
+      const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
+      if (!c) return;
+      if (c.type === "text-delta" && c.text) send("chat:subagent-token", { childId, delta: c.text });
+      if (c.type === "reasoning-delta" && c.text) send("chat:subagent-thought", { childId, delta: c.text });
+      return;
+    }
+
+    if (event.type === "tool/call") {
+      const d = event.data as { name: string; arguments?: string; callId?: string };
+      if (d.callId) callName.set(d.callId, d.name);
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(d.arguments ?? "{}") as Record<string, unknown>; } catch { /* keep {} */ }
+      send("chat:subagent-tool-call", { childId, tool: d.name, label: d.name, callId: d.callId, args });
+      return;
+    }
+
+    if (event.type === "tool/result") {
+      const msg = (event.data as { message?: { source?: { callId?: string }; content?: Array<{ type?: string; isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } }).message;
+      const callId = msg?.source?.callId;
+      const block = msg?.content?.[0];
+      const isError = block?.isError === true;
+      const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
+      const tool = callId ? (callName.get(callId) ?? "tool") : "tool";
+      send("chat:subagent-tool-call-done", {
+        childId, tool, callId,
+        ok: !isError, error: isError ? (output || "tool error") : undefined,
+        output: isError ? undefined : output,
+      });
+      return;
+    }
+
+    if (event.type === "assistant/message") {
+      const usage = (event.data as { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }).usage;
+      if (usage) {
+        send("chat:subagent-usage", {
+          childId,
+          promptTokens: usage.inputTokens ?? 0,
+          completionTokens: usage.outputTokens ?? 0,
+          reasoningTokens: usage.reasoningTokens ?? 0,
+        });
+      }
+      const text = eventText(event);
+      if (text) send("chat:subagent-token", { childId, delta: text });
+      return;
+    }
+
+    if (event.type === "turn/end") {
+      const reason = (event.data as { reason?: { kind?: string } }).reason;
+      const result = reason?.kind === "completed" ? "" : ` (${reason?.kind ?? "error"})`;
+      send("chat:subagent", { status: "done", childId, result, error: reason?.kind === "completed" ? undefined : reason?.kind });
+      void seq;
+      return;
+    }
+  });
+}
+
 // ── cairn-usage ─────────────────────────────────────────────────────────────
 export interface CairnUsageConfig {
   threadId: string;

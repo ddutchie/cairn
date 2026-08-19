@@ -16,10 +16,13 @@ import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } f
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import subagentServicePlugin from "@deepseek-ai/dsh-subagent";
+import { apply as spawnProviderApply, inject as spawnProviderInject, name as spawnProviderName } from "@deepseek-ai/dsh-subagent-spawn-in-process";
+import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolSubagentName } from "@deepseek-ai/dsh-tool-subagent";
 import type { Database } from "better-sqlite3";
 
 import { registerCairnTools } from "./cairn-tools";
-import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, CAIRN_DB } from "./cairn-plugins";
+import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, CAIRN_DB } from "./cairn-plugins";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 
@@ -43,6 +46,8 @@ export interface RunCordisLoopOptions {
   onUsage?: (pt: number, ct: number, rt?: number, costUsd?: number, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
   emitToolCall?: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void;
   emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void;
+  /** Emit a live subagent trace event (threadId tagged by the caller). */
+  sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
   getWin?: () => Electron.BrowserWindow | null;
   signal?: AbortSignal;
 }
@@ -66,6 +71,10 @@ async function getContext(): Promise<Context> {
     await ctx.plugin(agentPlugin);
     await ctx.plugin(toolsPlugin, { mode: "native" });
     await ctx.plugin(agentLoopPlugin, { agents: [] });
+    // Subagent capability stack (dsh-base order): service → spawn provider → tool.
+    await ctx.plugin(subagentServicePlugin);
+    await ctx.plugin({ apply: spawnProviderApply, inject: spawnProviderInject as never, name: spawnProviderName }, { providerName: "spawn" });
+    await ctx.plugin({ apply: toolSubagentApply, inject: toolSubagentInject as never, name: toolSubagentName }, { provider: "spawn", toolName: "subagent", backgroundMode: "one-shot" });
     sharedCtx = ctx;
     return ctx;
   })();
@@ -178,6 +187,9 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     model: llmConfig.model,
     baseUrl: llmConfig.baseUrl,
   });
+  if (opts.sendSubagent) {
+    await mount(cairnSubagentPlugin, { send: opts.sendSubagent });
+  }
 
   const toolDisposers = registerCairnTools(ctx, {
     getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
