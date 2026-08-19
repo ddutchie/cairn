@@ -20,7 +20,7 @@
 import type Database from "better-sqlite3";
 import path from "path";
 import type { OpenAIMessage } from "./llm";
-import { runToolLoop } from "./chat-loop";
+import { runToolLoop } from "./chat-loop"; // TODO Phase 2b: heartbeat is data-only — will use runCordisLoop via runHeartbeatCordisLoop below
 import { getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
 import { buildSystemPrompt, TOOLS, type ChatRequest } from "./tools";
@@ -431,7 +431,57 @@ export async function runAutomation(
       : { type: "automation", id: automation.id };
 
   emitRun("started", { recipe });
-  const result = await runToolLoop(
+
+  // ── Cordis engine (default) — data-only, no bash, via runCordisLoop ──────
+  // Heartbeat is a headless data-only turn (notes/tasks only), so it uses the
+  // chat Cordis loop (not the coding loop). Extra tools (MCP) and the
+  // run_script/write_run_file/deliver_file bridges are registered as extra
+  // tools via the same external-tools path the chat loop uses; the approval
+  // gate is re-used as the Cordis approval seam when needed.
+  const useCordis = process.env.CAIRN_ENGINE !== "builtin" && provider !== "localllm";
+  let result: { content: string; exhausted: boolean };
+  if (useCordis) {
+    const { runCordisLoop } = await import("../cordis/run-cordis-loop");
+    const cordisResult = await runCordisLoop({
+      db,
+      req: { ...req, history: [] },
+      workspacePath,
+      llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
+      signal: abortCtrl.signal,
+      onToken: (delta) => emitRun("token", { delta }),
+      onThought: (delta) => { log.thoughts += delta; emitRun("thought", { delta }); },
+      onUsage: (pt, ct, rt, costUsd, cacheRead, cacheCreate) => {
+        recordLlmUsage({
+          source: "automation",
+          sessionId: run.id,
+          projectId: automation.projectId ?? undefined,
+          workspaceId: automation.workspaceId,
+          provider,
+          model: cachedModel,
+          baseUrl: cachedBaseUrl,
+          promptTokens: pt,
+          completionTokens: ct,
+          reasoningTokens: rt ?? 0,
+          cacheReadTokens: cacheRead,
+          cacheCreationTokens: cacheCreate,
+          costUsd,
+        });
+      },
+      emitToolCall: (e) => {
+        currentTool(e.tool);
+        logTool(e.tool, e.label, e.args);
+        emitRun("tool", { tool: e.tool, label: e.label, args: e.args, status: "start" });
+      },
+      emitToolCallDone: (e) => {
+        recordArtifact(e.tool, e.cairnRef);
+        logToolDone(e.tool, e.ok, e.output, e.error);
+        flushLog();
+        emitRun("toolDone", { tool: e.tool, ok: e.ok, output: e.output, error: e.error, cairnRef: e.cairnRef });
+      },
+    });
+    result = { content: cordisResult.content, exhausted: cordisResult.exhausted };
+  } else {
+    result = await runToolLoop(
     db,
     req,
     workspacePath,
@@ -482,6 +532,7 @@ export async function runAutomation(
     writeRunFileHandler,             // write_run_file executor (agent→script data bridge)
     deliverFileHandler,              // deliver_file executor (out/ → attachments for the note)
   );
+  }
   emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content });
   log.tokens = result.content;
 
