@@ -28,17 +28,21 @@ export function registerChatDbHandlers(ctx: DbContext): void {
       const fs = require("node:fs") as typeof import("node:fs");
       const path = require("node:path") as typeof import("node:path");
       const { getSessionRoot } = require("../cordis/run-cordis-loop");
-      const root = (getSessionRoot as () => string)();
-      const base = path.join(root, threadId);
-      const candidates = [base + ".jsonl", path.join(base, "session.jsonl"), base];
-      for (const p of candidates) {
-        try {
-          if (fs.existsSync(p)) {
-            const stat = fs.statSync(p);
-            if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
-            else fs.unlinkSync(p);
-          }
-        } catch { /* ignore per candidate */ }
+      const primaryRoot = (getSessionRoot as () => string)();
+      const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
+      const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
+      for (const root of roots) {
+        const base = path.join(root, threadId);
+        const candidates = [base + ".jsonl", path.join(base, "session.jsonl"), base];
+        for (const p of candidates) {
+          try {
+            if (fs.existsSync(p)) {
+              const stat = fs.statSync(p);
+              if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
+              else fs.unlinkSync(p);
+            }
+          } catch { /* ignore per candidate */ }
+        }
       }
       const { getContext } = require("../cordis/run-cordis-loop");
       getContext().then((c: unknown) => {

@@ -823,23 +823,35 @@ export function registerPiAgentHandler(
       const fs = require("node:fs") as typeof import("node:fs");
       const path = require("node:path") as typeof import("node:path");
       const { getSessionRoot, getContext } = require("../cordis/run-cordis-loop");
-      const root = (getSessionRoot as () => string)();
-      const base = path.join(root, sessionId);
-      // dsh jsonl is either <sessionId>.jsonl or <sessionId>/session.jsonl — handle both.
-      const candidates = [base + ".jsonl", path.join(base, "session.jsonl"), base];
+      const primaryRoot = (getSessionRoot as () => string)();
+      const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
+      const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
       let deleted = false;
-      for (const p of candidates) {
-        try {
-          if (fs.existsSync(p)) {
-            const stat = fs.statSync(p);
-            if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
-            else fs.unlinkSync(p);
-            console.log(`[pi-agent/clear] deleted ${p}`);
-            deleted = true;
-          }
-        } catch (e) { console.warn(`[pi-agent/clear] failed to delete ${p}:`, e); }
+      for (const root of roots) {
+        const base = path.join(root, sessionId);
+        const candidates = [base + ".jsonl", path.join(base, "session.jsonl"), base];
+        for (const p of candidates) {
+          try {
+            if (fs.existsSync(p)) {
+              const stat = fs.statSync(p);
+              if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
+              else fs.unlinkSync(p);
+              console.log(`[pi-agent/clear] deleted ${p}`);
+              deleted = true;
+            }
+          } catch (e) { console.warn(`[pi-agent/clear] failed to delete ${p}:`, e); }
+        }
       }
-      if (!deleted) console.log(`[pi-agent/clear] no dsh file found for ${sessionId} in ${root} (checked ${candidates.join(", ")})`);
+      if (!deleted) {
+        // List what's actually in the session roots so we can see where the session lives.
+        for (const root of roots) {
+          try {
+            const entries = fs.readdirSync(root).slice(0, 20);
+            console.log(`[pi-agent/clear] root ${root} contains: ${entries.join(", ") || "(empty/missing)"}`);
+          } catch { console.log(`[pi-agent/clear] root ${root} not readable`); }
+        }
+        console.log(`[pi-agent/clear] no dsh file found for ${sessionId} in ${roots.join(" | ")}`);
+      }
       // Also drop any in-memory dsh agent that still holds the old session.
       getContext().then((c: unknown) => {
         const maybeAgents = (c as { agents?: { get?: (id: unknown) => unknown; delete?: (id: unknown) => void; remove?: (id: unknown) => void; dispose?: (id: unknown) => void } })?.agents;
