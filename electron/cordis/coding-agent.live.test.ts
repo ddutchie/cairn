@@ -129,4 +129,35 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
 
     db.close();
   }, 120000);
+
+  it("plan mode gates mutating tools (write denied, read/plan allowed)", async () => {
+    if (process.env.CORDIS_LIVE !== "1") return;
+    if (!process.env.CORDIS_DUMMY_KEY) return;
+    process.env.CORDIS_DUMMY_KEY = "local";
+
+    const db = makeDb();
+    const sessionId = `pi-plan-${Date.now()}`;
+    const sent: SentEvent[] = [];
+    const r = await runCordisCodingLoop({
+      db, req: { threadId: sessionId, workspaceId: "ws", projectId: undefined, message: "Try to create a file /tmp/should-not-exist-plan.txt with content 'x'. If you cannot write, instead list the /tmp directory and summarize what you would build.", history: [], personality: "helpful", config: { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" } } as never,
+      workspacePath: "/tmp", sessionId, cwd: "/tmp",
+      systemPrompt: "You are in plan mode. You may explore and read, but you must NOT write, edit, run bash, or mutate anything. Produce a plan.",
+      llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
+      mode: "plan",
+      send: (c, p) => { sent.push({ channel: c, payload: p }); },
+    });
+    expect(r.ok).toBe(true);
+
+    // No successful write tool call happened (plan-mode gate denied it).
+    const successfulWrites = sent.filter((s) => s.channel === "pi-agent:tool" && s.payload.status === "end" && (s.payload.name === "write" || s.payload.name === "edit" || s.payload.name === "bash") && s.payload.ok === true);
+    console.log("2D WRITES:", JSON.stringify(successfulWrites.map((w) => w.payload.name)));
+    expect(successfulWrites.length).toBe(0);
+    // The file must NOT have been created.
+    const exists = await import("fs").then((fs) => fs.existsSync("/tmp/should-not-exist-plan.txt"));
+    expect(exists).toBe(false);
+    // The turn still completed with some tokens (a plan/analysis).
+    expect(collectTokens(sent, sessionId).length).toBeGreaterThan(0);
+
+    db.close();
+  }, 120000);
 });

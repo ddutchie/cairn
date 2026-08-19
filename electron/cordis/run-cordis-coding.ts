@@ -29,6 +29,7 @@ import {
   cairnCodingPlugin,
   cairnQuestionsPlugin,
   cairnSystemPromptPlugin,
+  cairnPlanModePlugin,
   CAIRN_DB,
 } from "./cairn-plugins";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
@@ -109,6 +110,8 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       baseUrl: llmConfig.baseUrl,
     });
     await mount(cairnSystemPromptPlugin, { systemText: systemPrompt });
+    // Plan-mode read-only gate (denies mutating tools while plan mode is active).
+    await mount(cairnPlanModePlugin, { active: mode === "plan" });
     if (questions) {
       await mount(cairnQuestionsPlugin, {
         send: questions.send,
@@ -188,6 +191,12 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     const agent = handle.agent;
     handleDisposers.push(() => handle.dispose?.() ?? Promise.resolve());
     await agent.whenIdle();
+
+    // Set the dsh plan state so the plan-mode policy section renders and the
+    // exit_plan_mode tool works (state is logged + persisted across resume).
+    try {
+      (ctx as unknown as { planMode?: { set: (a: unknown, active: boolean) => unknown } }).planMode?.set(agent, mode === "plan");
+    } catch { /* non-fatal: plan mode falls back to prompt-only guidance */ }
 
     // Mount the bridge AFTER the agent exists so it knows the dsh session id to
     // match events against (= the caller's sessionId, which is also how events
