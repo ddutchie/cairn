@@ -818,21 +818,29 @@ export function registerPiAgentHandler(
     // doesn't see old messages. The builtin path's pi_agent_llm_history is
     // already cleared above (session.messages = []); for Cordis the transcript
     // lives in <userData>/sessions/<sessionId>.jsonl via
-    // dsh-session-persistence-jsonl. Best-effort: delete the file if it exists.
+    // dsh-session-persistence-jsonl. Best-effort: delete the file/dir if it exists.
     try {
-      const { default: fs } = require("node:fs");
-      const { default: path } = require("node:path");
-      // sessionRoot is set via setSessionRoot from main (app.getPath("userData") + "/sessions")
-      // Fall back to the same default getContext() uses.
-      const root = process.env.CAIRN_SESSION_ROOT || path.join(process.cwd(), ".cairn-sessions");
-      const file = path.join(root, `${sessionId}.jsonl`);
-      if (fs.existsSync(file)) fs.unlinkSync(file);
+      const fs = require("node:fs") as typeof import("node:fs");
+      const path = require("node:path") as typeof import("node:path");
+      const { getSessionRoot } = require("../cordis/run-cordis-loop");
+      const root = (getSessionRoot as () => string)();
+      const base = path.join(root, sessionId);
+      // dsh jsonl is either <sessionId>.jsonl or <sessionId>/session.jsonl — handle both.
+      const candidates = [base + ".jsonl", path.join(base, "session.jsonl"), base];
+      for (const p of candidates) {
+        try {
+          if (fs.existsSync(p)) {
+            const stat = fs.statSync(p);
+            if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
+            else fs.unlinkSync(p);
+          }
+        } catch { /* ignore per candidate */ }
+      }
       // Also drop any in-memory dsh agent that still holds the old session.
-      // The shared Cordis ctx is lazy — if it exists, try to remove the agent.
       const { getContext } = require("../cordis/run-cordis-loop");
       getContext().then((c: unknown) => {
-        const maybeAgents = (c as { agents?: { get?: (id: string) => unknown; delete?: (id: string) => void } })?.agents;
-        try { maybeAgents?.delete?.(sessionId); } catch { /* ignore */ }
+        const maybeAgents = (c as { agents?: { get?: (id: string) => unknown; delete?: (id: string) => void; remove?: (id: string) => void } })?.agents;
+        try { (maybeAgents?.delete ?? maybeAgents?.remove)?.call(maybeAgents, sessionId); } catch { /* ignore */ }
       }).catch(() => {});
     } catch { /* best-effort */ }
   });

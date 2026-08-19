@@ -84,6 +84,7 @@ let sessionRoot = process.env.CAIRN_SESSION_ROOT || path.join(process.cwd(), ".c
 /** Configure the directory where dsh persists its session logs (must be set
  *  before the first getContext()). The Electron main calls this with
  *  app.getPath("userData") + "/sessions". */
+export function getSessionRoot(): string { return sessionRoot; }
 export function setSessionRoot(root: string): void {
   sessionRoot = root;
 }

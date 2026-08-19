@@ -27,13 +27,23 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     try {
       const fs = require("node:fs") as typeof import("node:fs");
       const path = require("node:path") as typeof import("node:path");
-      const root = process.env.CAIRN_SESSION_ROOT || path.join(process.cwd(), ".cairn-sessions");
-      const file = path.join(root, `${threadId}.jsonl`);
-      if (fs.existsSync(file)) fs.unlinkSync(file);
+      const { getSessionRoot } = require("../cordis/run-cordis-loop");
+      const root = (getSessionRoot as () => string)();
+      const base = path.join(root, threadId);
+      const candidates = [base + ".jsonl", path.join(base, "session.jsonl"), base];
+      for (const p of candidates) {
+        try {
+          if (fs.existsSync(p)) {
+            const stat = fs.statSync(p);
+            if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
+            else fs.unlinkSync(p);
+          }
+        } catch { /* ignore per candidate */ }
+      }
       const { getContext } = require("../cordis/run-cordis-loop");
       getContext().then((c: unknown) => {
-        const maybeAgents = (c as { agents?: { get?: (id: string) => unknown; delete?: (id: string) => void } })?.agents;
-        try { maybeAgents?.delete?.(threadId); } catch { /* ignore */ }
+        const maybeAgents = (c as { agents?: { get?: (id: string) => unknown; delete?: (id: string) => void; remove?: (id: string) => void } })?.agents;
+        try { (maybeAgents?.delete ?? maybeAgents?.remove)?.call(maybeAgents, threadId); } catch { /* ignore */ }
       }).catch(() => {});
     } catch { /* best-effort */ }
   }));
