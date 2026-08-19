@@ -247,7 +247,10 @@ export async function executeTool(
 
       let tasksRaw: string;
       try {
-        tasksRaw = await callLLM(llmConfig, systemPrompt, userPrompt, {
+        const { runOneShot } = await import("../cordis/one-shot");
+        tasksRaw = await runOneShot({
+          systemPrompt, userPrompt,
+          config: llmConfig,
           source: "chat",
           sessionId: req.threadId,
           projectId: col.projectId,

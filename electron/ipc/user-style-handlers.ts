@@ -120,25 +120,22 @@ export async function generateUserStyleMarkdown(
   }
   const { systemPrompt, userPrompt } = buildUserStylePromptPair(step, input);
 
-  let markdown = await callLLM(cfg, systemPrompt, userPrompt, {
+  // One-shot via Cordis (single-turn, no tools) — falls back to callLLM for localllm.
+  const { runOneShot } = await import("../cordis/one-shot");
+  let markdown = await runOneShot({
+    systemPrompt, userPrompt,
+    config: cfg,
     source: "writing-style",
-    temperature: 0.3,
     maxTokens: 8192,
-    // Non-streaming: some gateways garble SSE output when a reasoning model
-    // interleaves long reasoning_content deltas with content deltas (verified
-    // against zen/go — same request is clean non-streamed, soup streamed).
-    stream: false,
-    // reasoning_effort none: measured ~2x faster with 0 reasoning tokens while
-    // still producing a usable guide for this direct transform.
-    reasoningEffort: "none",
+    temperature: 0.3,
   });
   if (!isUsableGuide(markdown, step)) {
-    markdown = await callLLM(cfg, systemPrompt, userPrompt, {
+    markdown = await runOneShot({
+      systemPrompt, userPrompt,
+      config: cfg,
       source: "writing-style",
-      temperature: 0.1,
       maxTokens: 8192,
-      stream: false,
-      reasoningEffort: "none",
+      temperature: 0.1,
     });
   }
   if (!isUsableGuide(markdown, step)) {

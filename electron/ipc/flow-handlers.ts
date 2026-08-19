@@ -226,7 +226,10 @@ export function registerFlowHandlers(ctx: DbContext): void {
 
         let summary: string;
         try {
-          summary = await callLLM({ baseUrl, model, apiKey }, systemPrompt, userPrompt, {
+          const { runOneShot } = await import("../cordis/one-shot");
+          summary = await runOneShot({
+            systemPrompt, userPrompt,
+            config: { baseUrl, model, apiKey, provider: "openai" },
             source: "flow-ai-summary",
             sessionId: args.nodeId,
             projectId: flowProjectId,
