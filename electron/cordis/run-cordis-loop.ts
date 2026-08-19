@@ -147,6 +147,14 @@ function collect(events: readonly SessionEvent[], firstSeq: number): { text: str
         rt += c.usage.reasoningTokens ?? 0;
       }
     }
+    // Fallback: some protocols (e.g. openai-responses) don't stream reasoning as
+    // deltas — the reasoning lives only in the final message's reasoning block.
+    if (e.type === "assistant/message" && !reasoning) {
+      const content = (e.data as { message?: { content?: Array<{ type?: string; text?: string }> } }).message?.content;
+      if (Array.isArray(content)) {
+        reasoning = content.filter((b) => b.type === "reasoning" && b.text).map((b) => b.text).join("");
+      }
+    }
   }
   return { text, reasoning, pt, ct, rt };
 }
@@ -159,13 +167,15 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   const ctx = await getContext();
   const { db, req, workspacePath, llmConfig, signal } = opts;
 
-  // Use the responses protocol by default (dsh production adapter supports it);
-  // completions is available by flipping the api below.
+  // Use the completions protocol: on the Rork bridge (and most OpenAI-compatible
+  // endpoints) reasoning streams as `reasoning-delta` chunks under completions,
+  // whereas `openai-responses` only surfaces reasoning in the final message — so
+  // completions is what makes the thinking block populate live.
   await ensurePiAiAdapter(ctx, {
     baseUrl: llmConfig.baseUrl,
     model: llmConfig.model,
     apiKey: llmConfig.apiKey,
-    api: "openai-responses",
+    api: "openai-completions",
   });
 
   // Cairn's own plugins: cairn-db owns the handle, cairn-session persists
@@ -244,11 +254,23 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     (session, event) => {
       if ((session as { header?: { origin?: string } }).header?.origin === "subagent") return;
       if ((session as { id?: unknown }).id !== sessionId) return;
-      if (event.type !== "assistant/chunk") return;
-      const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
-      if (!c?.text) return;
-      if (c.type === "text-delta") { liveText += c.text; opts.onToken?.(c.text); }
-      else if (c.type === "reasoning-delta") { liveReasoning += c.text; opts.onThought?.(c.text); }
+      if (event.type === "assistant/chunk") {
+        const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
+        if (!c?.text) return;
+        if (c.type === "text-delta") { liveText += c.text; opts.onToken?.(c.text); }
+        else if (c.type === "reasoning-delta") { liveReasoning += c.text; opts.onThought?.(c.text); }
+        return;
+      }
+      // Fallback for protocols that don't stream reasoning as deltas (e.g.
+      // openai-responses): emit the final message's reasoning block once so the
+      // thinking panel still populates.
+      if (event.type === "assistant/message" && !liveReasoning) {
+        const content = (event.data as { message?: { content?: Array<{ type?: string; text?: string }> } }).message?.content;
+        if (Array.isArray(content)) {
+          const r = content.filter((b) => b.type === "reasoning" && b.text).map((b) => b.text).join("");
+          if (r) { liveReasoning += r; opts.onThought?.(r); }
+        }
+      }
     },
   );
 

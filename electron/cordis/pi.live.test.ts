@@ -67,7 +67,7 @@ describe("runCordisLoop (gated on CORDIS_LIVE=1)", () => {
     // The answer ("Zephyr") only exists in the prior turn — the model must use
     // the replayed history (folded into the system prompt) to answer correctly.
     const req: ChatRequest = {
-      message: "What is the secret codeword I told you? Reply with just the word.",
+      message: "Think briefly, then tell me the secret codeword I gave you. Reply with just the word.",
       threadId: "thr-live-hist",
       projectId: "pj",
       workspaceId: "ws",
@@ -85,12 +85,17 @@ describe("runCordisLoop (gated on CORDIS_LIVE=1)", () => {
       onToken: (d) => tokens.push(d),
       onThought: (d) => thoughts.push(d),
     });
-    console.log("HISTORY RESULT:", JSON.stringify(result), "deltas:", tokens.length);
+    console.log("HISTORY RESULT:", JSON.stringify(result), "text deltas:", tokens.length, "thought deltas:", thoughts.length);
     // Context carried: the model recovered the codeword from replayed history.
     expect(result.content.toLowerCase()).toContain("zephyr");
     // Live streaming: onToken fired with incremental deltas (not one final blob),
     // and the concatenated deltas equal the final content.
     expect(tokens.length).toBeGreaterThan(0);
     expect(tokens.join("")).toBe(result.content);
+    // Reasoning was captured (completions streams reasoning-delta; the fallback
+    // reads the final message's reasoning block). onThought fired and the return
+    // value carries the reasoning text.
+    expect(result.reasoning.length).toBeGreaterThan(0);
+    expect(thoughts.join("")).toBe(result.reasoning);
   });
 });
