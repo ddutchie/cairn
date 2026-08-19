@@ -141,3 +141,70 @@ export function registerCairnTools(ctx: import("@deepseek-ai/cordis").Context, e
   }
   return disposers;
 }
+
+// ── cairn-external-tools ────────────────────────────────────────────────────
+// Bridge user-configured MCP servers + custom HTTP services onto ctx.tools.
+// getExternalToolDefs returns OpenAI-shaped defs (name/description/parameters);
+// we convert each to a dsh ToolDefinition that dispatches to
+// executeExternalTool (the existing connector execution path).
+
+/** Convert an OpenAI parameters JSON-schema object to the dsh value schema DSL. */
+function paramsToVNode(json: Record<string, unknown>): Record<string, VNode> {
+  const props = (json.properties ?? {}) as Record<string, unknown>;
+  const required = new Set<string>(Array.isArray(json.required) ? (json.required as string[]) : []);
+  const properties: Record<string, VNode> = {};
+  for (const [k, v] of Object.entries(props)) {
+    const node = zodJsonToVNode(v as Record<string, unknown>);
+    if (required.has(k)) (node as { required?: boolean }).required = true;
+    properties[k] = node;
+  }
+  return properties;
+}
+
+export interface ExternalToolsExecCtx {
+  db: Database;
+  workspaceId: string;
+  projectId: string;
+}
+
+/**
+ * Register the user's external tools (MCP servers + custom services) onto a dsh
+ * context. Resolves the in-scope defs once at registration time; each tool
+ * dispatches to executeExternalTool at execution time. Returns disposers.
+ */
+export async function registerExternalCairnTools(ctx: import("@deepseek-ai/cordis").Context, exec: ExternalToolsExecCtx): Promise<Array<() => void>> {
+  const disposers: Array<() => void> = [];
+  let defs: Array<{ function: { name: string; description: string; parameters: Record<string, unknown> } }> = [];
+  try {
+    const { getExternalToolDefs } = await import("../lib/external-tools");
+    defs = (await getExternalToolDefs(exec.db, exec.workspaceId, exec.projectId)) as typeof defs;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[cordis] failed to resolve external tool defs:", err);
+    return disposers;
+  }
+  for (const def of defs) {
+    const { name, description, parameters } = def.function;
+    try {
+      const tool = defineTool({
+        name,
+        description,
+        parameters: paramsToVNode(parameters) as never,
+        output: {
+          schema: { type: "json" },
+          render: (_args, value) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
+        },
+        async execute(args) {
+          const { executeExternalTool } = await import("../lib/external-tools");
+          const out = await executeExternalTool(exec.db, exec.workspaceId, exec.projectId, name, args as Record<string, unknown>);
+          return out as never;
+        },
+      });
+      disposers.push(ctx.tools.register(tool));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[cordis] failed to register external tool ${name}:`, err);
+    }
+  }
+  return disposers;
+}

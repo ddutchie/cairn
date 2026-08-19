@@ -21,7 +21,7 @@ import { apply as spawnProviderApply, inject as spawnProviderInject, name as spa
 import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolSubagentName } from "@deepseek-ai/dsh-tool-subagent";
 import type { Database } from "better-sqlite3";
 
-import { registerCairnTools } from "./cairn-tools";
+import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, CAIRN_DB } from "./cairn-plugins";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
@@ -200,6 +200,13 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     emit: opts.emitToolCall,
     emitDone: opts.emitToolCallDone,
   });
+  // User-configured MCP servers + custom services onto ctx.tools.
+  const externalDisposers = await registerExternalCairnTools(ctx, {
+    db,
+    workspaceId: req.workspaceId ?? "",
+    projectId: req.projectId ?? "",
+  });
+  toolDisposers.push(...externalDisposers);
 
   const sessionId = SessionId(`chat-${req.threadId}-${Date.now()}`);
   const selection = { provider: "cairn", model: llmConfig.model };
