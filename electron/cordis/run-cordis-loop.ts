@@ -89,7 +89,7 @@ export function setSessionRoot(root: string): void {
 }
 // The pi-ai provider route ("cairn") is registered once; its profile carries
 // the endpoint. Track the last config so a changed baseURL/model remounts it.
-let piAiDisposer: (() => void) | null = null;
+let piAiDisposer: (() => Promise<void>) | null = null;
 let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" } | null = null;
 
 export async function getContext(): Promise<Context> {
@@ -163,7 +163,13 @@ export async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string;
     lastPiAiConfig.api === config.api;
   if (same) return;
 
-  if (piAiDisposer) { try { piAiDisposer(); } catch { /* noop */ } }
+  if (piAiDisposer) {
+    try { await piAiDisposer(); } catch { /* noop */ }
+    // Give the Cordis plugin system a tick to fully unregister the old
+    // "cairn" provider route before re-registering with a new baseURL —
+    // otherwise the pi-ai adapter sees "already declared".
+    await new Promise<void>((r) => setTimeout(r, 0));
+  }
   piAiDisposer = null;
 
   // pi-ai resolves credentials through an apiKeyEnv; the endpoint ignores auth
@@ -199,7 +205,7 @@ export async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string;
     },
   );
   await handle;
-  piAiDisposer = () => { handle.then((h) => { try { h.dispose(); } catch { /* noop */ } }, () => {}); };
+  piAiDisposer = async () => { try { const h = await handle; h.dispose(); } catch { /* noop */ } };
   lastPiAiConfig = config;
 }
 
