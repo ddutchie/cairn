@@ -26,8 +26,10 @@ describe("cairn-subagent (gated on CORDIS_LIVE=1)", () => {
     if (process.env.CORDIS_LIVE !== "1") return;
     const db = makeDb();
     const subagentEvents: string[] = [];
+    const tokenByChild = new Map<string, string>();
+    const thoughtByChild = new Map<string, string>();
     const req: ChatRequest = {
-      message: "Use the subagent tool to delegate a tiny task: ask a subagent to reply with the single word 'done'. Then report it.",
+      message: "Use the subagent tool to delegate a tiny task: ask a subagent to think about and reply with the single word 'done'. Then report it.",
       threadId: "thr-sub-1",
       projectId: "pj",
       workspaceId: "ws",
@@ -40,16 +42,33 @@ describe("cairn-subagent (gated on CORDIS_LIVE=1)", () => {
       signal: undefined,
       sendSubagent: (channel, payload) => {
         subagentEvents.push(channel + ":" + JSON.stringify(payload));
+        const p = payload as { childId?: string; delta?: string };
+        if (channel === "chat:subagent-token" && p.childId && p.delta) tokenByChild.set(p.childId, (tokenByChild.get(p.childId) ?? "") + p.delta);
+        if (channel === "chat:subagent-thought" && p.childId && p.delta) thoughtByChild.set(p.childId, (thoughtByChild.get(p.childId) ?? "") + p.delta);
       },
     });
     console.log("SUBAGENT RESULT:", JSON.stringify(result));
     console.log("SUBAGENT EVENTS:", subagentEvents.join("\n  "));
     const starts = subagentEvents.filter((e) => e.startsWith("chat:subagent:") && JSON.parse(e.slice(14)).status === "start");
     const tokens = subagentEvents.filter((e) => e.startsWith("chat:subagent-token:"));
-    // The subagent tool should be available and the model should have attempted
-    // delegation; but model variance means a child may not always spawn. Assert
-    // only that no crash happened and report what was observed.
     expect(result.exhausted).toBe(false);
     console.log("   → subagent start events:", starts.length, "token events:", tokens.length);
+
+    // Regression: the child's THINKING (thought stream = FINDINGS BRIEF reasoning)
+    // must NOT appear in the child's TOKEN stream (the brief content), and the
+    // token stream must not duplicate itself (the old double-emit of final msg).
+    for (const [childId, brief] of tokenByChild) {
+      const thought = thoughtByChild.get(childId) ?? "";
+      console.log(`   child ${childId}: brief=${brief.length}ch thought=${thought.length}ch`);
+      if (thought.length > 20) {
+        // A non-trivial slice of the reasoning should not be embedded in the brief.
+        expect(brief.includes(thought.slice(0, Math.min(40, thought.length)))).toBe(false);
+      }
+      // No wholesale duplication: the brief's first half shouldn't repeat verbatim.
+      if (brief.length > 40) {
+        const half = brief.slice(0, Math.floor(brief.length / 2));
+        expect(brief.indexOf(half, 1)).not.toBe(half.length);
+      }
+    }
   }, 90000);
 });

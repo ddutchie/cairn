@@ -181,6 +181,11 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
   const { send } = config;
   const started = new Set<string>();
   const callName = new Map<string, string>();
+  // Track whether a child streamed text / reasoning as deltas, so the final
+  // assistant/message doesn't re-emit the same content (which duplicated the
+  // brief) and so a reasoning block never lands in the token stream (the brief).
+  const streamedText = new Set<string>();
+  const streamedReasoning = new Set<string>();
 
   ctx.on("session/event", (session: Session, event: SessionEvent) => {
     const isChild = (session as { header?: { origin?: string } }).header?.origin === "subagent";
@@ -202,8 +207,8 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     if (event.type === "assistant/chunk") {
       const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
       if (!c) return;
-      if (c.type === "text-delta" && c.text) send("chat:subagent-token", { childId, delta: c.text });
-      if (c.type === "reasoning-delta" && c.text) send("chat:subagent-thought", { childId, delta: c.text });
+      if (c.type === "text-delta" && c.text) { streamedText.add(childId); send("chat:subagent-token", { childId, delta: c.text }); }
+      if (c.type === "reasoning-delta" && c.text) { streamedReasoning.add(childId); send("chat:subagent-thought", { childId, delta: c.text }); }
       return;
     }
 
@@ -241,8 +246,18 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
           reasoningTokens: usage.reasoningTokens ?? 0,
         });
       }
-      const text = eventText(event);
-      if (text) send("chat:subagent-token", { childId, delta: text });
+      // Fill gaps ONLY: if deltas already streamed the text/reasoning, don't
+      // re-emit (that duplicated the brief). Text goes to the token stream (the
+      // brief); the reasoning block goes to the thought stream — never mix them,
+      // or chain-of-thought leaks into the FINDINGS BRIEF.
+      if (!streamedText.has(childId)) {
+        const text = eventText(event);
+        if (text) send("chat:subagent-token", { childId, delta: text });
+      }
+      if (!streamedReasoning.has(childId)) {
+        const { reasoning } = eventReasoning(event);
+        if (reasoning) send("chat:subagent-thought", { childId, delta: reasoning });
+      }
       return;
     }
 
