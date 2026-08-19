@@ -822,27 +822,45 @@ export function registerPiAgentHandler(
     try {
       const fs = require("node:fs") as typeof import("node:fs");
       const path = require("node:path") as typeof import("node:path");
-      const { getSessionRoot } = require("../cordis/run-cordis-loop");
+      const { getSessionRoot, getContext } = require("../cordis/run-cordis-loop");
       const root = (getSessionRoot as () => string)();
       const base = path.join(root, sessionId);
       // dsh jsonl is either <sessionId>.jsonl or <sessionId>/session.jsonl — handle both.
       const candidates = [base + ".jsonl", path.join(base, "session.jsonl"), base];
+      let deleted = false;
       for (const p of candidates) {
         try {
           if (fs.existsSync(p)) {
             const stat = fs.statSync(p);
             if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
             else fs.unlinkSync(p);
+            console.log(`[pi-agent/clear] deleted ${p}`);
+            deleted = true;
           }
-        } catch { /* ignore per candidate */ }
+        } catch (e) { console.warn(`[pi-agent/clear] failed to delete ${p}:`, e); }
       }
+      if (!deleted) console.log(`[pi-agent/clear] no dsh file found for ${sessionId} in ${root} (checked ${candidates.join(", ")})`);
       // Also drop any in-memory dsh agent that still holds the old session.
-      const { getContext } = require("../cordis/run-cordis-loop");
       getContext().then((c: unknown) => {
-        const maybeAgents = (c as { agents?: { get?: (id: string) => unknown; delete?: (id: string) => void; remove?: (id: string) => void } })?.agents;
-        try { (maybeAgents?.delete ?? maybeAgents?.remove)?.call(maybeAgents, sessionId); } catch { /* ignore */ }
+        const maybeAgents = (c as { agents?: { get?: (id: unknown) => unknown; delete?: (id: unknown) => void; remove?: (id: unknown) => void; dispose?: (id: unknown) => void } })?.agents;
+        const sid = { toString: () => sessionId } as unknown as string;
+        // Try every plausible delete/remove/dispose shape — dsh-agent's API has shifted across rc's.
+        let removed = false;
+        for (const k of ["delete", "remove", "dispose", "destroy"] as const) {
+          try {
+            const fn = (maybeAgents as Record<string, unknown>)?.[k] as ((id: unknown) => unknown) | undefined;
+            if (typeof fn === "function") { fn.call(maybeAgents, sid); console.log(`[pi-agent/clear] dropped in-memory dsh agent via agents.${k}(${sessionId})`); removed = true; break; }
+          } catch { /* ignore */ }
+        }
+        if (!removed) {
+          try {
+            const ag = maybeAgents?.get?.(sid) as { dispose?: () => void } | undefined;
+            if (ag?.dispose) { ag.dispose(); console.log(`[pi-agent/clear] disposed in-memory dsh agent ${sessionId} via get().dispose()`); }
+            else console.log(`[pi-agent/clear] no in-memory dsh agent found for ${sessionId} (or no delete/remove API)`);
+          } catch { /* ignore */ }
+        }
       }).catch(() => {});
-    } catch { /* best-effort */ }
+    } catch (e) { console.warn(`[pi-agent/clear] Cordis clear failed:`, e); }
   });
 
   // ── pi-agent:destroy ──────────────────────────────────────────────────────
