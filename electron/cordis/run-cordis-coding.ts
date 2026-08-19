@@ -31,6 +31,7 @@ import {
   cairnSystemPromptPlugin,
   cairnPlanModePlugin,
   cairnApprovalPlugin,
+  cairnDoomLoopPlugin,
   CAIRN_DB,
 } from "./cairn-plugins";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
@@ -65,6 +66,14 @@ export interface RunCordisCodingOptions {
   approvals?: {
     registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void) => () => void;
   };
+  /**
+   * Doom-loop adapter. registerPending stores a resolver keyed by callId
+   * (`${sessionId}:${signature}`) that pi-agent:respond-doom-loop invokes with
+   * the user's allow/deny. Omitted → no doom-loop pausing.
+   */
+  doomLoop?: {
+    registerPending: (callId: string, resolve: (allow: boolean) => void) => () => void;
+  };
   getWin?: () => Electron.BrowserWindow | null;
   signal?: AbortSignal;
 }
@@ -77,7 +86,7 @@ export interface RunCordisCodingResult {
 
 export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise<RunCordisCodingResult> {
   const ctx = await getContext();
-  const { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, approvals, getWin, signal } = opts;
+  const { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, approvals, doomLoop, getWin, signal } = opts;
   // autoApprove defaults ON; forced ON if no approvals adapter was supplied
   // (no way to prompt → don't block on an approval that can never resolve).
   const autoApprove = opts.autoApprove !== false ? true : (approvals ? false : true);
@@ -133,6 +142,15 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
         sessionId,
         send,
         registerPending: approvals.registerPending,
+        signal,
+      });
+    }
+    // Doom-loop guard: pause on repeated identical tool calls.
+    if (doomLoop) {
+      await mount(cairnDoomLoopPlugin, {
+        sessionId,
+        send,
+        registerPending: doomLoop.registerPending,
         signal,
       });
     }

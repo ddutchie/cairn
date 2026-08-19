@@ -23,6 +23,7 @@ import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos } from "../db/queries";
 import { resultContentError } from "../lib/tool-result";
+import { toolCallSignature, DOOM_LOOP_THRESHOLD } from "../lib/pi-agent-loop";
 
 /** Service key under which cairnDbPlugin provides the Database handle. */
 export const CAIRN_DB = "cairnDb";
@@ -753,4 +754,69 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
   disposers.push(unsubAns);
 
   return () => { for (const d of disposers) { try { d(); } catch { /* noop */ } } };
+}
+
+// ── cairn-doom-loop ───────────────────────────────────────────────────────────
+// Detect a stuck agent repeating the SAME tool with IDENTICAL arguments and
+// pause for a user decision before it burns the step budget (Phase 1.5 step 2f).
+// Reuses the builtin toolCallSignature + DOOM_LOOP_THRESHOLD. Implemented as a
+// tools/pre-execute guard: when the last (THRESHOLD-1) calls all match this
+// call's signature, emit pi-agent:doom-loop and block on respond-doom-loop —
+// allow → run + stop re-pausing this session; deny → deny the call.
+
+export interface CairnDoomLoopConfig {
+  /** The caller's pi sessionId — scopes the doom-loop IPC + pending key. */
+  sessionId: string;
+  /** Emit a `pi-agent:*` IPC event (sessionId NOT yet tagged). */
+  send: (channel: string, payload: Record<string, unknown>) => void;
+  /**
+   * Register a resolver for one pending doom-loop decision, keyed by callId
+   * (`${sessionId}:${signature}`); returns a disposer. pi-agent:respond-doom-loop
+   * invokes the resolver with the user's allow/deny.
+   */
+  registerPending: (callId: string, resolve: (allow: boolean) => void) => () => void;
+  signal?: AbortSignal;
+}
+
+export function cairnDoomLoopPlugin(ctx: Context, config: CairnDoomLoopConfig): (() => void) | void {
+  const { sessionId, send, registerPending, signal } = config;
+  const recent: string[] = [];
+  let approved = false; // once the user allows, stop re-pausing this session
+
+  const unsub = (ctx as unknown as { on: (ev: string, fn: (...args: unknown[]) => unknown) => () => void }).on(
+    "tools/pre-execute",
+    async (...args: unknown[]) => {
+      const exec = args[0] as { name?: string; arguments?: unknown } | undefined;
+      const next = args[1] as (() => Promise<unknown>) | undefined;
+      const name = exec?.name;
+      if (typeof name !== "string") return next ? next() : undefined;
+
+      const argsObj = (exec?.arguments && typeof exec.arguments === "object") ? exec.arguments as Record<string, unknown> : {};
+      const sig = toolCallSignature(name, argsObj);
+
+      if (!approved) {
+        const window = recent.slice(-(DOOM_LOOP_THRESHOLD - 1));
+        if (window.length === DOOM_LOOP_THRESHOLD - 1 && window.every((s) => s === sig)) {
+          const callId = `${sessionId}:${sig}`;
+          send("pi-agent:doom-loop", { sessionId, toolName: name, count: DOOM_LOOP_THRESHOLD, args: argsObj, callId });
+          const allow = await new Promise<boolean>((resolve) => {
+            const dispose = registerPending(callId, (a) => { dispose(); resolve(a); });
+            const onAbort = () => { dispose(); resolve(false); };
+            if (signal?.aborted) onAbort();
+            signal?.addEventListener?.("abort", onAbort, { once: true });
+          });
+          // Track the attempted signature regardless.
+          recent.push(sig);
+          if (recent.length > DOOM_LOOP_THRESHOLD) recent.shift();
+          if (!allow) return { kind: "deny", reason: "Stopped: repeated identical tool call (possible loop). Halted by the user." };
+          approved = true;
+          return next ? next() : undefined;
+        }
+      }
+      recent.push(sig);
+      if (recent.length > DOOM_LOOP_THRESHOLD) recent.shift();
+      return next ? next() : undefined;
+    },
+  );
+  return unsub;
 }
