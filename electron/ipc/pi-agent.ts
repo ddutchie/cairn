@@ -44,6 +44,28 @@ const sessions = new Map<string, PiAgentSession>();
  */
 const runningLoops = new Set<string>();
 
+// ── Cordis engine wiring ────────────────────────────────────────────────────
+// Per-turn pending resolvers for the dsh loop's HITL seams, keyed by callId (or
+// requestId for questions). The pi-agent:respond-* IPC handlers resolve these,
+// exactly like the builtin loop's pendingApprovals/pendingDoomLoop maps. Kept
+// module-level so the (single) respond handlers can reach any session's turn.
+const cordisPendingApprovals = new Map<string, (d: { approved: boolean; grant?: "session" | "command" }) => void>();
+const cordisPendingDoomLoop = new Map<string, (allow: boolean) => void>();
+const cordisPendingQuestions = new Map<string, (answersText: string) => void>();
+
+/** The raw turn inputs the Cordis coding loop needs (prompt + attachments + config). */
+interface CordisTurnPayload {
+  message: string;
+  images?: Array<{ kind?: "image" | "pdf"; dataUrl: string; name?: string }>;
+  projectId?: string;
+  workspaceId?: string;
+  personality?: string;
+  autoApprove: boolean;
+  /** automation-dev → read-only sandbox (file-only, no escape); else workspace-write. */
+  sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
+}
+
+
 // ── Debounced history persistence ─────────────────────────────────────────────
 // saveLlmHistory is a synchronous (better-sqlite3) transaction that
 // JSON-serialises every message in the session — on a long turn that's a
@@ -144,8 +166,21 @@ async function runSession(
   toolCtx: AgentToolContext,
   ctx: DbContext,
   send: (channel: string, payload: unknown) => void,
+  cordis?: CordisTurnPayload,
 ): Promise<void> {
   const { sessionId } = toolCtx;
+
+  // ── Cordis engine (default) ───────────────────────────────────────────────
+  // The coding agent runs on the dsh agent loop unless CAIRN_ENGINE=builtin (or
+  // the on-device local LLM, which the cordis adapter doesn't cover). All the
+  // capability parity — plan mode, HITL approvals, doom-loop, skills, sandbox,
+  // attachments, compaction, retries — lives in runCordisCodingLoop + its
+  // plugins; this branch only bridges the pending-map IPC + lifecycle.
+  const engine = process.env.CAIRN_ENGINE === "builtin" ? "builtin" : "cordis";
+  if (cordis && engine === "cordis" && llmConfig.provider !== "localllm") {
+    return runCordisCodingSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send, cordis);
+  }
+
   runningLoops.add(sessionId);
 
   // Reuse existing transformer to preserve cachedSummary across prompts.
@@ -233,8 +268,102 @@ async function runSession(
   });
 }
 
-// ── Registration ───────────────────────────────────────────────────────────────
+// ── Cordis coding-session runner ────────────────────────────────────────────
+// Drives runCordisCodingLoop for one turn and bridges its adapters to the same
+// pi-agent:* IPC + runningLoops lifecycle the builtin path uses. The dsh loop
+// owns the model↔tool iteration, session persistence (jsonl), plan mode,
+// approvals, doom-loop, skills, sandbox, attachments, compaction, and retries;
+// nothing here re-implements them.
+async function runCordisCodingSession(
+  session: PiAgentSession,
+  systemPrompt: string,
+  llmConfig: AgentLLMConfig,
+  mode: "plan" | "execute",
+  toolCtx: AgentToolContext,
+  ctx: DbContext,
+  send: (channel: string, payload: unknown) => void,
+  payload: CordisTurnPayload,
+): Promise<void> {
+  const { sessionId } = toolCtx;
+  runningLoops.add(sessionId);
 
+  const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
+
+  // Coalesce streamed deltas into ~20 IPC events/sec (same as the builtin path).
+  const tokens = createDeltaBatcher((delta) => send("pi-agent:token", { sessionId, delta }));
+  const thoughts = createDeltaBatcher((delta) => send("pi-agent:thought", { sessionId, delta }));
+
+  // Route the loop's raw pi-agent:* events through the delta batchers, then out.
+  const loopSend = (channel: string, evtPayload: Record<string, unknown>) => {
+    if (channel === "pi-agent:token" && typeof evtPayload.delta === "string") { tokens.push(evtPayload.delta); return; }
+    if (channel === "pi-agent:thought" && typeof evtPayload.delta === "string") { thoughts.push(evtPayload.delta); return; }
+    if (channel === "pi-agent:done" || channel === "pi-agent:error") { tokens.flush(); thoughts.flush(); }
+    if (channel === "pi-agent:plan-note" && typeof evtPayload.noteId === "string") {
+      try { q.updatePiSession(ctx.db, sessionId, { planNoteId: evtPayload.noteId, updatedAt: ts() }); } catch { /* non-critical */ }
+    }
+    send(channel, { sessionId, ...evtPayload });
+  };
+
+  const req = {
+    message: payload.message,
+    threadId: sessionId,
+    projectId: payload.projectId,
+    workspaceId: payload.workspaceId,
+    history: [],
+    personality: payload.personality ?? "helpful",
+    images: payload.images,
+    config: { provider: "openai", baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
+  };
+
+  try {
+    await runCordisCodingLoop({
+      db: ctx.db,
+      req: req as never,
+      workspacePath: ctx.workspacePath,
+      sessionId,
+      cwd: toolCtx.cwd,
+      systemPrompt,
+      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: "openai" },
+      mode,
+      autoApprove: payload.autoApprove,
+      sandboxMode: payload.sandboxMode,
+      send: loopSend,
+      getWin: toolCtx.getWin,
+      signal: session.abortCtrl.signal,
+      questions: {
+        send: (channel, p) => send(channel, { sessionId, ...p }),
+        registerPending: (requestId, resolve) => {
+          cordisPendingQuestions.set(requestId, resolve);
+          return () => cordisPendingQuestions.delete(requestId);
+        },
+      },
+      approvals: {
+        registerPending: (callId, resolve) => {
+          cordisPendingApprovals.set(callId, resolve);
+          return () => cordisPendingApprovals.delete(callId);
+        },
+      },
+      doomLoop: {
+        registerPending: (callId, resolve) => {
+          cordisPendingDoomLoop.set(callId, resolve);
+          return () => cordisPendingDoomLoop.delete(callId);
+        },
+      },
+    });
+  } catch (err) {
+    tokens.flush();
+    thoughts.flush();
+    if (!session.abortCtrl.signal.aborted) {
+      send("pi-agent:error", { sessionId, error: (err as Error)?.message ?? String(err) });
+    }
+  } finally {
+    runningLoops.delete(sessionId);
+    tokens.flush();
+    thoughts.flush();
+  }
+}
+
+// ── Registration ───────────────────────────────────────────────────────────────
 export function registerPiAgentHandler(
   ctx: DbContext,
 ): void {
@@ -393,7 +522,17 @@ export function registerPiAgentHandler(
              config: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey } },
     };
 
-    await runSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send);
+    await runSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send, {
+      message: prompt,
+      images: req.attachments,
+      projectId,
+      workspaceId,
+      autoApprove: llmConfig.autoApprove !== false,
+      // Confine fs mutations to cwd for every coding session. automation-dev's
+      // no-shell restriction comes from its file-only persona toolset (no bash),
+      // not the fs sandbox mode — so it still needs workspace-write to edit files.
+      sandboxMode: "workspace-write",
+    });
   });
 
   // ── pi-agent:approve-plan ─────────────────────────────────────────────────
@@ -506,7 +645,13 @@ export function registerPiAgentHandler(
              config: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey } },
     };
 
-    await runSession(session, systemPrompt, llmConfig, "execute", toolCtx, ctx, send);
+    await runSession(session, systemPrompt, llmConfig, "execute", toolCtx, ctx, send, {
+      message: `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_note if needed.`,
+      projectId,
+      workspaceId,
+      autoApprove: llmConfig.autoApprove !== false,
+      sandboxMode: "workspace-write",
+    });
   });
 
   // ── pi-agent:compact-now ─────────────────────────────────────────────────
@@ -593,6 +738,13 @@ export function registerPiAgentHandler(
   // ── pi-agent:respond-tool ──────────────────────────────────────────────────
   registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command" }) => {
     void sessionId;
+    // Cordis engine turn (default): resolve the loop's approval adapter.
+    const cordisPending = cordisPendingApprovals.get(callId);
+    if (cordisPending) {
+      cordisPending({ approved, grant: approved ? grant : undefined });
+      cordisPendingApprovals.delete(callId);
+      return;
+    }
     const pending = pendingApprovals.get(callId);
     if (pending) {
       pending.resolve({ approved, grant: approved ? grant : undefined });
@@ -605,6 +757,12 @@ export function registerPiAgentHandler(
   // the session stops re-pausing; deny → the loop halts with an error.
   registerIpcOn("pi-agent:respond-doom-loop", (_event, { sessionId, callId, allow }: { sessionId: string; callId: string; allow: boolean }) => {
     void sessionId;
+    const cordisPending = cordisPendingDoomLoop.get(callId);
+    if (cordisPending) {
+      cordisPending(allow);
+      cordisPendingDoomLoop.delete(callId);
+      return;
+    }
     const pending = pendingDoomLoop.get(callId);
     if (pending) {
       pending.resolve(allow);
@@ -615,9 +773,15 @@ export function registerPiAgentHandler(
   // ── pi-agent:respond-questions ─────────────────────────────────────────────
   // Answers to a blocked ask_questions call. The formatted answer text is fed
   // back to the model as the tool result so it reasons over the answers in the
-  // same turn.
+  // same turn. (Cordis keys by requestId; builtin by callId — same map role.)
   registerIpcOn("pi-agent:respond-questions", (_event, { sessionId, callId, answers }: { sessionId: string; callId: string; answers: string }) => {
     void sessionId;
+    const cordisPending = cordisPendingQuestions.get(callId);
+    if (cordisPending) {
+      cordisPending(answers);
+      cordisPendingQuestions.delete(callId);
+      return;
+    }
     const pending = pendingQuestionAnswers.get(callId);
     if (pending) {
       pending.resolve(answers);

@@ -225,6 +225,20 @@ const FEATURES = [
       "Quick Access: Switch themes from Settings or the quick-settings popover, independent of accent and note font.",
     ],
   },
+  {
+    id: "v2.7.7-cordis-coding-engine",
+    version: "v2.7.7",
+    title: "New Coding Agent Engine",
+    category: "Agent",
+    description:
+      "The coding agent that edits your files and runs commands now runs on Cairn's next-generation Cordis runtime — the same engine already powering chat. Everything you rely on carries over, with resumable sessions and cleaner streaming.",
+    highlights: [
+      "Full Parity: Plan mode, per-tool approvals, the repeated-action safety pause, skills, and image attachments all work exactly as before.",
+      "Resumable Sessions: Conversations persist and resume across turns, so the agent remembers what it did earlier.",
+      "Auto-Compaction: Long sessions compact themselves automatically so the agent keeps working without running out of context.",
+      "Safe by Default: File edits are confined to your working folder, and a fallback engine stays available (CAIRN_ENGINE=builtin) while the new one settles in.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

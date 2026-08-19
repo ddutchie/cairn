@@ -174,6 +174,8 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       await mount(cairnQuestionsPlugin, {
         send: questions.send,
         registerPending: questions.registerPending,
+        // Coding renderer listens on pi-agent:ask-questions {sessionId,callId,questions}.
+        emitQuestions: (requestId: string, qs: unknown[]) => questions.send("pi-agent:ask-questions", { sessionId, callId: requestId, questions: qs }),
         signal,
       });
     }

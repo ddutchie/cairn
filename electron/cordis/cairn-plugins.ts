@@ -283,6 +283,13 @@ export interface CairnQuestionsConfig {
    * The IPC handler calls the stored resolver when the renderer answers.
    */
   registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void;
+  /**
+   * How to surface the question form to the renderer. Chat omits this and the
+   * plugin emits the `chat:tool-call` shape; the coding agent supplies one that
+   * emits `pi-agent:ask-questions` (its renderer listens on a different channel).
+   * Receives the requestId (echoed back on answer) + the questions.
+   */
+  emitQuestions?: (requestId: string, questions: CairnQuestionItem[]) => void;
   signal?: AbortSignal;
 }
 
@@ -308,7 +315,7 @@ interface UserQuestionsSeam {
  * dsh-tool-ask-user package.
  */
 export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig): void {
-  const { send, registerPending, signal } = config;
+  const { send, registerPending, emitQuestions, signal } = config;
   const uq = (ctx as unknown as { userQuestions?: UserQuestionsSeam }).userQuestions;
   if (!uq) return;
 
@@ -321,7 +328,13 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
       // remap to dsh's {question,header} fields: those are undefined here and
       // would render an empty, un-fillable form.)
       const questions = request.questions;
-      send("chat:tool-call", { tool: "ask_questions", label: `Asking ${questions.length} question${questions.length === 1 ? "" : "s"}`, callId: requestId, args: { questions } });
+      if (emitQuestions) {
+        // Coding path: emit on the pi-agent question channel (renderer-specific).
+        emitQuestions(requestId, questions);
+      } else {
+        // Chat path: the chat renderer picks up ask_questions as a tool-call.
+        send("chat:tool-call", { tool: "ask_questions", label: `Asking ${questions.length} question${questions.length === 1 ? "" : "s"}`, callId: requestId, args: { questions } });
+      }
 
       const answersText = await new Promise<string>((resolve) => {
         const dispose = registerPending(requestId, (text) => { dispose(); resolve(text); });
