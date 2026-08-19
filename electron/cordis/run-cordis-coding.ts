@@ -213,8 +213,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
         .map((s) => (s as { function?: { name: string } })?.function?.name ?? (s as { name?: string })?.name ?? "")
         .filter(Boolean)
         .sort();
-      console.log(`[cordis-coding] cwd=${cwd} sandbox=${sandboxMode} provider=${llmConfig.provider ?? "openai"} model=${llmConfig.model} baseUrl=${llmConfig.baseUrl} tools=${toolNames.length} [${toolNames.join(", ")}] skills=${skills.length}`);
-      if (toolNames.length === 0) console.error(`[cordis-coding] NO TOOLS REGISTERED — mountCodingStack + registerCairnTools produced 0 tools; check previous mount errors`);
+      if (toolNames.length === 0) console.error(`[cordis-coding] NO TOOLS REGISTERED — mountCodingStack + registerCairnTools produced 0 tools`);
     } catch (e) {
       console.error(`[cordis-coding] tools diagnostic failed:`, e);
     }
@@ -226,10 +225,6 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // gives the coding agent stateful, resumable multi-turn sessions WITHOUT
     // storing transcripts in Cairn's SQLite (the DB is for MCP/tool access).
     const attemptSessionId = SessionId(sessionId);
-    try {
-      const { getSessionRoot } = await import("./run-cordis-loop");
-      console.log(`[cordis-coding] session ${String(attemptSessionId)} will persist at ${(getSessionRoot as () => string)()}/${String(attemptSessionId)}.jsonl (cwd=${cwd})`);
-    } catch { /* ignore */ }
 
     // Route every pi-agent:* event to BOTH the renderer (frontend `send`) and a
     // terminal resolver so the turn promise settles on done/error. cairnCodingPlugin

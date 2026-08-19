@@ -25,7 +25,7 @@ export interface CachedConfig {
     contextLimit?: number;
     aiEnabled?: boolean;
     subagentsEnabled?: boolean;
-    /** Chat/agent engine: "builtin" (default, Cairn's own loop) or "cordis" (dsh agent loop). */
+    /** @deprecated — engine is now always cordis; this field is ignored. Remove in Phase 2. */
     engine?: "builtin" | "cordis";
     // Max output tokens: Auto (default) sends a generous 32K cap (bounded by the
     // model's declared output limit) so the model can finish naturally; a manual

@@ -367,6 +367,9 @@ export function registerChatHandler(ctx: DbContext): void {
     // mode routes through cordis too — the model spawns dsh subagents via the
     // subagent tool (cairn-subagent maps them to chat:subagent* IPC).
     const engine = process.env.CAIRN_ENGINE === "builtin" ? "builtin" : "cordis";
+    if (process.env.CAIRN_ENGINE === "builtin") {
+      console.warn("[chat] builtin engine is deprecated and will be removed — CAIRN_ENGINE=builtin is for rollback only");
+    }
     if (engine === "cordis" && provider !== "localllm") {
       const { runCordisLoop } = await import("../cordis/run-cordis-loop");
       const tokens = createDeltaBatcher((delta) => send("chat:token", { delta }));

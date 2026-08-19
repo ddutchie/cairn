@@ -180,6 +180,9 @@ async function runSession(
   if (cordis && engine === "cordis" && llmConfig.provider !== "localllm") {
     return runCordisCodingSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send, cordis);
   }
+  if (process.env.CAIRN_ENGINE === "builtin") {
+    console.warn("[pi-agent] builtin engine is deprecated and will be removed — CAIRN_ENGINE=builtin is for rollback only");
+  }
 
   runningLoops.add(sessionId);
 
@@ -316,7 +319,6 @@ async function runCordisCodingSession(
   };
 
   try {
-    console.log(`[pi-agent/cordis] session=${sessionId} cwd=${toolCtx.cwd} provider=${llmConfig.provider ?? "openai"} model=${llmConfig.model} baseUrl=${llmConfig.baseUrl} mode=${mode} autoApprove=${payload.autoApprove} sandbox=${payload.sandboxMode}`);
     await runCordisCodingLoop({
       db: ctx.db,
       req: req as never,
@@ -844,10 +846,9 @@ export function registerPiAgentHandler(
                   const stat = fs.statSync(p);
                   if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
                   else fs.unlinkSync(p);
-                  console.log(`[pi-agent/clear] deleted ${p}`);
                   deleted = true;
                 }
-              } catch (e) { console.warn(`[pi-agent/clear] failed to delete ${p}:`, e); }
+              } catch { /* ignore */ }
             }
           }
         } catch { /* root not readable */ }
@@ -859,27 +860,13 @@ export function registerPiAgentHandler(
               const stat = fs.statSync(p);
               if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
               else fs.unlinkSync(p);
-              console.log(`[pi-agent/clear] deleted ${p}`);
               deleted = true;
             }
           } catch { /* ignore */ }
         }
       }
       if (!deleted) {
-        for (const root of roots) {
-          try {
-            const entries = fs.readdirSync(root).slice(0, 20);
-            console.log(`[pi-agent/clear] root ${root} contains: ${entries.join(", ") || "(empty/missing)"}`);
-            // Also list one level deeper for the first project dir so we can see session ids inside it.
-            for (const proj of entries.slice(0, 3)) {
-              try {
-                const sub = fs.readdirSync(path.join(root, proj)).slice(0, 10);
-                console.log(`[pi-agent/clear]   ${proj}/ contains: ${sub.join(", ")}`);
-              } catch { /* ignore */ }
-            }
-          } catch { console.log(`[pi-agent/clear] root ${root} not readable`); }
-        }
-        console.log(`[pi-agent/clear] no dsh file found for ${sessionId} in ${roots.join(" | ")}`);
+        // No dsh file found — not an error, the session may have been in-memory only or already cleared.
       }
       // Also drop any in-memory dsh agent that still holds the old session.
       getContext().then((c: unknown) => {
@@ -890,18 +877,17 @@ export function registerPiAgentHandler(
         for (const k of ["delete", "remove", "dispose", "destroy"] as const) {
           try {
             const fn = (maybeAgents as Record<string, unknown>)?.[k] as ((id: unknown) => unknown) | undefined;
-            if (typeof fn === "function") { fn.call(maybeAgents, sid); console.log(`[pi-agent/clear] dropped in-memory dsh agent via agents.${k}(${sessionId})`); removed = true; break; }
+            if (typeof fn === "function") { fn.call(maybeAgents, sid); break; }
           } catch { /* ignore */ }
         }
         if (!removed) {
           try {
             const ag = maybeAgents?.get?.(sid) as { dispose?: () => void } | undefined;
-            if (ag?.dispose) { ag.dispose(); console.log(`[pi-agent/clear] disposed in-memory dsh agent ${sessionId} via get().dispose()`); }
-            else console.log(`[pi-agent/clear] no in-memory dsh agent found for ${sessionId} (or no delete/remove API)`);
+            ag?.dispose?.();
           } catch { /* ignore */ }
         }
       }).catch(() => {});
-    } catch (e) { console.warn(`[pi-agent/clear] Cordis clear failed:`, e); }
+    } catch { /* best-effort */ }
   });
 
   // ── pi-agent:destroy ──────────────────────────────────────────────────────
