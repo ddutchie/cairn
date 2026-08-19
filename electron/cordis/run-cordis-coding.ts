@@ -30,6 +30,7 @@ import {
   cairnQuestionsPlugin,
   cairnSystemPromptPlugin,
   cairnPlanModePlugin,
+  cairnApprovalPlugin,
   CAIRN_DB,
 } from "./cairn-plugins";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
@@ -47,12 +48,22 @@ export interface RunCordisCodingOptions {
   systemPrompt: string;
   llmConfig: LLMConfig;
   mode: "plan" | "execute";
+  /** When false, mutating tools require user confirmation before running. Default true. */
+  autoApprove?: boolean;
   /** Emit a pi-agent:* IPC event (sessionId NOT yet tagged by the caller). */
   send: (channel: string, payload: Record<string, unknown>) => void;
   /** Interactive questions (ask_questions) adapter for the coding session. */
   questions?: {
     send: (channel: string, payload: Record<string, unknown>) => void;
     registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void;
+  };
+  /**
+   * Tool-approval adapter (HITL). registerPending stores a resolver keyed by
+   * callId that the pi-agent:respond-tool IPC handler invokes with the decision.
+   * Required for autoApprove:false; omitted → autoApprove is forced on.
+   */
+  approvals?: {
+    registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void) => () => void;
   };
   getWin?: () => Electron.BrowserWindow | null;
   signal?: AbortSignal;
@@ -66,7 +77,10 @@ export interface RunCordisCodingResult {
 
 export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise<RunCordisCodingResult> {
   const ctx = await getContext();
-  const { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, getWin, signal } = opts;
+  const { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, approvals, getWin, signal } = opts;
+  // autoApprove defaults ON; forced ON if no approvals adapter was supplied
+  // (no way to prompt → don't block on an approval that can never resolve).
+  const autoApprove = opts.autoApprove !== false ? true : (approvals ? false : true);
 
   // Pick the wire protocol the same way chat + the built-in loop do.
   const transport = await resolveTransport(llmConfig.baseUrl, llmConfig.apiKey);
@@ -112,6 +126,16 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     await mount(cairnSystemPromptPlugin, { systemText: systemPrompt });
     // Plan-mode read-only gate (denies mutating tools while plan mode is active).
     await mount(cairnPlanModePlugin, { active: mode === "plan" });
+    // HITL tool approval (no-op when autoApprove is on).
+    if (!autoApprove && approvals) {
+      await mount(cairnApprovalPlugin, {
+        autoApprove,
+        sessionId,
+        send,
+        registerPending: approvals.registerPending,
+        signal,
+      });
+    }
     if (questions) {
       await mount(cairnQuestionsPlugin, {
         send: questions.send,

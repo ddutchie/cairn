@@ -22,6 +22,7 @@ import { apply as spawnProviderApply, inject as spawnProviderInject, name as spa
 import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolSubagentName } from "@deepseek-ai/dsh-tool-subagent";
 import type { Database } from "better-sqlite3";
 import JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
+import approvalService from "@deepseek-ai/dsh-user-approval";
 import path from "path";
 
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
@@ -105,6 +106,11 @@ export async function getContext(): Promise<Context> {
     // calls ctx.userQuestions.ask(); cairnQuestionsPlugin registers the provider
     // that bridges ask() ⇄ the renderer form. Mounted before the agent loop.
     await ctx.plugin(userQuestionsService);
+    // dsh approval seam (ctx.approval): tools/pre-execute `ask` decisions route
+    // here; cairnApprovalPlugin registers the answerer that bridges to Cairn's
+    // renderer confirm UI. Policy 'ask' — the per-turn approval guard decides
+    // WHICH tools ask (only when autoApprove is off).
+    await ctx.plugin(approvalService, { policy: "ask" });
     // dsh session persistence (jsonl). Session/chat transcripts live HERE, not in
     // Cairn's SQLite (the DB is for MCP/tool access). Enables stateful, resumable
     // coding sessions via ctx.agents.resume. Self-contained backend (owns its own

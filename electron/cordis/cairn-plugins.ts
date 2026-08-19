@@ -657,3 +657,100 @@ export function cairnPlanModePlugin(ctx: Context, config: CairnPlanModeConfig): 
   );
   return unsub;
 }
+
+// ── cairn-approval ────────────────────────────────────────────────────────────
+// Human-in-the-loop tool approval for the coding agent (Phase 1.5 step 2e).
+// When autoApprove is OFF, mutating tools must be confirmed by the user before
+// they run. dsh's approval seam (ctx.approval) + tools pipeline provide the
+// mechanism: a `tools/pre-execute` handler returns {kind:'ask'} for a mutating
+// tool, the pipeline calls ctx.approval.request, and this plugin's answerer
+// bridges that to Cairn's renderer confirm UI (pi-agent:tool-confirm-required ⇄
+// pi-agent:respond-tool). Read-only tools always pass (never ask).
+
+/** Tools that never need approval (read-only / safe). */
+const APPROVAL_SAFE = new Set<string>([
+  "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
+  "get_active_context", "get_project_context_pack", "get_user_writing_style",
+  "get_note", "search_notes", "search_notes_semantic", "search_tasks_semantic",
+  "get_task", "search_tasks", "list_ready_tasks", "list_overdue_tasks",
+  "list_tasks_due", "list_templates", "get_neighbors", "get_idea_flow",
+  "get_idea_flow_rules",
+  "codebase_search_symbols", "codebase_get_symbol_definition",
+  "codebase_get_references", "codebase_get_file_symbols",
+  "ask_questions", "skill",
+]);
+
+export interface CairnApprovalConfig {
+  /** When true, every tool runs without a confirm prompt (no asks). */
+  autoApprove: boolean;
+  /** The caller's pi sessionId — scopes the confirm IPC. */
+  sessionId: string;
+  /** Emit a `pi-agent:*` IPC event (sessionId NOT yet tagged). */
+  send: (channel: string, payload: Record<string, unknown>) => void;
+  /**
+   * Register a resolver for one pending approval, keyed by callId; returns a
+   * disposer. The pi-agent:respond-tool IPC handler invokes the resolver with
+   * the user's decision.
+   */
+  registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void) => () => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Bridge dsh's approval seam to Cairn's renderer confirm UI. Mounted per turn.
+ * No-op when autoApprove is true. Otherwise:
+ *   1. tools/pre-execute → {kind:'ask'} for any non-safe tool (mutating).
+ *   2. approval/request answerer → emit pi-agent:tool-confirm-required, block on
+ *      pi-agent:respond-tool, map to allowed-once / rejected.
+ * A session-grant (grant:'session') is remembered so the same tool isn't
+ * re-prompted for the rest of the turn.
+ */
+export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): (() => void) | void {
+  const { autoApprove, sessionId, send, registerPending, signal } = config;
+  if (autoApprove) return;
+
+  const disposers: Array<() => void> = [];
+  // Tools the user granted for the whole session — skip re-prompting.
+  const sessionGranted = new Set<string>();
+
+  // 1) Ask-trigger: mutating tools route to the approval seam.
+  const unsubPre = (ctx as unknown as { on: (ev: string, fn: (...args: unknown[]) => unknown) => () => void }).on(
+    "tools/pre-execute",
+    (...args: unknown[]) => {
+      const exec = args[0] as { name?: string } | undefined;
+      const next = args[1] as (() => Promise<unknown>) | undefined;
+      const name = exec?.name;
+      if (typeof name === "string" && !APPROVAL_SAFE.has(name) && !sessionGranted.has(name)) {
+        return Promise.resolve({ kind: "ask", reason: `"${name}" needs your approval before it runs.` });
+      }
+      return next ? next() : undefined;
+    },
+  );
+  disposers.push(unsubPre);
+
+  // 2) Answerer: bridge the ask to the renderer confirm UI.
+  const unsubAns = (ctx as unknown as { on: (ev: string, fn: (...args: unknown[]) => unknown) => () => void }).on(
+    "approval/request",
+    (...args: unknown[]) => {
+      const req = args[0] as { toolName?: string; callId?: string; reason?: string; signal?: AbortSignal } | undefined;
+      const toolName = req?.toolName ?? "tool";
+      const callId = req?.callId ?? `approve-${newId()}`;
+      if (sessionGranted.has(toolName)) return Promise.resolve("allowed-once");
+      send("pi-agent:tool-confirm-required", { sessionId, name: toolName, label: toolName, callId });
+      return new Promise<string>((resolve) => {
+        const dispose = registerPending(callId, (decision) => {
+          dispose();
+          if (decision.approved && decision.grant === "session") sessionGranted.add(toolName);
+          resolve(decision.approved ? "allowed-once" : "rejected");
+        });
+        const onAbort = () => { dispose(); resolve("cancelled"); };
+        if (req?.signal?.aborted || signal?.aborted) onAbort();
+        req?.signal?.addEventListener?.("abort", onAbort, { once: true });
+        signal?.addEventListener?.("abort", onAbort, { once: true });
+      });
+    },
+  );
+  disposers.push(unsubAns);
+
+  return () => { for (const d of disposers) { try { d(); } catch { /* noop */ } } };
+}

@@ -160,4 +160,50 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
 
     db.close();
   }, 120000);
+
+  it("HITL approval: mutating tool asks, decision is honored (auto-approve confirm)", async () => {
+    if (process.env.CORDIS_LIVE !== "1") return;
+    if (!process.env.CORDIS_DUMMY_KEY) return;
+    process.env.CORDIS_DUMMY_KEY = "local";
+
+    const db = makeDb();
+    const sessionId = `pi-approve-${Date.now()}`;
+    const target = `/tmp/cordis-approve-${Date.now()}.txt`;
+    const sent: SentEvent[] = [];
+    const pending = new Map<string, (d: { approved: boolean; grant?: "session" | "command" }) => void>();
+
+    const send = (channel: string, payload: Record<string, unknown>) => {
+      sent.push({ channel, payload });
+      // Simulate the renderer approving the confirm dialog.
+      if (channel === "pi-agent:tool-confirm-required") {
+        const callId = String(payload.callId);
+        setTimeout(() => pending.get(callId)?.({ approved: true }), 50);
+      }
+    };
+
+    const r = await runCordisCodingLoop({
+      db, req: { threadId: sessionId, workspaceId: "ws", projectId: undefined, message: `Create a file ${target} with content 'approved-ok' using the write tool.`, history: [], personality: "helpful", config: { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" } } as never,
+      workspacePath: "/tmp", sessionId, cwd: "/tmp",
+      systemPrompt: "You are a coding agent. Use the write tool to create the file.",
+      llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
+      mode: "execute",
+      autoApprove: false,
+      send,
+      approvals: {
+        registerPending: (callId, resolve) => { pending.set(callId, resolve); return () => pending.delete(callId); },
+      },
+    });
+    expect(r.ok).toBe(true);
+
+    // A confirm was requested for the write tool.
+    const confirms = sent.filter((s) => s.channel === "pi-agent:tool-confirm-required");
+    console.log("2E CONFIRMS:", JSON.stringify(confirms.map((c) => c.payload.name)));
+    expect(confirms.length).toBeGreaterThanOrEqual(1);
+    // The approved write actually ran → the file exists.
+    const fs = await import("fs");
+    expect(fs.existsSync(target)).toBe(true);
+    fs.rmSync(target, { force: true });
+
+    db.close();
+  }, 120000);
 });
