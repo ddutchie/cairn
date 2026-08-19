@@ -34,7 +34,8 @@ import {
   cairnDoomLoopPlugin,
   CAIRN_DB,
 } from "./cairn-plugins";
-import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
+import { registerCairnTools, registerExternalCairnTools, registerSkillTool, discoverCodingSkills } from "./cairn-tools";
+import { renderSkillsXml } from "../lib/skills";
 import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
@@ -132,7 +133,13 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       model: llmConfig.model,
       baseUrl: llmConfig.baseUrl,
     });
-    await mount(cairnSystemPromptPlugin, { systemText: systemPrompt });
+    // Skills (Phase 1.5 step 2i): discover SKILL.md metadata under cwd once per
+    // turn, inject <available_skills> into the system prompt (name+description
+    // only — cheap), and register the `skill` tool that loads a body on demand.
+    const skills = discoverCodingSkills(cwd);
+    const skillsXml = renderSkillsXml(skills);
+    const systemText = skillsXml ? `${systemPrompt}\n\n${skillsXml}` : systemPrompt;
+    await mount(cairnSystemPromptPlugin, { systemText });
     // Plan-mode read-only gate (denies mutating tools while plan mode is active).
     await mount(cairnPlanModePlugin, { active: mode === "plan" });
     // HITL tool approval (no-op when autoApprove is on).
@@ -171,6 +178,8 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       projectId: req.projectId ?? "",
     });
     toolDisposers.push(...externalDisposers);
+    // The `skill` tool (loads a SKILL.md body on demand). No-op when no skills.
+    toolDisposers.push(...registerSkillTool(ctx, skills));
 
     const selection = { provider: "cairn", model: llmConfig.model };
     // Stable dsh session id = the caller's pi sessionId. With dsh jsonl

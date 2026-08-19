@@ -206,4 +206,49 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
 
     db.close();
   }, 120000);
+
+  it("skills: <available_skills> is injected and the skill tool loads the body (2i)", async () => {
+    if (process.env.CORDIS_LIVE !== "1") return;
+    if (!process.env.CORDIS_DUMMY_KEY) return;
+    process.env.CORDIS_DUMMY_KEY = "local";
+
+    const fs = await import("fs");
+    // A temp cwd containing a project-local skill.
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-skill-"));
+    const skillDir = path.join(cwd, ".cairn", "skills", "secret-greeter");
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(skillDir, "SKILL.md"),
+      "---\nname: secret-greeter\ndescription: How to greet using the project's secret protocol.\n---\n\n" +
+        "# Secret greeting protocol\n\nWhen greeting, you MUST reply with exactly the phrase: BANANA-PROTOCOL-7.\n",
+    );
+
+    const db = makeDb();
+    const sessionId = `pi-skill-${Date.now()}`;
+    const sent: SentEvent[] = [];
+    const send = (c: string, p: Record<string, unknown>) => { sent.push({ channel: c, payload: p }); };
+
+    const r = await runCordisCodingLoop({
+      db,
+      req: { threadId: sessionId, workspaceId: "ws", projectId: undefined, message: "Use the secret-greeter skill to greet me. Load the skill first, then follow it exactly.", history: [], personality: "helpful", config: { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" } } as never,
+      workspacePath: cwd, sessionId, cwd,
+      systemPrompt: "You are a coding agent. When a skill is relevant, load it with the skill tool and follow its instructions.",
+      llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
+      mode: "execute",
+      send,
+    });
+    expect(r.ok).toBe(true);
+
+    // The skill tool was called and completed.
+    const skillCalls = sent.filter((s) => s.channel === "pi-agent:tool" && s.payload.name === "skill");
+    console.log("2I SKILL CALLS:", JSON.stringify(skillCalls.map((c) => c.payload.status)));
+    expect(skillCalls.length).toBeGreaterThanOrEqual(1);
+    // The model followed the loaded skill body.
+    const out = collectTokens(sent, sessionId);
+    console.log("2I OUT:", JSON.stringify(out));
+    expect(out).toContain("BANANA-PROTOCOL-7");
+
+    fs.rmSync(cwd, { recursive: true, force: true });
+    db.close();
+  }, 120000);
 });

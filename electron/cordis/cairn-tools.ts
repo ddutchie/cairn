@@ -16,6 +16,7 @@ import { executeTool } from "../ipc/chat-executor";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { Database } from "better-sqlite3";
+import { discoverSkills, loadSkill, type SkillMeta } from "../lib/skills";
 
 /** Author-facing value schema node (dsh DSL subset we generate). */
 type VNode =
@@ -165,6 +166,69 @@ export function registerCairnTools(ctx: import("@deepseek-ai/cordis").Context, e
     }
   }
   return disposers;
+}
+
+// ── cairn-skills ─────────────────────────────────────────────────────────────
+// Register the `skill` tool on ctx.tools (Phase 1.5 step 2i). Cairn's SKILL.md
+// discovery/loading (electron/lib/skills.ts) is engine-agnostic pure-fs, so this
+// is a thin dsh wrapper over loadSkill — the Cordis equivalent of the built-in
+// coding-tools/skill.ts. The <available_skills> XML is injected into the coding
+// system prompt separately (see run-cordis-coding.ts via renderSkillsXml).
+
+/**
+ * Register the `skill` tool on `ctx`. `skills` is the metadata list discovered
+ * once per turn (discoverSkills(cwd)); the tool loads a skill's full body on
+ * demand and returns it (plus any bundled-resource paths the agent can `read`).
+ * Returns a disposer. No-op (returns []) when no skills were discovered.
+ */
+export function registerSkillTool(ctx: import("@deepseek-ai/cordis").Context, skills: SkillMeta[]): Array<() => void> {
+  if (skills.length === 0) return [];
+  const names = skills.map((s) => s.name);
+  const nameList = names.length > 0 ? names.join(", ") : "(none discovered)";
+  try {
+    const tool = defineTool({
+      name: "skill",
+      description:
+        "Load the full instructions for a skill listed in <available_skills>. " +
+        "Call this when a skill's description matches the current task. " +
+        "The skill body is returned so you can follow its workflow. " +
+        `Available skills: ${nameList}.`,
+      parameters: {
+        name: { type: "string", required: true, description: "The skill name to load (must match a <name> in <available_skills>)." },
+      } as never,
+      output: {
+        schema: { type: "json" },
+        render: (_args, value) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
+      },
+      async execute(args) {
+        const name = (args as { name?: string }).name ?? "";
+        const content = loadSkill(name, skills);
+        if (!content) {
+          const available = skills.map((s) => s.name).join(", ");
+          return { error: `Skill "${name}" not found. Available skills: ${available || "none"}.` } as never;
+        }
+        const resourceSection =
+          content.resources.length > 0
+            ? `\n\n## Bundled resources\nThe following files are co-located with this skill and can be read with the \`read\` tool:\n${content.resources.map((r) => `- ${r} (full path: ${content.dirPath}/${r})`).join("\n")}`
+            : "";
+        return `## Skill: ${content.name}\n\n${content.body}${resourceSection}` as never;
+      },
+    });
+    return [ctx.tools.register(tool)];
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[cordis] failed to register skill tool:", err);
+    return [];
+  }
+}
+
+/** Discover skills for a cwd (thin re-export so the loop imports one module). */
+export function discoverCodingSkills(cwd: string): SkillMeta[] {
+  try {
+    return discoverSkills(cwd);
+  } catch {
+    return [];
+  }
 }
 
 // ── cairn-external-tools ────────────────────────────────────────────────────
