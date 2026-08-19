@@ -111,9 +111,108 @@ Sub-steps (roughly in order):
 - [x] **FINAL wiring — DONE.** `runSession` (the shared runner both `pi-agent:prompt` and `pi-agent:approve-plan` call) now branches on `CAIRN_ENGINE`: `cordis` (default) → `runCordisCodingSession` → `runCordisCodingLoop`; `builtin` → the frozen `runAgentLoop`. Both entry points pass a `CordisTurnPayload` (message + attachments + projectId/workspaceId + autoApprove + `sandboxMode:"workspace-write"`). Module-level pending maps (`cordisPendingApprovals` / `cordisPendingDoomLoop` / `cordisPendingQuestions`) are populated by the loop's adapters and resolved by the existing `pi-agent:respond-tool` / `respond-doom-loop` / `respond-questions` handlers (each checks the cordis map first, then falls back to the builtin map). Streamed deltas run through the same `createDeltaBatcher`; `plan-note` persists the PRD id; `runningLoops`/`is-running`/`abort` stay Cairn-side (the loop takes `session.abortCtrl.signal`). Questions channel: chat emits `chat:tool-call`; the coding path passes an `emitQuestions` strategy so `cairnQuestionsPlugin` emits `pi-agent:ask-questions {sessionId,callId,questions}` (the coding renderer's channel). automation-dev keeps `workspace-write` (its no-shell restriction comes from the file-only persona toolset, not the fs sandbox). **The coding default is flipped** — cordis is default; `CAIRN_ENGINE=builtin` is the escape hatch (same as chat). Type-check + full electron suite green (90 files / 1178); bundle builds; all 8 live coding capabilities pass in isolation.
 
 ### Phase 2 — Delete the old loops (parity gate met)
-- [ ] Once BOTH chat AND coding parity are proven in production, **delete** `chat-loop.ts`, `chat-subagent-loop.ts`, `pi-agent-loop.ts`, and the toggle.
-- [ ] Also port the small remaining built-in callers: `user-style-handlers.ts` (`runToolLoop`) and the automation heartbeat runner.
-- [ ] Retire the old loops and their IPC handlers.
+
+> **Goal:** remove every line of the frozen builtin agent loop so the Cordis path is the only path. No dead code, no dual pending-maps, no `CAIRN_ENGINE` toggle, no `pi_agent_llm_history` table writes. The app ships smaller, the IPC surface is engine-agnostic, and the next contributor never has to ask "which loop am I in?"
+
+#### Gating — do not start until the flipped default has soaked
+
+| Gate | How to verify |
+|---|---|
+| Chat + coding Cordis defaults have shipped one full release (`v2.7.7`) with no `CAIRN_ENGINE=builtin` rollback | Release notes + support channel silence |
+| No P1/P2 filed against Cordis streaming, approvals, doom-loop, skills, sandbox, attachments, compaction, or session resume | GitHub issues filtered `label:cordis` |
+| Live suite (`coding-agent.live.test.ts` 8 tests) passes on CI with `CORDIS_LIVE=1` for 3 consecutive runs | CI workflow `cordis-live` |
+| `pi_agent_llm_history` row count stops growing in the wild (jsonl is the source of truth) | Telemetry or manual DB inspection |
+
+If any gate fails → fix on Cordis, do **not** re-freeze the builtin as the default. `CAIRN_ENGINE=builtin` stays as the escape hatch until Phase 2 deletes it.
+
+#### 2a — Deprecate (soft, no deletions — one PR, ~1 day)
+
+Announce the builtin as deprecated so the toggle's removal is not a surprise.
+
+- [ ] Add a `console.warn("[pi-agent] builtin engine is deprecated and will be removed — set CAIRN_ENGINE=builtin only for rollback")` at the top of the builtin branch in `electron/ipc/pi-agent.ts:179` and `electron/ipc/chat.ts:369`. Guard it with `process.env.CAIRN_ENGINE === "builtin"` so Cordis users never see it.
+- [ ] Update `electron/lib/config-cache.ts:28` docstring from `/** Chat/agent engine: "builtin" (default, …) or "cordis" */` to `/** @deprecated — engine is now always cordis; this field is ignored. Remove in Phase 2. */`.
+- [ ] Add a one-line note to `changelogs/vNEXT.md` "Deprecated: `CAIRN_ENGINE=builtin` fallback — will be removed next release."
+- [ ] No file deletions in this step — the toggle still works, but every builtin entry now self-identifies as deprecated.
+
+#### 2b — Port the last two builtin callers (one PR, ~2 days)
+
+These are the only production callers that still import `runToolLoop` directly. Port them **before** deleting the loop files so the tree stays green at every commit.
+
+| Caller | Current import | Cordis replacement | Notes |
+|---|---|---|---|
+| `electron/ipc/user-style-handlers.ts:21` `runToolLoop` | `user-style:generateStream` (Settings → Writing Style wizard) | `runCordisLoop` — small read-only wrapper (`autoApprove:true`, no sandbox, `toolsOverride` = `WRITING_STYLE_TOOLS` from the same file). Map `onToken/onUsage/emitToolCall` → the existing `user-style:*` IPC events. | Reuse the chat Cordis loop, not the coding one — it's a data-only task |
+| `electron/lib/heartbeat-runner.ts:23` `runToolLoop` | `runAutomation()` (scheduled automations) | `runCordisCodingLoop({ sandboxMode:"workspace-write", autoApprove:true })` with `makeApprovalGate` + `runScript/writeRunFile/deliverFile` bridged as extra tools. Heartbeat's file-only persona already excludes shell, so `workspace-write` is correct. | Keep the `automation:run` streaming + incremental `run-log.json` + `ARTIFACT_TOOLS` collection |
+
+After both ports pass `npm run type-check:all` + `npx vitest run electron` + a manual `user-style:generateStream` + `runAutomation` smoke test, the only remaining `runToolLoop`/`runAgentLoop` imports are in `chat.ts:17` and `pi-agent.ts:22` (the fallback branches) and in test files.
+
+#### 2c — Collapse the dual paths + delete the frozen files (one PR, ~2 days — the big delete)
+
+**Order matters** — collapse the branches first so the deletions have no dangling imports.
+
+1. **Collapse `electron/ipc/chat.ts`** — delete the `const engine = …CAIRN_ENGINE…` branch at `chat.ts:369`, the `import { runToolLoop } from "../lib/chat-loop"` at `chat.ts:17`, the `import { runDispatchLoop }` at `chat.ts:301`, and the entire builtin fallback block `chat.ts:444-471` (`let loopResult … await runToolLoop(…)`). The Cordis `if (provider !== "localllm") { const { runCordisLoop } … }` block becomes unconditional (keep the `localllm` early-return). The dynamic `import("../lib/compaction").generateSummary` at `chat.ts:106` inside `chat:compactThread` stays — it's a one-shot thread summariser, not the agent loop — or replace it with the Cordis summariser if desired.
+
+2. **Collapse `electron/ipc/pi-agent.ts`** — delete `import { runAgentLoop, pendingApprovals, … } from "../lib/pi-agent-loop"` at `pi-agent.ts:22`, `import { buildCompactionTransformer, compactNow } from "../lib/compaction"` at `pi-agent.ts:23`, the `CAIRN_ENGINE` branch at `pi-agent.ts:179-180`, the builtin body `pi-agent.ts:184-269` (`runningLoops.add → buildCompactionTransformer → runAgentLoop → onDone/onError`), and the builtin `pi-agent:compact-now` body at `pi-agent.ts:711 compactNow(…)`. Keep `runCordisCodingSession` and make it the sole body of `runSession`. Collapse the three `respond-*` handlers at `pi-agent.ts:739-789` to check only `cordisPending*` (delete the `pendingApprovals/DoomLoop/QuestionAnswers` fallback). Delete `cordisPending*` → rename to `pending*` since there is only one map now. Inline `toolCallSignature`/`DOOM_LOOP_THRESHOLD` from `pi-agent-loop.ts` into `electron/cordis/cairn-plugins.ts:26` (or `electron/cordis/cairn-attachment-store.ts` constants file) so `cairnDoomLoopPlugin` no longer imports from the deleted file.
+
+3. **Remove the `CAIRN_ENGINE` toggle itself** — delete `engine?: "builtin"|"cordis"` from `electron/lib/config-cache.ts:28-29` and the `configRecord.engine === "cordis"||"builtin"` handling at `config-cache.ts:160`. Grep for remaining `CAIRN_ENGINE` refs — only `changelogs/v2.7.7.md:5` ("`CAIRN_ENGINE=builtin` fallback") and `scripts/features.config.js:239` mention it as docs; leave the docs, delete the runtime check.
+
+4. **Delete the frozen source files** (now with zero importers):
+   ```
+   electron/lib/chat-loop.ts                        (~657 L)
+   electron/lib/chat-subagent-loop.ts               (~756 L)
+   electron/lib/pi-agent-loop.ts                    (~1300 L)
+   electron/lib/compaction.ts                       (~387 L)  # builtin; Cordis uses dsh-compaction-basic
+   electron/lib/coding-tools/subagent.ts            (spawn_subagent via runAgentLoop)
+   ```
+
+5. **Retire builtin-only tests** (keep shared + Cordis proofs):
+   ```
+   electron/lib/pi-agent-loop.test.ts               # runAgentLoop SSE/tool/approval/doom-loop/compaction
+   electron/lib/pi-agent-loop-tools.test.ts         # getAllToolDefs persona filtering
+   electron/lib/chat-loop-truncation.test.ts        # runToolLoop length guard
+   electron/lib/chat-agent-benchmark.test.ts        # runToolLoop vs runDispatchLoop bench
+   electron/lib/chat-write-recovery-benchmark.test.ts
+   electron/lib/chat-quality-scorer.test.ts         # scores via runToolLoop
+   electron/lib/chat-subagent-stream.test.ts        # subagent streaming (builtin)
+   electron/lib/coding-tools/subagent.test.ts       # nested runAgentLoop
+   electron/lib/heartbeat-runner.test.ts            # heartbeat over runToolLoop (replaced by Cordis heartbeat test)
+   electron/lib/user-style-generation.live.test.ts:25  # runToolLoop branch (port to Cordis if kept)
+   electron/lib/pi-agent-prompt-trim.test.ts:34     # live runToolLoop A/B (keep the offline buildPiAgentSystemPrompt asserts)
+   ```
+   **Keep:** `delta-batcher.test.ts`, `llm-stream.test.ts`, `llm-transport.test.ts`, `responses.test.ts`, `llm-sendable.test.ts`, `token-breakdown-images.test.ts` (shared), plus Cordis `compaction-retry.test.ts`, `doom-loop.test.ts`, `cairn-attachment-store.test.ts`.
+
+6. **Wire manual `/compact` on Cordis** — the current `pi-agent:compact-now` handler at `pi-agent.ts:660-726` is still the builtin `compactNow` stub. Replace it with `ctx.compaction.compactNow(agent, signal)` on the live agent handle. Options: expose the current agent from `runCordisCodingLoop` (return it), or add a `compactNow` callback that `runCordisCodingSession` registers while a turn is active. Auto-compaction already runs via `BasicCompactionEngine {auto:true}`; this step only adds the explicit user command.
+
+#### 2d — Prune dead DB plumbing (one PR, after the file deletions, ~1 day)
+
+Only `pi_agent_llm_history` is dead on Cordis — everything else stays.
+
+| Table / query | Verdict | Action |
+|---|---|---|
+| `pi_agent_llm_history` + `saveLlmHistory`/`getLlmHistory` (`electron/db/queries.ts:1798/1821`, `schema.ts:391`, `pi-agent.ts:70 scheduleHistorySave`) | **Dead** — Cordis logs to `dsh-session-persistence-jsonl` (`<userData>/sessions`); no `pi_agent_llm_history` writes on the Cordis path | Delete the table + queries + `scheduleHistorySave` + `pi-agent:restore-context`'s `getLlmHistory` branch (Cordis resumes via `ctx.sessionPersistence.inspect` → `ctx.agents.resume`). Add a one-time migration that drops the table if it exists. |
+| `pi_agent_sessions` + `pi_agent_messages` (`schema.ts:367-397`, `queries.ts:1633-1670`) | **Keep** — tab strip + `mode/plan_note_id/status` still read/written on Cordis; `mergeProject` repoint stays | Keep; only the `saveLlmHistory`-backed transcript inside the session is dead |
+| `pi_session_todos` (`schema.ts:1020`, `queries.ts:1768`) | **Keep** — todo dock | Keep |
+| `chat_threads` / `chat_messages` (`schema.ts:110-127`, `queries.ts:1024-1053`) | **Keep** — `cairn-session` plugin persists on Cordis; mobile/SSE/popout surface | Keep |
+| `shared/models/pdf-attach.ts` `buildAttachmentParts` | **Builtin wire-format only** — Cordis uses `CairnAttachmentStore` + `buildCordisUserContent` | Stop calling `buildAttachmentParts` on Cordis (already done); keep `validateAttachmentDataUrl`/`supportsPdfInput`/`pdfTokenEstimate`/`MAX_ATTACHMENT_BYTES` for renderer/mobile/token accounting |
+| `electron/preload.ts` `pi-agent:*` / `chat:*` channels | **Keep all** — contract is engine-agnostic | Keep; only the implementation behind them becomes cordis-only |
+
+#### Verification checklist (run after every Phase 2 PR)
+
+```
+npm run type-check:all          # no dangling imports from deleted files
+npm run compile                 # esbuild bundles without NODE_BUILTINS errors
+npx vitest run electron         # shared + Cordis suites green (expect ~75 files, not 90)
+CORDIS_LIVE=1 npx vitest run electron/cordis/coding-agent.live.test.ts  # 8 live capabilities still pass
+# Manual smoke:
+#   chat:stream with an image attachment → model describes it
+#   pi-agent:prompt in plan mode → read-only gate holds
+#   pi-agent:prompt with a mutating tool → approval dialog fires
+#   user-style:generateStream → style guide streams back
+#   heartbeat runAutomation → data tools only, no shell
+```
+
+#### Rollback
+
+There is no rollback to builtin after Phase 2 deletes the files. If a Cordis regression is found post-delete, fix it on Cordis — the builtin code is gone. This is why the soak gate (Phase 2 header) is required before starting.
 
 ### Phase 3 — In-app user plugins (the big unlock, 3–6 weeks)
 Users write/install Cordis plugins inside Cairn.
@@ -175,13 +274,11 @@ Users write/install Cordis plugins inside Cairn.
 - The renderer question form must NOT be gated on `isLoading` (a blocking ask_questions pauses the turn mid-flight).
 - The `ask_questions` tool needs the Cordis-only description telling the model it BLOCKS and RETURNS answers, else the model writes a "fill in the form" sign-off and stops.
 
-**Next concrete steps — Phase 2 then Phase 3 kickoff.**
+**Next concrete steps — see Phase 2 above for the full deprecation/removal plan, then Phase 3 kickoff in §9.**
 
-**Phase 2 (delete the frozen builtin loops)** — do this once the flipped coding default has soaked in a release with no regressions:
-- Delete `electron/lib/chat-loop.ts`, `chat-subagent-loop.ts`, `pi-agent-loop.ts`, `compaction.ts` (builtin) and the `CAIRN_ENGINE==="builtin"` branches in `chat.ts` + `pi-agent.ts` (`runSession`'s builtin path + `runAgentLoop` import). Keep the cordis path only.
-- Port the two remaining builtin callers: `electron/ipc/user-style-handlers.ts` (uses `runToolLoop`) → a small `runCordisLoop` call; the automation heartbeat runner (`electron/lib/heartbeat-runner.ts`) → `runCordisCodingLoop` with `sandboxMode:"workspace-write"` + `autoApprove:true`.
-- Retire the now-dead builtin unit tests; keep the cordis live/unit proofs.
-- Move manual `/compact` off its builtin stub: on the cordis path, expose the live agent handle from `runCordisCodingLoop` (or add a `compactNow` callback) and call `ctx.compaction.compactNow(agent, signal)`; auto-compaction already runs.
+- **Immediate next:** Phase 2a — Deprecate (add `console.warn` on the builtin branch + mark `config-cache.ts:engine` as `@deprecated`). One PR, no deletions, keeps `CAIRN_ENGINE=builtin` working as the escape hatch while it self-identifies as deprecated.
+- **Then:** Phase 2b → 2c → 2d in order (port the two remaining callers → collapse the dual paths + delete the 5 frozen source files → prune `pi_agent_llm_history` + builtin-only tests → remove the toggle). Each phase has its own verification checklist — see Phase 2 above.
+- **Phase 3 kickoff** is in §9 (six-step bridge-plugin workstream: boot the in-process dsh host web stack behind `CAIRN_UI=dsh`, then `cairn-root-layout` → `cairn-toolview-*` → `cairn-persistence-bridge` → brand/theme → retire the IPC bridge). §9 lists the exact dsh packages, the arch note, and the slot names to occupy.
 
 **Phase 3 (in-app user plugins + dsh client/UI) — HOW TO START.** The full design + feasibility is in §9; the six-step bridge-plugin workstream is enumerated there. Concrete kickoff:
 1. **Spike the in-process host (§9 step 1, option A).** In `electron/main.ts` (after the workspace ctx is built) boot the dsh host web stack on the SHARED Cordis ctx: `dsh-host-webserver` (plain `node:http`) + `dsh-host-apiproxy` + `dsh-client-connection` + `frontend-static`, then `mainWindow.loadURL("http://127.0.0.1:<port>")` behind a `CAIRN_UI=dsh` flag (mirror the `CAIRN_ENGINE` gate so the current renderer stays default). Reference the dsh repo at `scratch/dsh-repo` (see §9 findings) and the arch note `2026-07-19-gui-layering-and-rpc-protocol.md`. Verify Electron's Node 22 satisfies dsh's `^22.19 || >=24` engine.
