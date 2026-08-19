@@ -25,6 +25,8 @@ export interface CachedConfig {
     contextLimit?: number;
     aiEnabled?: boolean;
     subagentsEnabled?: boolean;
+    /** Chat/agent engine: "builtin" (default, Cairn's own loop) or "cordis" (dsh agent loop). */
+    engine?: "builtin" | "cordis";
     // Max output tokens: Auto (default) sends a generous 32K cap (bounded by the
     // model's declared output limit) so the model can finish naturally; a manual
     // value is a deliberate cap. Persisted so main-process consumers (e.g. the
@@ -155,6 +157,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         contextLimit: typeof configRecord.contextLimit === "number" ? configRecord.contextLimit : current.aiConfig?.contextLimit,
         aiEnabled: typeof configRecord.aiEnabled === "boolean" ? configRecord.aiEnabled : current.aiConfig?.aiEnabled,
         subagentsEnabled: typeof configRecord.subagentsEnabled === "boolean" ? configRecord.subagentsEnabled : current.aiConfig?.subagentsEnabled,
+        engine: configRecord.engine === "cordis" || configRecord.engine === "builtin" ? configRecord.engine : current.aiConfig?.engine,
         maxOutputAuto: typeof configRecord.maxOutputAuto === "boolean" ? configRecord.maxOutputAuto : current.aiConfig?.maxOutputAuto,
         // Normalize the candidate through the same helper consumers use: only a
         // value resolveMaxOutputTokens honours (>= 1, floored) is persisted; an

@@ -1,0 +1,204 @@
+/**
+ * run-cordis-loop — drive the dsh agent loop (dsh-agent-loop) with Cairn's
+ * tools bridged on, using dsh's production `dsh-llm-pi-ai` multi-protocol
+ * adapter (openai-completions / openai-responses). Maps the resulting session
+ * events onto the same contract as electron/lib/chat-loop.ts `runToolLoop` so
+ * electron/ipc/chat.ts can swap engines behind a toggle.
+ */
+import { Context } from "@deepseek-ai/cordis";
+import sessionPlugin from "@deepseek-ai/dsh-session";
+import llmPlugin from "@deepseek-ai/dsh-llm";
+import systemPromptPlugin from "@deepseek-ai/dsh-system-prompt";
+import agentPlugin from "@deepseek-ai/dsh-agent";
+import toolsPlugin from "@deepseek-ai/dsh-tools";
+import agentLoopPlugin from "@deepseek-ai/dsh-agent-loop";
+import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
+import { installModelSelection } from "@deepseek-ai/dsh-agent";
+import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import type { Database } from "better-sqlite3";
+
+import { registerCairnTools } from "./cairn-tools";
+import type { ChatRequest } from "../lib/tools";
+import type { LLMConfig } from "../lib/llm";
+
+export interface RunCordisLoopResult {
+  exhausted: boolean;
+  content: string;
+  reasoning: string;
+  reasoningSummary?: string;
+  reasoningItems?: Array<Record<string, unknown>>;
+  reasoningField?: string;
+  reasoningModel?: string;
+}
+
+export interface RunCordisLoopOptions {
+  db: Database;
+  req: ChatRequest;
+  workspacePath: string;
+  llmConfig: LLMConfig;
+  onToken?: (delta: string) => void;
+  onThought?: (delta: string) => void;
+  onUsage?: (pt: number, ct: number, rt?: number, costUsd?: number, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
+  emitToolCall?: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void;
+  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void;
+  getWin?: () => Electron.BrowserWindow | null;
+  signal?: AbortSignal;
+}
+
+// ── Shared Cordis context + pi-ai adapter lifecycle ─────────────────────────
+let sharedCtx: Context | null = null;
+let contextReady: Promise<Context> | null = null;
+// The pi-ai provider route ("cairn") is registered once; its profile carries
+// the endpoint. Track the last config so a changed baseURL/model remounts it.
+let piAiDisposer: (() => void) | null = null;
+let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" } | null = null;
+
+async function getContext(): Promise<Context> {
+  if (sharedCtx) return sharedCtx;
+  if (contextReady) return contextReady;
+  contextReady = (async () => {
+    const ctx = new Context();
+    await ctx.plugin(sessionPlugin);
+    await ctx.plugin(llmPlugin);
+    await ctx.plugin(systemPromptPlugin, { persona: "" });
+    await ctx.plugin(agentPlugin);
+    await ctx.plugin(toolsPlugin, { mode: "native" });
+    await ctx.plugin(agentLoopPlugin, { agents: [] });
+    sharedCtx = ctx;
+    return ctx;
+  })();
+  return contextReady;
+}
+
+/**
+ * (Re)mount the pi-ai adapter for the current endpoint. The provider route
+ * "cairn" is registered once; if the endpoint/model changed, dispose the old
+ * route first (the pi-ai plugin owns a configurable-provider directory + route).
+ */
+async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" }): Promise<void> {
+  const same =
+    piAiDisposer &&
+    lastPiAiConfig &&
+    lastPiAiConfig.baseUrl === config.baseUrl &&
+    lastPiAiConfig.model === config.model &&
+    lastPiAiConfig.api === config.api;
+  if (same) return;
+
+  if (piAiDisposer) { try { piAiDisposer(); } catch { /* noop */ } }
+  piAiDisposer = null;
+
+  // pi-ai resolves credentials through an apiKeyEnv; the endpoint ignores auth
+  // for local endpoints, so surface a literal key when one is configured and a
+  // harmless placeholder otherwise (never sent meaningfully).
+  process.env.CAIRN_LLM_API_KEY = config.apiKey || "local";
+  const apiKeyEnv = "CAIRN_LLM_API_KEY";
+  const handle = ctx.plugin(
+    { name: llmPiAiName, inject: llmPiAiInject, apply: llmPiAiApply },
+    {
+      providers: {
+        cairn: {
+          api: config.api,
+          baseURL: config.baseUrl,
+          displayName: "Cairn",
+          models: [{ id: config.model, contextWindow: 262144, maxTokens: 32768 }],
+          apiKeyEnv,
+        },
+      },
+    },
+  );
+  await handle;
+  piAiDisposer = () => { handle.then((h) => { try { h.dispose(); } catch { /* noop */ } }, () => {}); };
+  lastPiAiConfig = config;
+}
+
+/** Collect final assistant text + reasoning + usage from new session events. */
+function collect(events: readonly SessionEvent[], firstSeq: number): { text: string; reasoning: string; pt: number; ct: number; rt: number } {
+  let text = "";
+  let reasoning = "";
+  let pt = 0, ct = 0, rt = 0;
+  let started = false;
+  for (const e of events) {
+    if (e.seq < firstSeq) continue;
+    if (e.type === "turn/start") { started = true; continue; }
+    if (!started) continue;
+    if (e.type === "assistant/chunk") {
+      const c = (e.data as { chunk?: { type?: string; text?: string; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }).chunk;
+      if (!c) continue;
+      if (c.type === "text-delta" && c.text) text += c.text;
+      if (c.type === "reasoning-delta" && c.text) reasoning += c.text;
+      if (c.type === "usage" && c.usage) {
+        pt = Math.max(pt, c.usage.inputTokens ?? 0);
+        ct += c.usage.outputTokens ?? 0;
+        rt += c.usage.reasoningTokens ?? 0;
+      }
+    }
+  }
+  return { text, reasoning, pt, ct, rt };
+}
+
+/**
+ * Run one chat turn through the dsh agent loop. Mirrors runToolLoop's external
+ * contract so electron/ipc/chat.ts can call either engine.
+ */
+export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCordisLoopResult> {
+  const ctx = await getContext();
+  const { db, req, workspacePath, llmConfig, signal } = opts;
+
+  // Use the responses protocol by default (dsh production adapter supports it);
+  // completions is available by flipping the api below.
+  await ensurePiAiAdapter(ctx, {
+    baseUrl: llmConfig.baseUrl,
+    model: llmConfig.model,
+    apiKey: llmConfig.apiKey,
+    api: "openai-responses",
+  });
+
+  const toolDisposers = registerCairnTools(ctx, {
+    db,
+    req,
+    workspacePath,
+    llmConfig,
+    getWin: opts.getWin,
+    emit: opts.emitToolCall,
+    emitDone: opts.emitToolCallDone,
+  });
+
+  const sessionId = SessionId(`chat-${req.threadId}-${Date.now()}`);
+  const selection = { provider: "cairn", model: llmConfig.model };
+
+  try {
+    const { agent } = await ctx.agentLoop.createAgent(ctx, {
+      sessionId,
+      meta: { cwd: workspacePath },
+      agentOptions: { provider: selection.provider, model: selection.model },
+      setup: (agentCtx) => {
+        installModelSelection(agentCtx, { current: selection, assembled: undefined });
+      },
+    });
+
+    await agent.whenIdle();
+    const firstSeq = agent.session.seq;
+
+    agent.followup(
+      createUserMessage({
+        content: [{ type: "text", text: req.message }],
+        source: { kind: "user" },
+      }),
+    );
+    await agent.whenIdle();
+
+    const { text, reasoning, pt, ct, rt } = collect(agent.session.events, firstSeq);
+    if (opts.onToken) opts.onToken(text);
+    if (opts.onThought) opts.onThought(reasoning);
+    if (opts.onUsage && (pt > 0 || ct > 0)) opts.onUsage(pt, ct, rt);
+
+    return {
+      exhausted: signal?.aborted === true,
+      content: text,
+      reasoning,
+    };
+  } finally {
+    toolDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
+  }
+}

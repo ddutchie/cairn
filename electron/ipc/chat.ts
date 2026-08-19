@@ -346,6 +346,52 @@ export function registerChatHandler(ctx: DbContext): void {
       return;
     }
 
+    // ── Cordis engine ───────────────────────────────────────────────────────
+    // Opt-in: when the saved AI config selects the Cordis (dsh) agent loop,
+    // route the turn through runCordisLoop instead of the built-in runToolLoop.
+    // Tokens/thoughts/tool chips stream through the same IPC events so the
+    // renderer is unchanged. Subagent mode is not yet supported on this engine.
+    const engine = getCachedConfig().aiConfig?.engine === "cordis" ? "cordis" : "builtin";
+    if (engine === "cordis" && !req.useSubagents && provider !== "localllm") {
+      const { runCordisLoop } = await import("../cordis/run-cordis-loop");
+      const tokens = createDeltaBatcher((delta) => send("chat:token", { delta }));
+      const thoughts = createDeltaBatcher((delta) => send("chat:thought", { delta }));
+      const flushStream = () => { tokens.flush(); thoughts.flush(); };
+      try {
+        const loopResult = await runCordisLoop({
+          db: ctx.db,
+          req,
+          workspacePath: ctx.workspacePath,
+          llmConfig: { baseUrl, model, apiKey, provider: (provider === "openai" || provider === "localllm" ? provider : "openai") },
+          signal: abortCtrl.signal,
+          onToken: (d) => tokens.push(d),
+          onThought: (d) => thoughts.push(d),
+          onUsage: addUsage,
+          emitToolCall,
+          emitToolCallDone,
+          getWin,
+        });
+        flushStream();
+        if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
+        if (abortCtrl.signal.aborted) {
+          send("chat:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
+        } else {
+          send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
+        }
+      } catch (err) {
+        flushStream();
+        if (!abortCtrl.signal.aborted) {
+          console.error("[chat] cordis loop failed:", err);
+          send("chat:done", { content: `Chat loop failed: ${(err as Error)?.message ?? String(err)}`, contextRefs: [] });
+        } else {
+          send("chat:done", { content: "", contextRefs: [] });
+        }
+      } finally {
+        abortControllers.delete(event.sender.id);
+      }
+      return;
+    }
+
     // Pre-stream snapshot of provider credits (for providers like NeuralWatt
     // that don't include cost in streaming responses). We diff after the stream
     // to recover per-request cost — only used when the stream didn't report it.
