@@ -315,7 +315,7 @@ async function runCordisCodingSession(
     history: [],
     personality: payload.personality ?? "helpful",
     images: payload.images,
-    config: { provider: llmConfig.provider ?? "openai", baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
+    config: { provider: llmConfig.provider === "localllm" ? "localllm" : "openai", baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
   };
 
   try {
@@ -326,7 +326,7 @@ async function runCordisCodingSession(
       sessionId,
       cwd: toolCtx.cwd,
       systemPrompt,
-      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: llmConfig.provider ?? "openai" },
+      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: llmConfig.provider === "localllm" ? "localllm" : "openai" },
       mode,
       autoApprove: payload.autoApprove,
       sandboxMode: payload.sandboxMode,

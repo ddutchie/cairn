@@ -620,7 +620,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       window.electron?.piAgent.compactNow({
         sessionId: session.sessionId,
         config: {
-          provider: getModelInfo(agentConfig.model)?.provider || undefined,
+          provider: agentConfig.baseUrl.includes("localhost") || agentConfig.baseUrl.includes("127.0.0.1") ? "localllm" : "openai",
           baseUrl:  agentConfig.baseUrl  || undefined,
           model:    agentConfig.model    || undefined,
           apiKey:   agentConfig.apiKey   || undefined,
@@ -676,7 +676,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       mode:        session.mode ?? "execute",
       attachments: attachments.length > 0 ? attachments : undefined,
       config: {
-        provider:   getModelInfo(agentConfig.model)?.provider || undefined,
+        provider:   (agentConfig.baseUrl.includes("localhost") || agentConfig.baseUrl.includes("127.0.0.1")) ? "localllm" : "openai",
         baseUrl:     agentConfig.baseUrl     || undefined,
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,
@@ -800,7 +800,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       cwd:         session.cwd,
       taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
       config: {
-        provider:   getModelInfo(agentConfig.model)?.provider || undefined,
+        provider:   (agentConfig.baseUrl.includes("localhost") || agentConfig.baseUrl.includes("127.0.0.1")) ? "localllm" : "openai",
         baseUrl:     agentConfig.baseUrl     || undefined,
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,

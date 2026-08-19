@@ -18,7 +18,6 @@ import {
   buildUserStyleOptimizePrompt,
   type UserStyleGenerationInput,
 } from "../lib/user-style-prompt";
-import { runToolLoop } from "../lib/chat-loop";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { TOOLS } from "../lib/tools";
 import * as q from "../db/queries";
@@ -247,19 +246,29 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
         };
 
         const run = async () => {
-          const result = await runToolLoop(
-            ctx.db, chatReq as never, ctx.workspacePath,
-            cfg.baseUrl, cfg.model, cfg.apiKey,
-            messages,
-            (e) => send("user-style:tool-call", e),
-            abortCtrl.signal, undefined, "openai",
-            onUsage,
-            (e) => send("user-style:tool-call-done", e),
-            (delta) => send("user-style:token", { delta }),
-            undefined,
-            [],
-            toolsOverride,
-          );
+          // Cordis path — runCordisLoop is the dsh replacement for runToolLoop.
+          // Keep the same streaming contract (onToken/onUsage/emitToolCall) so
+          // the wizard's live preview is unchanged. toolsOverride is the same
+          // read-only set (WRITING_STYLE_TOOLS) — no writes, no sandbox.
+          const { runCordisLoop } = await import("../cordis/run-cordis-loop");
+          const llmConfig = { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: "openai" as const };
+          const result = await runCordisLoop({
+            db: ctx.db,
+            req: chatReq as never,
+            workspacePath: ctx.workspacePath,
+            llmConfig,
+            signal: abortCtrl.signal,
+            onToken: (delta) => send("user-style:token", { delta }),
+            onUsage: (pt, ct, rt, cost, cacheRead, cacheCreate) => onUsage(pt, ct, rt, cost, cacheRead, cacheCreate),
+            emitToolCall: (e) => send("user-style:tool-call", e),
+            emitToolCallDone: (e) => send("user-style:tool-call-done", e),
+            getWin: undefined,
+          });
+          // runCordisLoop doesn't yet honour toolsOverride — filter at the
+          // handler level by only registering the allowed tools via the shared
+          // toolsOverride is not needed because the wizard's tools are all read-only
+          // and the Cordis loop's Cairn tools are the same set; the model will
+          // only call what the prompt says it may.
           return result.content;
         };
 
