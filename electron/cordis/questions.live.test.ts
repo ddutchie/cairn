@@ -67,6 +67,15 @@ describe("cairn-questions (gated on CORDIS_LIVE=1)", () => {
     // The ask_questions form was surfaced to the renderer.
     const askEvents = sent.filter((s) => s.channel === "chat:tool-call" && s.payload.tool === "ask_questions");
     expect(askEvents.length).toBeGreaterThanOrEqual(1);
+    // The questions reached the renderer in its PendingQuestion shape
+    // ({id,label,prompt}) — NOT remapped to dsh {question,header}, which would
+    // render an empty, un-fillable form.
+    const firstQs = (askEvents[0].payload.args as { questions?: Array<{ id?: string; label?: string; prompt?: string; question?: string }> }).questions ?? [];
+    console.log("QUESTION SHAPE:", JSON.stringify(firstQs[0]));
+    expect(firstQs.length).toBeGreaterThanOrEqual(1);
+    expect(typeof firstQs[0].id).toBe("string");
+    expect(typeof firstQs[0].label).toBe("string");
+    expect(typeof firstQs[0].prompt).toBe("string");
     // The model used the same-turn answer ("teal") to complete its reply.
     expect(result.content.toLowerCase()).toContain("teal");
   }, 90000);

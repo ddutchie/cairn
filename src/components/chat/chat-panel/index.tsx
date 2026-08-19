@@ -139,7 +139,9 @@ function ChatFooter() {
           questions={s.pendingQuestions}
           onSubmit={(text) => handleSend(text)}
           onSubmitStructured={s.answerQuestions}
-          disabled={s.isLoading}
+          // Never gate the form on isLoading: a blocking (Cordis) ask_questions
+          // pauses the turn mid-flight, so isLoading stays true WHILE the user is
+          // meant to type. The form's own `submitted` guard prevents re-submits.
         />
       )}
     </div>

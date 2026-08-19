@@ -283,14 +283,16 @@ export interface CairnQuestionsConfig {
   signal?: AbortSignal;
 }
 
-/** dsh question item → Cairn ask_questions tool arg shape (renderer form). */
-interface DshQuestionItem { id: string; question: string; detail?: string; header?: string; options?: Array<{ label: string; description?: string }>; multiSelect?: boolean }
+/** The question shape that flows through ask() — Cairn's ask_questions schema
+ *  ({id,label,prompt}), which is already the renderer's PendingQuestion shape.
+ *  dsh's user-questions service forwards the questions array opaquely. */
+interface CairnQuestionItem { id: string; label?: string; prompt?: string }
 
 /** dsh AskUserQuestionAnswer shape returned by the provider. */
 interface DshAnswer { answers: Array<{ id: string; selected: string[]; custom?: string }> }
 /** The subset of ctx.userQuestions the provider registration needs. */
 interface UserQuestionsSeam {
-  registerProvider: (p: { ask: (req: { questions: DshQuestionItem[]; signal?: AbortSignal }) => Promise<DshAnswer> }) => () => void;
+  registerProvider: (p: { ask: (req: { questions: CairnQuestionItem[]; signal?: AbortSignal }) => Promise<DshAnswer> }) => () => void;
 }
 
 /**
@@ -310,16 +312,12 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
   uq.registerProvider({
     ask: async (request) => {
       const requestId = `q-${newId()}`;
-      // Present in the renderer's PendingQuestion shape (question/header/options
-      // {label,description}/multiple/custom). callId lets the renderer answer.
-      const questions = request.questions.map((q) => ({
-        id: q.id,
-        question: q.question,
-        header: q.header,
-        detail: q.detail,
-        options: (q.options ?? []).map((o) => ({ label: o.label, description: o.description ?? "" })),
-        multiple: q.multiSelect === true,
-      }));
+      // The ask_questions tool passes Cairn-shaped questions ({id,label,prompt})
+      // straight through ctx.userQuestions.ask(), and that IS exactly the
+      // renderer's PendingQuestion shape — so forward them UNCHANGED. (Do not
+      // remap to dsh's {question,header} fields: those are undefined here and
+      // would render an empty, un-fillable form.)
+      const questions = request.questions;
       send("chat:tool-call", { tool: "ask_questions", label: `Asking ${questions.length} question${questions.length === 1 ? "" : "s"}`, callId: requestId, args: { questions } });
 
       const answersText = await new Promise<string>((resolve) => {
@@ -330,15 +328,14 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
         signal?.addEventListener?.("abort", onAbort, { once: true });
       });
 
-      // The renderer answers with either free-text (per question) or a JSON blob
-      // {answers:[{id,selected[],custom?}]}. Map both back to dsh's structure.
+      // The renderer answers with a JSON blob {answers:[{id,selected[],custom?}]}
+      // (structured) or plain text. Map both back to dsh's answer structure.
       try {
         const parsed = JSON.parse(answersText) as { answers?: Array<{ id?: string; selected?: string[]; custom?: string }> };
         if (Array.isArray(parsed.answers)) {
           return { answers: parsed.answers.map((a, i) => ({ id: a.id ?? request.questions[i]?.id ?? String(i), selected: a.selected ?? [], custom: a.custom })) };
         }
       } catch { /* fall through to plain-text */ }
-      // Plain text: attribute to the first question as a custom answer.
       return { answers: request.questions.map((q, i) => ({ id: q.id, selected: [], custom: i === 0 ? answersText : undefined })) };
     },
   });
