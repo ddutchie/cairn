@@ -24,6 +24,7 @@ import type { Database } from "better-sqlite3";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnSystemPromptPlugin, CAIRN_DB } from "./cairn-plugins";
 import { buildSystemPrompt, withPersonality } from "../lib/tools";
+import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 
@@ -167,15 +168,21 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   const ctx = await getContext();
   const { db, req, workspacePath, llmConfig, signal } = opts;
 
-  // Use the responses protocol for the Rork bridge. Reasoning does not stream as
-  // reasoning-delta chunks under responses (it arrives only in the final message
-  // block), so the collect()/live-listener fallback surfaces it to the thinking
-  // panel. (Flip to "openai-completions" for endpoints that stream reasoning.)
+  // Pick the wire protocol the SAME way the built-in loop does: reuse Cairn's
+  // probe-and-cache transport resolver (electron/lib/llm-transport.ts). It
+  // resolves /responses vs /chat/completions ONCE per base URL (static allowlist
+  // for OpenAI/Azure; an empty-body /responses route probe for everything else)
+  // and caches the answer for the app session. We then map that to pi-ai's
+  // adapter mode. A runtime fallback below downgrades a provider that turns out
+  // not to speak /responses after all (markCompletionsOnly + retry).
+  const transport = await resolveTransport(llmConfig.baseUrl, llmConfig.apiKey);
+  const apiFor = (mode: ApiMode): "openai-responses" | "openai-completions" =>
+    mode === "responses" ? "openai-responses" : "openai-completions";
   await ensurePiAiAdapter(ctx, {
     baseUrl: llmConfig.baseUrl,
     model: llmConfig.model,
     apiKey: llmConfig.apiKey,
-    api: "openai-responses",
+    api: apiFor(transport.mode),
   });
 
   // Cairn's own plugins: cairn-db owns the handle, cairn-session persists
@@ -240,19 +247,20 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   });
   toolDisposers.push(...externalDisposers);
 
-  const sessionId = SessionId(`chat-${req.threadId}-${Date.now()}`);
   const selection = { provider: "cairn", model: llmConfig.model };
 
   // Live-stream text + reasoning deltas as they arrive on the MAIN session
   // (subagent children are handled by cairnSubagentPlugin). We also keep a
   // running buffer as the durable return value / fallback if no deltas fired.
+  // The active attempt's sessionId is set by runTurn (a retry uses a fresh id).
+  let currentAttemptSessionId: unknown = null;
   let liveText = "";
   let liveReasoning = "";
   const streamDisposer = (ctx as unknown as { on: (ev: string, fn: (s: unknown, e: SessionEvent) => void) => () => void }).on(
     "session/event",
     (session, event) => {
       if ((session as { header?: { origin?: string } }).header?.origin === "subagent") return;
-      if ((session as { id?: unknown }).id !== sessionId) return;
+      if ((session as { id?: unknown }).id !== currentAttemptSessionId) return;
       if (event.type === "assistant/chunk") {
         const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
         if (!c?.text) return;
@@ -273,9 +281,14 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     },
   );
 
-  try {
+  // One turn attempt against the currently-mounted adapter. Returns the turn's
+  // end reason so the caller can decide whether to downgrade + retry. A fresh
+  // sessionId per attempt avoids resuming the failed session on a retry.
+  const runTurn = async (): Promise<{ text: string; reasoning: string; pt: number; ct: number; rt: number; failedKind?: string }> => {
+    const attemptSessionId = SessionId(`chat-${req.threadId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    currentAttemptSessionId = attemptSessionId;
     const { agent } = await ctx.agentLoop.createAgent(ctx, {
-      sessionId,
+      sessionId: attemptSessionId,
       meta: { cwd: workspacePath },
       agentOptions: { provider: selection.provider, model: selection.model },
       setup: (agentCtx) => {
@@ -295,11 +308,46 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     await agent.whenIdle();
 
     const collected = collect(agent.session.events, firstSeq);
-    const pt = collected.pt, ct = collected.ct, rt = collected.rt;
+    // A turn that ended for any reason other than "completed" (an LLM/transport
+    // error) with no produced content is the fallback trigger.
+    const endEvent = agent.session.events.filter((e) => e.seq >= firstSeq && e.type === "turn/end").at(-1);
+    const endKind = (endEvent?.data as { reason?: { kind?: string } } | undefined)?.reason?.kind;
+    const failedKind = endKind && endKind !== "completed" ? endKind : undefined;
+    return { ...collected, failedKind };
+  };
+
+  try {
+    let attempt = await runTurn();
+
+    // Runtime protocol fallback: if we were on /responses and the turn failed
+    // with nothing produced, the endpoint likely doesn't actually serve
+    // /responses (a stale probe, or it dropped the route). Downgrade the base
+    // URL to chat-completions, remount the adapter, and retry the turn once.
+    // OpenAI/Azure (static allowlist) are trusted and not downgraded.
+    if (
+      attempt.failedKind &&
+      !attempt.text &&
+      !attempt.reasoning &&
+      readCachedMode(llmConfig.baseUrl) === "responses" &&
+      !liveText
+    ) {
+      markCompletionsOnly(llmConfig.baseUrl);
+      await ensurePiAiAdapter(ctx, {
+        baseUrl: llmConfig.baseUrl,
+        model: llmConfig.model,
+        apiKey: llmConfig.apiKey,
+        api: "openai-completions",
+      });
+      liveText = "";
+      liveReasoning = "";
+      attempt = await runTurn();
+    }
+
+    const pt = attempt.pt, ct = attempt.ct, rt = attempt.rt;
     // Prefer the live-streamed buffers; fall back to the post-hoc collection if
     // deltas never fired (e.g. a provider that only emits a final message).
-    const text = liveText || collected.text;
-    const reasoning = liveReasoning || collected.reasoning;
+    const text = liveText || attempt.text;
+    const reasoning = liveReasoning || attempt.reasoning;
     if (opts.onUsage && (pt > 0 || ct > 0)) opts.onUsage(pt, ct, rt);
 
     return {
