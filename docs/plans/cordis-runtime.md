@@ -14,6 +14,10 @@ Make the **Cairn Cordis runtime the single, default engine** behind Cairn's chat
 
 **Strategy decision (2026-08-19):** Cordis is **default**. The built-in loops (`chat-loop.ts`, `pi-agent-loop.ts`, `chat-subagent-loop.ts`) become **frozen legacy** — reachable via an advanced setting/env var for rollback only, never developed in parallel. Delete them + the toggle once parity lands.
 
+**UI/Client strategy decision (2026-08-19, validated by repo investigation):** dsh is NOT host-only — it ships a **full web GUI** (`apps/web` + `@deepseek-ai/dsh-client-*`, composed as the `dsh-web-app` bundle) with a **slot-based plugin-UI system** (`ui-slots`, `tool.call.toolview`, `conversation.chat.node`). The design explicitly anticipates an **Electron consumer** (architecture note names a future `AbstractApiClient.doFetch` IPC subclass; `dsh-host-webserver` README: "Electron loads dist over file:// and carries fetch over an IPC bridge"). The host web stack (webserver + apiproxy + connection + frontend-static) runs **in-process on the same shared Cordis ctx** as the agent loop — no separate dsh CLI/profile process required (profiles are only packaging).
+
+**Consequence for plugin-UI:** keeping Cairn's bespoke `pi-agent:*`/`chat:*` IPC + own React frontend means third-party dsh plugins would contribute **backend only, no UI**. The long-term direction is to **adopt dsh's client/UI layer** via bridge plugins: a Cairn `root`-occupying layout plugin (to host Cairn's notes/board/graph/insights alongside the dsh conversation), Cairn brand/theme occupants, **keyed `tool.call.toolview` views** for Cairn's data tools (a designed extension point), and a **persistence bridge** (dsh session jsonl ↔ Cairn SQLite — the hardest seam, since dsh's "model-visible ⟺ logged" invariant must hold). The current bespoke IPC bridge is a **stepping stone** to prove the host side (chat + coding agent) works end-to-end; replacing it with dsh's client/connection layer is the Phase-3 goal. See §9.
+
 **The core idea:** every gap = a `cairn-*` plugin on the shared tree:
 - `cairn-subagent` — bridge dsh subagent events → renderer `chat:subagent*` IPC
 - `cairn-usage` — dsh usage/chunk events → `recordLlmUsage` + `chat:usage` + credit recovery
@@ -141,10 +145,11 @@ Users write/install Cordis plugins inside Cairn.
 - 2026-08-19: Wire protocol is auto-selected per endpoint (reuse `electron/lib/llm-transport.ts` `resolveTransport` probe-and-cache + `markCompletionsOnly` runtime fallback) — no hardcoded/persisted protocol.
 - 2026-08-19: `dsh-llm-pi-ai` is the adapter = a thin wrapper over `@earendil-works/pi-ai` (a 3rd-party unified multi-provider LLM client). It sits BELOW the standard `dsh-agent`/`dsh-agent-loop` — it is NOT an agent. No `dsh-pi-agent` package exists.
 - 2026-08-19: Questions adopt the `dsh-user-questions` SEAM (blocking, same-turn) but keep Cairn's `ask_questions` TOOL because the model-facing `dsh-tool-ask-user` package is unpublished.
+- 2026-08-19: **Client/UI adoption.** dsh ships a full web GUI + slot-based plugin-UI (`apps/web`, `@deepseek-ai/dsh-client-*`, `dsh-web-app` bundle) and explicitly anticipates an Electron consumer (IPC `AbstractApiClient.doFetch`). The host web stack runs in-process on the shared Cordis ctx. Our bespoke IPC bridge is a valid stepping stone (proves the host side) but forfeits plugin-UI. Direction: adopt dsh's client/UI layer via bridge plugins (Cairn root layout, brand/theme, keyed `tool.call.toolview` views, persistence bridge) — see §9. Host-only IPC bridge is NOT the end-state.
 
 ## 8. Session handoff — resume here
 
-**Branch:** `feat/cordis-runtime` · **Latest commit:** `7f9076a6` · tree clean.
+**Branch:** `feat/cordis-runtime` · **Latest commit:** `156f694b` · tree clean.
 
 **Where we are:** Phase 1 (chat) is DONE and shipping as the default engine. Phase 1.5 (port the coding agent) is underway: **2a done** (coding toolset), **2g done** (questions), **2b done** (cairn-coding bridge plugin + runCordisCodingLoop scaffold, live-verified writing a file and emitting token/thought/tool/usage/done). **Next: 2c** — sessions + persistence for the coding loop.
 
@@ -170,3 +175,26 @@ Users write/install Cordis plugins inside Cairn.
 - The `ask_questions` tool needs the Cordis-only description telling the model it BLOCKS and RETURNS answers, else the model writes a "fill in the form" sign-off and stops.
 
 **Next concrete step (2c):** sessions + persistence for the coding loop. Decide the dsh persistence story for the coding agent: either keep Cairn's `pi_agent_sessions` + `pi_agent_llm_history` (JSON) + `pi_session_todos` (persist from `runCordisCodingLoop` on done/error, restoring via `pi-agent:restore-context`), or adopt dsh jsonl persistence. Also: the stateful `sessions` Map + `runningLoops` + `pi-agent:is-running` must stay Cairn-side (or move to a long-lived per-session Cordis agent). Once sessions/persistence + plan-mode (2d) + approvals (2e) land, wire `runCordisCodingLoop` into `electron/ipc/pi-agent.ts`'s `pi-agent:prompt`/`approve-plan` behind `CAIRN_ENGINE` (builtin untouched) and only then consider flipping the coding default. The bridge (2b) lives in `cairnCodingPlugin` (`electron/cordis/cairn-plugins.ts`) + `runCordisCodingLoop` (`electron/cordis/run-cordis-coding.ts`); the live proof is `electron/cordis/coding-agent.live.test.ts`.
+
+## 9. Adopting the dsh client/UI layer (Phase 3 — validated, not yet started)
+
+**Discovery (2026-08-19):** dsh is NOT host-only. It ships a full web GUI + slot-based plugin-UI system. Our bespoke IPC bridge is a valid **stepping stone** (proves the host side) but forfeits plugin-UI. Repo investigation (`scratch/dsh-repo`) confirmed adoption is feasible + design-sanctioned.
+
+**Feasibility findings (from explore agent on `scratch/dsh-repo`):**
+- **In-process host:** webserver (`dsh-host-webserver`, plain `node:http`), apiproxy (`dsh-host-apiproxy`), connection (`dsh-client-connection`), frontend-static all run **in-process on the same shared Cordis ctx** as the agent loop. No separate dsh CLI/profile process needed (profiles = packaging only). Engine `node ^22.19 || >=24` (Electron 43 ships Node 22 ✓).
+- **Electron-anticipating:** architecture note `2026-07-19-gui-layering-and-rpc-protocol.md` explicitly names a future Electron `AbstractApiClient.doFetch` IPC subclass; `dsh-host-webserver` README: "Electron loads dist over file:// and carries fetch over an IPC bridge." No service workers / PWA / cross-origin blockers.
+- **Two host options:** (A) run in-process server, `loadURL('http://127.0.0.1:<port>')` — simplest, keeps WebApiClient + WebSocket unchanged; (B) `file://` + IPC `doFetch` carrier — the design's preferred path, bigger lift (only `WebApiClient` is shipped as a browser carrier today; the in-process carrier is a host test seam).
+- **White-label:** `ui-brand-official` fills brand slots only under `DSH_CLIENT_BUILD_PROFILE='official'` — a deployment/brand plugin can occupy the same slots. `ui-theme` uses `--dsw-*` tokens (≠ Cairn's `--*` tokens; needs a mapping layer if both coexist in one DOM).
+- **Layout is all-or-nothing:** `ui-layout` occupies the `root` slot with a fixed 3-column AppFrame (sidebar|conversation|details). To host Cairn's notes/board/graph/insights as peers of the conversation, write a **Cairn `root`-occupying layout plugin** (replace `ui-layout`/`ui-sidebar`) — architecturally sanctioned, real work. Or add Cairn views as `conversation.view` tabs inside the conversation column.
+- **Cairn data tools get UI for free:** `tool.call.toolview` is a designed keyed-slot extension point — a client plugin registers `key:'<toolName>'` React views for get_note/ensure_note/board tools etc. (e.g. `ui-skill` registers the `skill` view). Unregistered tools fall back to a generic card.
+- **Persistence = hardest seam:** dsh session jsonl (append-only SessionEvent log) vs Cairn SQLite notes/boards are separate stores. Bridge = Cairn tools (in shared host ctx) read/write SQLite while logging model-visible results to the dsh session log (dsh invariant: "model-visible ⟺ logged").
+
+**Phase-3 bridge-plugin workstream (deferred until Phase 2 parity done):**
+1. Boot the dsh host web stack in Electron main on the shared ctx (option A first).
+2. `cairn-root-layout` client plugin — occupy `root` slot, host the dsh conversation view alongside Cairn's nav/views.
+3. `cairn-brand` / `cairn-theme` client plugins — brand occupants + token mapping.
+4. `cairn-toolview-*` client plugins — keyed `tool.call.toolview` views for Cairn's data tools.
+5. `cairn-persistence-bridge` — reconcile dsh session jsonl with Cairn SQLite (threads/notes/boards).
+6. Remove the bespoke `pi-agent:*`/`chat:*` IPC bridge once dsh's connection layer carries the same events.
+
+**Decision log:** see §7 for the 2026-08-19 client-adoption entry.
