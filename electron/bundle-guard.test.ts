@@ -135,6 +135,7 @@ const NODE_BUILTINS = new Set([
   "node:v8", "node:vm", "node:wasi", "node:worker_threads", "node:zlib",
   // Node 22 stream/util subpath builtins (used via the node: prefix).
   "node:stream/promises", "node:stream/web", "node:util/types",
+  "node:timers/promises",
 ]);
 
 /* ──────────────────────────────────────────────────────────────────────── *

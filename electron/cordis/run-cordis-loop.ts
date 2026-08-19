@@ -21,6 +21,8 @@ import userQuestionsService from "@deepseek-ai/dsh-user-questions";
 import { apply as spawnProviderApply, inject as spawnProviderInject, name as spawnProviderName } from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolSubagentName } from "@deepseek-ai/dsh-tool-subagent";
 import type { Database } from "better-sqlite3";
+import JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
+import path from "path";
 
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnSystemPromptPlugin, cairnQuestionsPlugin, CAIRN_DB } from "./cairn-plugins";
@@ -69,6 +71,16 @@ export interface RunCordisLoopOptions {
 // ── Shared Cordis context + pi-ai adapter lifecycle ─────────────────────────
 let sharedCtx: Context | null = null;
 let contextReady: Promise<Context> | null = null;
+// The dsh session-persistence root (jsonl session logs live here, NOT in Cairn's
+// SQLite — the DB is for MCP/tool access only). Configured by the Electron main
+// process via setSessionRoot(); falls back to CAIRN_SESSION_ROOT or cwd.
+let sessionRoot = process.env.CAIRN_SESSION_ROOT || path.join(process.cwd(), ".cairn-sessions");
+/** Configure the directory where dsh persists its session logs (must be set
+ *  before the first getContext()). The Electron main calls this with
+ *  app.getPath("userData") + "/sessions". */
+export function setSessionRoot(root: string): void {
+  sessionRoot = root;
+}
 // The pi-ai provider route ("cairn") is registered once; its profile carries
 // the endpoint. Track the last config so a changed baseURL/model remounts it.
 let piAiDisposer: (() => void) | null = null;
@@ -93,6 +105,11 @@ export async function getContext(): Promise<Context> {
     // calls ctx.userQuestions.ask(); cairnQuestionsPlugin registers the provider
     // that bridges ask() ⇄ the renderer form. Mounted before the agent loop.
     await ctx.plugin(userQuestionsService);
+    // dsh session persistence (jsonl). Session/chat transcripts live HERE, not in
+    // Cairn's SQLite (the DB is for MCP/tool access). Enables stateful, resumable
+    // coding sessions via ctx.agents.resume. Self-contained backend (owns its own
+    // PersistenceCoordinator + provides ctx.sessionPersistence).
+    await ctx.plugin(JsonlSessionPersistence, { root: sessionRoot });
     await ctx.plugin(agentLoopPlugin, { agents: [] });
     // Subagent capability stack (dsh-base order): service → spawn provider → tool.
     await ctx.plugin(subagentServicePlugin);

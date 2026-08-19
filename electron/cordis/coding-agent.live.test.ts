@@ -1,9 +1,16 @@
 import { describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
+import os from "os";
+import path from "path";
 import { runCordisCodingLoop } from "./run-cordis-coding";
+import { setSessionRoot } from "./run-cordis-loop";
 
 const BASE = process.env.CORDIS_TEST_BASE_URL ?? "http://localhost:3042/v1";
 const MODEL = process.env.CORDIS_TEST_MODEL ?? "claude-sonnet-4-5";
+
+// Route dsh's jsonl session logs to a temp dir (not Cairn's SQLite — the DB is
+// for MCP/tool access only). Set before the first getContext() builds the tree.
+setSessionRoot(path.join(os.tmpdir(), `cairn-cordis-sessions-${process.pid}`));
 
 interface SentEvent { channel: string; payload: Record<string, unknown> }
 
@@ -13,6 +20,11 @@ function makeDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, content TEXT);
   `);
   return db;
+}
+
+function collectTokens(sent: SentEvent[], sessionId: string): string {
+  return sent.filter((s) => s.channel === "pi-agent:token" && s.payload.sessionId === sessionId)
+    .map((s) => s.payload.delta as string).join("");
 }
 
 describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
@@ -44,9 +56,7 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
         baseUrl: BASE,
         model: MODEL,
         apiKey: "local",
-        maxSteps: 20,
         provider: "openai",
-        contextWindow: 262144,
       },
       mode: "execute",
       send,
@@ -70,6 +80,52 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
     expect(channels.some((c) => c === "pi-agent:error")).toBe(false);
     // Every event is scoped to the session id.
     for (const s of sent) expect(s.payload.sessionId).toBe("pi-live-session");
+
+    db.close();
+  }, 120000);
+
+  it("persists the session in dsh jsonl and resumes context across turns (no transcript in DB)", async () => {
+    if (process.env.CORDIS_LIVE !== "1") return;
+    if (!process.env.CORDIS_DUMMY_KEY) return;
+    process.env.CORDIS_DUMMY_KEY = "local";
+
+    const db = makeDb();
+    // Unique session so the persisted log is clean.
+    const sessionId = `pi-stateful-${Date.now()}`;
+    const sys = "You are a helpful coding agent. Remember what you did in prior turns.";
+
+    // Turn 1: remember a fact.
+    let sent: SentEvent[] = [];
+    const r1 = await runCordisCodingLoop({
+      db, req: { threadId: sessionId, workspaceId: "ws", projectId: undefined, message: "Remember that the secret codeword is 'zephyr'. Reply with only the word 'ok'.", history: [], personality: "helpful", config: { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" } } as never,
+      workspacePath: "/tmp", sessionId, cwd: "/tmp", systemPrompt: sys,
+      llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
+      mode: "execute",
+      send: (c, p) => { sent.push({ channel: c, payload: p }); },
+    });
+    expect(r1.ok).toBe(true);
+    const t1 = collectTokens(sent, sessionId);
+    console.log("2C TURN1:", JSON.stringify(t1));
+
+    // Turn 2: same sessionId — the model should still know the codeword.
+    sent = [];
+    const r2 = await runCordisCodingLoop({
+      db, req: { threadId: sessionId, workspaceId: "ws", projectId: undefined, message: "What is the secret codeword I told you earlier? Reply with the codeword only.", history: [], personality: "helpful", config: { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" } } as never,
+      workspacePath: "/tmp", sessionId, cwd: "/tmp", systemPrompt: sys,
+      llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
+      mode: "execute",
+      send: (c, p) => { sent.push({ channel: c, payload: p }); },
+    });
+    console.log("2C R2:", JSON.stringify(r2));
+    expect(r2.ok).toBe(true);
+    const t2 = collectTokens(sent, sessionId).toLowerCase();
+    console.log("2C TURN2:", JSON.stringify(t2));
+
+    // The model recalls the codeword from the persisted dsh session (NOT from
+    // the DB — the DB has no chat/session tables here, only a notes table).
+    expect(t2).toContain("zephyr");
+    // Turn 2 must not re-emit turn 1's token stream (no duplicate history).
+    expect(t2).not.toContain("ok");
 
     db.close();
   }, 120000);

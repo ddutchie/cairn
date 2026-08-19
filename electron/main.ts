@@ -27,6 +27,7 @@ import { registerToolBuilderHandlers } from "./ipc/tool-builder";
 import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
 import { registerGitHandlers } from "./ipc/git";
 import { registerPiAgentHandler } from "./ipc/pi-agent";
+import { setSessionRoot } from "./cordis/run-cordis-loop";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
@@ -237,6 +238,14 @@ app.whenReady().then(async () => {
   });
 
   const userDataPath = app.getPath("userData");
+
+  // ── Configure dsh session persistence root (jsonl) ──────────────────────
+  // Chats/sessions live in dsh's jsonl session log under userData, NOT in
+  // Cairn's SQLite (the DB is for MCP/tool access only). Must be set before the
+  // first Cordis context is built.
+  const sessionRoot = path.join(userDataPath, "sessions");
+  fs.mkdirSync(sessionRoot, { recursive: true });
+  setSessionRoot(sessionRoot);
 
   // ── Resolve workspace path ────────────────────────────────────────────
   const config = readWorkspaceConfig(userDataPath);

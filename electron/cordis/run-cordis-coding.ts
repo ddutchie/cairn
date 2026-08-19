@@ -85,6 +85,9 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     await fiber;
   };
   const codingDisposers: Array<() => void> = [];
+  // Disposes the active dsh agent handle at turn end so its session is detached
+  // from the live registry (persisted jsonl remains, enabling resume).
+  const handleDisposers: Array<() => Promise<void> | void> = [];
   const toolDisposers = registerCairnTools(ctx, {
     getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
     req,
@@ -125,7 +128,12 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     toolDisposers.push(...externalDisposers);
 
     const selection = { provider: "cairn", model: llmConfig.model };
-    const attemptSessionId = SessionId(`${sessionId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    // Stable dsh session id = the caller's pi sessionId. With dsh jsonl
+    // persistence mounted, createAgent with a stable id auto-RESUMES the
+    // session's materialized history on a remount (first use creates it). This
+    // gives the coding agent stateful, resumable multi-turn sessions WITHOUT
+    // storing transcripts in Cairn's SQLite (the DB is for MCP/tool access).
+    const attemptSessionId = SessionId(sessionId);
 
     // Route every pi-agent:* event to BOTH the renderer (frontend `send`) and a
     // terminal resolver so the turn promise settles on done/error. cairnCodingPlugin
@@ -138,19 +146,52 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       send(channel, payload);
     };
 
-    const { agent } = await ctx.agentLoop.createAgent(ctx, {
-      sessionId: attemptSessionId,
-      meta: { cwd },
-      agentOptions: { provider: selection.provider, model: selection.model },
-      setup: (agentCtx) => {
-        installModelSelection(agentCtx, { current: selection, assembled: undefined });
-      },
-    });
+    // A minimal view of the dsh agent handle we drive (whenIdle/followup/session).
+    type DriveAgent = {
+      whenIdle: () => Promise<unknown>;
+      followup: (m: unknown) => unknown;
+      session: { events: unknown[] };
+    };
+    type DriveHandle = { agent: DriveAgent; dispose?: () => Promise<void> };
+    const handle = await (async (): Promise<DriveHandle> => {
+      // If the session already has a persisted log, RESUME it so the model sees
+      // prior turns (stateful multi-turn). Otherwise create fresh. dsh owns the
+      // session transcript (jsonl) — nothing is written to Cairn's SQLite.
+      const pers = (ctx as unknown as { sessionPersistence?: { inspect: (id: unknown, signal?: AbortSignal) => Promise<{ events: readonly unknown[] }> } }).sessionPersistence;
+      let exists = false;
+      try {
+        if (pers) {
+          const insp = await pers.inspect(attemptSessionId, signal);
+          exists = insp.events.length > 0;
+        }
+      } catch { /* treat as fresh on any inspection error */ }
+      const base = {
+        meta: { cwd },
+        agentOptions: { provider: selection.provider, model: selection.model },
+        setup: (agentCtx: unknown) => {
+          installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
+        },
+      };
+      if (exists) {
+        return await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<DriveHandle> } }).agents.resume({
+          ...base,
+          resumeSessionId: attemptSessionId,
+          signal,
+        });
+      }
+      return await (ctx as unknown as { agentLoop: { createAgent: (c: unknown, o: unknown) => Promise<DriveHandle> } }).agentLoop.createAgent(ctx, {
+        ...base,
+        sessionId: attemptSessionId,
+        signal,
+      } as never);
+    })();
+    const agent = handle.agent;
+    handleDisposers.push(() => handle.dispose?.() ?? Promise.resolve());
     await agent.whenIdle();
 
-    // Mount the bridge AFTER the agent exists so it knows the dsh attempt id to
-    // match events against; it still tags emitted events with the caller's
-    // session id.
+    // Mount the bridge AFTER the agent exists so it knows the dsh session id to
+    // match events against (= the caller's sessionId, which is also how events
+    // are tagged).
     await mount(cairnCodingPlugin, { sessionId, matchSessionId: String(attemptSessionId), mode, send: combinedSend, signal });
 
     agent.followup(
@@ -171,6 +212,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   } catch (e) {
     result = { ok: false, error: (e as Error)?.message ?? String(e) };
   } finally {
+    for (const d of handleDisposers) { try { await d(); } catch { /* noop */ } }
     codingDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
     toolDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
     pluginDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
