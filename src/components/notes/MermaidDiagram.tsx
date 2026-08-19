@@ -61,13 +61,14 @@ async function getMermaid(id: string) {
   return { mermaid, id };
 }
 
-// ── Subgraph label contrast ───────────────────────────────────────────────────
+// ── Label contrast ────────────────────────────────────────────────────────────
 
-// Subgraphs (clusters) can carry an explicit fill chosen by the diagram author
-// (LLM-generated charts often pick light pastels). Mermaid's label colour
-// follows the theme — light text in dark mode — so an explicitly-light fill
-// becomes unreadable. Fix by computing the actual fill luminance per cluster
-// and pinning the label to a contrasting dark/light fill.
+// Nodes and subgraphs (clusters) can carry an explicit fill chosen by the
+// diagram author (LLM-generated charts often pick light pastels). Mermaid's
+// label colour follows the theme — light text in dark mode — so an
+// explicitly-light fill becomes unreadable. Fix by computing the actual fill
+// luminance per shape/cluster and pinning the label to a contrasting dark/light
+// fill.
 export const parseColor = (input: string): [number, number, number] | null => {
   const s = (input ?? "").trim();
   const hex = s.match(/^#([0-9a-f]{6})$/i);
@@ -96,7 +97,7 @@ export function contrastRatio(l1: number, l2: number): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-function enforceClusterLabelContrast(container: HTMLElement) {
+export function enforceLabelContrast(container: HTMLElement) {
   // FIXED (theme-independent) label candidates from the design tokens — dark
   // text on light fills, light text on dark fills.
   const styles = getComputedStyle(container);
@@ -105,32 +106,78 @@ function enforceClusterLabelContrast(container: HTMLElement) {
   const darkLum = colorLuminance(darkColor);
   const lightLum = colorLuminance(lightColor);
 
+  // Pick whichever candidate has the HIGHER WCAG contrast against the fill
+  // instead of a fixed 0.5-luminance threshold.
+  const pickColor = (luminance: number) =>
+    darkLum !== null && lightLum !== null
+      ? contrastRatio(luminance, darkLum) >= contrastRatio(luminance, lightLum)
+        ? darkColor
+        : lightColor
+      : luminance > 0.5
+        ? darkColor
+        : lightColor;
+
+  // Fill luminance of an element — prefer the attribute, fall back to the
+  // computed style (handles paint-server url() fills that fail to parse).
+  const luminanceOf = (el: Element): number | null => {
+    const attrFill = el.getAttribute("fill");
+    let luminance = colorLuminance(attrFill && attrFill !== "none" ? attrFill : getComputedStyle(el).fill);
+    if (luminance === null) {
+      luminance = colorLuminance(getComputedStyle(el).fill);
+    }
+    return luminance;
+  };
+
+  // Paint a label with the contrast-picked colour, preferring the inline style
+  // over the attribute so it always wins against the theme's CSS.
+  const paintLabel = (label: SVGTextElement | HTMLElement | null, color: string) => {
+    if (!label) return;
+    if (label instanceof SVGElement) {
+      label.setAttribute("fill", color);
+      label.style.fill = color;
+    } else {
+      label.style.color = color;
+    }
+  };
+
+  // Subgraph clusters — the cluster rect + its label in .cluster-label.
   for (const cluster of container.querySelectorAll<SVGElement>("g.cluster")) {
     const rect = cluster.querySelector<SVGRectElement>("rect") ?? (cluster.firstElementChild as SVGGraphicsElement | null);
-    const svgLabel = cluster.querySelector<SVGTextElement>(".cluster-label text, text.cluster-label");
-    const htmlLabel = cluster.querySelector<HTMLElement>(".cluster-label span");
     if (!rect) continue;
+    const luminance = luminanceOf(rect);
+    if (luminance === null) continue;
+    const color = pickColor(luminance);
+    paintLabel(cluster.querySelector<SVGTextElement>(".cluster-label text, text.cluster-label"), color);
+    paintLabel(cluster.querySelector<HTMLElement>(".cluster-label span"), color);
+  }
 
-    // Prefer the rect's own fill; fall back to the computed style when the
-    // attribute is missing/"none". If the attribute value is present but fails
-    // to parse (e.g. an SVG paint-server url), retry luminance with the
-    // computed style before giving up on this cluster.
-    const attrFill = rect.getAttribute("fill");
-    let luminance = colorLuminance(attrFill && attrFill !== "none" ? attrFill : getComputedStyle(rect).fill);
-    if (luminance === null) {
-      luminance = colorLuminance(getComputedStyle(rect).fill);
-    }
+  // Regular nodes — explicit author fills (often light pastels) clash with the
+  // theme's light label text in dark mode. The main shape is a direct child of
+  // g.node (or a wrapper group around it); the label lives in the .label group.
+  for (const node of container.querySelectorAll<SVGElement>("g.node")) {
+    const direct = node.querySelector<SVGGraphicsElement>(
+      ":scope > rect, :scope > path, :scope > polygon, :scope > circle, :scope > ellipse"
+    );
+    const shape =
+      direct ??
+      Array.from(node.querySelectorAll<SVGGraphicsElement>("rect, path, polygon, circle, ellipse")).find(
+        (el) => !el.closest(".label")
+      );
+    if (!shape) continue;
+    const luminance = luminanceOf(shape);
     if (luminance === null) continue;
 
-    // Pick whichever candidate has the HIGHER WCAG contrast against the fill
-    // instead of a fixed 0.5-luminance threshold.
-    const useDark = darkLum !== null && lightLum !== null
-      ? contrastRatio(luminance, darkLum) >= contrastRatio(luminance, lightLum)
-      : luminance > 0.5;
-    const color = useDark ? darkColor : lightColor;
+    // Respect an author-set label colour (inline style beats the theme CSS).
+    const htmlLabel = node.querySelector<HTMLElement>(".nodeLabel");
+    const svgLabel = node.querySelector<SVGTextElement>(".label text, .label tspan");
+    const hasAuthorColor =
+      (htmlLabel?.style.cssText.includes("color:") ?? false) ||
+      (svgLabel?.style.cssText.includes("fill:") ?? false);
+    if (hasAuthorColor) continue;
 
-    if (svgLabel) svgLabel.setAttribute("fill", color);
-    if (htmlLabel) htmlLabel.style.color = color;
+    const color = pickColor(luminance);
+    paintLabel(svgLabel, color);
+    paintLabel(htmlLabel, color);
   }
 }
 
@@ -151,7 +198,7 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
         const { svg } = await mermaid.render(modalId, chart.trim());
         if (!cancelled && containerRef.current) {
           containerRef.current.innerHTML = svg;
-          enforceClusterLabelContrast(containerRef.current);
+          enforceLabelContrast(containerRef.current);
           // Remove fixed width/height so SVG scales to fill the modal
           const svgEl = containerRef.current.querySelector("svg");
           if (svgEl) {
@@ -205,7 +252,7 @@ export function MermaidDiagram({ chart }: Props) {
         const { svg } = await mermaid.render(`mermaid-${id}`, chart.trim());
         if (!cancelled && containerRef.current) {
           containerRef.current.innerHTML = svg;
-          enforceClusterLabelContrast(containerRef.current);
+          enforceLabelContrast(containerRef.current);
           setError(null);
         }
       } catch (e) {
