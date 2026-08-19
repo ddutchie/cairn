@@ -449,6 +449,10 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
   const streamedReasoning = new Set<string>();
   // Terminal-guard: emit done/error exactly once per turn.
   let ended = false;
+  // Latest compaction summary text, captured on compaction/summary and reported
+  // to the renderer on compaction/end (auto-compaction is step-boundary driven).
+  let lastCompactSummary = "";
+  let lastCompactCount = 0;
 
   const emit = (channel: string, payload: Record<string, unknown>) => send(channel, { sessionId, ...payload });
 
@@ -588,6 +592,44 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
         const { reasoning } = eventReasoning(event);
         if (reasoning) emit("pi-agent:thought", { delta: reasoning });
       }
+      return;
+    }
+
+    // ── Retry: dsh-llm-retry records a durable llm/retry before each wait ─────
+    if (event.type === "llm/retry") {
+      const d = event.data as { retry?: number; maxRetries?: number; delayMs?: number; failure?: { message?: string; code?: string } };
+      emit("pi-agent:retry", {
+        attempt: (d.retry ?? 0) + 1,
+        maxRetries: d.maxRetries ?? 0,
+        delayMs: d.delayMs ?? 0,
+        error: d.failure?.message ?? d.failure?.code ?? "Model request failed",
+      });
+      return;
+    }
+
+    // ── Compaction: BasicCompactionEngine auto-compacts at 80% context ────────
+    if (event.type === "compaction/start") {
+      emit("pi-agent:compact", { status: "start" });
+      return;
+    }
+    if (event.type === "compaction/summary") {
+      // Remember the latest summary text + replaced-node count so compaction/end
+      // can report them (compaction/end carries only lifecycle data).
+      const d = event.data as { summary?: unknown; shadowedSeqs?: unknown[] };
+      const s = d.summary;
+      lastCompactSummary = typeof s === "string" ? s : (Array.isArray(s) ? s.filter((b) => (b as { type?: string }).type === "text").map((b) => (b as { text?: string }).text ?? "").join("") : "");
+      lastCompactCount = Array.isArray(d.shadowedSeqs) ? d.shadowedSeqs.length : 0;
+      return;
+    }
+    if (event.type === "compaction/end") {
+      // A failed close records an `error` on the end marker — don't claim success.
+      const failed = (event.data as { error?: unknown }).error !== undefined;
+      emit("pi-agent:compact", { status: "end", auto: true });
+      if (!failed) {
+        emit("pi-agent:compact-result", { messageCount: lastCompactCount, summary: lastCompactSummary });
+      }
+      lastCompactSummary = "";
+      lastCompactCount = 0;
       return;
     }
 

@@ -23,6 +23,9 @@ import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolS
 import type { Database } from "better-sqlite3";
 import JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
 import approvalService from "@deepseek-ai/dsh-user-approval";
+import TokenMeter from "@deepseek-ai/dsh-token-meter";
+import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
+import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
 import path from "path";
 
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
@@ -117,6 +120,18 @@ export async function getContext(): Promise<Context> {
     // PersistenceCoordinator + provides ctx.sessionPersistence).
     await ctx.plugin(JsonlSessionPersistence, { root: sessionRoot });
     await ctx.plugin(agentLoopPlugin, { agents: [] });
+    // Context management (Phase 1.5 step 2h). tokenMeter measures request +
+    // surface pressure; BasicCompactionEngine auto-compacts between steps at 80%
+    // of the model's context window (auto:true) and on provider context-overflow,
+    // replacing the compacted span with one summary node — the dsh-native
+    // replacement for Cairn's buildCompactionTransformer. dsh owns the session
+    // log (jsonl) so its compaction engine is the natural fit. Manual /compact is
+    // available via ctx.compaction.compactNow(agent). llm-retry executes the
+    // provider-owned retryPolicy on the agent loop's request-recovery seam,
+    // recording durable llm/retry events the coding bridge maps to pi-agent:retry.
+    await ctx.plugin(TokenMeter);
+    await ctx.plugin(BasicCompactionEngine, { auto: true, thresholdRatio: 0.8 });
+    await ctx.plugin({ apply: llmRetryApply, inject: llmRetryInject as never, name: llmRetryName }, {});
     // Subagent capability stack (dsh-base order): service → spawn provider → tool.
     await ctx.plugin(subagentServicePlugin);
     await ctx.plugin({ apply: spawnProviderApply, inject: spawnProviderInject as never, name: spawnProviderName }, { providerName: "spawn" });
@@ -158,6 +173,14 @@ export async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string;
           displayName: "Cairn",
           models: [{ id: config.model, contextWindow: 262144, maxTokens: 32768 }],
           apiKeyEnv,
+          // Provider-owned transient-failure retry policy; executed by
+          // dsh-llm-retry on the agent loop's request-recovery seam. Bounded
+          // exponential backoff, mirroring Cairn's built-in loop retry behaviour.
+          retryPolicy: {
+            mode: "normal",
+            maxRetries: 5,
+            backoff: { initialDelayMs: 500, maxDelayMs: 10000, jitterRatio: 0.1 },
+          },
         },
       },
     },
