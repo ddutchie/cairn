@@ -26,6 +26,8 @@ import approvalService from "@deepseek-ai/dsh-user-approval";
 import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
+import { CairnAttachmentStore } from "./cairn-attachment-store";
+import { buildCordisUserContent } from "./cairn-attachment-store";
 import path from "path";
 
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
@@ -120,6 +122,12 @@ export async function getContext(): Promise<Context> {
     // PersistenceCoordinator + provides ctx.sessionPersistence).
     await ctx.plugin(JsonlSessionPersistence, { root: sessionRoot });
     await ctx.plugin(agentLoopPlugin, { agents: [] });
+    // Durable attachment store (Phase 1.5 step 2l). Concrete backend for the
+    // abstract dsh AttachmentStore so image attachments on a message can be
+    // admitted (saveImage -> ImageAttachmentRef) and read back by the pi-ai
+    // adapter (resolveAttachments: () => ctx.get("attachments")) when it converts
+    // an ImageBlock to the wire image_url. Without it, pi-ai drops images.
+    await ctx.plugin(CairnAttachmentStore);
     // Context management (Phase 1.5 step 2h). tokenMeter measures request +
     // surface pressure; BasicCompactionEngine auto-compacts between steps at 80%
     // of the model's context window (auto:true) and on provider context-overflow,
@@ -173,6 +181,11 @@ export async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string;
           displayName: "Cairn",
           models: [{ id: config.model, contextWindow: 262144, maxTokens: 32768 }],
           apiKeyEnv,
+          // Declare image input so the pi-ai route accepts ImageBlocks (step 2l).
+          // Cairn's endpoint is a multi-provider gateway; images pass through as
+          // OpenAI image_url parts. Text-only models still work (an image is only
+          // sent when the user actually attaches one).
+          defaultInput: ["text", "image"],
           // Provider-owned transient-failure retry policy; executed by
           // dsh-llm-retry on the agent loop's request-recovery seam. Bounded
           // exponential backoff, mirroring Cairn's built-in loop retry behaviour.
@@ -369,9 +382,13 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     await agent.whenIdle();
     const firstSeq = agent.session.seq;
 
+    // Build user content: text + image/PDF attachments (step 2l). Images become
+    // ImageBlocks via the mounted attachment store; without this req.images is
+    // dropped (chat has supported attachments in the builtin loop all along).
+    const userContent = await buildCordisUserContent(ctx, req.message, req.images);
     agent.followup(
       createUserMessage({
-        content: [{ type: "text", text: req.message }],
+        content: userContent as never,
         source: { kind: "user" },
       }),
     );

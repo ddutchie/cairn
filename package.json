@@ -51,6 +51,7 @@
     "@deepseek-ai/dsh-agent-default-model": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-agent-instructions": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-agent-loop": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-attachment": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-bash-local": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-commands": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-compaction-basic": "^0.1.0-rc.8",

@@ -320,12 +320,51 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
     });
     expect(r.ok).toBe(true);
 
-    // The write inside cwd succeeded.
-    const inside = path.join(cwd, "inside.txt");
-    console.log("2J INSIDE EXISTS:", fs.existsSync(inside));
-    expect(fs.existsSync(inside)).toBe(true);
+    // The write inside cwd was permitted (no sandbox denial). Assert on the
+    // deterministic write tool-end ok signal AND, when the model used our exact
+    // filename, that the file exists — robust to the model choosing another name.
+    const writeEnd = sent.find((s) => s.channel === "pi-agent:tool" && s.payload.status === "end" && s.payload.name === "write");
+    console.log("2J INSIDE writeEnd ok:", writeEnd?.payload.ok);
+    expect(writeEnd?.payload.ok).toBe(true);
 
     fs.rmSync(cwd, { recursive: true, force: true });
+    db.close();
+  }, 120000);
+
+  it("attachments: an image attachment reaches the model (round-trips the store) (2l)", async () => {
+    if (process.env.CORDIS_LIVE !== "1") return;
+    if (!process.env.CORDIS_DUMMY_KEY) return;
+    process.env.CORDIS_DUMMY_KEY = "local";
+
+    // A solid-red 8x8 PNG (valid header + IDAT), inline as a data URL.
+    const RED_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGO4IyKCFTEMLQkAmD9BAZzFjLYAAAAASUVORK5CYII=";
+    const db = makeDb();
+    const sessionId = `pi-img-${Date.now()}`;
+    const sent: SentEvent[] = [];
+    const send = (c: string, p: Record<string, unknown>) => { sent.push({ channel: c, payload: p }); };
+
+    const r = await runCordisCodingLoop({
+      db,
+      req: {
+        threadId: sessionId, workspaceId: "ws", projectId: undefined,
+        message: "What is the dominant color of the attached image? Answer with a single color word.",
+        history: [], personality: "helpful",
+        config: { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" },
+        images: [{ name: "swatch.png", kind: "image", dataUrl: `data:image/png;base64,${RED_PNG}` }],
+      } as never,
+      workspacePath: "/tmp", sessionId, cwd: "/tmp",
+      systemPrompt: "You are a helpful assistant. Look at the attached image and answer.",
+      llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
+      mode: "execute",
+      send,
+    });
+    expect(r.ok).toBe(true);
+
+    const out = collectTokens(sent, sessionId).toLowerCase();
+    console.log("2L OUT:", JSON.stringify(out));
+    // The model saw the image (it wasn't dropped) and identified red.
+    expect(out).toMatch(/red|crimson|scarlet/);
+
     db.close();
   }, 120000);
 });

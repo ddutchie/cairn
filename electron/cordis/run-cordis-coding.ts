@@ -36,6 +36,7 @@ import {
 } from "./cairn-plugins";
 import { registerCairnTools, registerExternalCairnTools, registerSkillTool, discoverCodingSkills } from "./cairn-tools";
 import { renderSkillsXml } from "../lib/skills";
+import { buildCordisUserContent } from "./cairn-attachment-store";
 import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
@@ -262,8 +263,12 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // are tagged).
     await mount(cairnCodingPlugin, { sessionId, matchSessionId: String(attemptSessionId), mode, send: combinedSend, signal });
 
+    // Build the user message content: text + any image/PDF attachments. Images
+    // are admitted through the mounted attachment store and become ImageBlocks
+    // (step 2l); without this, req.images would be silently dropped.
+    const content = await buildCordisUserContent(ctx, req.message, req.images);
     agent.followup(
-      createUserMessage({ content: [{ type: "text", text: req.message }], source: { kind: "user" } }),
+      createUserMessage({ content: content as never, source: { kind: "user" } }),
     );
 
     // Wait for the turn to fully settle (the dsh loop runs all tool steps).
