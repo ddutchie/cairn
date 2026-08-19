@@ -56,9 +56,15 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
   const { cwd, sandboxMode = "danger-full-access", planModeSection = DEFAULT_PLAN_SECTION } = opts;
   const disposers: Array<() => void> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
-    const fiber = (ctx as unknown as { plugin: (p: unknown, c?: unknown) => Promise<{ dispose: () => void }> }).plugin(plugin, config);
-    disposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
-    await fiber;
+    const name = (plugin as { name?: string })?.name ?? (plugin as { apply?: { name?: string } })?.apply?.name ?? "unknown";
+    try {
+      const fiber = (ctx as unknown as { plugin: (p: unknown, c?: unknown) => Promise<{ dispose: () => void }> }).plugin(plugin, config);
+      disposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
+      await fiber;
+    } catch (e) {
+      console.error(`[cordis-coding] plug ${String(name)} failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
+      throw e;
+    }
   };
 
   await plug(sandboxLocalPlugin);
