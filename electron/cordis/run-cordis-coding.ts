@@ -226,6 +226,10 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // gives the coding agent stateful, resumable multi-turn sessions WITHOUT
     // storing transcripts in Cairn's SQLite (the DB is for MCP/tool access).
     const attemptSessionId = SessionId(sessionId);
+    try {
+      const { getSessionRoot } = await import("./run-cordis-loop");
+      console.log(`[cordis-coding] session ${String(attemptSessionId)} will persist at ${(getSessionRoot as () => string)()}/${String(attemptSessionId)}.jsonl (cwd=${cwd})`);
+    } catch { /* ignore */ }
 
     // Route every pi-agent:* event to BOTH the renderer (frontend `send`) and a
     // terminal resolver so the turn promise settles on done/error. cairnCodingPlugin
