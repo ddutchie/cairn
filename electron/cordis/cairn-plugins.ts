@@ -647,10 +647,18 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     }
 
     // ── Turn end: map completion to done/error ───────────────────────────────
+    // A user turn is multiple steps (LLM → tool → LLM → tool → answer).
+    // Only the final turn/end is "completed"; intermediate steps surface as
+    // `step/end`, and a turn that ends for any other terminal reason (aborted,
+    // blocked, error, max-tokens) is the failure case. Do NOT treat a
+    // non-completed turn as an error while steps are still in flight — the
+    // loop will keep stepping until it truly completes.
     if (event.type === "turn/end") {
       const reason = (event.data as { reason?: { kind?: string } }).reason?.kind;
       if (reason === "completed") finish("done");
-      else finish("error", reason ? `Agent turn ended abnormally (${reason})` : "Agent turn ended abnormally");
+      else if (reason === "aborted" || reason === "blocked" || reason === "error" || reason === "max-tokens") {
+        finish("error", reason ? `Agent turn ended abnormally (${reason})` : "Agent turn ended abnormally");
+      }
       return;
     }
   });
