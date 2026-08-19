@@ -182,20 +182,39 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // The dsh coding capability stack (bash/fs/search/editor/todo/plan-mode),
     // cwd-scoped. Order per dsh-base. Mounted before the agent so the tools are
     // registered when the model first requests them.
-    codingDisposers.push(await mountCodingStack(ctx, { cwd, sandboxMode }));
-    const externalDisposers = await registerExternalCairnTools(ctx, {
-      db,
-      workspaceId: req.workspaceId ?? "",
-      projectId: req.projectId ?? "",
-    });
+    try {
+      codingDisposers.push(await mountCodingStack(ctx, { cwd, sandboxMode }));
+    } catch (e) {
+      console.error(`[cordis-coding] mountCodingStack failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
+      throw e;
+    }
+    let externalDisposers: Array<() => void> = [];
+    try {
+      externalDisposers = await registerExternalCairnTools(ctx, {
+        db,
+        workspaceId: req.workspaceId ?? "",
+        projectId: req.projectId ?? "",
+      });
+    } catch (e) {
+      console.error(`[cordis-coding] registerExternalCairnTools failed:`, (e as Error)?.message ?? e);
+    }
     toolDisposers.push(...externalDisposers);
     // The `skill` tool (loads a SKILL.md body on demand). No-op when no skills.
-    toolDisposers.push(...registerSkillTool(ctx, skills));
+    try {
+      toolDisposers.push(...registerSkillTool(ctx, skills));
+    } catch (e) {
+      console.error(`[cordis-coding] registerSkillTool failed:`, (e as Error)?.message ?? e);
+    }
 
     try {
-      const toolNames = (ctx as unknown as { tools: { list: () => Array<{ name: string }> } }).tools?.list?.().map((t) => t.name).sort() ?? [];
+      const toolsAny = (ctx as unknown as { tools: { list?: () => Array<{ name: string }>; registry?: Map<string, unknown> } }).tools;
+      const toolNames = toolsAny?.list?.().map((t) => t.name).sort()
+        ?? (toolsAny?.registry ? [...(toolsAny.registry as Map<string, unknown>).keys()].sort() : []);
       console.log(`[cordis-coding] cwd=${cwd} sandbox=${sandboxMode} provider=${llmConfig.provider ?? "openai"} model=${llmConfig.model} baseUrl=${llmConfig.baseUrl} tools=${toolNames.length} [${toolNames.join(", ")}] skills=${skills.length}`);
-    } catch { /* best-effort diagnostic */ }
+      if (toolNames.length === 0) console.error(`[cordis-coding] NO TOOLS REGISTERED — mountCodingStack + registerCairnTools produced 0 tools; check previous mount errors`);
+    } catch (e) {
+      console.error(`[cordis-coding] tools.list diagnostic failed:`, e);
+    }
 
     const selection = { provider: "cairn", model: llmConfig.model };
     // Stable dsh session id = the caller's pi sessionId. With dsh jsonl
