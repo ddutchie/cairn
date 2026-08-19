@@ -1,14 +1,22 @@
 # Cairn Cordis Runtime — Rollout Plan
 
-Status: **Proposal (validated by spike)** · Updated: 2026-08-19
+Status: **Active — Cordis is the default direction** · Updated: 2026-08-19
 Owner: Cairn maintainer
 Related note: *DeepSeek Harness (dsh) integration analysis* (Cairn project)
 
 ## 1. Goal
 
-Adopt the Cordis plugin framework (`@deepseek-ai/cordis`) as the engine behind Cairn's chat + agent surfaces — without shipping DeepSeek Harness the app. Cairn boots its own Cordis tree **in-process in Electron main**, consumes selected `@deepseek-ai/dsh-*` plugin packages from npm, and writes its own plugins for everything Cairn-specific. Users keep every existing integration (chat UI, message persistence, mobile sync, MCP connectors, community registry) unchanged, and gain the dsh plugin ecosystem (sandboxing, plan mode, approvals, skills, workflows, subagents) as an opt-in layer.
+Make the **Cairn Cordis runtime the single, default engine** behind Cairn's chat + agent surfaces, so Cairn stops maintaining its own agent loops entirely. Cairn boots its own Cordis tree **in-process in Electron main**, consumes the dsh stack (`dsh-agent-loop` orchestrator + `dsh-llm-pi-ai` model transport + dsh capability plugins for plan-mode/bash/fs/subagents/approvals/sandbox), and writes **small `cairn-*` plugins** for every Cairn-specific concern — each parity gap is a plugin, not a fork.
 
-This plan is gated on the npm publish set stabilizing (see §6) — the architecture is proven; the distribution isn't.
+**Strategy decision (2026-08-19):** Cordis is **default**. The built-in loops (`chat-loop.ts`, `pi-agent-loop.ts`, `chat-subagent-loop.ts`) become **frozen legacy** — reachable via an advanced setting/env var for rollback only, never developed in parallel. Delete them + the toggle once parity lands.
+
+**The core idea:** every gap = a `cairn-*` plugin on the shared tree:
+- `cairn-subagent` — bridge dsh subagent events → renderer `chat:subagent*` IPC
+- `cairn-usage` — dsh usage/chunk events → `recordLlmUsage` + `chat:usage` + credit recovery
+- `cairn-reasoning` — reasoning chunks → round-trip metadata on `chat_messages`
+- `cairn-session` — dsh session events → `chat_threads`/`chat_messages` persistence
+- `cairn-tools` — Cairn's ~56 data tools onto `ctx.tools` (done)
+- `cairn-llm` — pi-ai adapter + profile for Cairn's endpoints (done)
 
 ## 2. Proof of concept (done — `scratch/dsh-spike/`)
 
@@ -33,69 +41,50 @@ This plan is gated on the npm publish set stabilizing (see §6) — the architec
 
 ```
 Cairn Electron main (in-process, no subprocess, no protocol bridge)
-└── @deepseek-ai/cordis Context (ctx)
-    ├── Borrowed dsh packages (Phase 1)
-    │   ├── dsh-session, dsh-llm, dsh-system-prompt, dsh-agent, dsh-tools
-    │   └── dsh-agent-loop (orchestrator — Phase 1b once npm completes)
-    ├── Borrowed capability plugins (Phase 2, adopt one per release)
-    │   ├── plan-mode, permission + user-approval, sandbox-*, compaction,
-    │   │   subagent-*, workflow, skill, tool-web, token-meter, session-query-sqlite
-    └── Cairn's own plugins (write once, Phase 1)
-        ├── cairn-db             — wraps the existing db handle + queries/graph-queries (ABI-safe)
-        ├── cairn-llm            — ctx.llm adapter for Cairn's providers (OpenAI-compat / Responses / localllm)
-        ├── cairn-tools          — register the ~45 data tools on ctx.tools (bodies already exist in electron/mcp/tools/*)
-        ├── cairn-external-tools — bridge user MCP servers + custom services into ctx.tools
-        ├── cairn-session        — session/event → chat_threads/chat_messages (renderer + mobile bridge unchanged)
-        ├── cairn-ui-bridge       — agent/session/tool events → existing chat:token/tool-call/done IPC
-        └── cairn-community       — map personalities / slash commands / automation recipes onto the Cordis tree
+└── @deepseek-ai/cordis Context (ctx)  ← default engine
+    ├── dsh core: session, llm, system-prompt, agent, tools, agent-loop, scope,
+    │   llm-retry, agent-default-model, llm-pi-ai
+    ├── dsh capability plugins: plan-mode, permission-presets, user-approval,
+    │   sandbox-local/policy, fs-sandbox, shell-env, subprocess-local, bash-local,
+    │   tool-bash/fs/fs-search/str-replace/todo, agent-instructions, subagent,
+    │   compaction-basic, token-meter, commands
+    └── Cairn's own plugins (the parity layer — one per concern, not a fork)
+        ├── cairn-db             — existing db handle + queries (ABI-safe)
+        ├── cairn-llm            — pi-ai adapter + profile for Cairn's endpoints (done)
+        ├── cairn-tools          — ~56 data tools onto ctx.tools (done)
+        ├── cairn-external-tools — user MCP servers + custom services onto ctx.tools
+        ├── cairn-session        — dsh session events → chat_threads/chat_messages
+        ├── cairn-usage          — dsh usage → recordLlmUsage + chat:usage + credit recovery
+        ├── cairn-reasoning      — reasoning chunks → chat_messages round-trip
+        ├── cairn-subagent       — dsh subagent events → chat:subagent* IPC
+        └── cairn-community      — personalities / slash commands / automations onto the tree
 ```
 
 **Non-negotiable invariants:**
 - `Database` is still constructed only in `electron/db/client.ts` and the MCP runtime — the ABI rules in AGENTS.md stay untouched.
-- The renderer keeps talking the exact same IPC surface (`chat:stream` / `chat:token` / `chat:tool-call` / `chat:done`). Only the engine call site in `electron/ipc/chat.ts` changes.
+- The renderer keeps talking the exact same IPC surface (`chat:stream` / `chat:token` / `chat:tool-call` / `chat:done`). Only the engine call site changes.
 - Chat messages still land in `chat_threads` / `chat_messages` (SQLite), so the mobile SSE bridge, pop-out window, and PreviewPane keep working with zero UI changes.
 
-## 4. Phased rollout
+## 4. Phased rollout (aggressive — Cordis default, frozen fallback)
 
 ### Phase 0 — Stabilize the dependency baseline (DONE 2026-08-19)
-- [x] **Core tree installs and runs at a coherent snapshot.** dsh repo at `0.1.0-rc.7`; the full core set (25 packages) is published at `0.1.0-rc.7` + framework `@deepseek-ai/cordis@4.0.1` (stable). `npm install` of the 25-package set resolves in plain Node with no conflicts (see the pinned matrix below).
-- [x] **Real agent loop proven.** Harness at `scratch/dsh-full/harness.mjs` mounts session/llm/system-prompt/agent/tools/agent-loop and drives a real `Agent` through `ctx.agentLoop.createAgent` with a custom `LlmAdapter` against the Rork bridge: user → tool-call → execute → result → assistant → `turn/end: completed`.
-- [x] **5 packages remain unpublished on npm:** `dsh-environment`, `dsh-bash-env`, `dsh-tasks`, `dsh-skill-local`, `dsh-cordis` (the `dsh-base` bundle is not installable as a result). None are needed for the Phase 1 core engine; `dsh-bash-env`/`dsh-tasks`/`dsh-environment` are needed for some Phase 2 capability plugins. Decision: **adopt core via npm now; revisit capability packages as upstream publishes them** — do not vendor yet, keep the 5-6 core packages on npm and track upstream.
+- [x] Core tree installs and runs at the coherent **0.1.0-rc.8** snapshot (all 32 deps; `@deepseek-ai/cordis@4.0.1`). See pinned matrix in `package.json`.
+- [x] Chat engine swap proven end-to-end (get_active_context → real SQLite → answer).
+- [x] Full coding toolset mounts on rc.8: bash, read, write, edit, glob, grep, str_replace_editor, todo_write, exit_plan_mode.
+- [x] 5 packages remain unpublished (`dsh-environment`, `dsh-bash-env`, `dsh-tasks`, `dsh-skill-local`, `dsh-cordis`) — none needed for the core/coding stack; revisit when adopting workflows/skills.
 
-**Pinned snapshot (commit this matrix):**
-```
-@deepseek-ai/cordis@4.0.1  (framework, stable)
-@deepseek-ai/dsh-agent@0.1.0-rc.7
-@deepseek-ai/dsh-agent-default-model@0.1.0-rc.7
-@deepseek-ai/dsh-agent-loop@0.1.0-rc.7
-@deepseek-ai/dsh-invariants@0.1.0-rc.7
-@deepseek-ai/dsh-llm@0.1.0-rc.7
-@deepseek-ai/dsh-llm-pi-ai@0.1.0-rc.7
-@deepseek-ai/dsh-llm-retry@0.1.0-rc.7
-@deepseek-ai/dsh-scope@0.1.0-rc.7
-@deepseek-ai/dsh-session@0.1.0-rc.7
-@deepseek-ai/dsh-session-persistence-jsonl@0.1.0-rc.7
-@deepseek-ai/dsh-system-prompt@0.1.0-rc.7
-@deepseek-ai/dsh-tools@0.1.0-rc.7
-(+ Phase 2 capability set: dsh-plan-mode, dsh-permission-presets, dsh-user-approval,
-   dsh-sandbox-local, dsh-fs-*, dsh-bash-sandbox, dsh-tool-*, dsh-commands,
-   dsh-compaction-basic, dsh-token-meter — all 0.1.0-rc.7)
-```
-**Key API facts learned (for Phase 1):** mount plugins by `await ctx.plugin(plugin, config)` (returns an awaitable fiber); register tools with `ctx.tools.register(defineTool({...}))` (mandatory typed output schema + render); register a provider with `ctx.llm.registerAdapter(providers, LlmAdapter)`; the loop service is `ctx.agentLoop.createAgent(ctx, { sessionId, meta, agentOptions, setup })`; `setup` may return void; agent events surface via `agent.session.events` (assistant/message, tool/call, tool/result, turn/end). Chunk data must be strictly JSON-serializable — never emit `undefined` fields in usage/tool-call chunks.
+### Phase 1 — Cordis default + parity plugins (CURRENT)
+- [ ] Flip the engine toggle default to `cordis`; keep built-in as frozen legacy (advanced setting / `CAIRN_ENGINE=builtin` env for rollback only, not developed).
+- [ ] `cairn-session` — persist dsh session events → `chat_threads`/`chat_messages` (currently in-memory only).
+- [ ] `cairn-usage` — full usage/credit/reasoning mapping → `chat:usage` + `recordLlmUsage` + ContextRing.
+- [ ] `cairn-subagent` — map dsh subagent events → `chat:subagent*` IPC (parity for `useSubagents`).
+- [ ] `cairn-reasoning` — reasoning round-trip onto messages.
+- [ ] `cairn-external-tools` — user MCP servers + custom services onto `ctx.tools`.
+- [ ] Fix bundle-guard + native-deps-guard (allowlist esprima/@google/genai/koffi) + accept ~5.4mb footprint; verify win32-arm64 packaging.
 
-### Phase 1 — Core engine swap behind a toggle (2–3 weeks)
-- [ ] `cairn-llm` — implement the dsh-llm adapter for Cairn's existing providers (reuse `electron/lib/llm-transport.ts`, `llm-stream.ts`, `llm.ts`). The spike proves the seam.
-- [ ] `cairn-tools` — a thin adapter that wraps the ~45 built-in tools + external MCP/services into `ctx.tools` definitions (schema conversion from Zod tool-schemas.ts → dsh ValueSchemaSpec).
-- [ ] `cairn-session` + `cairn-ui-bridge` — map dsh session events → existing IPC events and SQLite tables.
-- [ ] Wire `runToolLoop` call site in `electron/ipc/chat.ts` to the Cordis agent loop behind a settings toggle ("Chat engine: Built-in | Cordis").
-- [ ] Ship behind the toggle; default stays Built-in until parity is proven.
-
-### Phase 2 — Adopt capability plugins one per release (each 1–2 weeks)
-- [ ] Approval gating + sandboxing (OpenWorker Phase 1 alignment) → `dsh-permission` + `dsh-user-approval` + `dsh-sandbox-*`
-- [ ] Plan mode → `dsh-plan-mode`
-- [ ] Skills → `dsh-skill-*` (unblocks the "Registry 3: Skills" backlog card)
-- [ ] Workflows / automations v2 → `dsh-workflow-worker-thread` + `dsh-schedule`
-- [ ] Session fork/resume/replay + auto-titles → `dsh-session` + `dsh-session-title-*`
+### Phase 2 — Delete the old loops (parity gate met)
+- [ ] Once chat/subagent/usage/reasoning parity is proven in production, **delete** `chat-loop.ts`, `chat-subagent-loop.ts`, `pi-agent-loop.ts`, and the toggle.
+- [ ] Retire the old `electron/lib/chat-loop.ts`/`pi-agent-loop.ts`/`chat-subagent-loop.ts` and their IPC handlers.
 
 ### Phase 3 — In-app user plugins (the big unlock, 3–6 weeks)
 Users write/install Cordis plugins inside Cairn.
