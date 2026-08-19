@@ -207,13 +207,13 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     }
 
     try {
-      const toolsAny = (ctx as unknown as { tools: { list?: () => Array<{ name: string }>; registry?: Map<string, unknown> } }).tools;
-      const toolNames = toolsAny?.list?.().map((t) => t.name).sort()
-        ?? (toolsAny?.registry ? [...(toolsAny.registry as Map<string, unknown>).keys()].sort() : []);
+      const toolsAny = (ctx as unknown as { tools: { schemas?: () => Array<{ function: { name: string } }>; list?: () => Array<{ name: string }> } }).tools;
+      const toolNames = toolsAny?.schemas?.().map((s) => s.function.name).sort()
+        ?? toolsAny?.list?.().map((t) => t.name).sort() ?? [];
       console.log(`[cordis-coding] cwd=${cwd} sandbox=${sandboxMode} provider=${llmConfig.provider ?? "openai"} model=${llmConfig.model} baseUrl=${llmConfig.baseUrl} tools=${toolNames.length} [${toolNames.join(", ")}] skills=${skills.length}`);
       if (toolNames.length === 0) console.error(`[cordis-coding] NO TOOLS REGISTERED — mountCodingStack + registerCairnTools produced 0 tools; check previous mount errors`);
     } catch (e) {
-      console.error(`[cordis-coding] tools.list diagnostic failed:`, e);
+      console.error(`[cordis-coding] tools diagnostic failed:`, e);
     }
 
     const selection = { provider: "cairn", model: llmConfig.model };

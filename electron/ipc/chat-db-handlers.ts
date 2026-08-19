@@ -18,10 +18,24 @@ export function registerChatDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:chat:upsertThread", (_e, args: Parameters<typeof q.upsertChatThread>[1]) => handle(() => q.upsertChatThread(ctx.db, args)));
   registerIpcHandle("db:chat:addMessage", (_e, args: Parameters<typeof q.addChatMessage>[1]) => handle(() => q.addChatMessage(ctx.db, args)));
 
-  // db:chat:clearThreadMessages — direct SQL DELETE.
+  // db:chat:clearThreadMessages — direct SQL DELETE + Cordis jsonl clear.
   // TODO (P2 follow-up): promote to q.clearChatThreadMessages in db/queries.ts.
   registerIpcHandle("db:chat:clearThreadMessages", (_e, { threadId }) => handle(() => {
     ctx.db.prepare("DELETE FROM chat_messages WHERE thread_id = ?").run(threadId);
+    // Cordis path: also clear the dsh jsonl transcript so a resumed chat
+    // session doesn't see old messages (mirrors pi-agent:clear at pi-agent.ts:797).
+    try {
+      const fs = require("node:fs") as typeof import("node:fs");
+      const path = require("node:path") as typeof import("node:path");
+      const root = process.env.CAIRN_SESSION_ROOT || path.join(process.cwd(), ".cairn-sessions");
+      const file = path.join(root, `${threadId}.jsonl`);
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+      const { getContext } = require("../cordis/run-cordis-loop");
+      getContext().then((c: unknown) => {
+        const maybeAgents = (c as { agents?: { get?: (id: string) => unknown; delete?: (id: string) => void } })?.agents;
+        try { maybeAgents?.delete?.(threadId); } catch { /* ignore */ }
+      }).catch(() => {});
+    } catch { /* best-effort */ }
   }));
 
   registerIpcHandle("db:chat:deleteThread", (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));

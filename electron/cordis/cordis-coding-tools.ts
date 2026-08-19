@@ -63,8 +63,8 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
       disposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
       await fiber;
       try {
-        const toolsAny = (ctx as unknown as { tools?: { list?: () => Array<{ name: string }> } }).tools;
-        const count = toolsAny?.list?.().length ?? -1;
+        const toolsAny = (ctx as unknown as { tools?: { schemas?: () => Array<{ function: { name: string } }>; list?: () => Array<{ name: string }> } }).tools;
+        const count = toolsAny?.schemas?.().length ?? toolsAny?.list?.().length ?? -1;
         console.log(`[cordis-coding] plug ${String(name)} ok — tools now ${count}`);
       } catch { /* ignore */ }
     } catch (e) {
