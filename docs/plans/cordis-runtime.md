@@ -53,9 +53,8 @@ Cairn Electron main (in-process, no subprocess, no protocol bridge)
         ├── cairn-llm            — pi-ai adapter + profile for Cairn's endpoints (done)
         ├── cairn-tools          — ~56 data tools onto ctx.tools (done)
         ├── cairn-external-tools — user MCP servers + custom services onto ctx.tools
-        ├── cairn-session        — dsh session events → chat_threads/chat_messages
+        ├── cairn-session        — dsh session events → chat_threads/chat_messages (+ reasoning field)
         ├── cairn-usage          — dsh usage → recordLlmUsage + chat:usage + credit recovery
-        ├── cairn-reasoning      — reasoning chunks → chat_messages round-trip
         ├── cairn-subagent       — dsh subagent events → chat:subagent* IPC
         └── cairn-community      — personalities / slash commands / automations onto the tree
 ```
@@ -75,10 +74,9 @@ Cairn Electron main (in-process, no subprocess, no protocol bridge)
 
 ### Phase 1 — Cordis default + parity plugins (CURRENT)
 - [ ] Flip the engine toggle default to `cordis`; keep built-in as frozen legacy (advanced setting / `CAIRN_ENGINE=builtin` env for rollback only, not developed).
-- [ ] `cairn-session` — persist dsh session events → `chat_threads`/`chat_messages` (currently in-memory only).
-- [ ] `cairn-usage` — full usage/credit/reasoning mapping → `chat:usage` + `recordLlmUsage` + ContextRing.
+- [ ] `cairn-session` — persist dsh session events → `chat_threads`/`chat_messages` (done; reasoning field captured too — **no separate cairn-reasoning plugin needed** since dsh round-trips reasoning to the model natively via `deriveMessages`).
+- [ ] `cairn-usage` — full usage/credit/reasoning mapping → `chat:usage` + `recordLlmUsage` + ContextRing (usage done; add credit recovery).
 - [ ] `cairn-subagent` — map dsh subagent events → `chat:subagent*` IPC (parity for `useSubagents`).
-- [ ] `cairn-reasoning` — reasoning round-trip onto messages.
 - [ ] `cairn-external-tools` — user MCP servers + custom services onto `ctx.tools`.
 - [ ] Fix bundle-guard + native-deps-guard (allowlist esprima/@google/genai/koffi) + accept ~5.4mb footprint; verify win32-arm64 packaging.
 
