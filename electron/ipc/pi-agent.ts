@@ -811,6 +811,10 @@ export function registerPiAgentHandler(
       session.recentToolCalls = [];
       session.doomLoopApproved = false;
     }
+    // Persisted transcript — without this, pi-agent:restore-context on next
+    // launch reloads old messages from pi_agent_llm_history and the clear
+    // appears to not stick after quit/restart.
+    try { ctx.db.prepare("DELETE FROM pi_agent_llm_history WHERE session_id = ?").run(sessionId); } catch { /* ignore */ }
     // Explicit session clearing wipes persisted todos too (the todowrite
     // replacement contract otherwise leaves them until the next write).
     q.saveSessionTodos(ctx.db, sessionId, []);
@@ -828,9 +832,28 @@ export function registerPiAgentHandler(
       const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
       let deleted = false;
       for (const root of roots) {
-        const base = path.join(root, sessionId);
-        const candidates = [base + ".jsonl", path.join(base, "session.jsonl"), base];
-        for (const p of candidates) {
+        // dsh nests as <root>/<encoded-cwd>/<sessionId>/session.jsonl.zstd — brute-force
+        // every project dir and check the session id inside it, plus the flat fallbacks.
+        try {
+          const projectDirs = fs.readdirSync(root, { withFileTypes: true }).filter((d: { isDirectory: () => boolean }) => d.isDirectory()).map((d: { name: string }) => d.name);
+          for (const proj of projectDirs) {
+            const base = path.join(root, proj, sessionId);
+            for (const p of [path.join(base, "session.jsonl.zstd"), path.join(base, "session.jsonl"), base + ".jsonl", path.join(base, "session.jsonl"), base]) {
+              try {
+                if (fs.existsSync(p)) {
+                  const stat = fs.statSync(p);
+                  if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
+                  else fs.unlinkSync(p);
+                  console.log(`[pi-agent/clear] deleted ${p}`);
+                  deleted = true;
+                }
+              } catch (e) { console.warn(`[pi-agent/clear] failed to delete ${p}:`, e); }
+            }
+          }
+        } catch { /* root not readable */ }
+        // Flat fallbacks (old layout or if projectDir is _no-cwd)
+        const flatBase = path.join(root, sessionId);
+        for (const p of [flatBase + ".jsonl", path.join(flatBase, "session.jsonl"), path.join(flatBase, "session.jsonl.zstd"), flatBase]) {
           try {
             if (fs.existsSync(p)) {
               const stat = fs.statSync(p);
@@ -839,15 +862,21 @@ export function registerPiAgentHandler(
               console.log(`[pi-agent/clear] deleted ${p}`);
               deleted = true;
             }
-          } catch (e) { console.warn(`[pi-agent/clear] failed to delete ${p}:`, e); }
+          } catch { /* ignore */ }
         }
       }
       if (!deleted) {
-        // List what's actually in the session roots so we can see where the session lives.
         for (const root of roots) {
           try {
             const entries = fs.readdirSync(root).slice(0, 20);
             console.log(`[pi-agent/clear] root ${root} contains: ${entries.join(", ") || "(empty/missing)"}`);
+            // Also list one level deeper for the first project dir so we can see session ids inside it.
+            for (const proj of entries.slice(0, 3)) {
+              try {
+                const sub = fs.readdirSync(path.join(root, proj)).slice(0, 10);
+                console.log(`[pi-agent/clear]   ${proj}/ contains: ${sub.join(", ")}`);
+              } catch { /* ignore */ }
+            }
           } catch { console.log(`[pi-agent/clear] root ${root} not readable`); }
         }
         console.log(`[pi-agent/clear] no dsh file found for ${sessionId} in ${roots.join(" | ")}`);
