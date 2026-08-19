@@ -61,6 +61,11 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
       const fiber = (ctx as unknown as { plugin: (p: unknown, c?: unknown) => Promise<{ dispose: () => void }> }).plugin(plugin, config);
       disposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
       await fiber;
+      try {
+        const toolsAny = (ctx as unknown as { tools?: { list?: () => Array<{ name: string }> } }).tools;
+        const count = toolsAny?.list?.().length ?? -1;
+        console.log(`[cordis-coding] plug ${String(name)} ok — tools now ${count}`);
+      } catch { /* ignore */ }
     } catch (e) {
       console.error(`[cordis-coding] plug ${String(name)} failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
       throw e;
