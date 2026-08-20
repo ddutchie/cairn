@@ -210,7 +210,12 @@ function createWindow(): BrowserWindow {
 
   if (isDev) {
     win.loadURL("http://localhost:3000");
-    win.webContents.openDevTools({ mode: "detach" });
+    // Keep DevTools closed in headless/recording runs (CAIRN_NO_DEVTOOLS=1, used
+    // by the demo/QA harness) so the detached inspector window doesn't steal the
+    // Playwright video recording or pop a second window during capture.
+    if (process.env.CAIRN_NO_DEVTOOLS !== "1") {
+      win.webContents.openDevTools({ mode: "detach" });
+    }
   } else {
     win.loadURL("app://./index.html");
   }
@@ -221,6 +226,14 @@ function createWindow(): BrowserWindow {
   });
 
   return win;
+}
+
+// Test/QA isolation hook: when CAIRN_USER_DATA_DIR is set (used by the
+// Playwright Electron e2e harness), redirect the userData dir so the app runs
+// against a throwaway profile instead of the developer's real Cairn data. Must
+// run before whenReady resolves (whenReady reads app.getPath("userData") at boot).
+if (process.env.CAIRN_USER_DATA_DIR) {
+  app.setPath("userData", process.env.CAIRN_USER_DATA_DIR);
 }
 
 app.whenReady().then(async () => {

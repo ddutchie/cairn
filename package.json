@@ -35,7 +35,8 @@
     "test:e2e": "playwright test",
     "test:bundle": "npm run compile && vitest run electron/bundle-guard.test.ts electron/native-deps-guard.test.ts electron/mcp-server.test.ts",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:electron": "npm run compile && playwright test -c playwright.electron.config.ts"
   },
   "main": "dist-electron/main.js",
   "overrides": {

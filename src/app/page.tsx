@@ -191,8 +191,9 @@ export default function Home() {
             const history = useCairnStore.getState().piSessionHistory;
             if (history.length > 0) {
               const latest = history[0];
-              // Load messages for the latest session
-              const rows = await window.electron.piAgent.getMessages(latest.id) as Array<{
+              // Load messages for the latest session — session-as-truth (dsh JSONL),
+              // SQLite fallback for pre-dsh sessions. Mirrors the chat load path.
+              const rows = await (window.electron.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(latest.id) as Array<{
                 id: string; role: "user" | "assistant" | "error"; content: string;
                 reasoning: string | null;
                 toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;

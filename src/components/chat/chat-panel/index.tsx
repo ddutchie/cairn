@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { Trash2, ChevronDown, ArrowLeftFromLine, Loader2, Clock } from "lucide-react";
+import { Trash2, ChevronDown, ArrowLeftFromLine, Loader2, Clock, History } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -11,6 +11,8 @@ import { useChatMessageQueue, useQueueDrain, type QueuedMessage } from "@/hooks/
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { ipcAwaitResult } from "@/store/ipc";
 import { resolvePromptContext } from "@/lib/context-resolver";
+import { storage } from "@/lib/storage";
+import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
 import type { ChatHistoryEntry, ChatSubagent } from "@/types";
 
@@ -27,6 +29,7 @@ import { QuestionForm } from "./QuestionForm";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { cn, id } from "@/lib/utils";
+import { ChatTimeline, deriveSpansFromMessages } from "../ChatTimeline";
 import {
   getModelInfo,
   getModelCatalogVersion,
@@ -261,18 +264,35 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     return items;
   }, [notes, cards, activeWorkspaceId, activeProjectId]);
 
-  const handleClear = useCallback(() => {
+  const handleClear = useCallback(async () => {
     if (!threadId) return;
-    // Drop queued messages FIRST: stopping the stream flips isLoading to false,
-    // which fires the queue-drain — a pending prompt must not be sent into a
-    // just-cleared thread.
+    // Preserve project context across the clear (the "lose project context after
+    // clear" bug — after a clear the next turn's req.projectId was null because
+    // the in-memory Cordis session was not remounted with the thread's project).
+    const thread = useCairnStore.getState().chatThreads.find((t) => t.id === threadId);
+    const projectIdToRestore = thread?.projectId ?? activeProjectId ?? null;
+    const workspaceIdToRestore = thread?.workspaceId ?? activeWorkspaceId ?? null;
     clearQueue();
     if (isLoading) stopStream();
-    // Drop any in-flight questions form too — it belongs to this thread and
-    // would otherwise linger after the transcript is cleared.
     clearQuestions();
-    clearThreadMessages(threadId);
-  }, [threadId, isLoading, stopStream, clearThreadMessages, clearQuestions, clearQueue]);
+    await clearThreadMessages(threadId);
+    // Restore the thread's project/workspace so the next turn's get_active_context
+    // and project-scoped tools still resolve (clearThreadMessages keeps the thread
+    // row but the in-memory Context's per-turn mount would otherwise lose it).
+    if (projectIdToRestore) {
+      const cur = useCairnStore.getState().activeProjectId;
+      if (cur !== projectIdToRestore) {
+        useCairnStore.setState({ activeProjectId: projectIdToRestore });
+        try { storage.set(ACTIVE_PROJECT_KEY, projectIdToRestore); } catch {}
+      }
+    }
+    if (workspaceIdToRestore) {
+      const curWs = useCairnStore.getState().activeWorkspaceId;
+      if (curWs !== workspaceIdToRestore) {
+        useCairnStore.setState({ activeWorkspaceId: workspaceIdToRestore });
+      }
+    }
+  }, [threadId, isLoading, stopStream, clearThreadMessages, clearQuestions, clearQueue, activeProjectId, activeWorkspaceId]);
 
   const handleArchiveChat = useCallback(async () => {
     if (!threadId) return;
@@ -391,6 +411,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const prevProjectIdRef = useRef<string | null | undefined>(activeProjectId);
   const prevWorkspaceIdRef = useRef<string | null | undefined>(activeWorkspaceId);
   useEffect(() => {
+    console.log("[ChatPanel] thread init effect", { activeWorkspaceId, activeProjectId, activeChatThreadId, chatThreads: useCairnStore.getState().chatThreads.map((t) => ({ id: t.id, ws: t.workspaceId, proj: t.projectId })), isLoading: isLoadingRef.current });
     if (!activeWorkspaceId) return;
     if (isLoadingRef.current) return;
 
@@ -404,7 +425,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       // Fall through to getOrCreateThread below
     } else if (prevProject === activeProjectId) {
       // Neither changed — only initialise if no thread is active yet
-      if (activeChatThreadId) return;
+      if (activeChatThreadId) {
+        console.log("[ChatPanel] skip init — active thread already set", activeChatThreadId);
+        return;
+      }
     } else {
       // Project changed — check if the current thread still matches
       if (activeChatThreadId) {
@@ -412,11 +436,15 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           (t) => t.id === activeChatThreadId,
         );
         // Keep the thread if it matches the new project or is workspace-scoped
-        if (currentThread && currentThread.projectId === activeProjectId) return;
+        if (currentThread && currentThread.projectId === activeProjectId) {
+          console.log("[ChatPanel] skip init — thread matches new project", currentThread.id);
+          return;
+        }
       }
     }
 
     const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
+    console.log("[ChatPanel] getOrCreateThread", { ws: activeWorkspaceId, proj: activeProjectId, threadId: t.id, existing: useCairnStore.getState().chatThreads.map((x) => x.id) });
     setActiveChatThreadId(t.id);
   }, [activeWorkspaceId, activeProjectId, activeChatThreadId, setActiveChatThreadId]);
 
@@ -429,9 +457,25 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   }, []);
 
   const messages = useMemo(
-    () => threadId ? chatMessages.filter((m) => m.threadId === threadId) : [],
-    [threadId, chatMessages],
+    () => {
+      const filtered = threadId ? chatMessages.filter((m) => m.threadId === threadId) : [];
+      console.log("[ChatPanel] messages for thread", { threadId, total: chatMessages.length, filtered: filtered.length, chatThreads: chatThreads.map((t) => t.id) });
+      return filtered;
+    },
+    [threadId, chatMessages, chatThreads],
   );
+
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [timelineRange, setTimelineRange] = useState<{ start: number; end: number } | null>(null);
+  const timelineSpans = useMemo(() => deriveSpansFromMessages(messages as unknown as Array<{ role: string; toolCalls?: unknown[]; reasoning?: string }>), [messages]);
+  const visibleMessages = useMemo(() => {
+    if (!timelineRange) return messages;
+    const n = messages.length;
+    if (n === 0) return messages;
+    const s = Math.floor(timelineRange.start * n);
+    const e = Math.ceil(timelineRange.end * n);
+    return messages.slice(s, e);
+  }, [messages, timelineRange]);
 
   const isChatActive = useCairnStore((s) => s.activeSessionId === "chat");
 
@@ -577,11 +621,19 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       return history;
     };
 
+    // Timeline scrub is view-only (like dsh TrajectoryTimeline timelineFocusIndexes) — it dims
+    // rows outside range via visibleMessages for Virtuoso, but history sent to the
+    // model is always the full transcript (messages), not the scrubbed slice. The
+    // previous bug was historyForLog derived from visibleMessages, so scrubbing to
+    // 20% would send only 20% of history as context and the next turn would lose
+    // track (the "bonkers" duplicate Hello! after a scrub).
+    const historyForLog = formatChatHistory(messages);
+    console.log("[ChatPanel] sendStream", { threadId, projectId: activeProjectId, workspaceId: activeWorkspaceId, historyLen: historyForLog.length, input: content.slice(0, 50), messagesLen: messages.length, scrubbedVisible: visibleMessages.length, timelineRange });
     sendStream({
       message: resolvedMessage, threadId,
       projectId: activeProjectId,
       workspaceId: activeWorkspaceId,
-      history: formatChatHistory(messages),
+      history: historyForLog,
       config: {
         provider:    aiConfig.provider    || "openai",
         baseUrl:     aiConfig.baseUrl     || undefined,
@@ -733,6 +785,16 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         )}
 
 
+        <Tooltip content={timelineOpen ? "Hide timeline scrubber" : "Show timeline scrubber"} side="left">
+          <button
+            onClick={() => setTimelineOpen((v) => !v)}
+            className={cn("p-1 rounded transition-colors", timelineOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]")}
+            aria-pressed={timelineOpen}
+          >
+            <History size={11} />
+          </button>
+        </Tooltip>
+
         {messages.length > 0 && (
           <Tooltip content="Clear conversation" side="left">
             <button onClick={handleClear}
@@ -751,6 +813,18 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           </Tooltip>
         )}
       </div>
+
+      {timelineOpen && (
+        <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
+          <ChatTimeline
+            spans={timelineSpans}
+            range={timelineRange}
+            onRangeChange={setTimelineRange}
+            onSpanSelect={(idx) => chatVirtuosoRef.current?.scrollToIndex({ index: idx, align: "center", behavior: "smooth" })}
+          />
+          {timelineRange && <div className="text-[0.607rem] text-[var(--text-tertiary)] mt-1">Showing {visibleMessages.length} of {messages.length} messages — drag or wheel to zoom, double-click to reset</div>}
+        </div>
+      )}
 
       {/* Messages — virtualized so long threads never balloon the DOM; only the
           items near the viewport are mounted no matter how far you scroll. The
@@ -773,7 +847,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         <Virtuoso
           ref={chatVirtuosoRef}
           className="flex-1 min-h-0"
-          data={messages}
+          data={timelineRange ? visibleMessages : messages}
           initialTopMostItemIndex={Math.max(0, messages.length - 1)}
           followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
           components={{

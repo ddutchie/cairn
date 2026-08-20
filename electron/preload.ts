@@ -386,10 +386,12 @@ const api = {
   chat: {
     threads:       (workspaceId: string) => invoke("db:chat:threads", { workspaceId }),
     messages:      (threadId: string) => invoke("db:chat:messages", { threadId }),
+    sessionMessages: (threadId: string) => invoke("db:chat:sessionMessages", { threadId }),
     upsertThread:  (args: unknown) => invoke("db:chat:upsertThread", args),
     addMessage:    (args: unknown) => invoke("db:chat:addMessage", args),
     deleteThread:  (threadId: string) => invoke("db:chat:deleteThread", { threadId }),
     clearThreadMessages: (threadId: string) => invoke("db:chat:clearThreadMessages", { threadId }),
+    clearAllThreads: (workspaceId: string, projectId?: string) => invoke("db:chat:clearAllThreads", { workspaceId, projectId }),
     compactThread: (req: unknown) => invoke("chat:compactThread", req),
     // ── AI Chat streaming ──────────────────────
     // Fire-and-forget. Listen with onToken / onDone / onToolCall.
@@ -1154,6 +1156,8 @@ const api = {
     deleteSession:  (id: string) => invoke("db:piSession:delete", { id }),
     /** Fetch the full message transcript for a session */
     getMessages:    (sessionId: string) => invoke("db:piSession:messages", { sessionId }),
+    /** Fetch session transcript from the dsh JSONL log (session-as-truth), SQLite fallback */
+    getSessionMessages: (sessionId: string) => invoke("db:piSession:sessionMessages", { sessionId }),
     /** Fetch the persisted todo list for a session */
     getTodos:       (sessionId: string) => invoke<Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }>>("db:piSession:todos", { sessionId }),
     /** Bulk-save the full message array for a session (replaces existing rows) */

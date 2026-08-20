@@ -18,7 +18,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import type Database from "better-sqlite3";
-import { addChatMessage, upsertChatThread } from "../db/queries";
+import { upsertChatThread } from "../db/queries";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos } from "../db/queries";
@@ -118,21 +118,16 @@ export interface CairnSessionConfig {
   projectId?: string;
 }
 
-/** Extract the plain-text content of a message event. */
+/** Extract the plain-text content of a message event. Handles both the
+ *  `data.message.content` shape (assistant/message) and the `data.content`
+ *  shape (user/message on the live session/event stream, where content sits
+ *  directly on data — the previous data.message.content read returned "" for
+ *  user messages, so a subagent's instruction fell back to "subagent"). */
 function eventText(event: SessionEvent): string {
-  if (event.type === "assistant/message") {
-    return (event.data as { message: { content: Array<{ type: string; text?: string }> } })
-      .message.content
-      .filter((b) => b.type === "text" && b.text)
-      .map((b) => b.text)
-      .join("");
-  }
-  if (event.type === "user/message") {
-    const content = (event.data as { message?: { content?: Array<{ type: string; text?: string }> } }).message?.content;
-    if (Array.isArray(content)) {
-      return content.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("");
-    }
-    return "";
+  const d = event.data as { message?: { content?: Array<{ type: string; text?: string }> }; content?: Array<{ type: string; text?: string }> };
+  const content = d.message?.content ?? d.content;
+  if (Array.isArray(content)) {
+    return content.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("");
   }
   return "";
 }
@@ -150,7 +145,16 @@ function eventReasoning(event: SessionEvent): { reasoning: string; items?: Array
   return { reasoning, items: items.length ? items : undefined };
 }
 
-/** Persist a dsh session's durable events into Cairn's chat tables. */
+/** Index a dsh session's thread in SQLite; messages live in the JSONL log (not `chat_messages`).
+ *
+ *  Previously this also duplicated every `user/message`/`assistant/message` into
+ *  `chat_messages` (and `useChatStream onDone` did the same), causing the
+ *  `rSle/Hwx 171ms` double-final and `GpKH` reasoning-only ghost. `chat_messages`
+ *  is now legacy — the session log (`JsonlSessionPersistence` `chat-<threadId>`)
+ *  is the durable transcript and `db:chat:sessionMessages` reads it directly.
+ *  This plugin only maintains the lightweight `chat_threads` index for the thread
+ *  list; message history is never written to SQLite here.
+ */
 export function cairnSessionPlugin(ctx: Context, config: CairnSessionConfig): void {
   const { threadId, workspaceId, projectId } = config;
   const seen = new Set<string>();
@@ -166,24 +170,6 @@ export function cairnSessionPlugin(ctx: Context, config: CairnSessionConfig): vo
     try {
       upsertChatThread(db, { id: threadId, scope: "workspace", workspaceId, projectId });
     } catch { /* non-fatal */ }
-
-    if (event.type === "user/message" || event.type === "assistant/message") {
-      const role = event.type === "user/message" ? "user" : "assistant";
-      const content = eventText(event);
-      const { reasoning, items } = eventReasoning(event);
-      if (role === "assistant" && !content && !reasoning) return;
-      try {
-        addChatMessage(db, {
-          id: newId(),
-          threadId,
-          role,
-          content: content || "",
-          reasoning: reasoning || undefined,
-          reasoningItems: items,
-          reasoningModel: (event.data as { message?: { source?: { model?: string } } }).message?.source?.model,
-        });
-      } catch { /* non-fatal */ }
-    }
   });
 }
 
@@ -217,11 +203,21 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     const seq = event.seq;
 
     if (event.type === "user/message") {
+      // The child's first non-snapshot user/message is the delegated prompt.
+      // Skip the runtime-context snapshot (form:snapshot) so the instruction is
+      // the actual task, not "Current runtime context…". Use eventText (handles
+      // both data.message.content and data.content shapes) — the previous inline
+      // read of data.message.content returned undefined for the append-surface
+      // shape, so the instruction fell back to "subagent".
+      const src = (event.data as { message?: { source?: { kind?: string; form?: string } }; source?: { kind?: string; form?: string } }).message?.source
+        ?? (event.data as { source?: { kind?: string; form?: string } }).source;
+      if (src?.kind === "plugin" && src?.form === "snapshot") return;
       if (!started.has(childId)) {
         started.add(childId);
-        const label = (event.data as { message?: { content?: Array<{ type: string; text?: string }> } }).message?.content
-          ?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("").slice(0, 60) ?? "subagent";
-        send("chat:subagent", { status: "start", childId, role: label || "subagent", instruction: label });
+        const full = eventText(event).trim();
+        const instruction = full || "subagent";
+        const role = full ? full.slice(0, 60) : "subagent";
+        send("chat:subagent", { status: "start", childId, role, instruction });
       }
       return;
     }
@@ -333,47 +329,75 @@ interface UserQuestionsSeam {
  * and chat a blocking, same-turn question flow without the unpublished
  * dsh-tool-ask-user package.
  */
-export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig): void {
+export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig): (() => void) | void {
   const { send, registerPending, emitQuestions, signal } = config;
   const uq = (ctx as unknown as { userQuestions?: UserQuestionsSeam }).userQuestions;
   if (!uq) return;
 
-  uq.registerProvider({
-    ask: async (request) => {
-      const requestId = `q-${newId()}`;
-      // The ask_questions tool passes Cairn-shaped questions ({id,label,prompt})
-      // straight through ctx.userQuestions.ask(), and that IS exactly the
-      // renderer's PendingQuestion shape — so forward them UNCHANGED. (Do not
-      // remap to dsh's {question,header} fields: those are undefined here and
-      // would render an empty, un-fillable form.)
-      const questions = request.questions;
-      if (emitQuestions) {
-        // Coding path: emit on the pi-agent question channel (renderer-specific).
-        emitQuestions(requestId, questions);
-      } else {
-        // Chat path: the chat renderer picks up ask_questions as a tool-call.
-        send("chat:tool-call", { tool: "ask_questions", label: `Asking ${questions.length} question${questions.length === 1 ? "" : "s"}`, callId: requestId, args: { questions } });
-      }
+  // registerProvider throws DUPLICATE_PROVIDER if a prior turn's provider fiber
+  // hasn't been disposed yet (mount disposal is fire-and-forget, so a back-to-back
+  // turn can re-mount before teardown settles). A duplicate registration crashes
+  // the whole loop mid-turn (the "a user-questions provider is already registered"
+  // abort that left the subagent stuck "Working…"). Track the disposer on the
+  // shared context so we can dispose any stale provider before re-registering,
+  // making the mount idempotent.
+  const holder = ctx as unknown as { __cairnQuestionsDispose?: () => void };
+  if (typeof holder.__cairnQuestionsDispose === "function") {
+    try { holder.__cairnQuestionsDispose(); } catch { /* stale */ }
+    holder.__cairnQuestionsDispose = undefined;
+  }
 
-      const answersText = await new Promise<string>((resolve) => {
-        const dispose = registerPending(requestId, (text) => { dispose(); resolve(text); });
-        const onAbort = () => { dispose(); resolve('{"cancelled":true,"answers":[]}'); };
-        if (request.signal?.aborted || signal?.aborted) onAbort();
-        request.signal?.addEventListener?.("abort", onAbort, { once: true });
-        signal?.addEventListener?.("abort", onAbort, { once: true });
-      });
-
-      // The renderer answers with a JSON blob {answers:[{id,selected[],custom?}]}
-      // (structured) or plain text. Map both back to dsh's answer structure.
-      try {
-        const parsed = JSON.parse(answersText) as { answers?: Array<{ id?: string; selected?: string[]; custom?: string }> };
-        if (Array.isArray(parsed.answers)) {
-          return { answers: parsed.answers.map((a, i) => ({ id: a.id ?? request.questions[i]?.id ?? String(i), selected: a.selected ?? [], custom: a.custom })) };
+  let providerDispose: (() => void) | undefined;
+  try {
+    providerDispose = uq.registerProvider({
+      ask: async (request) => {
+        const requestId = `q-${newId()}`;
+        // The ask_questions tool passes Cairn-shaped questions ({id,label,prompt})
+        // straight through ctx.userQuestions.ask(), and that IS exactly the
+        // renderer's PendingQuestion shape — so forward them UNCHANGED. (Do not
+        // remap to dsh's {question,header} fields: those are undefined here and
+        // would render an empty, un-fillable form.)
+        const questions = request.questions;
+        if (emitQuestions) {
+          // Coding path: emit on the pi-agent question channel (renderer-specific).
+          emitQuestions(requestId, questions);
+        } else {
+          // Chat path: the chat renderer picks up ask_questions as a tool-call.
+          send("chat:tool-call", { tool: "ask_questions", label: `Asking ${questions.length} question${questions.length === 1 ? "" : "s"}`, callId: requestId, args: { questions } });
         }
-      } catch { /* fall through to plain-text */ }
-      return { answers: request.questions.map((q, i) => ({ id: q.id, selected: [], custom: i === 0 ? answersText : undefined })) };
-    },
-  });
+
+        const answersText = await new Promise<string>((resolve) => {
+          const dispose = registerPending(requestId, (text) => { dispose(); resolve(text); });
+          const onAbort = () => { dispose(); resolve('{"cancelled":true,"answers":[]}'); };
+          if (request.signal?.aborted || signal?.aborted) onAbort();
+          request.signal?.addEventListener?.("abort", onAbort, { once: true });
+          signal?.addEventListener?.("abort", onAbort, { once: true });
+        });
+
+        // The renderer answers with a JSON blob {answers:[{id,selected[],custom?}]}
+        // (structured) or plain text. Map both back to dsh's answer structure.
+        try {
+          const parsed = JSON.parse(answersText) as { answers?: Array<{ id?: string; selected?: string[]; custom?: string }> };
+          if (Array.isArray(parsed.answers)) {
+            return { answers: parsed.answers.map((a, i) => ({ id: a.id ?? request.questions[i]?.id ?? String(i), selected: a.selected ?? [], custom: a.custom })) };
+          }
+        } catch { /* fall through to plain-text */ }
+        return { answers: request.questions.map((q, i) => ({ id: q.id, selected: [], custom: i === 0 ? answersText : undefined })) };
+      },
+    }) as unknown as (() => void) | undefined;
+  } catch (err) {
+    // If a stale provider is still registered (dispose race), swallow the
+    // duplicate so the turn proceeds without ask_questions rather than aborting
+    // the whole loop (the DUPLICATE_PROVIDER crash).
+    if ((err as { code?: string })?.code !== "DUPLICATE_PROVIDER") throw err;
+    return;
+  }
+
+  holder.__cairnQuestionsDispose = () => {
+    try { providerDispose?.(); } catch { /* noop */ }
+    if (holder.__cairnQuestionsDispose) holder.__cairnQuestionsDispose = undefined;
+  };
+  return holder.__cairnQuestionsDispose;
 }
 // Cordis gates ctx.userQuestions behind an explicit injection declaration.
 cairnQuestionsPlugin.inject = ["userQuestions"];

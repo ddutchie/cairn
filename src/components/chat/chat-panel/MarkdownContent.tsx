@@ -103,7 +103,17 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
   const cwd = activeProject?.codeDirectory ?? null;
 
   const preprocessed = useMemo(() => {
-    return preprocessMarkdown(content, notes, cards, cwd);
+    // Balance unclosed ** so a model that opens bold without closing (e.g. "**Cairn is ..."
+    // with no trailing **) still renders as markdown instead of literal **. The last
+    // session's final paragraph started with ** and had an odd count (1), so the
+    // whole paragraph showed raw asterisks and no bold/italic.
+    let balanced = content;
+    const strongMarkers = (balanced.match(/\*\*/g) || []).length;
+    if (strongMarkers % 2 === 1) {
+      // Avoid appending inside a fenced code block — close after it.
+      balanced += "**";
+    }
+    return preprocessMarkdown(balanced, notes, cards, cwd);
   }, [content, notes, cards, cwd]);
 
   // The user bubble has a themed background. All text there renders in the

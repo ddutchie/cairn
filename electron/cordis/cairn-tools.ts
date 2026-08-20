@@ -111,7 +111,17 @@ export function buildCairnTool(
       schema: { type: "json" },
       render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }],
     },
-    async execute(args) {
+    async execute(args, runContext) {
+      // Subagent-originated tool calls must NOT fire the MAIN thread's emit/emitDone
+      // (chat:tool-call / chat:tool-call-done) — those chips belong to the parent
+      // chat bubble. A child session (header.origin === 'subagent') is already
+      // bridged to chat:subagent-tool-call by cairnSubagentPlugin via session/event.
+      // Without this guard, a subagent's get_active_context/get_note leaked chips
+      // into the main chat (the "tool chips spread between subagent and main" bug).
+      const rc = runContext as unknown as { agent?: { session?: { header?: { origin?: string } } } } | undefined;
+      const isSubagentCall = rc?.agent?.session?.header?.origin === "subagent";
+      const emit = isSubagentCall ? undefined : exec.emit;
+      const emitDone = isSubagentCall ? undefined : exec.emitDone;
       // ask_questions routes through the dsh user-questions seam so the turn
       // BLOCKS until the human answers and the answers become this tool's result
       // (same-turn), instead of the shared executor's synchronous echo. The
@@ -135,9 +145,9 @@ export function buildCairnTool(
         exec.llmConfig,
         name,
         args as Record<string, unknown>,
-        exec.emit,
+        emit,
         exec.getWin,
-        exec.emitDone,
+        emitDone,
         `cordis-${Math.random().toString(36).slice(2, 8)}`,
       );
       return out as never;

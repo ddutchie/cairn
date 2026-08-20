@@ -1,6 +1,6 @@
 # Cairn Cordis Runtime — Rollout Plan
 
-Status: **Phase 1 + 1.5 + 2 COMPLETE; A (heartbeat full agent) + C (manual /compact) DONE — only Phase 3 (dsh client/UI + plugins) remains** · Updated: 2026-08-19
+Status: **Phase 1 + 1.5 + 2 COMPLETE; A (heartbeat full agent) + C (manual /compact) DONE; D (Electron QA e2e harness) IMPLEMENTED — remaining: Phase 3 (dsh client/UI)** · Updated: 2026-08-19
 Owner: Cairn maintainer
 Related note: *DeepSeek Harness (dsh) integration analysis* (Cairn project)
 Branch: `feat/cordis-runtime` · Latest: `7df175ca`
@@ -49,6 +49,43 @@ Cordis is the **only engine** — chat, coding agent, automations, user-style, a
 
 ### C. Manual `/compact` on Cordis — DONE ✅
 `pi-agent:compact-now` (`pi-agent.ts:551`) opens the session's agent from its persisted jsonl (`openCordisAgent` at `run-cordis-coding.ts`), runs `ctx.compaction.compactNow(agent, signal)`, and disposes it — a real user-triggered compaction. Auto-compaction (`BasicCompactionEngine`, 80%) still runs between steps. The chat `/compact` (`chat.ts:90` `chat:compactThread`) works via `runOneShot`.
+
+### D. QA e2e — boot the REAL Electron app + drive the Cordis loops (new harness) — IMPLEMENTED ✅
+
+**Goal:** a test that boots the actual Electron app (not the mocked-IPC Next dev server) and drives each Cordis loop end-to-end through the real IPC + renderer — e.g. open chat and "summarize this project", open the agent and have it make a change, trigger a heartbeat automation. So `npm run test:e2e` (or a new `test:e2e:electron`) confirms everything works in the real app, not just at the `runCordisCodingLoop` unit level.
+
+**Delivered (2026-08-19):**
+- `tests/e2e/electron/cordis-qa.test.ts` — boots the real app via `_electron.launch` and drives the **chat loop** (`chat.stream` → `runCordisLoop` → `chat:done`), the **coding loop** (`piAgent.prompt` → `runCordisCodingLoop` → `pi-agent:done`), and the **heartbeat loop** (`automation.runNow` → `runAutomation` → `finished`). Each is gated behind `CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local` and asserts on plumbing (events fired, no error, tokens>0) not model text.
+- `playwright.electron.config.ts` — reuses the Next dev webServer (the Electron window loads it in dev mode) + `_electron.launch`. `DEMO_RECORD=1` turns on `recordVideo` → `electron-recordings/`.
+- `npm run test:e2e:electron` script (`npm run compile && playwright test -c playwright.electron.config.ts`).
+- **`CAIRN_USER_DATA_DIR` env hook in `electron/main.ts`** — redirects `app.setPath("userData")` before `whenReady` so the harness runs against a throwaway profile (never touches the developer's real Cairn data). The harness seeds `workspace-config.json` + `ai-settings-cache.json` into that dir pre-launch, then creates a workspace/project/note through the real store.
+- `scripts/demo-record.ts` — a standalone demo/video recorder that drives the REAL UI (types into the chat input by placeholder, submits, tours views) on a deterministic timeline for product/marketing videos.
+
+**Verified:** app boots under Playwright Electron, userData isolation works, store attaches, seeding (workspace/project/note) succeeds, and config points at the bridge — all validated with a throwaway probe (since the live model bridge isn't up in this environment). The three tests load and skip correctly without `CORDIS_LIVE`. A full live run needs the bridge at `CORDIS_TEST_BASE_URL` (default `http://localhost:3042/v1`).
+
+**Why a new harness:** the existing `tests/e2e/smoke.test.ts` + `playwright.config.ts` run against the **Next.js dev server with `window.electron` mocked** (`buildIpcMock` via `addInitScript`) — the Cordis loops never actually run. The live tests (`electron/cordis/*.live.test.ts`) call the loops directly, bypassing the renderer + IPC. This QA tier fills the gap between them.
+
+**Approach (Playwright Electron support — `@playwright/test` already ships `_electron`):**
+1. **Launch the real app** with `import { _electron as electron } from "@playwright/test"` + `electron.launch({ args: [path.join(__dirname, "../../dist-electron/main.js")], userDataDir: <temp> })`. `userDataDir` isolates the test from real user data; seed a **fixture workspace** (a temp dir with a `workspace.json`/`.cairn` pointing at a small notes project) so the app boots to a known state.
+2. **Point at the live model bridge** — same as `CORDIS_LIVE=1`: the Rork bridge at `http://localhost:3042/v1` (config via the app's `ai-settings-cache.json` in `userDataDir`, or set the cached `agentConfig`/`aiConfig` before launch). Gate the whole file behind `CORDIS_LIVE=1` + `CORDIS_DUMMY_KEY=local` so it skips without the bridge (same as the live tests).
+3. **Drive the renderer via the `ElectronApplication` API** (`app.firstWindow()`, `window.getByRole`/`getByPlaceholder`) — open the Chat pane, type "summarize this project", submit, and assert `chat:done` renders a non-empty assistant message; do the same for the Agent pane (a write/plan task) and a `runAutomationNow` heartbeat. Optionally assert the `chat:usage`/`pi-agent:usage` events fired (real usage recorded).
+4. **Emit-assert both directions**: `app.evaluate` to read store state; listen for the main-process events via the renderer's preload subscriptions.
+5. **Isolated config:** set `userDataDir` so `app.getPath("userData")` resolves to a temp dir (sessions jsonl + `ai-settings-cache.json` + the sqlite DB all live there) — the app's `main.ts:150/240` already reads everything from `userData`, so a fresh dir gives a clean, deterministic boot.
+
+**Checks to include (one test per Cordis loop):**
+- **Chat loop** (`chat:stream` → `runCordisLoop`): "Summarize this project" → assistant reply + usage event, no `chat:done` error.
+- **Agent/coding loop** (`pi-agent:prompt` → `runCordisCodingLoop`): plan-mode write is gated, or an execute-mode edit produces the file in the fixture workspace.
+- **Heartbeat** (`runAutomation`): a data-only automation completes with a `run-log.json` + notification.
+- **Attachments**: attach an image to chat → model describes it (round-trips `CairnAttachmentStore`).
+- **Approvals**: trigger a gated tool → `tool-confirm-required`/`automation:approval` event fires.
+
+**Build steps:**
+1. New `tests/e2e/electron/cordis-qa.test.ts` (gated `CORDIS_LIVE=1`).
+2. A `test:e2e:electron` npm script (`playwright test tests/e2e/electron`) + a second `playwright.electron.config.ts` (Electron apps need `electron.launch`, not the `webServer` Next dev server — reuse the port-3000 webServer is wrong here; the Electron window loads its own `dist-electron`/Next URL, so launch Electron directly with the app's real entry).
+3. Ensure `npm run compile` builds `dist-electron/main.js` first (the Electron entry the test launches).
+4. Reuse `tests/fixtures/` for a minimal workspace + seed `ai-settings-cache.json` pointing at `http://localhost:3042/v1`.
+
+**Risk/notes:** Electron in headless CI needs `xvfb` (or run headed locally). The app's `--user-data-dir`/`userDataDir` must be wired so it doesn't touch the developer's real Cairn data. Live-model tests are inherently non-deterministic (model output) — assert on plumbing (events fired, files created, no error) not exact text, mirroring the existing live tests' philosophy.
 
 ### Verification for any change
 `npm run type-check:all` (ignore `scratch/` errors) + `npm run compile` + `npx vitest run electron` (77 files/1106) + `CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npx vitest run electron/cordis/coding-agent.live.test.ts` (8, needs bridge at `localhost:3042`).

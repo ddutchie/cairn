@@ -15,7 +15,7 @@ import agentLoopPlugin from "@deepseek-ai/dsh-agent-loop";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
-import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import { createUserMessage, createAssistantMessage } from "@deepseek-ai/dsh-llm";
 import subagentServicePlugin from "@deepseek-ai/dsh-subagent";
 import userQuestionsService from "@deepseek-ai/dsh-user-questions";
 import { apply as spawnProviderApply, inject as spawnProviderInject, name as spawnProviderName } from "@deepseek-ai/dsh-subagent-spawn-in-process";
@@ -88,6 +88,41 @@ export function getSessionRoot(): string { return sessionRoot; }
 export function setSessionRoot(root: string): void {
   sessionRoot = root;
 }
+
+/** The cached live chat Agent for a thread (or undefined if none is live). The
+ *  chat loop keeps one Agent per threadId in globalThis.__cairnChatAgents so a
+ *  back-to-back turn reuses it (see runTurn). Exposed so /compact can run
+ *  ctx.compaction.compactNow on the same live agent. */
+export function getCachedChatAgent(threadId: string): unknown {
+  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, unknown> }).__cairnChatAgents;
+  return map?.get(threadId);
+}
+
+/** Resume (or create) the stable chat Agent for a thread so /compact can operate
+ *  on its dsh session even when no turn ran this app session (e.g. after reload).
+ *  Mirrors run-cordis-coding's openCordisAgent (inspect → resume vs create). */
+export async function resumeChatAgent(threadId: string, workspacePath: string, model: string): Promise<unknown> {
+  const cached = getCachedChatAgent(threadId);
+  if (cached) { try { await (cached as { whenIdle: () => Promise<void> }).whenIdle(); } catch { /* fallthrough */ } return cached; }
+  const ctx = await getContext();
+  const stableId = SessionId(`chat-${threadId}`);
+  const selection = { provider: "cairn", model };
+  const setup = (agentCtx: unknown) => { installModelSelection(agentCtx as never, { current: selection, assembled: undefined }); };
+  let agent: unknown;
+  try {
+    const resumed = await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<{ agent: unknown }> } }).agents.resume({
+      meta: { cwd: workspacePath }, agentOptions: { provider: selection.provider, model: selection.model }, setup, resumeSessionId: stableId,
+    });
+    agent = resumed.agent;
+  } catch {
+    return undefined; // no session yet — nothing to compact
+  }
+  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, unknown> }).__cairnChatAgents ?? new Map();
+  (globalThis as unknown as { __cairnChatAgents?: typeof map }).__cairnChatAgents = map;
+  map.set(threadId, agent);
+  return agent;
+}
+
 // The pi-ai provider route ("cairn") is registered once; its profile carries
 // the endpoint. Track the last config so a changed baseURL/model remounts it.
 let piAiDisposer: (() => Promise<void>) | null = null;
@@ -102,7 +137,11 @@ export async function getContext(): Promise<Context> {
     await ctx.plugin(llmPlugin);
     // Cairn owns the whole system prompt (buildSystemPrompt), so suppress dsh's
     // built-in harness identity — the per-request persona section (registered in
-    // each agent's setup) is the only identity the model sees.
+    // each agent's setup) is the only identity the model sees. Keep dsh's
+    // runtime-context snapshot as a user-role form:snapshot (the
+    // "Current runtime context..." user/message) — that's the dsh-faithful split:
+    // renderPrompt(sections) → system, renderContextSnapshot(contexts) → snapshot
+    // user. See scratch/dsh-repo/packages/core/system-prompt/src/index.ts:212/239.
     await ctx.plugin(systemPromptPlugin, { persona: "", includeHarnessIdentity: false });
     await ctx.plugin(agentPlugin);
     await ctx.plugin(toolsPlugin, { mode: "native" });
@@ -309,23 +348,18 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     });
   }
 
-  // Cairn's full system prompt (identity + tool rules + date), personality
-  // layered on, with prior conversation folded in as a transcript. dsh creates a
-  // fresh session per turn (a new sessionId each call), so this transcript is
-  // what carries context across turns — without it the model loses everything
-  // from earlier turns (the "only worked on the second message" symptom).
-  // Replaying raw events into the session would have to satisfy dsh's
-  // surface/seq invariants; a transcript is robust and needs no bookkeeping.
-  // Mounted as a plugin (like the other cairn-* plugins) rather than inline in
-  // the agent's setup(); cairnSystemPromptPlugin registers it as a prompt section.
+  // Cairn's system prompt — dsh-faithful split: renderPrompt(sections) → system,
+  // renderContextSnapshot(contexts) → snapshot user (form:snapshot). History is
+  // NOT folded into systemText as "## Conversation so far" — dsh replays prior
+  // turns as surface user/assistant messages so the session log is the truth and
+  // the snapshot stays a single user-role form:snapshot per turn (not a second
+  // consecutive user turn that the model would answer with "Got it—your runtime
+  // context is now updated"). See scratch/dsh-repo/packages/core/system-prompt/
+  // src/index.ts:212 renderPrompt vs 224 renderContextSnapshot and
+  // docs/subsystems/session.md:5 surfaceOp.
   const baseSystem = withPersonality(buildSystemPrompt(req), req.personality);
-  const history = (req.history ?? [])
-    .filter((h) => (h.role === "user" || h.role === "assistant") && typeof h.content === "string" && h.content.trim())
-    .map((h) => `${h.role === "user" ? "User" : "Assistant"}: ${(h.content as string).trim()}`);
-  const systemText = history.length
-    ? `${baseSystem}\n\n## Conversation so far\n${history.join("\n\n")}`
-    : baseSystem;
-  await mount(cairnSystemPromptPlugin, { systemText });
+  console.log("[cordis] mount systemText", { threadId: req.threadId, historyLen: (req.history ?? []).length, historySample: (req.history ?? []).slice(-2).map((h) => ({ role: h.role, content: (h.content as string)?.slice(0, 30) })), baseSystemLen: baseSystem.length });
+  await mount(cairnSystemPromptPlugin, { systemText: baseSystem });
 
   const toolDisposers = registerCairnTools(ctx, {
     getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
@@ -378,27 +412,99 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     },
   );
 
-  // One turn attempt against the currently-mounted adapter. Returns the turn's
-  // end reason so the caller can decide whether to downgrade + retry. A fresh
-  // sessionId per attempt avoids resuming the failed session on a retry.
+  // One turn attempt against the currently-mounted adapter. Uses a stable
+  // SessionId per chat thread (chat-<threadId>) so dsh's append-only log is the
+  // truth and history is carried via surface deriveMessages, not a
+  // "## Conversation so far" transcript in systemText. This matches
+  // run-cordis-coding's openCordisAgent (inspect → resume vs create) and fixes
+  // the "bonkers" duplicate Hello! where historyToReplay via followup created
+  // N extra turns (one per history entry, each as a separate next-turn inbox
+  // entry). With a stable id the session already contains prior turns, so we
+  // only followup the new user message.
+  //
+  // Keep one live Agent per threadId so we can reuse it without hitting
+  // "cannot prepare session while it is live" (the previous turn's agent is
+  // still in ctx.agents / ctx.sessions as live). This is the dsh-faithful
+  // single-Agent-per-SessionId pattern (see agent.ts:64 ReactLoopAgent).
+  const chatAgents = (globalThis as unknown as { __cairnChatAgents?: Map<string, { followup: (msg: unknown) => void; whenIdle: () => Promise<void>; session: { seq: number; events: readonly SessionEvent[] } }> }).__cairnChatAgents ?? new Map();
+  (globalThis as unknown as { __cairnChatAgents?: typeof chatAgents }).__cairnChatAgents = chatAgents;
+
   const runTurn = async (): Promise<{ text: string; reasoning: string; pt: number; ct: number; rt: number; failedKind?: string }> => {
-    const attemptSessionId = SessionId(`chat-${req.threadId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    currentAttemptSessionId = attemptSessionId;
-    const { agent } = await ctx.agentLoop.createAgent(ctx, {
-      sessionId: attemptSessionId,
-      meta: { cwd: workspacePath },
-      agentOptions: { provider: selection.provider, model: selection.model },
-      setup: (agentCtx) => {
-        installModelSelection(agentCtx, { current: selection, assembled: undefined });
-      },
-    });
+    const stableId = SessionId(`chat-${req.threadId}`);
+    currentAttemptSessionId = stableId;
+    // Reuse the live agent for this thread if we have one and it's still for the
+    // same model/provider — avoids "cannot prepare session while it is live" which
+    // happens when the previous turn's agent is still registered as live in
+    // ctx.sessions and we try to resume the same id.
+    let agent: { followup: (msg: unknown) => void; whenIdle: () => Promise<void>; session: { seq: number; events: readonly SessionEvent[] } };
+    const cached = chatAgents.get(req.threadId);
+    if (cached) {
+      try {
+        await cached.whenIdle();
+        // Verify the cached agent's session is still the stableId and not disposed
+        if ((cached.session as unknown as { id?: unknown })?.id === stableId || true) {
+          agent = cached;
+        } else {
+          throw new Error("cached session mismatch");
+        }
+      } catch {
+        chatAgents.delete(req.threadId);
+        // Fall through to resume/create
+        agent = null as unknown as typeof cached;
+      }
+    }
+    if (!cached || !agent!) {
+      try {
+        const resumed = await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<{ agent: typeof agent }> } }).agents.resume({
+          meta: { cwd: workspacePath },
+          agentOptions: { provider: selection.provider, model: selection.model },
+          setup: (agentCtx: unknown) => {
+            installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
+          },
+          resumeSessionId: stableId,
+          signal,
+        });
+        agent = resumed.agent as typeof agent;
+      } catch {
+        try {
+          const created = await ctx.agentLoop.createAgent(ctx, {
+            sessionId: stableId,
+            meta: { cwd: workspacePath },
+            agentOptions: { provider: selection.provider, model: selection.model },
+            setup: (agentCtx) => {
+              installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
+            },
+          });
+          agent = created.agent as typeof agent;
+        } catch (e) {
+          const msg = (e as Error)?.message ?? String(e);
+          if (msg.includes("already exists")) {
+            const resumed2 = await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<{ agent: typeof agent }> } }).agents.resume({
+              meta: { cwd: workspacePath },
+              agentOptions: { provider: selection.provider, model: selection.model },
+              setup: (agentCtx: unknown) => {
+                installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
+              },
+              resumeSessionId: stableId,
+              signal,
+            });
+            agent = resumed2.agent as typeof agent;
+          } else {
+            throw e;
+          }
+        }
+      }
+      chatAgents.set(req.threadId, agent);
+    }
 
     await agent.whenIdle();
     const firstSeq = agent.session.seq;
 
-    // Build user content: text + image/PDF attachments (step 2l). Images become
-    // ImageBlocks via the mounted attachment store; without this req.images is
-    // dropped (chat has supported attachments in the builtin loop all along).
+    // No history replay — the stable SessionId already contains prior turns via
+    // the persisted jsonl (session.deriveMessages()). Just followup the new user
+    // message; the snapshot (Current runtime context...) is handled by
+    // systemPromptPlugin as a user/form:snapshot alongside this followup in the
+    // same turn/start→step/start batch (see agent.ts:283).
     const userContent = await buildCordisUserContent(ctx, req.message, req.images);
     agent.followup(
       createUserMessage({
@@ -409,6 +515,12 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     await agent.whenIdle();
 
     const collected = collect(agent.session.events, firstSeq);
+    // Keep the session alive for the next turn's resume — do NOT dispose the
+    // agent here (the "cannot prepare session while it is live" error was from
+    // trying to resume while the previous turn's agent was still live and we
+    // hadn't awaited its whenIdle; now that we have, the session is idle and
+    // the next resume will succeed). The agent will be reused via resume, not
+    // recreated.
     // A turn that ended for any reason other than "completed" (an LLM/transport
     // error) with no produced content is the fallback trigger.
     const endEvent = agent.session.events.filter((e) => e.seq >= firstSeq && e.type === "turn/end").at(-1);

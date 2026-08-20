@@ -73,40 +73,17 @@ function extractCairnRef(
 }
 
 /**
- * Persist the session's finalised message transcript to the backend. Reads the
- * latest store state imperatively (so it is safe to call from IPC callbacks),
- * drops still-streaming messages, and fire-and-forgets the save. Shared by the
- * `onDone` and `onError` handlers, which previously inlined identical blocks.
+ * Persist the session's finalised message transcript. Pi-agent transcripts are
+ * now persisted by dsh's JSONL session log (session-as-truth), so this is a
+ * no-op — see persistPiTranscript below.
  */
-function redactPiMessage(message: PiAgentMessage): PiAgentMessage {
-  return {
-    ...message,
-    toolCalls: message.toolCalls?.map(redactAgentToolCall),
-    subagents: message.subagents?.map((sub) => ({
-      ...sub,
-      messages: sub.messages.map(redactPiMessage),
-    })),
-  };
-}
-
 function persistPiTranscript(sessionId: string): void {
-  const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
-  const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    images: m.images ?? null,
-    reasoning: m.reasoning ?? null,
-    toolCalls: m.toolCalls?.map(redactAgentToolCall) ?? null,
-    subagents: m.subagents?.map((sub) => ({
-      ...sub,
-      messages: sub.messages.map(redactPiMessage),
-    })) ?? null,
-    timestamp: m.timestamp,
-  }));
-  window.electron?.piAgent.saveMessages(sessionId, saveable).catch((err) =>
-    console.error(`[AgentChatPane] failed to persist transcript for session ${sessionId}:`, err),
-  );
+  // Pi-agent transcripts are persisted by dsh's JSONL session log (session-as-truth,
+  // read back via db:piSession:sessionMessages with a SQLite fallback for pre-dsh
+  // sessions). The pi_agent_messages SQLite table is legacy, so we no longer write
+  // to it — the in-memory store keeps the live transcript, and a reload rebuilds it
+  // from the jsonl. Kept as a no-op so the onDone/onError call sites are unchanged.
+  void sessionId;
 }
 
 
@@ -555,13 +532,38 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       }
     });
 
-    // /compact result — inject a system message confirming compaction
+    // /compact result — dsh's compactNow has rewritten the session surface (a
+    // summary replace node). Reload the transcript from the JSONL session log
+    // (session-as-truth) so the in-memory view matches the compacted history and
+    // survives reload, then append a confirmation system message.
     const unsubCompactResult = electron.piAgent.onCompactResult((e) => {
       if (e.sessionId !== sessionId) return;
-      const msg = e.messageCount > 0
-        ? `Context compacted — session history summarised into ${e.messageCount} messages.`
-        : "Nothing to compact — session history is too short.";
-      addPiMessage(sessionId, { id: id(), role: "system" as const, content: msg, timestamp: new Date().toISOString() });
+      void (async () => {
+        try {
+          const rows = await (electron.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId) as Array<{
+            id: string; role: "user" | "assistant" | "error"; content: string;
+            reasoning?: string | null; toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
+          }> | undefined;
+          if (rows && rows.length > 0) {
+            const fresh = rows.map((r) => ({
+              id: r.id, role: r.role, content: r.content,
+              reasoning: (r.reasoning ?? undefined) as never,
+              toolCalls: (r.toolCalls ?? undefined) as never,
+              subagents: (r.subagents ?? undefined) as never,
+              timestamp: r.timestamp,
+            }));
+            useCairnStore.setState((s) => ({
+              terminalSessions: s.terminalSessions.map((t) => (t.sessionId === sessionId ? { ...t, piMessages: fresh } : t)),
+            }));
+          }
+        } catch (err) {
+          console.warn("[AgentChatPane] compact reload failed", err);
+        }
+        const msg = e.messageCount > 0
+          ? `Context compacted — session history summarised into ${e.messageCount} messages.`
+          : "Nothing to compact — session history is too short.";
+        addPiMessage(sessionId, { id: id(), role: "system" as const, content: msg, timestamp: new Date().toISOString() });
+      })();
     });
 
     return () => {

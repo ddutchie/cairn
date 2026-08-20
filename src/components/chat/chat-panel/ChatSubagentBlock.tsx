@@ -50,8 +50,14 @@ function SubToolChip({ tc }: { tc: ChatToolCallRecord }) {
 export function ChatSubagentBlock({ sub }: { sub: ChatSubagent }) {
   const [expanded, setExpanded] = useState(false);
   const contextLimit = useCairnStore((s) => s.aiConfig.contextLimit ?? 128000);
-  const roleLabel = sub.role === "research" ? "Research agent" : sub.role === "write" ? "Writing agent" : "Sub-agent";
+  // `role` is either a known kind ("research"/"write") for the live subagent modes,
+  // or a dispatch title (the subagent/descriptor.label, e.g. "Project Summary") when
+  // replayed from the session log. Show the descriptor title verbatim if it's not a
+  // known kind, so the block header names the delegated task instead of "Sub-agent".
+  const knownKind = sub.role === "research" || sub.role === "write";
+  const roleLabel = sub.role === "research" ? "Research agent" : sub.role === "write" ? "Writing agent" : (sub.role && sub.role !== "subagent" ? sub.role : "Sub-agent");
   const RoleIcon = sub.role === "research" ? Search : sub.role === "write" ? PencilLine : GitBranch;
+  void knownKind;
 
   return (
     <div className="mt-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">

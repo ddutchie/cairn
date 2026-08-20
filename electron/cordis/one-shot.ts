@@ -16,6 +16,7 @@
  */
 
 import { getContext, ensurePiAiAdapter } from "./run-cordis-loop";
+import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { resolveTransport, type ApiMode } from "../lib/llm-transport";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import type { LLMConfig } from "../lib/llm";
@@ -64,26 +65,39 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
 
   let text = "";
   let promptTokens = 0, completionTokens = 0, reasoningTokens = 0;
+  const seenTypes: Record<string, number> = {};
 
   for await (const chunk of (ctx as unknown as {
-    llm: { stream: (opts: { provider: string; model: string; messages: Array<{ role: string; content: string }>; maxTokens?: number }) => AsyncIterable<{ type: string; text?: string; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }> };
+    llm: { stream: (opts: { provider: string; model: string; system?: string; messages: unknown[]; maxTokens?: number; temperature?: number }) => AsyncIterable<{ type: string; text?: string; block?: { type?: string; text?: string }; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }> };
   }).llm.stream({
     provider: "cairn",
     model: effectiveConfig.model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
+    // dsh GenerateOptions: `system` is a dedicated top-level slot (NOT a
+    // role:"system" message), and `messages` are structured Message objects with
+    // ContentBlock[] content — a plain {role:"system",content:string} list yielded
+    // an empty response (finish-only, no text), breaking /compact. Build a proper
+    // user Message via createUserMessage and pass the system prompt separately.
+    system: systemPrompt,
+    messages: [createUserMessage({ content: [{ type: "text", text: userPrompt }] as never, source: { kind: "user" } })],
     ...(maxTokens ? { maxTokens } : {}),
+    ...(temperature !== undefined ? { temperature } : {}),
   })) {
     if (signal?.aborted) break;
+    seenTypes[chunk.type] = (seenTypes[chunk.type] ?? 0) + 1;
     if (chunk.type === "text-delta" && chunk.text) text += chunk.text;
+    // Fallback: if the provider didn't stream text as deltas (e.g. /responses),
+    // the final text lands in a `block-end` text ContentBlock. Capture it when
+    // no deltas accumulated so /compact still gets a summary.
+    else if (chunk.type === "block-end" && chunk.block?.type === "text" && chunk.block.text) {
+      if (!text) text += chunk.block.text;
+    }
     if (chunk.type === "usage" && chunk.usage) {
       promptTokens = chunk.usage.inputTokens ?? promptTokens;
       completionTokens = chunk.usage.outputTokens ?? completionTokens;
       reasoningTokens = chunk.usage.reasoningTokens ?? reasoningTokens;
     }
   }
+  console.log("[one-shot] stream done", { source, textLen: text.length, seenTypes });
 
   // Record usage for the Usage view — same shape as callLLM's recordLlmUsage.
   try {

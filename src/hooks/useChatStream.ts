@@ -194,7 +194,10 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         }
         if (idx === -1) return prev;
         const updated = [...prev];
-        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error };
+        // Mark done here (not just on the NEXT tool-call) so a single/last tool
+        // call stops spinning as soon as it finishes, instead of staying
+        // "running" until the whole turn ends.
+        updated[idx] = { ...updated[idx], status: "done" as const, cairnRef: e.cairnRef, externalRef: e.externalRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error };
         toolCallsRef.current = updated;
         return updated;
       });

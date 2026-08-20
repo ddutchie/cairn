@@ -66,13 +66,15 @@ export function useAgentSessionActions() {
     if (!alreadyLoaded) {
       let piMessages: PiAgentMessage[] = [];
       try {
-        const rows = await window.electron?.piAgent.getMessages(summary.id) as Array<{
+        const rows = await (window.electron?.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> })?.getSessionMessages(summary.id) as Array<{
           id: string; role: "user" | "assistant" | "error"; content: string;
+          reasoning?: string | null;
           toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
         }> | undefined;
         if (rows) {
           piMessages = rows.map((r) => ({
             id: r.id, role: r.role, content: r.content,
+            reasoning: (r.reasoning ?? undefined) as PiAgentMessage["reasoning"],
             toolCalls: (r.toolCalls ?? undefined) as PiAgentMessage["toolCalls"],
             subagents: (r.subagents ?? undefined) as PiAgentMessage["subagents"],
             timestamp: r.timestamp,
