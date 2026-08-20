@@ -1,12 +1,39 @@
 # Cairn Cordis Runtime — Rollout Plan
 
-Status: **Active — Phase 1 DONE; Phase 1.5 (coding agent) in progress** · Updated: 2026-08-19
+Status: **Phase 1 + 1.5 + 2 COMPLETE — only Phase 3 (UI/plugins) + heartbeat follow-up remain** · Updated: 2026-08-19
 Owner: Cairn maintainer
 Related note: *DeepSeek Harness (dsh) integration analysis* (Cairn project)
-Branch: `feat/cordis-runtime` · Latest: `7f9076a6`
+Branch: `feat/cordis-runtime` · Latest: `79ab1871`
 
-> **Session handoff (read first):** See §8 for the current status, exactly what's
-> done vs pending, how to run the live tests, and the next concrete step.
+---
+
+## ⭐ REMAINING WORK (scope for the next session — read this first)
+
+Cordis is the **only engine** — chat, coding agent, automations, user-style, and every one-shot all run through it. The frozen builtin loops, `pi_agent_llm_history`, and `CAIRN_ENGINE` are **deleted** (`90f0b960`). Full electron suite 77 files/1106; live coding 8/8.
+
+### A. Heartbeat → run a full coding agent (TOP follow-up, ~1 day)
+`heartbeat-runner.ts:441` currently calls `runCordisLoop` with only streaming callbacks — connector tools, script executors, and approvals are NOT wired, so connector/script automations silently degrade. **Switch to `runCordisCodingLoop`** (`run-cordis-coding.ts:44`):
+- `cwd` = automation `runDir` (`heartbeat-runner.ts:220`), `sandboxMode:"workspace-write"`
+- All tools for free: `mountCodingStack` (bash/write/edit/read/grep/todo at `run-cordis-coding.ts:200`) + Cairn data tools + `registerExternalCairnTools` (connectors at `run-cordis-coding.ts:210`) + skill
+- **Approvals → UI**: `runCordisCodingLoop` already emits `pi-agent:tool-confirm-required` + blocks on `respond-tool` (`run-cordis-coding.ts:75`). Heartbeat is headless → emit an `automation:run` approval event via `ctx.send` (`heartbeat-runner.ts:364`) + store resolver; new `automation:approve` IPC (renderer→main) resolves it. Same for `questions` (`run-cordis-coding.ts:66`).
+- This **replaces** bespoke `runScript`/`writeRunFile`/`deliverFile` executors + `makeApprovalGate`.
+
+### B. Phase 3 — In-app user plugins + dsh client/UI (the big unlock, 3–6 wks)
+Full design + feasibility in §9 and the "HOW TO START" at the end of §8. Six-step bridge-plugin workstream:
+1. Boot the in-process dsh host web stack (`dsh-host-webserver` + `dsh-host-apiproxy` + `dsh-client-connection` + `frontend-static`) on the shared Cordis ctx in `electron/main.ts`, `loadURL("http://127.0.0.1:<port>")` behind `CAIRN_UI=dsh`.
+2. `cairn-root-layout` (occupy `root` slot, host Cairn views beside the dsh conversation).
+3. `cairn-toolview-*` (keyed `tool.call.toolview` views for Cairn data tools).
+4. `cairn-persistence-bridge` (reconcile dsh jsonl ⇄ SQLite).
+5. Brand/theme (`cairn-brand` + token mapping).
+6. Retire the bespoke `pi-agent:*`/`chat:*` IPC bridge.
+
+### C. Small: manual `/compact` on Cordis
+`pi-agent:compact-now` (`pi-agent.ts:577`) is currently a no-op (auto-compaction runs via `BasicCompactionEngine`). Manual `ctx.compaction.compactNow(agent)` needs the live agent handle — expose it from `runCordisCodingLoop` or wire a callback.
+
+### Verification for any change
+`npm run type-check:all` (ignore `scratch/` errors) + `npm run compile` + `npx vitest run electron` (77 files/1106) + `CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npx vitest run electron/cordis/coding-agent.live.test.ts` (8, needs bridge at `localhost:3042`).
+
+---
 
 ## 1. Goal
 
@@ -89,7 +116,7 @@ Cairn Electron main (in-process, no subprocess, no protocol bridge)
 - [x] Fix bundle-guard + native-deps-guard + footprint. (`cd0d0882`)
 - [x] **Bonus fixes (post-flip):** `import.meta.url` CJS-bundling crash (`7e16808c`); system-prompt + history injection + live token/reasoning streaming (`d1d6c2bf`); reasoning via completions (`636eac1e`); system-prompt as a plugin (`3259f35b`); **auto responses/completions probe-and-cache + runtime fallback** (`4dee51f4`).
 
-### Phase 1.5 — Port the CODING AGENT to Cordis (IN PROGRESS — the real Phase-2 blocker)
+### Phase 1.5 — Port the CODING AGENT to Cordis (DONE ✅ — 2a-2l + FINAL wiring)
 
 The chat loop is ported. The **coding agent** (`electron/ipc/pi-agent.ts` + `electron/lib/pi-agent-loop.ts`, driven by `runAgentLoop`) is still 100% on the built-in stack and is far richer than chat (plan mode, HITL approvals, doom-loop, retries, compaction, skills, stateful sessions, cwd/bash/fs tools). It CANNOT be deleted until ported. This phase builds `runCordisCodingLoop` + a `cairn-coding` bridge, mirroring the `pi-agent:*` IPC contract exactly (renderer + mobile stay unchanged).
 
@@ -110,7 +137,7 @@ Sub-steps (roughly in order):
 - [x] **2l — Attachments.** Both builtin loops support image + PDF attachments; both Cordis loops were silently dropping `req.images` (text-only `createUserMessage`). Fixed: (1) implemented a concrete `CairnAttachmentStore extends AttachmentStore` (`cairn-attachment-store.ts`) — dsh ships only the abstract class. In-process, content-addressed (sha256, dedupes), with a dependency-free raster-header dimension decoder for PNG/JPEG/WebP/GIF (sharp is a stub in this repo, so we parse IHDR/SOF/RIFF/GIF headers directly — no native dep). Mounted on the shared context in `getContext`; the pi-ai plugin already wires `resolveAttachments: () => ctx.get("attachments")`, so images round-trip automatically. (2) Added `defaultInput: ["text","image"]` to the `cairn` pi-ai provider so the route declares image capability (pi-ai refuses images on a text-only route). (3) `buildCordisUserContent(ctx, text, images)` converts `req.images` → dsh `ImageBlock`s via `store.saveImage`; used by BOTH loops when building the followup. PDFs degrade gracefully to a text note ("PDF attached, not yet supported on this engine — ask the user to paste text") since dsh's `ContentBlock` union has no document block and text-extraction would pull pdfjs into the Electron main bundle — full PDF passthrough is a tracked follow-up. Unit-tested (`cairn-attachment-store.test.ts`, 10: dimension decode, save/read round-trip, dedupe, type-mismatch, not-found, block builder incl. PDF-degrade + no-store fallback + unparseable-omit). Live-verified (`coding-agent.live.test.ts` test 8): a real 8×8 red PNG attached to a coding turn round-trips the store → ImageBlock → pi-ai wire and the model answers `"red"`. Also hardened the 2j-inside + 2e-approval live tests to assert on the deterministic `pi-agent:tool` end `ok` signal (was intermittently model-flaky).
 - [x] **FINAL wiring — DONE.** `runSession` (the shared runner both `pi-agent:prompt` and `pi-agent:approve-plan` call) now branches on `CAIRN_ENGINE`: `cordis` (default) → `runCordisCodingSession` → `runCordisCodingLoop`; `builtin` → the frozen `runAgentLoop`. Both entry points pass a `CordisTurnPayload` (message + attachments + projectId/workspaceId + autoApprove + `sandboxMode:"workspace-write"`). Module-level pending maps (`cordisPendingApprovals` / `cordisPendingDoomLoop` / `cordisPendingQuestions`) are populated by the loop's adapters and resolved by the existing `pi-agent:respond-tool` / `respond-doom-loop` / `respond-questions` handlers (each checks the cordis map first, then falls back to the builtin map). Streamed deltas run through the same `createDeltaBatcher`; `plan-note` persists the PRD id; `runningLoops`/`is-running`/`abort` stay Cairn-side (the loop takes `session.abortCtrl.signal`). Questions channel: chat emits `chat:tool-call`; the coding path passes an `emitQuestions` strategy so `cairnQuestionsPlugin` emits `pi-agent:ask-questions {sessionId,callId,questions}` (the coding renderer's channel). automation-dev keeps `workspace-write` (its no-shell restriction comes from the file-only persona toolset, not the fs sandbox). **The coding default is flipped** — cordis is default; `CAIRN_ENGINE=builtin` is the escape hatch (same as chat). Type-check + full electron suite green (90 files / 1178); bundle builds; all 8 live coding capabilities pass in isolation.
 
-### Phase 2 — Delete the old loops (parity gate met)
+### Phase 2 — Delete the old loops (DONE ✅ — 2a-2e, see front-matter)
 
 > **Goal:** remove every line of the frozen builtin agent loop so the Cordis path is the only path. No dead code, no dual pending-maps, no `CAIRN_ENGINE` toggle, no `pi_agent_llm_history` table writes. The app ships smaller, the IPC surface is engine-agnostic, and the next contributor never has to ask "which loop am I in?"
 
@@ -296,7 +323,7 @@ Users write/install Cordis plugins inside Cairn.
 - 2026-08-19: Questions adopt the `dsh-user-questions` SEAM (blocking, same-turn) but keep Cairn's `ask_questions` TOOL because the model-facing `dsh-tool-ask-user` package is unpublished.
 - 2026-08-19: **Client/UI adoption.** dsh ships a full web GUI + slot-based plugin-UI (`apps/web`, `@deepseek-ai/dsh-client-*`, `dsh-web-app` bundle) and explicitly anticipates an Electron consumer (IPC `AbstractApiClient.doFetch`). The host web stack runs in-process on the shared Cordis ctx. Our bespoke IPC bridge is a valid stepping stone (proves the host side) but forfeits plugin-UI. Direction: adopt dsh's client/UI layer via bridge plugins (Cairn root layout, brand/theme, keyed `tool.call.toolview` views, persistence bridge) — see §9. Host-only IPC bridge is NOT the end-state.
 
-## 8. Session handoff — resume here
+## 8. Session handoff — historical status (superseded by front-matter)
 
 **Branch:** `feat/cordis-runtime` · **Latest commit:** `156f694b` · tree clean.
 
