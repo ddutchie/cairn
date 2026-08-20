@@ -27,8 +27,8 @@ Full design + feasibility in §9 and the "HOW TO START" at the end of §8. Six-s
 5. Brand/theme (`cairn-brand` + token mapping).
 6. Retire the bespoke `pi-agent:*`/`chat:*` IPC bridge.
 
-### C. Small: manual `/compact` on Cordis
-`pi-agent:compact-now` (`pi-agent.ts:577`) is currently a no-op (auto-compaction runs via `BasicCompactionEngine`). Manual `ctx.compaction.compactNow(agent)` needs the live agent handle — expose it from `runCordisCodingLoop` or wire a callback.
+### C. Manual `/compact` on Cordis — LOW priority, auto-compaction covers it
+`pi-agent:compact-now` (`pi-agent.ts:551`) reports that auto-compaction (`BasicCompactionEngine`, 80% threshold) already runs between steps. A manual `ctx.compaction.compactNow(agent)` needs an idle live agent handle, but `runCordisCodingLoop` disposes the handle at turn end (so the jsonl session detaches cleanly) — there is no idle handle between turns. Making it work would require keeping the agent alive across turns, conflicting with the persistence design. **Keep the auto-compaction no-op; skip manual /compact unless a user need surfaces.** (The chat `/compact` at `chat.ts:90` `chat:compactThread` works via `runOneShot`.)
 
 ### Verification for any change
 `npm run type-check:all` (ignore `scratch/` errors) + `npm run compile` + `npx vitest run electron` (77 files/1106) + `CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npx vitest run electron/cordis/coding-agent.live.test.ts` (8, needs bridge at `localhost:3042`).
