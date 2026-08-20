@@ -14,7 +14,6 @@ import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptB
 import { TOOLS, buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { getExternalToolDefs } from "../lib/external-tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
-import { runToolLoop } from "../lib/chat-loop";
 import { resolveSystemRole } from "../lib/llm-stream";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
@@ -408,111 +407,5 @@ export function registerChatHandler(ctx: DbContext): void {
       }
       return;
     }
-
-    // Pre-stream snapshot of provider credits (for providers like NeuralWatt
-    // that don't include cost in streaming responses). We diff after the stream
-    // to recover per-request cost — only used when the stream didn't report it.
-    // `turnStart` scopes the recovery write-back to exactly this turn's rows.
-    const turnStart = Date.now();
-    let creditsBefore: number | null = null;
-    if (apiKey && !isLocalEndpointUrl) {
-      try {
-        const { manifest } = await fetchProvidersManifest();
-        const spec = resolveCreditSpec(baseUrl, manifest.providers);
-        if (spec) {
-          const probe = await probeCredits(spec.url, apiKey, spec.shape);
-          if (probe.info?.usage != null) creditsBefore = probe.info.usage;
-          else if (probe.info?.remaining != null && probe.info?.limit != null) {
-            creditsBefore = probe.info.limit - probe.info.remaining;
-          }
-        }
-      } catch { /* best-effort — no snapshot */ }
-    }
-
-    // Batch streamed deltas — one IPC event per flush instead of per token, so a
-    // dense stream can't flood the renderer. Flushed before every chat:done below.
-    const tokens = createDeltaBatcher((delta) => send("chat:token", { delta }));
-    const thoughts = createDeltaBatcher((delta) => send("chat:thought", { delta }));
-    const flushStream = () => { tokens.flush(); thoughts.flush(); };
-
-    let loopResult: Awaited<ReturnType<typeof runToolLoop>>;
-    try {
-      loopResult = await runToolLoop(
-        ctx.db, req, ctx.workspacePath, baseUrl, model, apiKey, messages,
-        emitToolCall, abortCtrl.signal, getWin, provider, addUsage,
-        emitToolCallDone,
-        (delta) => {
-          tokens.push(delta);
-        },
-        (delta) => {
-          thoughts.push(delta);
-        },
-        externalDefs,
-      );
-    } catch (err) {
-      // A crashed loop must still resolve the turn: flush any buffered tokens,
-      // release the abort controller, and send a terminal error chat:done so
-      // the renderer never stays stuck in its loading state.
-      flushStream();
-      abortControllers.delete(event.sender.id);
-      if (!abortCtrl.signal.aborted) {
-        console.error("[chat] tool loop failed:", err);
-        send("chat:done", { content: `Chat loop failed: ${(err as Error)?.message ?? String(err)}`, contextRefs: [] });
-      } else {
-        send("chat:done", { content: "", contextRefs: [] });
-      }
-      return;
-    }
-
-    abortControllers.delete(event.sender.id);
-
-    // If the provider didn't report cost inline (streaming responses from
-    // NeuralWatt etc. lack a cost field), recover it by diffing /quota usage.
-    if (costUsd === undefined && creditsBefore !== null && apiKey && !abortCtrl.signal.aborted) {
-      try {
-        const { manifest } = await fetchProvidersManifest();
-        const spec = resolveCreditSpec(baseUrl, manifest.providers);
-        if (spec) {
-          const probe = await probeCredits(spec.url, apiKey, spec.shape);
-          if (probe.info) {
-            const after = probe.info.usage != null
-              ? probe.info.usage
-              : probe.info.remaining != null && probe.info.limit != null
-                ? probe.info.limit - probe.info.remaining
-                : null;
-            if (after !== null) {
-              const diff = after - creditsBefore;
-              if (Number.isFinite(diff) && diff >= 0) {
-                costUsd = diff;
-                if (promptTokens > 0) {
-                  send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens });
-                }
-                // Write the recovered provider-reported cost back onto this
-                // turn's recorded usage rows (they were persisted during the
-                // loop, when the provider's inline cost wasn't known yet).
-                applyRecoveredTurnCost(ctx.db, req.threadId, turnStart, diff);
-              }
-            }
-          }
-        }
-      } catch { /* best-effort — no cost recovered */ }
-    }
-
-    // Broadcast db:changed so mobile SSE clients (and other Electron windows)
-    // re-hydrate the store after any tool calls that wrote to the DB.
-    // The chat stream runs tool calls internally — we broadcast once after all
-    // tools have finished so the board, notes, and other views stay in sync.
-    if (!abortCtrl.signal.aborted) {
-      broadcastEvent("db:changed", null);
-    }
-
-    if (abortCtrl.signal.aborted) {
-      flushStream();
-      send("chat:done", { content: "", reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
-      return;
-    }
-
-    flushStream();
-    send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
   });
 }

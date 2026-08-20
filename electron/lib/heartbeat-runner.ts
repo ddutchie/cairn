@@ -20,7 +20,6 @@
 import type Database from "better-sqlite3";
 import path from "path";
 import type { OpenAIMessage } from "./llm";
-import { runToolLoop } from "./chat-loop"; // TODO Phase 2b: heartbeat is data-only — will use runCordisLoop via runHeartbeatCordisLoop below
 import { getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
 import { buildSystemPrompt, TOOLS, type ChatRequest } from "./tools";
@@ -484,6 +483,7 @@ export async function runAutomation(
     });
     result = { content: cordisResult.content, exhausted: cordisResult.exhausted };
   } else {
+    const { runToolLoop } = await import("./chat-loop");
     result = await runToolLoop(
     db,
     req,
