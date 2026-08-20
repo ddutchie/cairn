@@ -37,10 +37,11 @@ export function RunWatcherModal({
   const [thought, setThought] = useState("");
   const [tools, setTools] = useState<ToolChip[]>([]);
   const [finished, setFinished] = useState(false);
+  const [approval, setApproval] = useState<{ tool: string; callId: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setRecipe(null); setAssistant(""); setThought(""); setTools([]); setFinished(false); /* eslint-disable-line react-hooks/set-state-in-effect */
+    setRecipe(null); setAssistant(""); setThought(""); setTools([]); setFinished(false); setApproval(null); /* eslint-disable-line react-hooks/set-state-in-effect */
     if (!runId || !window.electron?.automation.onRunEvent) return;
     const toolSeq = { n: 0 };
     return window.electron.automation.onRunEvent((e) => {
@@ -64,7 +65,10 @@ export function RunWatcherModal({
               : t,
           ));
           break;
-        case "finished": setFinished(true); break;
+        case "approval":
+          if (e.callId) setApproval({ tool: e.tool ?? "tool", callId: e.callId });
+          break;
+        case "finished": setFinished(true); setApproval(null); break;
       }
     });
   }, [runId]);
@@ -147,6 +151,28 @@ export function RunWatcherModal({
                 {assistant || (isLive ? "…" : "")}
                 {isLive && assistant && <span className="inline-block w-1.5 h-3.5 bg-[var(--accent)] align-middle animate-pulse ml-0.5" />}
               </div>
+            </div>
+          </div>
+        )}
+
+        {approval && (
+          <div className="rounded-lg border border-[var(--accent)] bg-[var(--accent)]/10 p-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
+              <Bot size={13} className="text-[var(--accent)] shrink-0" />
+              <span>
+                The agent wants to run <span className="font-mono text-[0.714rem]">{approval.tool}</span> — this tool requires your approval.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => { window.electron?.automation.approve(approval.callId, true); setApproval(null); }}>
+                Approve
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { window.electron?.automation.approve(approval.callId, true, "always"); setApproval(null); }}>
+                Always allow
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { window.electron?.automation.approve(approval.callId, false); setApproval(null); }}>
+                Deny
+              </Button>
             </div>
           </div>
         )}

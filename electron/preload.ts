@@ -336,13 +336,15 @@ const api = {
     recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) => invoke("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
     runNow: (id: string) => invoke("db:automation:runNow", { id }),
     runningCount: () => invoke("db:automation:runningCount"),
+    /** Approve/deny a pending tool approval for a running automation (Cordis). */
+    approve: (callId: string, approved: boolean, grant?: "session" | "always") => invoke("automation:approve", { callId, approved, grant }),
     folder: (id: string) => invoke<{ folder: string }>("db:automation:folder", { id }),
     syncFromManifest: (id: string) => invoke("db:automation:syncFromManifest", { id }),
     files: (id: string) => invoke<{ files: Array<{ path: string; size: number; mtimeMs: number }> }>("db:automation:files", { id }),
     runLog: (runId: string) => invoke<{ log: unknown } | { error: string }>("db:automation:runLog", { runId }),
     /** Live run activity (tokens/tools/thought) for the "watch this run" view. */
     onRunEvent: (cb: (payload: {
-      event: "started" | "token" | "thought" | "tool" | "toolDone" | "finished";
+      event: "started" | "token" | "thought" | "tool" | "toolDone" | "toolConfirmRequired" | "approval" | "finished";
       automationId: string;
       runId: string;
       delta?: string;
@@ -356,6 +358,7 @@ const api = {
       recipe?: string;
       content?: string;
       exhausted?: boolean;
+      callId?: string;
     }) => void) => {
       const handler = (_e: unknown, payload: Parameters<typeof cb>[0]) => cb(payload);
       ipcRenderer.on("automation:run", handler);

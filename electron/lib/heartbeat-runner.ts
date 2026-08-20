@@ -35,7 +35,7 @@ import {
   type Automation,
   type AutomationRun,
 } from "../db/automation-queries";
-import { makeApprovalGate } from "./automation-approval";
+import { isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance } from "./automation-approval";
 import { getExternalToolDefs, checkRequirements } from "./external-tools";
 import { recordLlmUsage } from "./usage-recorder";
 import {
@@ -81,6 +81,60 @@ export interface AutomationRunContext {
    * nothing.
    */
   send?: (channel: string, payload: unknown) => void;
+}
+
+// ── HITL approval forwarding (Cordis) ───────────────────────────────────────
+// The coding agent's approval seam blocks on resolve({approved}); for a headless
+// heartbeat we forward to the renderer via an automation:run approval event +
+// a new automation:approve IPC (resolves this map). Keyed by callId. Each entry
+// also carries the tool name/args so an "always allow" can persist a standing
+// rule, and the db/runId for recordStandingAllowance.
+interface PendingAutomationApproval {
+  tool: string;
+  args: Record<string, unknown>;
+  db: Database.Database;
+  runId: string;
+  resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void;
+}
+const pendingAutomationApprovals = new Map<string, PendingAutomationApproval>();
+/**
+ * Resolve a pending automation tool approval (called by the automation:approve IPC).
+ * @param callId - the approval's callId.
+ * @param approved - approve or deny.
+ * @param grant - "session" remembers for the rest of this turn; "always" persists
+ *   an "always allow" standing rule on the automation so future runs skip it.
+ */
+export function resolveAutomationApproval(callId: string, approved: boolean, grant?: "session" | "always"): void {
+  const pending = pendingAutomationApprovals.get(callId);
+  if (!pending) return;
+  pendingAutomationApprovals.delete(callId);
+  if (grant === "always") {
+    recordStandingAllowance(pending.db, pending.runId, pending.tool, pending.args);
+  }
+  pending.resolve({ approved, grant: grant === "session" ? "session" : undefined });
+}
+
+/**
+ * Decide whether a tool call is auto-allowed by the automation's approval
+ * policy, or must be forwarded to the user for approval. Mirrors the builtin
+ * makeApprovalGate classification WITHOUT the blocking parkAndWait (the Cordis
+ * seam resolves via resolve({approved}) instead of the DB approval inbox).
+ *   - read tools + standing rules → allow
+ *   - 'ask' mode → gate every write (forward)
+ *   - 'auto' mode → only forward external MCP/service calls when connector-aware
+ *   - run_script is always gated (code execution)
+ * Standing-rule per-arg matching (e.g. bash:<cmd>) uses the tool's primary
+ * identifier (path/note/card/title) — args are not carried through the seam.
+ */
+function shouldAutoAllowAutomationTool(db: Database.Database, run: AutomationRun, automation: Automation, name: string, args: Record<string, unknown>): boolean {
+  if (isReadTool(name)) return true;
+  if (name === RUN_SCRIPT_TOOL_NAME) return false;
+  const target = standingRuleTarget(name, args);
+  if (automation.standingRules.some((r) => r.tool === name && (r.target === undefined || r.target === target))) return true;
+  if (automation.approvalMode === "ask") return false;
+  const connectorAware = (automation.requires ?? []).length > 0;
+  if (connectorAware && isExternalTool(name)) return false;
+  return true;
 }
 
 const DEFAULT_MAX_STEPS = 10;
@@ -446,9 +500,17 @@ export async function runAutomation(
   const runDirForAgent = runDir ?? workspacePath;
   const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
   let finalContent = "";
+  // Tool name per pending approval callId, captured from the coding agent's
+  // `pi-agent:tool-confirm-required` event (the seam doesn't carry the name).
+  const confirmToolByCallId = new Map<string, string>();
   const loopSend = (channel: string, payload: Record<string, unknown>) => {
     const name = payload.name as string | undefined;
     const status = payload.status as string | undefined;
+    if (channel === "pi-agent:tool-confirm-required" && typeof payload.callId === "string") {
+      confirmToolByCallId.set(payload.callId as string, name ?? "tool");
+      emitRun("toolConfirmRequired", { tool: name, callId: payload.callId, label: payload.label });
+      return;
+    }
     if (channel === "pi-agent:token" && typeof payload.delta === "string") {
       finalContent += payload.delta;
       emitRun("token", { delta: payload.delta });
@@ -518,21 +580,20 @@ export async function runAutomation(
     send: loopSend,
     extraTools: automationTools,
     approvals: {
-      // Forward the HITL approval to the same DB-backed policy the builtin
-      // used: auto-allow read tools + standing rules, park writes/scripts/
-      // external calls in the inbox. The Cordis approval seam emits
-      // pi-agent:tool-confirm-required + blocks on respond-tool; we resolve it
-      // through makeApprovalGate's policy (parkAndWait for gated tools).
+      // Forward HITL approvals: auto-allow tools the automation's policy
+      // permits (read tools, standing rules, auto-mode built-ins); otherwise
+      // emit an automation:run approval event to the renderer and block until
+      // the user approves/denies via the automation:approve IPC.
       registerPending: (callId, resolve) => {
-        // Approve everything the automation's policy would allow; for gated
-        // tools, park in the inbox and resolve when the user answers.
-        const policy = makeApprovalGate(db, run, automation, abortCtrl.signal);
-        void policy;
-        void resolve;
-        // TODO (Phase A follow-up): wire policy decision → resolve({approved}).
-        // For now, autoApprove governs; this adapter is a no-op placeholder so
-        // the loop doesn't block on an unanswerable prompt.
-        return () => {};
+        const toolName = confirmToolByCallId.get(callId) ?? "tool";
+        confirmToolByCallId.delete(callId);
+        if (shouldAutoAllowAutomationTool(db, run, automation, toolName, {})) {
+          resolve({ approved: true });
+          return () => {};
+        }
+        pendingAutomationApprovals.set(callId, { tool: toolName, args: {}, db, runId: run.id, resolve });
+        emitRun("approval", { tool: toolName, callId });
+        return () => { pendingAutomationApprovals.delete(callId); };
       },
     },
   });

@@ -36,7 +36,7 @@ import {
   type AutomationEnv,
   type AutomationInput,
 } from "../db/automation-queries";
-import { runAutomationNow } from "../lib/heartbeat-runner";
+import { runAutomationNow, resolveAutomationApproval } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
 import { recordStandingAllowance } from "../lib/automation-approval";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
@@ -769,6 +769,14 @@ export function registerDbHandlers(ctx: DbContext): void {
     }, id);
     return runId === null ? { skipped: true } : { runId };
   }));
+
+  // Resolve a pending tool approval for a running automation (Cordis engine).
+  // The renderer fires this when the user approves/denies a gated tool; it
+  // resolves the coding agent's approval seam. grant "session" remembers for
+  // the turn; "always" persists an "always allow" standing rule on the automation.
+  registerIpcOn("automation:approve", (_e, { callId, approved, grant }: { callId: string; approved: boolean; grant?: "session" | "always" }) => {
+    resolveAutomationApproval(callId, approved, grant);
+  });
 
   // The automation's folder on disk (<project>/.automations/<id>/) — the dev
   // agent's cwd when building/testing the automation's scripts. The folder is
