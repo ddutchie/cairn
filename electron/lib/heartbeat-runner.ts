@@ -36,7 +36,7 @@ import {
   type AutomationRun,
 } from "../db/automation-queries";
 import { isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance } from "./automation-approval";
-import { getExternalToolDefs, checkRequirements } from "./external-tools";
+import { getExternalToolDefs, checkRequirements, externalToolLabel } from "./external-tools";
 import { recordLlmUsage } from "./usage-recorder";
 import {
   automationFolderDir,
@@ -523,10 +523,14 @@ export async function runAutomation(
     }
     if (channel === "pi-agent:tool") {
       const callId = payload.callId as string | undefined;
+      // Prettify the tool label the same way chat/agent views do — raw MCP
+      // names like mcp__<id>__search-designs become "Search designs" (or
+      // "Canva · Search designs" when the server name resolves).
+      const cleanLabel = externalToolLabel(name ?? "tool", db);
       if (status === "pending" || status === "start") {
         currentTool(name ?? "tool");
-        logTool(name ?? "tool", payload.label as string | undefined, payload.args as Record<string, unknown> | undefined);
-        emitRun("tool", { tool: name, label: payload.label, args: payload.args, status: "start", callId });
+        logTool(name ?? "tool", cleanLabel, payload.args as Record<string, unknown> | undefined);
+        emitRun("tool", { tool: name, label: cleanLabel, args: payload.args, status: "start", callId });
       } else if (status === "end") {
         recordArtifact(name ?? "", payload.cairnRef as { type: "note" | "task"; id: string; title: string } | undefined);
         logToolDone(name ?? "tool", payload.ok as boolean | undefined, payload.output as string | undefined, payload.error as string | undefined);
