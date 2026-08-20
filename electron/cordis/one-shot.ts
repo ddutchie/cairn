@@ -42,24 +42,23 @@ export interface OneShotOptions {
 export async function runOneShot(opts: OneShotOptions): Promise<string> {
   const { systemPrompt, userPrompt, config, source, projectId, workspaceId, sessionId, maxTokens, temperature, signal } = opts;
 
-  // On-device local LLM — Cordis adapter doesn't cover it yet.
+  // On-device local LLM — also goes through the Cordis pi-ai route.
+  // Ensure the llama-server is running and use its OpenAI-compatible endpoint.
+  let effectiveConfig = config;
   if (config.provider === "localllm") {
-    const { callLLM } = await import("../lib/llm");
-    return callLLM(config, systemPrompt, userPrompt, {
-      source: source as never,
-      projectId, workspaceId, sessionId,
-      maxTokens, temperature,
-    });
+    const { ensureLlamaServerRunning } = await import("../lib/llama-server");
+    const port = await ensureLlamaServerRunning();
+    effectiveConfig = { ...config, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
   }
 
   const ctx = await getContext();
-  const transport = await resolveTransport(config.baseUrl, config.apiKey);
+  const transport = await resolveTransport(effectiveConfig.baseUrl, effectiveConfig.apiKey);
   const apiFor = (m: ApiMode): "openai-completions" | "openai-responses" =>
     m === "responses" ? "openai-responses" : "openai-completions";
   await ensurePiAiAdapter(ctx, {
-    baseUrl: config.baseUrl,
-    model: config.model,
-    apiKey: config.apiKey,
+    baseUrl: effectiveConfig.baseUrl,
+    model: effectiveConfig.model,
+    apiKey: effectiveConfig.apiKey,
     api: apiFor(transport.mode),
   });
 
@@ -70,7 +69,7 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
     llm: { stream: (opts: { provider: string; model: string; messages: Array<{ role: string; content: string }>; maxTokens?: number }) => AsyncIterable<{ type: string; text?: string; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }> };
   }).llm.stream({
     provider: "cairn",
-    model: config.model,
+    model: effectiveConfig.model,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
@@ -92,9 +91,9 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
       source: source as never,
       sessionId: sessionId ?? "one-shot",
       projectId, workspaceId,
-      provider: config.provider ?? "openai",
-      model: config.model,
-      baseUrl: config.baseUrl,
+      provider: effectiveConfig.provider ?? "openai",
+      model: effectiveConfig.model,
+      baseUrl: effectiveConfig.baseUrl,
       promptTokens, completionTokens, reasoningTokens,
     });
   } catch { /* best-effort */ }

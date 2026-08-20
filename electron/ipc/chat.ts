@@ -360,10 +360,8 @@ export function registerChatHandler(ctx: DbContext): void {
       return;
     }
 
-    // ── Cordis engine (only path for non-local models) ─────────────────────
-    // The on-device local LLM (localllm) still uses the builtin loop — the
-    // cordis adapter doesn't cover it yet. Everything else is Cordis.
-    if (provider !== "localllm") {
+    // ── Cordis engine (only path — local models via llama-server at 127.0.0.1:<port>/v1 are also OpenAI-compatible) ──
+    if (true) {
       const { runCordisLoop } = await import("../cordis/run-cordis-loop");
       const tokens = createDeltaBatcher((delta) => send("chat:token", { delta }));
       const thoughts = createDeltaBatcher((delta) => send("chat:thought", { delta }));

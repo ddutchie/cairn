@@ -249,7 +249,14 @@ function collect(events: readonly SessionEvent[], firstSeq: number): { text: str
  */
 export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCordisLoopResult> {
   const ctx = await getContext();
-  const { db, req, workspacePath, llmConfig, signal } = opts;
+  let { db, req, workspacePath, llmConfig, signal } = opts;
+  // Local on-device model — ensure the app-spawned llama-server is running and
+  // use its OpenAI-compatible endpoint (also via the pi-ai route, no separate plugin).
+  if (llmConfig.provider === "localllm") {
+    const { ensureLlamaServerRunning } = await import("../lib/llama-server");
+    const port = await ensureLlamaServerRunning();
+    llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
+  }
 
   // Pick the wire protocol the SAME way the built-in loop does: reuse Cairn's
   // probe-and-cache transport resolver (electron/lib/llm-transport.ts). It

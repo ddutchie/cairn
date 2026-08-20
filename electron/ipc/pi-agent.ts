@@ -170,10 +170,8 @@ async function runSession(
 ): Promise<void> {
   const { sessionId } = toolCtx;
 
-  // ── Cordis engine (only path for non-local models) ──────────────────────
-  // The on-device local LLM (localllm) still uses the builtin loop — the
-  // cordis adapter doesn't cover it yet. Everything else is Cordis.
-  if (cordis && llmConfig.provider !== "localllm") {
+  // ── Cordis engine (only path — local models via llama-server are also OpenAI-compatible) ──
+  if (cordis) {
     return runCordisCodingSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send, cordis);
   }
 

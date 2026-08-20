@@ -95,7 +95,14 @@ export interface RunCordisCodingResult {
 
 export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise<RunCordisCodingResult> {
   const ctx = await getContext();
-  const { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, approvals, doomLoop, getWin, signal } = opts;
+  let { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, approvals, doomLoop, getWin, signal } = opts;
+  // Local on-device model — ensure the app-spawned llama-server is running and
+  // use its OpenAI-compatible endpoint (also via the pi-ai route, no separate plugin).
+  if ((llmConfig as { provider?: string }).provider === "localllm") {
+    const { ensureLlamaServerRunning } = await import("../lib/llama-server");
+    const port = await ensureLlamaServerRunning();
+    llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
+  }
   // Sandbox: confine fs/bash mutations to cwd by default (workspace-write).
   const sandboxMode = opts.sandboxMode ?? "workspace-write";  // autoApprove defaults ON; forced ON if no approvals adapter was supplied
   // (no way to prompt → don't block on an approval that can never resolve).
