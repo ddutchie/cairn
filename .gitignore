@@ -89,3 +89,4 @@ scripts/runtime-baselines/
 
 # scratch experiments (Needle finetune spike, venvs, checkpoints)
 /scratch
+.cairn-sessions/

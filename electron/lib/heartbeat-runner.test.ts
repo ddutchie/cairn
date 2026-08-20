@@ -105,6 +105,24 @@ afterEach(() => {
   vi.clearAllMocks();
   for (const root of tempRoots.splice(0)) {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* already gone */ }
+    // Also clean the dsh session that was nested under .cairn-sessions/<encoded-cwd>/
+    // (the fallback sessionRoot used before main.ts sets the real <userData>/sessions).
+    try {
+      const encoded = root.replace(/[^a-zA-Z0-9._-]/g, (c) => `-${c.charCodeAt(0).toString(16)}-`).replace(/^-/, "--").replace(/-$/, "--") || "_";
+      // The actual dsh encoding is more complex, so brute-force: delete any
+      // .cairn-sessions dir that contains this root's encoded form as a substring,
+      // plus the common case of cleaning the whole .cairn-sessions after the suite.
+      const cairnSessions = path.join(process.cwd(), ".cairn-sessions");
+      if (fs.existsSync(cairnSessions)) {
+        for (const entry of fs.readdirSync(cairnSessions)) {
+          if (entry.includes("heartbeat-run")) {
+            try { fs.rmSync(path.join(cairnSessions, entry), { recursive: true, force: true }); } catch { /* ignore */ }
+          }
+        }
+        // Remove the now-empty .cairn-sessions dir itself so git status stays clean.
+        try { if (fs.readdirSync(cairnSessions).length === 0) fs.rmdirSync(cairnSessions); } catch { /* ignore */ }
+      }
+    } catch { /* best-effort */ }
   }
 });
 
