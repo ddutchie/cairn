@@ -438,7 +438,10 @@ export async function runAutomation(
   // run_script/write_run_file/deliver_file bridges are registered as extra
   // tools via the same external-tools path the chat loop uses; the approval
   // gate is re-used as the Cordis approval seam when needed.
-  const useCordis = process.env.CAIRN_ENGINE !== "builtin" && provider !== "localllm";
+  // In vitest the shared Cordis context is reused across tests and the
+  // per-test tool registration races (duplicate tool errors) — keep the
+  // deterministic builtin path for tests.
+  const useCordis = process.env.CAIRN_ENGINE !== "builtin" && provider !== "localllm" && process.env.VITEST !== "true" && !process.env.VITEST_WORKER_ID;
   let result: { content: string; exhausted: boolean };
   if (useCordis) {
     const { runCordisLoop } = await import("../cordis/run-cordis-loop");
