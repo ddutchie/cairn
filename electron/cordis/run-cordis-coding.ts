@@ -83,6 +83,13 @@ export interface RunCordisCodingOptions {
   doomLoop?: {
     registerPending: (callId: string, resolve: (allow: boolean) => void) => () => void;
   };
+  /**
+   * Additional tool definitions to register on ctx.tools for this turn (e.g.
+   * automation's run_script / write_run_file / deliver_file). Each is
+   * `{ name, description, parameters, execute }` in the dsh ToolDefinition
+   * shape. Registered alongside the coding stack + Cairn data tools.
+   */
+  extraTools?: Array<{ name: string; description: string; parameters: unknown; execute: (args: Record<string, unknown>) => unknown | Promise<unknown> }>;
   getWin?: () => Electron.BrowserWindow | null;
   signal?: AbortSignal;
 }
@@ -211,6 +218,28 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       toolDisposers.push(...registerSkillTool(ctx, skills));
     } catch (e) {
       console.error(`[cordis-coding] registerSkillTool failed:`, (e as Error)?.message ?? e);
+    }
+    // Automation-specific tools (run_script / write_run_file / deliver_file) —
+    // registered from the heartbeat caller via extraTools.
+    for (const def of opts.extraTools ?? []) {
+      try {
+        const { defineTool } = await import("@deepseek-ai/dsh-tools");
+        const tool = defineTool({
+          name: def.name,
+          description: def.description,
+          parameters: def.parameters as never,
+          output: {
+            schema: { type: "json" },
+            render: (_args: unknown, value: unknown) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
+          },
+          async execute(args) {
+            return def.execute(args as Record<string, unknown>) as never;
+          },
+        });
+        toolDisposers.push(ctx.tools.register(tool));
+      } catch (e) {
+        console.error(`[cordis-coding] register extraTool ${def.name} failed:`, e);
+      }
     }
 
     try {

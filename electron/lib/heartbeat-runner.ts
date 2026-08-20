@@ -53,6 +53,12 @@ import {
   runAutomationScript,
   writeRunFile,
   deliverFile,
+  RUN_SCRIPT_TOOL_NAME,
+  WRITE_RUN_FILE_TOOL_NAME,
+  DELIVER_FILE_TOOL_NAME,
+  runScriptToolDefinition,
+  writeRunFileToolDefinition,
+  deliverFileToolDefinition,
   type AutomationScriptContext,
   type RunScriptArgs,
   type RunScriptHandler,
@@ -61,6 +67,7 @@ import {
   type DeliverFileArgs,
   type DeliverFileHandler,
 } from "./automation-script";
+import type { RunCordisCodingOptions } from "../cordis/run-cordis-coding";
 import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
 import { getSecretValue } from "./secure-store";
 import { toSlug } from "../shared/text-utils";
@@ -486,6 +493,15 @@ export async function runAutomation(
     }
   };
 
+  // The automation-specific tools registered on the coding agent: run_script,
+  // write_run_file (agent→script data bridge into runDir), deliver_file (copy
+  // out/ → <workspace>/attachments/<automationId>/ so the note can embed the
+  // generated images). Only offered when the folders exist.
+  const automationTools: RunCordisCodingOptions["extraTools"] = [];
+  if (runScript) automationTools.push({ name: RUN_SCRIPT_TOOL_NAME, description: runScriptToolDefinition.function.description, parameters: runScriptToolDefinition.function.parameters, execute: (a) => runScript(a as never) });
+  if (writeRunFileHandler) automationTools.push({ name: WRITE_RUN_FILE_TOOL_NAME, description: writeRunFileToolDefinition.function.description, parameters: writeRunFileToolDefinition.function.parameters, execute: (a) => writeRunFileHandler(a as never) });
+  if (deliverFileHandler) automationTools.push({ name: DELIVER_FILE_TOOL_NAME, description: deliverFileToolDefinition.function.description, parameters: deliverFileToolDefinition.function.parameters, execute: (a) => deliverFileHandler(a as never) });
+
   const codingResult = await runCordisCodingLoop({
     db,
     req,
@@ -500,6 +516,7 @@ export async function runAutomation(
     autoApprove: automation.approvalMode !== "ask",
     signal: abortCtrl.signal,
     send: loopSend,
+    extraTools: automationTools,
     approvals: {
       // Forward the HITL approval to the same DB-backed policy the builtin
       // used: auto-allow read tools + standing rules, park writes/scripts/
