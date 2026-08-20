@@ -232,6 +232,14 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // gives the coding agent stateful, resumable multi-turn sessions WITHOUT
     // storing transcripts in Cairn's SQLite (the DB is for MCP/tool access).
     const attemptSessionId = SessionId(sessionId);
+    const handle = await openCordisAgent(ctx, { sessionId, cwd, llmConfig, signal });
+    const agent = handle.agent as {
+      whenIdle: () => Promise<unknown>;
+      followup: (m: unknown) => unknown;
+      session: { events: unknown[] };
+    };
+    handleDisposers.push(() => handle.dispose?.() ?? Promise.resolve());
+    await agent.whenIdle();
 
     // Route every pi-agent:* event to BOTH the renderer (frontend `send`) and a
     // terminal resolver so the turn promise settles on done/error. cairnCodingPlugin
@@ -243,49 +251,6 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       else if (channel === "pi-agent:error") { resolveTerminal({ ok: false, error: (payload.error as string) ?? "Agent error" }); }
       send(channel, payload);
     };
-
-    // A minimal view of the dsh agent handle we drive (whenIdle/followup/session).
-    type DriveAgent = {
-      whenIdle: () => Promise<unknown>;
-      followup: (m: unknown) => unknown;
-      session: { events: unknown[] };
-    };
-    type DriveHandle = { agent: DriveAgent; dispose?: () => Promise<void> };
-    const handle = await (async (): Promise<DriveHandle> => {
-      // If the session already has a persisted log, RESUME it so the model sees
-      // prior turns (stateful multi-turn). Otherwise create fresh. dsh owns the
-      // session transcript (jsonl) — nothing is written to Cairn's SQLite.
-      const pers = (ctx as unknown as { sessionPersistence?: { inspect: (id: unknown, signal?: AbortSignal) => Promise<{ events: readonly unknown[] }> } }).sessionPersistence;
-      let exists = false;
-      try {
-        if (pers) {
-          const insp = await pers.inspect(attemptSessionId, signal);
-          exists = insp.events.length > 0;
-        }
-      } catch { /* treat as fresh on any inspection error */ }
-      const base = {
-        meta: { cwd },
-        agentOptions: { provider: selection.provider, model: selection.model },
-        setup: (agentCtx: unknown) => {
-          installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
-        },
-      };
-      if (exists) {
-        return await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<DriveHandle> } }).agents.resume({
-          ...base,
-          resumeSessionId: attemptSessionId,
-          signal,
-        });
-      }
-      return await (ctx as unknown as { agentLoop: { createAgent: (c: unknown, o: unknown) => Promise<DriveHandle> } }).agentLoop.createAgent(ctx, {
-        ...base,
-        sessionId: attemptSessionId,
-        signal,
-      } as never);
-    })();
-    const agent = handle.agent;
-    handleDisposers.push(() => handle.dispose?.() ?? Promise.resolve());
-    await agent.whenIdle();
 
     // Set the dsh plan state so the plan-mode policy section renders and the
     // exit_plan_mode tool works (state is logged + persisted across resume).
@@ -326,4 +291,50 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     pluginDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
   }
   return result;
+}
+
+/**
+ * Create (or resume) a dsh agent for a coding session WITHOUT running a turn.
+ * Shared by runCordisCodingLoop and pi-agent:compact-now so manual compaction
+ * can act on an idle session. Resumes the persisted jsonl if it exists.
+ * The returned handle is idle until followup(); caller disposes it.
+ */
+export async function openCordisAgent(
+  ctx: Context,
+  opts: { sessionId: string; cwd: string; llmConfig: LLMConfig; signal?: AbortSignal },
+): Promise<{ agent: unknown; dispose?: () => Promise<void> }> {
+  const { sessionId, cwd, llmConfig, signal } = opts;
+  const selection = { provider: "cairn", model: llmConfig.model };
+  const attemptSessionId = SessionId(sessionId);
+
+  const pers = (ctx as unknown as { sessionPersistence?: { inspect: (id: unknown, signal?: AbortSignal) => Promise<{ events: readonly unknown[] }> } }).sessionPersistence;
+  let exists = false;
+  try {
+    if (pers) {
+      const insp = await pers.inspect(attemptSessionId, signal);
+      exists = insp.events.length > 0;
+    }
+  } catch { /* treat as fresh on any inspection error */ }
+
+  const base = {
+    meta: { cwd },
+    agentOptions: { provider: selection.provider, model: selection.model },
+    setup: (agentCtx: unknown) => {
+      installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
+    },
+  };
+
+  type H = { agent: unknown; dispose?: () => Promise<void> };
+  if (exists) {
+    return await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<H> } }).agents.resume({
+      ...base,
+      resumeSessionId: attemptSessionId,
+      signal,
+    });
+  }
+  return await (ctx as unknown as { agentLoop: { createAgent: (c: unknown, o: unknown) => Promise<H> } }).agentLoop.createAgent(ctx, {
+    ...base,
+    sessionId: attemptSessionId,
+    signal,
+  } as never);
 }

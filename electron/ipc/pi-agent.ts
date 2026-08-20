@@ -541,32 +541,65 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:compact-now ─────────────────────────────────────────────────
-  // Triggered by the /compact slash command. On Cordis the dsh
-  // BasicCompactionEngine auto-compacts between steps (thresholdRatio 0.8) and
-  // fires pi-agent:compact/compact-result via cairnCodingPlugin — so a manual
-  // trigger is effectively a no-op that just acknowledges auto-compaction is
-  // in charge. (A manual ctx.compaction.compactNow(agent) needs the live agent
-  // handle, which the loop doesn't expose yet — tracked as a follow-up.)
+  // Triggered by the /compact slash command. Auto-compaction (BasicCompactionEngine,
+  // thresholdRatio 0.8) runs between steps automatically; this is the explicit
+  // user-triggered variant. It opens the session's agent from its persisted jsonl
+  // (idle), runs ctx.compaction.compactNow(agent), then disposes it.
   registerIpcOn("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number } }) => {
     const { sessionId } = req;
-    if (runningLoops.has(sessionId)) {
-      broadcastEvent("pi-agent:compact-result", {
-        sessionId,
-        messageCount: 0,
-        summary: "Can't compact while the agent is working — try again when it finishes.",
-      });
-      return;
-    }
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
     };
+    if (runningLoops.has(sessionId)) {
+      send("pi-agent:compact-result", { sessionId, messageCount: 0, summary: "Can't compact while the agent is working — try again when it finishes." });
+      return;
+    }
+    const sessionRow = q.getPiSessionById(ctx.db, sessionId) as { cwd?: string } | undefined;
+    const cwd = sessionRow?.cwd ?? "/";
+    const llmConfig: AgentLLMConfig = {
+      baseUrl: normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
+      model: req.config?.model || "gpt-5.6-luna",
+      apiKey: resolveLlmApiKey(req.config?.apiKey),
+      maxSteps: 20,
+      temperature: 0.1,
+      contextWindow: req.config?.contextWindow,
+    };
     send("pi-agent:compact", { sessionId, status: "start" });
-    send("pi-agent:compact-result", {
-      sessionId,
-      messageCount: 0,
-      summary: "This agent auto-compacts at 80% context as it works — no manual compaction is needed.",
-    });
-    send("pi-agent:compact", { sessionId, status: "end" });
+    try {
+      const { getContext } = await import("../cordis/run-cordis-loop");
+      const { openCordisAgent } = await import("../cordis/run-cordis-coding");
+      const ctxC = await getContext();
+      await (await import("../cordis/run-cordis-loop")).ensurePiAiAdapter(ctxC, {
+        baseUrl: llmConfig.baseUrl,
+        model: llmConfig.model,
+        apiKey: llmConfig.apiKey,
+        api: (await (await import("../lib/llm-transport")).resolveTransport(llmConfig.baseUrl, llmConfig.apiKey)).mode === "responses" ? "openai-responses" : "openai-completions",
+      });
+      const handle = await openCordisAgent(ctxC, { sessionId, cwd, llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: "openai" as const }, signal: new AbortController().signal });
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const compaction = (ctxC as any).compaction;
+        if (!compaction?.compactNow) throw new Error("compaction service not mounted");
+        const result = await compaction.compactNow(handle.agent, new AbortController().signal);
+        if (result) {
+          send("pi-agent:compact-result", {
+            sessionId,
+            messageCount: (result as { replacedCount?: number; replacedSeqs?: unknown[] })?.replacedCount
+              ?? (result as { replacedSeqs?: unknown[] })?.replacedSeqs?.length
+              ?? 0,
+            summary: (result as { summary?: string })?.summary ?? "",
+          });
+        } else {
+          send("pi-agent:compact-result", { sessionId, messageCount: 0, summary: "Nothing to compact." });
+        }
+      } finally {
+        await handle.dispose?.();
+      }
+    } catch (e) {
+      send("pi-agent:compact-result", { sessionId, messageCount: 0, summary: `Compaction unavailable: ${(e as Error).message}` });
+    } finally {
+      send("pi-agent:compact", { sessionId, status: "end" });
+    }
   });
 
   // ── pi-agent:set-mode ─────────────────────────────────────────────────────
