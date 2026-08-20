@@ -23,7 +23,26 @@ import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos } from "../db/queries";
 import { resultContentError } from "../lib/tool-result";
-import { toolCallSignature, DOOM_LOOP_THRESHOLD } from "../lib/pi-agent-loop";
+
+// Inlined from pi-agent-loop.ts:254 — kept here so the frozen file can be deleted.
+// Doom-loop: when the model issues the SAME tool with IDENTICAL args this many
+// times in a row, pause and ask the user to continue.
+export const DOOM_LOOP_THRESHOLD = 3;
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      out[key] = canonicalize((value as Record<string, unknown>)[key]);
+    }
+    return out;
+  }
+  return value;
+}
+type ToolArgs = Record<string, unknown>;
+export function toolCallSignature(name: string, args: ToolArgs): string {
+  return `${name}:${JSON.stringify(canonicalize(args))}`;
+}
 
 /** Service key under which cairnDbPlugin provides the Database handle. */
 export const CAIRN_DB = "cairnDb";

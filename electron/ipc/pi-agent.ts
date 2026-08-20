@@ -175,91 +175,16 @@ async function runSession(
     return runCordisCodingSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send, cordis);
   }
 
+  // cordis payload is always provided by both call sites; this path is unreachable.
+  void sessionId;
+  void session;
+  void systemPrompt;
+  void llmConfig;
+  void mode;
+  void toolCtx;
+  void ctx;
+  void send;
   runningLoops.add(sessionId);
-
-  // Reuse existing transformer to preserve cachedSummary across prompts.
-  // Signal is read live from session.abortCtrl inside the transformer.
-  session.compactionTransformer ??= buildCompactionTransformer(
-    session,
-    llmConfig,
-    () => send("pi-agent:compact", { sessionId, status: "start" }),
-    () => send("pi-agent:compact", { sessionId, status: "end", auto: true }),
-  );
-
-  // Coalesce streamed deltas into ~20 IPC events/sec instead of one per token.
-  const tokens = createDeltaBatcher((delta) => send("pi-agent:token", { sessionId, delta }));
-  const thoughts = createDeltaBatcher((delta) => send("pi-agent:thought", { sessionId, delta }));
-
-  await runAgentLoop(
-    session,
-    systemPrompt,
-    llmConfig,
-    {
-      // Batch streamed deltas — one IPC event per flush instead of per token,
-      // so a dense stream (reasoning models, long replies) can't flood the
-      // renderer. Flushed on done/error below.
-      onToken:        (delta) => tokens.push(delta),
-      onThought:      (delta) => thoughts.push(delta),
-      onToolsReady:   ()      => send("pi-agent:tools-ready", { sessionId }),
-      onToolPending:  (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
-       onToolStart:    (name, label, callId, args) => send("pi-agent:tool", { sessionId, name, label, args, callId, status: "start" }),
-       onToolConfirmRequired: (name, label, callId, args) => send("pi-agent:tool-confirm-required", { sessionId, name, label, args, callId }),
-       onDoomLoop: (info) => send("pi-agent:doom-loop", { sessionId, ...info }),
-       onToolEnd:      (name, label, ok, output, callId, args) => {
-         send("pi-agent:tool", { sessionId, name, label, args, callId, status: "end", ok, output });
-        // After any note-write tool, push fresh note content to the renderer
-        // so the plan task list can update live without a full re-hydration.
-        if (ok && NOTE_WRITE_TOOLS.has(name)) {
-          try {
-            const parsed = JSON.parse(output) as { id?: string };
-            if (parsed?.id) {
-              const row = ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
-              if (row) send("pi-agent:note-updated", { sessionId, noteId: parsed.id, content: row.content ?? "" });
-            }
-          } catch { /* non-JSON output — ignore */ }
-        }
-        // After the todowrite tool succeeds, broadcast the persisted list so the
-        // todo dock updates live as the agent works.
-        if (ok && name === "todowrite") {
-          send("pi-agent:todos", { sessionId, todos: q.getSessionTodos(ctx.db, sessionId) });
-        }
-      },
-      onStepStart:    () => send("pi-agent:step",  { sessionId }),
-      onUsage:        (promptTokens, completionTokens, reasoningTokens, breakdown, _cost, cacheRead, cacheCreate) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens, reasoningTokens, breakdown, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreate }),
-      onRetry:        (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
-      transformContext: session.compactionTransformer,
-      onDone: () => {
-        runningLoops.delete(sessionId);
-        tokens.flush();
-        thoughts.flush();
-        // Persist off the done-delivery path (see scheduleHistorySave).
-        scheduleHistorySave(ctx.db, sessionId, session.messages);
-        send("pi-agent:done", { sessionId });
-      },
-      onError: (error) => {
-        runningLoops.delete(sessionId);
-        tokens.flush();
-        thoughts.flush();
-        scheduleHistorySave(ctx.db, sessionId, session.messages, "exited");
-        send("pi-agent:error", { sessionId, error });
-      },
-      onPlanNoteFound: (noteId) => {
-        send("pi-agent:plan-note", { sessionId, noteId });
-        try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
-      },
-    },
-    toolCtx,
-    mode,
-  ).catch((err) => {
-    // A crashed loop must still resolve the turn: flush buffered tokens,
-    // persist the (exited) session, and send a terminal error so the renderer
-    // never stays stuck in its loading state.
-    runningLoops.delete(sessionId);
-    tokens.flush();
-    thoughts.flush();
-    scheduleHistorySave(ctx.db, sessionId, session.messages, "exited");
-    send("pi-agent:error", { sessionId, error: (err as Error)?.message ?? String(err) });
-  });
 }
 
 // ── Cordis coding-session runner ────────────────────────────────────────────
