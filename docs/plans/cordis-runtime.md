@@ -11,12 +11,8 @@ Branch: `feat/cordis-runtime` · Latest: `79ab1871`
 
 Cordis is the **only engine** — chat, coding agent, automations, user-style, and every one-shot all run through it. The frozen builtin loops, `pi_agent_llm_history`, and `CAIRN_ENGINE` are **deleted** (`90f0b960`). Full electron suite 77 files/1106; live coding 8/8.
 
-### A. Heartbeat → run a full coding agent (TOP follow-up, ~1 day)
-`heartbeat-runner.ts:441` currently calls `runCordisLoop` with only streaming callbacks — connector tools, script executors, and approvals are NOT wired, so connector/script automations silently degrade. **Switch to `runCordisCodingLoop`** (`run-cordis-coding.ts:44`):
-- `cwd` = automation `runDir` (`heartbeat-runner.ts:220`), `sandboxMode:"workspace-write"`
-- All tools for free: `mountCodingStack` (bash/write/edit/read/grep/todo at `run-cordis-coding.ts:200`) + Cairn data tools + `registerExternalCairnTools` (connectors at `run-cordis-coding.ts:210`) + skill
-- **Approvals → UI**: `runCordisCodingLoop` already emits `pi-agent:tool-confirm-required` + blocks on `respond-tool` (`run-cordis-coding.ts:75`). Heartbeat is headless → emit an `automation:run` approval event via `ctx.send` (`heartbeat-runner.ts:364`) + store resolver; new `automation:approve` IPC (renderer→main) resolves it. Same for `questions` (`run-cordis-coding.ts:66`).
-- This **replaces** bespoke `runScript`/`writeRunFile`/`deliverFile` executors + `makeApprovalGate`.
+### A. Heartbeat → run a full coding agent (IN PROGRESS — core done, approvals UI pending)
+`heartbeat-runner.ts:441` now calls `runCordisCodingLoop` (the full agent) with `cwd=runDir`, `sandboxMode:"workspace-write"`, all tools (bash/write/edit/read/grep/todo + Cairn data + connectors + skill), and `autoApprove: automation.approvalMode !== "ask"`. The coding agent's `pi-agent:*` tool/token/usage events are mapped to `automation:run` events, and the run transcript/artifacts/error-status are preserved. **Remaining:** (1) the `approvals` adapter is a no-op placeholder — the plan is to forward `pi-agent:tool-confirm-required` to the UI via an `automation:run` approval event + a new `automation:approve` IPC (renderer→main) resolving it, reusing the `makeApprovalGate` policy (park writes/scripts/external tools in the approval inbox); (2) a renderer approval dialog for automations.
 
 ### B. Phase 3 — In-app user plugins + dsh client/UI (the big unlock, 3–6 wks)
 Full design + feasibility in §9 and the "HOW TO START" at the end of §8. Six-step bridge-plugin workstream:

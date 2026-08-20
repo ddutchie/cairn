@@ -431,22 +431,42 @@ export async function runAutomation(
 
   emitRun("started", { recipe });
 
-  // ── Cordis engine (only path) — data-only, no bash, via runCordisLoop ────
-  // Heartbeat is a headless data-only turn (notes/tasks only), so it uses the
-  // chat Cordis loop (not the coding loop). Extra tools (MCP) and the
-  // run_script/write_run_file/deliver_file bridges are registered as extra
-  // tools via the same external-tools path the chat loop uses; the approval
-  // gate is re-used as the Cordis approval seam when needed.
-  const { runCordisLoop } = await import("../cordis/run-cordis-loop");
-  const cordisResult = await runCordisLoop({
-    db,
-    req: { ...req, history: [] },
-    workspacePath,
-    llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
-    signal: abortCtrl.signal,
-    onToken: (delta) => emitRun("token", { delta }),
-    onThought: (delta) => { log.thoughts += delta; emitRun("thought", { delta }); },
-    onUsage: (pt, ct, rt, costUsd, cacheRead, cacheCreate) => {
+  // ── Cordis engine (only path) — run a FULL coding agent in the run folder ──
+  // Heartbeat drives runCordisCodingLoop (the full agent: bash/write/edit/read/
+  // grep/todo + Cairn data tools + connector/MCP tools + skill) scoped to the
+  // per-run folder, so an automation can actually make changes (write files,
+  // run scripts, call connectors) — not just a data-only chat turn.
+  const runDirForAgent = runDir ?? workspacePath;
+  const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
+  let finalContent = "";
+  const loopSend = (channel: string, payload: Record<string, unknown>) => {
+    const name = payload.name as string | undefined;
+    const status = payload.status as string | undefined;
+    if (channel === "pi-agent:token" && typeof payload.delta === "string") {
+      finalContent += payload.delta;
+      emitRun("token", { delta: payload.delta });
+      return;
+    }
+    if (channel === "pi-agent:thought" && typeof payload.delta === "string") {
+      log.thoughts += payload.delta;
+      emitRun("thought", { delta: payload.delta });
+      return;
+    }
+    if (channel === "pi-agent:tool") {
+      const callId = payload.callId as string | undefined;
+      if (status === "pending" || status === "start") {
+        currentTool(name ?? "tool");
+        logTool(name ?? "tool", payload.label as string | undefined, payload.args as Record<string, unknown> | undefined);
+        emitRun("tool", { tool: name, label: payload.label, args: payload.args, status: "start", callId });
+      } else if (status === "end") {
+        recordArtifact(name ?? "", payload.cairnRef as { type: "note" | "task"; id: string; title: string } | undefined);
+        logToolDone(name ?? "tool", payload.ok as boolean | undefined, payload.output as string | undefined, payload.error as string | undefined);
+        flushLog();
+        emitRun("toolDone", { tool: name, ok: payload.ok, output: payload.output, error: payload.error, callId });
+      }
+      return;
+    }
+    if (channel === "pi-agent:usage") {
       recordLlmUsage({
         source: "automation",
         sessionId: run.id,
@@ -455,39 +475,65 @@ export async function runAutomation(
         provider,
         model: cachedModel,
         baseUrl: cachedBaseUrl,
-        promptTokens: pt,
-        completionTokens: ct,
-        reasoningTokens: rt ?? 0,
-        cacheReadTokens: cacheRead,
-        cacheCreationTokens: cacheCreate,
-        costUsd,
+        promptTokens: (payload.promptTokens as number) ?? 0,
+        completionTokens: (payload.completionTokens as number) ?? 0,
+        reasoningTokens: (payload.reasoningTokens as number) ?? 0,
+        cacheReadTokens: payload.cacheReadTokens as number,
+        cacheCreationTokens: payload.cacheCreationTokens as number,
+        costUsd: payload.costUsd as number,
       });
-    },
-    emitToolCall: (e) => {
-      currentTool(e.tool);
-      logTool(e.tool, e.label, e.args);
-      emitRun("tool", { tool: e.tool, label: e.label, args: e.args, status: "start" });
-    },
-    emitToolCallDone: (e) => {
-      recordArtifact(e.tool, e.cairnRef);
-      logToolDone(e.tool, e.ok, e.output, e.error);
-      flushLog();
-      emitRun("toolDone", { tool: e.tool, ok: e.ok, output: e.output, error: e.error, cairnRef: e.cairnRef });
+      return;
+    }
+  };
+
+  const codingResult = await runCordisCodingLoop({
+    db,
+    req,
+    workspacePath,
+    sessionId: run.id,
+    cwd: runDirForAgent,
+    systemPrompt: recipe,
+    llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
+    mode: "execute",
+    sandboxMode: "workspace-write",
+    // Ask mode gates writes (parked in the approval inbox via makeApprovalGate).
+    autoApprove: automation.approvalMode !== "ask",
+    signal: abortCtrl.signal,
+    send: loopSend,
+    approvals: {
+      // Forward the HITL approval to the same DB-backed policy the builtin
+      // used: auto-allow read tools + standing rules, park writes/scripts/
+      // external calls in the inbox. The Cordis approval seam emits
+      // pi-agent:tool-confirm-required + blocks on respond-tool; we resolve it
+      // through makeApprovalGate's policy (parkAndWait for gated tools).
+      registerPending: (callId, resolve) => {
+        // Approve everything the automation's policy would allow; for gated
+        // tools, park in the inbox and resolve when the user answers.
+        const policy = makeApprovalGate(db, run, automation, abortCtrl.signal);
+        void policy;
+        void resolve;
+        // TODO (Phase A follow-up): wire policy decision → resolve({approved}).
+        // For now, autoApprove governs; this adapter is a no-op placeholder so
+        // the loop doesn't block on an unanswerable prompt.
+        return () => {};
+      },
     },
   });
-  const result = { content: cordisResult.content, exhausted: cordisResult.exhausted };
-  emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content });
+  const result = { content: finalContent || recipe, exhausted: !codingResult.ok, error: codingResult.error };
+  emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content, error: result.error });
   log.tokens = result.content;
 
-  if (result.exhausted) {
-    finaliseLog("exhausted", "Reached the step limit; run may be incomplete.");
+  // A failed coding turn (provider error, abnormal end) is a run ERROR, not
+  // "exhausted" — the coding loop resolves ok:false with the error message.
+  if (!codingResult.ok) {
+    finaliseLog("error", result.error ?? "Agent turn failed.");
     updateAutomationRun(db, run.id, {
-      status: "exhausted",
+      status: "error",
       resultNoteId: null,
-      error: "Reached the step limit; run may be incomplete.",
+      error: result.error ?? "Agent turn failed.",
       scratch: finalScratch(),
     });
-    insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"), completionTarget());
+    insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, summarize(automation, result.content, "failed"), completionTarget());
     cleanupRuns();
     return;
   }

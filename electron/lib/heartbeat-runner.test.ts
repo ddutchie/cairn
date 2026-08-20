@@ -21,9 +21,9 @@ import { automationFolderDir, automationRunDir } from "./automation-folder";
 // mocked config-cache / chat-loop / external-tools modules.
 import { runAutomation, runAutomationNow } from "./heartbeat-runner";
 
-const { runCordisLoopMock, getExternalToolDefsMock } = vi.hoisted(() => ({
+const { runCordisCodingLoopMock, getExternalToolDefsMock } = vi.hoisted(() => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  runCordisLoopMock: vi.fn(async (_opts: any) => ({ content: "done", reasoning: "", exhausted: false })),
+  runCordisCodingLoopMock: vi.fn(async (_opts: any): Promise<any> => ({ ok: true })),
   getExternalToolDefsMock: vi.fn(async () => []),
 }));
 
@@ -31,8 +31,8 @@ vi.mock("./config-cache", () => ({
   getCachedConfig: () => ({ aiConfig: { baseUrl: "https://api.test.invalid", model: "gpt-test" } }),
 }));
 
-vi.mock("../cordis/run-cordis-loop", () => ({
-  runCordisLoop: (opts: unknown) => runCordisLoopMock(opts),
+vi.mock("../cordis/run-cordis-coding", () => ({
+  runCordisCodingLoop: (opts: unknown) => runCordisCodingLoopMock(opts),
 }));
 
 // Keep the REAL checkRequirements (that's the gate under test) but stub the
@@ -78,28 +78,33 @@ function makeRoot(): string {
 // The runner calls runCordisLoop with an options object; these accessors name
 // the fields so tests don't scatter magic keys (they read the LAST call).
 interface LoopOpts {
-  onToken?: (d: string) => void;
-  onThought?: (d: string) => void;
-  onUsage?: (...a: unknown[]) => void;
-  emitToolCall?: (e: unknown) => void;
-  emitToolCallDone?: (e: unknown) => void;
+  send?: (channel: string, payload: Record<string, unknown>) => void;
   signal?: unknown;
   req?: { message?: string; threadId?: string };
+  autoApprove?: boolean;
+  cwd?: string;
+  systemPrompt?: string;
 }
 function lastLoopOpts(): LoopOpts {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const calls = (runCordisLoopMock as unknown as { mock: { calls: Array<[unknown]> } }).mock.calls;
+  const calls = (runCordisCodingLoopMock as unknown as { mock: { calls: Array<[unknown]> } }).mock.calls;
   const last = calls[calls.length - 1]?.[0] as LoopOpts | undefined;
   return last ?? {};
 }
 
 const loopReq = () => lastLoopOpts().req;
-const loopEmitToolCall = () => lastLoopOpts().emitToolCall;
-const loopEmitToolCallDone = () => lastLoopOpts().emitToolCallDone;
-const loopOnToken = () => lastLoopOpts().onToken;
-const loopOnThought = () => lastLoopOpts().onThought;
-const loopOnUsage = () => lastLoopOpts().onUsage;
+const loopSend = () => lastLoopOpts().send;
+const loopCwd = () => lastLoopOpts().cwd;
+const loopAutoApprove = () => lastLoopOpts().autoApprove;
 const loopSignal = () => lastLoopOpts().signal;
+/** Drive a `pi-agent:tool` start event through the runner's send sink. */
+const fireToolStart = (tool: string, label: string, args: Record<string, unknown>) =>
+  loopSend()?.("pi-agent:tool", { name: tool, label, args, status: "start" });
+/** Drive a `pi-agent:tool` end event through the runner's send sink. */
+const fireToolEnd = (tool: string, ok: boolean, output: string) =>
+  loopSend()?.("pi-agent:tool", { name: tool, ok, output, status: "end" });
+/** Drive a `pi-agent:token` delta through the runner's send sink. */
+const fireToken = (delta: string) => loopSend()?.("pi-agent:token", { delta });
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -141,7 +146,7 @@ describe("runAutomation connector requirements", () => {
     expect(updated.status).toBe("skipped");
     expect(updated.error).toMatch(/linear/i);
     expect(updated.error).toMatch(/not installed/);
-    expect(runCordisLoopMock).not.toHaveBeenCalled();
+    expect(runCordisCodingLoopMock).not.toHaveBeenCalled();
   });
 
   it("skips the run when a required connector is installed but detached", async () => {
@@ -162,7 +167,7 @@ describe("runAutomation connector requirements", () => {
     const updated = getAutomationRunById(db, run.id)!;
     expect(updated.status).toBe("skipped");
     expect(updated.error).toMatch(/not attached/);
-    expect(runCordisLoopMock).not.toHaveBeenCalled();
+    expect(runCordisCodingLoopMock).not.toHaveBeenCalled();
   });
 
   it("runs normally when the required connector is installed and attached", async () => {
@@ -177,11 +182,11 @@ describe("runAutomation connector requirements", () => {
     setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m-linear", enabled: true });
     const automation = makeAutomation(db, { projectId: "p1", requires: [{ kind: "mcp", name: "linear" }] });
     const run = createAutomationRun(db, automation.id, "running");
-    runCordisLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+    runCordisCodingLoopMock.mockResolvedValue({ ok: true });
 
     await runAutomation({ db, workspacePath: "/tmp" }, run, automation);
 
-    expect(runCordisLoopMock).toHaveBeenCalled();
+    expect(runCordisCodingLoopMock).toHaveBeenCalled();
     expect(getAutomationRunById(db, run.id)!.status).toBe("done");
   });
 
@@ -201,7 +206,7 @@ describe("runAutomation connector requirements", () => {
 
     await runAutomation({ db, workspacePath: "/tmp" }, run, automation);
 
-    expect(runCordisLoopMock).not.toHaveBeenCalled();
+    expect(runCordisCodingLoopMock).not.toHaveBeenCalled();
     const updated = getAutomationRunById(db, run.id)!;
     expect(updated.status).toBe("error");
     expect(updated.error).toMatch(/connector exploded/);
@@ -215,7 +220,7 @@ describe("runAutomation folder plumbing", () => {
     createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
     const automation = makeAutomation(db, { projectId: "p1" });
     const run = createAutomationRun(db, automation.id, "running");
-    runCordisLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+    runCordisCodingLoopMock.mockResolvedValue({ ok: true });
     const root = makeRoot();
 
     await runAutomation({ db, workspacePath: root }, run, automation);
@@ -239,7 +244,7 @@ describe("runAutomation folder plumbing", () => {
     createWorkspace(db, { id: "ws1", name: "W" });
     const automation = makeAutomation(db, {}); // no project → workspace scope
     const run = createAutomationRun(db, automation.id, "running");
-    runCordisLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+    runCordisCodingLoopMock.mockResolvedValue({ ok: true });
     const root = makeRoot();
 
     await runAutomation({ db, workspacePath: root }, run, automation);
@@ -269,7 +274,7 @@ describe("runAutomation folder plumbing", () => {
       ],
     });
     const run = createAutomationRun(db, automation.id, "running");
-    runCordisLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+    runCordisCodingLoopMock.mockResolvedValue({ ok: true });
     const root = makeRoot();
     const autoDir = automationFolderDir(root, automation.id, "P");
     // Pre-place a probe script so the runScript handler can execute it.
@@ -299,7 +304,7 @@ describe("runAutomation folder plumbing", () => {
     createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
     const automation = makeAutomation(db, { projectId: "p1" }); // row recipe = "Summarise today's Linear activity."
     const run = createAutomationRun(db, automation.id, "running");
-    runCordisLoopMock.mockResolvedValue({ exhausted: false, content: "done", reasoning: "" });
+    runCordisCodingLoopMock.mockResolvedValue({ ok: true });
     const root = makeRoot();
     const autoDir = automationFolderDir(root, automation.id, "P");
     fs.mkdirSync(autoDir, { recursive: true });
@@ -327,14 +332,14 @@ describe("runAutomation folder plumbing", () => {
     const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
     const send = (channel: string, payload: unknown) => sent.push({ channel, payload: payload as Record<string, unknown> });
 
-    // The loop mock fires the tool/token callbacks DURING the run so they land
+    // The loop mock fires the tool/token events DURING the run so they land
     // in both the live stream and the persisted transcript.
-    runCordisLoopMock.mockImplementation(() => {
-      (loopEmitToolCall() as (e: { tool: string; label: string; args: Record<string, unknown> }) => void)({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
-      (loopOnToken() as (delta: string) => void)("hello ");
-      (loopOnToken() as (delta: string) => void)("world");
-      (loopEmitToolCallDone() as (e: { tool: string; ok: boolean; output: string }) => void)({ tool: "run_script", ok: true, output: "made image" });
-      return Promise.resolve({ exhausted: false, content: "final summary", reasoning: "" });
+    runCordisCodingLoopMock.mockImplementation(() => {
+      fireToolStart("run_script", "Running gen", { name: "gen" });
+      fireToken("hello ");
+      fireToken("world");
+      fireToolEnd("run_script", true, "made image");
+      return Promise.resolve({ ok: true });
     });
 
     await runAutomation({ db, workspacePath: root, send }, run, automation);
@@ -353,30 +358,31 @@ describe("runAutomation folder plumbing", () => {
     const log = JSON.parse(fs.readFileSync(path.join(runDir, "run-log.json"), "utf8"));
     expect(log.status).toBe("done");
     expect(log.recipe).toBe(automation.instructions);
-    expect(log.tokens).toBe("final summary");
+    // The coding agent's final content is the accumulated streamed tokens.
+    expect(log.tokens).toBe("hello world");
     expect(log.tools).toHaveLength(1);
     expect(log.tools[0].name).toBe("run_script");
     expect(log.tools[0].ok).toBe(true);
     expect(log.tools[0].output).toBe("made image");
   });
 
-  it("records an exhausted run as 'exhausted' (row + transcript), not 'done'", async () => {
+  it("records a failed coding turn as 'error', not 'done'", async () => {
     const db = makeDb();
     createWorkspace(db, { id: "ws1", name: "W" });
     createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
     const automation = makeAutomation(db, { projectId: "p1" });
     const run = createAutomationRun(db, automation.id, "running");
-    runCordisLoopMock.mockResolvedValue({ exhausted: true, content: "incomplete", reasoning: "" });
+    runCordisCodingLoopMock.mockResolvedValue({ ok: false, error: "provider down" });
     const root = makeRoot();
 
     await runAutomation({ db, workspacePath: root }, run, automation);
 
     const updated = getAutomationRunById(db, run.id)!;
-    expect(updated.status).toBe("exhausted");
-    expect(updated.error).toMatch(/step limit/i);
+    expect(updated.status).toBe("error");
+    expect(updated.error).toMatch(/provider down/);
     const autoDir = automationFolderDir(root, automation.id, "P");
     const log = JSON.parse(fs.readFileSync(path.join(automationRunDir(autoDir, run.id), "run-log.json"), "utf8"));
-    expect(log.status).toBe("exhausted");
+    expect(log.status).toBe("error");
   });
 
   it("flushes the transcript incrementally as tools complete (survives a crash mid-run)", async () => {
@@ -391,10 +397,10 @@ describe("runAutomation folder plumbing", () => {
     // the on-disk transcript BEFORE the run finishes.
     let resolveLoop!: (v: unknown) => void;
     const loopPromise = new Promise((r) => { resolveLoop = r; });
-    runCordisLoopMock.mockImplementation(() => {
-      (loopEmitToolCall() as (e: { tool: string; label: string; args: Record<string, unknown> }) => void)({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
-      (loopEmitToolCallDone() as (e: { tool: string; ok: boolean; output: string }) => void)({ tool: "run_script", ok: true, output: "made image" });
-      return loopPromise as Promise<{ content: string; reasoning: string; exhausted: boolean }>;
+    runCordisCodingLoopMock.mockImplementation(() => {
+      fireToolStart("run_script", "Running gen", { name: "gen" });
+      fireToolEnd("run_script", true, "made image");
+      return loopPromise as Promise<{ ok: boolean }>;
     });
 
     const pending = runAutomation({ db, workspacePath: root }, run, automation);
@@ -406,7 +412,7 @@ describe("runAutomation folder plumbing", () => {
     expect(midLog.tools).toHaveLength(1);
     expect(midLog.tools[0].ok).toBe(true);
 
-    resolveLoop({ exhausted: false, content: "final", reasoning: "" });
+    resolveLoop({ ok: true });
     await pending;
     const doneLog = JSON.parse(fs.readFileSync(path.join(runDir, "run-log.json"), "utf8"));
     expect(doneLog.status).toBe("done");
@@ -422,9 +428,9 @@ describe("runAutomationNow crash recovery (failRun)", () => {
     const root = makeRoot();
     // Emit one completed tool BEFORE the loop rejects, so the incrementally
     // flushed transcript exists and failRun must preserve it (not replace it).
-    runCordisLoopMock.mockImplementation(() => {
-      (loopEmitToolCall() as (e: { tool: string; label: string; args: Record<string, unknown> }) => void)({ tool: "run_script", label: "Running gen", args: { name: "gen" } });
-      (loopEmitToolCallDone() as (e: { tool: string; ok: boolean; output: string }) => void)({ tool: "run_script", ok: true, output: "made image" });
+    runCordisCodingLoopMock.mockImplementation(() => {
+      fireToolStart("run_script", "Running gen", { name: "gen" });
+      fireToolEnd("run_script", true, "made image");
       return Promise.reject(new Error("provider exploded"));
     });
     const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
