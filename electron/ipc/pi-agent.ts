@@ -19,8 +19,8 @@
 
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 
-import { runAgentLoop, pendingApprovals, pendingDoomLoop, pendingQuestionAnswers, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
-import { buildCompactionTransformer, compactNow } from "../lib/compaction";
+import type { PiAgentSession, AgentLLMConfig, AgentToolContext } from "../lib/pi-agent-types";
+import type { Database } from "better-sqlite3";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { discoverSkills, renderSkillsXml } from "../lib/skills";
 import { normaliseBaseUrl, isLocalEndpoint } from "../lib/llm";
@@ -63,39 +63,6 @@ interface CordisTurnPayload {
   autoApprove: boolean;
   /** automation-dev → read-only sandbox (file-only, no escape); else workspace-write. */
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
-}
-
-
-// ── Debounced history persistence ─────────────────────────────────────────────
-// saveLlmHistory is a synchronous (better-sqlite3) transaction that
-// JSON-serialises every message in the session — on a long turn that's a
-// non-trivial main-thread block. Defer it off the done/error delivery path and
-// coalesce rapid saves (a done immediately followed by an error) so the renderer
-// gets its turn-complete event without waiting on the DB write. The message
-// snapshot is taken at schedule time, so a new turn can never be half-saved.
-const pendingHistorySaves = new Map<string, { timer: NodeJS.Timeout; msgs: PiAgentSession["messages"] }>();
-
-function scheduleHistorySave(
-  db: Parameters<typeof q.saveLlmHistory>[0],
-  sessionId: string,
-  msgs: PiAgentSession["messages"],
-  status?: "exited",
-): void {
-  const existing = pendingHistorySaves.get(sessionId);
-  if (existing) clearTimeout(existing.timer);
-  const snapshot = [...msgs];
-  pendingHistorySaves.set(sessionId, {
-    msgs: snapshot,
-    timer: setTimeout(() => {
-      pendingHistorySaves.delete(sessionId);
-      try {
-        q.saveLlmHistory(db, sessionId, snapshot);
-        q.updatePiSession(db, sessionId, { ...(status ? { status } : {}), updatedAt: ts() });
-      } catch (e) {
-        console.warn("[pi-agent] failed to persist session:", e);
-      }
-    }, 50),
-  });
 }
 
 // ── Note-writing tool names ────────────────────────────────────────────────────
@@ -574,13 +541,14 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:compact-now ─────────────────────────────────────────────────
-  // Triggered by the /compact slash command. Immediately summarises the session
-  // history and returns the result. The renderer shows a status message.
+  // Triggered by the /compact slash command. On Cordis the dsh
+  // BasicCompactionEngine auto-compacts between steps (thresholdRatio 0.8) and
+  // fires pi-agent:compact/compact-result via cairnCodingPlugin — so a manual
+  // trigger is effectively a no-op that just acknowledges auto-compaction is
+  // in charge. (A manual ctx.compaction.compactNow(agent) needs the live agent
+  // handle, which the loop doesn't expose yet — tracked as a follow-up.)
   registerIpcOn("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number } }) => {
     const { sessionId } = req;
-    // A running loop is reading session.messages live — replacing them mid-run
-    // would desync its in-flight context. The renderer only sends /compact
-    // when idle, so this is a defensive guard.
     if (runningLoops.has(sessionId)) {
       broadcastEvent("pi-agent:compact-result", {
         sessionId,
@@ -589,59 +557,16 @@ export function registerPiAgentHandler(
       });
       return;
     }
-    const session = sessions.get(sessionId);
-    if (!session || session.messages.length === 0) return;
-
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
     };
-
-    // Cache the connection (apiKey scrubbed to a ref-or-clear by the cache layer).
-    cacheLlmConnection("agent", {
-      baseUrl: req.config?.baseUrl,
-      model: req.config?.model,
-      apiKey: req.config?.apiKey,
-    });
-
-    let reqConfig = req.config;
-    if (!reqConfig?.apiKey) {
-      const cached = getCachedConfig().agentConfig;
-      if (cached?.apiKey) {
-        reqConfig = {
-          ...reqConfig,
-          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
-          model: reqConfig?.model || cached.model,
-          apiKey: cached.apiKey,
-        };
-      }
-    }
-
-    const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
-      model:       reqConfig?.model  || "gpt-5.6-luna",
-      apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
-      maxSteps:    20,
-      temperature: 0.1,
-      contextWindow: reqConfig?.contextWindow,
-    };
-
     send("pi-agent:compact", { sessionId, status: "start" });
-    try {
-      const result = await compactNow(session, llmConfig);
-      if (result) {
-        session.messages = result.messages;
-        // Update the transformer's cache so the next runAgentLoop call uses the summary
-        session.compactionTransformer = undefined; // reset so it rebuilds with new context
-        q.saveLlmHistory(ctx.db, sessionId, session.messages);
-        send("pi-agent:compact-result", { sessionId, messageCount: result.messages.length, summary: result.summary });
-      } else {
-        send("pi-agent:compact-result", { sessionId, messageCount: 0, summary: "" });
-      }
-    } catch (e) {
-      send("pi-agent:error", { sessionId, error: `Compaction failed: ${(e as Error).message}` });
-    } finally {
-      send("pi-agent:compact", { sessionId, status: "end" });
-    }
+    send("pi-agent:compact-result", {
+      sessionId,
+      messageCount: 0,
+      summary: "This agent auto-compacts at 80% context as it works — no manual compaction is needed.",
+    });
+    send("pi-agent:compact", { sessionId, status: "end" });
   });
 
   // ── pi-agent:set-mode ─────────────────────────────────────────────────────
@@ -655,19 +580,13 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:respond-tool ──────────────────────────────────────────────────
+  // Resolve the Cordis loop's approval adapter (keyed by callId).
   registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command" }) => {
     void sessionId;
-    // Cordis engine turn (default): resolve the loop's approval adapter.
     const cordisPending = cordisPendingApprovals.get(callId);
     if (cordisPending) {
       cordisPending({ approved, grant: approved ? grant : undefined });
       cordisPendingApprovals.delete(callId);
-      return;
-    }
-    const pending = pendingApprovals.get(callId);
-    if (pending) {
-      pending.resolve({ approved, grant: approved ? grant : undefined });
-      pendingApprovals.delete(callId);
     }
   });
 
@@ -680,31 +599,19 @@ export function registerPiAgentHandler(
     if (cordisPending) {
       cordisPending(allow);
       cordisPendingDoomLoop.delete(callId);
-      return;
-    }
-    const pending = pendingDoomLoop.get(callId);
-    if (pending) {
-      pending.resolve(allow);
-      pendingDoomLoop.delete(callId);
     }
   });
 
   // ── pi-agent:respond-questions ─────────────────────────────────────────────
   // Answers to a blocked ask_questions call. The formatted answer text is fed
   // back to the model as the tool result so it reasons over the answers in the
-  // same turn. (Cordis keys by requestId; builtin by callId — same map role.)
+  // same turn. Cordis keys by requestId (which the renderer echoes as callId).
   registerIpcOn("pi-agent:respond-questions", (_event, { sessionId, callId, answers }: { sessionId: string; callId: string; answers: string }) => {
     void sessionId;
     const cordisPending = cordisPendingQuestions.get(callId);
     if (cordisPending) {
       cordisPending(answers);
       cordisPendingQuestions.delete(callId);
-      return;
-    }
-    const pending = pendingQuestionAnswers.get(callId);
-    if (pending) {
-      pending.resolve(answers);
-      pendingQuestionAnswers.delete(callId);
     }
   });
 
@@ -841,25 +748,20 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:restore-context ───────────────────────────────────────────────────────
-  // Loads the persisted LLM message history for a session back into the
-  // in-memory sessions Map so the model can continue from where it left off.
+  // On the Cordis engine, session context resumes automatically via the dsh
+  // jsonl log (ctx.sessionPersistence.inspect → ctx.agents.resume in
+  // run-cordis-coding.ts) — there is no pi_agent_llm_history on this path.
+  // This handler just restores the persisted session persona so a re-prompt
+  // keeps the session's tool restrictions (validated, failing closed).
   registerIpcOn("pi-agent:restore-context", (_event, { sessionId }: { sessionId: string }) => {
     if (sessions.has(sessionId)) return; // already in memory
     try {
-      const history = q.getLlmHistory(ctx.db, sessionId);
-      if (history.length > 0) {
-        // getLlmHistory now returns the full AgentMessage objects (role, content,
-        // tool_calls, tool_call_id, etc.) so multi-turn context is fully restored.
-        // Restore the persisted persona too so a subsequent prompt/approval keeps
-        // the session's tool restrictions (validated, failing closed).
-        const sessionRow = q.getPiSessionById(ctx.db, sessionId);
-        sessions.set(sessionId, {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          messages: history as any[],
-          abortCtrl: new AbortController(),
-          role: q.normalizeSessionRole(sessionRow?.role),
-        });
-      }
+      const sessionRow = q.getPiSessionById(ctx.db, sessionId);
+      sessions.set(sessionId, {
+        messages: [],
+        abortCtrl: new AbortController(),
+        role: q.normalizeSessionRole(sessionRow?.role),
+      });
     } catch (e) {
       console.warn("[pi-agent] restore-context failed for", sessionId, e);
     }

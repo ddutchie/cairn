@@ -1781,54 +1781,6 @@ export function getSessionTodos(db: Database.Database, sessionId: string): PiSes
     .map(toPiTodo);
 }
 
-// ── Pi Agent LLM History ──────────────────────────────────────────────────────────────────
-
-export interface LlmHistoryRow {
-  role: string;
-  content: string;
-}
-
-/**
- * Persist the full LLM message history for a session.
- *
- * Each message is serialised as JSON and stored in the `content` column so that
- * tool_calls (assistant→tool) and tool_call_id (tool result) are preserved across
- * restarts. The `role` column is kept for quick filtering without a JSON parse.
- */
-export function saveLlmHistory(
-  db: Database.Database,
-  sessionId: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  messages: Array<Record<string, any>>,
-) {
-  const save = db.transaction(() => {
-    db.prepare("DELETE FROM pi_agent_llm_history WHERE session_id = ?").run(sessionId);
-    messages.forEach((msg, i) => {
-      db.prepare(`INSERT INTO pi_agent_llm_history (session_id, "order", role, content) VALUES (?, ?, ?, ?)`)
-        .run(sessionId, i, msg.role as string, JSON.stringify(msg));
-    });
-  });
-  save();
-}
-
-/**
- * Restore the full LLM message history for a session.
- *
- * The `content` column contains a JSON-serialised AgentMessage object. We parse
- * it back out; if parsing fails (legacy plain-text rows) we fall back to a minimal
- * { role, content } shape so old sessions degrade gracefully.
- */
-export function getLlmHistory(db: Database.Database, sessionId: string): LlmHistoryRow[] {
-  const rows = db.prepare(`SELECT role, content FROM pi_agent_llm_history WHERE session_id = ? ORDER BY "order" ASC`).all(sessionId) as LlmHistoryRow[];
-  return rows.map((row) => {
-    try {
-      const parsed = JSON.parse(row.content);
-      if (parsed && typeof parsed === "object" && "role" in parsed) return parsed as LlmHistoryRow;
-    } catch { /* legacy plain-text row — fall through */ }
-    return row;
-  });
-}
-
 // ── Codebase semantic indexing ────────────────
 // The codebase file/symbol/relation/graph queries live in codebase-queries.ts;
 // re-exported here so existing `./queries` / `../db/queries` imports are unchanged.

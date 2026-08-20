@@ -35,6 +35,7 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
 
     const db = makeDb();
     const sent: SentEvent[] = [];
+    const sessionId = `pi-live-${Date.now()}`;
     const send = (channel: string, payload: Record<string, unknown>) => { sent.push({ channel, payload }); };
 
     const result = await runCordisCodingLoop({
@@ -49,7 +50,7 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
         config: { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" },
       } as never,
       workspacePath: "/tmp",
-      sessionId: "pi-live-session",
+      sessionId,
       cwd: "/tmp",
       systemPrompt: "You are a helpful coding agent. Use the provided tools to complete the task.",
       llmConfig: {
@@ -79,7 +80,7 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
     // No error.
     expect(channels.some((c) => c === "pi-agent:error")).toBe(false);
     // Every event is scoped to the session id.
-    for (const s of sent) expect(s.payload.sessionId).toBe("pi-live-session");
+    for (const s of sent) expect(s.payload.sessionId).toBe(sessionId);
 
     db.close();
   }, 120000);

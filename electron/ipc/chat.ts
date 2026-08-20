@@ -102,10 +102,19 @@ export function registerChatHandler(ctx: DbContext): void {
         temperature: 0.1,
       };
 
-      const { generateSummary } = await import("../lib/compaction");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const agentMsgs = req.messages as any[];
-      const summary = await generateSummary(agentMsgs, llmConfig, new AbortController().signal, { sessionId: req.threadId });
+      // One-shot summariser via Cordis (dsh compaction owns agent compaction; this
+      // is the explicit /compact thread summary).
+      const { runOneShot } = await import("../cordis/one-shot");
+      const serialized = (req.messages as Array<{ role: string; content: string }>)
+        .map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`)
+        .join("\n\n");
+      const summary = await runOneShot({
+        systemPrompt: "Summarize the following conversation into a concise, lossless summary that preserves all key decisions, facts, and action items. Use the user's writing style.",
+        userPrompt: serialized,
+        config: llmConfig,
+        source: "summary",
+        sessionId: req.threadId,
+      });
       return { data: { summary } };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -293,71 +302,10 @@ export function registerChatHandler(ctx: DbContext): void {
         : undefined;
 
     // ── Subagent mode ─────────────────────────────────────────────────────────
-    // Per-thread toggle routes the turn through the dispatch → research/write
-    // loop. It streams a live, expandable subagent trace to the renderer via
-    // chat:subagent* events, then streams the dispatcher's final reply as tokens.
-    if (req.useSubagents && provider !== "localllm") {
-      const { runDispatchLoop } = await import("../lib/chat-subagent-loop");
-      try {
-        const dispatchResult = await runDispatchLoop(
-          ctx.db, req, ctx.workspacePath, { baseUrl, model, apiKey, provider },
-          getWin,
-          {
-            signal: abortCtrl.signal,
-            events: {
-              onSubagentStart: (e) => send("chat:subagent", { ...e, status: "start" }),
-              onSubagentDone: (e) => send("chat:subagent", { ...e, status: "done" }),
-              onSubagentToken: (e) => send("chat:subagent-token", e),
-              onSubagentThought: (e) => send("chat:subagent-thought", e),
-              onSubagentToolCall: (e) => send("chat:subagent-tool-call", e),
-              onSubagentToolCallDone: (e) => send("chat:subagent-tool-call-done", e),
-              onSubagentUsage: (e) => send("chat:subagent-usage", e),
-            },
-          },
-        );
-
-        // The main/total ContextRing must reflect the DISPATCHER's context window —
-        // the system prompt + the subagent briefs fed back — NOT the summed cost of
-        // every subagent turn. Each subagent reports its own usage via
-        // chat:subagent-usage for its own ring. (metrics.promptTokens is the total
-        // cost figure; metrics.dispatcherPromptTokens is the context figure.)
-        const m = dispatchResult.metrics;
-        promptTokens = m.dispatcherPromptTokens;
-        completionTokens = m.dispatcherCompletionTokens;
-        reasoningTokens = m.dispatcherReasoningTokens;
-        cacheReadTokens = m.dispatcherCacheReadTokens;
-        cacheCreationTokens = m.dispatcherCacheCreationTokens;
-        if (typeof m.costUsd === "number") costUsd = m.costUsd;
-        send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens });
-
-        // Stream the dispatcher's final reply as content tokens so it renders like
-        // a normal assistant message.
-        if (!abortCtrl.signal.aborted && dispatchResult.content) send("chat:token", { delta: dispatchResult.content });
-
-        if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
-        send("chat:done", {
-          content: abortCtrl.signal.aborted ? "" : dispatchResult.content,
-          reasoning: dispatchResult.reasoning,
-          reasoningItems: dispatchResult.reasoningItems,
-          reasoningField: dispatchResult.reasoningField,
-          reasoningModel: dispatchResult.reasoningModel,
-          contextRefs: [],
-          usage: finalUsage(),
-        });
-      } catch (err) {
-        // Cancellation or an unexpected failure must never leave the input
-        // disabled — always emit chat:done so the renderer resolves the turn.
-        if (!abortCtrl.signal.aborted) {
-          console.error("[chat] subagent dispatch failed:", err);
-          send("chat:done", { content: `Subagent run failed: ${String(err)}`, contextRefs: [] });
-        } else {
-          send("chat:done", { content: "", contextRefs: [] });
-        }
-      } finally {
-        abortControllers.delete(event.sender.id);
-      }
-      return;
-    }
+    // The builtin dispatch → research/write subagent loop (chat-subagent-loop)
+    // has been removed — Cordis handles subagents natively via cairn-subagent
+    // (the dsh subagent tool, run-cordis-loop.ts:144) which emits chat:subagent*
+    // events. So `req.useSubagents` is covered by the Cordis loop below.
 
     // ── Cordis engine (only path — local models via llama-server at 127.0.0.1:<port>/v1 are also OpenAI-compatible) ──
     if (true) {

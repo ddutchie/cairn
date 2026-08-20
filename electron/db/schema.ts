@@ -388,14 +388,6 @@ const MIGRATIONS: Migration[] = [
         "order"      INTEGER NOT NULL DEFAULT 0
       );
 
-      CREATE TABLE IF NOT EXISTS pi_agent_llm_history (
-        session_id TEXT NOT NULL REFERENCES pi_agent_sessions(id) ON DELETE CASCADE,
-        "order"    INTEGER NOT NULL,
-        role       TEXT NOT NULL,
-        content    TEXT NOT NULL,
-        PRIMARY KEY (session_id, "order")
-      );
-
       CREATE INDEX IF NOT EXISTS idx_pi_sessions_project ON pi_agent_sessions(project_id);
       CREATE INDEX IF NOT EXISTS idx_pi_messages_session ON pi_agent_messages(session_id);
     `);

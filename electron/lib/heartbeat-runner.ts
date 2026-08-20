@@ -431,78 +431,22 @@ export async function runAutomation(
 
   emitRun("started", { recipe });
 
-  // ── Cordis engine (default) — data-only, no bash, via runCordisLoop ──────
+  // ── Cordis engine (only path) — data-only, no bash, via runCordisLoop ────
   // Heartbeat is a headless data-only turn (notes/tasks only), so it uses the
   // chat Cordis loop (not the coding loop). Extra tools (MCP) and the
   // run_script/write_run_file/deliver_file bridges are registered as extra
   // tools via the same external-tools path the chat loop uses; the approval
   // gate is re-used as the Cordis approval seam when needed.
-  // In vitest the shared Cordis context is reused across tests and the
-  // per-test tool registration races (duplicate tool errors) — keep the
-  // deterministic builtin path for tests.
-  const useCordis = process.env.CAIRN_ENGINE !== "builtin" && provider !== "localllm" && process.env.VITEST !== "true" && !process.env.VITEST_WORKER_ID;
-  let result: { content: string; exhausted: boolean };
-  if (useCordis) {
-    const { runCordisLoop } = await import("../cordis/run-cordis-loop");
-    const cordisResult = await runCordisLoop({
-      db,
-      req: { ...req, history: [] },
-      workspacePath,
-      llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
-      signal: abortCtrl.signal,
-      onToken: (delta) => emitRun("token", { delta }),
-      onThought: (delta) => { log.thoughts += delta; emitRun("thought", { delta }); },
-      onUsage: (pt, ct, rt, costUsd, cacheRead, cacheCreate) => {
-        recordLlmUsage({
-          source: "automation",
-          sessionId: run.id,
-          projectId: automation.projectId ?? undefined,
-          workspaceId: automation.workspaceId,
-          provider,
-          model: cachedModel,
-          baseUrl: cachedBaseUrl,
-          promptTokens: pt,
-          completionTokens: ct,
-          reasoningTokens: rt ?? 0,
-          cacheReadTokens: cacheRead,
-          cacheCreationTokens: cacheCreate,
-          costUsd,
-        });
-      },
-      emitToolCall: (e) => {
-        currentTool(e.tool);
-        logTool(e.tool, e.label, e.args);
-        emitRun("tool", { tool: e.tool, label: e.label, args: e.args, status: "start" });
-      },
-      emitToolCallDone: (e) => {
-        recordArtifact(e.tool, e.cairnRef);
-        logToolDone(e.tool, e.ok, e.output, e.error);
-        flushLog();
-        emitRun("toolDone", { tool: e.tool, ok: e.ok, output: e.output, error: e.error, cairnRef: e.cairnRef });
-      },
-    });
-    result = { content: cordisResult.content, exhausted: cordisResult.exhausted };
-  } else {
-    const { runToolLoop } = await import("./chat-loop");
-    result = await runToolLoop(
+  const { runCordisLoop } = await import("../cordis/run-cordis-loop");
+  const cordisResult = await runCordisLoop({
     db,
-    req,
+    req: { ...req, history: [] },
     workspacePath,
-    cached.baseUrl,
-    cached.model,
-    apiKey,
-    messages,
-    (e) => {                       // emitToolCall — record + stream the active tool
-      currentTool(e.tool);
-      logTool(e.tool, e.label, e.args);
-      emitRun("tool", { tool: e.tool, label: e.label, args: e.args, status: "start" });
-    },
-    abortCtrl.signal,
-    undefined,                       // getWin
-    provider,
-    // Persist one usage row per automation round for the Usage view (previously
-    // usage was never captured for background runs).
-    (pt, ct, rt, costUsd, cacheRead, cacheCreate) => {
+    llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
+    signal: abortCtrl.signal,
+    onToken: (delta) => emitRun("token", { delta }),
+    onThought: (delta) => { log.thoughts += delta; emitRun("thought", { delta }); },
+    onUsage: (pt, ct, rt, costUsd, cacheRead, cacheCreate) => {
       recordLlmUsage({
         source: "automation",
         sessionId: run.id,
@@ -519,23 +463,19 @@ export async function runAutomation(
         costUsd,
       });
     },
-    (e) => {                       // emitToolCallDone — collect artifacts + stream result
+    emitToolCall: (e) => {
+      currentTool(e.tool);
+      logTool(e.tool, e.label, e.args);
+      emitRun("tool", { tool: e.tool, label: e.label, args: e.args, status: "start" });
+    },
+    emitToolCallDone: (e) => {
       recordArtifact(e.tool, e.cairnRef);
       logToolDone(e.tool, e.ok, e.output, e.error);
-      flushLog(); // incremental transcript — survives a crash mid-run
+      flushLog();
       emitRun("toolDone", { tool: e.tool, ok: e.ok, output: e.output, error: e.error, cairnRef: e.cairnRef });
     },
-    (delta) => emitRun("token", { delta }),   // onToken (live stream; final text lands in the log)
-    (delta) => { log.thoughts += delta; emitRun("thought", { delta }); }, // onThought
-    extraTools,                      // connector-aware recipes get their attached external tools
-    undefined,                       // toolsOverride
-    undefined,                       // argMutator
-    makeApprovalGate(db, run, automation, abortCtrl.signal),
-    runScript,                       // run_script executor (scripts/ + run cwd + out/)
-    writeRunFileHandler,             // write_run_file executor (agent→script data bridge)
-    deliverFileHandler,              // deliver_file executor (out/ → attachments for the note)
-  );
-  }
+  });
+  const result = { content: cordisResult.content, exhausted: cordisResult.exhausted };
   emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content });
   log.tokens = result.content;
 
