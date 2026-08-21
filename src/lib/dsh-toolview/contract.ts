@@ -39,6 +39,13 @@ export interface ToolResultNode {
   content: readonly DshContentBlock[];
   isError: boolean;
   error?: { name: string; code: string };
+  /**
+   * presentationMeta recomputed from the registered tool def (dsh does not
+   * persist it; the host recomputes like its web shell). Rich toolviews keyed
+   * by this tool read it — e.g. dsh-visualize's card needs
+   * { kind:"visualize", fragment, title, mode, path }.
+   */
+  meta?: Record<string, unknown>;
   callView: null;
   resultView: null;
   subCalls: readonly ToolCallBlock[];

@@ -37,6 +37,7 @@ export function toDshBlock(tc: ChatToolCall): ToolCallBlock {
     content: tc.output != null && tc.output !== "" ? [{ type: "text", text: tc.output }] : [],
     isError: tc.ok === false,
     ...(tc.ok === false ? { error: { name: "ToolError", code: tc.error ?? "error" } } : {}),
+    ...(tc.meta ? { meta: tc.meta } : {}),
     callView: null,
     resultView: null,
     subCalls: [],

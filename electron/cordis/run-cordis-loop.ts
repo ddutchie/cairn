@@ -59,7 +59,7 @@ export interface RunCordisLoopOptions {
   onThought?: (delta: string) => void;
   onUsage?: (pt: number, ct: number, rt?: number, costUsd?: number, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
   emitToolCall?: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void;
-  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void;
+  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string; meta?: unknown }) => void;
   /** Emit a live subagent trace event (threadId tagged by the caller). */
   sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
   /**
@@ -101,8 +101,7 @@ export function setSessionRoot(root: string): void {
  * persisting). Call BEFORE wiping files: dispose may flush pending events,
  * which the subsequent file wipe then removes.
  */
-export async function dropChatAgentForThread(threadId: string): Promise<void> {
-  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, Record<string, unknown>> }).__cairnChatAgents;
+export async function dropChatAgentForThread(threadId: string): Promise<void> {  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, Record<string, unknown>> }).__cairnChatAgents;
   if (!map) return;
   const agent = map.get(threadId);
   if (!agent) return;
@@ -119,6 +118,51 @@ export async function dropChatAgentForThread(threadId: string): Promise<void> {
       break;
     }
   }
+}
+
+// Tool definitions captured at ctx.tools.register time (see getContext) so
+// output.presentationMeta can be recomputed at render time — dsh does not
+// persist it in the session log; the host shell recomputes like its web shell.
+const toolDefsByName = new Map<string, Record<string, unknown>>();
+
+/**
+ * Recompute a tool's presentationMeta for one (args, result value) pair using
+ * the registered definition. Tolerant: returns undefined when the def/output
+ * hook is missing or throws — callers then render plain text as before.
+ */
+export function resolvePresentationMeta(tool: string, argsRaw: string | undefined, outputRaw: string | undefined): unknown {
+  const def = toolDefsByName.get(tool);
+  const hook = (def?.output as { presentationMeta?: (a: unknown, v: unknown) => unknown } | undefined)?.presentationMeta;
+  if (typeof hook !== "function") return undefined;
+  let args: unknown = {};
+  if (argsRaw) { try { args = JSON.parse(argsRaw); } catch { /* {} */ } }
+  let value: unknown;
+  if (outputRaw !== undefined && outputRaw !== "") {
+    try { value = JSON.parse(outputRaw); } catch { value = outputRaw; }
+  }
+  try {
+    return hook(args, value) ?? undefined;
+  } catch { /* presentationMeta threw — degrade to no meta */ }
+  return undefined;
+}
+
+/** Attach freshly-computed presentationMeta to replayed tool calls (session
+ *  replay paths). Mutates-and-returns the same message objects. */
+export function enrichToolCallsWithMeta<T extends { toolCalls?: Array<{ tool: string; args?: string; output?: string; meta?: unknown }> }>(
+  messages: T[],
+): T[] {
+  for (const m of messages) {
+    for (const tc of m.toolCalls ?? []) {
+      if (tc.meta === undefined) tc.meta = resolvePresentationMeta(tc.tool, tc.args, tc.output);
+    }
+  }
+  return messages;
+}
+
+/** Test hook: seed/clear a captured tool definition for resolvePresentationMeta. */
+export function __setToolDefForTest(name: string, def: Record<string, unknown> | undefined): void {
+  if (def) toolDefsByName.set(name, def);
+  else toolDefsByName.delete(name);
 }
 
 /** The cached live chat Agent for a thread (or undefined if none is live). The
@@ -260,6 +304,27 @@ export async function getContext(): Promise<Context> {
 
     for (const entry of ENTRY_LIST) await loader.create(entry);
     await loader.await();
+
+    // Capture tool DEFINITIONS as they register (Cairn's, external/MCP, and
+    // runtime plugin tools) so presentationMeta can be recomputed at render
+    // time. dsh does NOT persist output.presentationMeta into the session log
+    // (the stored tool/result has meta:null) — the host shell is expected to
+    // call the registered def's presentationMeta(args, value) when building the
+    // view block (that's how the real dsh web shell powers e.g. dsh-visualize's
+    // card). Without this, community toolviews that read block.meta fall back
+    // to plain text.
+    const toolsSvc = (ctx as unknown as { tools?: { register?: (def: unknown) => unknown } }).tools;
+    if (toolsSvc && typeof toolsSvc.register === "function" && !(toolsSvc as unknown as { __cairnDefCapture?: boolean }).__cairnDefCapture) {
+      const origRegister = toolsSvc.register.bind(toolsSvc);
+      toolsSvc.register = (def: unknown) => {
+        try {
+          const name = (def as { name?: unknown })?.name;
+          if (typeof name === "string") toolDefsByName.set(name, def as Record<string, unknown>);
+        } catch { /* capture is best-effort */ }
+        return origRegister(def);
+      };
+      (toolsSvc as unknown as { __cairnDefCapture?: boolean }).__cairnDefCapture = true;
+    }
 
     // Register Cairn's SKILL.md provider on the shared SkillRegistry. The
     // registry forwards each caller's `cwd` view option into the provider's
@@ -534,6 +599,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   let liveReasoning = "";
   // callId → tool name, for pairing tool/result with its tool/call (plugin tools).
   const sessionCallNames = new Map<string, string>();
+  const sessionCallArgs = new Map<string, string>();
   const streamDisposer = (ctx as unknown as { on: (ev: string, fn: (s: unknown, e: SessionEvent) => void) => () => void }).on(
     "session/event",
     (session, event) => {
@@ -550,7 +616,10 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
       // tool Cairn's per-tool path didn't already emit (plugin/other tools).
       if (event.type === "tool/call") {
         const d = event.data as { name?: string; arguments?: string; callId?: string };
-        if (d.callId && d.name) sessionCallNames.set(d.callId, d.name);
+        if (d.callId && d.name) {
+          sessionCallNames.set(d.callId, d.name);
+          sessionCallArgs.set(d.callId, d.arguments ?? "");
+        }
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(d.arguments ?? "{}") as Record<string, unknown>; } catch { /* {} */ }
         opts.emitToolCall?.({ tool: d.name ?? "tool", label: d.name ?? "tool", args, callId: d.callId });
@@ -563,12 +632,18 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
         const block = msg?.content?.[0];
         const isError = block?.isError === true;
         const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
+        const toolName = (callId && sessionCallNames.get(callId)) || "tool";
+        // Recompute presentationMeta from the registered def (not persisted in
+        // the log — see resolvePresentationMeta). Plugin toolviews like
+        // dsh-visualize render their rich card from this.
+        const meta = isError ? undefined : resolvePresentationMeta(toolName, callId ? sessionCallArgs.get(callId) : undefined, output || undefined) as never;
         opts.emitToolCallDone?.({
-          tool: (callId && sessionCallNames.get(callId)) || "tool",
+          tool: toolName,
           callId,
           output: isError ? undefined : output,
           ok: !isError,
           error: isError ? (output || "tool error") : undefined,
+          ...(meta !== undefined ? { meta } : {}),
         });
         return;
       }

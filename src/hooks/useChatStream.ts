@@ -34,6 +34,8 @@ export interface ChatToolCall {
   /** Tool execution status; `ok: false` + `error` when the tool failed. */
   ok?: boolean;
   error?: string;
+  /** presentationMeta recomputed from the registered tool def (see ChatToolCallRecord). */
+  meta?: Record<string, unknown>;
 }
 
 export interface PendingQuestion {
@@ -197,7 +199,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         // Mark done here (not just on the NEXT tool-call) so a single/last tool
         // call stops spinning as soon as it finishes, instead of staying
         // "running" until the whole turn ends.
-        updated[idx] = { ...updated[idx], status: "done" as const, cairnRef: e.cairnRef, externalRef: e.externalRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error };
+        updated[idx] = { ...updated[idx], status: "done" as const, cairnRef: e.cairnRef, externalRef: e.externalRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error, meta: e.meta as import("@/types").ChatToolCallRecord["meta"] };
         toolCallsRef.current = updated;
         return updated;
       });

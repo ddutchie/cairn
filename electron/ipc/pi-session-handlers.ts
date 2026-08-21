@@ -52,7 +52,10 @@ export function registerPiSessionHandlers(ctx: DbContext): void {
       const liveSessions = (cordisCtx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((cordisCtx as unknown as { sessions: unknown }).sessions);
       const { messages } = await loadSessionMessages(pers, liveSessions, sessionId);
       if (messages.length === 0) return q.getPiMessages(ctx.db, sessionId); // no jsonl → SQLite fallback
-      return toPiMessages(messages);
+      // presentationMeta is not persisted in the log — recompute from the
+      // registered tool defs so rich toolviews (dsh-visualize) render.
+      const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
+      return toPiMessages(enrichToolCallsWithMeta(messages));
     } catch {
       return q.getPiMessages(ctx.db, sessionId);
     }

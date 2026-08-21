@@ -40,7 +40,10 @@ export function registerChatSessionHandlers(_ctx: DbContext): void {
       const liveSessions = (ctx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((ctx as unknown as { sessions: unknown }).sessions);
       const stableId = String(SessionId(`chat-${threadId}`));
       const { messages } = await loadSessionMessages(pers, liveSessions, stableId);
-      return toChatMessages(threadId, messages);
+      // presentationMeta is not persisted in the session log — recompute from
+      // the registered tool defs so rich toolviews (dsh-visualize) render.
+      const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
+      return toChatMessages(threadId, enrichToolCallsWithMeta(messages));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("not found") || msg.includes("no such") || msg.includes("ENOENT")) return [] as ChatMessage[];

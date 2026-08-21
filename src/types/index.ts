@@ -616,6 +616,13 @@ export interface ChatToolCallRecord {
    */
   ok?: boolean;
   error?: string;
+  /**
+   * Presentation metadata recomputed from the registered tool definition's
+   * output.presentationMeta(args, value) (NOT persisted in the session log —
+   * dsh recomputes it at render time like its web shell). Rich toolviews keyed
+   * to this tool read it off the block; absent → generic text rendering.
+   */
+  meta?: Record<string, unknown>;
 }
 
 /**
