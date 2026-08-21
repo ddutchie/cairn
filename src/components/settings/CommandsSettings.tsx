@@ -7,6 +7,8 @@ import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup } from "./shared";
 import { cn } from "@/lib/utils";
 import { ALL_BUILTIN_COMMANDS, isReservedCommandName } from "@/lib/slash-commands";
+import { useRegistryCommands } from "@/hooks/useRegistryCommands";
+import { Terminal } from "lucide-react";
 import { BrowseCommandsModal } from "./tools/BrowseCommandsModal";
 import type { CustomSlashCommand, SlashCommandScope } from "@/types";
 
@@ -26,6 +28,39 @@ function sanitizeName(raw: string): string {
     .replace(/^\/+/, "")
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
+}
+
+/** Runtime (executable) commands from the dsh command registry — /plan,
+ *  /compact, and anything a plugin registers. Executed on the session's agent
+ *  and logged as command/run+done in the session log. */
+function RuntimeCommandsGroup() {
+  const registryCommands = useRegistryCommands();
+  if (registryCommands.length === 0) return null;
+  return (
+    <SettingsGroup
+      title="Runtime commands"
+      description="Executable commands from the agent runtime and installed plugins. Running one is recorded in the session log."
+    >
+      <div className="space-y-1.5">
+        {registryCommands.map((cmd) => (
+          <div
+            key={cmd.name}
+            className="flex items-start gap-3 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]"
+          >
+            <span className="text-xs font-mono font-semibold text-[var(--accent)] whitespace-nowrap pt-0.5">
+              /{cmd.name}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-[var(--text-secondary)]">{cmd.description}</div>
+            </div>
+            <span className="inline-flex items-center gap-1 text-[0.643rem] uppercase tracking-wider text-[var(--text-tertiary)] whitespace-nowrap pt-0.5">
+              <Terminal size={9} /> Runtime
+            </span>
+          </div>
+        ))}
+      </div>
+    </SettingsGroup>
+  );
 }
 
 export function CommandsSettings() {
@@ -73,6 +108,8 @@ export function CommandsSettings() {
           void createCommand({ workspaceId: activeWorkspaceId, ...input });
         }}
       />
+
+      <RuntimeCommandsGroup />
 
       <SettingsGroup
         title="Your commands"

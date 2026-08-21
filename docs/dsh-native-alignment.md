@@ -97,7 +97,26 @@ linkage, display title) and treat everything the log already records as derived:
    the same function, so there is exactly ONE compaction path with two entry
    points. A generic `cordis:executeCommand` IPC executes any registry command
    on a session's resumed agent (preload: `runtime.executeCommand`).
-3. ✅ **DONE** — palettes merged: `getCommandsForScope` now takes registry
+3. ✅ **DONE** — palettes merged + Settings → Commands shows a "Runtime
+   commands" group (registry commands with an executable·logged badge).
+   `getCommandsForScope` takes registry commands (`useRegistryCommands()` via
+   `cordis:listCommands`) and merges them above built-ins/custom (precedence:
+   custom > registry > built-in). Send intercepts in chat + agent panes execute
+   any `/name` matching a registry command through `cordis:executeCommand`;
+   pure prompt-inserters stay renderer-side. User-defined/community commands
+   remain SQLite rows (prompt inserters) — deliberately: registry commands are
+   EXECUTABLE agent actions, prompt-inserters are host UI templates; different
+   kinds. A plugin can register executable commands via ctx.inject(['commands']).
+
+## 4. Agent presets — future capability, not a migration
+
+Cairn's `CodingAgent` store is a **CLI-binary launcher** config (binaryPath +
+args for external CLIs like claude/aider) — a different concept from dsh's
+agent presets (scoped cordis compositions mounted per preset, selection logged
+via `agent-preset/selected`). The dsh-native future here is NEW functionality:
+author named in-engine agent compositions as preset directories (model, tool
+set, prompt sections) selectable per coding session. Tracked as a future
+feature; no migration path from the CLI-launcher store.
    commands (`useRegistryCommands()` loads them via `cordis:listCommands`) and
    merges them above built-ins/custom (precedence: custom > registry >
    built-in). Send intercepts in chat + agent panes execute any `/name` that
