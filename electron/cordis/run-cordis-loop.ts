@@ -120,10 +120,22 @@ export async function dropChatAgentForThread(threadId: string): Promise<void> { 
   }
 }
 
-// Tool definitions captured at ctx.tools.register time (see getContext) so
-// output.presentationMeta can be recomputed at render time — dsh does not
-// persist it in the session log; the host shell recomputes like its web shell.
+// Tool definitions resolved lazily from the shared context's registry (cached
+// here) so output.presentationMeta can be recomputed at render time — dsh does
+// not persist it in the session log; the host shell recomputes like its web
+// shell. Looked up via ctx.tools.get(name), which works through any scoped view.
 const toolDefsByName = new Map<string, Record<string, unknown>>();
+
+function toolDefFor(name: string): Record<string, unknown> | undefined {
+  const hit = toolDefsByName.get(name);
+  if (hit) return hit;
+  const svc = (sharedCtx as unknown as { tools?: { get?: (n: string) => unknown } } | null)?.tools;
+  try {
+    const def = typeof svc?.get === "function" ? (svc.get(name) as Record<string, unknown> | undefined) : undefined;
+    if (def && typeof def === "object") { toolDefsByName.set(name, def); return def; }
+  } catch { /* registry lookup is best-effort */ }
+  return undefined;
+}
 
 /**
  * Recompute a tool's presentationMeta for one (args, result value) pair using
@@ -131,7 +143,7 @@ const toolDefsByName = new Map<string, Record<string, unknown>>();
  * hook is missing or throws — callers then render plain text as before.
  */
 export function resolvePresentationMeta(tool: string, argsRaw: string | undefined, outputRaw: string | undefined): unknown {
-  const def = toolDefsByName.get(tool);
+  const def = toolDefFor(tool);
   const hook = (def?.output as { presentationMeta?: (a: unknown, v: unknown) => unknown } | undefined)?.presentationMeta;
   if (typeof hook !== "function") return undefined;
   let args: unknown = {};
@@ -163,6 +175,38 @@ export function enrichToolCallsWithMeta<T extends { toolCalls?: Array<{ tool: st
 export function __setToolDefForTest(name: string, def: Record<string, unknown> | undefined): void {
   if (def) toolDefsByName.set(name, def);
   else toolDefsByName.delete(name);
+}
+
+/**
+ * Prepare the shared context for REPLAY enrichment: plugin toolviews register
+ * through inject-gated backends whose apply waits for the fs chain, which only
+ * chat turns mount — so a freshly-reopened app has NO registered plugin tools
+ * until this runs. Mounts the chain (cwd from the session's own header) and
+ * lets the loader settle so tools.get(name) resolves before presentationMeta
+ * recomputation. Best-effort; safe to call when everything is already up.
+ */
+export async function prepareReplayContext(
+  pers: { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> },
+  sessionId: string,
+): Promise<void> {
+  try {
+    const { pluginsDevEnabled } = await import("./plugin-loader");
+    if (!pluginsDevEnabled()) return;
+    const ctx = await getContext();
+    const get = (ctx as unknown as { get: (n: string) => unknown }).get;
+    if (!get.call(ctx, "fs")) {
+      let cwd: string | undefined;
+      try {
+        cwd = (await pers.inspect(sessionId))?.header?.cwd;
+      } catch { /* fall back below */ }
+      const { mountFsChain } = await import("./cordis-coding-tools");
+      await mountFsChain(ctx, { cwd: cwd || process.cwd() });
+    }
+    const { settleLoader } = await import("./plugin-loader");
+    await settleLoader(ctx);
+  } catch (err) {
+    console.error("[cordis] prepareReplayContext failed:", err instanceof Error ? err.message : err);
+  }
 }
 
 /** The cached live chat Agent for a thread (or undefined if none is live). The
@@ -304,27 +348,6 @@ export async function getContext(): Promise<Context> {
 
     for (const entry of ENTRY_LIST) await loader.create(entry);
     await loader.await();
-
-    // Capture tool DEFINITIONS as they register (Cairn's, external/MCP, and
-    // runtime plugin tools) so presentationMeta can be recomputed at render
-    // time. dsh does NOT persist output.presentationMeta into the session log
-    // (the stored tool/result has meta:null) — the host shell is expected to
-    // call the registered def's presentationMeta(args, value) when building the
-    // view block (that's how the real dsh web shell powers e.g. dsh-visualize's
-    // card). Without this, community toolviews that read block.meta fall back
-    // to plain text.
-    const toolsSvc = (ctx as unknown as { tools?: { register?: (def: unknown) => unknown } }).tools;
-    if (toolsSvc && typeof toolsSvc.register === "function" && !(toolsSvc as unknown as { __cairnDefCapture?: boolean }).__cairnDefCapture) {
-      const origRegister = toolsSvc.register.bind(toolsSvc);
-      toolsSvc.register = (def: unknown) => {
-        try {
-          const name = (def as { name?: unknown })?.name;
-          if (typeof name === "string") toolDefsByName.set(name, def as Record<string, unknown>);
-        } catch { /* capture is best-effort */ }
-        return origRegister(def);
-      };
-      (toolsSvc as unknown as { __cairnDefCapture?: boolean }).__cairnDefCapture = true;
-    }
 
     // Register Cairn's SKILL.md provider on the shared SkillRegistry. The
     // registry forwards each caller's `cwd` view option into the provider's

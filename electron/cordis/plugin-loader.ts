@@ -88,6 +88,14 @@ function loaderOf(ctx: Context): LoaderLike | undefined {
   return l && typeof l.create === "function" ? l : undefined;
 }
 
+/** Await the loader so inject-gated entries whose missing services just became
+ *  available (e.g. the fs chain mounting for plugin toolviews) finish applying
+ *  before a caller reads registry state. No-op when the loader isn't mounted. */
+export async function settleLoader(ctx: Context): Promise<void> {
+  const l = loaderOf(ctx);
+  if (l) await l.await();
+}
+
 /** Parse the manifest (plain data only). Returns [] when absent/empty/invalid. */
 function readManifest(): UserPluginEntry[] {
   if (!pluginsRoot) return [];

@@ -45,10 +45,13 @@ export function registerPiSessionHandlers(ctx: DbContext): void {
   registerIpcHandle("db:piSession:sessionMessages", (_e, { sessionId }: { sessionId: string }) => handle(async () => {
     if (!sessionId) return [] as ReturnType<typeof toPiMessages>;
     try {
-      const { getContext } = await import("../cordis/run-cordis-loop");
+      const { getContext, prepareReplayContext } = await import("../cordis/run-cordis-loop");
       const cordisCtx = await getContext();
       const pers = (cordisCtx as unknown as { sessionPersistence?: Parameters<typeof loadSessionMessages>[0] }).sessionPersistence;
       if (!pers) return q.getPiMessages(ctx.db, sessionId);
+      // Mount the fs chain + settle the loader so plugin toolviews are
+      // registered before presentationMeta recomputation (see chat-session).
+      await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, sessionId);
       const liveSessions = (cordisCtx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((cordisCtx as unknown as { sessions: unknown }).sessions);
       const { messages } = await loadSessionMessages(pers, liveSessions, sessionId);
       if (messages.length === 0) return q.getPiMessages(ctx.db, sessionId); // no jsonl → SQLite fallback
