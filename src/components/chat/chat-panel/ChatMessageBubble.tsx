@@ -15,8 +15,27 @@ import { ConnectorToolCard } from "@/components/shared/ConnectorToolCard";
 import type { ChatMessage, LinkedContextReference, ChatToolCallRecord } from "@/types";
 import { humanizeTool } from "@/lib/humanize-tool";
 import { connectorForTool, parseToolArgs, type ChatConnectorMeta } from "./connector-context";
+import { registerBuiltinToolViews } from "@/lib/dsh-toolview";
+import { toToolCallViewProps } from "@/lib/dsh-toolview/adapter";
+import { KeyedSlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
+import { useSlotEntries } from "@/lib/plugin-ui/registry";
+
+registerBuiltinToolViews();
 
 function ChatToolCallChip({ tc, connectors }: { tc: ChatToolCallRecord; connectors?: Record<string, ChatConnectorMeta> }) {
+  // A registered tool.call.toolview (vendored SkillRow or a user/community
+  // plugin like `visualize`) owns this tool's rendering. Persisted records are
+  // always settled, so mark status "done" for the adapter.
+  const toolViewEntries = useSlotEntries("tool.call.toolview");
+  if (toolViewEntries.some((e) => e.key === tc.tool)) {
+    return (
+      <KeyedSlotOutlet
+        name="tool.call.toolview"
+        matchKey={tc.tool}
+        props={toToolCallViewProps({ ...tc, status: "done" })}
+      />
+    );
+  }
   // A failed tool never produced a usable ref — show the failure reason.
   if (tc.ok === false) {
     return (

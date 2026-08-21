@@ -76,4 +76,24 @@ describe("dsh-visualize spike (community-plugin UI shape in Cairn)", () => {
     const { container } = render(<KeyedSlotOutlet name="tool.call.toolview" matchKey="visualize" props={running} />);
     expect(container.textContent).toContain("rendering visualization");
   });
+
+  it("routes a PERSISTED (reloaded) tool-call record to the toolview, not the generic chip", async () => {
+    // Both the live (ToolCallIndicator) and reloaded (ChatMessageBubble) paths
+    // dispatch through the same plugin-ui slot + adapter. Persisted records lack
+    // `status`; the bubble maps them to status:"done". Prove the adapter builds a
+    // settled block that renders the card.
+    const src = fs.readFileSync(
+      path.join(__dirname, "../../../electron/cordis/plugins-template/visualize-view.plugin.js"),
+      "utf8",
+    );
+    act(() => activateUIPlugin("visualize", evalPlugin(src)));
+    const { toToolCallViewProps } = await import("@/lib/dsh-toolview/adapter");
+    const record = { tool: "visualize", label: "visualize", callId: "p1", args: "{}", output: "<b>persisted viz</b>", ok: true, status: "done" as const };
+    const { container } = render(
+      <KeyedSlotOutlet name="tool.call.toolview" matchKey="visualize" props={toToolCallViewProps(record)} />,
+    );
+    const iframe = container.querySelector("iframe") as HTMLIFrameElement;
+    expect(iframe).toBeTruthy();
+    expect(iframe.getAttribute("srcdoc")).toContain("persisted viz");
+  });
 });
