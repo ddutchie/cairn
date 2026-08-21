@@ -18,6 +18,7 @@ import type { ChatHistoryEntry, ChatSubagent } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatInputArea } from "../ChatInputArea";
+import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
 import { ChatMessageBubble } from "./ChatMessageBubble";
 import { ChatSubagentBlock } from "./ChatSubagentBlock";
@@ -924,6 +925,22 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         </div>
       )}
       <div className={cn("border-t border-[var(--border)] p-3 flex-shrink-0", activeView === "chat" && "border-t-0 bg-transparent p-6 max-w-3xl mx-auto w-full")}>
+        {/* Plugin-UI: a band under the composer (chat.transcript.footer) — the
+            home for plugin cost/context widgets. Fed with Cairn's OWN live usage
+            (the thread's lastUsage), NOT dsh's useProjection. Self-hides + adds a
+            small gap above the input only when a plugin has registered. */}
+        <ChatFooterSlot
+          threadId={threadId ?? null}
+          usage={
+            activeThread?.lastUsage
+              ? {
+                  promptTokens: activeThread.lastUsage.promptTokens,
+                  completionTokens: activeThread.lastUsage.completionTokens,
+                  costUsd: activeThread.lastUsage.costUsd,
+                }
+              : undefined
+          }
+        />
         <ChatInputArea
           ref={inputRef}
           value={input}

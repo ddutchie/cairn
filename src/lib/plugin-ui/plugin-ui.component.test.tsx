@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import * as React from "react";
-import { AppOverlayLayer, AppStatusBar } from "./SlotOutlet";import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "./api";
+import { AppOverlayLayer, AppStatusBar, SlotOutlet } from "./SlotOutlet";import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "./api";
 import { SLOT_MATRIX, ALL_SLOTS } from "./slot-matrix";
 import { resolveSlotName, DSH_SLOT_ALIAS, dshCompatSummary } from "./dsh-slot-map";
 
@@ -143,5 +143,24 @@ describe("plugin-ui slot system", () => {
     rerender(<AppStatusBar {...overlayProps} />);
     expect(screen.getByTestId("clock")).toBeTruthy();
     expect(container.querySelector("[data-app-statusbar]")).toBeTruthy();
+  });
+
+  it("feeds a chat.transcript.footer widget Cairn's own usage via props", () => {
+    const footerProps = {
+      threadId: "t1",
+      usage: { promptTokens: 1200, completionTokens: 300, costUsd: 0.0042 },
+    };
+    const widget: UIPluginModule = {
+      activate(ui) {
+        const W = (p: { usage?: { promptTokens: number; costUsd?: number } }) =>
+          ui.React.createElement("div", { "data-testid": "cost" },
+            `${p.usage?.promptTokens ?? 0}|${p.usage?.costUsd ?? 0}`);
+        ui.registerChatFooter("cost", W as never);
+      },
+    };
+    act(() => activateUIPlugin("cost", widget));
+    render(<SlotOutlet name="chat.transcript.footer" props={footerProps} />);
+    // The plugin received Cairn's live usage as props.
+    expect(screen.getByTestId("cost").textContent).toBe("1200|0.0042");
   });
 });

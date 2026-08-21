@@ -10,6 +10,8 @@
 #   ui: ./clock-statusbar.plugin.js
 # - id: view-indicator          # shows the active view in the status bar
 #   ui: ./view-indicator.plugin.js
+# - id: cost-widget             # tokens + cost under the chat composer (chat.transcript.footer)
+#   ui: ./cost-widget.plugin.js
 #
 # ── Backend plugins (add agent tools) ───────────────────────────────────────
 # - id: hello-tool              # a `hello` greeting tool

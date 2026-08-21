@@ -82,3 +82,19 @@ function StatusBarInner({ props }: { props: SlotProps["app.statusbar"] }) {
     </div>
   );
 }
+
+/**
+ * The band under the chat composer (chat.transcript.footer) — cost/context
+ * widgets. Renders nothing (and adds no spacing) when no plugin has registered,
+ * so the composer sits flush by default; when populated it gets a small gap
+ * above the input.
+ */
+export function ChatFooterSlot(props: SlotProps["chat.transcript.footer"]) {
+  const entries = useSlotEntries("chat.transcript.footer");
+  if (entries.length === 0) return null;
+  return (
+    <div data-chat-footer className="mb-2 flex flex-col gap-1">
+      <SlotOutlet name="chat.transcript.footer" props={props} />
+    </div>
+  );
+}

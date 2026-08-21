@@ -69,6 +69,7 @@ Use `ui.React` (Cairn's React instance) — **never bundle your own React**.
 | `bouncing-dvd.plugin.js` | UI (`app.overlay`) | the classic bouncing DVD logo — colour-changes on bounce, counts corner hits |
 | `clock-statusbar.plugin.js` | UI (`app.statusbar`) | a live clock in the bottom status bar |
 | `view-indicator.plugin.js` | UI (`app.statusbar`) | shows the active view — demonstrates slot **props** (`{ activeView, activeProjectId }`) |
+| `cost-widget.plugin.js` | UI (`chat.transcript.footer`) | tokens + cost under the chat composer — fed Cairn's live usage via props |
 | `hello-tool.mjs` | Backend tool | adds an agent-visible `hello` tool |
 | `roll-dice.mjs` | Backend tool | adds a `roll_dice` tool (params + config) |
 

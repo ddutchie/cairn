@@ -724,3 +724,17 @@ IPC (`electron/ipc/ui-plugin-handlers.ts`): `plugins:list` (full manifest incl. 
 Verified: `PluginsSettings.component.test.tsx` **6 tests** (list + kind labels, toggle writes setEnabled, open folder, dev-off banner, empty state, agent signpost); component suite **159**; renderer + electron tsc + next build clean.
 
 **Next (the plugin agent):** a subagent/persona that, given a description, scaffolds a plugin file + `plugins.yml` entry into `<userData>/plugins` (reusing the coding agent + the plugin-UI/tool contracts), so "make a bouncing cat" writes the plugin and it loads live. Groundwork is all in place (runtime loader, slot matrix, ctx.cairn/ui APIs, the settings surface).
+
+## 15. chat.transcript.footer host + cost widget (2026-08-20) ✅
+
+Mounted the `chat.transcript.footer` slot host so a Cairn-data cost/context widget is authorable — the last of the "self-contained UI" slots to go live.
+
+- **Host:** `ChatFooterSlot` (SlotOutlet.tsx) rendered in the chat panel just above `ChatInputArea`. It **self-hides + adds no spacing when empty** (composer stays flush), and adds a small `mb-2` gap above the input only once a plugin registers.
+- **Data (Cairn-native, NOT dsh useProjection):** fed `{ threadId, usage: { promptTokens, completionTokens, costUsd? } }` from the active thread's `lastUsage` (the same live data `chat:usage`/`onUsage` writes). This is exactly the split noted in §11.6/§13 — dsh's cost plugin couples to its connection/session-projection spine; Cairn pushes its own usage in as props, so a widget needs no data pipeline.
+- **Example:** `plugins-template/cost-widget.plugin.js` (`ui.registerChatFooter`) — shows total/in/out tokens + cost, reacting live as the thread's usage updates.
+
+`conversation.composer.dock` (dsh) already aliases to `chat.transcript.footer` (§13), so a dsh dock plugin lands here too.
+
+Verified: plugin-ui.component.test.tsx → **11** (footer receives Cairn usage props); component suite **161**; renderer tsc + next build clean.
+
+**Live-UI slot status now:** `app.overlay` ✅, `app.statusbar` ✅, `tool.call.toolview` ✅, `chat.transcript.footer` ✅ — all four self-contained UI slots have live hosts + shipped examples. Remaining `planned` slots (`sidebar.footer`, `view.header.actions`, settings family) become live when their hosts are mounted.
