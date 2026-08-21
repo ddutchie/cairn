@@ -74,6 +74,7 @@ Use `ui.React` (Cairn's React instance) — **never bundle your own React**.
 | `view-header-action.plugin.js` | UI (`view.header.actions`) | a button in the top bar — receives the active `{ view }` |
 | `hello-tool.mjs` | Backend tool | adds an agent-visible `hello` tool |
 | `roll-dice.mjs` | Backend tool | adds a `roll_dice` tool (params + config) |
+| `visualize-tool.mjs` + `visualize-view.plugin.js` | Backend tool + `tool.call.toolview` | a port of the community plugin **dsh-visualize**: the agent calls `visualize(html)` and an interactive **sandboxed iframe card** renders in the transcript |
 
 Copy any of them in, add its entry to `plugins.yml`, and it appears live.
 

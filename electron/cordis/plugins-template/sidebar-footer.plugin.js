@@ -16,7 +16,7 @@ function activate(ui) {
     return React.createElement(
       "button",
       {
-        onClick: () => window.open("https://opencode.ai/docs", "_blank"),
+        onClick: () => window.open("https://ddutchie.github.io/cairn-site/docs/index.html", "_blank"),
         style: {
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           borderRadius: 6, padding: "6px 8px", fontSize: 12, textAlign: "left",

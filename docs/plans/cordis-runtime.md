@@ -752,3 +752,34 @@ Examples: `sidebar-footer.plugin.js` (a "Plugin Docs" link) + `view-header-actio
 **Live-UI slot status:** `app.overlay` ✅ · `app.statusbar` ✅ · `tool.call.toolview` ✅ · `chat.transcript.footer` ✅ · `sidebar.footer` ✅ · `view.header.actions` ✅. Six slots live; settings family the only remaining chrome.
 
 Verified: component suite **161**; renderer tsc + next build clean.
+
+## 17. Phase 2 spike — porting the community plugin dsh-visualize (2026-08-20) ✅
+
+Ported `github:Nagi-ovo/dsh-visualize` (a `visualize` tool + a `tool.call.toolview` that renders model-generated HTML as a sandboxed interactive card) into Cairn's plugin format to answer "would a real dsh community plugin work?".
+
+**Result: the UI shape works unmodified in spirit.** `visualize-view.plugin.js` registers a `visualize` toolview that renders the tool's durable HTML in `<iframe sandbox="allow-scripts">` (frame unreachable from host; height auto-sized via postMessage) — identical technique to the real plugin, running in Cairn's transcript via our `tool.call.toolview` slot with a Cairn-built ToolCallViewProps. `visualize-tool.mjs` registers the `visualize` tool via `ctx.cairn.defineTool`. Verified: `visualize-spike.component.test.tsx` (2) — the sandboxed iframe carries the model HTML; running state before settle. Component suite 163.
+
+**Gaps found (the "not a drop-in" list, now concrete):**
+1. **Packaging** — dsh-visualize ships as an npm/pnpm bundle (`package.json` + `cordis.patch.yml` + built `lib/`), not our single-file `plugins.yml` format. → the C2 tier.
+2. **Renderer entry shape** — its client half calls dsh's `ctx.slots.register({name:'tool.call.toolview', key:'visualize'}, C)` and is ESM. Cairn's renderer loader wraps source in `new Function` (CJS) and expects `activate(ui)` + `module.exports`. **ESM `export` does NOT parse in `new Function`** — a real finding. C2 needs the renderer loader to accept ESM (transpile/detect) since real client bundles are ESM. (Backend `.mjs` is fine — main uses real `import()`.)
+3. **Dual-purpose file** — one file can't be both `name:` (ESM, main `import()`) and `ui:` (CJS, renderer `new Function`) today; we split into `-tool.mjs` + `-view.plugin.js`.
+4. **Backend capability surface** — dsh-visualize's tool imports `@deepseek-ai/dsh-fs`/`-skill`/`-sandbox-policy` to persist the fragment + enforce CSP/byte caps. Cairn's plugin API exposes only `ctx.cairn.defineTool`. Full parity needs more capabilities surfaced on `ctx.cairn` (fs, skill, sandbox) — a tracked `ctx.cairn` gap.
+5. **Theme** — dsh bridges `--dsw-alias-*` tokens into the frame; we mapped a couple of Cairn `--*`. Use the §11 `--dsw-*` shim for parity.
+
+**Takeaway:** the architecture is validated — a keyed-toolview community plugin ports with a thin adapter. The blockers to *unmodified* install are (a) C2 packaging/resolution, (b) an ESM-capable renderer loader, (c) a richer `ctx.cairn`.
+
+## 18. Phase 3 — C2 "install a community plugin" (design)
+
+**dsh command:** `dsh plugin --profile web add github:Nagi-ovo/dsh-visualize` — a pnpm forwarder that installs the package into the profile dir and appends any `dsh.bundle` it finds to `dsh.profile.bundles`.
+
+**Cairn equivalent (two surfaces):**
+- CLI-ish: `cairn plugin add github:Nagi-ovo/dsh-visualize` (or `npm:<pkg>`, `.` for a local checkout).
+- GUI (preferred for a desktop app): an **"Add plugin"** field in Settings → Plugins taking a `github:owner/repo` / npm spec.
+
+**What it must do (the C2 work):**
+1. Resolve + fetch the package into `<userData>/plugins/node_modules/<pkg>` (bundle a package manager, or fetch the GitHub tarball; dsh-visualize commits its built `lib/`, so no build step needed — a real convenience).
+2. Read its `package.json` `dsh` section: `bundle.patch` (a `cordis.patch.yml` → backend entries) + `client` (the `./client` export → renderer UI). Parse `cordis.patch.yml` (plain data, NO `!!js`) into Cairn loader entries.
+3. Register the backend half on the shared ctx (resolve its peer deps — surface the needed `@deepseek-ai/dsh-*` from Cairn's bundled set on a resolver, or via `ctx.cairn`); load the `./client` ESM into the renderer (needs the ESM-capable loader from §17 gap 2).
+4. Auto-add a managed `plugins.yml` entry (or a separate installed-plugins index) + show it in the Settings → Plugins list with a toggle + uninstall.
+
+**Prereqs (from §17):** ESM renderer loader; a richer `ctx.cairn` (fs/skill/sandbox) OR a peer-dep resolver pointing at Cairn's bundled `@deepseek-ai/dsh-*`; the untrusted-code sandbox (Tier 3) before ungating. C2 is the largest remaining piece and needs the trust decision.
