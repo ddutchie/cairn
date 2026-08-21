@@ -2,6 +2,10 @@
 
 Status: **Phase 1 + 1.5 + 2 COMPLETE; A (heartbeat full agent) + C (manual /compact) DONE; D (Electron QA e2e harness) IMPLEMENTED — remaining: Phase 3. Plugin-system port investigated (§10 backend Loader; §11 UI-bridge into Cairn's OWN frontend, NOT the dsh shell)** · Updated: 2026-08-20
 Owner: Cairn maintainer
+
+> State-of-the-world reference: **`docs/architecture-cordis.md`** (system map,
+> composition, data flow, bump checklist, breakage points, open items). This
+> file is the chronological rollout plan; the architecture doc is the living map.
 Related note: *DeepSeek Harness (dsh) integration analysis* (Cairn project)
 Branch: `feat/cordis-runtime` · Latest: `7df175ca`
 
