@@ -35,6 +35,26 @@ describe("CairnAttachmentStore", () => {
     expect(Buffer.from(stored.data).equals(Buffer.from(data))).toBe(true);
   });
 
+  it("readImageRequest returns the model-request version (dsh 0.1.1 attachment API)", async () => {
+    const store = makeStore();
+    const data = new Uint8Array(Buffer.from(PNG_1x1, "base64"));
+    const ref = await store.saveImage({ data, mediaType: "image/png" });
+    const req = await store.readImageRequest(ref, { maxPixels: 40_000_000, maxBytes: 3_500_000 });
+    // Bytes + metadata carried through (no re-encode — the stored bytes ARE the
+    // request version), and the pi-ai adapter's required fields are populated.
+    expect(Buffer.from(req.data).equals(Buffer.from(data))).toBe(true);
+    expect(req.mediaType).toBe("image/png");
+    expect([req.width, req.height]).toEqual([1, 1]);
+    expect(req.bytes).toBe(data.byteLength);
+    expect(req.depth).toBe("uchar");
+    expect(req.space).toBe("srgb");
+    expect(req.hasAlpha).toBe(true); // PNG can carry alpha
+    expect(String(req.variantId)).toMatch(/^[0-9a-f]{64}$/);
+    // variantId is deterministic over (attachmentId, policy).
+    const again = await store.readImageRequest(ref, { maxPixels: 40_000_000, maxBytes: 3_500_000 });
+    expect(String(again.variantId)).toBe(String(req.variantId));
+  });
+
   it("decodes GIF dimensions", async () => {
     const store = makeStore();
     const data = new Uint8Array(Buffer.from(GIF_1x1, "base64"));

@@ -700,6 +700,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       const reason = (event.data as { reason?: { kind?: string } }).reason?.kind;
       if (reason === "completed") finish("done");
       else if (reason === "aborted" || reason === "blocked" || reason === "error" || reason === "max-tokens") {
+        if (reason === "error") console.error("[cordis] turn/end error reason:", JSON.stringify((event.data as { reason?: unknown }).reason));
         finish("error", reason ? `Agent turn ended abnormally (${reason})` : "Agent turn ended abnormally");
       }
       return;

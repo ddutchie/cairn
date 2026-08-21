@@ -20,10 +20,13 @@
 import { Context } from "@deepseek-ai/cordis";
 import AttachmentStore, {
   AttachmentId,
+  ImageVariantId,
   AttachmentError,
   type ImageAttachmentLimits,
   type ImageAttachmentRef,
   type ImageMediaType,
+  type ImageRequestPolicy,
+  type RequestImageAttachment,
   type SaveImageAttachment,
   type StoredImageAttachment,
 } from "@deepseek-ai/dsh-attachment";
@@ -142,6 +145,48 @@ export class CairnAttachmentStore extends AttachmentStore {
     const hit = this.blobs.get(String(ref.attachmentId));
     if (!hit) throw new AttachmentError(`attachment ${String(ref.attachmentId)} not found`, "ATTACHMENT_NOT_FOUND");
     return { ref: hit.ref, data: hit.data };
+  }
+
+  /**
+   * Derive the model-request version of a stored image (dsh-attachment ≥0.1.1).
+   * The pi-ai adapter calls this (not readImage) to get the bytes it base64-
+   * encodes into the wire request. We do NOT re-encode/resize (no native image
+   * pipeline — sharp is stubbed): the stored, already-validated bytes ARE the
+   * request version. The policy's pixel/byte caps are honoured at admission time
+   * (assertAndMeasure) rather than by a lossy downscale here; a stored image
+   * that passed our limits is emitted as-is. variantId is a deterministic key
+   * over (attachmentId, policy) so the adapter's per-request cache is stable.
+   */
+  async readImageRequest(
+    ref: ImageAttachmentRef,
+    policy: ImageRequestPolicy,
+    signal?: AbortSignal,
+  ): Promise<RequestImageAttachment> {
+    if (signal?.aborted) throw signal.reason ?? new Error("aborted");
+    const hit = this.blobs.get(String(ref.attachmentId));
+    if (!hit) throw new AttachmentError(`attachment ${String(ref.attachmentId)} not found`, "ATTACHMENT_NOT_FOUND");
+    const variantId = ImageVariantId(
+      crypto
+        .createHash("sha256")
+        .update(String(ref.attachmentId))
+        .update(`|${policy.maxPixels}|${policy.maxBytes}`)
+        .digest("hex"),
+    );
+    // PNG/WebP/GIF may carry alpha; JPEG never does. We don't inspect the alpha
+    // channel per-pixel (no decoder), so declare alpha by container capability.
+    const hasAlpha = hit.ref.mediaType !== "image/jpeg";
+    return {
+      variantId,
+      attachment: hit.ref,
+      data: hit.data,
+      mediaType: hit.ref.mediaType,
+      bytes: hit.data.byteLength,
+      width: hit.ref.width,
+      height: hit.ref.height,
+      depth: "uchar",
+      space: "srgb",
+      hasAlpha,
+    };
   }
 
   /** Shared validation + dimension decode for validate/save. */

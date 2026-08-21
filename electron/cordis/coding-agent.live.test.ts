@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import { runCordisCodingLoop } from "./run-cordis-coding";
 import { setSessionRoot } from "./run-cordis-loop";
+import { applySchema } from "../db/schema";
 
 const BASE = process.env.CORDIS_TEST_BASE_URL ?? "http://localhost:3042/v1";
 const MODEL = process.env.CORDIS_TEST_MODEL ?? "claude-sonnet-4-5";
@@ -16,9 +17,9 @@ interface SentEvent { channel: string; payload: Record<string, unknown> }
 
 function makeDb(): Database.Database {
   const db = new Database(":memory:");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, content TEXT);
-  `);
+  // Real schema so external-tool resolution (tool_attachments etc.) has its
+  // tables — the coding loop queries them on every turn.
+  applySchema(db);
   return db;
 }
 
