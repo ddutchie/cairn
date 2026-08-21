@@ -50,4 +50,17 @@ describe("dropChatAgentForThread", () => {
     await expect(dropChatAgentForThread("thr-b")).resolves.toBeUndefined();
     expect(map.has("thr-b")).toBe(false);
   });
+
+  it("disposes via Symbol.asyncDispose when no plain .dispose exists (dsh agent handles)", async () => {
+    const calls: string[] = [];
+    const agent = {
+      whenIdle: async () => { calls.push("whenIdle"); },
+      // dsh agent-loop disposes via Symbol.asyncDispose; plain .dispose absent.
+      [Symbol.asyncDispose]: async () => { calls.push("asyncDispose"); },
+    };
+    const map = seedMap(["thr-d", agent as unknown as Record<string, unknown>]);
+    await dropChatAgentForThread("thr-d");
+    expect(map.has("thr-d")).toBe(false);
+    expect(calls).toEqual(["whenIdle", "asyncDispose"]);
+  });
 });

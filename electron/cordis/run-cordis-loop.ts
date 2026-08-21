@@ -111,8 +111,14 @@ export async function dropChatAgentForThread(threadId: string): Promise<void> { 
     const whenIdle = agent.whenIdle as (() => Promise<void>) | undefined;
     if (typeof whenIdle === "function") await whenIdle.call(agent);
   } catch { /* already idle / aborted */ }
-  for (const k of ["dispose", "close", "abort"] as const) {
-    const fn = agent[k] as (() => unknown) | undefined;
+  // dsh handles are disposable via Symbol.asyncDispose / Symbol.dispose (see
+  // dsh-agent-loop:782) — plain `.dispose` often does not exist on the agent
+  // handle, which is why the session was previously left LIVE and the next
+  // prepare/recreate threw "cannot prepare session … while it is live".
+  const agents = agent as Record<PropertyKey, unknown>;
+  for (const k of [Symbol.asyncDispose, Symbol.dispose, "dispose", "close", "abort"] as const) {
+    let fn: (() => unknown) | undefined;
+    try { fn = agents[k] as (() => unknown) | undefined; } catch { fn = undefined; }
     if (typeof fn === "function") {
       try { await fn.call(agent); } catch { /* best-effort teardown */ }
       break;
@@ -664,24 +670,27 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
         return;
       }
       if (event.type === "tool/result") {
-        const msg = (event.data as { message?: { source?: { callId?: string }; content?: Array<{ isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } }).message;
+        const d = event.data as { meta?: unknown; message?: { source?: { callId?: string }; content?: Array<{ isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } };
+        const msg = d?.message;
         const callId = msg?.source?.callId;
         if (callId && cairnDoneCallIds.has(callId)) return; // Cairn's emitDone is authoritative
         const block = msg?.content?.[0];
         const isError = block?.isError === true;
         const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
         const toolName = (callId && sessionCallNames.get(callId)) || "tool";
-        // Recompute presentationMeta from the registered def (not persisted in
-        // the log — see resolvePresentationMeta). Plugin toolviews like
-        // dsh-visualize render their rich card from this.
-        const meta = isError ? undefined : resolvePresentationMeta(toolName, callId ? sessionCallArgs.get(callId) : undefined, output || undefined) as never;
+        // presentationMeta: dsh persists it on the event (data.meta) — prefer
+        // that; fall back to recomputing from the registered def (older logs).
+        let meta = d?.meta as Record<string, unknown> | undefined;
+        if (!meta && !isError) {
+          meta = resolvePresentationMeta(toolName, callId ? sessionCallArgs.get(callId) : undefined, output || undefined) as Record<string, unknown> | undefined;
+        }
         opts.emitToolCallDone?.({
           tool: toolName,
           callId,
           output: isError ? undefined : output,
           ok: !isError,
           error: isError ? (output || "tool error") : undefined,
-          ...(meta !== undefined ? { meta } : {}),
+          ...(meta ? { meta } : {}),
         });
         return;
       }
@@ -775,6 +784,26 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
               signal,
             });
             agent = resumed2.agent as typeof agent;
+          } else if (msg.includes("while it is live")) {
+            // A clear raced this turn: the old session is still live in
+            // ctx.sessions, so prepare/resume refuses. Force-detach (Symbol
+            // dispose on the cached handle, if any) and retry resume once.
+            try { await dropChatAgentForThread(req.threadId); } catch { /* best-effort */ }
+            try {
+              const resumed3 = await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<{ agent: typeof agent }> } }).agents.resume({
+                meta: { cwd: workspacePath },
+                agentOptions: { provider: selection.provider, model: selection.model },
+                setup: (agentCtx: unknown) => {
+                  installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
+                },
+                resumeSessionId: stableId,
+                signal,
+              });
+              agent = resumed3.agent as typeof agent;
+            } catch (e2) {
+              const m2 = (e2 as Error)?.message ?? String(e2);
+              throw new Error(m2.includes("while it is live") ? `clear left session "${stableId}" live; try clearing again` : m2);
+            }
           } else {
             throw e;
           }
