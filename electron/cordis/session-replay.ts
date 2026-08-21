@@ -30,6 +30,10 @@ export interface ReplayToolCall {
   output?: string;
   ok?: boolean;
   error?: string;
+  /** presentationMeta persisted on the tool/result event (dsh writes it at
+   *  event.data.meta). Rich toolviews (dsh-visualize) render their card from
+   *  this; absent → generic text rendering. */
+  meta?: Record<string, unknown>;
 }
 
 /** A UI-agnostic replayed message (both chat + pi-agent map from this). */
@@ -72,16 +76,34 @@ export function deriveMessagesFromEvents(events: readonly SessionEvent[]): Deriv
  * only assistant steps and attach them (with their tool/result outputs) to the
  * next text assistant. Snapshot (`form:snapshot`) user turns are dropped.
  */
-export function collapseDerivedToMessages(derived: readonly DerivedMessage[]): ReplayMessage[] {
+/**
+ * Extract persisted presentationMeta from raw tool/result events: dsh writes it
+ * at event.data.meta (sibling of message), keyed by the result's callId.
+ */
+export function metaByCallIdFromEvents(events: readonly SessionEvent[]): Map<string, Record<string, unknown>> {
+  const map = new Map<string, Record<string, unknown>>();
+  for (const e of events) {
+    if ((e as { type?: string }).type !== "tool/result") continue;
+    const d = e.data as { meta?: unknown; message?: { source?: { callId?: string } } } | undefined;
+    const callId = d?.message?.source?.callId;
+    if (callId && d.meta && typeof d.meta === "object") map.set(callId, d.meta as Record<string, unknown>);
+  }
+  return map;
+}
+
+export function collapseDerivedToMessages(
+  derived: readonly DerivedMessage[],
+  metaByCallId?: ReadonlyMap<string, Record<string, unknown>>,
+): ReplayMessage[] {
   const out: ReplayMessage[] = [];
-  let pendingToolResults: Array<{ callId?: string; output?: string; ok?: boolean; error?: string }> = [];
+  let pendingToolResults: Array<{ callId?: string; output?: string; ok?: boolean; error?: string; meta?: Record<string, unknown> }> = [];
   let carryoverToolCalls: ReplayToolCall[] = [];
 
   const flushResultsInto = (calls: ReplayToolCall[]) => {
     if (!pendingToolResults.length || !calls.length) return;
     for (const tr of pendingToolResults) {
       const idx = calls.findIndex((tc) => tc.callId === tr.callId);
-      if (idx !== -1) calls[idx] = { ...calls[idx], output: tr.ok === false ? undefined : tr.output, ok: tr.ok, error: tr.error };
+      if (idx !== -1) calls[idx] = { ...calls[idx], output: tr.ok === false ? undefined : tr.output, ok: tr.ok, error: tr.error, ...(tr.meta ? { meta: tr.meta } : {}) };
     }
     pendingToolResults = [];
   };
@@ -95,7 +117,8 @@ export function collapseDerivedToMessages(derived: readonly DerivedMessage[]): R
       if (isToolResult) {
         for (const tr of (m.content ?? []).filter((b) => b.type === "tool-result")) {
           const output = tr.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
-          pendingToolResults.push({ callId: tr.toolCallId, output, ok: !tr.isError, error: tr.isError ? (output || "tool error") : undefined });
+          const meta = tr.toolCallId ? metaByCallId?.get(tr.toolCallId) : undefined;
+          pendingToolResults.push({ callId: tr.toolCallId, output, ok: !tr.isError, error: tr.isError ? (output || "tool error") : undefined, ...(meta ? { meta } : {}) });
         }
         continue;
       }
@@ -107,7 +130,9 @@ export function collapseDerivedToMessages(derived: readonly DerivedMessage[]): R
 
     if (m.role === "assistant") {
       const text = (m.content ?? []).filter((b) => b.type === "text" && b.text).map((b) => b.text).join("");
-      const reasoning = (m.content ?? []).filter((b) => b.type === "reasoning" && b.text).map((b) => b.text ?? "").join("");
+      // Multiple reasoning blocks in one turn are joined with a separator so
+      // one block's end never glues onto the next block's start.
+      const reasoning = (m.content ?? []).filter((b) => b.type === "reasoning" && b.text).map((b) => b.text ?? "").join("\n\n");
       const reasoningItems = (m.content ?? []).filter((b) => b.type === "reasoning" && b.text) as unknown as Array<Record<string, unknown>>;
       const toolCallsRaw = (m.content ?? []).filter((b) => b.type === "tool-call");
       const toolCalls: ReplayToolCall[] = toolCallsRaw.map((c) => ({ tool: c.name ?? "tool", label: c.name ?? "tool", callId: c.id, args: c.arguments }));
@@ -228,7 +253,7 @@ export async function loadSessionMessages(
   const inspection = await pers.inspect(sessionId);
   const events = (inspection?.events ?? []) as readonly SessionEvent[];
   if (!events || events.length === 0) return { messages: [], subagents: [] };
-  const messages = collapseDerivedToMessages(deriveMessagesFromEvents(events));
+  const messages = collapseDerivedToMessages(deriveMessagesFromEvents(events), metaByCallIdFromEvents(events));
 
   // Collect subagent children (durable list + live in-memory not yet flushed)
   let list: Array<{ id: unknown; origin?: string; parentSession?: unknown; createdAt?: number; meta?: { origin?: string; parentSession?: unknown; createdAt?: number } }> = [];
