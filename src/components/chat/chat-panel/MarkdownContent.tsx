@@ -242,6 +242,14 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
           );
         },
         hr: () => <hr className={`my-2 ${ruleBorder}`} />,
+        // Skip images with no/empty src (model-emitted raw <img> via rehypeRaw
+        // otherwise renders <img src=""> — the browser re-fetches the whole page).
+        img: ({ src, alt }) => {
+          const s = typeof src === "string" ? src.trim() : "";
+          if (!s) return null;
+          // eslint-disable-next-line @next/next/no-img-element
+          return <img src={s} alt={alt ?? ""} className="max-w-full rounded my-1.5" />;
+        },
         table: ({ children }) => (
           <div className="my-2 overflow-x-auto">
             <table className="w-full border-collapse text-xs">{children}</table>

@@ -11,7 +11,14 @@ import { ConnectorToolCard } from "@/components/shared/ConnectorToolCard";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 import { humanizeTool } from "@/lib/humanize-tool";
 import { connectorForTool, parseToolArgs, type ChatConnectorMeta } from "./connector-context";
-import { DshToolView, hasToolView } from "@/lib/dsh-toolview";
+import { registerBuiltinToolViews } from "@/lib/dsh-toolview";
+import { toToolCallViewProps } from "@/lib/dsh-toolview/adapter";
+import { KeyedSlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
+import { useSlotEntries } from "@/lib/plugin-ui/registry";
+
+// Ensure the built-in (vendored) toolviews are registered into the unified
+// plugin-ui slot registry before we check it.
+registerBuiltinToolViews();
 
 interface ToolCallIndicatorProps {
   toolCalls: ChatToolCall[];
@@ -23,16 +30,25 @@ interface ToolCallIndicatorProps {
 export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCalls, streamingContent, streamingThought, connectors }: ToolCallIndicatorProps) {
   const hasThought = !!streamingThought;
   const hasContent = !!streamingContent;
+  // Reactive set of tool names with a registered tool.call.toolview (so a plugin
+  // that registers after first render still routes its calls to the view).
+  const toolViewEntries = useSlotEntries("tool.call.toolview");
+  const toolViewKeys = new Set(toolViewEntries.map((e) => e.key).filter(Boolean) as string[]);
   return (
     <div className="flex gap-2 items-start">
       <MessageAvatar role="bot" size="lg" />
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         {toolCalls.map((tc, i) =>
-          hasToolView(tc.tool) ? (
-            // §11 spike: a registered dsh `tool.call.toolview` plugin owns this
-            // tool's rendering. Cairn hands it a Cairn-built ToolCallViewProps;
-            // the dsh component renders inside Cairn's transcript (scoped theme).
-            <DshToolView key={i} tc={tc} />
+          toolViewKeys.has(tc.tool) ? (
+            // A registered tool.call.toolview (dsh-compatible, keyed by tool name)
+            // owns this tool's rendering — vendored SkillRow or a user/community
+            // plugin (e.g. visualize). We hand it a Cairn-built ToolCallViewProps.
+            <KeyedSlotOutlet
+              key={i}
+              name="tool.call.toolview"
+              matchKey={tc.tool}
+              props={toToolCallViewProps(tc)}
+            />
           ) : tc.status === "done" && tc.ok === false ? (
             <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
               <XCircle size={10} className="text-[var(--danger)] shrink-0" />
