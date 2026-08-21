@@ -818,3 +818,49 @@ shapes) whose only runtime dependency is `ctx.slots` + react runs unmodified —
 its type-only `@deepseek-ai/dsh-client-*` imports are erased at build, and its
 `ctx.slots.*` calls hit Cairn's registry through the shim. Remaining for a
 literal `dsh plugin add`: the C2 fetch/install flow (§18) — the shims are done.
+
+## 20. RESUME HERE — C2 install flow ("Add plugin from GitHub/npm")
+
+**State (commit d3b8b954):** plugin system complete through the shims. Backend
+tools + UI plugins load live from `<userData>/plugins/plugins.yml`
+(CAIRN_PLUGINS_DEV=1); 6 UI slots live; dsh↔Cairn slot alias; ESM+CJS loader;
+platform module table; **real dsh client `apply(ctx)`+`ctx.slots` plugins run
+unmodified** (dsh-client-ctx.ts). Component suite 166.
+
+**Next task: the fetch/install flow** — the only thing left for a literal
+`dsh plugin add github:owner/repo` equivalent. Design in §18. Build order:
+
+1. **Main: `plugins:install` IPC** (electron/ipc/ui-plugin-handlers.ts) taking a
+   spec: `github:owner/repo`, `npm:<pkg>`, or a local path.
+   - Fetch: for `github:` download the repo tarball (GitHub codeload:
+     `https://codeload.github.com/<owner>/<repo>/tar.gz/refs/heads/main`) → extract
+     into `<userData>/plugins/installed/<id>/`. (dsh-visualize commits built
+     `lib/`, so NO build step — start with that.)
+   - Read the package's `package.json` `dsh` section: `bundle.patch`
+     (→ `cordis.patch.yml` backend entries) + `client` (→ the `./client` export
+     for the UI half). Resolve `main`/`exports["./client"]` to the built files.
+   - Append a managed entry to `plugins.yml`: `{ id, name?: <lib/index.js>,
+     ui?: <lib/client.js> }` pointing at the extracted files (absolute or
+     `./installed/<id>/…` relative — the loader resolves `./` from pluginsRoot;
+     nested paths need a check that `path.resolve` stays under the dir).
+   - Return `{ id, name, kind }`.
+2. **Renderer: "Add plugin" field** in PluginsSettings.tsx — a text input +
+   Install button → `electron.plugins.install(spec)` → refresh the list. Show
+   progress/errors. Add an **uninstall** (remove entry + dir).
+3. **Verify** with `github:Nagi-ovo/dsh-visualize` (its client is CJS that
+   require()s the platform table + apply(ctx) — already supported; but note it
+   also imports `@deepseek-ai/dsh-client-runtime/client` type-only [erased] and
+   `react` — should resolve). Its backend tool imports dsh-fs/skill/sandbox
+   (ctx.cairn gap) — may partially fail; the UI half should work. This surfaces
+   the exact `ctx.cairn` backend-capability gaps.
+
+**Prereqs already met:** ESM/CJS loader, platform modules, dsh ctx shim, the
+plugins dir + watcher + Settings section. **Still gated** behind
+CAIRN_PLUGINS_DEV; fetching+running third-party code makes the Tier-3 sandbox
+decision more pressing (note it in the Install UI as "developer preview,
+trusted sources only").
+
+**Key files:** electron/ipc/ui-plugin-handlers.ts (add install/uninstall),
+electron/cordis/plugin-loader.ts (readEnabledManifest, pluginsRoot),
+electron/preload.ts (electron.plugins.*), src/components/settings/PluginsSettings.tsx,
+src/lib/plugin-ui/{loader,dsh-client-ctx,platform-modules,dsh-slot-map}.ts.
