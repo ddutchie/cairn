@@ -16,7 +16,7 @@ import { executeTool } from "../ipc/chat-executor";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { Database } from "better-sqlite3";
-import { discoverSkills, loadSkill, type SkillMeta } from "../lib/skills";
+// skills are read through the dsh SkillRegistry (ctx.skills) — see cairn-skills below.
 
 /** Author-facing value schema node (dsh DSL subset we generate). */
 type VNode =
@@ -179,22 +179,43 @@ export function registerCairnTools(ctx: import("@deepseek-ai/cordis").Context, e
 }
 
 // ── cairn-skills ─────────────────────────────────────────────────────────────
-// Register the `skill` tool on ctx.tools (Phase 1.5 step 2i). Cairn's SKILL.md
-// discovery/loading (electron/lib/skills.ts) is engine-agnostic pure-fs, so this
-// is a thin dsh wrapper over loadSkill — the Cordis equivalent of the built-in
-// coding-tools/skill.ts. The <available_skills> XML is injected into the coding
-// system prompt separately (see run-cordis-coding.ts via renderSkillsXml).
+// The `skill` tool (Phase 1.5 step 2i), now reading through the dsh SkillRegistry
+// (ctx.skills) instead of the SKILL.md loader directly. One seam: our
+// cairn-skill-provider feeds Cairn's SKILL.md files INTO ctx.skills, community
+// plugins register their own providers, and this tool loads from the MERGED
+// catalog — so plugin skills are loadable here too. <available_skills> is
+// injected into the coding system prompt separately (run-cordis-coding.ts).
+
+/** List skill summaries for a cwd through the registry ([] when unmounted). */
+export async function listSkillsViaRegistry(ctx: import("@deepseek-ai/cordis").Context, cwd: string): Promise<Array<{ name: string; description: string }>> {
+  try {
+    const skills = (ctx as unknown as { skills?: { list: (o: { cwd: string }) => Promise<Array<{ name: string; description: string }>> } }).skills;
+    if (!skills) return [];
+    return await skills.list({ cwd });
+  } catch {
+    return [];
+  }
+}
 
 /**
- * Register the `skill` tool on `ctx`. `skills` is the metadata list discovered
- * once per turn (discoverSkills(cwd)); the tool loads a skill's full body on
- * demand and returns it (plus any bundled-resource paths the agent can `read`).
- * Returns a disposer. No-op (returns []) when no skills were discovered.
+ * Register the `skill` tool on `ctx`, loading bodies through ctx.skills for
+ * `cwd`. Returns disposers. No-op when the registry is missing or no skills are
+ * discovered.
  */
-export function registerSkillTool(ctx: import("@deepseek-ai/cordis").Context, skills: SkillMeta[]): Array<() => void> {
-  if (skills.length === 0) return [];
-  const names = skills.map((s) => s.name);
-  const nameList = names.length > 0 ? names.join(", ") : "(none discovered)";
+export async function registerSkillTool(ctx: import("@deepseek-ai/cordis").Context, cwd: string): Promise<Array<() => void>> {
+  const registry = (ctx as unknown as {
+    skills?: {
+      list: (o: { cwd: string }) => Promise<Array<{ name: string }>>;
+      get: (name: string, o: { cwd: string }) => Promise<{ name: string; content: string; resourceBase?: { path?: string } } | undefined>;
+    };
+  }).skills;
+  if (!registry) return [];
+  let names: string[] = [];
+  try {
+    names = (await registry.list({ cwd })).map((s) => s.name);
+  } catch { /* catalog read failed → treat as none */ }
+  if (names.length === 0) return [];
+  const nameList = names.join(", ");
   try {
     const tool = defineTool({
       name: "skill",
@@ -212,31 +233,23 @@ export function registerSkillTool(ctx: import("@deepseek-ai/cordis").Context, sk
       },
       async execute(args) {
         const name = (args as { name?: string }).name ?? "";
-        const content = loadSkill(name, skills);
-        if (!content) {
-          const available = skills.map((s) => s.name).join(", ");
-          return { error: `Skill "${name}" not found. Available skills: ${available || "none"}.` } as never;
+        const def = await registry.get(name, { cwd });
+        if (!def || !def.content) {
+          return { error: `Skill "${name}" not found. Available skills: ${names.join(", ") || "none"}.` } as never;
         }
-        const resourceSection =
-          content.resources.length > 0
-            ? `\n\n## Bundled resources\nThe following files are co-located with this skill and can be read with the \`read\` tool:\n${content.resources.map((r) => `- ${r} (full path: ${content.dirPath}/${r})`).join("\n")}`
-            : "";
-        return `## Skill: ${content.name}\n\n${content.body}${resourceSection}` as never;
+        // Bundled-resource hint: point the agent at the skill directory so its
+        // co-located docs/templates/scripts can be read with the `read` tool.
+        const base = def.resourceBase?.path;
+        const resourceSection = base
+          ? `\n\n## Bundled resources\nThis skill's supporting files live in ${base} (docs/, templates/, scripts/ subdirectories where present) and can be read with the \`read\` tool.`
+          : "";
+        return `## Skill: ${def.name}\n\n${def.content}${resourceSection}` as never;
       },
     });
     return [ctx.tools.register(tool)];
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[cordis] failed to register skill tool:", err);
-    return [];
-  }
-}
-
-/** Discover skills for a cwd (thin re-export so the loop imports one module). */
-export function discoverCodingSkills(cwd: string): SkillMeta[] {
-  try {
-    return discoverSkills(cwd);
-  } catch {
     return [];
   }
 }

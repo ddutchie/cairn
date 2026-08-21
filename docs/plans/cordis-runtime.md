@@ -920,3 +920,44 @@ Loader can't resolve those (no node_modules beside the plugin), so the backend
 tool does not load. Full backend parity needs the `ctx.cairn` capability shims
 (defineTool bridge + dsh-fs/skill/sandbox) — the next task. The UI half is fully
 working today.
+
+## 22. Skills migrate onto dsh SkillRegistry + fs-chain ownership (2026-08-21) ✅
+
+**Skills: one catalog.** Cairn's SKILL.md loader now feeds dsh's SkillRegistry
+instead of being read directly by consumers:
+
+- `cairn-skill-provider.ts` — `createCairnSkillProvider(): SkillProvider`
+  (dsh's exact interface). Candidates/definitions carry `provider:"cairn-skills"`
+  (required by dsh's validators), `source:"bundled"`, `rank:BUNDLED_SKILL_RANK`,
+  invocation both-true, `resourceBase` = skill dir, locator = SKILL.md path.
+  The cwd comes from each call's view options (`options.cwd`) — ONE provider
+  registered once serves every turn's working directory.
+- getContext mounts `B["dsh:skills"] = SkillRegistry` (`{id:"skills"}`) and
+  registers the Cairn provider after boot → `ctx.skills` exists for community
+  plugins (dsh-visualize's `ctx.skills.registerProvider`) AND for us.
+- Consumers migrated: `<available_skills>` XML (run-cordis-coding via
+  `listSkillsViaRegistry`) and the `skill` tool body-loading
+  (`registry.get(name,{cwd})`) — plugin skills now appear alongside Cairn's
+  automatically. Proven live (2i passes through the registry).
+
+**fs chain ownership (the collision lesson).** Mounting a global
+LocalFileSystem as "fs" broke coding turns: SandboxedFileSystem (dsh-fs-sandbox)
+EXTENDS LocalFileSystem, injects ["sandboxPolicy"], and registers "fs" itself —
+the sandbox/sandboxPolicy/fs names are a per-context OWNERSHIP trio. Resolution:
+
+- `cordis-coding-tools.ts`: `plugFsChain` mounts the trio with ADOPTION
+  semantics ("service … has been registered" → log + adopt, don't throw);
+  exported `mountFsChain(ctx,{cwd,mode})` mounts just the trio.
+- Chat loop lazily calls `mountFsChain` when plugins are dev-enabled and no fs
+  exists (kept alive; later coding turns adopt). Coding stack keeps its
+  per-turn registration when it gets there first. Known tradeoff: whichever
+  side mounts first owns sandbox root/mode for the process; plan-mode tool
+  gating is unaffected (separate pre-execute guard).
+
+Also fixed this session: installer links the app's copies of a plugin's
+declared deps into `installed/<id>/node_modules` (symlink to real app path →
+transitive deps resolve), so dsh-visualize's backend `lib/index.js` imports
+cleanly (`inject:["tools","skills","fs"]` all satisfiable now).
+
+Suites: node 2127 / component 167 / tsc clean; live pi 2/2, coding 8/8 solo
+(HITL remains the known model-choice flake).

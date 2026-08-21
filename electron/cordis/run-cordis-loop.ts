@@ -26,9 +26,11 @@ import JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl"
 import approvalService from "@deepseek-ai/dsh-user-approval";
 import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
+import SkillRegistry from "@deepseek-ai/dsh-skill";
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
+import { createCairnSkillProvider } from "./cairn-skill-provider";
 import path from "path";
 
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
@@ -170,6 +172,14 @@ export async function getContext(): Promise<Context> {
     B["dsh:token-meter"] = TokenMeter;
     B["dsh:compaction"] = BasicCompactionEngine;
     B["dsh:subagent"] = subagentServicePlugin;
+    // SkillRegistry (ctx.skills): the standard dsh skill seam. Cairn's SKILL.md
+    // loader registers a provider on it (below) and community plugins register
+    // theirs — one merged catalog with dsh rank/precedence semantics.
+    B["dsh:skills"] = SkillRegistry;
+    // NOTE: no boot-time "fs" here — the sandbox/sandboxPolicy/fs service names
+    // are OWNED by the per-context fs chain (mountFsChain / mountCodingStack),
+    // which the chat loop mounts lazily when plugins need ctx.fs and coding
+    // turns adopt or own. See cordis-coding-tools.ts plugFsChain.
     // Class-plugin (dsh Service subclass)
     B["cairn:attachment-store"] = CairnAttachmentStore;
     // Named-export "triple" plugins (apply/inject/name — not default objects)
@@ -212,12 +222,28 @@ export async function getContext(): Promise<Context> {
       { id: "llm-retry", name: "cordis:cairn:llm-retry", config: {} },
       // Subagent capability stack (dsh-base order): service → spawn provider → tool.
       { id: "subagent", name: "cordis:dsh:subagent" },
+      // Skill registry (ctx.skills): hosts Cairn's SKILL.md provider + any
+      // community plugin's bundled-skill providers behind one catalog.
+      { id: "skills", name: "cordis:dsh:skills" },
       { id: "subagent-spawn", name: "cordis:cairn:subagent-spawn", config: { providerName: "spawn" } },
       { id: "tool-subagent", name: "cordis:cairn:tool-subagent", config: { provider: "spawn", toolName: "subagent", backgroundMode: "one-shot" } },
     ];
 
     for (const entry of ENTRY_LIST) await loader.create(entry);
     await loader.await();
+
+    // Register Cairn's SKILL.md provider on the shared SkillRegistry. The
+    // registry forwards each caller's `cwd` view option into the provider's
+    // list/get, so ONE global provider serves every turn's working directory
+    // (chat: workspacePath; coding loop: its per-turn cwd). Duplicate-name
+    // safety: registerProvider throws on a duplicate within one layer — guard
+    // so a re-mounted context can't crash boot.
+    try {
+      const skills = (ctx as unknown as { skills?: { registerProvider: (c: unknown) => () => void } }).skills;
+      if (skills) skills.registerProvider(() => createCairnSkillProvider());
+    } catch (err) {
+      console.error("[cordis] cairn skill provider registration failed:", err instanceof Error ? err.message : err);
+    }
 
     // Expose a tiny, stable plugin API on the context so user plugins never need
     // to import app-internal packages by bare name (they live outside the app's
@@ -346,6 +372,20 @@ function collect(events: readonly SessionEvent[], firstSeq: number): { text: str
 export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCordisLoopResult> {
   const ctx = await getContext();
   let { db, req, workspacePath, llmConfig, signal } = opts;
+  // Plugin backends that inject "fs" (e.g. dsh-visualize) need the sandbox/fs
+  // chain to exist to activate AND to execute. Coding turns mount their own
+  // per-turn; on chat turns, mount it ONCE here (kept alive for the process —
+  // later coding turns ADOPT it instead of re-registering). Dev-gated: only
+  // user plugins consume ctx.fs.
+  try {
+    const { pluginsDevEnabled } = await import("./plugin-loader");
+    if (pluginsDevEnabled() && !(ctx as unknown as { get: (n: string) => unknown }).get("fs")) {
+      const { mountFsChain } = await import("./cordis-coding-tools");
+      await mountFsChain(ctx, { cwd: workspacePath });
+    }
+  } catch (err) {
+    console.error("[cordis] fs chain mount for plugins failed:", err instanceof Error ? err.message : err);
+  }
   // Local on-device model — ensure the app-spawned llama-server is running and
   // use its OpenAI-compatible endpoint (also via the pi-ai route, no separate plugin).
   if (llmConfig.provider === "localllm") {

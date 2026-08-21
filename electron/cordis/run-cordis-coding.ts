@@ -34,7 +34,7 @@ import {
   cairnDoomLoopPlugin,
   CAIRN_DB,
 } from "./cairn-plugins";
-import { registerCairnTools, registerExternalCairnTools, registerSkillTool, discoverCodingSkills } from "./cairn-tools";
+import { registerCairnTools, registerExternalCairnTools, registerSkillTool, listSkillsViaRegistry } from "./cairn-tools";
 import { renderSkillsXml } from "../lib/skills";
 import { buildCordisUserContent } from "./cairn-attachment-store";
 import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
@@ -156,11 +156,12 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       model: llmConfig.model,
       baseUrl: llmConfig.baseUrl,
     });
-    // Skills (Phase 1.5 step 2i): discover SKILL.md metadata under cwd once per
-    // turn, inject <available_skills> into the system prompt (name+description
-    // only — cheap), and register the `skill` tool that loads a body on demand.
-    const skills = discoverCodingSkills(cwd);
-    const skillsXml = renderSkillsXml(skills);
+    // Skills (Phase 1.5 step 2i): read the merged skill catalog through the dsh
+    // SkillRegistry (ctx.skills — our SKILL.md provider + community plugins),
+    // inject <available_skills> into the system prompt (name+description only),
+    // and register the `skill` tool that loads a body on demand.
+    const skillSummaries = await listSkillsViaRegistry(ctx, cwd);
+    const skillsXml = renderSkillsXml(skillSummaries);
     const systemText = skillsXml ? `${systemPrompt}\n\n${skillsXml}` : systemPrompt;
     await mount(cairnSystemPromptPlugin, { systemText });
     // Plan-mode read-only gate (denies mutating tools while plan mode is active).
@@ -213,9 +214,10 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       console.error(`[cordis-coding] registerExternalCairnTools failed:`, (e as Error)?.message ?? e);
     }
     toolDisposers.push(...externalDisposers);
-    // The `skill` tool (loads a SKILL.md body on demand). No-op when no skills.
+    // The `skill` tool (loads a skill body on demand through ctx.skills).
+    // No-op when the registry is missing or no skills are discovered.
     try {
-      toolDisposers.push(...registerSkillTool(ctx, skills));
+      toolDisposers.push(...(await registerSkillTool(ctx, cwd)));
     } catch (e) {
       console.error(`[cordis-coding] registerSkillTool failed:`, (e as Error)?.message ?? e);
     }

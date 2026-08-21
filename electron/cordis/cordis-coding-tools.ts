@@ -48,6 +48,57 @@ const DEFAULT_PLAN_SECTION =
   "You are in plan mode. Stay in plan mode until the user switches the session mode. Explore and read first; do not edit files or run mutating commands.";
 
 /**
+ * Mount the sandbox/fs ownership trio (sandbox-local → sandbox-policy →
+ * fs-sandbox). These three register the "sandbox"/"sandboxPolicy"/"fs" service
+ * NAMES, so at most ONE chain can exist per context lifetime.
+ *
+ * Adoption semantics: if one of the names is already registered (e.g. the chat
+ * loop mounted an fs chain for plugins before the first coding turn), we log
+ * and ADOPT the existing services instead of throwing — the per-turn mode/root
+ * config is then ignored for the adopted parts (plan-mode tool gating still
+ * enforced by cairnPlanModePlugin; noted tradeoff).
+ */
+async function plugFsChain(
+  ctx: Context,
+  opts: { cwd: string; mode: string },
+  disposers: Array<() => void>,
+  plug: (plugin: unknown, config?: unknown) => Promise<void>,
+): Promise<void> {
+  const owned: Array<[unknown, unknown]> = [
+    [sandboxLocalPlugin, undefined],
+    [sandboxPolicyPlugin, { mode: opts.mode, workspaceRoot: opts.cwd }],
+    [fsSandboxPlugin, { cwd: opts.cwd }],
+  ];
+  for (const [plugin, config] of owned) {
+    try {
+      await plug(plugin, config);
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e);
+      if (/service ".+" has been registered/.test(msg)) {
+        console.warn(`[cordis-coding] adopting already-registered fs/sandbox service (${msg}); per-turn sandbox config not applied`);
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+/** Mount ONLY the fs/sandbox ownership trio — used by the chat loop so plugin
+ *  backends that inject "fs" can activate and execute outside coding turns.
+ *  Kept alive for the process lifetime (never disposed): later coding turns
+ *  ADOPT these services instead of re-registering (see plugFsChain). */
+export async function mountFsChain(ctx: Context, opts: { cwd: string; mode?: "workspace-write" | "read-only" | "danger-full-access" }): Promise<void> {
+  if ((ctx as unknown as { get: (n: string) => unknown }).get("fs")) return;
+  const disposers: Array<() => void> = [];
+  const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
+    const fiber = (ctx as unknown as { plugin: (p: unknown, c?: unknown) => Promise<{ dispose: () => void }> }).plugin(plugin, config);
+    disposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
+    await fiber;
+  };
+  await plugFsChain(ctx, { cwd: opts.cwd, mode: opts.mode ?? "workspace-write" }, disposers, plug);
+}
+
+/**
  * Mount the coding capability stack on `ctx`. Returns a disposer that tears down
  * every mounted fiber in reverse order. Awaits each fiber so tool registration
  * is complete before returning.
@@ -67,9 +118,7 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
     }
   };
 
-  await plug(sandboxLocalPlugin);
-  await plug(sandboxPolicyPlugin, { mode: sandboxMode, workspaceRoot: cwd });
-  await plug(fsSandboxPlugin, { cwd });
+  await plugFsChain(ctx, { cwd, mode: sandboxMode }, disposers, plug);
   await plug({ apply: fsObsApply, name: fsObsName });
   await plug(planModePlugin, { section: planModeSection });
   await plug(subprocessLocalPlugin);

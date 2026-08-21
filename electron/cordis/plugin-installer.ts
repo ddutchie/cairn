@@ -23,6 +23,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as zlib from "zlib";
 import * as yaml from "js-yaml";
+import { createRequire } from "module";
 import { getPluginsRoot } from "./plugin-loader";
 
 const INSTALLED_DIR = "installed";
@@ -186,6 +187,50 @@ function readRows(root: string): Array<Record<string, unknown>> {
   }
 }
 
+/**
+ * Make the app's own copies of the plugin's declared dependencies resolvable
+ * from the extracted plugin directory: symlink each dependency/peerDependency
+ * that the app ships into <pkgDir>/node_modules/<name>. Node resolves the
+ * plugin's static `import "@deepseek-ai/dsh-tools"` by walking up from its file
+ * and finds the symlink; the symlink's REAL path is inside the app's
+ * node_modules, so the package's own transitive deps resolve there too.
+ *
+ * Unshipped deps are skipped (clearly logged) — the plugin's apply will fail on
+ * them and surface a targeted error rather than an opaque resolve failure.
+ */
+function linkAppDependencies(pkgDir: string, id: string): void {
+  let pkg: { dependencies?: Record<string, string>; peerDependencies?: Record<string, string> };
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
+  } catch {
+    return;
+  }
+  const wanted = [...new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.peerDependencies ?? {})])];
+  if (wanted.length === 0) return;
+  const req = createRequire(__filename);
+  let linked = 0;
+  for (const name of wanted) {
+    // Scoped names → nested dirs (node_modules/@deepseek-ai/x).
+    const dest = path.join(pkgDir, "node_modules", name);
+    if (fs.existsSync(dest)) continue;
+    let src: string;
+    try {
+      src = path.dirname(req.resolve(`${name}/package.json`));
+    } catch {
+      console.warn(`[cairn-plugins] '${id}' depends on ${name}, which this app does not ship — its backend may fail to load`);
+      continue;
+    }
+    try {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.symlinkSync(src, dest, "dir");
+      linked++;
+    } catch (err) {
+      console.warn(`[cairn-plugins] '${id}' could not link ${name}:`, err instanceof Error ? err.message : err);
+    }
+  }
+  console.log(`[cairn-plugins] '${id}' linked ${linked}/${wanted.length} app-provided dependencies into node_modules`);
+}
+
 function writeRows(root: string, rows: Array<Record<string, unknown>>): void {
   fs.writeFileSync(path.join(root, MANIFEST), yaml.dump(rows, { lineWidth: 100 }));
 }
@@ -213,6 +258,10 @@ export async function installPlugin(rawSpec: string): Promise<InstallResult> {
   }
 
   const { name, ui } = resolveEntries(destDir, id);
+  // Static-import resolution: the extracted plugin sits OUTSIDE any node_modules
+  // tree, so its bare `import "@deepseek-ai/*"` calls can't resolve on their
+  // own. Symlink the app's copies of its declared deps next to it.
+  linkAppDependencies(destDir, id);
 
   // Upsert the manifest row (replace an existing entry with the same id).
   const rows = readRows(root).filter((r) => r.id !== id);
