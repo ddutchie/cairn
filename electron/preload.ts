@@ -1359,6 +1359,16 @@ const api = {
       llm: { healthy: boolean; model: string | null; loaded: boolean; port: number | null };
     }>("runtime:status"),
     stop: () => invoke<{ ok: boolean }>("runtime:stop"),
+    /** Assemble the real dsh system prompt (Cordis engine) + section breakdown. */
+    systemPromptPreview: (req: { cwd?: string }) => invoke<{
+      text: string;
+      sections: Array<{ name: string; order: number; text: string; index: number }>;
+      contexts: Array<{ name: string; order: number; text: string }>;
+      skillCount: number;
+      toolCount: number;
+      variables: Record<string, string | undefined>;
+      error?: string;
+    }>("runtime:systemPrompt:preview", req),
     onProgress: (cb: (e: {
       modelId: string;
       status: string;

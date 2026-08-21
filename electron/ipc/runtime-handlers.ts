@@ -49,6 +49,58 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
     return { ok: true };
   }));
 
+  // ── System-prompt introspection (Cordis) ─────────────────────────────
+  // Assemble the REAL dsh system prompt the Cordis engine sends, plus a
+  // breakdown of its sections (name + order). Cairn's own identity section
+  // (cairn:system:*) is mounted per-turn inside the loop, so to reflect a real
+  // turn we temporarily mount it here, assemble, then remove it.
+  registerIpcHandle("runtime:systemPrompt:preview", (_e, req: { cwd?: string }) => handle(async () => {
+    try {
+      const [{ getContext }, { buildSystemPrompt }] = await Promise.all([
+        import("../cordis/run-cordis-loop"),
+        import("../lib/tools"),
+      ]);
+      const ctx = await getContext();
+      const sys = (ctx as unknown as {
+        systemPrompt?: {
+          assemble: (c: { scope?: unknown; signal?: AbortSignal }) => Promise<unknown>;
+          section: (s: { name: string; order: number; text: string }) => () => void;
+        };
+      }).systemPrompt;
+      if (!sys) return { text: "", sections: [], skillCount: 0, error: "systemPrompt service unavailable" };
+      // Mount Cairn's identity section at order -100 (same as the chat loop) so
+      // the assembled text is what a real turn sends.
+      const disposeSection = sys.section({ name: "cairn:system:preview", order: -100, text: buildSystemPrompt({ message: "", threadId: "preview", projectId: "", workspaceId: "" } as never) });
+      try {
+        const assembly = (await sys.assemble({ signal: undefined })) as {
+          sections: Array<{ name: string; order: number; text: string | ((c: { scope?: unknown }) => string) }>;
+          contexts: Array<{ name: string; order: number; text: string | ((c: { scope?: unknown }) => string) }>;
+          variables: Record<string, string | undefined>;
+          tools: unknown[];
+        };
+        const { renderPrompt } = await import("@deepseek-ai/dsh-system-prompt");
+        const text = renderPrompt(assembly as unknown as Parameters<typeof renderPrompt>[0]);
+        const textOf = (v: string | ((c: { scope?: unknown }) => string)) =>
+          typeof v === "function" ? v({}) : v;
+        // The assembled sections are {name, text} (order is a registration-only
+        // prop that assemble() strips) — use index as a stable display order.
+        const sections = assembly.sections
+          .map((s, i) => ({ name: s.name, order: i, text: textOf(s.text), index: i }));
+        const contexts = assembly.contexts.map((c) => ({ name: c.name, order: c.order, text: textOf(c.text) }));
+        let skillCount = 0;
+        try {
+          const skills = (ctx as unknown as { skills?: { list: (o: { cwd: string }) => Promise<Array<unknown>> } }).skills;
+          if (skills) skillCount = (await skills.list({ cwd: req?.cwd ?? "" })).length;
+        } catch { /* informational */ }
+        return { text, sections, contexts, skillCount, toolCount: (assembly.tools ?? []).length, variables: assembly.variables ?? {} };
+      } finally {
+        disposeSection();
+      }
+    } catch (err) {
+      return { text: "", sections: [], skillCount: 0, error: err instanceof Error ? err.message : String(err) };
+    }
+  }));
+
   // ── Embedding model management (via unified runtime) ────────
   registerIpcHandle("runtime:embeddings:status", () => handle(() => {
     return runtime.getEmbeddingsStatus();

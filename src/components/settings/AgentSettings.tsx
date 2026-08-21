@@ -257,6 +257,9 @@ function SkillsPreviewSection() {
   const [mode, setMode] = useState<"execute" | "plan">("execute");
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
+  const [sections, setSections] = useState<Array<{ name: string; order: number; text: string; index: number }> | null>(null);
+  const [skillCount, setSkillCount] = useState<number | null>(null);
+  const [toolCount, setToolCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -279,7 +282,16 @@ function SkillsPreviewSection() {
       });
       if (result) {
         setSkills(result.skills);
-        setSystemPrompt(result.systemPrompt);
+      }
+      // The REAL assembled prompt now comes from the Cordis engine (dsh
+      // SystemPrompt), not the legacy pi-agent builder.
+      const promptRes = await window.electron?.runtime?.systemPromptPreview({ cwd: workspacePath });
+      if (promptRes) {
+        if (promptRes.error) setError(promptRes.error);
+        setSystemPrompt(promptRes.text || null);
+        setSections(promptRes.sections);
+        setSkillCount(promptRes.skillCount);
+        setToolCount(promptRes.toolCount);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -371,12 +383,43 @@ function SkillsPreviewSection() {
         </div>
       )}
 
-      {/* System prompt preview */}
+      {/* System prompt preview (live dsh assembly) */}
       {systemPrompt !== null && (
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2">
             Assembled System Prompt
           </h3>
+          {sections && sections.length > 0 && (
+            <div className="mb-3 space-y-1.5">
+              <div className="flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
+                  {sections.length} section{sections.length !== 1 ? "s" : ""}
+                </span>
+                {skillCount !== null && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
+                    {skillCount} skills
+                  </span>
+                )}
+                {toolCount !== null && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
+                    {toolCount} tools
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1">
+                {sections.map((s) => (
+                  <div key={`${s.index}-${s.name}`} className="flex items-start gap-2">
+                    <span className="text-[0.65rem] font-mono text-[var(--text-tertiary)] pt-0.5 w-6 shrink-0 text-right">
+                      {s.index + 1}
+                    </span>
+                    <span className="text-[0.714rem] font-mono text-[var(--accent)] pt-0.5 shrink-0">
+                      {s.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <PromptPreview systemPrompt={systemPrompt} />
         </div>
       )}
