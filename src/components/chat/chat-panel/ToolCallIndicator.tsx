@@ -11,6 +11,7 @@ import { ConnectorToolCard } from "@/components/shared/ConnectorToolCard";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 import { humanizeTool } from "@/lib/humanize-tool";
 import { connectorForTool, parseToolArgs, type ChatConnectorMeta } from "./connector-context";
+import { DshToolView, hasToolView } from "@/lib/dsh-toolview";
 
 interface ToolCallIndicatorProps {
   toolCalls: ChatToolCall[];
@@ -27,7 +28,12 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
       <MessageAvatar role="bot" size="lg" />
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         {toolCalls.map((tc, i) =>
-          tc.status === "done" && tc.ok === false ? (
+          hasToolView(tc.tool) ? (
+            // §11 spike: a registered dsh `tool.call.toolview` plugin owns this
+            // tool's rendering. Cairn hands it a Cairn-built ToolCallViewProps;
+            // the dsh component renders inside Cairn's transcript (scoped theme).
+            <DshToolView key={i} tc={tc} />
+          ) : tc.status === "done" && tc.ok === false ? (
             <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
               <XCircle size={10} className="text-[var(--danger)] shrink-0" />
               <span className="text-[0.786rem] text-[var(--text-secondary)]">{humanizeTool(tc.tool, parseToolArgs(tc.args)).pre} failed</span>

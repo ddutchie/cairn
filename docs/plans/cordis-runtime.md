@@ -1,6 +1,6 @@
 # Cairn Cordis Runtime — Rollout Plan
 
-Status: **Phase 1 + 1.5 + 2 COMPLETE; A (heartbeat full agent) + C (manual /compact) DONE; D (Electron QA e2e harness) IMPLEMENTED — remaining: Phase 3 (dsh client/UI)** · Updated: 2026-08-19
+Status: **Phase 1 + 1.5 + 2 COMPLETE; A (heartbeat full agent) + C (manual /compact) DONE; D (Electron QA e2e harness) IMPLEMENTED — remaining: Phase 3. Plugin-system port investigated (§10 backend Loader; §11 UI-bridge into Cairn's OWN frontend, NOT the dsh shell)** · Updated: 2026-08-20
 Owner: Cairn maintainer
 Related note: *DeepSeek Harness (dsh) integration analysis* (Cairn project)
 Branch: `feat/cordis-runtime` · Latest: `7df175ca`
@@ -437,3 +437,193 @@ Users write/install Cordis plugins inside Cairn.
 6. Remove the bespoke `pi-agent:*`/`chat:*` IPC bridge once dsh's connection layer carries the same events.
 
 **Decision log:** see §7 for the 2026-08-19 client-adoption entry.
+
+## 10. Porting the PLUGIN SYSTEM — investigation + plan (2026-08-20)
+
+**Question:** how do we port dsh's plugin system so third-party dsh plugins run in Cairn? (This is the backend half of Phase 3 — orthogonal to the UI/client half in §9/§B. A dsh plugin can contribute backend capability (tools, seams, services) with no UI; that's the first unlock and the cheaper one.)
+
+### 10.1 Ground truth (verified 2026-08-20 — do NOT re-research)
+
+Two reference writeups were produced this session (gitignored `scratch/`):
+- `scratch/notes-plugin-loading.md` — dsh's profile/bundle/`cordis.patch.yml`/boot machinery (very thorough, file:line refs).
+- Cairn's current mounting was read directly from `electron/cordis/run-cordis-loop.ts`.
+
+**A. What a Cordis plugin actually is (installed `@deepseek-ai/cordis@4.0.1`, `lib/types/registry.d.ts`):**
+- A plugin is one of: a **function** `(ctx, config) => void`; a **plain object** `{ name?, inject?, reusable?, apply(ctx,config), Config? }`; or a **class** with static `inject`/instance `apply` (the `Service` subclass form). `ctx.plugin(plugin, config?)` returns `Fiber & PromiseLike<Fiber>` — awaiting it settles the fiber (`registry.d.ts:198`). `ctx.inject(deps, cb)` is shorthand for `ctx.plugin({inject, apply:cb})` (`registry.d.ts:111/185`).
+- **`inject`** is the capability-seam gate: a plugin listing `inject:["systemPrompt"]` has its fiber **wait** until another plugin `provide`s `systemPrompt`; accessing `ctx.systemPrompt` without declaring it in `inject` throws "cannot get property X without inject" (already a known Cairn gotcha, §8). This is exactly how `cairnSystemPromptPlugin`/`cairnQuestionsPlugin` are written today.
+- Ordering between plugins is **service-availability driven, not row order** — a fiber activates once its injected services exist. (`base/cordis.patch.yml:12` "Row order carries no load semantics.") So mount order only matters for *await-blocking*; the Loader would resolve it declaratively.
+
+**B. How dsh loads plugins (the machinery Cairn does NOT use):**
+- dsh never hand-mounts. It composes **`cordis.patch.yml`** layers (YAML arrays of `{id,name,config?,inject?,disabled?}` entry rows, `!!js` expressions allowed) via the **Cordis Loader** (`@deepseek-ai/cordis-plugin-include` — provides `ctx.loader`), driven by `boot()` in `@deepseek-ai/dsh-app-boot`.
+- A **bundle** = any npm package whose `package.json` has `"dsh":{"bundle":{"patch":"./cordis.patch.yml"}}`. A **profile** = a dir with `package.json` `"dsh":{"profile":{"bundles":[...]}}` + a user `cordis.patch.yml`. `dsh plugin --profile X add <pkg>` is a **pnpm forwarder** that installs into the profile dir and appends any bundle it finds to `dsh.profile.bundles`.
+- **HMR** (`@deepseek-ai/cordis-plugin-hmr`) reloads a plugin module on file change at the Context level; the boot layer also watches the user `cordis.patch.yml` and transactionally recomposes on edit (`app-boot/src/index.ts:232`).
+- **Runtime self-modification** exists: `@deepseek-ai/dsh-cordis-host-runner` provides `ctx.dynamicCordisRunner` (a `node:vm` sandbox + fiber lifecycle for host-half plugin code, define→run→stop→undefine, session-scoped), driven by the model-facing `@deepseek-ai/dsh-tool-cordis` tools. This is dsh's answer to "user/agent adds a plugin live."
+
+**C. Publish status (npm, checked 2026-08-20):**
+| Package | Status | Role |
+|---|---|---|
+| `@deepseek-ai/cordis-plugin-include` | ✅ `1.0.6` | the Loader (`ctx.loader`) |
+| `@deepseek-ai/cordis-plugin-hmr` | ✅ `1.0.16` | HMR |
+| `@deepseek-ai/cordis-plugin-timer` | ✅ `1.1.3` | timer service (base dep) |
+| `@deepseek-ai/dsh-app-boot` | ✅ `0.1.0-rc.6` | `boot()` + profile/bundle compose |
+| `@deepseek-ai/dsh-settings` / `-settings-file` | ✅ `rc.1` / `rc.3` | per-plugin runtime config seam (`ctx.settings`) |
+| `@deepseek-ai/dsh-cordis-host-runner` | ✅ `rc.3` | `ctx.dynamicCordisRunner` (live plugin lifecycle) |
+| `@deepseek-ai/dsh-tool-cordis` | ✅ `rc.1` | model-facing cordis_define/run/stop tools |
+| `@deepseek-ai/dsh-boot`, `@deepseek-ai/dsh-bundle-base` | ❌ unpublished | bundle META-packages (just `cordis.patch.yml` lists — **we don't need them**, we author our own patch/manifest) |
+
+**Version-line caveat:** `dsh-app-boot` is on the `rc.6` line while every capability plugin Cairn pins is `0.1.0-rc.8`, and the Loader/HMR/timer are on their own `1.x` lines. Per the Phase-0 finding ("never trust ranges; pin the coherent snapshot"), `boot()` + the Loader must be integration-tested against the pinned rc.8 capability tree before trusting it (they share one `cordis@4.0.1` instance, which is the real ABI constraint).
+
+**D. Where Cairn is today (`run-cordis-loop.ts:131-191` `getContext`):** Cairn does `new Context()` then **hand-mounts ~18 plugins imperatively** with `await ctx.plugin(importedPlugin, config)` (session, llm, system-prompt, agent, tools, user-questions, approval, jsonl-persistence, agent-loop, attachment-store, token-meter, compaction, llm-retry, subagent×3), plus `registerCairnTools`/`registerExternalCairnTools` and per-turn `cairn-*` plugins. **No Loader, no `cordis.patch.yml`, no profile/bundle, no HMR, no settings seam.** The `cairn-*` plugins are already idiomatic Cordis plugins (object `{apply, inject, name}`), so they are *already* Loader-compatible — they just aren't loaded *by* the Loader.
+
+### 10.2 The gap (what's actually missing)
+
+The capability layer is done. The **plugin-SYSTEM** (discovery + declarative composition + third-party install + lifecycle) is the gap:
+
+1. **No declarative composition.** The mount list is TypeScript in `getContext`, not a data manifest. A third-party plugin can't be inserted without editing + recompiling Electron.
+2. **No Loader.** Without `ctx.loader` (`cordis-plugin-include`), there is no entry registry, no `disabled:` gating, no config-replacement patching, no HMR-driven recompose, and nothing for `dsh-tool-cordis`/`dsh-cordis-host-runner` to hook.
+3. **No install path.** dsh's `dsh plugin add` = pnpm-into-a-profile-dir. Cairn ships as a packaged Electron app (asar, no pnpm, arch-fenced native addons) — installing arbitrary npm at runtime is a real design problem, not a `spawnSync('pnpm')`.
+4. **No sandbox for untrusted plugin code.** A dsh plugin's `apply` runs with full Electron-main privileges (raw `Database`, fs, net). dsh's own answer is `dsh-cordis-host-runner`'s `node:vm` sandbox; Cairn would need that or worker-thread isolation before running third-party code (already flagged Phase 3 bullet 2).
+5. **No runtime config seam.** Cairn passes config as literals in `getContext`; dsh plugins expect `ctx.settings` namespaces the user can edit (the Plugins settings tab). Absent today.
+
+### 10.3 Plan — three tiers, each independently shippable
+
+**Tier 1 — Loader-backed composition (internal, no third-party yet). ~1 wk. The keystone.**
+Replace the imperative `getContext` mount list with the Cordis Loader driven by a Cairn-authored `cordis.patch.yml`, so composition is data, not code — the prerequisite for everything else.
+1. Add deps: `@deepseek-ai/cordis-plugin-include`, `-timer`, `-hmr`, `@deepseek-ai/dsh-app-boot`. Pin exact; integration-test against the rc.8 tree (verify one shared `cordis@4.0.1`). Add any new node builtins they pull to `NODE_BUILTINS` (bundle-guard) — `boot()`/include use `node:fs`/`node:url`/`node:path`; HMR adds a watcher.
+2. Author `electron/cordis/cairn.patch.yml` (or a JS-object equivalent to dodge the YAML-in-asar + `!!js` eval concern — see risk) listing the current mount set as entry rows (`id`,`name`,`config`,`inject`). The `cairn-*` plugins register by a local module name the Loader can `import` (they're already object-plugins).
+3. `getContext` becomes: `new Context()` → `ctx.plugin(Loader)` → feed it the patch list (mirror `mountRootInclude`/`boot` from `app-boot`, or call `boot()` with a `prepare` hook that provides `CAIRN_DB`, sessionRoot, etc. — Cairn's launcher-owned slots, exactly like dsh's `provideCmdline`). Keep `ensurePiAiAdapter` as an imperative post-boot step (it's endpoint-dynamic, not a static row) OR model it as a config-replaced row updated via `entry.update`.
+4. **Exit:** chat + coding + heartbeat + one-shots all run through the Loader-composed tree; full electron suite + 8 live coding capabilities green; `CAIRN_ENGINE`-style env escape hatch NOT needed (this is a refactor of composition, not behaviour). This alone buys `disabled:` gating + HMR for Cairn's own dev loop.
+
+**Tier 2 — First-party bundle + settings seam (still trusted code). ~1 wk.**
+5. Mount `@deepseek-ai/dsh-settings-file` (root `<userData>/cairn-settings.yaml`); migrate a few plugin configs (e.g. compaction `thresholdRatio`, sandbox default) from literals to settings namespaces so they're user-editable without a rebuild. Wire a minimal read-only **Plugins** inventory (dsh ships `dsh-host-plugin-inventory` → `pluginInventory/list` projecting Loader entries + fiber phase) behind a settings tab — even without third-party install, this makes the composed tree visible/toggleable.
+6. Package Cairn's mount set as a proper first-party bundle (`package.json` `dsh.bundle.patch`) so the composition is reusable + testable as a unit, and so a future profile can layer over it.
+
+**Tier 3 — Third-party plugins (untrusted). The real unlock — gated on a soak of Tier 1+2. 2–4 wk.**
+7. **Install path (pick one):** (a) a Cairn-managed plugin dir under `<userData>/plugins` with a bundled pnpm/npm to install into it at runtime (heavy, but matches dsh) — the flat-symlink `profiles/node_modules` trick (`profile.ts:223`) keeps one shared `cordis` instance; or (b) accept only pre-bundled single-file plugins (esbuild'd to one JS) dropped into the dir, no npm at runtime (lighter, safer, but no transitive deps). Decision needed — lean (b) first.
+8. **Sandbox:** run third-party `apply` via `@deepseek-ai/dsh-cordis-host-runner`'s `ctx.dynamicCordisRunner` (`node:vm` + fiber lifecycle, define→run→stop→undefine, browser-approval round trip) rather than inventing one. Add `@deepseek-ai/dsh-tool-cordis` so the AGENT can propose plugins too (the "agent modifies its own runtime" story), each `run` gated behind an explicit user approval (reuse Cairn's approval seam).
+9. **UI:** the Plugins settings tab gains enable/disable (patch `disabled:` write to the user layer) + per-plugin settings cards (dsh `ui-settings-plugins` is the reference, but Cairn renders it in its own React — no dsh client layer needed for the backend-plugin story; that's §9's separate workstream).
+
+### 10.4 Key risks specific to the plugin-system port
+- **`!!js` in `cordis.patch.yml` = arbitrary eval.** dsh's patch files evaluate `!!js` expressions at mount. Shipping that verbatim in a packaged app is a code-exec surface. Mitigation: author Cairn's own composition as a **JS object list** (not YAML-with-`!!js`) fed straight to the Loader's `applyEntryPatches`, keeping `!!js` OFF for any third-party/user-supplied layer (config-only, no expressions).
+- **Version drift:** `app-boot@rc.6` vs capabilities `@rc.8` vs Loader/HMR `@1.x`. Must pin a coherent snapshot and integration-test; if `boot()` fights the rc.8 tree, we can use just `cordis-plugin-include` (the Loader) directly and skip `dsh-app-boot` (author our own tiny compose — we already do the equivalent imperatively).
+- **asar + native addons:** third-party plugins can't dlopen arbitrary native code under Cairn's arch-fenced signing (AGENTS.md better-sqlite3 rules). Restrict third-party plugins to pure-JS, or require them to declare + ship arch-matched prebuilds (out of scope for Tier 3 v1).
+- **Sandbox escape:** `node:vm` is NOT a security boundary against determined code. For genuinely untrusted plugins, worker-thread + message-passing (no shared `Database` handle) is the safer boundary — but that breaks the "tools run on the real DB handle" invariant. Trusted-first (Tier 1/2) sidesteps this; Tier 3 needs an explicit trust decision.
+
+### 10.5 Recommended first step
+**Do Tier 1 only, behind no flag** — swap `getContext`'s imperative mount for a Loader + a Cairn-authored JS entry-list (not YAML). It's a pure refactor with a green-suite exit criterion, it introduces the Loader (the keystone every later tier needs), and it immediately proves the pinned capability tree composes under `boot()`/include without regressions. Ship it, soak it, then decide Tier 2/3.
+
+### 10.6 SPIKE RESULTS (2026-08-20 — de-risked in a throwaway dir, DONE)
+
+Ran the Tier 1 spike in `/var/folders/.../opencode/cordis-loader-spike` (throwaway, per plan). **All green — Tier 1 is viable exactly as designed.**
+
+**Install / dedupe:**
+- The Loader stack installs cleanly alongside the pinned rc.8 capability tree: `@deepseek-ai/cordis-plugin-loader@1.0.2` (provides `ctx.loader`), `cordis-plugin-include@1.0.6` (the `cordis:include` YAML/JSON entry-tree — **we don't need it**), `cordis-plugin-timer@1.1.3`, `cordis-plugin-hmr@1.0.16`, `dsh-app-boot@0.1.0-rc.6`.
+- **Single `@deepseek-ai/cordis@4.0.1` copy** — dedupe is clean (the real ABI constraint). `dsh-app-boot` only hard-deps `js-yaml`; it treats cordis/loader as host-provided peers.
+- **Correction to §10.1:** the Loader is `@deepseek-ai/cordis-plugin-loader` (exports `Loader`, `applyEntryPatches`, `EntryTree`, `evaluate`/`interpolate`/`isJsExpr`); `cordis-plugin-include` is a thin `EntryTree` subclass (`static inject=["loader"]`) that reads a `cordis.yml`/JSON file. **Cairn should mount `Loader` and drive it programmatically — skip `Include` (no file) and skip `boot()` (it reads a profile dir + `cordis.yml` from disk, unnecessary for us).**
+
+**API proven (`ctx.loader` after `await ctx.plugin(Loader)`):** `create(options)`, `update(config)`, `entries()`, `resolve(id)`, `import(name)`, `await()`. `import(name)` has three resolution paths (`cordis-plugin-loader/lib/index.js:260`):
+  1. `name.startsWith("cordis:")` → `ctx.loader.builtins[name.slice(7)]` — **no module resolution** (asar-safe).
+  2. `ctx.loader.internal.import(name, baseUrl)` — a swappable `ModuleLoader` (the `bareModuleBaseUrl` hook `boot()` uses).
+  3. plain `await import(name)` — bare npm names + relative-from-`baseUrl`.
+
+**→ Decision (REVISED at implementation — see §10.7): register EVERY plugin (dsh + cairn) as a `cordis:` builtin.** The spike's mixed "dsh = bare name, cairn = builtin" split does NOT survive esbuild: `main.ts` bundles to CJS and esbuild cannot see the Loader's runtime `import("<string>")`, so bare-name dsh packages would 404 inside the asar. Fix: statically `import` every plugin (esbuild bundles them) and register ALL as builtins — `ctx.loader.builtins['dsh:tools']=toolsPlugin`, entry `name:'cordis:dsh:tools'`. Zero runtime module resolution, fully asar-safe. Proven in §10.7.
+
+**Three assertions passed (against the pinned rc.8 tree):**
+1. **Composition parity** — driving a JS entry-list (`[{id,name,config?}]`, NO YAML, NO `!!js`) through `ctx.loader.create()` + `await ctx.loader.await()` mounts session→llm→system-prompt→agent→tools and **`ctx.get('tools')` is a live service** (`object`), same as the imperative mount. `systemPrompt`/`llm` also resolve.
+2. **Config threads** — `config:{marker:'HELLO-TIER1'}` on an entry arrives verbatim as the plugin's `apply(ctx, config)` 2nd arg.
+3. **`inject`-gating works declaratively** — a local plugin with `inject:['systemPrompt']` created *before* the `system-prompt` entry still had its `apply` wait and correctly saw `ctx.systemPrompt` once it mounted (activation is service-availability driven, not creation order). This is the exact seam every `cairn-*` plugin relies on.
+
+**Implication for the real port:** `getContext` becomes `new Context()` → `await ctx.plugin(Loader)` → register the `cairn-*` builtins on `ctx.loader.builtins` → `for (e of ENTRY_LIST) await ctx.loader.create(e)` → `await ctx.loader.await()`. `ensurePiAiAdapter` stays an imperative post-boot step (endpoint-dynamic; not a static row) OR becomes a config-replaced entry updated via `ctx.loader.resolve('pi-ai').update(...)`. The per-turn `cairn-*` plugins (session/usage/subagent/system-prompt/questions mounted per request in `runTurn`) can either stay per-turn `ctx.plugin(...)` calls or become Loader entries created/removed per turn — **keep them imperative in v1** (smaller diff; the Loader win is the static tree).
+
+**§11 UI note (also de-risked 2026-08-20):** Cairn is **React 19.2.7**; dsh client packages peer `react:^18.2.0` (satisfied by 19 at the hook/`useSyncExternalStore` API level they use) and are **all published at `0.0.1-rc.1`** (`dsh-client-ui-slots`, `-ui-tool`, `-ui-primitives`, `-ui-runtime`, `-ui-skill`, `-ui-theme`). The React-version risk that could have killed §11 Strategy 1 is **cleared** — proceed to the toolview micro-host spike after Tier 1 lands.
+
+## 11. Bridging plugin UI into Cairn's OWN frontend (investigation, 2026-08-20)
+
+**Question:** we are NOT adopting dsh's whole web shell (§9/§B are the all-or-nothing path — replace Cairn's React with dsh's `ui-layout` `root` slot). We want to keep Cairn's bespoke frontend and let a dsh plugin's UI render *inside* it. Is that possible, and how coupled is a single plugin UI to the dsh shell?
+
+### 11.1 Ground truth (verified from `scratch/dsh-repo/packages/client`, 2026-08-20)
+
+**A. A client plugin is just a Cordis plugin running in a BROWSER Context.**
+- `ClientContext = Context` (`packages/client/runtime/src/client/index.ts:112`). A plugin's browser half is `apply(ctx)` + `inject` exactly like the host half — but it runs in a **second Cordis tree in the renderer**, not the Electron-main tree. `package.json` declares it via `dsh.client` + `exports["./client"]`; the host half can be an empty `apply()` (ui-skill's is literally `export function apply(): void {}`, `ui-skill/src/index.ts`).
+- The browser runtime (`packages/client/runtime`) owns a `SlotRegistry` + a snapshot store (bare `getSnapshot`/`subscribe`, useSyncExternalStore-shaped); `ui-renderer` binds that store to React. **ui-slots is "React-free and cordis-free" — React types only at runtime** (`ui-slots/README.md`) — so the slot core is portable; only the renderer binding is React.
+
+**B. `tool.call.toolview` is a keyed slot with a tiny, self-contained data contract.**
+- Registration (`ui-skill/src/client/index.ts`): `ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name:'tool.call.toolview', key:'skill', locale:NS }, SkillRow))`. `key` = the tool name; the transcript dispatches each tool call to the matching keyed view (unregistered tools → generic fallback).
+- The view's props are **`ToolCallViewProps`** = the owner currency ONLY (`ui-tool/src/client/contract/slots.ts:29`): `{ callId, toolName, block, cwd?, home?, openFile(path), inspect?() }` where `block: ToolCallBlock = RunningToolCall | ToolResultNode` (`runtime/.../conversation.ts:311`) — the streaming-or-settled call+result slice. **A toolview derives its entire render from `block` + a couple of host callbacks. No session-wide store, no AppFrame, no conversation context is required as a prop.** (SkillRow: `skillRowModel(block)` reads `block.call.argsRaw` / result blocks; nothing else.)
+
+**C. The real coupling is styling + primitives, not layout.**
+- `SkillRow` imports icons/`StateDot` from `@deepseek-ai/dsh-client-ui-primitives` and its CSS module uses **20 `--dsw-*` theme tokens** (`--dsw-alias-label-primary`, `--dsw-alias-state-error-primary`, …). So rendered in isolation it's structurally fine but **unstyled/broken without dsh's `--dsw-*` tokens present** (Cairn uses `--*` tokens — a mapping layer is needed, already flagged §9/§B).
+- Data-fetching toolviews (ui-skill also owns a `/` slash source) read `ctx.get('connection').api.*` RPCs off the browser root context — but that's the *source* half, NOT the toolview half. The `skill` **toolview** is explicitly "a replay-stable accent row derived only from each logged call/result slice" (`ui-skill/src/client/index.ts` header) — zero RPC. So a *pure* toolview (the common case: render this tool's call+result) needs no connection at all.
+
+### 11.2 Verdict — YES, individual plugin UIs are embeddable
+
+A single `tool.call.toolview` component is **highly isolatable**: it's a React component taking `ToolCallViewProps`. To host it inside Cairn's own transcript we need, per rendered call:
+1. Build a `ToolCallBlock` from Cairn's own tool-call/result data (Cairn already tracks call args + output + ok/error in `useChatStream`/`ToolCallIndicator` — the same fields `RunningToolCall`/`ToolResultNode` carry).
+2. Provide `openFile`/`inspect` shims wired to Cairn's own file-open/inspect (or no-ops).
+3. Provide the `--dsw-*` tokens (a `cairn-dsw-theme.css` mapping `--dsw-*` → Cairn's `--*`) + mount `ui-primitives` (or shim the handful of primitives a given plugin imports).
+4. A minimal browser slot registry so the plugin's `apply(ctx)` can `ctx.slots.register(...)` and Cairn can look the component up by `key`.
+
+This does NOT require `ui-layout`, `ui-conversation`, `ui-sidebar`, or the dsh connection layer. It's a **micro-host**: a stripped browser Cordis Context in the renderer with just `SlotRegistry` + `locale` + `ui-primitives` + the token shim.
+
+### 11.3 Two embedding strategies (pick per appetite)
+
+**Strategy 1 — "toolview micro-host" (recommended; incremental, keeps Cairn's frontend).**
+Run a tiny browser-side Cordis Context inside Cairn's renderer whose ONLY job is to collect `tool.call.toolview` (and later `conversation.chat.node`) registrations from installed client-plugin halves. Cairn's transcript renderer, when it hits a tool call whose `toolName` has a registered view, wraps it in a `<DswThemeScope>` (the token-mapping div) + the required providers and renders the dsh component with a Cairn-built `ToolCallViewProps`. Everything else in Cairn stays Cairn.
+- **Pros:** Cairn's UI, nav, notes/board/graph untouched; adopt plugin UIs one slot at a time; no dsh web server, no `loadURL`, no IPC `doFetch` carrier.
+- **Cons:** we own the `ToolCallBlock` adapter + the `--dsw-*` mapping + bundling each plugin's `./client` half into the renderer (esbuild) + a React-version match (dsh assumes React 19-era; Cairn is on its own React — verify before importing dsh components).
+- **Scope:** slots beyond `tool.call.toolview` (e.g. `root`, `conversation.view`) are the shell's territory — a micro-host deliberately ignores them (or maps a whitelist). Settings/inspector slots could be added later the same way.
+
+**Strategy 2 — full dsh shell (the §9/§B path).** Adopt `ui-layout`'s `root` + write a Cairn `root`-occupying layout to host Cairn views as peers. Gets ALL slots + third-party UI "for free," but replaces Cairn's frontend and forces the `--dsw-*`/`--*` reconciliation globally. Bigger lift, bigger blast radius. Only worth it if the end-state is "Cairn IS a dsh deployment."
+
+### 11.4 Gaps/risks specific to UI embedding
+- **React runtime match:** importing dsh's compiled React components into Cairn's renderer requires one React instance + a compatible version. If dsh targets React 19 and Cairn differs, either align or render the micro-host in an isolated React root. Verify FIRST — this can kill Strategy 1 cheaply.
+- **`--dsw-*` token surface:** need a complete mapping (dsh's `ui-theme` defines the full `--dsw-alias-*` set). Build `cairn-dsw-theme.css` from dsh's `ui-theme` token list; scope it to the plugin-rendered subtree so it never leaks into Cairn's own `--*` styling.
+- **`ToolCallBlock` fidelity:** the adapter must produce both the streaming (`RunningToolCall`) and settled (`ToolResultNode`) shapes so a plugin's running/ok/error states render — Cairn already has these signals (the recent `onToolCallDone status:"done"` fix), they just need reshaping into dsh's block type.
+- **Bundling third-party `./client`:** a plugin ships browser code; Cairn must esbuild it into (or lazy-load it beside) the renderer. Same trust/sandbox questions as §10.3 Tier 3, but UI code is somewhat lower-risk than host `apply` (no DB/fs handle) — still, it runs in the renderer with Cairn's privileges, so treat as untrusted (isolated React root / no direct `window.electron`).
+- **Depends on §10:** there is no point embedding a plugin's UI if its backend half can't mount. UI embedding (§11) is the *renderer* companion to §10's *host* Loader work — do §10 Tier 1 first (backend plugins load), then §11 Strategy 1 (their UIs render).
+
+### 11.5 Recommended UI first step
+After §10 Tier 1 lands: **spike Strategy 1 with the `skill` toolview** (a pure, RPC-free, replay-stable view we already understand). (1) esbuild `@deepseek-ai/dsh-client-ui-skill/client` into a renderer chunk; (2) stand up a micro browser Context with `SlotRegistry` + `ui-primitives` + a `--dsw-*` shim; (3) feed a Cairn-built `ToolCallViewProps` for a real `skill` tool call and render `SkillRow` inside Cairn's transcript. If SkillRow renders + themes correctly in Cairn, the pattern generalises to every keyed toolview and the "third-party plugins contribute UI inside Cairn" story is proven — without adopting the dsh shell. If the React-version match blocks it, fall back to isolated-React-root or reassess Strategy 2.
+
+### 10.7 TIER 1 IMPLEMENTED (2026-08-20) — Loader-backed composition is live ✅
+
+`electron/cordis/run-cordis-loop.ts` `getContext()` now composes the shared Cordis tree via the **Loader + a declarative JS `ENTRY_LIST`**, replacing the imperative `await ctx.plugin(...)` sequence. No behaviour change; pure refactor.
+
+**Deps added (`package.json`, pinned exact):** `@deepseek-ai/cordis-plugin-loader@1.0.2`, `cordis-plugin-timer@1.1.3`, `cordis-plugin-hmr@1.0.16`. `npm i` → single `cordis@4.0.1` (dedupe clean). `dsh-app-boot` NOT added (we drive the Loader directly — no profile dir / `cordis.yml` from disk).
+
+**The esbuild bundling wall (the one real gotcha):** `main.ts` bundles to CJS; esbuild cannot see the Loader's runtime `import("<string>")`, so referencing dsh plugins by **bare npm name** in the entry-list would resolve to nothing inside the packaged asar (works in dev from `node_modules`, breaks when packaged). **Fix:** keep every plugin as a **static `import`** at the top of the file (so esbuild bundles it) and register ALL of them — dsh defaults, the class-plugin `CairnAttachmentStore`, and the three named-export triples — as **`cordis:` builtins** (`loader.builtins['dsh:tools']=toolsPlugin`), with entries referencing `name:'cordis:dsh:tools'`. The Loader's `import()` fast-paths `cordis:` names straight to `builtins[...]` with zero module resolution → fully asar-safe. (Confirmed in §10.6 spike6: a fully-builtin tree yields a live `ctx.tools`.)
+
+**Shape now:** `new Context()` → `await ctx.plugin(Loader)` → assign all plugins to `ctx.loader.builtins` → `for (e of ENTRY_LIST) await loader.create(e)` → `await loader.await()`. The `ENTRY_LIST` is a plain JS `[{id,name,config?}]` array (NO YAML, NO `!!js`). `ensurePiAiAdapter` + the per-turn `cairn-*` plugins + `registerCairnTools` stay imperative (endpoint-dynamic / per-request — deliberately out of the static tree for v1).
+
+**Verification (all green):**
+- `npx tsc -p tsconfig.electron.json` clean; `npm run compile` clean.
+- Runtime service probe: after `loader.await()`, `ctx.get(...)` resolves `agentLoop / tools / userQuestions / approval / sessionPersistence / compaction / tokenMeter / agents` — identical to the imperative mount.
+- **Full electron suite: 77 files / 1106 tests passing** (was 77/1106 — no regressions, no new node-builtins needed in the bundle-guard).
+- Live coding capabilities: **6/8 pass** incl. all deterministic ones (plan-mode gate, HITL approval, skills injection+load, sandbox confine-in/deny-out ×2, image attachment round-trip). The 2 failures (turn-emits-tool-events; resume-recall-codeword) are **pre-existing model-behaviour flakiness** — verified by `git stash`-ing the change and reproducing the identical failures on the original imperative code (the chat `pi.live.test.ts` "recall zephyr" test fails the same way before and after). NOT a composition regression.
+
+**Not yet done (deliberately deferred):** `disabled:` gating UI, HMR wiring for Cairn's own plugins, moving per-turn plugins into the Loader, and the settings seam — all Tier 2. Tier 1's win is the declarative static tree + `ctx.loader` existing (the keystone).
+
+### 11.6 STRATEGY 1 SPIKE IMPLEMENTED (2026-08-20) — a dsh toolview renders inside Cairn ✅
+
+Built the "toolview micro-host" (§11.3 Strategy 1) end-to-end. A real dsh `tool.call.toolview` component (the `skill` row) now renders **inside Cairn's own chat transcript** from a Cairn-built `ToolCallViewProps` — no dsh web shell, no `ui-layout`/`ui-conversation`/connection.
+
+**New module `src/lib/dsh-toolview/`:**
+- `contract.ts` — the dsh `ToolCallViewProps` + `ToolCallBlock` (`RunningToolCall | ToolResultNode`) shapes, vendored from `ui-tool/contract/slots.ts:29` + `runtime/.../conversation.ts:185/295` (only the fields a pure, replay-stable toolview reads).
+- `adapter.ts` — `toToolCallViewProps(ChatToolCall)` — reshapes Cairn's existing tool-call data (tool/argsRaw/output/ok/error/running-vs-done) into dsh's block union. This is THE seam.
+- `registry.ts` — a minimal keyed slot registry (`registerToolView(key, Component)` / `getToolView(toolName)`), the micro-host equivalent of `ctx.slots.register({name:'tool.call.toolview', key})`.
+- `primitives.tsx` — local stand-ins for the 4 `ui-primitives` exports SkillRow imports (`IconSkillOutline16/ChevronDown14/Inspect12`, `StateDot`), matching dsh's `{size,className}` / `{state,size,className}` signatures. **Deliberately NOT the real `ui-primitives`** (it drags shiki+katex+micromark+cordis into the renderer — wrong for a spike; swapping in the real package later is a drop-in since signatures match).
+- `dsw-theme.css` — the scoped `--dsw-*` → Cairn `--*` mapping (`.dsh-toolview-scope`), covering exactly the tokens SkillRow+StateDot reference; plus the vendored SkillRow CSS (prefixed `.dsh-skill-*`, scoped) so it never leaks into Cairn styling.
+- `SkillRow.tsx` — a faithful vendored port of `ui-skill/src/client/SkillRow.tsx` (only changes: local primitives, plain classNames vs CSS-module, inlined `t()` — no dsh locale seat).
+- `index.tsx` — `<DshToolView tc={...} />` (wraps a Cairn `ChatToolCall` in the theme scope + renders the registered view; returns null → Cairn's own chip) + `registerBuiltinToolViews()` (the plugin-browser-half equivalent) + `hasToolView()`.
+
+**Wired live:** `ToolCallIndicator.tsx` now renders `<DshToolView tc={tc}/>` for any tool with a registered dsh view (currently `skill`), else falls through to Cairn's existing chip. So a `skill` tool call renders the dsh row in the running app.
+
+**Verification (all green):**
+- New `DshToolView.component.test.tsx` (**6 tests**, jsdom): registration by key; settled row renders "Skill" + the call's skill name inside `.dsh-toolview-scope`; expand-to-instructions shows the durable output; error state; running/streaming block; null-fallback for an unregistered tool.
+- Full **component suite: 18 files / 144 passing** (no regressions).
+- `npx next build` compiles the static export cleanly (validates the `.css` import + module bundles).
+- Renderer `tsc -p tsconfig.json`: zero `src/` errors.
+
+**What this proves:** individual dsh plugin UIs ARE embeddable in Cairn's frontend with a small, bounded bridge (contract + adapter + keyed registry + scoped `--dsw-*` shim). The pattern generalises to every keyed `tool.call.toolview`. The remaining step to true third-party UI is loading a plugin's real `./client` half (the same trust/bundling questions as §10.3 Tier 3) and using the real `ui-primitives`/`ui-slots` rather than vendored copies.
+
+**Follow-ups (tracked):** (1) load the REAL `@deepseek-ai/dsh-client-ui-skill/client` + `ui-primitives`/`ui-slots` instead of vendored copies (proves it works with dsh's actual compiled components, not a port); (2) generate `dsw-theme.css` from dsh's `ui-theme` full token set rather than the hand-picked subset; (3) wire `openFile`/`inspect` to Cairn's real handlers; (4) surface it in the CODING agent transcript too (where `skill` calls actually originate) — chat rarely calls `skill`, so the live-app demo is currently exercised via the coding pane / the component test.

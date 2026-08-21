@@ -6,6 +6,7 @@
  * electron/ipc/chat.ts can swap engines behind a toggle.
  */
 import { Context } from "@deepseek-ai/cordis";
+import Loader from "@deepseek-ai/cordis-plugin-loader";
 import sessionPlugin from "@deepseek-ai/dsh-session";
 import llmPlugin from "@deepseek-ai/dsh-llm";
 import systemPromptPlugin from "@deepseek-ai/dsh-system-prompt";
@@ -133,57 +134,91 @@ export async function getContext(): Promise<Context> {
   if (contextReady) return contextReady;
   contextReady = (async () => {
     const ctx = new Context();
-    await ctx.plugin(sessionPlugin);
-    await ctx.plugin(llmPlugin);
-    // Cairn owns the whole system prompt (buildSystemPrompt), so suppress dsh's
-    // built-in harness identity — the per-request persona section (registered in
-    // each agent's setup) is the only identity the model sees. Keep dsh's
-    // runtime-context snapshot as a user-role form:snapshot (the
-    // "Current runtime context..." user/message) — that's the dsh-faithful split:
-    // renderPrompt(sections) → system, renderContextSnapshot(contexts) → snapshot
-    // user. See scratch/dsh-repo/packages/core/system-prompt/src/index.ts:212/239.
-    await ctx.plugin(systemPromptPlugin, { persona: "", includeHarnessIdentity: false });
-    await ctx.plugin(agentPlugin);
-    await ctx.plugin(toolsPlugin, { mode: "native" });
-    // dsh user-questions capability seam (ctx.userQuestions): lets a tool pause
-    // the turn until the human answers. The model-facing tool (dsh-tool-ask-user)
-    // is unpublished, so Cairn keeps its own `ask_questions` tool whose body
-    // calls ctx.userQuestions.ask(); cairnQuestionsPlugin registers the provider
-    // that bridges ask() ⇄ the renderer form. Mounted before the agent loop.
-    await ctx.plugin(userQuestionsService);
-    // dsh approval seam (ctx.approval): tools/pre-execute `ask` decisions route
-    // here; cairnApprovalPlugin registers the answerer that bridges to Cairn's
-    // renderer confirm UI. Policy 'ask' — the per-turn approval guard decides
-    // WHICH tools ask (only when autoApprove is off).
-    await ctx.plugin(approvalService, { policy: "ask" });
-    // dsh session persistence (jsonl). Session/chat transcripts live HERE, not in
-    // Cairn's SQLite (the DB is for MCP/tool access). Enables stateful, resumable
-    // coding sessions via ctx.agents.resume. Self-contained backend (owns its own
-    // PersistenceCoordinator + provides ctx.sessionPersistence).
-    await ctx.plugin(JsonlSessionPersistence, { root: sessionRoot });
-    await ctx.plugin(agentLoopPlugin, { agents: [] });
-    // Durable attachment store (Phase 1.5 step 2l). Concrete backend for the
-    // abstract dsh AttachmentStore so image attachments on a message can be
-    // admitted (saveImage -> ImageAttachmentRef) and read back by the pi-ai
-    // adapter (resolveAttachments: () => ctx.get("attachments")) when it converts
-    // an ImageBlock to the wire image_url. Without it, pi-ai drops images.
-    await ctx.plugin(CairnAttachmentStore);
-    // Context management (Phase 1.5 step 2h). tokenMeter measures request +
-    // surface pressure; BasicCompactionEngine auto-compacts between steps at 80%
-    // of the model's context window (auto:true) and on provider context-overflow,
-    // replacing the compacted span with one summary node — the dsh-native
-    // replacement for Cairn's buildCompactionTransformer. dsh owns the session
-    // log (jsonl) so its compaction engine is the natural fit. Manual /compact is
-    // available via ctx.compaction.compactNow(agent). llm-retry executes the
-    // provider-owned retryPolicy on the agent loop's request-recovery seam,
-    // recording durable llm/retry events the coding bridge maps to pi-agent:retry.
-    await ctx.plugin(TokenMeter);
-    await ctx.plugin(BasicCompactionEngine, { auto: true, thresholdRatio: 0.8 });
-    await ctx.plugin({ apply: llmRetryApply, inject: llmRetryInject as never, name: llmRetryName }, {});
-    // Subagent capability stack (dsh-base order): service → spawn provider → tool.
-    await ctx.plugin(subagentServicePlugin);
-    await ctx.plugin({ apply: spawnProviderApply, inject: spawnProviderInject as never, name: spawnProviderName }, { providerName: "spawn" });
-    await ctx.plugin({ apply: toolSubagentApply, inject: toolSubagentInject as never, name: toolSubagentName }, { provider: "spawn", toolName: "subagent", backgroundMode: "one-shot" });
+    // Tier 1 (§10.6): the shared Cordis tree is composed by the Cordis LOADER
+    // from a declarative JS entry-list, not hand-mounted imperatively. This is
+    // the keystone for the plugin system — `disabled:` gating, HMR, and (later)
+    // third-party plugin entries all hang off ctx.loader. We drive the Loader
+    // programmatically (create() + await()) rather than via boot()/Include
+    // (which read a profile dir + cordis.yml from disk — unnecessary here).
+    await ctx.plugin(Loader);
+
+    // BUNDLER-SAFE RESOLUTION: main.ts is bundled to CJS by esbuild, which
+    // cannot see a dynamic import("<runtime string>"). So we do NOT let the
+    // Loader import plugins by bare npm name (that would 404 inside the asar).
+    // Instead every plugin is STATICALLY imported above (so esbuild bundles it)
+    // and registered as a `cordis:` builtin — the Loader's import() then looks
+    // it up in ctx.loader.builtins with zero module resolution (asar-safe).
+    // Proven end-to-end in §10.6 (spike6): a fully-builtin tree yields a live
+    // ctx.tools identical to the old imperative mount.
+    const loader = ctx.loader as unknown as {
+      builtins: Record<string, unknown>;
+      create: (o: Record<string, unknown>) => Promise<unknown>;
+      await: () => Promise<void>;
+    };
+    loader.builtins ??= {};
+    const B = loader.builtins;
+    // dsh default-export plugins
+    B["dsh:session"] = sessionPlugin;
+    B["dsh:llm"] = llmPlugin;
+    B["dsh:system-prompt"] = systemPromptPlugin;
+    B["dsh:agent"] = agentPlugin;
+    B["dsh:tools"] = toolsPlugin;
+    B["dsh:user-questions"] = userQuestionsService;
+    B["dsh:approval"] = approvalService;
+    B["dsh:session-persistence"] = JsonlSessionPersistence;
+    B["dsh:agent-loop"] = agentLoopPlugin;
+    B["dsh:token-meter"] = TokenMeter;
+    B["dsh:compaction"] = BasicCompactionEngine;
+    B["dsh:subagent"] = subagentServicePlugin;
+    // Class-plugin (dsh Service subclass)
+    B["cairn:attachment-store"] = CairnAttachmentStore;
+    // Named-export "triple" plugins (apply/inject/name — not default objects)
+    B["cairn:llm-retry"] = { apply: llmRetryApply, inject: llmRetryInject, name: llmRetryName };
+    B["cairn:subagent-spawn"] = { apply: spawnProviderApply, inject: spawnProviderInject, name: spawnProviderName };
+    B["cairn:tool-subagent"] = { apply: toolSubagentApply, inject: toolSubagentInject, name: toolSubagentName };
+
+    // The declarative composition. Row order carries no load semantics
+    // (activation is service-availability driven; inject-gating waits for the
+    // provider regardless of creation order — proven §10.6), but we keep the
+    // list in dsh-base order for readers. `config` threads verbatim to each
+    // plugin's apply(ctx, config). NO YAML, NO `!!js` — a plain JS array.
+    const ENTRY_LIST: Array<Record<string, unknown>> = [
+      { id: "session", name: "cordis:dsh:session" },
+      { id: "llm", name: "cordis:dsh:llm" },
+      // Cairn owns the whole system prompt (buildSystemPrompt), so suppress
+      // dsh's built-in harness identity — see the dsh-faithful system/snapshot
+      // split note in scratch/dsh-repo/.../system-prompt/src/index.ts:212/239.
+      { id: "system-prompt", name: "cordis:dsh:system-prompt", config: { persona: "", includeHarnessIdentity: false } },
+      { id: "agent", name: "cordis:dsh:agent" },
+      { id: "tools", name: "cordis:dsh:tools", config: { mode: "native" } },
+      // dsh user-questions seam (ctx.userQuestions): a tool can pause the turn
+      // until the human answers. cairnQuestionsPlugin registers the provider.
+      { id: "user-questions", name: "cordis:dsh:user-questions" },
+      // dsh approval seam (ctx.approval): tools/pre-execute `ask` routes here;
+      // the per-turn approval guard decides WHICH tools ask (autoApprove off).
+      { id: "approval", name: "cordis:dsh:approval", config: { policy: "ask" } },
+      // dsh session persistence (jsonl) — session/chat transcripts live HERE,
+      // not Cairn's SQLite. Enables resumable sessions via ctx.agents.resume.
+      { id: "session-persistence", name: "cordis:dsh:session-persistence", config: { root: sessionRoot } },
+      { id: "agent-loop", name: "cordis:dsh:agent-loop", config: { agents: [] } },
+      // Durable attachment store (2l): concrete backend for the abstract dsh
+      // AttachmentStore so image attachments round-trip through the pi-ai adapter.
+      { id: "attachment-store", name: "cordis:cairn:attachment-store" },
+      // Context management (2h): tokenMeter (pressure) + BasicCompactionEngine
+      // (auto-compact at 80% + on overflow; manual /compact via compactNow) +
+      // llm-retry (provider retryPolicy on the request-recovery seam).
+      { id: "token-meter", name: "cordis:dsh:token-meter" },
+      { id: "compaction", name: "cordis:dsh:compaction", config: { auto: true, thresholdRatio: 0.8 } },
+      { id: "llm-retry", name: "cordis:cairn:llm-retry", config: {} },
+      // Subagent capability stack (dsh-base order): service → spawn provider → tool.
+      { id: "subagent", name: "cordis:dsh:subagent" },
+      { id: "subagent-spawn", name: "cordis:cairn:subagent-spawn", config: { providerName: "spawn" } },
+      { id: "tool-subagent", name: "cordis:cairn:tool-subagent", config: { provider: "spawn", toolName: "subagent", backgroundMode: "one-shot" } },
+    ];
+
+    for (const entry of ENTRY_LIST) await loader.create(entry);
+    await loader.await();
+
     sharedCtx = ctx;
     return ctx;
   })();
