@@ -62,6 +62,9 @@ function activate(ui) {
   }
 
   ui.registerOverlay("bouncing-cat", BouncingCat);
+  // dsh-compatibility: the same plugin could target the DSH slot name instead —
+  // ui.registerBySlot("shell.overlay", { id: "bouncing-cat" }, BouncingCat)
+  // resolves through the dsh⇄Cairn alias map to app.overlay. See dsh-slot-map.ts.
 }
 
 // CommonJS-style export (the renderer loader evaluates with module/exports).

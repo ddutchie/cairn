@@ -19,6 +19,7 @@
 import * as React from "react";
 import type { SlotName, SlotComponent } from "./slot-matrix";
 import { registerSlot, type RegisterOptions } from "./registry";
+import { resolveSlotName } from "./dsh-slot-map";
 
 export interface CairnPluginUI {
   /** React (use this — do NOT bundle your own; one instance only). */
@@ -33,6 +34,14 @@ export interface CairnPluginUI {
   registerToolView: (toolName: string, component: SlotComponent<"tool.call.toolview">) => void;
   /** Low-level escape hatch: register into any slot. */
   register: <K extends SlotName>(name: K, opts: RegisterOptions, component: SlotComponent<K>) => void;
+  /**
+   * dsh-compatibility: register by a slot name that may be a DSH slot name
+   * (e.g. "shell.overlay", "conversation.composer.dock") or a Cairn slot name.
+   * The name is resolved through the dsh⇄Cairn alias map; unmappable dsh slots
+   * (conversation.*, root, …) are rejected with a console warning. Lets a
+   * self-contained dsh UI plugin register unmodified.
+   */
+  registerBySlot: (slotName: string, opts: RegisterOptions, component: React.ComponentType<Record<string, unknown>>) => void;
 }
 
 export interface UIPluginModule {
@@ -54,6 +63,15 @@ function apiFor(pluginId: string): CairnPluginUI {
     registerChatFooter: (id, c, order) => track(registerSlot("chat.transcript.footer", { id: `${pluginId}:${id}`, order }, c)),
     registerToolView: (toolName, c) => track(registerSlot("tool.call.toolview", { id: `${pluginId}:tool:${toolName}`, key: toolName }, c)),
     register: (name, opts, c) => track(registerSlot(name, { ...opts, id: `${pluginId}:${opts.id}` }, c)),
+    registerBySlot: (slotName, opts, c) => {
+      const resolved = resolveSlotName(slotName);
+      if (!resolved) {
+        console.warn(`[plugin-ui] '${pluginId}' targeted slot '${slotName}' which has no Cairn equivalent (shell-only or unknown) — skipped. See dsh-slot-map.ts.`);
+        return;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      track(registerSlot(resolved, { ...opts, id: `${pluginId}:${opts.id}` }, c as any));
+    },
   };
 }
 

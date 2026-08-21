@@ -691,3 +691,22 @@ The renderer evaluates plugin source (`new Function`) — a code-exec surface, *
 
 ### 12.7 Follow-ups
 Mount `AppStatusBar` + build the `chat.transcript.footer` host (unlocks status bar + Cairn-data cost widget); a Plugins settings tab (enable/disable + `slotInventory()`); load real dsh `ui-*` client packages for toolviews (§11.6 #1); the Tier-3 sandbox before ungating.
+
+## 13. dsh ⇄ Cairn slot comparison matrix + alias layer (2026-08-20) ✅
+
+Answers "is Cairn's slot matrix mapped to dsh's slots?" — with a real, checked-in comparison table (`src/lib/plugin-ui/dsh-slot-map.ts`) covering **every production dsh client slot**, each classified against Cairn:
+
+- **`aliased`** — a genuine Cairn equivalent; a dsh plugin registering that name is routed to the Cairn slot. **5 slots:** `shell.overlay`→`app.overlay`, `tool.call.toolview`→`tool.call.toolview` (same name), `conversation.composer.dock`→`chat.transcript.footer`, `sidebar.footer.action`→`sidebar.footer`, `settings.section`→`settings.section` (same name).
+- **`cairn-has-different`** — Cairn covers the concern natively (branding, workspace switcher, model picker, attachments, plan UI, message images, per-message nodes) — not via a plugin slot.
+- **`shell-only`** — needs dsh's AppFrame/session shell (`root`, `conversation`, `details`, `conversation.session*`, composer internals, hero, slash overlay). No Cairn home without adopting the whole dsh shell (§9/§B). A dsh plugin targeting these is **rejected with a console warning**, not silently broken.
+- **`planned`** — a Cairn slot we intend to add (`conversation.session.header.actions`→`view.header.actions`, `conversation.input.dock`, the settings `action`/`plugins.tab`/`general.item`/`plugin.item` family → a Plugins settings tab).
+
+### Alias layer
+`resolveSlotName(name)` maps a dsh OR Cairn slot name → a Cairn slot (or null). The plugin-UI API gains **`ui.registerBySlot(slotName, opts, Component)`**: a self-contained dsh UI plugin registering `"shell.overlay"` (or `"conversation.composer.dock"`, etc.) works unmodified; a `shell-only`/unknown name is skipped with a warning pointing at `dsh-slot-map.ts`. `dshCompatSummary()` gives counts for docs / a future Plugins tab.
+
+### What this tells us (the "what's missing" view)
+- **The interesting compatibility cases are covered:** the per-tool view (exact-name) + the frame-wide overlay (aliased) — so a dsh "bouncing cat" (`shell.overlay`) or a keyed toolview drops in as-is.
+- **The gaps are deliberate:** everything `shell-only` is dsh-shell layout that Cairn doesn't have (and shouldn't fake). `planned` items are the honest backlog (header actions, input dock, the settings-plugins family) — each becomes an alias the moment its Cairn host is mounted.
+
+### Verified
+`plugin-ui.component.test.tsx` extended to **9 tests**: a dsh-shaped plugin using `ui.registerBySlot("shell.overlay", …)` renders; `resolveSlotName` maps aliases + native names + rejects `shell-only`/`root`/unknown; a shell-only target is skipped with a warning; the compat summary counts the full inventory (≥30 dsh slots, ≥5 aliased). Component suite **153**; renderer tsc + next build clean.
