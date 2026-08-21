@@ -70,6 +70,8 @@ Use `ui.React` (Cairn's React instance) — **never bundle your own React**.
 | `clock-statusbar.plugin.js` | UI (`app.statusbar`) | a live clock in the bottom status bar |
 | `view-indicator.plugin.js` | UI (`app.statusbar`) | shows the active view — demonstrates slot **props** (`{ activeView, activeProjectId }`) |
 | `cost-widget.plugin.js` | UI (`chat.transcript.footer`) | tokens + cost under the chat composer — fed Cairn's live usage via props |
+| `sidebar-footer.plugin.js` | UI (`sidebar.footer`) | a link/button pinned under Settings in the sidebar |
+| `view-header-action.plugin.js` | UI (`view.header.actions`) | a button in the top bar — receives the active `{ view }` |
 | `hello-tool.mjs` | Backend tool | adds an agent-visible `hello` tool |
 | `roll-dice.mjs` | Backend tool | adds a `roll_dice` tool (params + config) |
 

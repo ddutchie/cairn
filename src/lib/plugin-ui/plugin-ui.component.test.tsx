@@ -97,6 +97,8 @@ describe("plugin-ui slot system", () => {
     expect(resolveSlotName("shell.overlay")).toBe("app.overlay");
     expect(resolveSlotName("tool.call.toolview")).toBe("tool.call.toolview"); // same name
     expect(resolveSlotName("conversation.composer.dock")).toBe("chat.transcript.footer");
+    expect(resolveSlotName("sidebar.footer.action")).toBe("sidebar.footer");
+    expect(resolveSlotName("conversation.session.header.actions")).toBe("view.header.actions");
     expect(resolveSlotName("app.overlay")).toBe("app.overlay"); // native passthrough
     expect(resolveSlotName("conversation.session")).toBeNull(); // shell-only
     expect(resolveSlotName("root")).toBeNull(); // would erase the app
@@ -125,7 +127,7 @@ describe("plugin-ui slot system", () => {
     const s = dshCompatSummary();
     const total = s.aliased + s["cairn-has-different"] + s["shell-only"] + s.planned;
     expect(total).toBeGreaterThanOrEqual(30); // full production inventory
-    expect(s.aliased).toBeGreaterThanOrEqual(4); // shell.overlay, tool.call.toolview, composer.dock, sidebar.footer.action, settings.section
+    expect(s.aliased).toBeGreaterThanOrEqual(4); // shell.overlay, tool.call.toolview, composer.dock, sidebar.footer.action, settings.section, view.header.actions
   });
 
   it("renders a status-bar plugin item, and the bar hides when empty", () => {

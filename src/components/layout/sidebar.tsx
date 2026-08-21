@@ -21,6 +21,7 @@ import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
 import { buildShortcutMap, modKey, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
 import { getActiveCrossProjectDrag, setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
+import { SlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
 import type { Project } from "@/types";
 
 // ── View nav config ───────────────────────────────────────────────────────────
@@ -365,6 +366,9 @@ export function Sidebar() {
                 activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Settings size={13} /><span>Settings</span>
             </button>
+
+            {/* Plugin-UI: extra rows at the sidebar bottom (sidebar.footer). */}
+            <SlotOutlet name="sidebar.footer" props={{}} />
           </div>
         </div>
       </aside>

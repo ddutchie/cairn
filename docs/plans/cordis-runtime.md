@@ -738,3 +738,17 @@ Mounted the `chat.transcript.footer` slot host so a Cairn-data cost/context widg
 Verified: plugin-ui.component.test.tsx → **11** (footer receives Cairn usage props); component suite **161**; renderer tsc + next build clean.
 
 **Live-UI slot status now:** `app.overlay` ✅, `app.statusbar` ✅, `tool.call.toolview` ✅, `chat.transcript.footer` ✅ — all four self-contained UI slots have live hosts + shipped examples. Remaining `planned` slots (`sidebar.footer`, `view.header.actions`, settings family) become live when their hosts are mounted.
+
+## 16. Mounting the remaining chrome slots (2026-08-20) ✅
+
+Two more `planned` slots got live hosts, flipping their dsh aliases to `aliased`:
+- **`sidebar.footer`** — `<SlotOutlet name="sidebar.footer">` under the Settings button in `sidebar.tsx`. dsh `sidebar.footer.action` aliases here.
+- **`view.header.actions`** — `<SlotOutlet name="view.header.actions" props={{ view: activeView }}>` in `topbar.tsx` (right side, before the chat toggle). dsh `conversation.session.header.actions` aliases here; the component receives `{ view }`.
+
+Examples: `sidebar-footer.plugin.js` (a "Plugin Docs" link) + `view-header-action.plugin.js` (a top-bar button that reads the active view via props).
+
+**Deferred:** `settings.section` (+ the `settings.plugins.tab`/`plugin.item`/`general.item` family) — these need a decision on nav integration (a plugin settings *section* implies a nav entry + panel, or rendering inside an existing tab). Left `planned`; the Plugins settings tab (§14) is the natural anchor when we do it.
+
+**Live-UI slot status:** `app.overlay` ✅ · `app.statusbar` ✅ · `tool.call.toolview` ✅ · `chat.transcript.footer` ✅ · `sidebar.footer` ✅ · `view.header.actions` ✅. Six slots live; settings family the only remaining chrome.
+
+Verified: component suite **161**; renderer tsc + next build clean.

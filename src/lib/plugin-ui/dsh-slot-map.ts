@@ -36,12 +36,12 @@ export const DSH_SLOT_MATRIX: Record<string, { kind: string; scope: string; pkg:
   "sidebar.brand.name":  { kind: "single", scope: "root", pkg: "ui-sidebar", status: "cairn-has-different", note: "Cairn owns its branding." },
   "sidebar.workspaces":  { kind: "single", scope: "root", pkg: "ui-sidebar", status: "cairn-has-different", note: "Cairn's workspace switcher is native." },
   "sidebar.settings":    { kind: "single", scope: "root", pkg: "ui-sidebar", status: "cairn-has-different", note: "Cairn's settings entry is native." },
-  "sidebar.footer.action": { kind: "list", scope: "root", pkg: "ui-sidebar", status: "aliased", to: "sidebar.footer", note: "Additive sidebar-bottom actions — concept match (host not yet mounted)." },
+  "sidebar.footer.action": { kind: "list", scope: "root", pkg: "ui-sidebar", status: "aliased", to: "sidebar.footer", note: "Additive sidebar-bottom actions — live host mounted below the Settings button." },
 
   // ── Conversation shell (ui-conversation) — mostly shell-only ───────────────
   "conversation.session":                 { kind: "single", scope: "session", pkg: "ui-conversation", status: "shell-only", note: "Session frame inside dsh's conversation column." },
   "conversation.session.header":          { kind: "single", scope: "session", pkg: "ui-conversation", status: "shell-only", note: "Conversation header region." },
-  "conversation.session.header.actions":  { kind: "list",   scope: "session", pkg: "ui-conversation", status: "planned", note: "Analogous to Cairn's view.header.actions (per-view header buttons); could alias once that host is mounted." },
+  "conversation.session.header.actions":  { kind: "list",   scope: "session", pkg: "ui-conversation", status: "aliased", to: "view.header.actions", note: "Per-view header buttons — live host in Cairn's Topbar." },
   "conversation.session.header.utilities":{ kind: "list",   scope: "session", pkg: "ui-conversation", status: "shell-only", note: "Header utility cluster — dsh-shell specific." },
   "conversation.view":                    { kind: "list",   scope: "session", pkg: "ui-conversation", status: "shell-only", note: "Tabs inside dsh's conversation column." },
   "conversation.chat.node":               { kind: "chain?", scope: "session", pkg: "ui-conversation", status: "cairn-has-different", note: "Per-message node rendering; Cairn renders its own transcript. tool.call.toolview is the supported per-call hook." },

@@ -23,6 +23,7 @@ import { Select } from "@/components/ui/select";
 import { STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
 import { QuickSettings } from "./QuickSettings";
 import { modKey } from "./sidebar-utils";
+import { SlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
 
 const VIEW_TABS = [
   { id: "overview" as const, label: "Overview", icon: Hash },
@@ -185,6 +186,9 @@ export function Topbar() {
       )}
 
       <div className="flex-1" />
+
+      {/* Plugin-UI: per-view header actions (view.header.actions). */}
+      <SlotOutlet name="view.header.actions" props={{ view: activeView }} />
 
       {/* Right actions */}
       <div className="flex items-center gap-1">
