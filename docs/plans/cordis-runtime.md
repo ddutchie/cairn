@@ -627,3 +627,25 @@ Built the "toolview micro-host" (§11.3 Strategy 1) end-to-end. A real dsh `tool
 **What this proves:** individual dsh plugin UIs ARE embeddable in Cairn's frontend with a small, bounded bridge (contract + adapter + keyed registry + scoped `--dsw-*` shim). The pattern generalises to every keyed `tool.call.toolview`. The remaining step to true third-party UI is loading a plugin's real `./client` half (the same trust/bundling questions as §10.3 Tier 3) and using the real `ui-primitives`/`ui-slots` rather than vendored copies.
 
 **Follow-ups (tracked):** (1) load the REAL `@deepseek-ai/dsh-client-ui-skill/client` + `ui-primitives`/`ui-slots` instead of vendored copies (proves it works with dsh's actual compiled components, not a port); (2) generate `dsw-theme.css` from dsh's `ui-theme` full token set rather than the hand-picked subset; (3) wire `openFile`/`inspect` to Cairn's real handlers; (4) surface it in the CODING agent transcript too (where `skill` calls actually originate) — chat rarely calls `skill`, so the live-app demo is currently exercised via the coding pane / the component test.
+
+### 10.8 RUNTIME PLUGIN LOADING IMPLEMENTED (2026-08-20) — author a YAML, it loads live ✅
+
+The north-star ("app running, you build a YAML and it loads — no restart") is working, behind `CAIRN_PLUGINS_DEV=1`. This is §10 Tier 2/3 step A+B+C1 collapsed into one working seam, on top of Tier 1's `ctx.loader`.
+
+**How it works (`electron/cordis/plugin-loader.ts`):**
+- Electron main sets the plugins root to `<userData>/plugins/` (`main.ts`, sibling to `setSessionRoot`).
+- After the static `ENTRY_LIST` settles, `getContext()` calls `loadUserPlugins(ctx)` + `watchUserPlugins(ctx)` (no-op unless `CAIRN_PLUGINS_DEV=1`).
+- `loadUserPlugins` reads `<pluginsRoot>/plugins.yml` (a top-level YAML array of `{id, name, config?, disabled?}`, parsed with `yaml.DEFAULT_SCHEMA` — **no `!!js`**, the file is untrusted data) and `ctx.loader.create()`s each enabled entry on the LIVE context.
+- `watchUserPlugins` uses `fs.watch` (150ms debounce) → `reconcile()`: diff the manifest against the currently-mounted user entry ids, `loader.remove()` the gone/disabled ones, `loader.create()` the new ones. A config/body edit = remove+recreate.
+
+**The two gotchas solved (both proven live):**
+1. **Loading NEW code at runtime.** A `name: "./x.mjs"` entry is resolved to an **absolute `file://` URL against the plugins dir** + a `?v=<ts>` cache-bust (so edits reload past `import()`'s URL memoisation). The Loader's `import()` uses a runtime string → esbuild leaves it alone → it resolves against the real `<userData>` dir, NOT the asar. (A bare `?v=` on a *relative* name broke the Loader's URL rewrite — hence resolving to a full URL ourselves.)
+2. **Plugins can't import app deps by bare name.** A file in `<userData>/plugins/` doing `import("@deepseek-ai/dsh-tools")` fails (Node resolves relative to the *plugin* file, which has no `node_modules`). Fix: Cairn exposes a tiny stable API on the context — **`ctx.cairn = { defineTool }`** — so a plugin uses `ctx.cairn.defineTool` (+ `inject:['tools']` → `ctx.tools.register`) instead of importing internals. This is the runtime plugin contract; keep it minimal + documented.
+
+**Shipped example + docs:** `electron/cordis/plugins-template/` — `README.md`, `plugins.yml` (commented), and `hello-tool.mjs` (registers a real agent-visible `hello` tool via `ctx.cairn.defineTool` — the dsh `parameters` shape is a flat `{param: {type, required, description}}` map, NOT JSON-Schema).
+
+**Verified (live):** `plugin-loader.live.test.ts` (gated `CAIRN_PLUGINS_DEV=1`) boots the real shared context, then — simulating you editing files while the app runs — writes `plugins.yml` + plugin files and asserts: a bespoke probe plugin loads with its config; the shipped `hello-tool` registers the `hello` tool into `ctx.tools`; emptying the manifest tears both down + unregisters the tool. Log: `loaded 'probe'` → `loaded 'hello-tool'` → `removed 'probe'`/`removed 'hello-tool'`. Full electron suite **1107 passing** (the +1 gated test skips without the flag); bundle-guard green (js-yaml bundles, no new node-builtins). Strict no-op without `CAIRN_PLUGINS_DEV=1`.
+
+**To try it:** `CAIRN_PLUGINS_DEV=1 npm run dev`, copy `plugins-template/*` into `<userData>/plugins/` (macOS: `~/Library/Application Support/Cairn/plugins/`), uncomment the `hello-tool` entry in `plugins.yml`, then ask the agent to use the `hello` tool — it appears live.
+
+**Still deferred (Tier 3 proper):** sandbox for untrusted code (`node:vm`/worker — `apply` currently runs with full main privileges), the settings/inventory UI (enable/disable + per-plugin config cards), agent-authored plugins (`dsh-cordis-host-runner` + `dsh-tool-cordis`), and npm-installable plugins (C2). Ungating (removing `CAIRN_PLUGINS_DEV`) requires the sandbox decision first.

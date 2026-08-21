@@ -260,6 +260,14 @@ app.whenReady().then(async () => {
   fs.mkdirSync(sessionRoot, { recursive: true });
   setSessionRoot(sessionRoot);
 
+  // ── Runtime plugin dir (§10 Tier 2/3) ──────────────────────────────────
+  // User/agent-authored plugins live here; with CAIRN_PLUGINS_DEV=1 the Cordis
+  // context loads <userData>/plugins/plugins.yml and hot-reloads on change.
+  try {
+    const { setPluginsRoot } = await import("./cordis/plugin-loader");
+    setPluginsRoot(path.join(userDataPath, "plugins"));
+  } catch { /* plugin loader is optional */ }
+
   // ── Resolve workspace path ────────────────────────────────────────────
   const config = readWorkspaceConfig(userDataPath);
   const initialWorkspacePath = config

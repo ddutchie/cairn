@@ -219,6 +219,28 @@ export async function getContext(): Promise<Context> {
     for (const entry of ENTRY_LIST) await loader.create(entry);
     await loader.await();
 
+    // Expose a tiny, stable plugin API on the context so user plugins never need
+    // to import app-internal packages by bare name (they live outside the app's
+    // node_modules, where `import("@deepseek-ai/dsh-tools")` can't resolve). A
+    // plugin reads ctx.cairn.defineTool instead. Keep this surface minimal +
+    // documented — it is the runtime plugin contract.
+    try {
+      const { defineTool } = await import("@deepseek-ai/dsh-tools");
+      (ctx as unknown as { cairn?: Record<string, unknown> }).cairn = { defineTool };
+    } catch { /* defineTool always resolves in-app; guard is belt-and-braces */ }
+
+    // Runtime plugin layer (§10 Tier 2/3, opt-in via CAIRN_PLUGINS_DEV=1): after
+    // the static tree settles, mount user plugins from <pluginsRoot>/plugins.yml
+    // and watch the dir so a plugin authored/edited while the app runs loads live
+    // (create/update/remove on the live ctx — no restart). No-op unless enabled.
+    try {
+      const { loadUserPlugins, watchUserPlugins } = await import("./plugin-loader");
+      await loadUserPlugins(ctx);
+      watchUserPlugins(ctx);
+    } catch (err) {
+      console.error("[cairn-plugins] runtime plugin layer failed to init:", err instanceof Error ? err.message : err);
+    }
+
     sharedCtx = ctx;
     return ctx;
   })();
