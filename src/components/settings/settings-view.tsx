@@ -15,6 +15,7 @@ import {
   FolderSync,
   SlashSquare,
   PenLine,
+  Puzzle,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -32,6 +33,7 @@ import { EmbeddingsSettings } from "./EmbeddingsSettings";
 import { ToolsSettings } from "./ToolsSettings";
 import { CommandsSettings } from "./CommandsSettings";
 import { UserStyleSettings } from "./UserStyleSettings";
+import { PluginsSettings } from "./PluginsSettings";
 import type { SettingsSection } from "@/types";
 
 export function SettingsView() {
@@ -60,6 +62,7 @@ export function SettingsView() {
           { id: "tools" as const, label: "Tools", icon: Wrench },
           { id: "commands" as const, label: "Commands", icon: SlashSquare },
           { id: "writing-style" as const, label: "Writing Style", icon: PenLine },
+          { id: "plugins" as const, label: "Plugins", icon: Puzzle },
           { id: "mobile" as const, label: "Mobile Access", icon: Smartphone },
           { id: "sync" as const, label: "Device Sync", icon: FolderSync },
           { id: "tags" as const, label: "Tags", icon: Tag },
@@ -101,6 +104,7 @@ export function SettingsView() {
           {section === "tools" && <ToolsSettings />}
           {section === "commands" && <CommandsSettings />}
           {section === "writing-style" && <UserStyleSettings />}
+          {section === "plugins" && <PluginsSettings />}
           {section === "mobile" && <MobileSettings />}
           {section === "sync" && <SyncSettings />}
           {section === "tags" && <TagsSettings />}

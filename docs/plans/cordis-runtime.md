@@ -710,3 +710,17 @@ Answers "is Cairn's slot matrix mapped to dsh's slots?" — with a real, checked
 
 ### Verified
 `plugin-ui.component.test.tsx` extended to **9 tests**: a dsh-shaped plugin using `ui.registerBySlot("shell.overlay", …)` renders; `resolveSlotName` maps aliases + native names + rejects `shell-only`/`root`/unknown; a shell-only target is skipped with a warning; the compat summary counts the full inventory (≥30 dsh slots, ≥5 aliased). Component suite **153**; renderer tsc + next build clean.
+
+## 14. Plugins settings section (2026-08-20) ✅
+
+A **Settings → Plugins** section (`src/components/settings/PluginsSettings.tsx`) makes plugins discoverable + testable without hand-editing YAML:
+- **Per-plugin toggles** — flip `disabled` in `plugins.yml` via `plugins:setEnabled` (main re-dumps the manifest; the dir watcher reconciles the backend loader + fires `plugins:ui-changed` so the renderer re-pulls — enable/disable is live).
+- **"Open plugins folder"** — `plugins:openFolder` → `shell.openPath(<userData>/plugins)`.
+- **Refresh**, kind badges (UI / Tool / UI+Tool), the `ui:`/`name:` path, an **empty state**, and a **developer-preview banner** when `CAIRN_PLUGINS_DEV` is off (toggles disabled but folder/list still work).
+- **Plugin-agent signpost** — a card noting the coming guided agent ("write, install, debug plugins from a description").
+
+IPC (`electron/ipc/ui-plugin-handlers.ts`): `plugins:list` (full manifest incl. disabled + `devEnabled` + root), `plugins:setEnabled`, `plugins:openFolder`; preload `electron.plugins.{list,setEnabled,openFolder}`. Registered in settings-view under a new `"plugins"` SettingsSection.
+
+Verified: `PluginsSettings.component.test.tsx` **6 tests** (list + kind labels, toggle writes setEnabled, open folder, dev-off banner, empty state, agent signpost); component suite **159**; renderer + electron tsc + next build clean.
+
+**Next (the plugin agent):** a subagent/persona that, given a description, scaffolds a plugin file + `plugins.yml` entry into `<userData>/plugins` (reusing the coding agent + the plugin-UI/tool contracts), so "make a bouncing cat" writes the plugin and it loads live. Groundwork is all in place (runtime loader, slot matrix, ctx.cairn/ui APIs, the settings surface).

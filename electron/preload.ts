@@ -1498,6 +1498,14 @@ const api = {
       ipcRenderer.on("plugins:ui-changed", handler);
       return () => ipcRenderer.off("plugins:ui-changed", handler);
     },
+    /** Settings section: full manifest (enabled + disabled), toggle, open folder. */
+    list: () => invoke<{
+      devEnabled: boolean;
+      root: string;
+      plugins: Array<{ id: string; kind: "ui" | "backend" | "both"; name: string | null; ui: string | null; disabled: boolean }>;
+    }>("plugins:list"),
+    setEnabled: (id: string, enabled: boolean) => invoke<{ ok: boolean }>("plugins:setEnabled", { id, enabled }),
+    openFolder: () => invoke<{ ok: boolean }>("plugins:openFolder"),
   }
 } as const;
 

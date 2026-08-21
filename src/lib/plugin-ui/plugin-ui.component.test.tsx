@@ -1,8 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import * as React from "react";
-import { AppOverlayLayer } from "./SlotOutlet";
-import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "./api";
+import { AppOverlayLayer, AppStatusBar } from "./SlotOutlet";import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "./api";
 import { SLOT_MATRIX, ALL_SLOTS } from "./slot-matrix";
 import { resolveSlotName, DSH_SLOT_ALIAS, dshCompatSummary } from "./dsh-slot-map";
 
@@ -127,5 +126,22 @@ describe("plugin-ui slot system", () => {
     const total = s.aliased + s["cairn-has-different"] + s["shell-only"] + s.planned;
     expect(total).toBeGreaterThanOrEqual(30); // full production inventory
     expect(s.aliased).toBeGreaterThanOrEqual(4); // shell.overlay, tool.call.toolview, composer.dock, sidebar.footer.action, settings.section
+  });
+
+  it("renders a status-bar plugin item, and the bar hides when empty", () => {
+    const { container, rerender } = render(<AppStatusBar {...overlayProps} />);
+    // Empty → the bar renders nothing (layout unaffected).
+    expect(container.querySelector("[data-app-statusbar]")).toBeNull();
+
+    const clock: UIPluginModule = {
+      activate(ui) {
+        const Clock = () => ui.React.createElement("span", { "data-testid": "clock" }, "12:00");
+        ui.registerStatusBarItem("clock", Clock);
+      },
+    };
+    act(() => activateUIPlugin("clock", clock));
+    rerender(<AppStatusBar {...overlayProps} />);
+    expect(screen.getByTestId("clock")).toBeTruthy();
+    expect(container.querySelector("[data-app-statusbar]")).toBeTruthy();
   });
 });

@@ -1,14 +1,21 @@
 # Cairn runtime plugins manifest.
 # A top-level YAML array of entries. Edit this file while Cairn runs
 # (with CAIRN_PLUGINS_DEV=1) and changes load/unload live — no restart.
+# Each entry: id + (name: backend .mjs / cordis:builtin) and/or (ui: renderer .js).
 #
-# BACKEND plugin (adds an agent-visible `hello` tool) — copy hello-tool.mjs here:
-# - id: hello-tool
+# ── UI plugins (draw chrome) ────────────────────────────────────────────────
+# - id: bouncing-dvd            # the classic bouncing DVD logo (app.overlay)
+#   ui: ./bouncing-dvd.plugin.js
+# - id: clock                   # a live clock in the status bar (app.statusbar)
+#   ui: ./clock-statusbar.plugin.js
+# - id: view-indicator          # shows the active view in the status bar
+#   ui: ./view-indicator.plugin.js
+#
+# ── Backend plugins (add agent tools) ───────────────────────────────────────
+# - id: hello-tool              # a `hello` greeting tool
 #   name: ./hello-tool.mjs
-#   config:
-#     excitement: 3
-#
-# UI plugin (a cat emoji bouncing around the screen) — copy bouncing-cat.plugin.js here:
-# - id: bouncing-cat
-#   ui: ./bouncing-cat.plugin.js
+#   config: { excitement: 3 }
+# - id: dice                    # a `roll_dice` tool
+#   name: ./roll-dice.mjs
+#   config: { defaultSides: 6 }
 []

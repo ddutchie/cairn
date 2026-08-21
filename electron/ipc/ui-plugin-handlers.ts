@@ -11,7 +11,8 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { ipcMain, type WebContents } from "electron";
+import { ipcMain, shell, type WebContents } from "electron";
+import * as yaml from "js-yaml";
 import { readEnabledManifest, getPluginsRoot, pluginsDevEnabled } from "../cordis/plugin-loader";
 
 export interface UiPluginPayload {
@@ -48,6 +49,74 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
   ipcMain.handle("plugins:listUi", () => {
     try {
       return { data: collectUiPlugins() };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // ── Plugins settings section: list all entries (enabled + disabled), toggle,
+  // open the folder. Reads/writes plugins.yml as a plain YAML array.
+  const MANIFEST = "plugins.yml";
+  const manifestPath = () => path.join(getPluginsRoot(), MANIFEST);
+
+  function readAllRows(): Array<Record<string, unknown>> {
+    const root = getPluginsRoot();
+    if (!root) return [];
+    try {
+      const parsed = yaml.load(fs.readFileSync(manifestPath(), "utf8"), { schema: yaml.DEFAULT_SCHEMA });
+      return Array.isArray(parsed) ? (parsed.filter((r) => r && typeof r === "object" && !Array.isArray(r)) as Array<Record<string, unknown>>) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  ipcMain.handle("plugins:list", () => {
+    try {
+      const rows = readAllRows();
+      const list = rows
+        .filter((r) => typeof r.id === "string")
+        .map((r) => ({
+          id: r.id as string,
+          kind: typeof r.ui === "string" && typeof r.name === "string" ? "both"
+            : typeof r.ui === "string" ? "ui"
+            : "backend",
+          name: (r.name as string) ?? null,
+          ui: (r.ui as string) ?? null,
+          disabled: r.disabled === true,
+        }));
+      return { data: { devEnabled: pluginsDevEnabled(), root: getPluginsRoot(), plugins: list } };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle("plugins:setEnabled", (_e, req: { id: string; enabled: boolean }) => {
+    try {
+      const root = getPluginsRoot();
+      if (!root) return { error: "no plugins directory configured" };
+      const rows = readAllRows();
+      const row = rows.find((r) => r.id === req.id);
+      if (!row) return { error: `plugin '${req.id}' not found in ${MANIFEST}` };
+      if (req.enabled) delete row.disabled;
+      else row.disabled = true;
+      // Re-dump the whole array (plain data; comments in the file are not
+      // preserved — acceptable for a managed manifest).
+      fs.writeFileSync(manifestPath(), yaml.dump(rows, { lineWidth: 100 }));
+      // The plugin-dir watcher (both backend loader + this module) will fire and
+      // reconcile live; the renderer re-pulls on plugins:ui-changed.
+      return { data: { ok: true } };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle("plugins:openFolder", async () => {
+    try {
+      const root = getPluginsRoot();
+      if (!root) return { error: "no plugins directory configured" };
+      fs.mkdirSync(root, { recursive: true });
+      await shell.openPath(root);
+      return { data: { ok: true } };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }

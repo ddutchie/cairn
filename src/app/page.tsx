@@ -8,7 +8,7 @@ import { CairnEvents } from "@/lib/events";
 import { historyManager, ownWriteGuard } from "@/lib/history";
 import { markAiNoteWriteStarted, markAiNoteWriteEnded, hasRecentAiNoteWrite } from "@/store/ipc";
 import { useIpcErrorToasts } from "@/hooks/useIpcErrorToasts";
-import { AppOverlayLayer } from "@/lib/plugin-ui/SlotOutlet";
+import { AppOverlayLayer, AppStatusBar } from "@/lib/plugin-ui/SlotOutlet";
 import { startUIPlugins } from "@/lib/plugin-ui/loader";
 import { TitleBar } from "@/components/layout/title-bar";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -523,8 +523,12 @@ export default function Home() {
       <AppTutorial />
 
       {/* Plugin-UI slots: frame-wide floating overlay (app.overlay) — the home
-          for plugin-drawn chrome like a bouncing cat, badges, toasts. */}
+          for plugin-drawn chrome like a bouncing DVD logo, badges, toasts. */}
       <AppOverlayLayer activeView={activeView} activeProjectId={activeProjectId} />
+
+      {/* Plugin-UI: persistent bottom status bar (app.statusbar). Renders nothing
+          until a plugin registers an item, so layout is unaffected otherwise. */}
+      <AppStatusBar activeView={activeView} activeProjectId={activeProjectId} />
     </main>
   );
 }
