@@ -1165,14 +1165,7 @@ const api = {
     /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */
     restoreContext: (sessionId: string) => ipcRenderer.send("pi-agent:restore-context", { sessionId }),
     /**
-     * Preview the assembled system prompt and discovered skills for a given cwd.
-     * Used by Settings → Coding Agents to show what the agent will receive.
-     */
-    previewPrompt: (req: { cwd: string; projectId?: string; mode?: "plan" | "execute" }) =>
-      invoke<{ systemPrompt: string; skills: Array<{ name: string; description: string; filePath: string; dirPath: string; license?: string; compatibility?: string }> }>(
-        "pi-agent:preview-prompt", req
-      ),
-    /** Dynamically switch a session's mode */
+     * Dynamically switch a session's mode */
     setMode: (sessionId: string, mode: "plan" | "execute") =>
       ipcRenderer.send("pi-agent:set-mode", { sessionId, mode }),
     /** Approve or deny a pending tool call */

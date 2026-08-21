@@ -756,30 +756,6 @@ export function registerPiAgentHandler(
     }
   });
 
-  // ── pi-agent:preview-prompt ───────────────────────────────────────────────────────
-  // Used by Settings → Agent Settings to show the full assembled system prompt
-  // and list discovered skills for the given cwd.
-  registerIpcHandle("pi-agent:preview-prompt", (_event, req: {
-    cwd: string;
-    projectId?: string;
-    mode?: "plan" | "execute";
-  }) => {
-    try {
-      const { cwd, projectId, mode = "execute" } = req;
-      const projectName = projectId
-        ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
-        : "Project";
-      const skills = discoverSkills(cwd);
-      const systemPrompt = buildPiAgentSystemPrompt({
-        projectName, cwd, mode,
-        skillsXml: renderSkillsXml(skills),
-      });
-      return { data: { systemPrompt, skills } };
-    } catch (e) {
-      return { error: (e as Error).message };
-    }
-  });
-
   // ── pi-agent:restore-context ───────────────────────────────────────────────────────
   // On the Cordis engine, session context resumes automatically via the dsh
   // jsonl log (ctx.sessionPersistence.inspect → ctx.agents.resume in
