@@ -50,7 +50,8 @@ const activeUserEntryIds = new Set<string>();
 
 interface UserPluginEntry {
   id: string;
-  name: string;
+  name?: string; // backend plugin module (cordis: builtin or ./file.mjs). Optional if ui-only.
+  ui?: string; // renderer-side UI plugin file (./thing.plugin.js), read + sent to the renderer
   config?: Record<string, unknown>;
   disabled?: boolean;
 }
@@ -94,18 +95,24 @@ function readManifest(): UserPluginEntry[] {
   for (const row of parsed) {
     if (!row || typeof row !== "object" || Array.isArray(row)) continue;
     const r = row as Record<string, unknown>;
-    if (typeof r.id !== "string" || typeof r.name !== "string") {
-      console.error("[cairn-plugins] skipping entry without string id+name:", JSON.stringify(row));
+    if (typeof r.id !== "string" || (typeof r.name !== "string" && typeof r.ui !== "string")) {
+      console.error("[cairn-plugins] skipping entry without id + (name or ui):", JSON.stringify(row));
       continue;
     }
     out.push({
       id: r.id,
-      name: r.name,
+      name: typeof r.name === "string" ? r.name : undefined,
+      ui: typeof r.ui === "string" ? r.ui : undefined,
       config: (r.config && typeof r.config === "object" ? r.config : {}) as Record<string, unknown>,
       disabled: r.disabled === true,
     });
   }
   return out;
+}
+
+/** Public: the parsed, enabled manifest (used by the UI-plugin IPC layer). */
+export function readEnabledManifest(): UserPluginEntry[] {
+  return readManifest().filter((e) => !e.disabled);
 }
 
 /** Mount all enabled user entries once on the live ctx (idempotent per id). */
@@ -122,7 +129,9 @@ export async function loadUserPlugins(ctx: Context): Promise<void> {
 
 /** Diff the manifest against the currently-mounted user entries and apply. */
 async function reconcile(ctx: Context, loader: LoaderLike): Promise<void> {
-  const desired = readManifest().filter((e) => !e.disabled);
+  // Only entries with a backend `name` mount on the Cordis context here; ui-only
+  // entries (just `ui:`) are handled renderer-side via the UI-plugin IPC layer.
+  const desired = readManifest().filter((e) => !e.disabled && typeof e.name === "string");
   const desiredIds = new Set(desired.map((e) => e.id));
 
   // Remove entries that are gone or now disabled.
@@ -144,21 +153,22 @@ async function reconcile(ctx: Context, loader: LoaderLike): Promise<void> {
   // a later refinement.)
   for (const e of desired) {
     if (activeUserEntryIds.has(e.id)) continue;
+    const modName = e.name as string; // filtered to string above
     try {
       // For a file plugin, resolve to an absolute file:// URL against the plugins
       // dir and cache-bust it so an edited body reloads (import() memoises URLs).
       // We resolve here (not via the Loader's relative baseUrl path) because a
       // `?v=` query on a bare relative name breaks the Loader's URL rewrite.
-      let name = e.name;
-      if (e.name.startsWith(".")) {
-        const abs = path.resolve(pluginsRoot, e.name);
+      let name = modName;
+      if (modName.startsWith(".")) {
+        const abs = path.resolve(pluginsRoot, modName);
         name = `${pathToFileURL(abs).href}?v=${Date.now()}`;
       }
       await loader.create({ id: e.id, name, config: e.config ?? {} });
       activeUserEntryIds.add(e.id);
-      console.log(`[cairn-plugins] loaded '${e.id}' (${e.name})`);
+      console.log(`[cairn-plugins] loaded '${e.id}' (${modName})`);
     } catch (err) {
-      console.error(`[cairn-plugins] failed to load '${e.id}' (${e.name}):`, err instanceof Error ? err.message : err);
+      console.error(`[cairn-plugins] failed to load '${e.id}' (${modName}):`, err instanceof Error ? err.message : err);
     }
   }
   await loader.await();

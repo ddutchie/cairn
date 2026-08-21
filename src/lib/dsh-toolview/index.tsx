@@ -16,15 +16,29 @@ import type { ChatToolCall } from "@/hooks/useChatStream";
 import { getToolView, registerToolView, registeredToolViewKeys } from "./registry";
 import { toToolCallViewProps } from "./adapter";
 import { SkillRow } from "./SkillRow";
+import { registerSlot } from "@/lib/plugin-ui/registry";
+import type { ToolCallViewProps } from "./contract";
 import "./dsw-theme.css";
 
 let registered = false;
 
-/** Register the built-in (vendored) dsh toolviews. Idempotent. */
+/** SkillRow wrapped in the --dsw-* theme scope, for the plugin-ui slot registry. */
+function ScopedSkillRow(props: ToolCallViewProps) {
+  return (
+    <div className="dsh-toolview-scope">
+      <SkillRow {...props} />
+    </div>
+  );
+}
+
+/** Register the built-in (vendored) dsh toolviews into BOTH the self-contained
+ *  §11 registry AND Cairn's unified plugin-ui slot matrix (tool.call.toolview),
+ *  so the transcript can render them via the shared SlotOutlet. Idempotent. */
 export function registerBuiltinToolViews(): void {
   if (registered) return;
   registered = true;
   registerToolView("skill", SkillRow);
+  registerSlot("tool.call.toolview", { id: "dsh:skill", key: "skill" }, ScopedSkillRow);
 }
 
 export function hasToolView(toolName: string): boolean {

@@ -2,11 +2,13 @@
 # A top-level YAML array of entries. Edit this file while Cairn runs
 # (with CAIRN_PLUGINS_DEV=1) and changes load/unload live — no restart.
 #
-# Uncomment the entry below (and copy hello-tool.mjs into this dir) to add an
-# agent-visible `hello` tool at runtime:
-#
+# BACKEND plugin (adds an agent-visible `hello` tool) — copy hello-tool.mjs here:
 # - id: hello-tool
 #   name: ./hello-tool.mjs
 #   config:
 #     excitement: 3
+#
+# UI plugin (a cat emoji bouncing around the screen) — copy bouncing-cat.plugin.js here:
+# - id: bouncing-cat
+#   ui: ./bouncing-cat.plugin.js
 []

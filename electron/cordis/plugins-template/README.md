@@ -22,17 +22,21 @@ A top-level YAML array of entries. **Plain data only — no `!!js`** (a user/age
 file is untrusted; expressions are never evaluated).
 
 ```yaml
+# A BACKEND plugin (adds tools/services on the agent context):
 - id: hello-tool            # unique id (the live entry key)
   name: ./hello-tool.mjs    # relative file (new code), OR cordis:<shipped-builtin>
   config:                   # threaded to the plugin's apply(ctx, config)
     excitement: 3
   disabled: false           # optional; true = not mounted
+
+# A UI plugin (draws chrome in the app — an overlay, a status bar item, …):
+- id: bouncing-cat
+  ui: ./bouncing-cat.plugin.js   # a renderer-side module exporting activate(ui)
 ```
 
-Edit this file while Cairn is running:
-- **add** an entry → the plugin loads live,
-- **remove** an entry (or set `disabled: true`) → its live entry is torn down,
-- **edit** an entry's file/config → it reloads (remove + recreate).
+An entry has `name` (backend), `ui` (frontend), or both. Edit this file while
+Cairn runs: add → loads live; remove / `disabled: true` → unloads; edit the
+file → reloads.
 
 ## A plugin file
 
@@ -43,6 +47,22 @@ can register tools, read services (`inject: ['tools']`), etc.
 See `hello-tool.mjs` in this folder for a working example that adds an
 agent-visible `hello` tool. Drop both files into your plugins dir, add the entry
 to `plugins.yml`, and ask the agent to use the `hello` tool — live.
+
+## A UI plugin (draws chrome in the app)
+
+A UI plugin's code runs in the **renderer**. It exports `activate(ui)` and mounts
+components into Cairn's **slot matrix** (`src/lib/plugin-ui/slot-matrix.ts`):
+
+| API | Slot | What it does |
+|-----|------|--------------|
+| `ui.registerOverlay(id, C)` | `app.overlay` | frame-wide, click-through floating layer (badges, toasts, a bouncing cat) |
+| `ui.registerStatusBarItem(id, C)` | `app.statusbar` | item in the bottom status bar |
+| `ui.registerChatFooter(id, C)` | `chat.transcript.footer` | a band under the chat composer (cost/context widgets — gets Cairn's live usage) |
+| `ui.registerToolView(tool, C)` | `tool.call.toolview` | a rich per-tool view in the chat transcript |
+
+Use `ui.React` (Cairn's React instance) — **never bundle your own React**.
+See `bouncing-cat.plugin.js` for a working example: a 🐈 that bounces around the
+screen. Copy it in, add its `ui:` entry to `plugins.yml`, and it appears live.
 
 ## Notes / limits
 

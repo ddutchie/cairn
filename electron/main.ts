@@ -343,6 +343,15 @@ app.whenReady().then(async () => {
   const win = createWindow();
   _win = win;
 
+  // UI plugins (dev-gated): serve renderer-side plugin sources + live-change
+  // events from <userData>/plugins to this window.
+  try {
+    const { registerUiPluginHandlers } = await import("./ipc/ui-plugin-handlers");
+    registerUiPluginHandlers(() => _win?.webContents);
+  } catch (err) {
+    console.error("[cairn-plugins] ui handlers failed to register:", err instanceof Error ? err.message : err);
+  }
+
   // Close splash after the main window has finished loading its first page.
   // The main window is created hidden (show: false) so only the splash is
   // visible during boot. Once the renderer has painted, we send the final

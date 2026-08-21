@@ -649,3 +649,45 @@ The north-star ("app running, you build a YAML and it loads — no restart") is 
 **To try it:** `CAIRN_PLUGINS_DEV=1 npm run dev`, copy `plugins-template/*` into `<userData>/plugins/` (macOS: `~/Library/Application Support/Cairn/plugins/`), uncomment the `hello-tool` entry in `plugins.yml`, then ask the agent to use the `hello` tool — it appears live.
 
 **Still deferred (Tier 3 proper):** sandbox for untrusted code (`node:vm`/worker — `apply` currently runs with full main privileges), the settings/inventory UI (enable/disable + per-plugin config cards), agent-authored plugins (`dsh-cordis-host-runner` + `dsh-tool-cordis`), and npm-installable plugins (C2). Ungating (removing `CAIRN_PLUGINS_DEV`) requires the sandbox decision first.
+## 12. UI PLUGINS + Cairn slot matrix (2026-08-20) — "author a UI plugin, it renders live" ✅
+
+Extends §11 (single toolview embed) into a general **plugin-UI system for Cairn's OWN frontend**: a user/agent authors a UI plugin that draws app chrome (a bouncing cat overlay, a status-bar item, a chat-footer cost widget, a tool view), dropped in via `plugins.yml`, loaded LIVE — no dsh web shell.
+
+### 12.1 The Cairn Slot Matrix (`src/lib/plugin-ui/slot-matrix.ts`)
+Cairn's answer to dsh's `SlotMap`: a concrete, closed table of WHERE a plugin may render. A plugin can only mount where Cairn declares + renders a host (declaration = render authorization). Axes: `kind` (list/keyed/single) × `scope` (app/view/thread/turn). Each slot documents its component props (the data contract).
+
+| Slot | kind | scope | host (real DOM) | status |
+|---|---|---|---|---|
+| `app.overlay` | list | app | `AppOverlayLayer` at page.tsx root (fixed, click-through) | **live** |
+| `app.statusbar` | list | app | `AppStatusBar` (renders nothing until populated) | host built, not yet mounted |
+| `tool.call.toolview` | keyed | turn | `ToolCallIndicator` (§11) | **live** (SkillRow bridged in) |
+| `chat.transcript.footer` | list | thread | chat composer band (cost/context) | declared; host TBD |
+| `sidebar.footer` / `view.header.actions` / `settings.section` | list | app/view | declared; hosts TBD |
+
+### 12.2 Architecture
+- **Registry** (`registry.ts`): framework-agnostic store + `useSyncExternalStore` so hosts re-render on live register/unregister. `registerSlot(name, {id,key?,order?}, Component)` → disposer.
+- **Hosts** (`SlotOutlet.tsx`): `<SlotOutlet>` (list), `<KeyedSlotOutlet>` (keyed), `AppOverlayLayer` (fixed click-through layer, `pointer-events:none`; entries opt back in), `AppStatusBar`. Every plugin component is wrapped in a `PluginBoundary` error boundary — a crashing plugin can't take down the app.
+- **Plugin-UI API** (`api.ts`): `activate(ui)` receives `{ React, registerOverlay, registerStatusBarItem, registerChatFooter, registerToolView, register }`. Plugins use `ui.React` (Cairn's single instance — never bundle their own) and never import Cairn internals. Registrations are tracked per plugin id; `deactivateUIPlugin(id)` disposes them (live unload); re-activate = dispose+re-add (clean live edit).
+
+### 12.3 The cross-boundary path (main ⇄ renderer)
+A UI plugin's code runs in the RENDERER, but `plugins.yml` + files live under `<userData>/plugins` read by MAIN:
+- `plugins.yml` entries gained an optional **`ui:`** field (a renderer file). Backend (`name:`) and UI (`ui:`) entries coexist; the Cordis loader (§10.8) skips `ui:`-only rows.
+- **Main** (`electron/ipc/ui-plugin-handlers.ts`): `plugins:listUi` returns each enabled ui-entry's `{id, source}` (raw module text, contained to the plugins dir); an `fs.watch` fires `plugins:ui-changed` on change. Preload exposes `electron.plugins.listUi()` + `onUiChanged`.
+- **Renderer** (`loader.ts`): `startUIPlugins()` (called once in page.tsx) pulls sources, evaluates each with `new Function(module, exports, require, React, source)` — a CJS shim whose `require` only resolves `"react"` (Cairn's instance) — into a module exporting `activate(ui)`, and activates it. Re-pulls + re-activates on `plugins:ui-changed` (live reload/unload).
+
+### 12.4 Security posture
+The renderer evaluates plugin source (`new Function`) — a code-exec surface, **dev-gated behind `CAIRN_PLUGINS_DEV=1`** exactly like the backend loader. Untrusted-plugin sandboxing (worker isolation / a real boundary) is Tier 3, required before ungating.
+
+### 12.5 Shipped example + verification
+- `electron/cordis/plugins-template/bouncing-cat.plugin.js` — a 🐈 that bounces around the screen via `ui.registerOverlay`; click it to speed it up. Plus updated README + `plugins.yml` documenting UI plugins.
+- `src/lib/plugin-ui/plugin-ui.component.test.tsx` (**5 tests**): slot matrix shape; a plugin-registered overlay renders + the layer is click-through; deactivate removes it; re-activate dedupes; a crashing plugin is isolated (good sibling still renders).
+- Full component suite **149**; §11 DshToolView **6/6** (registry bridge intact); electron **1107**; `next build` clean; renderer + electron tsc clean.
+
+### 12.6 What works now / what needs the full shell (answering "would all dsh plugins work?")
+- **Backend plugins (tools/services):** work (§10.8).
+- **Self-contained UI** — overlay (bouncing cat), status-bar item, keyed toolview: **work** via this slot system. A dsh UI plugin of this shape ports by mapping its `--dsw-*` tokens (§11 shim) + targeting a Cairn slot.
+- **Cost / context widget:** the *widget* is easy (a `chat.transcript.footer` slot), but dsh's own cost plugin reads `useProjection` fed by dsh's connection/session-projection spine — NOT portable as-is. In Cairn it reads **Cairn's** live usage (`chat:usage`/token-meter) via the slot's props. So a user CAN build one, against Cairn's data, not dsh's.
+- **Shell-coupled dsh UI** (anything occupying `conversation.*` / needing `useProjection` / the dsh AppFrame): would NOT work without adopting dsh's whole web shell (§9/§B) — out of scope; Cairn keeps its own frontend.
+
+### 12.7 Follow-ups
+Mount `AppStatusBar` + build the `chat.transcript.footer` host (unlocks status bar + Cairn-data cost widget); a Plugins settings tab (enable/disable + `slotInventory()`); load real dsh `ui-*` client packages for toolviews (§11.6 #1); the Tier-3 sandbox before ungating.

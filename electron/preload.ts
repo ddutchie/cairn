@@ -1489,6 +1489,15 @@ const api = {
       ipcRenderer.on("mobile:status-changed", handler);
       return () => ipcRenderer.off("mobile:status-changed", handler);
     }
+  },
+  /** UI plugins (dev-gated): pull renderer-side plugin sources + live-change events. */
+  plugins: {
+    listUi: () => invoke<Array<{ id: string; source: string }>>("plugins:listUi"),
+    onUiChanged: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on("plugins:ui-changed", handler);
+      return () => ipcRenderer.off("plugins:ui-changed", handler);
+    },
   }
 } as const;
 

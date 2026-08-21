@@ -59,7 +59,7 @@ describe("runtime plugin loading (gated on CAIRN_PLUGINS_DEV=1)", () => {
       path.join(root, "probe.mjs"),
       `export const name='cairn-probe';\nexport function apply(ctx, config){ const g=globalThis['${marker}']; g.loaded=true; g.config=config; }\n`,
     );
-    const probe = () => (globalThis as Record<string, { loaded: boolean; config: unknown }>)[marker];
+    const probe = () => (globalThis as unknown as Record<string, { loaded: boolean; config: unknown }>)[marker];
     expect(probe().loaded).toBe(false);
 
     fs.writeFileSync(path.join(root, "plugins.yml"), `- id: probe\n  name: ./probe.mjs\n  config:\n    greeting: LIVE-YAML\n`);
