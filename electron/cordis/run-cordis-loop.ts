@@ -418,14 +418,33 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   console.log("[cordis] mount systemText", { threadId: req.threadId, historyLen: (req.history ?? []).length, historySample: (req.history ?? []).slice(-2).map((h) => ({ role: h.role, content: (h.content as string)?.slice(0, 30) })), baseSystemLen: baseSystem.length });
   await mount(cairnSystemPromptPlugin, { systemText: baseSystem });
 
+  // Tool-chip emission is single-sourced through the dsh session events
+  // (tool/call + tool/result) below, so EVERY tool — Cairn's own, external/MCP,
+  // AND runtime-loaded plugin tools (e.g. `visualize`) — shows a live chip from
+  // one place. The session listener owns the PENDING chip (tool/call) and the
+  // basic DONE (tool/result). Cairn's per-tool `emitDone` still fires afterwards
+  // to ENRICH the chip with cairnRef/externalRef (which the raw session event
+  // can't carry); the renderer merges it onto the same callId. Cairn's per-tool
+  // PENDING emit is dropped here (the session listener already emitted it) to
+  // avoid a duplicate chip — note the dsh tool/call event fires BEFORE the
+  // tool's execute() body (where Cairn's emit lives), so we cannot dedup by
+  // "cairn emitted first".
+  const wrappedEmit: typeof opts.emitToolCall = () => { /* pending owned by the session listener */ };
+  // Cairn's per-tool emitDone is the AUTHORITY for its own + external tools (it
+  // carries cairnRef/externalRef + the JSON output the connector cards parse).
+  // Record those callIds so the session listener's basic DONE doesn't overwrite
+  // them; plugin/other tools (no cairn emitDone) get their DONE from the session.
+  const cairnDoneCallIds = new Set<string>();
+  const wrappedEmitDone: typeof opts.emitToolCallDone = (e) => { if (e.callId) cairnDoneCallIds.add(e.callId); opts.emitToolCallDone?.(e); };
+
   const toolDisposers = registerCairnTools(ctx, {
     getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
     req,
     workspacePath,
     llmConfig,
     getWin: opts.getWin,
-    emit: opts.emitToolCall,
-    emitDone: opts.emitToolCallDone,
+    emit: wrappedEmit,
+    emitDone: wrappedEmitDone,
   });
   // User-configured MCP servers + custom services onto ctx.tools.
   const externalDisposers = await registerExternalCairnTools(ctx, {
@@ -444,6 +463,8 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   let currentAttemptSessionId: unknown = null;
   let liveText = "";
   let liveReasoning = "";
+  // callId → tool name, for pairing tool/result with its tool/call (plugin tools).
+  const sessionCallNames = new Map<string, string>();
   const streamDisposer = (ctx as unknown as { on: (ev: string, fn: (s: unknown, e: SessionEvent) => void) => () => void }).on(
     "session/event",
     (session, event) => {
@@ -454,6 +475,32 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
         if (!c?.text) return;
         if (c.type === "text-delta") { liveText += c.text; opts.onToken?.(c.text); }
         else if (c.type === "reasoning-delta") { liveReasoning += c.text; opts.onThought?.(c.text); }
+        return;
+      }
+      // Single-source tool chips from the session log: emit a LIVE chip for any
+      // tool Cairn's per-tool path didn't already emit (plugin/other tools).
+      if (event.type === "tool/call") {
+        const d = event.data as { name?: string; arguments?: string; callId?: string };
+        if (d.callId && d.name) sessionCallNames.set(d.callId, d.name);
+        let args: Record<string, unknown> = {};
+        try { args = JSON.parse(d.arguments ?? "{}") as Record<string, unknown>; } catch { /* {} */ }
+        opts.emitToolCall?.({ tool: d.name ?? "tool", label: d.name ?? "tool", args, callId: d.callId });
+        return;
+      }
+      if (event.type === "tool/result") {
+        const msg = (event.data as { message?: { source?: { callId?: string }; content?: Array<{ isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } }).message;
+        const callId = msg?.source?.callId;
+        if (callId && cairnDoneCallIds.has(callId)) return; // Cairn's emitDone is authoritative
+        const block = msg?.content?.[0];
+        const isError = block?.isError === true;
+        const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
+        opts.emitToolCallDone?.({
+          tool: (callId && sessionCallNames.get(callId)) || "tool",
+          callId,
+          output: isError ? undefined : output,
+          ok: !isError,
+          error: isError ? (output || "tool error") : undefined,
+        });
         return;
       }
       // Fallback for protocols that don't stream reasoning as deltas (e.g.
