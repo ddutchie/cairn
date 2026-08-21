@@ -1,26 +1,22 @@
 /**
  * Spike (UI half): a Cairn port of the `visualize` toolview from
- * github:Nagi-ovo/dsh-visualize.
+ * github:Nagi-ovo/dsh-visualize — now in the AUTHENTIC dsh client-plugin shape.
  *
  *   # plugins.yml
  *   - id: visualize
  *     name: ./visualize-tool.mjs
  *     ui: ./visualize-view.plugin.js   # this file
  *
- * Registers a `tool.call.toolview` keyed to `visualize`: it reads the tool's
- * durable HTML result and renders it inside a sandboxed <iframe sandbox="allow-scripts">
- * — the same technique as dsh-visualize (replay-stable from the logged slice,
- * frame unreachable from the host, height auto-sized via postMessage).
- *
- * This proves a dsh community-plugin UI SHAPE runs in Cairn's transcript with no
- * dsh shell — just our tool.call.toolview slot + a Cairn-built ToolCallViewProps.
+ * A real dsh community client plugin exports { name, inject, apply(ctx) } and
+ * calls ctx.slots.inject(slot, () => ctx.slots.register({ name, key }, C)).
+ * Cairn provides a `ctx` shim (dsh-client-ctx.ts) that maps ctx.slots.* onto its
+ * plugin-ui registry, so this bundle runs UNMODIFIED — the same code that runs
+ * in the dsh web shell. It renders the tool's HTML in a sandboxed iframe.
  */
 const HEIGHT_MSG = "cairn-visualize-height";
 
-function activate(ui) {
-  const { React } = ui;
+function VisualizeCardFactory(React) {
   const { useEffect, useState } = React;
-
   const readHtml = (block) => {
     if (block && "kind" in block && Array.isArray(block.content)) {
       for (const b of block.content) if (b.type === "text" && b.text) return b.text;
@@ -31,13 +27,11 @@ function activate(ui) {
     try { return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || fb; }
     catch { return fb; }
   };
-
-  function VisualizeCard(props) {
+  return function VisualizeCard(props) {
     const { block, callId } = props;
     const running = !block || !("kind" in block);
     const html = readHtml(block);
     const [height, setHeight] = useState(60);
-
     useEffect(() => {
       const onMsg = (e) => {
         const d = e.data;
@@ -47,10 +41,8 @@ function activate(ui) {
       addEventListener("message", onMsg);
       return () => removeEventListener("message", onMsg);
     }, [callId]);
-
     if (running) return React.createElement("div", { style: { fontSize: 12, opacity: 0.6, padding: "4px 0" } }, "\u2728 rendering visualization…");
     if (!html) return React.createElement("div", { style: { fontSize: 12, color: "var(--danger)" } }, "visualization failed");
-
     const doc = `<!doctype html><html><head><meta charset="utf-8"><style>
       :root{color-scheme:light dark}
       body{margin:0;font-family:system-ui,sans-serif;color:${cssVar("--text-primary", "#e5e5e5")};background:transparent}
@@ -60,7 +52,6 @@ function activate(ui) {
       function report(){parent.postMessage({type:${JSON.stringify(HEIGHT_MSG)},token:${JSON.stringify(callId)},height:document.documentElement.scrollHeight},"*")}
       new ResizeObserver(report).observe(document.documentElement);report();
     <\/script></body></html>`;
-
     return React.createElement(
       "div",
       { style: { margin: "4px 0" } },
@@ -71,11 +62,19 @@ function activate(ui) {
         style: { display: "block", width: "100%", border: 0, background: "transparent", height },
       }),
     );
-  }
-
-  ui.registerToolView("visualize", VisualizeCard);
-  // dsh parity: the real plugin registers key:'visualize' on tool.call.toolview
-  // via ctx.slots.register — ui.registerToolView is Cairn's equivalent.
+  };
 }
 
-module.exports = { activate };
+// ── Authentic dsh client-plugin surface ─────────────────────────────────────
+const React = require("react");
+
+export const name = "dsh-visualize";
+export const inject = ["slots"];
+
+export function apply(ctx) {
+  const VisualizeCard = VisualizeCardFactory(React);
+  // dsh idiom: wait for the slot's declaration, then register keyed by tool name.
+  ctx.slots.inject("tool.call.toolview", () =>
+    ctx.slots.register({ name: "tool.call.toolview", key: "visualize" }, VisualizeCard),
+  );
+}

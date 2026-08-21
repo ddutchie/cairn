@@ -14,8 +14,9 @@
  *
  * Evaluating plugin source is a code-exec surface — dev-gated (CAIRN_PLUGINS_DEV).
  */
-import * as React from "react";
 import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "./api";
+import type { DshClientPlugin } from "./dsh-client-ctx";
+type PluginModule = UIPluginModule | DshClientPlugin;
 import { createPlatformModules, KNOWN_UNPROVIDED } from "./platform-modules";
 
 interface ElectronUiPlugins {
@@ -113,15 +114,24 @@ function namedBindings(clause: string): string {
   }).filter(Boolean).join(", ");
 }
 
-function evalCjs(id: string, source: string): UIPluginModule | null {
+function evalCjs(id: string, source: string): PluginModule | null {
   const module = { exports: {} as Record<string, unknown> };
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const fn = new Function("module", "exports", "require", "React", source);
-    fn(module, module.exports, makeRequire(id), React);
-    const mod = (module.exports.activate ? module.exports : module.exports.default) as UIPluginModule | undefined;
-    if (!mod || typeof mod.activate !== "function") { console.error(`[plugin-ui] '${id}' must export activate(ui)`); return null; }
-    return mod;
+    // Only module/exports/require are injected (the CommonJS trio). React is
+    // obtained via require("react") — NOT a magic param — so a plugin that does
+    // `const React = require("react")` (dsh bundles, ours) never collides with a
+    // wrapper param.
+    const fn = new Function("module", "exports", "require", source);
+    fn(module, module.exports, makeRequire(id));
+    // Accept the Cairn-native shape (activate) OR the dsh client shape (apply).
+    // The default export (some bundles) is unwrapped too.
+    const raw = module.exports as Record<string, unknown>;
+    const mod = (raw.activate || raw.apply ? raw : (raw.default as Record<string, unknown> | undefined)) as (Record<string, unknown>) | undefined;
+    if (!mod || (typeof mod.activate !== "function" && typeof mod.apply !== "function")) {
+      console.error(`[plugin-ui] '${id}' must export activate(ui) or apply(ctx)`);
+      return null;
+    }
+    return mod as unknown as PluginModule;
   } catch (err) {
     console.error(`[plugin-ui] '${id}' failed to evaluate:`, err);
     return null;
@@ -130,7 +140,7 @@ function evalCjs(id: string, source: string): UIPluginModule | null {
 
 /** Evaluate a plugin module. ESM is transpiled to CJS first, then both go
  *  through the single `new Function` path (no blob: import → no CSP change). */
-function evalPluginModule(id: string, source: string): UIPluginModule | null {
+function evalPluginModule(id: string, source: string): PluginModule | null {
   const src = isEsm(source) ? esmToCjs(source) : source;
   return evalCjs(id, src);
 }

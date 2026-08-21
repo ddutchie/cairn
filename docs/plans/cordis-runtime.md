@@ -783,3 +783,38 @@ Ported `github:Nagi-ovo/dsh-visualize` (a `visualize` tool + a `tool.call.toolvi
 4. Auto-add a managed `plugins.yml` entry (or a separate installed-plugins index) + show it in the Settings → Plugins list with a toggle + uninstall.
 
 **Prereqs (from §17):** ESM renderer loader; a richer `ctx.cairn` (fs/skill/sandbox) OR a peer-dep resolver pointing at Cairn's bundled `@deepseek-ai/dsh-*`; the untrusted-code sandbox (Tier 3) before ungating. C2 is the largest remaining piece and needs the trust decision.
+
+## 19. dsh client `ctx` shim — real community client plugins run unmodified (2026-08-20) ✅
+
+Finalized the plugin shims so a REAL dsh community client plugin — exported as
+`{ name, inject:['slots'], apply(ctx) }` calling `ctx.slots.inject(slot, () =>
+ctx.slots.register({ name, key? }, Component))` — runs in Cairn unmodified.
+
+- **`dsh-client-ctx.ts`** — `makeDshClientCtx(pluginId, track)` builds the `ctx`
+  facade a dsh client plugin's `apply(ctx)` receives: `ctx.slots.register`
+  (maps the dsh slot name through the dsh⇄Cairn alias → `registerSlot`),
+  `ctx.slots.inject` (runs the factory immediately — Cairn's hosts are always
+  declared, so no declaration race), `ctx.effect`, `ctx.get('slots')`. Only the
+  `slots` seam is wired; other Cordis seams stay unsupported (clear warning).
+- **`api.ts` `activateUIPlugin`** now accepts BOTH entry shapes: Cairn-native
+  `activate(ui)` and dsh-client `apply(ctx)` (dispatched by which export exists),
+  with one shared per-plugin disposer tracker.
+- **`loader.ts`** — module extraction accepts `activate` OR `apply`; and the CJS
+  wrapper drops the `React` param — plugins get React via `require("react")`
+  (the platform table) exactly like dsh bundles, so `const React =
+  require("react")` never collides with a wrapper param.
+- **`platform-modules.ts`** — the `require` table (react/jsx-runtime/react-dom)
+  a dsh bundle's externals resolve against.
+
+**Proof:** `visualize-view.plugin.js` is now the AUTHENTIC dsh shape
+(`export function apply(ctx)` + `ctx.slots.register({name:'tool.call.toolview',
+key:'visualize'}, VisualizeCard)` + `require('react')`), and
+`visualize-spike.component.test.tsx` evaluates it exactly as the loader does
+(ESM→CJS transpile + platform require) and renders the sandboxed card. Full
+plugin-ui suite 16; component suite 166; tsc + next build clean.
+
+**What now works:** a self-contained dsh client plugin (keyed toolview / overlay
+shapes) whose only runtime dependency is `ctx.slots` + react runs unmodified —
+its type-only `@deepseek-ai/dsh-client-*` imports are erased at build, and its
+`ctx.slots.*` calls hit Cairn's registry through the shim. Remaining for a
+literal `dsh plugin add`: the C2 fetch/install flow (§18) — the shims are done.

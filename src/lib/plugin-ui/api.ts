@@ -20,6 +20,7 @@ import * as React from "react";
 import type { SlotName, SlotComponent } from "./slot-matrix";
 import { registerSlot, type RegisterOptions } from "./registry";
 import { resolveSlotName } from "./dsh-slot-map";
+import { makeDshClientCtx, type DshClientPlugin } from "./dsh-client-ctx";
 
 export interface CairnPluginUI {
   /** React (use this — do NOT bundle your own; one instance only). */
@@ -50,12 +51,17 @@ export interface UIPluginModule {
 
 const disposersByPlugin = new Map<string, Array<() => void>>();
 
-function apiFor(pluginId: string): CairnPluginUI {
-  const track = (d: () => void) => {
+/** Per-plugin disposer collector (live unload disposes all). */
+function trackerFor(pluginId: string): (d: () => void) => void {
+  return (d: () => void) => {
     const arr = disposersByPlugin.get(pluginId) ?? [];
     arr.push(d);
     disposersByPlugin.set(pluginId, arr);
   };
+}
+
+function apiFor(pluginId: string): CairnPluginUI {
+  const track = trackerFor(pluginId);
   return {
     React,
     registerOverlay: (id, c, order) => track(registerSlot("app.overlay", { id: `${pluginId}:${id}`, order }, c)),
@@ -75,23 +81,36 @@ function apiFor(pluginId: string): CairnPluginUI {
   };
 }
 
-/** Activate a UI plugin module under an id (idempotent: re-activating disposes first). */
-export function activateUIPlugin(pluginId: string, mod: UIPluginModule): void {
+/** Activate a plugin module under an id (idempotent: re-activating disposes
+ *  first). Accepts BOTH entry shapes:
+ *   - Cairn native:  `export function activate(ui)`  (uses the ui API)
+ *   - dsh client:    `export function apply(ctx)` + `inject:['slots']`
+ *     (a real dsh community client plugin — driven via the dsh ctx shim). */
+export function activateUIPlugin(pluginId: string, mod: UIPluginModule | DshClientPlugin): void {
   deactivateUIPlugin(pluginId);
-  if (typeof mod.activate !== "function") {
-    console.error(`[plugin-ui] '${pluginId}' has no activate(ui) export`);
+  const track = trackerFor(pluginId);
+  // Cairn-native form.
+  if (typeof (mod as UIPluginModule).activate === "function") {
+    try {
+      const ret = (mod as UIPluginModule).activate(apiFor(pluginId));
+      if (typeof ret === "function") track(ret);
+    } catch (err) {
+      console.error(`[plugin-ui] '${pluginId}' activate() threw:`, err);
+    }
     return;
   }
-  try {
-    const ret = mod.activate(apiFor(pluginId));
-    if (typeof ret === "function") {
-      const arr = disposersByPlugin.get(pluginId) ?? [];
-      arr.push(ret);
-      disposersByPlugin.set(pluginId, arr);
+  // dsh client form: apply(ctx) driving ctx.slots.* through the shim.
+  if (typeof (mod as DshClientPlugin).apply === "function") {
+    try {
+      const ctx = makeDshClientCtx(pluginId, track);
+      const ret = (mod as DshClientPlugin).apply(ctx);
+      if (typeof ret === "function") track(ret);
+    } catch (err) {
+      console.error(`[plugin-ui] '${pluginId}' apply(ctx) threw:`, err);
     }
-  } catch (err) {
-    console.error(`[plugin-ui] '${pluginId}' activate() threw:`, err);
+    return;
   }
+  console.error(`[plugin-ui] '${pluginId}' exports neither activate(ui) nor apply(ctx)`);
 }
 
 /** Dispose all registrations a plugin made (live unload). */

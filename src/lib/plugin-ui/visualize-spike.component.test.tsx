@@ -15,13 +15,28 @@ import type { ToolCallViewProps } from "@/lib/dsh-toolview/contract";
  * the model's HTML. No dsh shell involved.
  */
 
-// Mirror src/lib/plugin-ui/loader.ts evalPluginModule (CJS shim).
+/**
+ * Phase 2 spike: the community plugin dsh-visualize's AUTHENTIC shape runs in
+ * Cairn — { name, inject, apply(ctx) } calling ctx.slots.register, driven via
+ * the dsh-client ctx shim. We eval the shipped file exactly as the loader does
+ * (ESM→CJS transpile + platform require), activate it, and render a `visualize`
+ * tool call through the tool.call.toolview slot — asserting the sandboxed iframe
+ * carries the model's HTML. No dsh shell involved.
+ */
+
+import { esmToCjsForTest } from "@/lib/plugin-ui/loader";
+
+// Eval the plugin source the way the loader does (transpile ESM, resolve the
+// platform module table for require('react')).
 function evalPlugin(source: string): UIPluginModule {
+  const platform: Record<string, unknown> = { react: React, "react/jsx-runtime": require("react/jsx-runtime") };
+  const src = /(^|[\n;])\s*export\s|(^|[\n;])\s*import\s.+\sfrom\s/m.test(source) ? esmToCjsForTest(source) : source;
   const mod = { exports: {} as Record<string, unknown> };
-  const req = (n: string) => { if (n === "react") return React; throw new Error(`require(${n})`); };
+  const req = (n: string) => { if (n in platform) return platform[n]; throw new Error(`require(${n})`); };
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  new Function("module", "exports", "require", "React", source)(mod, mod.exports, req, React);
-  return (mod.exports.activate ? mod.exports : mod.exports.default) as UIPluginModule;
+  new Function("module", "exports", "require", src)(mod, mod.exports, req);
+  const raw = mod.exports;
+  return (raw.activate || raw.apply ? raw : raw.default) as UIPluginModule;
 }
 
 function settledVisualizeCall(html: string): ToolCallViewProps {
