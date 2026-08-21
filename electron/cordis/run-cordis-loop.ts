@@ -477,6 +477,21 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
       const { mountFsChain } = await import("./cordis-coding-tools");
       await mountFsChain(ctx, { cwd: workspacePath });
     }
+    // Artifact hygiene (plugins-gated, throttled to once per 10 min): move any
+    // legacy top-level viz/ into .chat/, keep git status clean via
+    // .git/info/exclude, and cap rendered artifacts so they don't accumulate.
+    const now = Date.now();
+    const g = globalThis as unknown as { __cairnArtifactHygieneAt?: number };
+    if (!g.__cairnArtifactHygieneAt || now - g.__cairnArtifactHygieneAt > 10 * 60 * 1000) {
+      g.__cairnArtifactHygieneAt = now;
+      try {
+        const h = await import("../lib/artifact-hygiene");
+        if (h.migrateLegacyVizDir(workspacePath)) console.log("[cairn] moved legacy viz/ into .chat/viz/");
+        h.ensureGitExcluded(workspacePath);
+        const pruned = h.pruneChatArtifacts(workspacePath, "viz");
+        if (pruned > 0) console.log(`[cairn] pruned ${pruned} old .chat/viz artifacts`);
+      } catch { /* hygiene is best-effort */ }
+    }
   } catch (err) {
     console.error("[cordis] fs chain mount for plugins failed:", err instanceof Error ? err.message : err);
   }

@@ -961,3 +961,23 @@ cleanly (`inject:["tools","skills","fs"]` all satisfiable now).
 
 Suites: node 2127 / component 167 / tsc clean; live pi 2/2, coding 8/8 solo
 (HITL remains the known model-choice flake).
+
+## 23. Chat artifact hygiene — `.chat/` (2026-08-21) ✅
+
+Community plugins write artifacts through ctx.fs (dsh-visualize hardcodes
+`viz/<slug>-<hash>.html` relative to the workspace). Left alone that litters
+the project root (index noise, git-status noise, unbounded growth).
+
+- **Remap at the seam**: the chat fs chain instance-patches `fs.resolve` to
+  rewrite `viz(/…)` → `.chat/viz(…)` — no plugin fork; coding's own per-turn
+  chain stays stock and adoption is harmless (nothing legit writes top-level
+  `viz/`). One choke point covers write/read/edit since they take the resolved
+  target.
+- **Hygiene** (`artifact-hygiene.ts`, run with the chain mount, 10-min throttle):
+  migrate legacy `viz/` → `.chat/viz/`; list `.chat/` + `viz/` in
+  `.git/info/exclude` (local-only — never touches .gitignore/tracked files);
+  prune `.chat/viz` to the newest 100 files.
+- **Indexer**: IGNORED_DIRS += `viz`, `.chat`, `.cairn`.
+
+Follow-up worth proposing upstream: a configurable artifacts dir in dsh-
+visualize's Config so hosts can point it at their own convention directly.

@@ -86,7 +86,11 @@ async function plugFsChain(
 /** Mount ONLY the fs/sandbox ownership trio — used by the chat loop so plugin
  *  backends that inject "fs" can activate and execute outside coding turns.
  *  Kept alive for the process lifetime (never disposed): later coding turns
- *  ADOPT these services instead of re-registering (see plugFsChain). */
+ *  ADOPT these services instead of re-registering (see plugFsChain).
+ *
+ *  Also remaps community-plugin artifact writes (`viz/…`, dsh-visualize) into
+ *  `<workspace>/.chat/viz/…` so agent-generated files stay in ONE hidden dir
+ *  instead of littering the project root — see artifact-hygiene.ts. */
 export async function mountFsChain(ctx: Context, opts: { cwd: string; mode?: "workspace-write" | "read-only" | "danger-full-access" }): Promise<void> {
   if ((ctx as unknown as { get: (n: string) => unknown }).get("fs")) return;
   const disposers: Array<() => void> = [];
@@ -96,6 +100,22 @@ export async function mountFsChain(ctx: Context, opts: { cwd: string; mode?: "wo
     await fiber;
   };
   await plugFsChain(ctx, { cwd: opts.cwd, mode: opts.mode ?? "workspace-write" }, disposers, plug);
+  remapChatArtifactDirs(ctx);
+}
+
+/** Instance-level patch on the mounted fs service: rewrite the well-known
+ *  plugin-artifact prefix `viz(/…)` to `.chat/viz(…)`. Only the chat-mounted
+ *  chain is patched (coding mounts its own per-turn and stays stock). Harmless
+ *  under adoption: nothing legitimate writes a top-level `viz/`. Idempotent. */
+export function remapChatArtifactDirs(ctx: Context): void {
+  const fsSvc = (ctx as unknown as { get: (n: string) => unknown }).get("fs") as
+    | { resolve: (path: string, opts?: unknown) => Promise<unknown>; __cairnVizRemap?: boolean }
+    | undefined;
+  if (!fsSvc || typeof fsSvc.resolve !== "function" || fsSvc.__cairnVizRemap) return;
+  const origResolve = fsSvc.resolve.bind(fsSvc);
+  fsSvc.resolve = (path: string, opts?: unknown) =>
+    origResolve(path === "viz" || path.startsWith("viz/") ? `.chat/${path}` : path, opts);
+  fsSvc.__cairnVizRemap = true;
 }
 
 /**
