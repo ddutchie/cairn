@@ -27,6 +27,7 @@ import approvalService from "@deepseek-ai/dsh-user-approval";
 import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
 import SkillRegistry from "@deepseek-ai/dsh-skill";
+import InvariantRegistry from "@deepseek-ai/dsh-invariants";
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
@@ -299,6 +300,10 @@ export async function getContext(): Promise<Context> {
     // loader registers a provider on it (below) and community plugins register
     // theirs — one merged catalog with dsh rank/precedence semantics.
     B["dsh:skills"] = SkillRegistry;
+    // InvariantRegistry (ctx.invariants): many plugin companions inject this to
+    // install commit-event/security invariants. Mount it so those plugins
+    // activate (inject-gating) instead of stalling; default config is permissive.
+    B["dsh:invariants"] = InvariantRegistry;
     // NOTE: no boot-time "fs" here — the sandbox/sandboxPolicy/fs service names
     // are OWNED by the per-context fs chain (mountFsChain / mountCodingStack),
     // which the chat loop mounts lazily when plugins need ctx.fs and coding
@@ -348,6 +353,9 @@ export async function getContext(): Promise<Context> {
       // Skill registry (ctx.skills): hosts Cairn's SKILL.md provider + any
       // community plugin's bundled-skill providers behind one catalog.
       { id: "skills", name: "cordis:dsh:skills" },
+      // Invariant registry (ctx.invariants): plugin companions that inject
+      // "invariants" activate against this instead of stalling.
+      { id: "invariants", name: "cordis:dsh:invariants" },
       { id: "subagent-spawn", name: "cordis:cairn:subagent-spawn", config: { providerName: "spawn" } },
       { id: "tool-subagent", name: "cordis:cairn:tool-subagent", config: { provider: "spawn", toolName: "subagent", backgroundMode: "one-shot" } },
     ];

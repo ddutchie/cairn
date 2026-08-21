@@ -7,7 +7,8 @@ what is still open after the `feat/cordis-runtime` refactor.
 > scope: electron main + renderer. The runtime is Cordis (the engine), dsh
 > provides the agent/session/tools stack, Cairn owns the UI, DB, tools bridge
 > and plugin system. `docs/plans/cordis-runtime.md` holds the chronological plan
-> (§1–§23); this file is the state-of-the-world reference.
+> (§1–§23); this file is the state-of-the-world reference. Plugin service
+> coverage: **`docs/dsh-plugin-compatibility.md`**.
 
 ---
 
@@ -90,6 +91,7 @@ caches it in module-level `sharedCtx`.
 | token-meter / compaction / llm-retry | dsh builtins | pressure + auto-compact + retry |
 | subagent (+spawn +tool-subagent) | dsh/cairn | subagent capability |
 | skills | `cordis:dsh:skills` | `skills` registry |
+| invariants | `cordis:dsh:invariants` | `invariants` registry (companion plugins) |
 
 ---
 
