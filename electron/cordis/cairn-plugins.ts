@@ -708,64 +708,6 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
   });
 }
 
-// ── cairn-plan-mode ──────────────────────────────────────────────────────────
-// Plan-mode read-only gate for the coding agent (Phase 1.5 step 2d). dsh's
-// dsh-plan-mode provides the logged plan/mode state + the exit_plan_mode review
-// tool, but it does NOT restrict the toolset. This plugin registers a
-// tools/pre-execute guard that DENIES mutating tools while plan mode is active,
-// mirroring Cairn's builtin PLAN_MODE_ALLOWED contract: plan mode is read-only
-// analysis + writing the PRD note (ensure_note) only.
-
-/** Tools permitted while plan mode is active (read-only + PRD write). */
-const PLAN_MODE_ALLOWED = new Set<string>([
-  // Coding read-only (dsh names).
-  "read", "read_image", "glob", "grep",
-  // Plan-mode control (dsh).
-  "exit_plan_mode", "plan",
-  // Cairn read / context.
-  "get_active_context", "get_project_context_pack", "get_user_writing_style",
-  "get_note", "search_notes", "search_notes_semantic", "search_tasks_semantic",
-  "get_task", "search_tasks", "list_ready_tasks", "list_overdue_tasks",
-  "list_tasks_due", "list_templates",
-  "codebase_search_symbols", "codebase_get_symbol_definition",
-  "codebase_get_references", "codebase_get_file_symbols",
-  // Cairn write — PRD note only (idempotent upsert).
-  "ensure_note",
-  // Renderer-side questions + skills.
-  "ask_questions", "skill",
-]);
-
-export interface CairnPlanModeConfig {
-  /** Whether plan mode is active for this turn. */
-  active: boolean;
-}
-
-/**
- * Gate mutating tools out of plan mode. Registers a `tools/pre-execute` handler
- * that returns `{kind:'deny'}` for any tool not in PLAN_MODE_ALLOWED while plan
- * mode is active. Read-only + ensure_note + exit_plan_mode pass through.
- */
-export function cairnPlanModePlugin(ctx: Context, config: CairnPlanModeConfig): (() => void) | void {
-  const { active } = config;
-  if (!active) return;
-
-  // Register on the tools pre-execute waterfall. The first denial reason is
-  // surfaced to the model so it knows why the call was blocked.
-  const unsub = (ctx as unknown as { on: (ev: string, fn: (...args: unknown[]) => unknown) => () => void }).on(
-    "tools/pre-execute",
-    (...args: unknown[]) => {
-      const exec = args[0] as { name?: string } | undefined;
-      const next = args[1] as (() => Promise<unknown>) | undefined;
-      const name = exec?.name;
-      if (typeof name === "string" && !PLAN_MODE_ALLOWED.has(name)) {
-        return Promise.resolve({ kind: "deny", reason: `"${name}" is not available in plan mode (read-only).` });
-      }
-      return next ? next() : undefined;
-    },
-  );
-  return unsub;
-}
-
 // ── cairn-approval ────────────────────────────────────────────────────────────
 // Human-in-the-loop tool approval for the coding agent (Phase 1.5 step 2e).
 // When autoApprove is OFF, mutating tools must be confirmed by the user before

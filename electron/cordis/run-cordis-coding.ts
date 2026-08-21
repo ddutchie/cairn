@@ -29,7 +29,6 @@ import {
   cairnCodingPlugin,
   cairnQuestionsPlugin,
   cairnSystemPromptPlugin,
-  cairnPlanModePlugin,
   cairnApprovalPlugin,
   cairnDoomLoopPlugin,
   CAIRN_DB,
@@ -163,8 +162,9 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // register no skill tool — the section is just the caller's systemPrompt.
     const systemText = systemPrompt;
     await mount(cairnSystemPromptPlugin, { systemText });
-    // Plan-mode read-only gate (denies mutating tools while plan mode is active).
-    await mount(cairnPlanModePlugin, { active: mode === "plan" });
+    // Plan mode is owned by dsh (`dsh-plan-mode`, mounted in the coding stack):
+    // it drives the plan:policy section + exit_plan_mode via planMode.set(agent).
+    // No custom read-only tool guard — dsh's plan mode is advisory state.
     // HITL tool approval (no-op when autoApprove is on).
     if (!autoApprove && approvals) {
       await mount(cairnApprovalPlugin, {

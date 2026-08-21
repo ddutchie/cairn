@@ -164,8 +164,9 @@ names can be registered exactly once per context lifetime.
   and `fs` is absent, and KEEPS it (never disposed). Later coding turns **ADOPT**
   the existing services instead of re-registering (`plugFsChain` catches
   `service "…" has been registered`).
-- Tradeoff: whichever side mounts first owns sandbox root/mode for the process;
-  plan-mode tool gating is unaffected (separate pre-execute guard).
+-   Tradeoff: whichever side mounts first owns sandbox root/mode for the process;
+  plan mode is dsh-owned advisory state (plan:policy section + exit_plan_mode
+  via `planMode.set(agent)`), with no custom read-only tool guard.
 - **`.chat` artifacts**: the chat fs chain `remapChatArtifactDirs` rewrites the
   plugin-artifact prefix `viz(/…)` → `.chat/viz(…)` on `fs.resolve`. Hygiene
   (`artifact-hygiene.ts`) migrates legacy `viz/`, lists `.chat/`+`viz/` in

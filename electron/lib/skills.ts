@@ -274,22 +274,3 @@ export function loadSkill(name: string, skills: SkillMeta[]): SkillContent | nul
   };
 }
 
-/**
- * Renders the available skills as an XML block for injection into the system
- * prompt. Only name and description are included — the full body is lazy.
- * Accepts any {name, description} shape (SkillMeta or dsh SkillSummary).
- *
- * Returns an empty string if there are no skills.
- */
-export function renderSkillsXml(skills: ReadonlyArray<{ name: string; description: string }>): string {
-  if (skills.length === 0) return "";
-
-  const items = skills
-    .map(
-      (s) =>
-        `  <skill>\n    <name>${s.name}</name>\n    <description>${s.description}</description>\n  </skill>`,
-    )
-    .join("\n");
-
-  return `<available_skills>\n${items}\n</available_skills>`;
-}

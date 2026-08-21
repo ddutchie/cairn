@@ -22,7 +22,7 @@ import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import type { PiAgentSession, AgentLLMConfig, AgentToolContext } from "../lib/pi-agent-types";
 import type { Database } from "better-sqlite3";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
-import { discoverSkills, renderSkillsXml } from "../lib/skills";
+import { discoverSkills } from "../lib/skills";
 import { normaliseBaseUrl, isLocalEndpoint } from "../lib/llm";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
@@ -398,7 +398,6 @@ export function registerPiAgentHandler(
     const skills = discoverSkills(cwd);
     const systemPrompt = buildPiAgentSystemPrompt({
       projectName, cwd, taskTitle, workspaceId, projectId, mode, planContent,
-      skillsXml: renderSkillsXml(skills),
       role,
     });
 
@@ -523,7 +522,7 @@ export function registerPiAgentHandler(
     session.role = role;
 
     const skills = discoverSkills(cwd);
-    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, skillsXml: renderSkillsXml(skills), role });
+    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, role });
 
     const toolCtx: AgentToolContext = {
       cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
