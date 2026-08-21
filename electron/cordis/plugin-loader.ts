@@ -47,6 +47,25 @@ export function pluginsDevEnabled(): boolean {
 const MANIFEST = "plugins.yml";
 /** All entry ids this loader currently owns (so a reload can diff/remove them). */
 const activeUserEntryIds = new Set<string>();
+/** Entries that failed to load, keyed by id → the source signature that failed.
+ *  We skip re-creating a failed entry until its signature changes (its file is
+ *  edited, or the manifest points it elsewhere) — otherwise every fs.watch tick
+ *  retries a broken plugin forever (e.g. a backend importing an unresolvable
+ *  bare package). */
+const failedEntries = new Map<string, string>();
+
+/** A cheap change-signature for an entry: file mtime+size for a `./` plugin, or
+ *  the bare module name for a builtin. Used to decide whether to retry a failed
+ *  entry after the plugins dir changes. */
+function entrySignature(modName: string): string {
+  if (!modName.startsWith(".")) return modName;
+  try {
+    const st = fs.statSync(path.resolve(pluginsRoot, modName));
+    return `${modName}:${st.mtimeMs}:${st.size}`;
+  } catch {
+    return `${modName}:missing`;
+  }
+}
 
 interface UserPluginEntry {
   id: string;
@@ -147,6 +166,10 @@ async function reconcile(ctx: Context, loader: LoaderLike): Promise<void> {
       }
     }
   }
+  // Drop failure records for entries no longer desired (so re-adding retries).
+  for (const id of [...failedEntries.keys()]) {
+    if (!desiredIds.has(id)) failedEntries.delete(id);
+  }
 
   // Create newly-desired entries. (A config edit on an existing id is handled by
   // remove+recreate: simplest correct semantics; the Loader's own update path is
@@ -154,6 +177,10 @@ async function reconcile(ctx: Context, loader: LoaderLike): Promise<void> {
   for (const e of desired) {
     if (activeUserEntryIds.has(e.id)) continue;
     const modName = e.name as string; // filtered to string above
+    const sig = entrySignature(modName);
+    // Skip an entry that already failed with this exact signature — retry only
+    // once its file/name changes (avoids a per-watch-tick retry storm).
+    if (failedEntries.get(e.id) === sig) continue;
     try {
       // For a file plugin, resolve to an absolute file:// URL against the plugins
       // dir and cache-bust it so an edited body reloads (import() memoises URLs).
@@ -166,8 +193,10 @@ async function reconcile(ctx: Context, loader: LoaderLike): Promise<void> {
       }
       await loader.create({ id: e.id, name, config: e.config ?? {} });
       activeUserEntryIds.add(e.id);
+      failedEntries.delete(e.id);
       console.log(`[cairn-plugins] loaded '${e.id}' (${modName})`);
     } catch (err) {
+      failedEntries.set(e.id, sig);
       console.error(`[cairn-plugins] failed to load '${e.id}' (${modName}):`, err instanceof Error ? err.message : err);
     }
   }
@@ -203,4 +232,5 @@ export function watchUserPlugins(ctx: Context): void {
 export function stopWatchingUserPlugins(): void {
   if (debounce) { clearTimeout(debounce); debounce = null; }
   if (watcher) { watcher.close(); watcher = null; }
+  failedEntries.clear();
 }
