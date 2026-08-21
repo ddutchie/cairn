@@ -92,6 +92,35 @@ export function setSessionRoot(root: string): void {
   sessionRoot = root;
 }
 
+/**
+ * Drop the cached live chat agent for a thread (used by clear-thread). The
+ * cache is module-global (`globalThis.__cairnChatAgents`), so a clear that only
+ * wipes jsonl + ctx.agents leaves this agent alive — the next turn would then
+ * followup into the STALE in-memory session (pre-clear context leaks back into
+ * the model) whose write handles point at deleted files (turns silently stop
+ * persisting). Call BEFORE wiping files: dispose may flush pending events,
+ * which the subsequent file wipe then removes.
+ */
+export async function dropChatAgentForThread(threadId: string): Promise<void> {
+  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, Record<string, unknown>> }).__cairnChatAgents;
+  if (!map) return;
+  const agent = map.get(threadId);
+  if (!agent) return;
+  map.delete(threadId);
+  // Let an in-flight turn settle so dispose doesn't race mid-step.
+  try {
+    const whenIdle = agent.whenIdle as (() => Promise<void>) | undefined;
+    if (typeof whenIdle === "function") await whenIdle.call(agent);
+  } catch { /* already idle / aborted */ }
+  for (const k of ["dispose", "close", "abort"] as const) {
+    const fn = agent[k] as (() => unknown) | undefined;
+    if (typeof fn === "function") {
+      try { await fn.call(agent); } catch { /* best-effort teardown */ }
+      break;
+    }
+  }
+}
+
 /** The cached live chat Agent for a thread (or undefined if none is live). The
  *  chat loop keeps one Agent per threadId in globalThis.__cairnChatAgents so a
  *  back-to-back turn reuses it (see runTurn). Exposed so /compact can run

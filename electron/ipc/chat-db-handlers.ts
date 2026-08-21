@@ -39,6 +39,15 @@ export function registerChatDbHandlers(ctx: DbContext): void {
   // like bb4c63a3… — the prefix scan alone would leave them orphaned and they'd
   // reappear as 6 blocks on reload). Also drop in-memory agents.
   registerIpcHandle("db:chat:clearThreadMessages", (_e, { threadId }) => handle(async () => {
+    // Drop the cached live chat agent FIRST (see dropChatAgentForThread): the
+    // module-global cache survives jsonl/ctx.agents wipes, and reusing a stale
+    // agent both leaks pre-clear context into the next turn and writes to
+    // deleted files (turns stop persisting). Dispose may flush pending events,
+    // so this must run before the file wipe below removes them.
+    try {
+      const { dropChatAgentForThread } = require("../cordis/run-cordis-loop") as { dropChatAgentForThread: (id: string) => Promise<void> };
+      await dropChatAgentForThread(threadId);
+    } catch { /* best-effort; wipe still proceeds */ }
     ctx.db.prepare("DELETE FROM chat_messages WHERE thread_id = ?").run(threadId);
     try {
       const fs = require("node:fs") as typeof import("node:fs");
