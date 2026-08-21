@@ -864,3 +864,59 @@ trusted sources only").
 electron/cordis/plugin-loader.ts (readEnabledManifest, pluginsRoot),
 electron/preload.ts (electron.plugins.*), src/components/settings/PluginsSettings.tsx,
 src/lib/plugin-ui/{loader,dsh-client-ctx,platform-modules,dsh-slot-map}.ts.
+
+## 21. C2 install flow — `Add plugin from GitHub` (2026-08-21) ✅
+
+A real dsh community plugin can now be installed from a GitHub repo (or a local
+path) straight from Settings → Plugins, with no build step, and its UI half runs
+via the shims (§19). This is the last piece of C2.
+
+**Main (`electron/cordis/plugin-installer.ts`):**
+- `parseSpec(raw)` — `github:owner/repo[#ref]` | `owner/repo` | github.com URL |
+  absolute/`~`/`.` local path.
+- `installPlugin(spec)` — for `github:`, fetch the codeload tarball
+  (`https://codeload.github.com/<o>/<r>/tar.gz/refs/heads/<ref>`, tries
+  main→master), gunzip (`zlib`), and extract with a **built-in minimal ustar
+  extractor** (`untar`, strips the top dir, contains against `..` escape — NO new
+  dependency). Local specs are `fs.cpSync`'d. Then read `package.json`: require a
+  `dsh` section, map `main`→backend `name` and `exports["./client"]`→`ui`, both
+  rewritten to `./installed/<id>/…` (only if the file actually ships — a
+  build-from-source package is rejected loudly). Upsert the row into
+  `plugins.yml` (replaces same-id, never duplicates).
+- `uninstallPlugin(id)` — drop the row + remove `installed/<id>` (only ever
+  deletes under `installed/`, so hand-authored plugins are safe).
+
+**IPC (`ui-plugin-handlers.ts`) + preload:** `plugins:install` (dev-gated — it
+runs third-party code) and `plugins:uninstall`; `electron.plugins.install/
+uninstall`. The plugin-dir watcher reconciles the new backend live and fires
+`plugins:ui-changed` so the renderer re-pulls + re-activates the UI half.
+
+**Settings (`PluginsSettings.tsx`):** an "Add plugin" input (spec + Install,
+Enter-to-submit) with a "trusted sources only" warning + inline error surface,
+and a per-row **uninstall** (trash) button shown only for installer-managed
+rows (`./installed/…`).
+
+**Real dsh bundle discovery — `__ModuleLoader__` wrapper.** The real
+`dsh-visualize` client (`lib/client.js`, tsdown) is NOT bare CJS — it's wrapped:
+`window.__ModuleLoader__.load({ id, factory: (require) => { …; return
+module.exports } })`. Inside the factory it's exactly our supported shape
+(`require("react")`, `exports.apply/inject/name`, `ctx.slots.inject/register`).
+The renderer loader now installs a **transient `__ModuleLoader__` shim**
+(`loader.ts` `installModuleLoaderShim`) that runs the factory with our platform
+`require` and captures its exports, restoring the previous global after. It uses
+one aliased slot (`tool.call.toolview` ✓) and one `planned` slot
+(`conversation.input.dock` → `resolveSlotName` returns null → the ctx shim warns
++ no-ops that registration; the toolview still works).
+
+**Verified:** installer unit suite 9 (spec parse, tar round-trip, dsh map,
+upsert, uninstall — mocked fetch); loader wrapped-bundle test 1; component suite
+167; installer live-fetched the real `github:Nagi-ovo/dsh-visualize`, extracted
+it, wrote the correct manifest row, and it's installed in the dev plugins dir.
+tsc + next build clean.
+
+**Known gap (unchanged):** the backend half (`lib/index.js`) is plain ESM that
+imports `@deepseek-ai/dsh-tools`/`-skill`/`schemastery` by bare name — the Cordis
+Loader can't resolve those (no node_modules beside the plugin), so the backend
+tool does not load. Full backend parity needs the `ctx.cairn` capability shims
+(defineTool bridge + dsh-fs/skill/sandbox) — the next task. The UI half is fully
+working today.

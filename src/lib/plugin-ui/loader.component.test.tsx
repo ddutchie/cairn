@@ -62,4 +62,37 @@ describe("plugin-ui loader eval paths", () => {
     render(<AppOverlayLayer {...overlayProps} />);
     expect(screen.getByTestId("esm-badge")).toBeTruthy();
   });
+
+  it("loads a real dsh bundle wrapped in window.__ModuleLoader__.load({ factory }) exporting apply(ctx)", async () => {
+    const { evalPluginModuleForTest } = await import("./loader");
+    // The exact shape tsdown emits for a dsh client plugin: the CJS body lives
+    // inside a factory registered with a global __ModuleLoader__, and exports
+    // apply/inject/name — driven via the dsh ctx shim (apply path).
+    const wrapped = `
+      window.__ModuleLoader__.load({
+        id: "@dsh-external/example",
+        factory: (require) => {
+          var module = { exports: {} };
+          var exports = module.exports;
+          var react = require("react");
+          function VizCard() { return react.createElement("div", { "data-testid": "wrapped-viz" }, "viz"); }
+          function apply(ctx) {
+            ctx.slots.inject("tool.call.toolview", () =>
+              ctx.slots.register({ name: "tool.call.toolview", key: "visualize" }, VizCard));
+          }
+          exports.apply = apply;
+          exports.inject = ["slots"];
+          exports.name = "example";
+          return module.exports;
+        }
+      });
+    `;
+    const mod = evalPluginModuleForTest("wrapped", wrapped);
+    expect(mod).toBeTruthy();
+    expect(typeof (mod as { apply?: unknown }).apply).toBe("function");
+    // Activating routes through the dsh ctx shim → registers the keyed toolview.
+    act(() => activateUIPlugin("wrapped", mod!));
+    const { slotHasKey } = await import("./registry");
+    expect(slotHasKey("tool.call.toolview", "visualize")).toBe(true);
+  });
 });

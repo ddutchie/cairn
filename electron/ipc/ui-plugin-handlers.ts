@@ -14,6 +14,7 @@ import * as path from "path";
 import { ipcMain, shell, type WebContents } from "electron";
 import * as yaml from "js-yaml";
 import { readEnabledManifest, getPluginsRoot, pluginsDevEnabled } from "../cordis/plugin-loader";
+import { installPlugin, uninstallPlugin } from "../cordis/plugin-installer";
 
 export interface UiPluginPayload {
   id: string;
@@ -116,6 +117,34 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       if (!root) return { error: "no plugins directory configured" };
       fs.mkdirSync(root, { recursive: true });
       await shell.openPath(root);
+      return { data: { ok: true } };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // ── Install / uninstall (C2, §20). Fetching + running third-party code is a
+  // code-exec surface, so install is only permitted under the dev flag until the
+  // Tier-3 sandbox exists. The plugin-dir watcher reconciles the new entry live.
+  ipcMain.handle("plugins:install", async (_e, req: { spec: string }) => {
+    try {
+      if (!pluginsDevEnabled()) {
+        return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to install." };
+      }
+      if (!req || typeof req.spec !== "string" || !req.spec.trim()) {
+        return { error: "provide a plugin spec (github:owner/repo or a local path)" };
+      }
+      const result = await installPlugin(req.spec);
+      return { data: result };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle("plugins:uninstall", (_e, req: { id: string }) => {
+    try {
+      if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
+      uninstallPlugin(req.id);
       return { data: { ok: true } };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };

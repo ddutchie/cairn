@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Puzzle, FolderOpen, RefreshCw, Bot } from "lucide-react";
+import { Puzzle, FolderOpen, RefreshCw, Bot, Download, Trash2, Loader2 } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 
 interface PluginRow {
@@ -23,6 +23,8 @@ type Electron = {
     setEnabled: (id: string, enabled: boolean) => Promise<{ ok: boolean }>;
     openFolder: () => Promise<{ ok: boolean }>;
     onUiChanged: (cb: () => void) => () => void;
+    install: (spec: string) => Promise<{ id: string; name: string | null; ui: string | null; kind: PluginRow["kind"] }>;
+    uninstall: (id: string) => Promise<{ ok: boolean }>;
   };
 };
 
@@ -36,6 +38,9 @@ export function PluginsSettings() {
   const el = (typeof window !== "undefined" ? (window as unknown as { electron?: Electron }).electron : undefined);
   const [data, setData] = useState<PluginList | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [spec, setSpec] = useState("");
+  const [installing, setInstalling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!el?.plugins) { setData({ devEnabled: false, root: "", plugins: [] }); return; }
@@ -55,6 +60,34 @@ export function PluginsSettings() {
     try { await el.plugins.setEnabled(row.id, row.disabled /* was disabled → enable */); await refresh(); }
     finally { setBusy(null); }
   };
+
+  const install = async () => {
+    if (!el?.plugins || !spec.trim()) return;
+    setInstalling(true);
+    setError(null);
+    try {
+      await el.plugins.install(spec.trim());
+      setSpec("");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const uninstall = async (row: PluginRow) => {
+    if (!el?.plugins) return;
+    setBusy(row.id);
+    try { await el.plugins.uninstall(row.id); await refresh(); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(null); }
+  };
+
+  // A plugin is installer-managed when its entry points under installed/.
+  const isManaged = (row: PluginRow) =>
+    (row.name?.includes("/installed/") ?? false) || (row.ui?.includes("/installed/") ?? false)
+    || (row.name?.startsWith("./installed/") ?? false) || (row.ui?.startsWith("./installed/") ?? false);
 
   return (
     <div className="space-y-6">
@@ -93,6 +126,39 @@ export function PluginsSettings() {
         </div>
       )}
 
+      {/* Add a plugin from GitHub or a local path. */}
+      {data?.devEnabled && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <input
+              value={spec}
+              onChange={(e) => { setSpec(e.target.value); if (error) setError(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !installing) void install(); }}
+              placeholder="github:owner/repo  ·  or a local folder path"
+              spellCheck={false}
+              className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-mono rounded-lg border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+            <button
+              onClick={() => void install()}
+              disabled={installing || !spec.trim()}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-[var(--accent)] text-white disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity shrink-0"
+            >
+              {installing ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              {installing ? "Installing…" : "Install"}
+            </button>
+          </div>
+          <p className="text-[0.7rem] text-[var(--text-tertiary)] leading-relaxed">
+            Installs a dsh-compatible plugin. Runs third-party code — install from{" "}
+            <strong className="text-[var(--text-secondary)]">trusted sources only</strong>.
+          </p>
+          {error && (
+            <div className="text-[0.7rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] rounded-lg px-2.5 py-1.5">
+              {error}
+            </div>
+          )}
+        </div>
+      )}
+
       {data && data.plugins.length === 0 ? (
         <div className="p-6 rounded-xl border border-dashed border-[var(--border)] text-center">
           <Puzzle size={20} className="mx-auto text-[var(--text-tertiary)] mb-2" />
@@ -124,6 +190,16 @@ export function PluginsSettings() {
                 disabled={busy === row.id || !data.devEnabled}
                 onCheckedChange={() => void toggle(row)}
               />
+              {isManaged(row) && (
+                <button
+                  onClick={() => void uninstall(row)}
+                  disabled={busy === row.id}
+                  title="Uninstall (removes files)"
+                  className="p-1.5 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] disabled:opacity-40 transition-colors shrink-0"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           ))}
         </div>

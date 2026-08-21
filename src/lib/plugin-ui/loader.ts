@@ -117,16 +117,24 @@ function namedBindings(clause: string): string {
 function evalCjs(id: string, source: string): PluginModule | null {
   const module = { exports: {} as Record<string, unknown> };
   try {
+    // Real dsh client bundles (tsdown) are wrapped as
+    //   window.__ModuleLoader__.load({ id, factory: (require) => { …; return module.exports } })
+    // rather than a bare CJS body. Provide a transient __ModuleLoader__ shim that
+    // runs the factory with our platform `require` and captures its exports.
+    const captured = installModuleLoaderShim(id);
     // Only module/exports/require are injected (the CommonJS trio). React is
     // obtained via require("react") — NOT a magic param — so a plugin that does
     // `const React = require("react")` (dsh bundles, ours) never collides with a
     // wrapper param.
     const fn = new Function("module", "exports", "require", source);
     fn(module, module.exports, makeRequire(id));
+    captured.restore();
+    // Prefer the __ModuleLoader__-captured exports (wrapped bundle), else the
+    // module.exports written directly (bare CJS / transpiled ESM).
+    const rawExports = (captured.exports ?? module.exports) as Record<string, unknown>;
     // Accept the Cairn-native shape (activate) OR the dsh client shape (apply).
     // The default export (some bundles) is unwrapped too.
-    const raw = module.exports as Record<string, unknown>;
-    const mod = (raw.activate || raw.apply ? raw : (raw.default as Record<string, unknown> | undefined)) as (Record<string, unknown>) | undefined;
+    const mod = (rawExports.activate || rawExports.apply ? rawExports : (rawExports.default as Record<string, unknown> | undefined)) as (Record<string, unknown>) | undefined;
     if (!mod || (typeof mod.activate !== "function" && typeof mod.apply !== "function")) {
       console.error(`[plugin-ui] '${id}' must export activate(ui) or apply(ctx)`);
       return null;
@@ -136,6 +144,30 @@ function evalCjs(id: string, source: string): PluginModule | null {
     console.error(`[plugin-ui] '${id}' failed to evaluate:`, err);
     return null;
   }
+}
+
+/** Transient window.__ModuleLoader__ shim for wrapped dsh client bundles.
+ *  Restores the previous global on `restore()` and exposes the captured
+ *  factory exports (undefined if the source wasn't a wrapped bundle). */
+function installModuleLoaderShim(id: string): { exports: Record<string, unknown> | undefined; restore: () => void } {
+  const state: { exports: Record<string, unknown> | undefined; restore: () => void } = { exports: undefined, restore: () => {} };
+  if (typeof window === "undefined") return state;
+  const w = window as unknown as { __ModuleLoader__?: unknown };
+  const prev = w.__ModuleLoader__;
+  w.__ModuleLoader__ = {
+    load(descriptor: { id?: string; factory?: (require: (n: string) => unknown) => Record<string, unknown> }) {
+      try {
+        if (typeof descriptor?.factory === "function") {
+          state.exports = descriptor.factory(makeRequire(id));
+        }
+      } catch (err) {
+        console.error(`[plugin-ui] '${id}' __ModuleLoader__ factory threw:`, err);
+      }
+      return state.exports;
+    },
+  };
+  state.restore = () => { w.__ModuleLoader__ = prev; };
+  return state;
 }
 
 /** Evaluate a plugin module. ESM is transpiled to CJS first, then both go
@@ -178,3 +210,7 @@ export function startUIPlugins(): void {
 
 /** Exposed for unit tests: the ESM → CJS transpile. */
 export const esmToCjsForTest = esmToCjs;
+
+/** Test hook: evaluate a plugin source exactly as the loader does (ESM→CJS
+ *  transpile, __ModuleLoader__ wrapper capture, platform require). */
+export const evalPluginModuleForTest = evalPluginModule;
