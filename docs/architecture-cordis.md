@@ -8,7 +8,8 @@ what is still open after the `feat/cordis-runtime` refactor.
 > provides the agent/session/tools stack, Cairn owns the UI, DB, tools bridge
 > and plugin system. `docs/plans/cordis-runtime.md` holds the chronological plan
 > (§1–§23); this file is the state-of-the-world reference. Plugin service
-> coverage: **`docs/dsh-plugin-compatibility.md`**.
+> coverage: **`docs/dsh-plugin-compatibility.md`**. Pre-Cordis leftovers audit +
+> cleanup plan: **`docs/pre-cordis-leftovers-audit.md`**.
 
 ---
 
