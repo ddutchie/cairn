@@ -81,9 +81,14 @@ community client bundles use.
 | `hello-tool.mjs` | Backend tool | adds an agent-visible `hello` tool |
 | `roll-dice.mjs` | Backend tool | adds a `roll_dice` tool (params + config) |
 | `esm-badge.plugin.js` | UI (`app.overlay`), **ESM** | a badge authored with `import`/`export` — proves the ESM→CJS path |
-| `visualize-tool.mjs` + `visualize-view.plugin.js` | Backend tool + `tool.call.toolview` | a port of the community plugin **dsh-visualize**: the agent calls `visualize(html)` and an interactive **sandboxed iframe card** renders in the transcript |
 
 Copy any of them in, add its entry to `plugins.yml`, and it appears live.
+
+For a full backend-tool + UI-card showcase, **install the real community
+plugin** from Settings → Plugins: `github:Nagi-ovo/dsh-visualize` — the agent
+gets a `visualize(html)` tool and interactive sandboxed-iframe cards render in
+the transcript. It runs in Cairn unmodified (the same bundle the dsh web shell
+loads).
 
 ## Notes / limits
 

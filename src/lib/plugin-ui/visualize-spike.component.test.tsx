@@ -1,30 +1,24 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, act } from "@testing-library/react";
 import * as React from "react";
-import * as fs from "fs";
-import * as path from "path";
 import { KeyedSlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
 import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "@/lib/plugin-ui/api";
 import type { ToolCallViewProps } from "@/lib/dsh-toolview/contract";
-
-/**
- * Phase 2 spike: the community plugin dsh-visualize's UI SHAPE runs in Cairn.
- * We load the shipped visualize-view.plugin.js exactly as the renderer loader
- * does (new Function CJS eval), activate it, and render a `visualize` tool call
- * through the tool.call.toolview slot — asserting the sandboxed iframe carries
- * the model's HTML. No dsh shell involved.
- */
-
-/**
- * Phase 2 spike: the community plugin dsh-visualize's AUTHENTIC shape runs in
- * Cairn — { name, inject, apply(ctx) } calling ctx.slots.register, driven via
- * the dsh-client ctx shim. We eval the shipped file exactly as the loader does
- * (ESM→CJS transpile + platform require), activate it, and render a `visualize`
- * tool call through the tool.call.toolview slot — asserting the sandboxed iframe
- * carries the model's HTML. No dsh shell involved.
- */
-
 import { esmToCjsForTest } from "@/lib/plugin-ui/loader";
+
+/**
+ * dsh-visualize spike: the community plugin's UI SHAPE runs in Cairn —
+ * { name, inject:['slots'], apply(ctx) } calling ctx.slots.register through the
+ * dsh-client ctx shim. The inlined source below is the authentic shape the real
+ * bundle uses (ESM exports + require("react") + ctx.slots.inject → register of
+ * a keyed tool.call.toolview rendering a sandboxed iframe). We eval it exactly
+ * as the loader does (ESM→CJS transpile + platform require), activate it, and
+ * render a `visualize` tool call — asserting the iframe carries the model's
+ * HTML. No dsh shell involved.
+ *
+ * The REAL dsh-visualize is installed via Settings → Plugins
+ * (github:Nagi-ovo/dsh-visualize) — this test guards the shim it relies on.
+ */
 
 // Eval the plugin source the way the loader does (transpile ESM, resolve the
 // platform module table for require('react')).
@@ -38,6 +32,38 @@ function evalPlugin(source: string): UIPluginModule {
   const raw = mod.exports;
   return (raw.activate || raw.apply ? raw : raw.default) as UIPluginModule;
 }
+
+const DSH_SHAPED_PLUGIN = `
+const HEIGHT_MSG = "cairn-visualize-height";
+function readHtml(block) {
+  if (block && "kind" in block && Array.isArray(block.content)) {
+    for (const b of block.content) if (b.type === "text" && b.text) return b.text;
+  }
+  return null;
+}
+const React = require("react");
+function VisualizeCard(props) {
+  const html = readHtml(props.block);
+  if (!html) return React.createElement("div", { style: { fontSize: 12 } }, "\\u2728 rendering visualization\\u2026");
+  return React.createElement(
+    "div",
+    null,
+    React.createElement("div", null, "\\u2728 Visualization"),
+    React.createElement("iframe", {
+      sandbox: "allow-scripts",
+      srcDoc: "<!doctype html><html><body>" + html + "</body></html>",
+      style: { display: "block", width: "100%", border: 0 },
+    }),
+  );
+}
+export const name = "dsh-visualize";
+export const inject = ["slots"];
+export function apply(ctx) {
+  ctx.slots.inject("tool.call.toolview", () =>
+    ctx.slots.register({ name: "tool.call.toolview", key: "visualize" }, VisualizeCard),
+  );
+}
+`;
 
 function settledVisualizeCall(html: string): ToolCallViewProps {
   return {
@@ -56,12 +82,8 @@ function settledVisualizeCall(html: string): ToolCallViewProps {
 describe("dsh-visualize spike (community-plugin UI shape in Cairn)", () => {
   afterEach(() => { for (const id of activeUIPluginIds()) deactivateUIPlugin(id); });
 
-  it("loads the shipped visualize toolview and renders the HTML in a sandboxed iframe", () => {
-    const src = fs.readFileSync(
-      path.join(__dirname, "../../../electron/cordis/plugins-template/visualize-view.plugin.js"),
-      "utf8",
-    );
-    act(() => activateUIPlugin("visualize", evalPlugin(src)));
+  it("loads the dsh-shaped toolview and renders the HTML in a sandboxed iframe", () => {
+    act(() => activateUIPlugin("dsh-visualize", evalPlugin(DSH_SHAPED_PLUGIN)));
 
     const html = "<h1>Hello viz</h1><p>interactive</p>";
     const { container } = render(
@@ -78,11 +100,7 @@ describe("dsh-visualize spike (community-plugin UI shape in Cairn)", () => {
   });
 
   it("shows a running state before the result settles", () => {
-    const src = fs.readFileSync(
-      path.join(__dirname, "../../../electron/cordis/plugins-template/visualize-view.plugin.js"),
-      "utf8",
-    );
-    act(() => activateUIPlugin("visualize", evalPlugin(src)));
+    act(() => activateUIPlugin("dsh-visualize", evalPlugin(DSH_SHAPED_PLUGIN)));
     const running: ToolCallViewProps = {
       callId: "v", toolName: "visualize",
       block: { callId: "v", name: "visualize", argsRaw: "", turn: 0, step: 0, time: 0, callView: null, subCalls: [] },
@@ -97,11 +115,7 @@ describe("dsh-visualize spike (community-plugin UI shape in Cairn)", () => {
     // dispatch through the same plugin-ui slot + adapter. Persisted records lack
     // `status`; the bubble maps them to status:"done". Prove the adapter builds a
     // settled block that renders the card.
-    const src = fs.readFileSync(
-      path.join(__dirname, "../../../electron/cordis/plugins-template/visualize-view.plugin.js"),
-      "utf8",
-    );
-    act(() => activateUIPlugin("visualize", evalPlugin(src)));
+    act(() => activateUIPlugin("dsh-visualize", evalPlugin(DSH_SHAPED_PLUGIN)));
     const { toToolCallViewProps } = await import("@/lib/dsh-toolview/adapter");
     const record = { tool: "visualize", label: "visualize", callId: "p1", args: "{}", output: "<b>persisted viz</b>", ok: true, status: "done" as const };
     const { container } = render(
