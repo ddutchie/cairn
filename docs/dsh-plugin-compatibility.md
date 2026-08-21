@@ -25,7 +25,7 @@ the installed `@deepseek-ai/*` versions).
 | Service | Source |
 |---|---|
 | `tools` | `ctx.tools.register/get` (Cairn bridged tools + plugin tools) |
-| `skills` | `dsh-skill` SkillRegistry (mounted) + Cairn SKILL.md provider |
+| `skills` | `dsh-skill` SkillRegistry (mounted, `ctx.skills`) + `dsh-tool-skill` (owns the `skill` tool + `<available_skills>` catalog) | Cairn's SKILL.md provider feeds the registry |
 | `fs` | chat-chain `SandboxedFileSystem` (lazy, dev-gated) |
 | `sessions` | `dsh-session` registry |
 | `agents` / `agentLoop` | `dsh-agent` + `dsh-agent-loop` |

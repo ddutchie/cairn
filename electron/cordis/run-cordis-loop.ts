@@ -28,6 +28,7 @@ import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
 import SkillRegistry from "@deepseek-ai/dsh-skill";
 import InvariantRegistry from "@deepseek-ai/dsh-invariants";
+import { apply as toolSkillApply, inject as toolSkillInject, name as toolSkillName } from "@deepseek-ai/dsh-tool-skill";
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
@@ -304,6 +305,11 @@ export async function getContext(): Promise<Context> {
     // install commit-event/security invariants. Mount it so those plugins
     // activate (inject-gating) instead of stalling; default config is permissive.
     B["dsh:invariants"] = InvariantRegistry;
+    // tool-skill (dsh drives skills): registers the `skill` tool + injects the
+    // <available_skills> catalog as a per-step user/form:catalog message, and
+    // handles /<name> user invocation. THIS owns skill delivery now — Cairn no
+    // longer injects its own section/tool (see run-cordis-coding).
+    B["dsh:tool-skill"] = { apply: toolSkillApply, inject: toolSkillInject, name: toolSkillName };
     // NOTE: no boot-time "fs" here — the sandbox/sandboxPolicy/fs service names
     // are OWNED by the per-context fs chain (mountFsChain / mountCodingStack),
     // which the chat loop mounts lazily when plugins need ctx.fs and coding
@@ -356,6 +362,9 @@ export async function getContext(): Promise<Context> {
       // Invariant registry (ctx.invariants): plugin companions that inject
       // "invariants" activate against this instead of stalling.
       { id: "invariants", name: "cordis:dsh:invariants" },
+      // tool-skill: owns the skill tool + per-step <available_skills> catalog
+      // (injected as user/form:catalog from the shared SkillRegistry).
+      { id: "tool-skill", name: "cordis:dsh:tool-skill" },
       { id: "subagent-spawn", name: "cordis:cairn:subagent-spawn", config: { providerName: "spawn" } },
       { id: "tool-subagent", name: "cordis:cairn:tool-subagent", config: { provider: "spawn", toolName: "subagent", backgroundMode: "one-shot" } },
     ];

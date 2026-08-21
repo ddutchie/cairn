@@ -169,46 +169,38 @@ A user may also invoke a skill directly; its <skill_content> block then appears 
 - A **user gesture** `/<name>` (claiming a user-invocable skill) also loads it
   deterministically.
 
-### Cairn — static system-prompt section
+### Cairn — now delegated to dsh (`dsh-tool-skill`)
 
-- Our `<available_skills>` is built **once per call** by
-  `listSkillsViaRegistry(ctx, cwd)` → `renderSkillsXml(summaries)` and mounted as
-  part of `systemText` (a `cairn:system:<id>` **section**), not a per-step
-  inbox message. Rendering:
-  ```xml
-  <available_skills>
-    <skill>
-      <name>secret-greeter</name>
-      <description>How to greet using the project's secret protocol.</description>
-    </skill>
-  </available_skills>
-  ```
-- Our **`skill` tool** (`registerSkillTool`) reads `ctx.skills.list/get` (same
-  registry), returns the body + a resource hint, and is registered like any
-  tool. We do NOT emit per-turn catalog updates (`form:catalog`) or honor
-  `<name>`-style entries (we use `<skill>/<name>` XML instead of the
-  `- \`name\`: desc` line).
-- Both source from the SAME `ctx.skills` registry (dsh SkillRegistry + Cairn's
-  SKILL.md provider).
+As of the Cordis runtime, Cairn **lets dsh own skill delivery** rather than
+injecting its own section/tool:
+
+- `dsh-tool-skill` is mounted globally (cordis: builtin + ENTRY_LIST). It
+  registers the `skill` tool and injects the `<available_skills>` catalog as a
+  per-step `user/form:catalog` message from the shared SkillRegistry — the SAME
+  registry Cairn's SKILL.md provider feeds via `cairn-skill-provider`.
+- The Cordis **coding** loop no longer builds `<available_skills>` itself and
+  no longer registers its own `skill` tool (`registerSkillTool` /
+  `listSkillsViaRegistry` were removed) — no duplicate catalog.
+- Chat gets the same dsh-driven catalog + tool automatically (both loops share
+  the global registry), so skills behave consistently across surfaces.
+- `renderSkillsXml` / `discoverSkills` remain used by the **built-in pi-agent**
+  path (`electron/ipc/pi-agent.ts`), which is a separate engine and unchanged.
 
 ### Comparison table
 
-| | dsh (`tool-skill`) | Cairn |
+| | dsh (`tool-skill`) | Cairn (now = dsh) |
 |---|---|---|
-| Catalog delivery | `user/form:catalog` message injected per `agent/pre-step` | static `<available_skills>` in the `cairn:system:<id>` system-prompt section |
-| Catalog updates | republished replacement message on change | rebuilt next call (sections are per-turn) |
-| Entry format | `- \`name\`: description` | `<skill><name>…<description>…` XML |
-| Skill tool | `skill` → `ctx.skills.get` (invocation-gated) | `skill` → `ctx.skills.get` |
-| User gesture `/<name>` | supported (user-invocable) | not implemented |
-| Registry | `ctx.skills` SkillRegistry | same (shared) |
+| Catalog delivery | `user/form:catalog` message injected per `agent/pre-step` | **same** (dsh owns it) |
+| Catalog updates | republished replacement message on change | **same** |
+| Entry format | `- \`name\`: description` | **same** |
+| Skill tool | `skill` → `ctx.skills.get` (invocation-gated) | **same** |
+| User gesture `/<name>` | supported (user-invocable) | **same** |
+| Registry | `ctx.skills` SkillRegistry | **same** (Cairn's SKILL.md provider feeds it) |
 
-**Implication:** because Cairn injects skills as a **system-prompt section**
-rather than dsh's **per-step catalog message**, a Cairn session shows the
-catalog once up-front and it's part of the "system" text the model always has —
-functionally equivalent for a fixed set, but it never emits dsh's
-"catalog changed" replacement and doesn't support `/<name>` user invocation.
-Both are correct; they're just different injection strategies over the same
-registry.
+**Implication:** dsh now drives skill discovery + delivery; Cairn only feeds the
+registry (its SKILL.md provider) and no longer double-injects. New skills are
+auto-managed — dsh republishes the catalog on change and supports `/<name>`
+user invocation.
 
 ---
 

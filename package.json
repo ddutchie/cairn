@@ -83,6 +83,7 @@
     "@deepseek-ai/dsh-tool-bash": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-tool-fs": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-tool-fs-search": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-tool-skill": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-tool-str-replace-editor": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-tool-subagent": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-tool-subagent-control": "^0.1.1-rc.2",

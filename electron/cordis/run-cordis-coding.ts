@@ -34,8 +34,7 @@ import {
   cairnDoomLoopPlugin,
   CAIRN_DB,
 } from "./cairn-plugins";
-import { registerCairnTools, registerExternalCairnTools, registerSkillTool, listSkillsViaRegistry } from "./cairn-tools";
-import { renderSkillsXml } from "../lib/skills";
+import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { buildCordisUserContent } from "./cairn-attachment-store";
 import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
@@ -157,12 +156,12 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       baseUrl: llmConfig.baseUrl,
     });
     // Skills (Phase 1.5 step 2i): read the merged skill catalog through the dsh
-    // SkillRegistry (ctx.skills — our SKILL.md provider + community plugins),
-    // inject <available_skills> into the system prompt (name+description only),
-    // and register the `skill` tool that loads a body on demand.
-    const skillSummaries = await listSkillsViaRegistry(ctx, cwd);
-    const skillsXml = renderSkillsXml(skillSummaries);
-    const systemText = skillsXml ? `${systemPrompt}\n\n${skillsXml}` : systemPrompt;
+    // Skills are owned by dsh (`dsh-tool-skill`, mounted globally): it registers
+    // the `skill` tool and injects <available_skills> as a per-step
+    // user/form:catalog message from the shared SkillRegistry (which holds our
+    // SKILL.md provider). So the system prompt here needs no skills XML and we
+    // register no skill tool — the section is just the caller's systemPrompt.
+    const systemText = systemPrompt;
     await mount(cairnSystemPromptPlugin, { systemText });
     // Plan-mode read-only gate (denies mutating tools while plan mode is active).
     await mount(cairnPlanModePlugin, { active: mode === "plan" });
@@ -214,13 +213,6 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       console.error(`[cordis-coding] registerExternalCairnTools failed:`, (e as Error)?.message ?? e);
     }
     toolDisposers.push(...externalDisposers);
-    // The `skill` tool (loads a skill body on demand through ctx.skills).
-    // No-op when the registry is missing or no skills are discovered.
-    try {
-      toolDisposers.push(...(await registerSkillTool(ctx, cwd)));
-    } catch (e) {
-      console.error(`[cordis-coding] registerSkillTool failed:`, (e as Error)?.message ?? e);
-    }
     // Automation-specific tools (run_script / write_run_file / deliver_file) —
     // registered from the heartbeat caller via extraTools.
     for (const def of opts.extraTools ?? []) {
