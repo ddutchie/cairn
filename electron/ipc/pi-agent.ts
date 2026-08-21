@@ -602,13 +602,42 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:set-mode ─────────────────────────────────────────────────────
+  // Plan mode is dsh-owned: the toggle EXECUTES dsh's /plan command through
+  // ctx.commands on a short-lived resumed agent, so the flip is logged as
+  // command/run+done + plan/mode in the session jsonl (durable — resume folds
+  // it back). The DB `mode` column remains as a Cairn-domain index for listing.
   registerIpcOn("pi-agent:set-mode", (_event, { sessionId, mode }: { sessionId: string; mode: "plan" | "execute" }) => {
     try {
       q.updatePiSession(ctx.db, sessionId, { mode, updatedAt: ts() });
-      broadcastEvent("pi-agent:mode-change", { sessionId, mode });
     } catch (e) {
       console.warn("[pi-agent] failed to update session mode:", e);
     }
+    void (async () => {
+      try {
+        const agentConfig = getCachedConfig().agentConfig;
+        const { openCordisAgent } = await import("../cordis/run-cordis-coding");
+        const { getContext } = await import("../cordis/run-cordis-loop");
+        const cordisCtx = await getContext();
+        const handle = await openCordisAgent(cordisCtx, {
+          sessionId, cwd: ctx.workspacePath || process.cwd(),
+          llmConfig: { baseUrl: agentConfig?.baseUrl ?? "", model: agentConfig?.model ?? "", apiKey: agentConfig?.apiKey ?? "", provider: "openai" },
+          signal: undefined,
+        });
+        try {
+          const commands = (cordisCtx as unknown as { commands?: { execute: (a: unknown, line: string, images: unknown[], signal?: AbortSignal) => Promise<unknown> } }).commands;
+          if (!commands) throw new Error("commands runtime unavailable");
+          const result = await commands.execute((handle as { agent: unknown }).agent, mode === "plan" ? "/plan" : "/plan off", [], new AbortController().signal);
+          console.log("[pi-agent] /plan command:", JSON.stringify(result)?.slice(0, 120));
+        } finally {
+          try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
+        }
+      } catch (e) {
+        // Non-fatal: the DB row already flipped; next turn's planMode.set()
+        // reconciles dsh state with it anyway.
+        console.warn("[pi-agent] /plan execution failed (DB index still updated):", e instanceof Error ? e.message : e);
+      }
+      broadcastEvent("pi-agent:mode-change", { sessionId, mode });
+    })();
   });
 
   // ── pi-agent:respond-tool ──────────────────────────────────────────────────

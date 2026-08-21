@@ -526,6 +526,15 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     if (String((session as { id?: unknown }).id) !== matchSessionId) return;
     const seq = event.seq;
 
+    // ── Plan-mode flips (dsh-owned) ─────────────────────────────────────────
+    // /plan (or planMode.set) commits a log-only plan/mode event; forward it so
+    // the renderer's toggle reflects the authoritative session state.
+    if (event.type === "plan/mode") {
+      const active = (event.data as { active?: boolean } | undefined)?.active === true;
+      emit("pi-agent:mode-change", { sessionId, mode: active ? "plan" : "execute" });
+      return;
+    }
+
     // ── Step boundary ────────────────────────────────────────────────────────
     // dsh opens a durable turn per step. The builtin fires onStepStart for every
     // step after the first so the renderer finalises the previous assistant

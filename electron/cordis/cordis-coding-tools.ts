@@ -16,7 +16,6 @@
  */
 import type { Context } from "@deepseek-ai/cordis";
 
-import planModePlugin from "@deepseek-ai/dsh-plan-mode";
 import sandboxLocalPlugin from "@deepseek-ai/dsh-sandbox-local";
 import sandboxPolicyPlugin from "@deepseek-ai/dsh-sandbox-policy";
 import fsSandboxPlugin from "@deepseek-ai/dsh-fs-sandbox";
@@ -40,12 +39,7 @@ export interface CodingStackOptions {
    * once the approval layer lands (Phase 1.5 step 2e/2j).
    */
   sandboxMode?: "danger-full-access" | "workspace-write" | "read-only";
-  /** Plan-mode guidance section (non-empty — dsh rejects an empty section). */
-  planModeSection?: string;
 }
-
-const DEFAULT_PLAN_SECTION =
-  "You are in plan mode. Stay in plan mode until the user switches the session mode. Explore and read first; do not edit files or run mutating commands.";
 
 /**
  * Mount the sandbox/fs ownership trio (sandbox-local → sandbox-policy →
@@ -124,7 +118,7 @@ export function remapChatArtifactDirs(ctx: Context): void {
  * is complete before returning.
  */
 export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): Promise<() => void> {
-  const { cwd, sandboxMode = "danger-full-access", planModeSection = DEFAULT_PLAN_SECTION } = opts;
+  const { cwd, sandboxMode = "danger-full-access" } = opts;
   const disposers: Array<() => void> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
     const name = (plugin as { name?: string })?.name ?? (plugin as { apply?: { name?: string } })?.apply?.name ?? "unknown";
@@ -140,7 +134,8 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
 
   await plugFsChain(ctx, { cwd, mode: sandboxMode }, disposers, plug);
   await plug({ apply: fsObsApply, name: fsObsName });
-  await plug(planModePlugin, { section: planModeSection });
+  // plan-mode is mounted GLOBALLY in getContext (dsh owns it; /plan command +
+  // plan:policy section) — plugging it here too would duplicate the section.
   await plug(subprocessLocalPlugin);
   await plug(bashLocalPlugin);
   await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});

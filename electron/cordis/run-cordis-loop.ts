@@ -28,6 +28,8 @@ import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
 import SkillRegistry from "@deepseek-ai/dsh-skill";
 import InvariantRegistry from "@deepseek-ai/dsh-invariants";
+import CommandRuntime from "@deepseek-ai/dsh-commands";
+import planModePlugin from "@deepseek-ai/dsh-plan-mode";
 import { apply as toolSkillApply, inject as toolSkillInject, name as toolSkillName } from "@deepseek-ai/dsh-tool-skill";
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
@@ -310,6 +312,17 @@ export async function getContext(): Promise<Context> {
     // handles /<name> user invocation. THIS owns skill delivery now — Cairn no
     // longer injects its own section/tool (see run-cordis-coding).
     B["dsh:tool-skill"] = { apply: toolSkillApply, inject: toolSkillInject, name: toolSkillName };
+    // CommandRuntime (ctx.commands): the dsh slash-command registry. Plugins
+    // register commands (/plan from dsh-plan-mode, /permission from presets);
+    // execution appends command/run+done to the session log. Cairn's UI executes
+    // through commands.execute instead of string-matching send paths.
+    B["dsh:commands"] = CommandRuntime;
+    // PlanModeController (ctx.planMode): dsh-owned plan mode — plan:policy
+    // section, exit_plan_mode tool, /plan command (registered into the commands
+    // runtime above), and logged plan/mode state. Mounted GLOBALLY so the /plan
+    // command exists outside coding turns too (the toggle executes it).
+    // Config.section is the deployment-owned policy guidance.
+    B["dsh:plan-mode"] = planModePlugin;
     // NOTE: no boot-time "fs" here — the sandbox/sandboxPolicy/fs service names
     // are OWNED by the per-context fs chain (mountFsChain / mountCodingStack),
     // which the chat loop mounts lazily when plugins need ctx.fs and coding
@@ -365,6 +378,17 @@ export async function getContext(): Promise<Context> {
       // tool-skill: owns the skill tool + per-step <available_skills> catalog
       // (injected as user/form:catalog from the shared SkillRegistry).
       { id: "tool-skill", name: "cordis:dsh:tool-skill" },
+      // Command runtime (ctx.commands): dsh slash-command registry (/plan etc).
+      { id: "commands", name: "cordis:dsh:commands" },
+      // Plan mode (ctx.planMode): dsh-owned advisory plan state + /plan command.
+      {
+        id: "plan-mode",
+        name: "cordis:dsh:plan-mode",
+        config: {
+          section:
+            "You are in plan mode. Stay in plan mode until the user switches the session mode. Explore and read first; do not edit files or run mutating commands.",
+        },
+      },
       { id: "subagent-spawn", name: "cordis:cairn:subagent-spawn", config: { providerName: "spawn" } },
       { id: "tool-subagent", name: "cordis:cairn:tool-subagent", config: { provider: "spawn", toolName: "subagent", backgroundMode: "one-shot" } },
     ];

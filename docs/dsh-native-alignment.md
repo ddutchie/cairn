@@ -81,12 +81,15 @@ linkage, display title) and treat everything the log already records as derived:
 
 ---
 
-## 3. Near-term actions (this branch)
+## 3. Near-term actions
 
-1. **Plan toggle via `/plan`** — mount `dsh-commands`; route the coding UI's
-   plan toggle through `commands.execute(agent, "/plan" | "/plan off")`
-   (mid-turn capable, logged, narrated). UI plan state derives from
-   `session/event` (`plan/mode`) pushed over our existing bridge, not from a
-   DB column.
-2. **Commands registry** — mount `cordis:dsh:commands` now so `/plan` (and any
-   plugin commands) activate; migrate `/compact` next.
+1. ✅ **DONE** — `dsh-commands` mounted globally (`cordis:dsh:commands`);
+   `dsh-plan-mode` moved to the global context too (was per-turn in the coding
+   stack) so its `/plan` command exists outside turns. The coding UI's plan
+   toggle executes `/plan` | `/plan off` via `commands.execute` on a short-lived
+   resumed agent → flips are logged as `command/run+done` + `plan/mode`
+   (durable; resume folds them back). `plan/mode` session events are forwarded
+   to the renderer as `pi-agent:mode-change`, so UI plan state derives from the
+   authoritative log.
+2. **Next**: migrate `/compact` (chat) through the same registry path; then
+   re-home user-defined/community slash commands onto it.
