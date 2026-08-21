@@ -120,6 +120,98 @@ descriptions.
 
 ---
 
+## 1c. How dsh sees skills (vs Cairn)
+
+Both surfaces use the **same `<available_skills>` XML framing**, but they reach
+the model differently.
+
+### dsh — dynamic, per-step catalog (dsh-skill `tool-skill`)
+
+`tool-skill/src/index.ts` does two things:
+
+1. **Registers the `skill` tool** (order matters — it's a normal `defineTool`
+   named `skill`, whose `execute` calls `ctx.skills.list/get` with
+   `{ cwd, signal, scope: agent }`). Skill name grammar validated by
+   `isSkillName`; model/user invocation gates honored
+   (`isModelInvocable`/`isUserInvocable`).
+2. **Injects the catalog at every `agent/pre-step`** as a **`user/form:catalog`
+   reminder message appended to the inbox** — NOT a static system-prompt
+   section. When the set of skills changes it respublishes a **replacement
+   catalog** message (`renderCatalogUpdate`), so the model never sees a stale
+   list.
+
+The rendered entry line:
+
+```text
+- `<name>`: <description>
+```
+
+wrapped in:
+
+```text
+<system-reminder>
+A skill is a reusable set of task-specific instructions. The following skills are available in this session:
+
+<available_skills>
+- `secret-greeter`: How to greet using the project's secret protocol.
+</available_skills>
+
+If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.
+A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.
+</system-reminder>
+```
+
+- The catalog **summary is a user message** (`source.kind: 'skill-catalog'`),
+  model-facing, deliberately excluded from derive/replay as dialogue.
+- The **`skill` tool returns** `{ name, provider, resourceBase, content }` and
+  its `render` calls `renderSkillContent(value)` — the loaded body is appended
+  with `@module`-relative resource resolution (`resourceBase`).
+- A **user gesture** `/<name>` (claiming a user-invocable skill) also loads it
+  deterministically.
+
+### Cairn — static system-prompt section
+
+- Our `<available_skills>` is built **once per call** by
+  `listSkillsViaRegistry(ctx, cwd)` → `renderSkillsXml(summaries)` and mounted as
+  part of `systemText` (a `cairn:system:<id>` **section**), not a per-step
+  inbox message. Rendering:
+  ```xml
+  <available_skills>
+    <skill>
+      <name>secret-greeter</name>
+      <description>How to greet using the project's secret protocol.</description>
+    </skill>
+  </available_skills>
+  ```
+- Our **`skill` tool** (`registerSkillTool`) reads `ctx.skills.list/get` (same
+  registry), returns the body + a resource hint, and is registered like any
+  tool. We do NOT emit per-turn catalog updates (`form:catalog`) or honor
+  `<name>`-style entries (we use `<skill>/<name>` XML instead of the
+  `- \`name\`: desc` line).
+- Both source from the SAME `ctx.skills` registry (dsh SkillRegistry + Cairn's
+  SKILL.md provider).
+
+### Comparison table
+
+| | dsh (`tool-skill`) | Cairn |
+|---|---|---|
+| Catalog delivery | `user/form:catalog` message injected per `agent/pre-step` | static `<available_skills>` in the `cairn:system:<id>` system-prompt section |
+| Catalog updates | republished replacement message on change | rebuilt next call (sections are per-turn) |
+| Entry format | `- \`name\`: description` | `<skill><name>…<description>…` XML |
+| Skill tool | `skill` → `ctx.skills.get` (invocation-gated) | `skill` → `ctx.skills.get` |
+| User gesture `/<name>` | supported (user-invocable) | not implemented |
+| Registry | `ctx.skills` SkillRegistry | same (shared) |
+
+**Implication:** because Cairn injects skills as a **system-prompt section**
+rather than dsh's **per-step catalog message**, a Cairn session shows the
+catalog once up-front and it's part of the "system" text the model always has —
+functionally equivalent for a fixed set, but it never emits dsh's
+"catalog changed" replacement and doesn't support `/<name>` user invocation.
+Both are correct; they're just different injection strategies over the same
+registry.
+
+---
+
 ## 2. What Cairn actually sends
 
 `runCordisLoop` (chat) mounts `cairnSystemPromptPlugin` with
