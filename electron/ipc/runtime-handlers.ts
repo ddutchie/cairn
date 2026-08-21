@@ -40,6 +40,20 @@ function ensureProgressForwarder(getWin: () => BrowserWindow | null): void {
 export function registerRuntimeHandlers(ctx: DbContext): void {
   ensureProgressForwarder(ctx.getWin);
   // ── Command execution (dsh commands runtime) ────────────────────────
+  // List registry commands (name + description) so host UIs can render their
+  // palettes from the same namespace plugins register into.
+  registerIpcHandle("cordis:listCommands", () => handle(async () => {
+    try {
+      const { getContext } = await import("../cordis/run-cordis-loop");
+      const cordisCtx = await getContext();
+      const commands = (cordisCtx as unknown as { commands?: { list?: () => Array<{ name: string; description?: string }> } }).commands;
+      const list = commands?.list?.() ?? [];
+      return { data: list.map((c) => ({ name: c.name, description: c.description ?? "" })) };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }));
+
   // Generic executor for registry commands (/plan, /compact, plugin commands)
   // on a session's resumed agent. Returns the command result {kind, text}.
   registerIpcHandle("cordis:executeCommand", (_e, req: { sessionId: string; line: string }) => handle(async () => {

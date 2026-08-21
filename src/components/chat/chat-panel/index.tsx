@@ -29,6 +29,7 @@ import { useCommunityConnectorMap, type ChatConnectorMeta } from "./connector-co
 import { QuestionForm } from "./QuestionForm";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { getCommandsForScope } from "@/lib/slash-commands";
+import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { cn, id } from "@/lib/utils";
 import { ChatTimeline, deriveSpansFromMessages } from "../ChatTimeline";
 import {
@@ -201,9 +202,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   // at enqueue time so a thread switch or queued images/PDFs are never lost.
   // Session-scoped; cleared on thread switch.
   const { queued, queueExpanded, setQueueExpanded, enqueue, removeQueued, clearQueue, drainNext } = useChatMessageQueue<QueuedMessage>();
+  const registryCommands = useRegistryCommands();
   const chatCommands = useMemo(
-    () => getCommandsForScope("chat", customCommands),
-    [customCommands]
+    () => getCommandsForScope("chat", customCommands, registryCommands),
+    [customCommands, registryCommands]
   );
   // Virtualized transcript handle — used to jump to the newest message when the
   // panel activates or a question form appears (followOutput handles streaming).
@@ -528,6 +530,17 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       if (trimmed === "/archive-chat" || trimmed === "/archive" || trimmed === "/ archive-chat" || trimmed === "/ archive") {
         setInput("");
         handleArchiveChat();
+        return;
+      }
+
+      // Other dsh registry commands (e.g. /plan from a future chat surface,
+      // plugin commands) execute through the runtime on this thread's agent.
+      const commandMatch = trimmed.startsWith("/")
+        ? registryCommands.find((c) => c.name === trimmed.slice(1).trim())
+        : undefined;
+      if (commandMatch) {
+        setInput("");
+        void window.electron?.runtime?.executeCommand({ sessionId: `chat-${threadId}`, line: trimmed });
         return;
       }
     }

@@ -1352,6 +1352,8 @@ const api = {
       llm: { healthy: boolean; model: string | null; loaded: boolean; port: number | null };
     }>("runtime:status"),
     stop: () => invoke<{ ok: boolean }>("runtime:stop"),
+    /** List dsh registry commands (name + description) — palette source. */
+    listCommands: () => invoke<Array<{ name: string; description: string }>>("cordis:listCommands"),
     /** Execute a dsh registry command (/plan, /compact, …) on a session's agent. */
     executeCommand: (req: { sessionId: string; line: string }) => invoke<{ kind?: string; text?: string }>(
       "cordis:executeCommand", req

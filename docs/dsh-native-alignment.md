@@ -97,5 +97,10 @@ linkage, display title) and treat everything the log already records as derived:
    the same function, so there is exactly ONE compaction path with two entry
    points. A generic `cordis:executeCommand` IPC executes any registry command
    on a session's resumed agent (preload: `runtime.executeCommand`).
-3. **Next**: re-home user-defined/community slash commands onto the registry;
-   render the chat palette from the merged registry listing.
+3. ✅ **DONE** — palettes merged: `getCommandsForScope` now takes registry
+   commands (`useRegistryCommands()` loads them via `cordis:listCommands`) and
+   merges them above built-ins/custom (precedence: custom > registry >
+   built-in). Send intercepts in chat + agent panes execute any `/name` that
+   matches a registry command through `cordis:executeCommand`; pure
+   prompt-inserters stay renderer-side. User-defined/community commands remain
+   SQLite rows (prompt inserters) — a future registry re-home is optional.

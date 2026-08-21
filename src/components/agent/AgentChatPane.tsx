@@ -18,6 +18,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import { getCommandsForScope } from "@/lib/slash-commands";
+import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
@@ -135,9 +136,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     customServices:    s.customServices,
   })));
     const sessionTodos = useCairnStore((s) => s.piSessionTodos[session.sessionId]);
-  const customCommands = useCairnStore((s) => s.customCommands);  const agentCommands = useMemo(
-    () => getCommandsForScope("agent", customCommands),
-    [customCommands]
+  const customCommands = useCairnStore((s) => s.customCommands);
+  const registryCommands = useRegistryCommands();
+  const agentCommands = useMemo(
+    () => getCommandsForScope("agent", customCommands, registryCommands),
+    [customCommands, registryCommands]
   );
 
   const messages    = session.piMessages ?? [];
@@ -631,6 +634,17 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           contextWindow: agentConfig.contextLimit,
         },
       });
+      return;
+    }
+
+    // Other registry commands (/plan, plugin commands) execute through the dsh
+    // command runtime on this session's resumed agent.
+    const commandMatch = trimmed.startsWith("/")
+      ? registryCommands.find((c) => c.name === trimmed.slice(1).trim())
+      : undefined;
+    if (commandMatch) {
+      setInput("");
+      void window.electron?.runtime?.executeCommand({ sessionId: session.sessionId, line: trimmed });
       return;
     }
 
