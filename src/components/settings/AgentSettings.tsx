@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  Plus, Trash2, Star, FolderOpen, Check, BookOpen, ChevronDown, ChevronUp, Copy, FileCode, CheckCircle, RefreshCw, Download
+  Plus, Trash2, Star, FolderOpen, Check, BookOpen, ChevronDown, ChevronUp, Copy, FileCode, CheckCircle, RefreshCw, Download, Wrench
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -247,6 +247,34 @@ function PromptPreview({ systemPrompt }: PromptPreviewProps) {
 
 // ── Skills & prompt preview section ──────────────────────────────────────────
 
+/** One assembled prompt section, expandable to show its literal text. */
+function SectionPreview({ name, text, index }: { name: string; text: string; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const preview = text && text.length > 90 ? `${text.slice(0, 90)}…` : text;
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-[var(--surface-2)] transition-colors"
+        aria-expanded={expanded}
+      >
+        <span className="text-[0.65rem] font-mono text-[var(--text-tertiary)] w-5 shrink-0 text-right">{index + 1}</span>
+        <span className="text-[0.714rem] font-mono text-[var(--accent)] shrink-0">{name}</span>
+        {text && (
+          <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1">{expanded ? "" : preview}</span>
+        )}
+        <ChevronDown size={12} className={`text-[var(--text-tertiary)] shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+      {expanded && (
+        <pre className="text-[0.714rem] font-mono text-[var(--text-secondary)] leading-relaxed px-3 py-2 border-t border-[var(--border)] overflow-x-auto whitespace-pre-wrap break-words">
+          {text || "(empty section)"}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function SkillsPreviewSection() {
   const { projects, activeProjectId } = useCairnStore(useShallow((s) => ({
     projects: s.projects,
@@ -257,9 +285,9 @@ function SkillsPreviewSection() {
   const [mode, setMode] = useState<"execute" | "plan">("execute");
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [sections, setSections] = useState<Array<{ name: string; order: number; text: string; index: number }> | null>(null);
-  const [skillCount, setSkillCount] = useState<number | null>(null);
-  const [toolCount, setToolCount] = useState<number | null>(null);
+  const [sections, setSections] = useState<Array<{ name: string; text: string; index: number }> | null>(null);
+  const [skillNames, setSkillNames] = useState<Array<{ name: string; description: string }>>([]);
+  const [toolNames, setToolNames] = useState<Array<{ name: string; description?: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -290,8 +318,8 @@ function SkillsPreviewSection() {
         if (promptRes.error) setError(promptRes.error);
         setSystemPrompt(promptRes.text || null);
         setSections(promptRes.sections);
-        setSkillCount(promptRes.skillCount);
-        setToolCount(promptRes.toolCount);
+        setSkillNames(promptRes.skills ?? []);
+        setToolNames(promptRes.tools ?? []);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -385,42 +413,62 @@ function SkillsPreviewSection() {
 
       {/* System prompt preview (live dsh assembly) */}
       {systemPrompt !== null && (
-        <div>
+        <div className="space-y-3">
           <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2">
             Assembled System Prompt
           </h3>
+          {/* Section breakdown */}
           {sections && sections.length > 0 && (
-            <div className="mb-3 space-y-1.5">
+            <div className="space-y-1.5">
               <div className="flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
                   {sections.length} section{sections.length !== 1 ? "s" : ""}
                 </span>
-                {skillCount !== null && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
-                    {skillCount} skills
-                  </span>
-                )}
-                {toolCount !== null && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
-                    {toolCount} tools
-                  </span>
-                )}
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
+                  {skillNames.length} skills
+                </span>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
+                  {toolNames.length} tools
+                </span>
               </div>
-              <div className="space-y-1">
-                {sections.map((s) => (
-                  <div key={`${s.index}-${s.name}`} className="flex items-start gap-2">
-                    <span className="text-[0.65rem] font-mono text-[var(--text-tertiary)] pt-0.5 w-6 shrink-0 text-right">
-                      {s.index + 1}
-                    </span>
-                    <span className="text-[0.714rem] font-mono text-[var(--accent)] pt-0.5 shrink-0">
-                      {s.name}
-                    </span>
+              {sections.map((s) => <SectionPreview key={`${s.index}-${s.name}`} name={s.name} text={s.text} index={s.index} />)}
+            </div>
+          )}
+          <PromptPreview systemPrompt={systemPrompt} />
+          {/* Skills list */}
+          {skillNames.length > 0 && (
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+              <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]">
+                <BookOpen size={12} className="text-[var(--text-tertiary)]" />
+                <span className="text-xs font-medium text-[var(--text-secondary)]">Skills ({skillNames.length})</span>
+              </div>
+              <div className="p-2 space-y-1">
+                {skillNames.map((sk) => (
+                  <div key={sk.name} className="px-2 py-1.5 rounded hover:bg-[var(--surface-2)]">
+                    <div className="text-[0.714rem] font-mono text-[var(--accent)]">{sk.name}</div>
+                    <div className="text-[0.714rem] text-[var(--text-tertiary)]">{sk.description}</div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          <PromptPreview systemPrompt={systemPrompt} />
+          {/* Tools list */}
+          {toolNames.length > 0 && (
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+              <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]">
+                <Wrench size={12} className="text-[var(--text-tertiary)]" />
+                <span className="text-xs font-medium text-[var(--text-secondary)]">Tools ({toolNames.length})</span>
+              </div>
+              <div className="p-2 space-y-1">
+                {toolNames.map((t) => (
+                  <div key={t.name} className="px-2 py-1.5 rounded hover:bg-[var(--surface-2)]">
+                    <div className="text-[0.714rem] font-mono text-[var(--accent)]">{t.name}</div>
+                    {t.description && <div className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-1">{t.description}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

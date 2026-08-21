@@ -87,12 +87,27 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
         const sections = assembly.sections
           .map((s, i) => ({ name: s.name, order: i, text: textOf(s.text), index: i }));
         const contexts = assembly.contexts.map((c) => ({ name: c.name, order: c.order, text: textOf(c.text) }));
-        let skillCount = 0;
+        // Skills: full list (name + description) from the shared registry.
+        let skills: Array<{ name: string; description: string }> = [];
         try {
-          const skills = (ctx as unknown as { skills?: { list: (o: { cwd: string }) => Promise<Array<unknown>> } }).skills;
-          if (skills) skillCount = (await skills.list({ cwd: req?.cwd ?? "" })).length;
+          const skillsSvc = (ctx as unknown as { skills?: { list: (o: { cwd: string }) => Promise<Array<{ name: string; description: string }>> } }).skills;
+          if (skillsSvc) skills = await skillsSvc.list({ cwd: req?.cwd ?? "" });
         } catch { /* informational */ }
-        return { text, sections, contexts, skillCount, toolCount: (assembly.tools ?? []).length, variables: assembly.variables ?? {} };
+        // Tools: enumerate the global view (per-turn Cairn tools register inside
+        // a loop, so this reflects globally-registered + plugin tools).
+        let tools: Array<{ name: string; description?: string }> = [];
+        try {
+          const toolsSvc = (ctx as unknown as { tools?: { view: (s?: unknown) => { visible: Map<string, unknown> } } }).tools;
+          const vis = toolsSvc?.view?.()?.visible;
+          if (vis) {
+            for (const name of vis.keys()) {
+              const def = vis.get(name) as { description?: string } | undefined;
+              tools.push({ name, description: def?.description });
+            }
+            tools.sort((a, b) => a.name.localeCompare(b.name));
+          }
+        } catch { /* informational */ }
+        return { text, sections, contexts, skills, tools, variables: assembly.variables ?? {} };
       } finally {
         disposeSection();
       }
