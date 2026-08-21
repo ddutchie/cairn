@@ -23,8 +23,8 @@ export async function apply(ctx, config) {
     description: "Roll dice. Returns each die and the total.",
     // dsh parameters = a flat map of param -> ValueSchemaSpec (NOT JSON-Schema).
     parameters: {
-      count: { type: "integer", required: false, description: "how many dice (default 1)" },
-      sides: { type: "integer", required: false, description: `sides per die (default ${defaultSides})` },
+      count: { type: "integer", description: "how many dice (default 1)" },
+      sides: { type: "integer", description: `sides per die (default ${defaultSides})` },
     },
     output: {
       schema: { type: "json" },

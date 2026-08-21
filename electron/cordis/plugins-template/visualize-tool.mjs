@@ -29,7 +29,7 @@ export async function apply(ctx) {
       "Use for simulators, charts, comparisons, or UI mockups.",
     parameters: {
       html: { type: "string", required: true, description: "a self-contained HTML fragment (body content)" },
-      title: { type: "string", required: false, description: "optional card title" },
+      title: { type: "string", description: "optional card title" },
     },
     output: {
       schema: { type: "json" },

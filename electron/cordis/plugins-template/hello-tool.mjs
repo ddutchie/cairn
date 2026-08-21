@@ -29,6 +29,7 @@ export async function apply(ctx, config) {
     name: "hello",
     description: "Say hello to someone. A runtime-loaded example plugin tool.",
     // dsh parameters = a flat map of param -> ValueSchemaSpec (NOT JSON-Schema).
+    // Optional params: OMIT `required` entirely (never set required: false).
     parameters: {
       who: { type: "string", required: true, description: "who to greet" },
     },
