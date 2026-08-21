@@ -396,6 +396,15 @@ export async function getContext(): Promise<Context> {
     for (const entry of ENTRY_LIST) await loader.create(entry);
     await loader.await();
 
+    // Register Cairn's executable commands on the dsh command runtime
+    // (ctx.commands) — one namespace with plugin commands (/plan, …).
+    try {
+      const { registerCairnCommands } = await import("./cairn-commands");
+      registerCairnCommands(ctx);
+    } catch (err) {
+      console.warn("[cordis] cairn command registration failed:", err instanceof Error ? err.message : err);
+    }
+
     // Register Cairn's SKILL.md provider on the shared SkillRegistry. The
     // registry forwards each caller's `cwd` view option into the provider's
     // list/get, so ONE global provider serves every turn's working directory

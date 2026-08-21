@@ -91,5 +91,11 @@ linkage, display title) and treat everything the log already records as derived:
    (durable; resume folds them back). `plan/mode` session events are forwarded
    to the renderer as `pi-agent:mode-change`, so UI plan state derives from the
    authoritative log.
-2. **Next**: migrate `/compact` (chat) through the same registry path; then
-   re-home user-defined/community slash commands onto it.
+2. ✅ **DONE** — `compact` is registered in `ctx.commands`
+   (`cairn-commands.ts`) with a shared implementation
+   (`compactChatSession`); the `chat:compactThread` IPC is a thin wrapper over
+   the same function, so there is exactly ONE compaction path with two entry
+   points. A generic `cordis:executeCommand` IPC executes any registry command
+   on a session's resumed agent (preload: `runtime.executeCommand`).
+3. **Next**: re-home user-defined/community slash commands onto the registry;
+   render the chat palette from the merged registry listing.

@@ -39,6 +39,37 @@ function ensureProgressForwarder(getWin: () => BrowserWindow | null): void {
 
 export function registerRuntimeHandlers(ctx: DbContext): void {
   ensureProgressForwarder(ctx.getWin);
+  // ── Command execution (dsh commands runtime) ────────────────────────
+  // Generic executor for registry commands (/plan, /compact, plugin commands)
+  // on a session's resumed agent. Returns the command result {kind, text}.
+  registerIpcHandle("cordis:executeCommand", (_e, req: { sessionId: string; line: string }) => handle(async () => {
+    try {
+      const [{ getContext }, { openCordisAgent }] = await Promise.all([
+        import("../cordis/run-cordis-loop"),
+        import("../cordis/run-cordis-coding"),
+      ]);
+      const cordisCtx = await getContext();
+      const agentConfig = (await import("../lib/config-cache")).getCachedConfig().agentConfig;
+      const handle = await openCordisAgent(cordisCtx, {
+        sessionId: req.sessionId,
+        cwd: ctx.workspacePath || process.cwd(),
+        llmConfig: { baseUrl: agentConfig?.baseUrl ?? "", model: agentConfig?.model ?? "", apiKey: agentConfig?.apiKey ?? "", provider: "openai" },
+        signal: undefined,
+      });
+      try {
+        const commands = (cordisCtx as unknown as { commands?: { list?: unknown; execute: (a: unknown, line: string, imgs: unknown[], s: AbortSignal) => Promise<unknown> } }).commands;
+        if (!commands) return { error: "commands runtime unavailable" };
+        const out = await commands.execute((handle as { agent: unknown }).agent, req.line, [], new AbortController().signal) as { result?: { kind?: string; text?: string } } | undefined;
+        const r = out?.result ?? (out as { kind?: string; text?: string } | undefined);
+        return { data: { kind: r?.kind, text: r?.text } };
+      } finally {
+        try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
+      }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }));
+
   // ── Runtime health & lifecycle ─────────────────────────────
   registerIpcHandle("runtime:status", () => handle(async () => {
     return runtime.getRuntimeStatus();

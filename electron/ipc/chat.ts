@@ -96,30 +96,14 @@ export function registerChatHandler(ctx: DbContext): void {
       const threadId = req.threadId;
       if (!threadId) return { error: "compact: threadId required" };
 
-      // Session-as-truth compaction: run dsh's ctx.compaction.compactNow on the
-      // thread's live/resumed Agent. This appends a compaction/start + a single
-      // summary `replace` node to the dsh JSONL session log, so the summary IS the
-      // session history (rebuilt via db:chat:sessionMessages on reload) — no
-      // custom summary bubble, no clearing the jsonl (which lost the thread).
-      const { getContext, resumeChatAgent } = await import("../cordis/run-cordis-loop");
-      const { ensurePiAiAdapter } = await import("../cordis/run-cordis-loop");
-      const { resolveTransport } = await import("../lib/llm-transport");
-      const ctx = await getContext();
-      // Ensure the pi-ai route is mounted for the summariser model call.
-      const transport = await resolveTransport(baseUrl, apiKey);
-      await ensurePiAiAdapter(ctx, { baseUrl, model, apiKey, api: transport.mode === "responses" ? "openai-responses" : "openai-completions" });
-
-      const agent = await resumeChatAgent(threadId, ctx ? (ctx as unknown as { root?: { cwd?: string } }).root?.cwd ?? process.cwd() : process.cwd(), model);
-      if (!agent) return { error: "compact: no session to compact (start a conversation first)" };
-
-      const compaction = (ctx as unknown as { compaction?: { compactNow: (a: unknown, signal: AbortSignal, cmd?: unknown) => Promise<{ summary?: unknown } | null> } }).compaction;
-      if (!compaction) return { error: "compact: compaction engine not available" };
-
-      const controller = new AbortController();
-      const result = await compaction.compactNow(agent, controller.signal);
-      console.log("[chat:compactThread] compactNow result", { threadId, compacted: result !== null });
-      // result === null means nothing to compact (too short); treat as a no-op success.
-      return { data: { compacted: result !== null } };
+      // Session-as-truth compaction via the SHARED flow (also registered as the
+      // dsh `compact` command — one implementation, two entry points).
+      const { compactChatSession } = await import("../cordis/cairn-commands");
+      const { getContext } = await import("../cordis/run-cordis-loop");
+      const res = await compactChatSession(getContext, threadId, { baseUrl, model, apiKey });
+      if (!res.ok) return { error: res.error ?? "compact failed" };
+      console.log("[chat:compactThread] compactNow result", { threadId, compacted: res.compacted });
+      return { data: { compacted: res.compacted } };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[chat:compactThread] failed", msg, err);

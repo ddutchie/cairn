@@ -1352,6 +1352,10 @@ const api = {
       llm: { healthy: boolean; model: string | null; loaded: boolean; port: number | null };
     }>("runtime:status"),
     stop: () => invoke<{ ok: boolean }>("runtime:stop"),
+    /** Execute a dsh registry command (/plan, /compact, …) on a session's agent. */
+    executeCommand: (req: { sessionId: string; line: string }) => invoke<{ kind?: string; text?: string }>(
+      "cordis:executeCommand", req
+    ),
     /** Assemble the real dsh system prompt (Cordis engine) + breakdown. */
     systemPromptPreview: (req: { cwd?: string }) => invoke<{
       text: string;
