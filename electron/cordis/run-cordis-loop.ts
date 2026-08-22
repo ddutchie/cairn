@@ -424,7 +424,25 @@ export async function getContext(): Promise<Context> {
     // documented — it is the runtime plugin contract.
     try {
       const { defineTool } = await import("@deepseek-ai/dsh-tools");
-      (ctx as unknown as { cairn?: Record<string, unknown> }).cairn = { defineTool };
+      (ctx as unknown as { cairn?: Record<string, unknown> }).cairn = {
+        defineTool,
+        /**
+         * Ask the human running this session to confirm something on the
+         * plugin's behalf. Routes through the session's registered transport
+         * (interactive coding UI today); with no session bound — or after the
+         * fail-closed timeout — resolves "cancelled", never throws.
+         */
+        confirm: async (
+          sessionId: string,
+          req: { title?: string; detail?: string; toolName?: string; args?: Record<string, unknown> },
+          opts?: { signal?: AbortSignal },
+        ) => {
+          const { getConfirmTransport } = await import("./approval-transports");
+          const transport = getConfirmTransport(sessionId);
+          if (!transport) return "cancelled" as const;
+          return transport.confirm({ ...req, signal: opts?.signal });
+        },
+      };
     } catch { /* defineTool always resolves in-app; guard is belt-and-braces */ }
 
     // Runtime plugin layer (§10 Tier 2/3, opt-in via CAIRN_PLUGINS_DEV=1): after

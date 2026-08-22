@@ -179,8 +179,20 @@ Plus: clear/destroy sweep pending maps + grants.
      ["shell","approval","sessions"] and we register the session service as
      "session"; forcing aliases isn't worth it while presets remains a UX
      layer over two knobs we already set natively.
-9. Unify the three bridges behind one approval module with pluggable
-   transports (interactive IPC / headless map / future ctx.cairn.confirm()
-   for user-space plugins — the doom-loop pilot then reuses it).
+9. ~~`ctx.cairn.confirm()` seam~~ — ✅ CORE DONE (2026-08-21):
+   `electron/cordis/approval-transports.ts` defines the session-scoped
+   transport registry + an interactive transport that rides the NATIVE
+   approval surface end-to-end (synthetic pending chip → ApprovalCard with
+   risk labels/grants from the shared taxonomy → `pi-agent:respond-tool`
+   pairing, incl. standing-grant recording and the fail-closed timeout).
+   `ctx.cairn.confirm(sessionId, req)` is exposed on the plugin contract in
+   getContext — resolves "cancelled" when no session is bound (never
+   throws); a pre-aborted ask surfaces nothing at all. Zero new IPC channels:
+   plugin asks reuse the existing card pipeline, so the renderer needed no
+   changes. Per-turn binding lives beside the approvals adapter in
+   pi-agent.ts; cleared on turn end / clear / destroy.
+   REMAINING for full consolidation: extract cairnDoomLoopPlugin as the first
+   bundled-plugin consumer of this seam (pilot), then fold the headless
+   automation bridge onto the same registry.
 
 Phase A items 1–4 are mechanical and testable; recommend starting there.

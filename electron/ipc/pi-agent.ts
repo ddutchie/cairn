@@ -32,6 +32,7 @@ import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts, validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { createDeltaBatcher } from "../lib/delta-batcher";
 import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry } from "../cordis/approval-grants";
+import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ function sweepSessionPendings(sessionId: string): void {
   }
   clearSessionGrants(sessionId);
   pendingAsks.clearSession(sessionId);
+  setConfirmTransport(sessionId, undefined);
 }
 
 /** The raw turn inputs the Cordis coding loop needs (prompt + attachments + config). */
@@ -210,6 +212,19 @@ async function runCordisCodingSession(
     config: { provider: llmConfig.provider === "localllm" ? "localllm" : "openai", baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
   };
 
+  // Bind the plugin confirmation seam for this session's turn: ctx.cairn.confirm
+  // routes through the same interactive pairing (chip + ApprovalCard + respond
+  // IPC) the native approval bridge uses. Cleared when the turn ends.
+  setConfirmTransport(sessionId, createInteractiveConfirmTransport({
+    sessionId,
+    send: loopSend,
+    registerPending: (callId, resolve) => {
+      const key = pendingKey(sessionId, callId);
+      cordisPendingApprovals.set(key, resolve);
+      return () => cordisPendingApprovals.delete(key);
+    },
+  }));
+
   try {
     await runCordisCodingLoop({
       db: ctx.db,
@@ -278,6 +293,7 @@ async function runCordisCodingSession(
     // The turn is over — every ask in it was settled (answered, aborted, or
     // timed out). Drop any registry residue so the next turn starts clean.
     pendingAsks.clearSession(sessionId);
+    setConfirmTransport(sessionId, undefined);
     tokens.flush();
     thoughts.flush();
   }
