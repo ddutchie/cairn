@@ -17,7 +17,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
   // in dsh's JSONL session log (session-as-truth). The pre-Cordis SQLite body
   // tables have no readers left — drop them outright (idempotent; fresh DBs
   // never had them after this point).
-  for (const t of ["chat_messages", "pi_agent_messages", "pi_agent_llm_history"]) {
+  for (const t of ["chat_messages", "pi_agent_messages", "pi_agent_llm_history", "approval_items"]) {
     try { ctx.db.prepare(`DROP TABLE IF EXISTS ${t}`).run(); } catch { /* ignore */ }
   }
   registerIpcHandle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));

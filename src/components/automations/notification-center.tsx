@@ -44,28 +44,19 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
       clearNotifications: s.clearNotifications,
     })));
 
-  const { pendingApprovals, resolveApprovalItem, fetchPendingApprovals } = useCairnStore(useShallow((s) => ({
-    pendingApprovals: s.pendingApprovals,
-    resolveApprovalItem: s.resolveApprovalItem,
-    fetchPendingApprovals: s.fetchPendingApprovals,
-  })));
-
   const { setView } = useCairnStore(useShallow((s) => ({ setView: s.setView })));
 
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void fetchNotifications();
-    void fetchPendingApprovals();
-    // Keep the list live while the popover is open (new runs/completions/approvals
-    // land without reopening) and keep approval items fresh so the inline
-    // Approve/Always allow/Deny controls render for newly arrived approvals.
+    // Keep the list live while the popover is open (new runs/completions land
+    // without reopening).
     const t = setInterval(() => {
       void fetchNotifications();
-      void fetchPendingApprovals();
     }, 3_000);
     return () => clearInterval(t);
-  }, [fetchNotifications, fetchPendingApprovals]);
+  }, [fetchNotifications]);
 
   // Close on outside click / Escape (the popover only exists while open).
   useEffect(() => {
@@ -114,12 +105,13 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           sorted.map((n) => {
+            // "approval"-targeted notifications are historical only — the DB
+            // inbox they pointed at was retired; render them as plain rows.
             const targetable =
               n.targetId !== null &&
-              (n.targetType === "note" || n.targetType === "task" || n.targetType === "automation" || n.targetType === "approval");
-            const isApproval = n.targetType === "approval";
-            const approvalPending = isApproval ? pendingApprovals.some((p) => p.id === n.targetId) : false;
-            const onClick = targetable && !isApproval
+              (n.targetType === "note" || n.targetType === "task" || n.targetType === "automation");
+            const isApproval = false;
+            const onClick = targetable
               ? () => {
                   if (n.targetType === "note") revealNote(setView, n.targetId!);
                   else if (n.targetType === "task") revealCard(setView, n.targetId!);
@@ -131,12 +123,12 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
               <div
                 key={n.id}
                 onClick={onClick}
-                role={targetable && !isApproval ? "button" : undefined}
-                tabIndex={targetable && !isApproval ? 0 : undefined}
-                onKeyDown={targetable && !isApproval ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } } : undefined}
+                role={targetable ? "button" : undefined}
+                tabIndex={targetable ? 0 : undefined}
+                onKeyDown={targetable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } } : undefined}
                 className={cn(
                   "flex items-start gap-2.5 px-3 py-2 text-left",
-                  targetable && !isApproval ? "cursor-pointer hover:bg-[var(--surface-2)]" : "",
+                  targetable ? "cursor-pointer hover:bg-[var(--surface-2)]" : "",
                   n.read ? "opacity-60" : "bg-[color-mix(in_srgb,var(--accent)_6%,transparent)]"
                 )}
               >
@@ -144,23 +136,10 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-[var(--text-primary)] truncate">{n.title}</span>
-                    {targetable && !isApproval && <ExternalLink size={10} className="shrink-0 text-[var(--text-tertiary)]" />}
+                    {targetable && <ExternalLink size={10} className="shrink-0 text-[var(--text-tertiary)]" />}
                     <span className="text-[0.625rem] text-[var(--text-tertiary)] ml-auto shrink-0">{formatWhen(n.createdAt)}</span>
                   </div>
                   <p className="text-[0.714rem] text-[var(--text-secondary)] mt-0.5 break-words line-clamp-2">{n.body}</p>
-                  {isApproval && approvalPending && (
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <Button variant="accent" size="xs" onClick={(e) => { e.stopPropagation(); void resolveApprovalItem(n.targetId!, "approved_once").then(() => void markNotificationRead(n.id)); }}>
-                        Approve
-                      </Button>
-                      <Button variant="outline" size="xs" onClick={(e) => { e.stopPropagation(); void resolveApprovalItem(n.targetId!, "approved_always").then(() => void markNotificationRead(n.id)); }}>
-                        Always allow
-                      </Button>
-                      <Button variant="danger" size="xs" onClick={(e) => { e.stopPropagation(); void resolveApprovalItem(n.targetId!, "denied").then(() => void markNotificationRead(n.id)); }}>
-                        Deny
-                      </Button>
-                    </div>
-                  )}
                 </div>
                 {!n.read && (
                   <Tooltip content="Dismiss">

@@ -109,25 +109,6 @@ export interface AutomationInput {
   communityId?: ID | null;
 }
 
-// ── Approval inbox (parked from 'ask'-mode automation runs) ──────────────────
-
-export interface ApprovalItem {
-  id: ID;
-  runId: ID | null;
-  sessionId: ID | null;
-  tool: string;
-  args: Record<string, unknown>;
-  kind: "approval" | "question" | "notification" | "plan";
-  title: string;
-  body: string;
-  state: "pending" | "resolved" | "expired";
-  resolution: "approved_once" | "approved_session" | "approved_always" | "denied" | null;
-  createdAt: string;
-  resolvedAt: string | null;
-}
-
-export type ApprovalResolution = "approved_once" | "approved_session" | "approved_always" | "denied";
-
 // ── Slice interface ───────────────────────────────────────────────────────────
 
 export interface AutomationsSlice {
@@ -142,10 +123,6 @@ export interface AutomationsSlice {
    * feed. Empty until `fetchRecentProjectRuns` is called on Overview mount.
    */
   recentProjectRuns: AutomationRunWithAutomation[];
-  /** Pending approval items (parked by 'ask'-mode runs), newest first. */
-  pendingApprovals: ApprovalItem[];
-  /** Live pending-approval count for the sidebar badge. */
-  pendingApprovalCount: number;
   /** Number of automation runs currently in flight (title-bar running bar). */
   runningAutomationCount: number;
   /**
@@ -163,14 +140,12 @@ export interface AutomationsSlice {
   fetchRun: (automationId: ID) => Promise<AutomationRun | undefined>;
   fetchRuns: (automationId: ID, limit?: number) => Promise<void>;
   fetchRecentProjectRuns: (workspaceId: ID, projectId: ID, limit?: number) => Promise<void>;
-  fetchPendingApprovals: () => Promise<void>;
-  fetchApprovalCount: () => Promise<void>;
   fetchRunningCount: () => Promise<void>;
   registerAutomationDevSession: (automationId: ID, sessionId: ID) => void;
   clearAutomationDevSession: (automationId: ID) => void;
-  resolveApprovalItem: (id: ID, resolution: ApprovalResolution) => Promise<void>;
-  startApprovalPolling: () => void;
-  stopApprovalPolling: () => void;
+  /** Poll the live running-automation count for the sidebar badge. */
+  startRunCountPolling: () => void;
+  stopRunCountPolling: () => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -188,8 +163,6 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   lastRuns: {},
   runsById: {},
   recentProjectRuns: [],
-  pendingApprovals: [],
-  pendingApprovalCount: 0,
   runningAutomationCount: 0,
   automationDevSessions: {},
 
@@ -319,26 +292,6 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
     }
   },
 
-  async fetchPendingApprovals() {
-    if (typeof window === "undefined" || !window.electron?.approval) return;
-    try {
-      const items = (await window.electron.approval.listPending()) as ApprovalItem[];
-      set({ pendingApprovals: items, pendingApprovalCount: items.length });
-    } catch (err) {
-      console.error("[automations] fetchPendingApprovals error", err);
-    }
-  },
-
-  async fetchApprovalCount() {
-    if (typeof window === "undefined" || !window.electron?.approval) return;
-    try {
-      const n = (await window.electron.approval.count()) as number;
-      set({ pendingApprovalCount: n });
-    } catch (err) {
-      console.error("[automations] fetchApprovalCount error", err);
-    }
-  },
-
   async fetchRunningCount() {
     if (typeof window === "undefined" || !window.electron?.automation) return;
     try {
@@ -349,31 +302,18 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
     }
   },
 
-  async resolveApprovalItem(approvalId, resolution) {
-    if (typeof window === "undefined" || !window.electron?.approval) return;
-    try {
-      await window.electron.approval.resolve(approvalId, resolution);
-      set((s) => ({
-        pendingApprovals: s.pendingApprovals.filter((i) => i.id !== approvalId),
-        pendingApprovalCount: Math.max(0, s.pendingApprovalCount - 1),
-      }));
-    } catch (err) {
-      console.error("[automations] resolveApprovalItem error", err);
-    }
-  },
-
-  startApprovalPolling() {
+  startRunCountPolling() {
     if (approvalPollTimer) return;
     approvalPollTimer = setInterval(() => {
-      void get().fetchApprovalCount();
       void get().fetchRunningCount();
     }, APPROVAL_POLL_MS);
   },
 
-  stopApprovalPolling() {
+  stopRunCountPolling() {
     if (approvalPollTimer) {
       clearInterval(approvalPollTimer);
       approvalPollTimer = null;
     }
   },
+
 });

@@ -63,14 +63,13 @@ export default function Home() {
     chatPanelWidth,
     chatPanelResizing,
     lastContentView,
-    startApprovalPolling,
-    stopApprovalPolling,
-    fetchApprovalCount,
     startNotificationPolling,
     stopNotificationPolling,
     notificationOpen,
     setNotificationOpen,
     runningAutomationCount,
+    startRunCountPolling,
+    stopRunCountPolling,
   } = useCairnStore(useShallow((s) => ({
     hydrate:             s.hydrate,
     hydrateFromElectron: s.hydrateFromElectron,
@@ -87,14 +86,13 @@ export default function Home() {
     chatPanelWidth:      s.chatPanelWidth,
     chatPanelResizing:   s.chatPanelResizing,
     lastContentView:     s.lastContentView,
-    startApprovalPolling: s.startApprovalPolling,
-    stopApprovalPolling:  s.stopApprovalPolling,
-    fetchApprovalCount:   s.fetchApprovalCount,
     startNotificationPolling: s.startNotificationPolling,
     stopNotificationPolling:  s.stopNotificationPolling,
     notificationOpen:    s.notificationOpen,
     setNotificationOpen: s.setNotificationOpen,
     runningAutomationCount: s.runningAutomationCount,
+    startRunCountPolling: s.startRunCountPolling,
+    stopRunCountPolling:  s.stopRunCountPolling,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
   const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations", "usage"] as const).filter(
@@ -149,15 +147,13 @@ export default function Home() {
     (window as unknown as { __cairnStoreRef?: typeof useCairnStore }).__cairnStoreRef = useCairnStore;
   }, []);
 
-  // Live pending-approval polling for the sidebar badge / inbox. Lightweight:
-  // a COUNT query every few seconds so a parked approval from a background run
+  // Live running-automation polling for the sidebar badge. Lightweight:
   // surfaces without a full renderer reload.
   useEffect(() => {
-    if (typeof window === "undefined" || !window.electron?.approval) return;
-    void fetchApprovalCount();
-    startApprovalPolling();
-    return () => stopApprovalPolling();
-  }, [startApprovalPolling, stopApprovalPolling, fetchApprovalCount]);
+    if (typeof window === "undefined") return;
+    startRunCountPolling();
+    return () => stopRunCountPolling();
+  }, [startRunCountPolling, stopRunCountPolling]);
 
   // Live unread-notification polling for the bell badge + center (same pattern;
   // also subscribes to the main-process mcp:unread-count pushes).

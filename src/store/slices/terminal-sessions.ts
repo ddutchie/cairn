@@ -337,12 +337,33 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         return {
           ...t,
           piMessages: (t.piMessages ?? []).map((msg) => {
-            if (!msg.toolCalls) return msg;
-            const idx = msg.toolCalls.findIndex((tc) => tc.callId === callId);
-            if (idx === -1) return msg;
-            const updated = [...msg.toolCalls];
-            updated[idx] = { ...updated[idx], confirmRequired };
-            return { ...msg, toolCalls: updated };
+            // Top-level chips…
+            if (msg.toolCalls) {
+              const idx = msg.toolCalls.findIndex((tc) => tc.callId === callId);
+              if (idx !== -1) {
+                const updated = [...msg.toolCalls];
+                updated[idx] = { ...updated[idx], confirmRequired };
+                return { ...msg, toolCalls: updated };
+              }
+            }
+            // …and chips nested inside subagent blocks (audit G12): a confirm
+            // whose callId lives in a child transcript must still surface and
+            // retire its card.
+            if (!msg.subagents?.length) return msg;
+            let changed = false;
+            const newSubagents = msg.subagents.map((sa) => ({
+              ...sa,
+              messages: sa.messages.map((m) => {
+                if (!m.toolCalls) return m;
+                const idx = m.toolCalls.findIndex((tc) => tc.callId === callId);
+                if (idx === -1) return m;
+                changed = true;
+                const updated = [...m.toolCalls];
+                updated[idx] = { ...updated[idx], confirmRequired };
+                return { ...m, toolCalls: updated };
+              }),
+            }));
+            return changed ? { ...msg, subagents: newSubagents } : msg;
           }),
         };
       }),
@@ -540,7 +561,9 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
                 const idx = m.toolCalls.findIndex((tc) => tc.callId === callId);
                 if (idx === -1) return m;
                 const updated = [...m.toolCalls];
-                updated[idx] = { ...updated[idx], ...patch };
+                // Hard-reset confirmRequired like the top-level updatePiToolCall:
+                // a tool-end patch retires any open approval card on this chip.
+                updated[idx] = { ...updated[idx], ...patch, confirmRequired: false };
                 return { ...m, toolCalls: updated };
               }),
             };

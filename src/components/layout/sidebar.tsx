@@ -57,7 +57,6 @@ export function Sidebar() {
     createProject, updateProject, deleteProject, mergeProject,
      cards, chatOpen, searchOpen,
      hiddenViews,
-     pendingApprovalCount,
     notificationUnreadCount,
     notificationOpen,
     setNotificationOpen,
@@ -82,7 +81,6 @@ export function Sidebar() {
      chatOpen:            s.chatOpen,
      searchOpen:          s.searchOpen,
      hiddenViews:         s.hiddenViews,
-     pendingApprovalCount: s.pendingApprovalCount,
     notificationUnreadCount: s.notificationUnreadCount,
     notificationOpen: s.notificationOpen,
     setNotificationOpen: s.setNotificationOpen,
@@ -324,11 +322,6 @@ export function Sidebar() {
               className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
                 activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Zap size={13} /><span>Automations</span>
-              {pendingApprovalCount > 0 && (
-                <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">
-                  {pendingApprovalCount}
-                </span>
-              )}
             </button>
 
             {/* Divider — separates Automations from the workspace views below */}

@@ -43,7 +43,6 @@ import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog, removeAutomationDir } from "../lib/automation-folder";
 import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret, deleteToolSecrets } from "../lib/secure-store";
-import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
 
@@ -893,17 +892,6 @@ export function registerDbHandlers(ctx: DbContext): void {
   }));
 
   // ── Approval inbox ──────────────────────────────
-  registerIpcHandle("db:approval:listPending", (_e, { limit }: { limit?: number }) => handle(() => listPendingApprovals(ctx.db, limit)));
-  registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => {
-    const resolved = resolveApproval(ctx.db, id, resolution);
-    // "Always allow" must persist across runs: write a standing rule on the
-    // owning automation so the gate lets it through next time without asking.
-    if (resolution === "approved_always" && resolved?.runId) {
-      recordStandingAllowance(ctx.db, resolved.runId, resolved.tool, resolved.args);
-    }
-    return resolved;
-  }));
-  registerIpcHandle("db:approval:count", () => handle(() => countPendingApprovals(ctx.db)));
 
   // ── In-app notification center ─────────────────
   registerIpcHandle("db:notification:list", (_e, { limit }: { limit?: number }) => handle(() => q.listMcpNotifications(ctx.db, limit)));

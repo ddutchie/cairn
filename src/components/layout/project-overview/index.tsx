@@ -14,7 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { sortTagsByUsage, capTags } from "@/lib/tag-utils";
 import { Button } from "@/components/ui/button";
-import { PendingApprovals } from "@/components/automations/pending-approvals";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
@@ -168,7 +167,6 @@ export function ProjectOverview() {
         </div>
 
         {/* ── Attention queue: pending approvals from background automations ── */}
-        <PendingApprovals />
 
         {/* ── Due soon ──────────────────────────────────────── */}
         {dueCards.length > 0 && (
