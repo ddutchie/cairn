@@ -286,6 +286,16 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       (ctx as unknown as { planMode?: { set: (a: unknown, active: boolean) => unknown } }).planMode?.set(agent, mode === "plan");
     } catch { /* non-fatal: plan mode falls back to prompt-only guidance */ }
 
+    // Native approval-policy fold (audit §5 Phase C2): record autoApprove as
+    // dsh's durable per-session approval/policy instead of silently keeping
+    // the pinned "ask" service default — the jsonl audit trail AND the
+    // model-visible approval section then reflect reality (auto-approve ⇒
+    // "never"; HITL ⇒ "ask"). No-op when unchanged across turns; a resumed
+    // session folds its own logged history.
+    try {
+      (ctx as unknown as { approval?: { setPolicy?: (a: unknown, p: "ask" | "never") => unknown } }).approval?.setPolicy?.(agent, autoApprove ? "never" : "ask");
+    } catch { /* non-fatal: the per-turn classifier bridge still gates asks */ }
+
     // Mount the bridge AFTER the agent exists so it knows the dsh session id to
     // match events against (= the caller's sessionId, which is also how events
     // are tagged).

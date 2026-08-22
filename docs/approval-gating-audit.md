@@ -164,9 +164,21 @@ Plus: clear/destroy sweep pending maps + grants.
    Cairn `delete_note`/`delete_task` etc. no longer shown as reads; unknown
    tools default to a conservative WRITE_LOCAL label while the classifier
    keeps default-ask. Regression-tested from both sides.
-8. Adopt dsh-sandbox-policy (workspace-write default) + permission-presets;
-   replace the autoApprove boolean with the native policy fold surfaced via a
-   Settings preset selector — **next up**.
+8. Native policy folds — **PARTIALLY DONE (2026-08-21)**:
+   - The coding loop now folds autoApprove into dsh's durable per-session
+     `approval/policy` (`setPolicy(agent, autoApprove ? "never" : "ask")` in
+     run-cordis-coding.ts) — the jsonl audit trail and the model-visible
+     approval section finally reflect reality instead of the pinned "ask"
+     default; unchanged across turns is a no-op, resumed sessions fold their
+     own history.
+   - `dsh-sandbox-policy` confirmed ALREADY mounted natively (workspace-write
+     default, workspaceRoot = project cwd) inside plugFsChain — the audit's
+     "hard-default danger-full-access" note referred to mountCodingStack's
+     shadowed internal default.
+   - `dsh-permission-presets` DEFERRED to the next dsh bump: it injects
+     ["shell","approval","sessions"] and we register the session service as
+     "session"; forcing aliases isn't worth it while presets remains a UX
+     layer over two knobs we already set natively.
 9. Unify the three bridges behind one approval module with pluggable
    transports (interactive IPC / headless map / future ctx.cairn.confirm()
    for user-space plugins — the doom-loop pilot then reuses it).
