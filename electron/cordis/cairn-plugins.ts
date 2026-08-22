@@ -23,6 +23,7 @@ import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos } from "../db/queries";
 import { resultContentError } from "../lib/tool-result";
+import { getSessionGrants, canonicalBashCommand } from "./approval-grants";
 
 // Inlined from pi-agent-loop.ts:254 — kept here so the frozen file can be deleted.
 // Doom-loop: when the model issues the SAME tool with IDENTICAL args this many
@@ -758,28 +759,39 @@ export interface CairnApprovalConfig {
 /**
  * Bridge dsh's approval seam to Cairn's renderer confirm UI. Mounted per turn.
  * No-op when autoApprove is true. Otherwise:
- *   1. tools/pre-execute → {kind:'ask'} for any non-safe tool (mutating).
+ *   1. tools/pre-execute → {kind:'ask'} for any non-safe tool (mutating) whose
+ *      tool name / exact bash command hasn't been granted for the session.
  *   2. approval/request answerer → emit pi-agent:tool-confirm-required, block on
  *      pi-agent:respond-tool, map to allowed-once / rejected.
- * A session-grant (grant:'session') is remembered so the same tool isn't
- * re-prompted for the rest of the turn.
+ * Grants (grant:'session' for a tool, grant:'command' for an exact bash
+ * command) live in the per-session approval-grants store so they survive this
+ * turn — this mount is disposed with it.
  */
 export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): (() => void) | void {
   const { autoApprove, sessionId, send, registerPending, signal } = config;
   if (autoApprove) return;
 
   const disposers: Array<() => void> = [];
-  // Tools the user granted for the whole session — skip re-prompting.
-  const sessionGranted = new Set<string>();
+  // Durable per-session grants (survive this turn; cleared with the session).
+  const grants = getSessionGrants(sessionId);
+  const isGranted = (name: string, argsObj: Record<string, unknown>): boolean => {
+    if (grants.tools.has(name)) return true;
+    if (name === "bash") {
+      const cmd = canonicalBashCommand(argsObj.command);
+      if (cmd && grants.bashCommands.has(cmd)) return true;
+    }
+    return false;
+  };
 
   // 1) Ask-trigger: mutating tools route to the approval seam.
   const unsubPre = (ctx as unknown as { on: (ev: string, fn: (...args: unknown[]) => unknown) => () => void }).on(
     "tools/pre-execute",
     (...args: unknown[]) => {
-      const exec = args[0] as { name?: string } | undefined;
+      const exec = args[0] as { name?: string; arguments?: unknown } | undefined;
       const next = args[1] as (() => Promise<unknown>) | undefined;
       const name = exec?.name;
-      if (typeof name === "string" && !APPROVAL_SAFE.has(name) && !sessionGranted.has(name)) {
+      const argsObj = (exec?.arguments && typeof exec.arguments === "object") ? exec.arguments as Record<string, unknown> : {};
+      if (typeof name === "string" && !APPROVAL_SAFE.has(name) && !isGranted(name, argsObj)) {
         return Promise.resolve({ kind: "ask", reason: `"${name}" needs your approval before it runs.` });
       }
       return next ? next() : undefined;
@@ -794,12 +806,15 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const req = args[0] as { toolName?: string; callId?: string; reason?: string; signal?: AbortSignal } | undefined;
       const toolName = req?.toolName ?? "tool";
       const callId = req?.callId ?? `approve-${newId()}`;
-      if (sessionGranted.has(toolName)) return Promise.resolve("allowed-once");
+      if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
       send("pi-agent:tool-confirm-required", { sessionId, name: toolName, label: toolName, callId });
       return new Promise<string>((resolve) => {
         const dispose = registerPending(callId, (decision) => {
           dispose();
-          if (decision.approved && decision.grant === "session") sessionGranted.add(toolName);
+          if (decision.approved && decision.grant === "session") grants.tools.add(toolName);
+          // grant:"command" is recorded by the pi-agent:respond-tool handler,
+          // which owns the canonicalized command text (dsh's ApprovalRequest
+          // deliberately carries no args).
           resolve(decision.approved ? "allowed-once" : "rejected");
         });
         const onAbort = () => { dispose(); resolve("cancelled"); };

@@ -165,6 +165,20 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // Plan mode is owned by dsh (`dsh-plan-mode`, mounted in the coding stack):
     // it drives the plan:policy section + exit_plan_mode via planMode.set(agent).
     // No custom read-only tool guard — dsh's plan mode is advisory state.
+    // Doom-loop guard: pause on repeated identical tool calls. Mounted BEFORE
+    // the approval plugin on purpose: waterfall listeners fire in registration
+    // order, and once the approval classifier claims a call with {kind:"ask"}
+    // (without calling next()) downstream guards never see it. Mounting doom
+    // first means every call — including ones about to be asked — counts toward
+    // loop detection; its next() chains into the approval classifier below.
+    if (doomLoop) {
+      await mount(cairnDoomLoopPlugin, {
+        sessionId,
+        send,
+        registerPending: doomLoop.registerPending,
+        signal,
+      });
+    }
     // HITL tool approval (no-op when autoApprove is on).
     if (!autoApprove && approvals) {
       await mount(cairnApprovalPlugin, {
@@ -172,15 +186,6 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
         sessionId,
         send,
         registerPending: approvals.registerPending,
-        signal,
-      });
-    }
-    // Doom-loop guard: pause on repeated identical tool calls.
-    if (doomLoop) {
-      await mount(cairnDoomLoopPlugin, {
-        sessionId,
-        send,
-        registerPending: doomLoop.registerPending,
         signal,
       });
     }

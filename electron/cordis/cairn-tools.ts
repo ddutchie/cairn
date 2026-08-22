@@ -12,7 +12,7 @@
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
 import z from "zod";
 import { TOOL_SCHEMAS } from "../lib/tool-schemas";
-import { executeTool } from "../ipc/chat-executor";
+import { executeTool } from "./chat-executor";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { Database } from "better-sqlite3";

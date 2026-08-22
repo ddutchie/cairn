@@ -119,15 +119,23 @@ doom-loop plugin (:609–632); every chat tool executes unconditionally.
 
 ## 5. Fix plan
 
-**Phase A — P0 bug fixes (host-side, small):**
-1. Honor `grant:"command"`: per-session bash-command standing set (exact
-   canonicalized command; refuse wildcards like automation does).
-2. Make grants outlive the turn: hoist `sessionGranted` (+ new command grants)
-   to a per-sessionId store in pi-agent.ts, passed into each mount.
-3. Fix doom-loop ordering: count signatures BEFORE the approval classifier
-   claims the waterfall (mount order / call next() from the classifier after
-   classification so downstream guards see the call).
-4. Verify sessionId in respond handlers before resolving (kill G4).
+**Phase A — P0 bug fixes — ✅ DONE (2026-08-21):**
+1. ~~Honor `grant:"command"`~~ — the renderer now echoes the exact bash command
+   with the respond event (`pi-agent:respond-tool …command`); the handler
+   canonicalizes (trim + whitespace-collapse) and records it in the new
+   per-session grant store. Exact-match only; no wildcards.
+2. ~~Grants outlive the turn~~ — grants moved from the per-mount
+   `sessionGranted` Set to `electron/cordis/approval-grants.ts`
+   (`getSessionGrants(sessionId)`), keyed by session and cleared on
+   pi-agent:clear/destroy. Covered by remount regression test.
+3. ~~Doom-loop ordering~~ — doom-loop mounts BEFORE the approval plugin in
+   run-cordis-coding.ts (waterfall listeners fire in registration order, so the
+   classifier can no longer hide calls from the guard). Regression test mounts
+   both on a chained fake ctx and asserts the doom pause fires on call 3.
+4. ~~sessionId verification~~ — all three pending maps are keyed
+   `${sessionId}::${callId}`; respond handlers compose the same key. A stale or
+   cross-session respond can no longer resolve someone else's ask.
+Plus: clear/destroy sweep pending maps + grants.
 
 **Phase B — resilience:**
 5. Reload/replay: keep pending asks in a resumable registry; re-broadcast

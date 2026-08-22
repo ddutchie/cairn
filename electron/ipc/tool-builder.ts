@@ -27,7 +27,7 @@ import * as q from "../db/queries";
 import * as builder from "../lib/tool-builder";
 import * as secrets from "../lib/secure-store";
 import { buildBuilderSystemPrompt, BUILDER_TOOL_DEFS } from "../lib/tool-builder-prompt";
-import { parseToolArgs } from "../lib/parse-tool-args";
+import { parseToolArgs } from "../../shared/chat/parse-tool-args";
 import { AUTO_OUTPUT_TOKEN_CAP, resolveMaxOutputTokens } from "../../shared/models/model-catalog";
 import { resolveTemperatureForModel } from "../lib/model-pricing";
 import { recordLlmUsage, extractCost, extractCacheTokens } from "../lib/usage-recorder";

@@ -116,10 +116,12 @@ Corrections made during execution (audit vs reality):
   identical before and after this work; not introduced here.
 
 **Phase 2 — decided separately:** fallback retirement + schema drops;
-`reasoningField`/`reasoningModel`; `confirmAction` chat-store removal;
-moving `chat-executor.ts` under `cordis/`;
-fold `parse-tool-args.ts`; remaining orphaned store surface if any
+`reasoningField`/`reasoningModel`; remaining orphaned store surface if any
 (`finalisePiSubagentMessage` is still used).
+Mechanical items **✅ DONE (2026-08-21)**: `confirmAction` + `PendingAction`
+removed from the chat store/types; `chat-executor.ts` relocated to
+`electron/cordis/chat-executor.ts`; `parse-tool-args.ts` shim deleted in favour
+of direct `shared/chat/parse-tool-args` imports.
 
 **Phase 3 — plugin-shaped future:** `ctx.cairn.{confirm,skills}` seams →
 doom-loop pilot → approval-policy extraction. Tracked in

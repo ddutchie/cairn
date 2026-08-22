@@ -4,7 +4,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ChatThread, ChatMessage, ChatToolCallRecord, PendingAction, ID, TokenBreakdown } from "@/types";
+import type { ChatThread, ChatMessage, ChatToolCallRecord, ID, TokenBreakdown } from "@/types";
 import { id, now } from "@/lib/utils";
 import { storage } from "@/lib/storage";
 import { ACTIVE_CHAT_THREAD_KEY } from "@/lib/constants";
@@ -35,7 +35,6 @@ export interface ChatSlice {
     reasoningField?: string,
     reasoningModel?: string,
   ) => ChatMessage;
-  confirmAction: (action: PendingAction) => void;
   deleteThread: (threadId: ID) => void;
   renameThread: (threadId: ID, title: string) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
@@ -286,30 +285,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     const thread = get().chatThreads.find((t) => t.id === threadId);
     if (thread) ipc((e) => e.chat.upsertThread({ ...thread, updatedAt: now() }));
     return msg;
-  },
-
-  confirmAction(action) {
-    const s = get();
-    if (action.type === "create_note") {
-      const { projectId, title } = action.payload as {
-        projectId: ID;
-        title: string;
-      };
-      s.createNote(projectId, title);
-    } else if (action.type === "create_task") {
-      const { columnId, projectId, title } = action.payload as {
-        columnId: ID;
-        projectId: ID;
-        title: string;
-      };
-      s.createCard(columnId, projectId, title);
-    } else if (action.type === "update_task_status") {
-      const { cardId, columnId } = action.payload as {
-        cardId: ID;
-        columnId: ID;
-      };
-      s.moveCard(cardId, columnId, 0);
-    }
   },
 
   deleteThread(threadId) {

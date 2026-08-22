@@ -31,6 +31,7 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts, validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { createDeltaBatcher } from "../lib/delta-batcher";
+import { getSessionGrants, clearSessionGrants, canonicalBashCommand } from "../cordis/approval-grants";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -52,6 +53,24 @@ const runningLoops = new Set<string>();
 const cordisPendingApprovals = new Map<string, (d: { approved: boolean; grant?: "session" | "command" }) => void>();
 const cordisPendingDoomLoop = new Map<string, (allow: boolean) => void>();
 const cordisPendingQuestions = new Map<string, (answersText: string) => void>();
+
+/**
+ * Pending maps are keyed `${sessionId}::${callId}` so a respond event can only
+ * ever resolve its OWN session's ask — dsh callIds are provider-generated and
+ * not guaranteed collision-free across concurrent coding/automation sessions.
+ */
+const pendingKey = (sessionId: string, callId: string): string => `${sessionId}::${callId}`;
+
+/** Drop every pending resolver + approval grant belonging to one session. */
+function sweepSessionPendings(sessionId: string): void {
+  const prefix = `${sessionId}::`;
+  for (const map of [cordisPendingApprovals, cordisPendingDoomLoop, cordisPendingQuestions]) {
+    for (const key of Array.from(map.keys())) {
+      if (key.startsWith(prefix)) map.delete(key);
+    }
+  }
+  clearSessionGrants(sessionId);
+}
 
 /** The raw turn inputs the Cordis coding loop needs (prompt + attachments + config). */
 interface CordisTurnPayload {
@@ -201,20 +220,23 @@ async function runCordisCodingSession(
       questions: {
         send: (channel, p) => send(channel, { sessionId, ...p }),
         registerPending: (requestId, resolve) => {
-          cordisPendingQuestions.set(requestId, resolve);
-          return () => cordisPendingQuestions.delete(requestId);
+          const key = pendingKey(sessionId, requestId);
+          cordisPendingQuestions.set(key, resolve);
+          return () => cordisPendingQuestions.delete(key);
         },
       },
       approvals: {
         registerPending: (callId, resolve) => {
-          cordisPendingApprovals.set(callId, resolve);
-          return () => cordisPendingApprovals.delete(callId);
+          const key = pendingKey(sessionId, callId);
+          cordisPendingApprovals.set(key, resolve);
+          return () => cordisPendingApprovals.delete(key);
         },
       },
       doomLoop: {
         registerPending: (callId, resolve) => {
-          cordisPendingDoomLoop.set(callId, resolve);
-          return () => cordisPendingDoomLoop.delete(callId);
+          const key = pendingKey(sessionId, callId);
+          cordisPendingDoomLoop.set(key, resolve);
+          return () => cordisPendingDoomLoop.delete(key);
         },
       },
     });
@@ -623,13 +645,18 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:respond-tool ──────────────────────────────────────────────────
-  // Resolve the Cordis loop's approval adapter (keyed by callId).
-  registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command" }) => {
-    void sessionId;
-    const cordisPending = cordisPendingApprovals.get(callId);
-    if (cordisPending) {
-      cordisPending({ approved, grant: approved ? grant : undefined });
-      cordisPendingApprovals.delete(callId);
+  // Resolve the Cordis loop's approval adapter (keyed `${sessionId}::${callId}`).
+  // grant:"command" records the exact canonicalized bash command (echoed by the
+  // renderer from the approval card's args) in the session's durable grants.
+  registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant, command }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string }) => {
+    const key = pendingKey(sessionId, callId);
+    const cordisPending = cordisPendingApprovals.get(key);
+    if (!cordisPending) return;
+    cordisPending({ approved, grant: approved ? grant : undefined });
+    cordisPendingApprovals.delete(key);
+    if (approved && grant === "command") {
+      const cmd = canonicalBashCommand(command);
+      if (cmd) getSessionGrants(sessionId).bashCommands.add(cmd);
     }
   });
 
@@ -637,11 +664,11 @@ export function registerPiAgentHandler(
   // User decision on a repeated-identical-call pause. Allow → the call runs and
   // the session stops re-pausing; deny → the loop halts with an error.
   registerIpcOn("pi-agent:respond-doom-loop", (_event, { sessionId, callId, allow }: { sessionId: string; callId: string; allow: boolean }) => {
-    void sessionId;
-    const cordisPending = cordisPendingDoomLoop.get(callId);
+    const key = pendingKey(sessionId, callId);
+    const cordisPending = cordisPendingDoomLoop.get(key);
     if (cordisPending) {
       cordisPending(allow);
-      cordisPendingDoomLoop.delete(callId);
+      cordisPendingDoomLoop.delete(key);
     }
   });
 
@@ -650,11 +677,11 @@ export function registerPiAgentHandler(
   // back to the model as the tool result so it reasons over the answers in the
   // same turn. Cordis keys by requestId (which the renderer echoes as callId).
   registerIpcOn("pi-agent:respond-questions", (_event, { sessionId, callId, answers }: { sessionId: string; callId: string; answers: string }) => {
-    void sessionId;
-    const cordisPending = cordisPendingQuestions.get(callId);
+    const key = pendingKey(sessionId, callId);
+    const cordisPending = cordisPendingQuestions.get(key);
     if (cordisPending) {
       cordisPending(answers);
-      cordisPendingQuestions.delete(callId);
+      cordisPendingQuestions.delete(key);
     }
   });
 
@@ -674,6 +701,8 @@ export function registerPiAgentHandler(
     if (session) {
       session.messages = [];
     }
+    // Grants + any stray pendings die with the conversation.
+    sweepSessionPendings(sessionId);
     // Persisted transcript — without this, pi-agent:restore-context on next
     // launch reloads old messages from pi_agent_llm_history and the clear
     // appears to not stick after quit/restart.
@@ -759,6 +788,10 @@ export function registerPiAgentHandler(
       session.abortCtrl.abort();
       sessions.delete(sessionId);
     }
+    // The abort listeners inside the plugins resolve their own pendings on
+    // abort; sweep whatever remains (e.g. an ask whose listeners were torn
+    // down abnormally) so nothing leaks across sessions.
+    sweepSessionPendings(sessionId);
   });
 
   // ── pi-agent:restore-context ───────────────────────────────────────────────────────

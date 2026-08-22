@@ -705,34 +705,12 @@ export interface ChatMessage {
   contextRefs?: LinkedContextReference[];
   /** Tool calls made during this assistant turn — persisted so they remain visible after streaming ends */
   toolCalls?: ChatToolCallRecord[];
-  /** If this message triggered a write action */
-  pendingAction?: PendingAction;
   /** Suggested connection actions for graph assistant */
   actions?: SuggestedAction[];
   /** Attachments on this message — inline base64 data URLs, ephemeral (not persisted to disk) */
   images?: Array<{ url: string; name: string; kind?: "image" | "pdf" }>;
   /** Subagent runs during this turn (subagent mode) — expandable inline traces. */
   subagents?: ChatSubagent[];
-  createdAt: string;
-}
-
-// ── Agent Action Model ────────────────────────
-export type ActionType =
-  | "create_note"
-  | "update_note"
-  | "create_task"
-  | "update_task_status"
-  | "link_note_to_task"
-  | "move_task";
-
-export type ActionStatus = "pending" | "confirmed" | "rejected";
-
-export interface PendingAction {
-  id: ID;
-  type: ActionType;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  payload: Record<string, any>;
-  status: ActionStatus;
   createdAt: string;
 }
 
