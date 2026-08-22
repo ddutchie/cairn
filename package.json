@@ -59,7 +59,7 @@
     "@deepseek-ai/dsh-bash-local": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-commands": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-compaction-basic": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-context-ring": "file:../dsh-context-ring",
+    "@deepseek-ai/dsh-context-ring": "github:ddutchie/dsh-context-ring",
     "@deepseek-ai/dsh-fs-local": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-fs-observation-policy": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-fs-sandbox": "^0.1.1-rc.2",
