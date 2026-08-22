@@ -8,7 +8,10 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { cairnApprovalPlugin, cairnDoomLoopPlugin } from "./cairn-plugins";
-import { getSessionGrants, clearSessionGrants, canonicalBashCommand } from "./approval-grants";
+import {
+  getSessionGrants, clearSessionGrants, canonicalBashCommand,
+  createPendingAskRegistry,
+} from "./approval-grants";
 
 type Handler = (a: unknown, b: unknown) => Promise<unknown> | unknown;
 
@@ -57,7 +60,15 @@ function makeCtx() {
   };
 }
 
-function makeHarness(sessionId: string, decide?: (callId: string) => { approved: boolean; grant?: "session" | "command" }) {
+function makeHarness(
+  sessionId: string,
+  opts: {
+    decide?: (callId: string) => { approved: boolean; grant?: "session" | "command" };
+    /** Never answer the ask — lets the fail-closed timeout win. */
+    neverRespond?: boolean;
+    timeoutMs?: number;
+  } = {},
+) {
   const h = makeCtx();
   const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
   const dispose = cairnApprovalPlugin(h.ctx as never, {
@@ -65,9 +76,12 @@ function makeHarness(sessionId: string, decide?: (callId: string) => { approved:
     sessionId,
     send: (channel, payload) => { sent.push({ channel, payload }); },
     registerPending: (callId, resolve) => {
-      setTimeout(() => resolve(decide?.(callId) ?? { approved: true }), 0);
+      if (!opts.neverRespond) {
+        setTimeout(() => resolve(opts.decide?.(callId) ?? { approved: true }), 0);
+      }
       return () => {};
     },
+    timeoutMs: opts.timeoutMs,
   });
   return { ...h, sent, dispose: () => dispose?.() };
 }
@@ -112,7 +126,7 @@ describe("cairnApprovalPlugin ask-classification", () => {
 
   it("keeps a grant:'session' alive across plugin re-mounts (turn boundary)", async () => {
     // Turn 1: user approves with "Always allow this tool".
-    const turn1 = makeHarness("s2", () => ({ approved: true, grant: "session" }));
+    const turn1 = makeHarness("s2", { decide: () => ({ approved: true, grant: "session" }) });
     const asked = await turn1.invokeTool("bash", { command: "ls" });
     expect((asked as { kind: string }).kind).toBe("ask");
     expect(turn1.sent.some((s) => s.channel === "pi-agent:tool-confirm-required")).toBe(true);
@@ -167,5 +181,67 @@ describe("doom-loop sees calls claimed by the approval classifier", () => {
     // …but the doom guard still counted every identical call and trips 3rd.
     expect(sent.some((s) => s.channel === "pi-agent:doom-loop")).toBe(true);
     expect((r3 as { kind: string }).kind).toBe("deny");
+  });
+});
+
+describe("pending-ask registry", () => {
+  it("records, lists per session, resolves, and clears sessions", () => {
+    const reg = createPendingAskRegistry();
+    reg.record({ sessionId: "a", name: "write", label: "Write", callId: "c1" });
+    reg.record({ sessionId: "b", name: "bash", label: "Bash", callId: "c2" });
+    expect(reg.listForSession("a")).toHaveLength(1);
+    expect(reg.listForSession("b")[0].callId).toBe("c2");
+    reg.resolve("a", "c1");
+    expect(reg.listForSession("a")).toHaveLength(0);
+    reg.record({ sessionId: "b", name: "edit", label: "Edit", callId: "c3" });
+    reg.clearSession("b");
+    expect(reg.listForSession("b")).toHaveLength(0);
+  });
+});
+
+describe("fail-closed timeouts (audit G6)", () => {
+  it("approval ask expires: settles cancelled, emits expiry, records NO grant", async () => {
+    const { invokeTool, sent } = makeHarness("s1", {
+      neverRespond: true,
+      decide: () => ({ approved: true, grant: "session" }), // would grant if answered
+      timeoutMs: 5,
+    });
+    const result = await invokeTool("bash", { command: "cargo build" });
+    await new Promise((r) => setTimeout(r, 15));
+    expect(sent.some((s) => s.channel === "pi-agent:tool-confirm-expired")).toBe(true);
+    // The timeout won the race — no standing grant may be recorded.
+    expect(getSessionGrants("s1").tools.size).toBe(0);
+    expect((result as { kind: string }).kind).toBe("ask");
+  });
+
+  it("doom-loop pause expires into a precautionary deny", async () => {
+    const h = makeCtx();
+    const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
+    cairnDoomLoopPlugin(h.ctx as never, {
+      sessionId: "s4",
+      send: (channel, payload) => { sent.push({ channel, payload }); },
+      registerPending: () => () => {}, // never answers
+      timeoutMs: 5,
+    });
+    const args = { command: "make all" };
+    await h.invokePre("bash", args);
+    await h.invokePre("bash", args);
+    const r3 = await h.invokePre("bash", args);
+    await new Promise((r) => setTimeout(r, 15));
+    const denied = r3 as { kind: string; reason?: string };
+    expect(denied.kind).toBe("deny");
+    expect(denied.reason).toContain("time limit");
+    expect(sent.some((s) => s.channel === "pi-agent:doom-loop")).toBe(true);
+  });
+
+  it("an answered approval still wins when it arrives before the timeout", async () => {
+    const { invokeTool, sent } = makeHarness("s3", {
+      timeoutMs: 10_000,
+      decide: () => ({ approved: true, grant: "session" }),
+    });
+    const result = await invokeTool("bash", { command: "ls" });
+    expect((result as { kind: string }).kind).toBe("ask"); // asked…
+    expect(sent.some((s) => s.channel === "pi-agent:tool-confirm-expired")).toBe(false); // …answered, not expired
+    expect(getSessionGrants("s3").tools.has("bash")).toBe(true);
   });
 });

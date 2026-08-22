@@ -1014,7 +1014,7 @@ const api = {
     /** Send a prompt to an existing or new session. Fire-and-forget. */
     prompt: (req: unknown) => ipcRenderer.send("pi-agent:prompt", req),
     /** Whether a runAgentLoop is currently in flight for this session. */
-    isRunning: (sessionId: string) => invoke<boolean>("pi-agent:is-running", { sessionId }),
+    isRunning: (sessionId: string) => invoke<{ running: boolean; pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string }> }>("pi-agent:is-running", { sessionId }),
     /** Abort the current in-flight turn for this session. */
     abort: (sessionId: string) => ipcRenderer.send("pi-agent:abort", { sessionId }),
     /** Clear message history for a session (start fresh). */
@@ -1166,6 +1166,13 @@ const api = {
       const handler = (_: any, e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown> }) => cb(e);
       ipcRenderer.on("pi-agent:tool-confirm-required", handler);
       return () => ipcRenderer.off("pi-agent:tool-confirm-required", handler);
+    },
+    /** A pending confirmation expired unanswered — the loop settled it fail-closed. */
+    onToolConfirmExpired: (cb: (e: { sessionId: string; callId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; callId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:tool-confirm-expired", handler);
+      return () => ipcRenderer.off("pi-agent:tool-confirm-expired", handler);
     },
   },
 

@@ -31,7 +31,7 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts, validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { createDeltaBatcher } from "../lib/delta-batcher";
-import { getSessionGrants, clearSessionGrants, canonicalBashCommand } from "../cordis/approval-grants";
+import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry } from "../cordis/approval-grants";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -61,6 +61,13 @@ const cordisPendingQuestions = new Map<string, (answersText: string) => void>();
  */
 const pendingKey = (sessionId: string, callId: string): string => `${sessionId}::${callId}`;
 
+/**
+ * Outstanding tool-approval asks, so a reloading renderer can pull them back
+ * via pi-agent:is-running instead of losing the card (and leaving the main
+ * promise blocked with no visible way to answer it).
+ */
+const pendingAsks = createPendingAskRegistry();
+
 /** Drop every pending resolver + approval grant belonging to one session. */
 function sweepSessionPendings(sessionId: string): void {
   const prefix = `${sessionId}::`;
@@ -70,6 +77,7 @@ function sweepSessionPendings(sessionId: string): void {
     }
   }
   clearSessionGrants(sessionId);
+  pendingAsks.clearSession(sessionId);
 }
 
 /** The raw turn inputs the Cordis coding loop needs (prompt + attachments + config). */
@@ -214,7 +222,26 @@ async function runCordisCodingSession(
       mode,
       autoApprove: payload.autoApprove,
       sandboxMode: payload.sandboxMode,
-      send: loopSend,
+      send: (channel, payload) => {
+        // Record outstanding approval asks so a reloaded renderer can pull
+        // them back via is-running (the original push died with the old page).
+        if (payload && typeof payload === "object" && typeof (payload as { callId?: unknown }).callId === "string") {
+          const p = payload as { sessionId?: string; name?: string; label?: string; callId?: string };
+          if (p.sessionId) {
+            if (channel === "pi-agent:tool-confirm-required") {
+              pendingAsks.record({
+                sessionId: p.sessionId,
+                name: p.name ?? "tool",
+                label: p.label ?? p.name ?? "tool",
+                callId: p.callId,
+              });
+            } else if (channel === "pi-agent:tool-confirm-expired") {
+              pendingAsks.resolve(p.sessionId, p.callId);
+            }
+          }
+        }
+        loopSend(channel, payload);
+      },
       getWin: toolCtx.getWin,
       signal: session.abortCtrl.signal,
       questions: {
@@ -248,6 +275,9 @@ async function runCordisCodingSession(
     }
   } finally {
     runningLoops.delete(sessionId);
+    // The turn is over — every ask in it was settled (answered, aborted, or
+    // timed out). Drop any registry residue so the next turn starts clean.
+    pendingAsks.clearSession(sessionId);
     tokens.flush();
     thoughts.flush();
   }
@@ -263,9 +293,13 @@ export function registerPiAgentHandler(
   // ── pi-agent:is-running ──────────────────────────────────────────────────
   // Invoke-style query so a (re)mounting AgentChatPane can restore its busy
   // state from the main process — the loop's lifecycle lives here, not in the
-  // renderer's local state.
+  // renderer's local state. Also returns the session's outstanding approval
+  // asks so a reload that swallowed the original push can re-render the cards.
   registerIpcHandle("pi-agent:is-running", (_event, { sessionId }: { sessionId: string }) => {
-    return runningLoops.has(sessionId);
+    return {
+      running: runningLoops.has(sessionId),
+      pendingAsks: pendingAsks.listForSession(sessionId),
+    };
   });
 
   // ── pi-agent:abort ────────────────────────────────────────────────────────
@@ -654,6 +688,7 @@ export function registerPiAgentHandler(
     if (!cordisPending) return;
     cordisPending({ approved, grant: approved ? grant : undefined });
     cordisPendingApprovals.delete(key);
+    pendingAsks.resolve(sessionId, callId);
     if (approved && grant === "command") {
       const cmd = canonicalBashCommand(command);
       if (cmd) getSessionGrants(sessionId).bashCommands.add(cmd);

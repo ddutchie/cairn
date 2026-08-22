@@ -307,6 +307,8 @@ export interface CairnQuestionsConfig {
    */
   emitQuestions?: (requestId: string, questions: CairnQuestionItem[]) => void;
   signal?: AbortSignal;
+  /** Fail-closed idle timeout for the form. Defaults to APPROVAL_TIMEOUT_MS. */
+  questionsTimeoutMs?: number;
 }
 
 /** The question shape that flows through ask() — Cairn's ask_questions schema
@@ -331,7 +333,7 @@ interface UserQuestionsSeam {
  * dsh-tool-ask-user package.
  */
 export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig): (() => void) | void {
-  const { send, registerPending, emitQuestions, signal } = config;
+  const { send, registerPending, emitQuestions, signal, questionsTimeoutMs } = config;
   const uq = (ctx as unknown as { userQuestions?: UserQuestionsSeam }).userQuestions;
   if (!uq) return;
 
@@ -368,11 +370,28 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
         }
 
         const answersText = await new Promise<string>((resolve) => {
-          const dispose = registerPending(requestId, (text) => { dispose(); resolve(text); });
-          const onAbort = () => { dispose(); resolve('{"cancelled":true,"answers":[]}'); };
+          const onAborts: Array<() => void> = [];
+          let settled = false;
+          const settle = (text: string) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            dispose();
+            for (const off of onAborts) off();
+            resolve(text);
+          };
+          const dispose = registerPending(requestId, (text) => settle(text));
+          const onAbort = () => settle('{"cancelled":true,"answers":[]}');
           if (request.signal?.aborted || signal?.aborted) onAbort();
-          request.signal?.addEventListener?.("abort", onAbort, { once: true });
-          signal?.addEventListener?.("abort", onAbort, { once: true });
+          for (const sig of [request?.signal, signal]) {
+            if (!sig) continue;
+            sig.addEventListener?.("abort", onAbort, { once: true });
+            onAborts.push(() => sig.removeEventListener?.("abort", onAbort));
+          }
+          // Same fail-closed budget as approvals: an unanswered form must not
+          // block the loop forever. No expiry IPC needed — the loop settles
+          // with the cancelled answers and the pane clears its state on done.
+          const timer = setTimeout(() => settle('{"cancelled":true,"answers":[]}'), questionsTimeoutMs ?? APPROVAL_TIMEOUT_MS);
         });
 
         // The renderer answers with a JSON blob {answers:[{id,selected[],custom?}]}
@@ -754,7 +773,17 @@ export interface CairnApprovalConfig {
    */
   registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void) => () => void;
   signal?: AbortSignal;
+  /** Fail-closed idle timeout for one ask. Defaults to APPROVAL_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
+
+/**
+ * Fail-closed idle timeout for interactive HITL prompts. Without it an ask
+ * whose card was lost to a renderer reload blocks the loop forever (audit G6);
+ * the automation inbox had the same 10-minute fail-closed budget before the
+ * Cordis cutover.
+ */
+export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * Bridge dsh's approval seam to Cairn's renderer confirm UI. Mounted per turn.
@@ -768,7 +797,7 @@ export interface CairnApprovalConfig {
  * turn — this mount is disposed with it.
  */
 export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): (() => void) | void {
-  const { autoApprove, sessionId, send, registerPending, signal } = config;
+  const { autoApprove, sessionId, send, registerPending, signal, timeoutMs } = config;
   if (autoApprove) return;
 
   const disposers: Array<() => void> = [];
@@ -809,18 +838,38 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
       send("pi-agent:tool-confirm-required", { sessionId, name: toolName, label: toolName, callId });
       return new Promise<string>((resolve) => {
-        const dispose = registerPending(callId, (decision) => {
+        // Single-settle guard: exactly one of respond / abort / timeout wins,
+        // and the abort listeners never linger after a normal settle.
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const onAborts: Array<() => void> = [];
+        const settle = (outcome: "allowed-once" | "rejected" | "cancelled") => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
           dispose();
+          for (const off of onAborts) off();
+          resolve(outcome);
+        };
+        const dispose = registerPending(callId, (decision) => {
           if (decision.approved && decision.grant === "session") grants.tools.add(toolName);
           // grant:"command" is recorded by the pi-agent:respond-tool handler,
           // which owns the canonicalized command text (dsh's ApprovalRequest
           // deliberately carries no args).
-          resolve(decision.approved ? "allowed-once" : "rejected");
+          settle(decision.approved ? "allowed-once" : "rejected");
         });
-        const onAbort = () => { dispose(); resolve("cancelled"); };
+        const onAbort = () => settle("cancelled");
         if (req?.signal?.aborted || signal?.aborted) onAbort();
-        req?.signal?.addEventListener?.("abort", onAbort, { once: true });
-        signal?.addEventListener?.("abort", onAbort, { once: true });
+        for (const sig of [req?.signal, signal]) {
+          if (!sig) continue;
+          sig.addEventListener?.("abort", onAbort, { once: true });
+          onAborts.push(() => sig.removeEventListener?.("abort", onAbort));
+        }
+        timer = setTimeout(() => {
+          if (settled) return;
+          send("pi-agent:tool-confirm-expired", { sessionId, name: toolName, label: toolName, callId });
+          settle("cancelled");
+        }, timeoutMs ?? APPROVAL_TIMEOUT_MS);
       });
     },
   );
@@ -849,10 +898,12 @@ export interface CairnDoomLoopConfig {
    */
   registerPending: (callId: string, resolve: (allow: boolean) => void) => () => void;
   signal?: AbortSignal;
+  /** Fail-closed idle timeout for the pause. Defaults to APPROVAL_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
 
 export function cairnDoomLoopPlugin(ctx: Context, config: CairnDoomLoopConfig): (() => void) | void {
-  const { sessionId, send, registerPending, signal } = config;
+  const { sessionId, send, registerPending, signal, timeoutMs } = config;
   const recent: string[] = [];
   let approved = false; // once the user allows, stop re-pausing this session
 
@@ -872,16 +923,34 @@ export function cairnDoomLoopPlugin(ctx: Context, config: CairnDoomLoopConfig): 
         if (window.length === DOOM_LOOP_THRESHOLD - 1 && window.every((s) => s === sig)) {
           const callId = `${sessionId}:${sig}`;
           send("pi-agent:doom-loop", { sessionId, toolName: name, count: DOOM_LOOP_THRESHOLD, args: argsObj, callId });
+          let timedOut = false;
           const allow = await new Promise<boolean>((resolve) => {
-            const dispose = registerPending(callId, (a) => { dispose(); resolve(a); });
-            const onAbort = () => { dispose(); resolve(false); };
+            const onAborts: Array<() => void> = [];
+            const disposers: Array<() => void> = [];
+            let settled = false;
+            const settle = (outcome: boolean) => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timer);
+              for (const d of disposers) d();
+              resolve(outcome);
+            };
+            const onAbort = () => settle(false);
             if (signal?.aborted) onAbort();
             signal?.addEventListener?.("abort", onAbort, { once: true });
+            onAborts.push(() => signal?.removeEventListener?.("abort", onAbort));
+            const disposePending = registerPending(callId, (a) => settle(a));
+            disposers.push(disposePending);
+            const timer = setTimeout(() => { timedOut = true; settle(false); }, timeoutMs ?? APPROVAL_TIMEOUT_MS);
           });
           // Track the attempted signature regardless.
           recent.push(sig);
           if (recent.length > DOOM_LOOP_THRESHOLD) recent.shift();
-          if (!allow) return { kind: "deny", reason: "Stopped: repeated identical tool call (possible loop). Halted by the user." };
+          if (!allow) {
+            return { kind: "deny", reason: timedOut
+              ? "Stopped: no response to the repeat-detection pause within the time limit. Halted as a precaution — re-prompt to continue."
+              : "Stopped: repeated identical tool call (possible loop). Halted by the user." };
+          }
           approved = true;
           return next ? next() : undefined;
         }

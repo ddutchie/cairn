@@ -269,8 +269,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // could read false in the split second before runningLoops is populated —
       // which would wrongly flip the input to idle and finalise a live bubble.
       await new Promise((resolve) => setTimeout(resolve, 150));
-      const running = (await window.electron?.piAgent.isRunning(session.sessionId)) ?? false;
+      const res = await window.electron?.piAgent.isRunning(session.sessionId);
       if (cancelled) return;
+      const running = res?.running ?? false;
+      // Re-surface approval asks whose original push was lost to a reload —
+      // the main-process loop is still blocked waiting on them.
+      for (const ask of res?.pendingAsks ?? []) {
+        setPiToolConfirmRequired(session.sessionId, ask.callId, true);
+      }
       if (running) {
         setIsLoading(true);
         return;
@@ -473,6 +479,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setPiToolConfirmRequired(sessionId, e.callId, true);
     });
 
+    // The ask timed out unanswered and the loop settled it fail-closed —
+    // retire the card so no dead approve/deny buttons linger.
+    const unsubToolConfirmExpired = electron.piAgent.onToolConfirmExpired?.((e) => {
+      if (e.sessionId !== sessionId) return;
+      setPiToolConfirmRequired(sessionId, e.callId, false);
+    });
+
     // Live plan note content updates — keep task list in sync as agent patches the PRD
     const unsubNoteUpdated = electron.piAgent.onNoteUpdated((e) => {
       if (e.sessionId !== sessionId) return;
@@ -567,6 +580,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       unsubStep();
       unsubDone();
       unsubError();
+      unsubToolConfirmExpired?.();
       unsubSubToken();
       unsubSubThought();
       unsubSubTool();
@@ -575,6 +589,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       unsubModeChange();
       unsubAskQuestions();
       unsubToolConfirmRequired();
+      unsubToolConfirmExpired?.();
       unsubNoteUpdated();
       unsubTodos();
       unsubDoomLoop();

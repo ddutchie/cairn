@@ -50,3 +50,43 @@ export function canonicalBashCommand(command: unknown): string | null {
   const canonical = command.trim().replace(/\s+/g, " ");
   return canonical.length > 0 ? canonical : null;
 }
+
+// ── Pending-ask registry ─────────────────────────────────────────────────────
+
+/** One outstanding HITL prompt, enough to re-surface it after a renderer reload. */
+export interface PendingAskMeta {
+  sessionId: string;
+  name: string;
+  label: string;
+  callId: string;
+}
+
+export interface PendingAskRegistry {
+  record(meta: PendingAskMeta): void;
+  /** Remove one ask (answered / aborted / expired). */
+  resolve(sessionId: string, callId: string): void;
+  listForSession(sessionId: string): PendingAskMeta[];
+  clearSession(sessionId: string): void;
+}
+
+/**
+ * Tracks outstanding tool-approval asks so a reloading renderer can pull them
+ * (`pi-agent:is-running`) instead of relying on the original push — which the
+ * reload swallowed while the main-process promise stayed blocked.
+ */
+export function createPendingAskRegistry(): PendingAskRegistry {
+  const byKey = new Map<string, PendingAskMeta>();
+  const key = (sessionId: string, callId: string): string => `${sessionId}::${callId}`;
+  return {
+    record: (meta) => { byKey.set(key(meta.sessionId, meta.callId), meta); },
+    resolve: (sessionId, callId) => { byKey.delete(key(sessionId, callId)); },
+    listForSession: (sessionId) => {
+      const prefix = `${sessionId}::`;
+      return Array.from(byKey.entries()).filter(([k]) => k.startsWith(prefix)).map(([, v]) => v);
+    },
+    clearSession: (sessionId) => {
+      const prefix = `${sessionId}::`;
+      for (const k of Array.from(byKey.keys())) if (k.startsWith(prefix)) byKey.delete(k);
+    },
+  };
+}

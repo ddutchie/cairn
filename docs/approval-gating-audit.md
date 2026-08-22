@@ -137,12 +137,23 @@ doom-loop plugin (:609–632); every chat tool executes unconditionally.
    cross-session respond can no longer resolve someone else's ask.
 Plus: clear/destroy sweep pending maps + grants.
 
-**Phase B — resilience:**
-5. Reload/replay: keep pending asks in a resumable registry; re-broadcast
-   `tool-confirm-required` on `webContents` reload + on `is-running` upgrade
-   (return pending asks, not just a boolean). Template: apiproxy rpcId frames.
-6. Optional idle timeout (fail-closed deny w/ notice) + sweep maps on
-   destroy/clear; remove lingering abort listeners on settle.
+**Phase B — resilience — ✅ DONE (2026-08-21):**
+5. ~~Reload recovery~~ — outstanding asks are recorded in a pending-ask
+   registry (`createPendingAskRegistry`) via a send-wrapper on the coding
+   loop; `pi-agent:is-running` now returns `{ running, pendingAsks }`, and
+   AgentChatPane's busy-sync re-flags the matching chips after a reload
+   (transcript restore happens before pane mount, so no clobber race). The
+   pull-based design replaces the apiproxy push/replay template — same
+   outcome, less machinery.
+6. ~~Fail-closed timeouts~~ — every interactive HITL seam now has a
+   fail-closed budget (`APPROVAL_TIMEOUT_MS`, 10 min, matching the old
+   automation inbox): approvals settle `cancelled` + emit
+   `pi-agent:tool-confirm-expired` (renderer retires the card); doom-loop
+   denies with an explicit "no response within the time limit" reason;
+   question forms settle cancelled. Answered-before-timeout still records
+   grants normally (tested). Plus single-settle guards so abort listeners
+   never linger after a normal resolution, and registry residue is swept at
+   turn end / clear / destroy.
 
 **Phase C — native alignment (with plugin-shaped future):**
 7. Adopt dsh-sandbox-policy (workspace-write default) + permission-presets;
