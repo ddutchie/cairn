@@ -414,7 +414,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const prevProjectIdRef = useRef<string | null | undefined>(activeProjectId);
   const prevWorkspaceIdRef = useRef<string | null | undefined>(activeWorkspaceId);
   useEffect(() => {
-    console.log("[ChatPanel] thread init effect", { activeWorkspaceId, activeProjectId, activeChatThreadId, chatThreads: useCairnStore.getState().chatThreads.map((t) => ({ id: t.id, ws: t.workspaceId, proj: t.projectId })), isLoading: isLoadingRef.current });
     if (!activeWorkspaceId) return;
     if (isLoadingRef.current) return;
 
@@ -423,41 +422,41 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     prevProjectIdRef.current = activeProjectId;
     prevWorkspaceIdRef.current = activeWorkspaceId;
 
-    // Workspace changed — invalidate the active thread regardless of project match
-    if (prevWorkspace !== activeWorkspaceId) {
-      // Fall through to getOrCreateThread below
-    } else if (prevProject === activeProjectId) {
-      // Neither changed — only initialise if no thread is active yet
-      if (activeChatThreadId) {
-        console.log("[ChatPanel] skip init — active thread already set", activeChatThreadId);
-        return;
-      }
-    } else {
-      // Project changed — check if the current thread still matches
-      if (activeChatThreadId) {
-        const currentThread = useCairnStore.getState().chatThreads.find(
-          (t) => t.id === activeChatThreadId,
-        );
-        // Keep the thread if it matches the new project or is workspace-scoped
-        if (currentThread && currentThread.projectId === activeProjectId) {
-          console.log("[ChatPanel] skip init — thread matches new project", currentThread.id);
+    const projectOrWorkspaceChanged =
+      prevWorkspace !== activeWorkspaceId || prevProject !== activeProjectId;
+
+    // If within the same project and workspace, preserve user selection
+    if (!projectOrWorkspaceChanged && activeChatThreadId) {
+      const currentThread = useCairnStore.getState().chatThreads.find(
+        (t) => t.id === activeChatThreadId,
+      );
+      if (currentThread && currentThread.workspaceId === activeWorkspaceId) {
+        if (activeProjectId ? currentThread.projectId === activeProjectId : !currentThread.projectId) {
           return;
         }
       }
     }
 
+    // When switching project/workspace or starting up, pick the most recent thread scoped to this project:
+    const candidates = useCairnStore.getState().chatThreads
+      .filter((t) => t.workspaceId === activeWorkspaceId && (activeProjectId ? t.projectId === activeProjectId : !t.projectId))
+      .sort((a, b) => {
+        const aHas = useCairnStore.getState().chatMessages.some((m) => m.threadId === a.id);
+        const bHas = useCairnStore.getState().chatMessages.some((m) => m.threadId === b.id);
+        if (aHas !== bHas) return bHas ? 1 : -1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+
+    if (candidates.length > 0) {
+      setActiveChatThreadId(candidates[0].id);
+      return;
+    }
+
     const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
-    console.log("[ChatPanel] getOrCreateThread", { ws: activeWorkspaceId, proj: activeProjectId, threadId: t.id, existing: useCairnStore.getState().chatThreads.map((x) => x.id) });
     setActiveChatThreadId(t.id);
   }, [activeWorkspaceId, activeProjectId, activeChatThreadId, setActiveChatThreadId]);
 
-  // Also initialise on first mount when activeChatThreadId is already null
-  useEffect(() => {
-    if (!activeWorkspaceId || activeChatThreadId) return;
-    const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
-    setActiveChatThreadId(t.id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
 
   const messages = useMemo(
     () => {

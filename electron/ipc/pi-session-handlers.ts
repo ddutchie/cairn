@@ -51,15 +51,19 @@ export function registerPiSessionHandlers(ctx: DbContext): void {
       // registered before presentationMeta recomputation (see chat-session).
       await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, sessionId);
       const liveSessions = (cordisCtx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((cordisCtx as unknown as { sessions: unknown }).sessions);
-      const { messages } = await loadSessionMessages(pers, liveSessions, sessionId);
-      if (messages.length === 0) return [] as ReturnType<typeof toPiMessages>; // no jsonl (pre-cutover session) → permanently empty
-      // presentationMeta is not persisted in the log — recompute from the
-      // registered tool defs so rich toolviews (dsh-visualize) render.
+      const { messages, usage, contextRing, todos } = await loadSessionMessages(pers, liveSessions, sessionId);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
-      return toPiMessages(enrichToolCallsWithMeta(messages));
+      const piMessages = toPiMessages(enrichToolCallsWithMeta(messages));
+      return {
+        messages: piMessages,
+        usage,
+        contextRing,
+        todos,
+      };
     } catch {
-      return [] as ReturnType<typeof toPiMessages>;
+      return { messages: [] as ReturnType<typeof toPiMessages> };
     }
   }));
 }
+
 

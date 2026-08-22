@@ -593,71 +593,70 @@ export const useCairnStore = create<CairnStore>()(
       // (which runs on mount) sees the restored threads and doesn't create a
       // duplicate empty thread before the DB merge lands.
       const workspaceChanged = isRefresh && nextWorkspaceId !== current.activeWorkspaceId;
-      if (!isRefresh || workspaceChanged) {
-        let wsId: string | null = get().activeWorkspaceId as string | null;
-        if (!isRefresh) {
-          const savedThreadId = storage.get<string>(ACTIVE_CHAT_THREAD_KEY);
-          console.log("[hydrate] cold start", { savedThreadId, wsId, nextWorkspaceId, snapWorkspaces: snapWorkspaces.map((w) => w.id), snapProjects: snap.projects?.map((p) => p.id) });
-          if (savedThreadId) {
-            try {
-              const res = await ipcAwaitResult<ChatThread | null>(
-                (e) => (e.chat as unknown as { thread?: (id: string) => Promise<{ data: ChatThread | null }> }).thread?.(savedThreadId) as Promise<{ data: ChatThread | null } | { error: string }>
-              ).catch(() => null as unknown as { data: ChatThread | null });
-              // Fallback: try via threads list if single-thread fetch not available
-              let thread: ChatThread | null | undefined = (res as { data?: ChatThread | null })?.data ?? null;
-              console.log("[hydrate] fetch single thread", { savedThreadId, resThread: thread?.id ?? null });
+      let wsId: string | null = get().activeWorkspaceId as string | null;
+      if (!isRefresh) {
+        const savedThreadId = storage.get<string>(ACTIVE_CHAT_THREAD_KEY);
+        console.log("[hydrate] cold start", { savedThreadId, wsId, nextWorkspaceId, snapWorkspaces: snapWorkspaces.map((w) => w.id), snapProjects: snap.projects?.map((p) => p.id) });
+        if (savedThreadId) {
+          try {
+            const res = await ipcAwaitResult<ChatThread | null>(
+              (e) => (e.chat as unknown as { thread?: (id: string) => Promise<{ data: ChatThread | null }> }).thread?.(savedThreadId) as Promise<{ data: ChatThread | null } | { error: string }>
+            ).catch(() => null as unknown as { data: ChatThread | null });
+            // Fallback: try via threads list if single-thread fetch not available
+            let thread: ChatThread | null | undefined = (res as { data?: ChatThread | null })?.data ?? null;
+            console.log("[hydrate] fetch single thread", { savedThreadId, resThread: thread?.id ?? null });
+            if (!thread) {
+              const allRes = await ipcAwaitResult<ChatThread[]>(
+                (e) => e.chat.threads(wsId ?? "") as Promise<{ data: ChatThread[] } | { error: string }>
+              ).catch(() => null as unknown as { data: ChatThread[] });
+              const rawList = Array.isArray(allRes) ? (allRes as unknown as ChatThread[]) : ((allRes as { data?: ChatThread[] })?.data ?? []);
+              const list = rawList;
+              console.log("[hydrate] threads in wsId", wsId, list.map((t) => ({ id: t.id, ws: t.workspaceId, proj: t.projectId })));
+              thread = list.find((t) => t.id === savedThreadId) ?? null;
+              // If not in current ws, scan all workspaces' threads
               if (!thread) {
-                const allRes = await ipcAwaitResult<ChatThread[]>(
-                  (e) => e.chat.threads(wsId ?? "") as Promise<{ data: ChatThread[] } | { error: string }>
-                ).catch(() => null as unknown as { data: ChatThread[] });
-                const rawList = Array.isArray(allRes) ? (allRes as unknown as ChatThread[]) : ((allRes as { data?: ChatThread[] })?.data ?? []);
-                const list = rawList;
-                console.log("[hydrate] threads in wsId", wsId, list.map((t) => ({ id: t.id, ws: t.workspaceId, proj: t.projectId })));
-                thread = list.find((t) => t.id === savedThreadId) ?? null;
-                // If not in current ws, scan all workspaces' threads
-                if (!thread) {
-                  for (const w of snapWorkspaces) {
-                    const r = await ipcAwaitResult<ChatThread[]>(
-                      (e) => e.chat.threads(w.id) as Promise<{ data: ChatThread[] } | { error: string }>
-                    ).catch(() => null as unknown as { data: ChatThread[] });
-                    const raw = Array.isArray(r) ? (r as unknown as ChatThread[]) : ((r as { data?: ChatThread[] })?.data ?? []);
-                    const l = raw;
-                    console.log("[hydrate] scan ws", w.id, l.map((t) => t.id));
-                    thread = l.find((t) => t.id === savedThreadId) ?? null;
-                    if (thread) break;
-                  }
+                for (const w of snapWorkspaces) {
+                  const r = await ipcAwaitResult<ChatThread[]>(
+                    (e) => e.chat.threads(w.id) as Promise<{ data: ChatThread[] } | { error: string }>
+                  ).catch(() => null as unknown as { data: ChatThread[] });
+                  const raw = Array.isArray(r) ? (r as unknown as ChatThread[]) : ((r as { data?: ChatThread[] })?.data ?? []);
+                  const l = raw;
+                  console.log("[hydrate] scan ws", w.id, l.map((t) => t.id));
+                  thread = l.find((t) => t.id === savedThreadId) ?? null;
+                  if (thread) break;
                 }
               }
-              console.log("[hydrate] resolved thread", thread ? { id: thread.id, ws: thread.workspaceId, proj: thread.projectId } : null);
-              if (thread && thread.workspaceId) {
-                const wsExists = snapWorkspaces.some((w) => w.id === thread!.workspaceId);
-                const projExists = !thread.projectId || snap.projects?.some((p) => p.id === thread.projectId);
-                console.log("[hydrate] wsExists/projExists", { wsExists, projExists, wsId, curProj: get().activeProjectId, threadProj: thread.projectId });
-                if (wsExists && projExists) {
-                  wsId = thread.workspaceId;
-                  // Preserve project context: if the thread is workspace-scoped (no projectId)
-                  // keep the current activeProjectId instead of nulling it (the "lose project
-                  // context after clear" bug — a cleared project thread was being remounted
-                  // as workspace-scoped and subsequent turns had no projectId).
-                  const curProj = get().activeProjectId;
-                  const nextProj = thread.projectId ?? (curProj && snap.projects?.some((p) => p.id === curProj) ? curProj : null);
-                  console.log("[hydrate] override ws/proj", { wsId, nextProj, curProj });
-                  set({ activeWorkspaceId: thread.workspaceId, activeProjectId: nextProj });
-                  if (thread.projectId) storage.set(ACTIVE_CHAT_THREAD_KEY, thread.id);
-                }
+            }
+            console.log("[hydrate] resolved thread", thread ? { id: thread.id, ws: thread.workspaceId, proj: thread.projectId } : null);
+            if (thread && thread.workspaceId) {
+              const wsExists = snapWorkspaces.some((w) => w.id === thread!.workspaceId);
+              const projExists = !thread.projectId || snap.projects?.some((p) => p.id === thread.projectId);
+              console.log("[hydrate] wsExists/projExists", { wsExists, projExists, wsId, curProj: get().activeProjectId, threadProj: thread.projectId });
+              if (wsExists && projExists) {
+                wsId = thread.workspaceId;
+                // Preserve project context: if the thread is workspace-scoped (no projectId)
+                // keep the current activeProjectId instead of nulling it (the "lose project
+                // context after clear" bug — a cleared project thread was being remounted
+                // as workspace-scoped and subsequent turns had no projectId).
+                const curProj = get().activeProjectId;
+                const nextProj = thread.projectId ?? (curProj && snap.projects?.some((p) => p.id === curProj) ? curProj : null);
+                console.log("[hydrate] override ws/proj", { wsId, nextProj, curProj });
+                set({ activeWorkspaceId: thread.workspaceId, activeProjectId: nextProj });
+                if (thread.projectId) storage.set(ACTIVE_CHAT_THREAD_KEY, thread.id);
               }
-            } catch (e) { console.warn("[hydrate] savedThread lookup failed", e); }
-          }
-        }
-        console.log("[hydrate] loading chat for wsId", wsId);
-        if (wsId) {
-          await get().loadChatFromDb(wsId);
-          console.log("[hydrate] after loadChatFromDb", { activeChatThreadId: get().activeChatThreadId, threads: get().chatThreads.map((t) => ({ id: t.id, ws: t.workspaceId, proj: t.projectId })), messages: get().chatMessages.length });
-          // If the DB load restored the saved thread, ensure activeChatThreadId
-          // points at it (loadChatFromDb does this, but only if the thread was
-          // in the loaded workspace — the override above guarantees it).
+            }
+          } catch (e) { console.warn("[hydrate] savedThread lookup failed", e); }
         }
       }
+      console.log("[hydrate] loading chat for wsId", wsId);
+      if (wsId) {
+        await get().loadChatFromDb(wsId);
+        console.log("[hydrate] after loadChatFromDb", { activeChatThreadId: get().activeChatThreadId, threads: get().chatThreads.map((t) => ({ id: t.id, ws: t.workspaceId, proj: t.projectId })), messages: get().chatMessages.length });
+        // If the DB load restored the saved thread, ensure activeChatThreadId
+        // points at it (loadChatFromDb does this, but only if the thread was
+        // in the loaded workspace — the override above guarantees it).
+      }
+
 
       // Workspace-global slash commands live in SQLite (command:* IPC) and aren't
       // in the snapshot. Refetch on every hydrate (cheap) so commands created in

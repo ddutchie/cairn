@@ -104,30 +104,48 @@ export function setSessionRoot(root: string): void {
  * persisting). Call BEFORE wiping files: dispose may flush pending events,
  * which the subsequent file wipe then removes.
  */
-export async function dropChatAgentForThread(threadId: string): Promise<void> {  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, Record<string, unknown>> }).__cairnChatAgents;
+export async function dropChatAgentForThread(threadId: string): Promise<void> {
+  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, { handle?: Record<PropertyKey, unknown>; agent?: Record<PropertyKey, unknown>; whenIdle?: () => Promise<void> }> }).__cairnChatAgents;
   if (!map) return;
-  const agent = map.get(threadId);
-  if (!agent) return;
-  map.delete(threadId);
-  // Let an in-flight turn settle so dispose doesn't race mid-step.
-  try {
-    const whenIdle = agent.whenIdle as (() => Promise<void>) | undefined;
-    if (typeof whenIdle === "function") await whenIdle.call(agent);
-  } catch { /* already idle / aborted */ }
-  // dsh handles are disposable via Symbol.asyncDispose / Symbol.dispose (see
-  // dsh-agent-loop:782) — plain `.dispose` often does not exist on the agent
-  // handle, which is why the session was previously left LIVE and the next
-  // prepare/recreate threw "cannot prepare session … while it is live".
-  const agents = agent as Record<PropertyKey, unknown>;
-  for (const k of [Symbol.asyncDispose, Symbol.dispose, "dispose", "close", "abort"] as const) {
-    let fn: (() => unknown) | undefined;
-    try { fn = agents[k] as (() => unknown) | undefined; } catch { fn = undefined; }
-    if (typeof fn === "function") {
-      try { await fn.call(agent); } catch { /* best-effort teardown */ }
-      break;
+  const entry = map.get(threadId);
+  if (entry) {
+    map.delete(threadId);
+    const agent = (entry.agent ?? entry) as Record<PropertyKey, unknown>;
+    const handle = (entry.handle ?? entry) as Record<PropertyKey, unknown>;
+
+    // Let an in-flight turn settle so dispose doesn't race mid-step.
+    try {
+      const whenIdle = (entry.whenIdle ?? agent.whenIdle) as (() => Promise<void>) | undefined;
+      if (typeof whenIdle === "function") await whenIdle.call(agent);
+    } catch { /* already idle / aborted */ }
+
+    const targets = Array.from(new Set([entry.handle, entry.agent, entry].filter(Boolean))) as Array<Record<PropertyKey, unknown>>;
+    for (const obj of targets) {
+      for (const k of [Symbol.asyncDispose, Symbol.dispose, "dispose", "close", "abort"] as const) {
+        let fn: (() => unknown) | undefined;
+        try { fn = obj[k] as (() => unknown) | undefined; } catch { fn = undefined; }
+        if (typeof fn === "function") {
+          try { await fn.call(obj); } catch { /* best-effort teardown */ }
+          break;
+        }
+      }
     }
+
   }
+
+  // Also remove from ctx.sessions directly if still present
+  try {
+    const { getContext } = await import("./run-cordis-loop");
+    const ctx = await getContext();
+    const sid = SessionId(`chat-${threadId}`);
+    const s = (ctx as unknown as { sessions?: { get: (id: unknown) => { dispose?: () => void; [Symbol.dispose]?: () => void } | undefined } }).sessions?.get?.(sid);
+    if (s) {
+      try { s[Symbol.dispose]?.(); } catch { /* noop */ }
+      try { s.dispose?.(); } catch { /* noop */ }
+    }
+  } catch { /* best-effort */ }
 }
+
 
 // Tool definitions resolved lazily from the shared context's registry (cached
 // here) so output.presentationMeta can be recomputed at render time — dsh does
@@ -453,7 +471,7 @@ export async function getContext(): Promise<Context> {
     // ever stops advertising confinement.
     try {
       const { PermissionPresetService } = await import("@deepseek-ai/dsh-permission-presets");
-      ctx.plugin(PermissionPresetService as never, {});
+      (ctx.plugin as (p: unknown, c?: unknown) => unknown)(PermissionPresetService, {});
     } catch (err) {
       console.warn("[cordis] permission presets unavailable:", err instanceof Error ? err.message : err);
     }
@@ -464,10 +482,11 @@ export async function getContext(): Promise<Context> {
     // context-ring registration below.
     try {
       const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection");
-      ctx.plugin(ProjectionRegistry as never, {});
+      (ctx.plugin as (p: unknown, c?: unknown) => unknown)(ProjectionRegistry, {});
     } catch (err) {
       console.warn("[cordis] session projections unavailable:", err instanceof Error ? err.message : err);
     }
+
 
     // Context Ring (reasoning-provenance projection) — registered like
     // TokenMeter's units so it replays durably on resume.
@@ -477,6 +496,16 @@ export async function getContext(): Promise<Context> {
     } catch (err) {
       console.warn("[cordis] context ring unavailable:", err instanceof Error ? err.message : err);
     }
+
+    // Dynamic Workspace Context (systemPrompt.context) — supplies active
+    // project, note, and git branch to DSH's native user/form:snapshot messages.
+    try {
+      const { mountWorkspaceContext } = await import("./plugins/workspace-context");
+      mountWorkspaceContext(ctx);
+    } catch (err) {
+      console.warn("[cordis] workspace context unavailable:", err instanceof Error ? err.message : err);
+    }
+
 
     // Runtime plugin layer (§10 Tier 2/3, opt-in via CAIRN_PLUGINS_DEV=1): after
     // the static tree settles, mount user plugins from <pluginsRoot>/plugins.yml
@@ -808,15 +837,19 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
         if (!meta && !isError) {
           meta = resolvePresentationMeta(toolName, callId ? sessionCallArgs.get(callId) : undefined, output || undefined) as Record<string, unknown> | undefined;
         }
+        const { extractCairnRef } = require("./session-replay") as { extractCairnRef: (name: string, output: unknown) => { type: "note" | "task"; id: string; title: string } | undefined };
+        const cairnRef = (meta?.cairnRef ?? extractCairnRef(toolName, output)) as { type: "note" | "task"; id: string; title: string } | undefined;
         opts.emitToolCallDone?.({
           tool: toolName,
           callId,
+          cairnRef,
           output: isError ? undefined : output,
           ok: !isError,
           error: isError ? (output || "tool error") : undefined,
           ...(meta ? { meta } : {}),
         });
         return;
+
       }
       // Fallback for protocols that don't stream reasoning as deltas (e.g.
       // openai-responses): emit the final message's reasoning block once so the
@@ -852,24 +885,18 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     const stableId = SessionId(`chat-${req.threadId}`);
     currentAttemptSessionId = stableId;
     // Reuse the live agent for this thread if we have one and it's still for the
-    // same model/provider — avoids "cannot prepare session while it is live" which
-    // happens when the previous turn's agent is still registered as live in
-    // ctx.sessions and we try to resume the same id.
+    let activeHandle: Record<PropertyKey, unknown> | undefined;
     let agent: { followup: (msg: unknown) => void; whenIdle: () => Promise<void>; session: { seq: number; events: readonly SessionEvent[] } };
     const cached = chatAgents.get(req.threadId);
     if (cached) {
       try {
-        await cached.whenIdle();
-        // Verify the cached agent's session is still the stableId and not disposed
-        if ((cached.session as unknown as { id?: unknown })?.id === stableId || true) {
-          agent = cached;
-        } else {
-          throw new Error("cached session mismatch");
-        }
+        const ag = (cached.agent ?? cached) as typeof agent;
+        await ag.whenIdle();
+        agent = ag;
+        activeHandle = cached.handle;
       } catch {
         chatAgents.delete(req.threadId);
-        // Fall through to resume/create
-        agent = null as unknown as typeof cached;
+        agent = null as unknown as typeof agent;
       }
     }
     if (!cached || !agent!) {
@@ -883,6 +910,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
           resumeSessionId: stableId,
           signal,
         });
+        activeHandle = resumed as unknown as Record<PropertyKey, unknown>;
         agent = resumed.agent as typeof agent;
       } catch {
         try {
@@ -894,6 +922,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
               installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
             },
           });
+          activeHandle = created as unknown as Record<PropertyKey, unknown>;
           agent = created.agent as typeof agent;
         } catch (e) {
           const msg = (e as Error)?.message ?? String(e);
@@ -907,6 +936,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
               resumeSessionId: stableId,
               signal,
             });
+            activeHandle = resumed2 as unknown as Record<PropertyKey, unknown>;
             agent = resumed2.agent as typeof agent;
           } else if (msg.includes("while it is live")) {
             // A clear raced this turn: the old session is still live in
@@ -923,6 +953,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
                 resumeSessionId: stableId,
                 signal,
               });
+              activeHandle = resumed3 as unknown as Record<PropertyKey, unknown>;
               agent = resumed3.agent as typeof agent;
             } catch (e2) {
               const m2 = (e2 as Error)?.message ?? String(e2);
@@ -933,8 +964,9 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
           }
         }
       }
-      chatAgents.set(req.threadId, agent);
+      chatAgents.set(req.threadId, { handle: activeHandle, agent });
     }
+
 
     await agent.whenIdle();
     const firstSeq = agent.session.seq;

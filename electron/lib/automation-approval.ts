@@ -11,15 +11,9 @@
  */
 
 import type Database from "better-sqlite3";
-import { insertNotification } from "../mcp/db";
-import {
-  getApprovalItemById,
-  resolveApproval,
-  type ApprovalItem,
-  type ApprovalResolution,
-} from "../db/approval-queries";
 import { getAutomationById, getAutomationRunById, updateAutomation, type Automation, type AutomationRun } from "../db/automation-queries";
 import { RUN_SCRIPT_TOOL_NAME } from "./automation-script";
+
 
 /** How long a parked approval waits for a user decision before failing closed. */
 export const APPROVAL_TIMEOUT_MS = 10 * 60_000;

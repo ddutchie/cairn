@@ -580,28 +580,45 @@ export function scaleBreakdown(
   breakdown: TokenBreakdown,
   targetTotal: number
 ): TokenBreakdown {
-  const sum =
+  const fixed =
     breakdown.systemPrompt +
     breakdown.skills +
     breakdown.tools +
-    breakdown.conversation +
-    breakdown.toolOutputs +
     breakdown.rules +
     breakdown.mcp +
     breakdown.subagentDefinitions;
 
-  if (sum <= 0 || targetTotal <= 0) return breakdown;
+  if (targetTotal <= 0) return breakdown;
+  if (targetTotal <= fixed) {
+    const ratio = targetTotal / (fixed || 1);
+    return {
+      systemPrompt: Math.round(breakdown.systemPrompt * ratio),
+      skills: Math.round(breakdown.skills * ratio),
+      tools: Math.round(breakdown.tools * ratio),
+      rules: Math.round(breakdown.rules * ratio),
+      mcp: Math.round(breakdown.mcp * ratio),
+      subagentDefinitions: Math.round(breakdown.subagentDefinitions * ratio),
+      conversation: 0,
+      toolOutputs: 0,
+    };
+  }
 
-  const ratio = targetTotal / sum;
+  const dynamic = breakdown.conversation + breakdown.toolOutputs;
+  const remaining = targetTotal - fixed;
+
+  if (dynamic <= 0) {
+    return {
+      ...breakdown,
+      conversation: remaining,
+    };
+  }
+
+  const ratio = remaining / dynamic;
   return {
-    systemPrompt: Math.round(breakdown.systemPrompt * ratio),
-    skills: Math.round(breakdown.skills * ratio),
-    tools: Math.round(breakdown.tools * ratio),
+    ...breakdown,
     conversation: Math.round(breakdown.conversation * ratio),
     toolOutputs: Math.round(breakdown.toolOutputs * ratio),
-    rules: Math.round(breakdown.rules * ratio),
-    mcp: Math.round(breakdown.mcp * ratio),
-    subagentDefinitions: Math.round(breakdown.subagentDefinitions * ratio),
   };
 }
+
 

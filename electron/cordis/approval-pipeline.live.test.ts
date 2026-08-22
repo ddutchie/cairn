@@ -179,11 +179,14 @@ describe("approval pipeline (LIVE, gated on CORDIS_LIVE=1)", () => {
       description: "Ask the human to approve publishing the summary. You MUST call this tool exactly once before replying.",
       parameters: {}, // dsh property-map shape (defineTool builds the object wrapper)
       execute: async () => {
-        const outcome = await (await getContext()).cairn!.confirm!(sessionId, {
+        const ctx = await getContext();
+
+        const outcome = await (ctx as unknown as { cairn?: { confirm?: (sid: string, opts: unknown) => Promise<string> } }).cairn?.confirm?.(sessionId, {
           title: "Publish the scratch summary?",
           detail: "Plugin-mediated confirmation (ctx.cairn.confirm)",
           toolName: "publish_summary",
         });
+
         console.log("[live] plugin confirm outcome:", outcome);
         return { approved: outcome === "allowed-once" };
       },

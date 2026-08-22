@@ -3,7 +3,7 @@
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { id } from "@/lib/utils";
-import type { PiSessionSummary, PiAgentMessage } from "@/types";
+import type { PiSessionSummary, PiAgentMessage, TerminalSession } from "@/types";
 
 /**
  * Shared hook for creating new Cairn Agent sessions and resuming existing ones.
@@ -61,16 +61,37 @@ export function useAgentSessionActions() {
     setActiveSession(sessionId);
   }
 
+
   async function handleResumeSession(summary: PiSessionSummary) {
     const alreadyLoaded = terminalSessions.find((t) => t.sessionId === summary.id);
     if (!alreadyLoaded) {
       let piMessages: PiAgentMessage[] = [];
+      let lastUsage: TerminalSession["lastUsage"] = undefined;
       try {
-        const rows = await (window.electron?.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> })?.getSessionMessages(summary.id) as Array<{
+        type RowType = {
           id: string; role: "user" | "assistant" | "error"; content: string;
           reasoning?: string | null;
           toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
-        }> | undefined;
+        };
+        const sessRes = await (window.electron?.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> })?.getSessionMessages(summary.id);
+        let rows: RowType[] | undefined = undefined;
+
+        if (Array.isArray(sessRes)) {
+          rows = sessRes as RowType[];
+        } else if (sessRes && typeof sessRes === "object") {
+          const raw = "data" in sessRes && (sessRes as { data?: unknown }).data ? (sessRes as { data: unknown }).data : sessRes;
+          if (Array.isArray(raw)) {
+            rows = raw as RowType[];
+          } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
+            rows = (raw as { messages: RowType[] }).messages;
+            lastUsage = (raw as { usage?: TerminalSession["lastUsage"] }).usage;
+            const rawTodos = (raw as { todos?: Array<{ id: string; title: string; status: "pending" | "in_progress" | "completed" }> }).todos;
+            if (rawTodos && rawTodos.length > 0) {
+              useCairnStore.getState().setPiSessionTodos(summary.id, rawTodos.map((t) => ({ content: t.title, status: t.status, priority: "medium" as const })));
+            }
+          }
+        }
+
         if (rows) {
           piMessages = rows.map((r) => ({
             id: r.id, role: r.role, content: r.content,
@@ -81,6 +102,7 @@ export function useAgentSessionActions() {
           }));
         }
       } catch { /* ok */ }
+
       window.electron?.piAgent.restoreContext(summary.id);
       addTerminalSession({
         sessionId: summary.id, taskId: summary.taskId ?? summary.id,
@@ -88,8 +110,11 @@ export function useAgentSessionActions() {
         projectId: summary.projectId, cwd: summary.cwd, status: summary.status,
         exitCode: null, spawnedAt: summary.spawnedAt, sessionType: "pi",
         piMessages, mode: summary.mode, planNoteId: summary.planNoteId ?? undefined,
+        lastUsage,
       });
     } else {
+
+
       window.electron?.piAgent.restoreContext(summary.id);
     }
     setPersistentPiSession(summary.id);

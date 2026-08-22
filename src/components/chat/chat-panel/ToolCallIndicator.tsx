@@ -5,8 +5,10 @@ import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { MessageAvatar, StreamingCursor } from "./message-ui";
-import { ExternalRefChip } from "@/components/shared/cairn-ref-chip";
+import { CairnRefChip, ExternalRefChip, extractCairnRef, type CairnRef } from "@/components/shared/cairn-ref-chip";
 import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
+
+
 import { ConnectorToolCard } from "@/components/shared/ConnectorToolCard";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 import { humanizeTool } from "@/lib/humanize-tool";
@@ -59,9 +61,13 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
             <WritingStylePromptChip key={i} output={tc.output} />
           ) : tc.status === "done" && connectors && connectorForTool(tc.tool, connectors) ? (
             <ConnectorToolCard key={i} toolCall={{ tool: tc.tool, args: parseToolArgs(tc.args), output: tc.output, externalRef: tc.externalRef }} connector={connectorForTool(tc.tool, connectors)!} testId="chat-connector-card" />
+          ) : tc.status === "done" && (tc.cairnRef || (tc.meta as { cairnRef?: CairnRef })?.cairnRef || extractCairnRef(tc.tool, tc.output)) ? (
+            <CairnRefChip key={i} toolName={tc.tool} cairnRef={(tc.cairnRef || (tc.meta as { cairnRef?: CairnRef })?.cairnRef || extractCairnRef(tc.tool, tc.output))!} />
           ) : tc.status === "done" && tc.externalRef ? (
+
             <ExternalRefChip key={i} toolName={tc.tool} externalRef={tc.externalRef} />
           ) : (
+
             <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
               {tc.status === "running" ? (
                 <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
@@ -86,14 +92,13 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
             <MarkdownContent content={streamingContent} />
             <StreamingCursor />
           </div>
-        ) : !hasThought ? (
+        ) : !hasThought && toolCalls.length === 0 ? (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
             <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
-            <span className="text-[0.786rem] text-[var(--text-tertiary)]">
-              {toolCalls.length === 0 ? "Thinking…" : "Working…"}
-            </span>
+            <span className="text-[0.786rem] text-[var(--text-tertiary)]">Thinking…</span>
           </div>
         ) : null}
+
       </div>
     </div>
   );

@@ -16,6 +16,8 @@ import { executeTool } from "./chat-executor";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { Database } from "better-sqlite3";
+import { extractCairnRef } from "./session-replay";
+
 
 /** Author-facing value schema node (dsh DSL subset we generate). */
 type VNode =
@@ -109,7 +111,13 @@ export function buildCairnTool(
     output: {
       schema: { type: "json" },
       render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }],
+      presentationMeta: (_args, value) => {
+        const ref = extractCairnRef(name, value);
+        return (ref ? { cairnRef: ref } : null) as never;
+      },
     },
+
+
     async execute(args, runContext) {
       // Subagent-originated tool calls must NOT fire the MAIN thread's emit/emitDone
       // (chat:tool-call / chat:tool-call-done) — those chips belong to the parent

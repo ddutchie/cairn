@@ -16,12 +16,20 @@
  */
 
 import { foldSurface, deriveEventMessage, type SessionEvent } from "@deepseek-ai/dsh-session";
+import {
+  foldSessionUsage,
+  foldContextRing,
+  foldSessionTodos,
+  type SessionUsageMetrics,
+  type ContextRingState,
+  type SessionTodoItem,
+} from "./plugins/context-ring";
+
 
 /** A generic derived message block (post foldSurface + deriveEventMessage). */
 type DerivedBlock = { type: string; text?: string; id?: string; name?: string; arguments?: string; toolCallId?: string; isError?: boolean; content?: Array<{ type: string; text?: string }> };
 type DerivedMessage = { id: string; role: string; content: DerivedBlock[]; source?: { kind?: string; form?: string; model?: string } };
 
-/** A UI-agnostic tool-call record (superset of chat + pi-agent shapes). */
 export interface ReplayToolCall {
   tool: string;
   label: string;
@@ -30,11 +38,40 @@ export interface ReplayToolCall {
   output?: string;
   ok?: boolean;
   error?: string;
+  cairnRef?: { type: "note" | "task"; id: string; title: string };
   /** presentationMeta persisted on the tool/result event (dsh writes it at
    *  event.data.meta). Rich toolviews (dsh-visualize) render their card from
    *  this; absent → generic text rendering. */
   meta?: Record<string, unknown>;
 }
+
+const NOTE_TOOLS = new Set([
+  "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template", "create_note",
+]);
+const TASK_TOOLS = new Set([
+  "get_task", "create_task", "update_task", "update_task_status",
+]);
+
+export function extractCairnRef(
+  toolName: string,
+  output: unknown,
+): { type: "note" | "task"; id: string; title: string } | undefined {
+
+  if (!output) return undefined;
+  const isNote = NOTE_TOOLS.has(toolName);
+  const isTask = TASK_TOOLS.has(toolName);
+  if (!isNote && !isTask) return undefined;
+  try {
+    const parsed = typeof output === "string" ? JSON.parse(output) : output;
+    const refId = parsed?.id;
+    const refTitle = parsed?.title ?? parsed?.name ?? "(untitled)";
+    if (!refId) return undefined;
+    return { type: isNote ? "note" : "task", id: String(refId), title: String(refTitle) };
+  } catch {
+    return undefined;
+  }
+}
+
 
 /** A UI-agnostic replayed message (both chat + pi-agent map from this). */
 export interface ReplayMessage {
@@ -98,35 +135,58 @@ export function collapseDerivedToMessages(
   const out: ReplayMessage[] = [];
   let pendingToolResults: Array<{ callId?: string; output?: string; ok?: boolean; error?: string; meta?: Record<string, unknown> }> = [];
   let carryoverToolCalls: ReplayToolCall[] = [];
+  let carryoverReasoning: string[] = [];
+  let carryoverReasoningItems: Array<Record<string, unknown>> = [];
 
   const flushResultsInto = (calls: ReplayToolCall[]) => {
     if (!pendingToolResults.length || !calls.length) return;
     for (const tr of pendingToolResults) {
       const idx = calls.findIndex((tc) => tc.callId === tr.callId);
-      if (idx !== -1) calls[idx] = { ...calls[idx], output: tr.ok === false ? undefined : tr.output, ok: tr.ok, error: tr.error, ...(tr.meta ? { meta: tr.meta } : {}) };
+      if (idx !== -1) {
+        const ref = extractCairnRef(calls[idx].tool, tr.output);
+        calls[idx] = {
+          ...calls[idx],
+          output: tr.ok === false ? undefined : tr.output,
+          ok: tr.ok,
+          error: tr.error,
+          ...(ref ? { cairnRef: ref } : {}),
+          ...(tr.meta ? { meta: tr.meta } : {}),
+        };
+      }
     }
     pendingToolResults = [];
   };
 
   for (const m of derived) {
     const src = getMessageSource(m);
-    if (m.role === "user" && src?.kind === "plugin" && src?.form === "snapshot") continue;
 
     if (m.role === "user") {
       const isToolResult = (m.content ?? []).some((b) => b.type === "tool-result");
       if (isToolResult) {
         for (const tr of (m.content ?? []).filter((b) => b.type === "tool-result")) {
           const output = tr.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
-          const meta = tr.toolCallId ? metaByCallId?.get(tr.toolCallId) : undefined;
-          pendingToolResults.push({ callId: tr.toolCallId, output, ok: !tr.isError, error: tr.isError ? (output || "tool error") : undefined, ...(meta ? { meta } : {}) });
+          const callId = tr.toolCallId ?? (m.source as { callId?: string })?.callId;
+          const meta = callId ? metaByCallId?.get(callId) : undefined;
+          pendingToolResults.push({ callId, output, ok: !tr.isError, error: tr.isError ? (output || "tool error") : undefined, ...(meta ? { meta } : {}) });
         }
         continue;
       }
+
+      // In DSH architecture, human chat prompts are strictly identified by
+      // source.kind === "user". Plugin/system injections (skill catalogs,
+      // dynamic context snapshots, invariants) carry source.kind === "plugin"
+      // and belong solely to model context, not the human chat transcript.
+      if (src?.kind && src.kind !== "user") {
+        continue;
+      }
+
       const text = (m.content ?? []).filter((b) => b.type === "text" && b.text).map((b) => b.text).join("");
       if (!text.trim()) continue;
+
       out.push({ id: String(m.id), role: "user", content: text });
       continue;
     }
+
 
     if (m.role === "assistant") {
       const text = (m.content ?? []).filter((b) => b.type === "text" && b.text).map((b) => b.text).join("");
@@ -139,24 +199,32 @@ export function collapseDerivedToMessages(
 
       if (!text.trim() && toolCalls.length) {
         carryoverToolCalls.push(...toolCalls);
+        if (reasoning.trim()) carryoverReasoning.push(reasoning);
+        if (reasoningItems.length) carryoverReasoningItems.push(...reasoningItems);
         continue;
       }
+
       if (!text.trim() && !reasoning.trim() && toolCalls.length === 0) continue;
 
       const mergedCalls = [...carryoverToolCalls, ...toolCalls];
+      const mergedReasoning = [...carryoverReasoning, ...(reasoning.trim() ? [reasoning] : [])].join("\n\n");
+      const mergedReasoningItems = [...carryoverReasoningItems, ...reasoningItems];
       carryoverToolCalls = [];
+      carryoverReasoning = [];
+      carryoverReasoningItems = [];
       flushResultsInto(mergedCalls);
       out.push({
         id: String(m.id),
         role: "assistant",
         content: text || "",
-        reasoning: reasoning || undefined,
-        reasoningItems: reasoningItems.length ? reasoningItems : undefined,
+        reasoning: mergedReasoning || undefined,
+        reasoningItems: mergedReasoningItems.length ? mergedReasoningItems : undefined,
         reasoningModel: (m.source as { model?: string })?.model,
         toolCalls: mergedCalls.length ? mergedCalls : undefined,
       });
       continue;
     }
+
 
     if (m.role === "tool") {
       for (const tr of (m.content ?? []).filter((b) => b.type === "tool-result")) {
@@ -166,14 +234,20 @@ export function collapseDerivedToMessages(
       continue;
     }
   }
-  // Any trailing carryover tool calls with no following text assistant — surface
-  // them on a final empty assistant so the chips aren't lost.
+  // If there are carryover tool calls, attach them to the last assistant message
+  // if one exists. Never emit a standalone empty assistant message (content === "")
+  // for in-flight / trailing tool calls, as this creates a duplicate phantom message
+  // bubble alongside the live streaming footer.
   if (carryoverToolCalls.length) {
     flushResultsInto(carryoverToolCalls);
-    out.push({ id: `${out.length}-trailing`, role: "assistant", content: "", toolCalls: carryoverToolCalls });
+    const last = out[out.length - 1];
+    if (last && last.role === "assistant") {
+      last.toolCalls = [...(last.toolCalls ?? []), ...carryoverToolCalls];
+    }
   }
   return out;
 }
+
 
 /** Build a subagent trace from a child session's derived messages. */
 export function childDerivedToSubagent(derived: readonly DerivedMessage[], childId: string): ReplaySubagent | null {
@@ -190,8 +264,18 @@ export function childDerivedToSubagent(derived: readonly DerivedMessage[], child
         for (const tr of (m.content ?? []).filter((b) => b.type === "tool-result")) {
           const out = tr.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
           const idx = tr.toolCallId ? toolCallsById.get(tr.toolCallId) : undefined;
-          if (idx !== undefined) toolCalls[idx] = { ...toolCalls[idx], output: tr.isError ? undefined : (out || "{}"), ok: !tr.isError, error: tr.isError ? (out || "tool error") : undefined };
+          if (idx !== undefined) {
+            const ref = extractCairnRef(toolCalls[idx].tool, out);
+            toolCalls[idx] = {
+              ...toolCalls[idx],
+              output: tr.isError ? undefined : (out || "{}"),
+              ok: !tr.isError,
+              error: tr.isError ? (out || "tool error") : undefined,
+              ...(ref ? { cairnRef: ref } : {}),
+            };
+          }
         }
+
         continue;
       }
       if (!instruction) {
@@ -242,6 +326,14 @@ export function descriptorLabelFromEvents(events: readonly SessionEvent[]): stri
  * returning the collapsed messages with the most-recent subagent attached to the
  * dispatching assistant. Shared by chat + pi-agent load paths.
  */
+export interface LoadSessionMessagesResult {
+  messages: ReplayMessage[];
+  subagents: ReplaySubagent[];
+  usage?: SessionUsageMetrics;
+  contextRing?: ContextRingState;
+  todos?: SessionTodoItem[];
+}
+
 export async function loadSessionMessages(
   pers: {
     inspect: (id: unknown) => Promise<{ header: unknown; events: readonly unknown[] }>;
@@ -249,11 +341,15 @@ export async function loadSessionMessages(
   },
   liveSessions: (() => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }>) | undefined,
   sessionId: string,
-): Promise<{ messages: ReplayMessage[]; subagents: ReplaySubagent[] }> {
+): Promise<LoadSessionMessagesResult> {
   const inspection = await pers.inspect(sessionId);
   const events = (inspection?.events ?? []) as readonly SessionEvent[];
   if (!events || events.length === 0) return { messages: [], subagents: [] };
   const messages = collapseDerivedToMessages(deriveMessagesFromEvents(events), metaByCallIdFromEvents(events));
+  const usage = foldSessionUsage(events);
+  const contextRing = foldContextRing(events);
+  const todos = foldSessionTodos(events);
+
 
   // Collect subagent children (durable list + live in-memory not yet flushed)
   let list: Array<{ id: unknown; origin?: string; parentSession?: unknown; createdAt?: number; meta?: { origin?: string; parentSession?: unknown; createdAt?: number } }> = [];
@@ -341,5 +437,6 @@ export async function loadSessionMessages(
   }
   const subagents = attachedSubs;
 
-  return { messages, subagents };
+  return { messages, subagents, usage, contextRing, todos };
 }
+

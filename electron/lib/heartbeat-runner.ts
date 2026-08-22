@@ -576,9 +576,10 @@ export async function runAutomation(
   setConfirmTransport(run.id, createHeadlessConfirmTransport({
     emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
     registerPending: (callId, resolve) => {
-      pendingAutomationApprovals.set(callId, { tool: "plugin_confirm", args: {}, db, runId: run.id, resolve });
+      pendingAutomationApprovals.set(callId, { tool: "plugin_confirm", args: {}, db, runId: run.id, resolve: (d) => resolve(d.approved) });
       return () => { pendingAutomationApprovals.delete(callId); };
     },
+
   }));
 
   const codingResult = await runCordisCodingLoop({

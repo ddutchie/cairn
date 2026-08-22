@@ -69,3 +69,53 @@ describe("applyContextRingEvent", () => {
     expect(contextRingProjectionDefinition.wire.view(state)).toBe(state);
   });
 });
+
+describe("foldSessionUsage", () => {
+  it("folds token metrics from chunk and message events", () => {
+    const events = [
+      {
+        type: "assistant/chunk",
+        data: {
+          chunk: {
+            type: "usage",
+            usage: { inputTokens: 1200, outputTokens: 350, reasoningTokens: 150, cacheReadTokens: 400, costUsd: 0.02 },
+          },
+        },
+      },
+      {
+        type: "tool/result",
+        data: { message: { content: [{ type: "text", text: "1234567890" }] } },
+      },
+    ];
+
+    const usage = import("./plugins/context-ring").then((m) => m.foldSessionUsage(events));
+    return usage.then((res) => {
+      expect(res).toBeDefined();
+      expect(res?.promptTokens).toBe(1200);
+      expect(res?.completionTokens).toBe(350);
+      expect(res?.reasoningTokens).toBe(150);
+      expect(res?.cacheReadTokens).toBe(400);
+      expect(res?.costUsd).toBe(0.02);
+      expect(res?.breakdown).toBeDefined();
+    });
+  });
+});
+
+describe("foldSessionTodos", () => {
+  it("folds last todo/write event into todo list", () => {
+    const events = [
+      {
+        type: "todo/write",
+        data: { todos: [{ id: "1", title: "Step 1", status: "completed" }, { id: "2", title: "Step 2", status: "in_progress" }] },
+      },
+    ];
+
+    return import("./plugins/context-ring").then((m) => {
+      const todos = m.foldSessionTodos(events);
+      expect(todos).toHaveLength(2);
+      expect(todos[0]).toMatchObject({ id: "1", title: "Step 1", status: "completed" });
+      expect(todos[1]).toMatchObject({ id: "2", title: "Step 2", status: "in_progress" });
+    });
+  });
+});
+

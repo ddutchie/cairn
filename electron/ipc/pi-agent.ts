@@ -248,11 +248,12 @@ async function runCordisCodingSession(
                 sessionId: p.sessionId,
                 name: p.name ?? "tool",
                 label: p.label ?? p.name ?? "tool",
-                callId: p.callId,
+                callId: p.callId ?? "",
               });
             } else if (channel === "pi-agent:tool-confirm-expired") {
-              pendingAsks.resolve(p.sessionId, p.callId);
+              pendingAsks.resolve(p.sessionId, p.callId ?? "");
             }
+
           }
         }
         loopSend(channel, payload);

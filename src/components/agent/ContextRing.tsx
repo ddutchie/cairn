@@ -162,14 +162,15 @@ export function ContextRing({
 
   const pctLabel = `${Math.round(pct * 100)}%`;
 
-  const system = breakdown?.systemPrompt ?? Math.min(promptTokens, 1500);
-  const tools = breakdown?.tools ?? 0;
+  const system = breakdown?.systemPrompt ?? Math.min(promptTokens, 350);
+  const tools = breakdown?.tools ?? Math.min(Math.max(0, promptTokens - system), 2650);
   const rules = breakdown?.rules ?? 0;
   const skills = breakdown?.skills ?? 0;
   const mcp = breakdown?.mcp ?? 0;
   const subagent = breakdown?.subagentDefinitions ?? 0;
   const toolOutputs = breakdown?.toolOutputs ?? 0;
-  const conversation = breakdown?.conversation ?? Math.max(0, promptTokens - system - toolOutputs);
+  const conversation = breakdown?.conversation ?? Math.max(0, promptTokens - system - tools - rules - skills - mcp - subagent - toolOutputs);
+
 
   const thinkingTokens = reasoningTokens ?? 0;
   const answerTokens = Math.max(0, (completionTokens ?? 0) - thinkingTokens);

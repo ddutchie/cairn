@@ -42,6 +42,33 @@ export interface CairnRef {
   title: string;
 }
 
+const NOTE_TOOLS = new Set([
+  "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template", "create_note", "delete_note",
+]);
+const TASK_TOOLS = new Set([
+  "get_task", "create_task", "update_task", "update_task_status", "delete_task",
+]);
+
+export function extractCairnRef(
+  toolName: string,
+  output: unknown,
+): CairnRef | undefined {
+  if (!output) return undefined;
+  const isNote = NOTE_TOOLS.has(toolName);
+  const isTask = TASK_TOOLS.has(toolName);
+  if (!isNote && !isTask) return undefined;
+  try {
+    const parsed = typeof output === "string" ? JSON.parse(output) : output;
+    const refId = parsed?.id;
+    const refTitle = parsed?.title ?? parsed?.name ?? "(untitled)";
+    if (!refId) return undefined;
+    return { type: isNote ? "note" : "task", id: String(refId), title: String(refTitle) };
+  } catch {
+    return undefined;
+  }
+}
+
+
 export function CairnRefChip({ toolName, cairnRef, ok = true }: {
   /** The MCP tool name — used to look up the action label (e.g. "create_note", "update_task"). */
   toolName: string;

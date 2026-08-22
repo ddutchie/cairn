@@ -9,8 +9,10 @@ import { ActionsList } from "./ActionsList";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { MessageAvatar } from "./message-ui";
-import { CairnRefChip, ExternalRefChip } from "@/components/shared/cairn-ref-chip";
+import { CairnRefChip, ExternalRefChip, extractCairnRef } from "@/components/shared/cairn-ref-chip";
+
 import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
+
 import { ConnectorToolCard } from "@/components/shared/ConnectorToolCard";
 import type { ChatMessage, LinkedContextReference, ChatToolCallRecord } from "@/types";
 import { humanizeTool } from "@/lib/humanize-tool";
@@ -46,9 +48,11 @@ function ChatToolCallChip({ tc, connectors }: { tc: ChatToolCallRecord; connecto
       </div>
     );
   }
-  if (tc.cairnRef) {
-    return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
+  const cairnRef = tc.cairnRef ?? (tc.meta as { cairnRef?: import("@/components/shared/cairn-ref-chip").CairnRef })?.cairnRef ?? extractCairnRef(tc.tool, tc.output);
+  if (cairnRef) {
+    return <CairnRefChip toolName={tc.tool} cairnRef={cairnRef} />;
   }
+
   // Writing style not configured — surface the "set up" prompt (persisted
   // messages render here, not ToolCallIndicator, so this is where it shows
   // after the stream completes).

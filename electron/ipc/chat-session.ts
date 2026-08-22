@@ -31,29 +31,36 @@ function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessag
 
 export function registerChatSessionHandlers(_ctx: DbContext): void {
   registerIpcHandle("db:chat:sessionMessages", (_e, { threadId }: { threadId: string }) => handle(async () => {
-    if (!threadId) return [] as ChatMessage[];
+    if (!threadId) return { messages: [] as ChatMessage[] };
     try {
       const { getContext, prepareReplayContext } = await import("../cordis/run-cordis-loop");
       const ctx = await getContext();
       const pers = (ctx as unknown as { sessionPersistence?: Parameters<typeof loadSessionMessages>[0] }).sessionPersistence;
-      if (!pers) return [] as ChatMessage[];
+      if (!pers) return { messages: [] as ChatMessage[] };
+
       // Plugin toolviews register through inject-gated backends that wait for
       // the fs chain (only mounted by chat turns) — mount + settle so the
       // tools registry can serve presentationMeta for enrichment below.
       const stableId = String(SessionId(`chat-${threadId}`));
       await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, stableId);
       const liveSessions = (ctx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((ctx as unknown as { sessions: unknown }).sessions);
-      const { messages } = await loadSessionMessages(pers, liveSessions, stableId);
-      // presentationMeta is not persisted in the session log — recompute from
-      // the registered tool defs so rich toolviews (dsh-visualize) render.
+      const { messages, usage, contextRing, todos } = await loadSessionMessages(pers, liveSessions, stableId);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
-      return toChatMessages(threadId, enrichToolCallsWithMeta(messages));
+      const chatMessages = toChatMessages(threadId, enrichToolCallsWithMeta(messages));
+
+      return {
+        messages: chatMessages,
+        usage,
+        contextRing,
+        todos,
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("not found") || msg.includes("no such") || msg.includes("ENOENT")) return [] as ChatMessage[];
+      if (msg.includes("not found") || msg.includes("no such") || msg.includes("ENOENT")) return { messages: [] as ChatMessage[] };
       throw err;
     }
   }));
+
 
   registerIpcHandle("db:chat:sessionThreads", (_e, { workspaceId }: { workspaceId: string }) => handle(async () => {
     void workspaceId;

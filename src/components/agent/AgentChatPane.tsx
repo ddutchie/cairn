@@ -549,10 +549,26 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       if (e.sessionId !== sessionId) return;
       void (async () => {
         try {
-          const rows = await (electron.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId) as Array<{
+          type RowType = {
             id: string; role: "user" | "assistant" | "error"; content: string;
             reasoning?: string | null; toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
-          }> | undefined;
+          };
+          const sessRes = await (electron.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId);
+          let rows: RowType[] | undefined = undefined;
+          let usage: TerminalSession["lastUsage"] = undefined;
+
+          if (Array.isArray(sessRes)) {
+            rows = sessRes as RowType[];
+          } else if (sessRes && typeof sessRes === "object") {
+            const raw = "data" in sessRes && (sessRes as { data?: unknown }).data ? (sessRes as { data: unknown }).data : sessRes;
+            if (Array.isArray(raw)) {
+              rows = raw as RowType[];
+            } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
+              rows = (raw as { messages: RowType[] }).messages;
+              usage = (raw as { usage?: TerminalSession["lastUsage"] }).usage;
+            }
+          }
+
           if (rows && rows.length > 0) {
             const fresh = rows.map((r) => ({
               id: r.id, role: r.role, content: r.content,
@@ -562,12 +578,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
               timestamp: r.timestamp,
             }));
             useCairnStore.setState((s) => ({
-              terminalSessions: s.terminalSessions.map((t) => (t.sessionId === sessionId ? { ...t, piMessages: fresh } : t)),
+              terminalSessions: s.terminalSessions.map((t) => (t.sessionId === sessionId ? { ...t, piMessages: fresh, ...(usage ? { lastUsage: usage } : {}) } : t)),
             }));
           }
         } catch (err) {
           console.warn("[AgentChatPane] compact reload failed", err);
         }
+
+
         const msg = e.messageCount > 0
           ? `Context compacted — session history summarised into ${e.messageCount} messages.`
           : "Nothing to compact — session history is too short.";

@@ -55,19 +55,27 @@ export interface CairnSystemPromptConfig {
  * Cairn's identity first. dsh suppresses its own harness identity
  * (includeHarnessIdentity:false), so this is the only identity the model sees.
  */
-export function cairnSystemPromptPlugin(ctx: Context, config: CairnSystemPromptConfig): void {
-  const { systemText } = config;
-  if (!systemText) return;
-  // Unique section name per mount: the plugin is mounted per turn on the shared
-  // context, and dsh throws on a duplicate section name — so two overlapping
-  // turns would collide on a fixed name. The disposer (tied to this fiber)
-  // removes it when the turn ends.
-  const name = `cairn:system:${newId()}`;
-  (ctx as unknown as { systemPrompt: { section: (s: { name: string; order: number; text: string }) => void } })
-    .systemPrompt.section({ name, order: -100, text: systemText });
+let activeSystemText = "";
+
+export function updateSystemPrompt(text: string): void {
+  activeSystemText = text;
 }
-// Cordis gates `ctx.systemPrompt` behind an explicit injection declaration.
+
+export function cairnSystemPromptPlugin(ctx: Context, config: CairnSystemPromptConfig): (() => void) | void {
+  const { systemText } = config;
+  if (systemText) activeSystemText = systemText;
+
+  const sp = (ctx as unknown as { systemPrompt?: { section: (s: { name: string; order: number; text: () => string }) => () => void } }).systemPrompt;
+  if (!sp || typeof sp.section !== "function") return;
+
+  return sp.section({
+    name: "cairn:system",
+    order: -100,
+    text: () => activeSystemText,
+  });
+}
 cairnSystemPromptPlugin.inject = ["systemPrompt"];
+
 
 // ── cairn-db ────────────────────────────────────────────────────────────────
 export interface CairnDbConfig {

@@ -105,16 +105,29 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     // (JsonlSessionPersistence `chat-<threadId>`), not the duplicated `chat_messages` SQLite
     // table (cairnSessionPlugin + useChatStream double-write). Falls back to SQLite for
     // legacy threads that have no session yet (pre-dsh).
+    const usageByThreadId = new Map<string, unknown>();
     const messageLists = await Promise.all(
       dbThreads.map(async (t) => {
         try {
-          const sessRes = await ipcAwaitResult<ChatMessage[]>(
+          const sessRes = await ipcAwaitResult<unknown>(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (e) => (e.chat as unknown as { sessionMessages: (id: string) => Promise<{ data: ChatMessage[] } | { error: string }> }).sessionMessages(t.id) as Promise<{ data: ChatMessage[] } | { error: string }>
+            (e) => (e.chat as unknown as { sessionMessages: (id: string) => Promise<{ data: unknown } | { error: string }> }).sessionMessages(t.id)
           );
           let data: ChatMessage[] | null = null;
-          if (Array.isArray(sessRes)) data = sessRes as unknown as ChatMessage[];
-          else if (sessRes && typeof sessRes === "object" && "data" in sessRes && Array.isArray((sessRes as { data: unknown }).data)) data = (sessRes as { data: ChatMessage[] }).data;
+          let usage: unknown = undefined;
+          let raw: unknown = sessRes;
+          if (raw && typeof raw === "object" && "data" in raw && (raw as { data: unknown }).data !== undefined) {
+            raw = (raw as { data: unknown }).data;
+          }
+          if (Array.isArray(raw)) {
+            data = raw as ChatMessage[];
+          } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
+            data = (raw as { messages: ChatMessage[] }).messages;
+            usage = (raw as { usage?: unknown }).usage;
+          }
+
+
+          if (usage) usageByThreadId.set(t.id, usage);
           if (data && data.length > 0) {
             console.log("[chat] sessionMessages", { threadId: t.id, count: data.length, sample: data.slice(0, 2).map((m) => ({ role: m.role, content: m.content.slice(0, 30), toolCalls: m.toolCalls?.length, subagents: m.subagents?.length })) });
             return data;
@@ -131,34 +144,36 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     if (get().activeWorkspaceId !== workspaceId) return;
 
     set((s) => {
-      // Merge threads: keep any in-memory thread not yet in the DB; otherwise
-      // take the DB row (it's the persisted truth) — but carry over the
-      // in-memory `lastUsage`, which chat_threads does not persist and would
-      // otherwise be lost (blanking the live token-usage gauge).
+      // Merge threads: take DB row + restored/cached lastUsage so the ContextRing
+      // and token-usage gauge restore immediately on reload/restart.
       const memById = new Map(s.chatThreads.map((t) => [t.id, t]));
       const dbThreadIds = new Set(dbThreads.map((t) => t.id));
       const mergedThreads = [
         ...dbThreads.map((t) => {
           const mem = memById.get(t.id);
-          return mem?.lastUsage ? { ...t, lastUsage: mem.lastUsage } : t;
+          const restoredUsage = usageByThreadId.get(t.id) as ChatThread["lastUsage"];
+          const finalUsage = restoredUsage ?? mem?.lastUsage ?? t.lastUsage;
+          return finalUsage ? { ...t, lastUsage: finalUsage } : t;
         }),
         ...s.chatThreads.filter((t) => !dbThreadIds.has(t.id)),
       ];
 
-      // Merge messages: session (dsh) is the truth; in-memory (localStorage) copies
-      // that are already in the session (same thread+role+content) are dropped to
-      // collapse the optimistic `addMessage` duplicate (user `hi` + assistant `Hi…`
-      // added via ChatPanel/useChatStream and also in the JSONL as `user/message`/
-      // `assistant/message`). Id-based dedupe alone keeps both because ids differ.
-      const dbMsgIds = new Set(dbMessages.map((m) => m.id));
-      const dbKeys = new Set(dbMessages.map((m) => `${m.threadId}:${m.role}:${(m.content ?? "").trim()}`));
+
+      // Merge messages: session (dsh) is the source of truth for all loaded threads.
+      // Replace in-memory copies for those threads so stale optimistic streaming
+      // bubbles (e.g. empty content + tools) do not duplicate alongside replayed turns.
+      const dbLoadedThreadIds = new Set(dbThreads.map((t) => t.id));
+      const cleanDbMessages = dbMessages.filter(
+        (m) => !(m.role === "assistant" && !m.content?.trim() && !m.reasoning?.trim() && String(m.id).includes("-trailing"))
+      );
       const mergedMessages = [
-        ...dbMessages,
-        ...s.chatMessages.filter((m) => !dbMsgIds.has(m.id) && !dbKeys.has(`${m.threadId}:${m.role}:${(m.content ?? "").trim()}`)),
+        ...cleanDbMessages,
+        ...s.chatMessages.filter((m) => !dbLoadedThreadIds.has(m.threadId)),
       ];
 
       return { chatThreads: mergedThreads, chatMessages: mergedMessages };
     });
+
     get().persist();
 
     console.log("[chat] merged", { threads: get().chatThreads.map((t) => ({ id: t.id, ws: t.workspaceId, proj: t.projectId })), messages: get().chatMessages.length, workspaceId });
@@ -364,22 +379,34 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       // reload (session is the source of truth). Replace only THIS thread's
       // messages to avoid disturbing other threads' in-memory state.
       try {
-        const sessRes = await ipcAwaitResult<ChatMessage[]>(
+        const sessRes = await ipcAwaitResult<unknown>(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (e) => (e.chat as unknown as { sessionMessages: (id: string) => Promise<{ data: ChatMessage[] } | { error: string }> }).sessionMessages(threadId) as Promise<{ data: ChatMessage[] } | { error: string }>
+          (e) => (e.chat as unknown as { sessionMessages: (id: string) => Promise<{ data: unknown } | { error: string }> }).sessionMessages(threadId)
         );
         let fresh: ChatMessage[] = [];
-        if (Array.isArray(sessRes)) fresh = sessRes as unknown as ChatMessage[];
-        else if (sessRes && typeof sessRes === "object" && "data" in sessRes && Array.isArray((sessRes as { data: unknown }).data)) fresh = (sessRes as { data: ChatMessage[] }).data;
+        let usage: unknown = undefined;
+        let raw: unknown = sessRes;
+        if (raw && typeof raw === "object" && "data" in raw && (raw as { data: unknown }).data !== undefined) {
+          raw = (raw as { data: unknown }).data;
+        }
+        if (Array.isArray(raw)) {
+          fresh = raw as ChatMessage[];
+        } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
+          fresh = (raw as { messages: ChatMessage[] }).messages;
+          usage = (raw as { usage?: unknown }).usage;
+        }
+
+
         set((s) => ({
           chatMessages: [...s.chatMessages.filter((m) => m.threadId !== threadId), ...fresh],
-          chatThreads: s.chatThreads.map((t) => (t.id === threadId ? { ...t, lastUsage: undefined, updatedAt: now() } : t)),
+          chatThreads: s.chatThreads.map((t) => (t.id === threadId ? { ...t, lastUsage: (usage as ChatThread["lastUsage"]) ?? t.lastUsage, updatedAt: now() } : t)),
         }));
         get().persist();
       } catch (err) {
         console.warn("[chat] compact reload failed", err);
       }
     }
+
   },
 
   async clearThreadMessages(threadId) {
