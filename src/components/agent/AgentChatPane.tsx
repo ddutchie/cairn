@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
-import { Trash2, FileText, Zap, Map as MapIcon, Loader2, Clock, ChevronDown } from "lucide-react";
+import { Trash2, FileText, Zap, Map as MapIcon, Loader2, Clock, ChevronDown, Brain } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
@@ -292,6 +292,18 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     return () => { cancelled = true; };
   }, [session.sessionId, finalisePiMessage]);
 
+  // ── Context Ring badge (reasoning provenance) ─────────────────────────────
+  const [contextRing, setContextRing] = useState<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } } | null>(null);
+  const refreshContextRing = useCallback(async (sid: string) => {
+    try {
+      const res = await window.electron?.piAgent.contextRing(sid);
+      if (res) setContextRing(res);
+    } catch { /* pill is optional decoration */ }
+  }, []);
+  useEffect(() => {
+    void refreshContextRing(session.sessionId);
+  }, [session.sessionId, refreshContextRing]);
+
   // Fire initialPrompt once when the session is loaded (set by SpawnAgentModal).
   // Uses a ref so we always call the current sendPrompt (not a stale closure).
   // Tracks fired session IDs in a Set ref to ensure we only queue this once per session
@@ -383,6 +395,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const unsubDone = electron.piAgent.onDone((e) => {
       if (e.sessionId !== sessionId) return;
+      void refreshContextRing(sessionId);
       finalisePiMessage(sessionId);
       setIsLoading(false);
       setRetryInfo(null);
@@ -910,6 +923,24 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           ),
           Footer: () => (
             <div className="px-3 pb-3 space-y-3">
+              {contextRing?.available && contextRing.ring && Object.keys(contextRing.ring.byModel).length > 0 && (
+                <div data-testid="context-ring" className="w-full max-w-xl rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Brain size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                    {Object.entries(contextRing.ring.byModel).sort((a, b) => b[1].reasoningChars - a[1].reasoningChars).map(([key, bucket]) => {
+                      const modelShort = key.split("::").pop() ?? key;
+                      const degraded = bucket.degradedBlocks - bucket.replayedBlocks >= 0 && bucket.replayedBlocks === 0;
+                      return (
+                        <span key={key} className="text-[0.643rem] text-[var(--text-secondary)]" title={`${bucket.turns} turn(s) with reasoning · ${bucket.reasoningChars} chars${degraded ? " · replay envelope lost (degrades to text)" : ""}`}>
+                          <span className="font-medium text-[var(--text-primary)]">{modelShort}</span>
+                          {" "}· {(bucket.reasoningChars / 1024).toFixed(1)}k think
+                          {bucket.degradedBlocks > 0 && <span className="text-[var(--warning,#f59e0b)]"> · {bucket.degradedBlocks} degraded</span>}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {pendingQuestions && (
                 <QuestionForm
                   questions={pendingQuestions}

@@ -21,7 +21,7 @@ import { setSessionRoot } from "./run-cordis-loop";
 import { applySchema } from "../db/schema";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "./approval-transports";
 import { clearSessionGrants, getSessionGrants } from "./approval-grants";
-import { getContext } from "./run-cordis-loop";
+import { getContext, readContextRing } from "./run-cordis-loop";
 
 const BASE = process.env.CORDIS_TEST_BASE_URL ?? "http://localhost:3042/v1";
 const MODEL = process.env.CORDIS_TEST_MODEL ?? "claude-sonnet-4-5";
@@ -209,4 +209,21 @@ describe("approval pipeline (LIVE, gated on CORDIS_LIVE=1)", () => {
     console.log("[live] scenario3 final text:", text.slice(-120));
     expect(text.includes("APPROVED:true")).toBe(true);
   }, 180_000);
+
+  it("context ring projection populates after a real turn", async () => {
+    if (process.env.CORDIS_LIVE !== "1") return;
+    const db = makeDb();
+    const cwd = makeSandbox();
+    const sessionId = `pi-ring-${Date.now()}`;
+    await runTurn({
+      db, cwd, sessionId,
+      message: "Reply with exactly: RING-OK",
+      send: () => {},
+    });
+    const ring = await readContextRing(sessionId);
+    console.log("[live] context-ring:", JSON.stringify(ring).slice(0, 300));
+    // Projection is registered + readable for a known session. Reasoning
+    // buckets depend on the model emitting thinking — soft-checked via log.
+    expect(ring.available).toBe(true);
+  }, 120_000);
 });

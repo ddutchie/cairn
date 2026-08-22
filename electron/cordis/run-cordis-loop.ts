@@ -458,6 +458,26 @@ export async function getContext(): Promise<Context> {
       console.warn("[cordis] permission presets unavailable:", err instanceof Error ? err.message : err);
     }
 
+    // Session-projection registry — drives every registered projection
+    // eagerly over committed session events (the upstream bundle mounts this;
+    // our hand-built context mounts it explicitly). Must precede the
+    // context-ring registration below.
+    try {
+      const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection");
+      ctx.plugin(ProjectionRegistry as never, {});
+    } catch (err) {
+      console.warn("[cordis] session projections unavailable:", err instanceof Error ? err.message : err);
+    }
+
+    // Context Ring (reasoning-provenance projection) — registered like
+    // TokenMeter's units so it replays durably on resume.
+    try {
+      const { mountContextRing } = await import("./plugins/context-ring");
+      mountContextRing(ctx);
+    } catch (err) {
+      console.warn("[cordis] context ring unavailable:", err instanceof Error ? err.message : err);
+    }
+
     // Runtime plugin layer (§10 Tier 2/3, opt-in via CAIRN_PLUGINS_DEV=1): after
     // the static tree settles, mount user plugins from <pluginsRoot>/plugins.yml
     // and watch the dir so a plugin authored/edited while the app runs loads live
@@ -474,6 +494,31 @@ export async function getContext(): Promise<Context> {
     return ctx;
   })();
   return contextReady;
+}
+
+/**
+ * Read the Context Ring projection for one session. Gracefully unavailable
+ * outside a live cordis context or for unknown sessions.
+ */
+export async function readContextRing(sessionId: string): Promise<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }> {
+  try {
+    // Prefer the event-warmed cache: turn end detaches the session handle from
+    // ctx.sessions, so a post-turn registry lookup would miss.
+    const { cachedContextRing } = await import("./plugins/context-ring");
+    const cached = cachedContextRing(sessionId);
+    if (cached) return { available: true, ring: { currentModel: cached.currentModel, byModel: cached.byModel } };
+    const ctx = await getContext();
+    const registry = (ctx as unknown as { sessionProjections?: { stateOf: (session: unknown, key: string) => unknown } }).sessionProjections;
+    const session = (ctx as unknown as { sessions?: { get?: (id: string) => unknown } }).sessions?.get?.(sessionId);
+    if (!registry || !session) return { available: false };
+    type RingBucket = { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number };
+    const state = registry.stateOf(session, "contextRing") as
+      { currentModel: string | null; byModel: Record<string, RingBucket> } | undefined;
+    if (!state) return { available: false };
+    return { available: true, ring: { currentModel: state.currentModel, byModel: state.byModel } };
+  } catch {
+    return { available: false };
+  }
 }
 
 /**

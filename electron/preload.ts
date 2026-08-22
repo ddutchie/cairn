@@ -1008,6 +1008,8 @@ const api = {
     /** Send a prompt to an existing or new session. Fire-and-forget. */
     prompt: (req: unknown) => ipcRenderer.send("pi-agent:prompt", req),
     /** Whether a runAgentLoop is currently in flight for this session. */
+    /** Reasoning-provenance snapshot for the agent panel's Context Ring badge */
+    contextRing: (sessionId: string) => invoke<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }>("pi-agent:context-ring", { sessionId }),
     isRunning: (sessionId: string) => invoke<{ running: boolean; pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string }> }>("pi-agent:is-running", { sessionId }),
     /** Abort the current in-flight turn for this session. */
     abort: (sessionId: string) => ipcRenderer.send("pi-agent:abort", { sessionId }),

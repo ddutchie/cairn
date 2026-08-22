@@ -18,6 +18,7 @@
  */
 
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { handle } from "./result-helpers";
 
 import type { PiAgentSession, AgentLLMConfig, AgentToolContext } from "../lib/pi-agent-types";
 import type { Database } from "better-sqlite3";
@@ -309,6 +310,14 @@ export function registerPiAgentHandler(
       pendingAsks: pendingAsks.listForSession(sessionId),
     };
   });
+
+  // ── pi-agent:context-ring ─────────────────────────────────────────────────
+  // Reasoning-provenance snapshot ("whose thinking is in context") for the
+  // agent panel's ring badge. Unavailable → renderer hides the pill.
+  registerIpcHandle("pi-agent:context-ring", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
+    const { readContextRing } = await import("../cordis/run-cordis-loop");
+    return readContextRing(sessionId);
+  }));
 
   // ── pi-agent:abort ────────────────────────────────────────────────────────
   registerIpcOn("pi-agent:abort", (_event, { sessionId }: { sessionId: string }) => {
