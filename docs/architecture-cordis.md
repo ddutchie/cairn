@@ -9,7 +9,8 @@ what is still open after the `feat/cordis-runtime` refactor.
 > and plugin system. `docs/plans/cordis-runtime.md` holds the chronological plan
 > (§1–§23); this file is the state-of-the-world reference. Plugin service
 > coverage: **`docs/dsh-plugin-compatibility.md`**. Pre-Cordis leftovers audit +
-> cleanup plan: **`docs/pre-cordis-leftovers-audit.md`**.
+> cleanup plan: **`docs/pre-cordis-leftovers-audit.md`**. Approval-gating audit
+> + fix plan: **`docs/approval-gating-audit.md`**.
 
 ---
 
