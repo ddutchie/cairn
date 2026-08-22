@@ -20,7 +20,7 @@
 
 import type { Context } from "@deepseek-ai/cordis";
 import * as z from "zod";
-import { foldSessionUsage as dshFoldSessionUsage, type ContextRingUsage } from "@deepseek-ai/dsh-context-ring";
+import { foldSessionUsage as dshFoldSessionUsage, type ContextRingUsage } from "dsh-context-ring";
 
 export const CONTEXT_RING_KEY = "contextRing";
 
