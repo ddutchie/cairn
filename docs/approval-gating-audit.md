@@ -156,13 +156,19 @@ Plus: clear/destroy sweep pending maps + grants.
    turn end / clear / destroy.
 
 **Phase C — native alignment (with plugin-shaped future):**
-7. Adopt dsh-sandbox-policy (workspace-write default) + permission-presets;
+7. ~~Unify the taxonomy~~ — ✅ DONE (2026-08-21): `shared/agent/tool-risk.ts`
+   is now the single source consumed by BOTH the main-process classifier
+   (`APPROVAL_SAFE_TOOLS`/`needsApproval`) and the renderer's approval card
+   (`src/lib/tool-risk.ts` is a re-export facade). Drift fixed with it:
+   `str_replace_editor`/`todo_write` labelled session-grantable writes;
+   Cairn `delete_note`/`delete_task` etc. no longer shown as reads; unknown
+   tools default to a conservative WRITE_LOCAL label while the classifier
+   keeps default-ask. Regression-tested from both sides.
+8. Adopt dsh-sandbox-policy (workspace-write default) + permission-presets;
    replace the autoApprove boolean with the native policy fold surfaced via a
-   Settings preset selector; keep APPROVAL_SAFE as the per-tool layer.
-8. Unify the taxonomy: one shared module (tool-risk) consumed by BOTH main
-   classifier and renderer; delete drift.
+   Settings preset selector — **next up**.
 9. Unify the three bridges behind one approval module with pluggable
-   transports (interactive IPC / headless map / future ctx.cairn.confirm() for
-   user-space plugins — the doom-loop pilot then reuses it).
+   transports (interactive IPC / headless map / future ctx.cairn.confirm()
+   for user-space plugins — the doom-loop pilot then reuses it).
 
 Phase A items 1–4 are mechanical and testable; recommend starting there.

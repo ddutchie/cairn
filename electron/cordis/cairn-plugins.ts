@@ -24,6 +24,7 @@ import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos } from "../db/queries";
 import { resultContentError } from "../lib/tool-result";
 import { getSessionGrants, canonicalBashCommand } from "./approval-grants";
+import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
 
 // Inlined from pi-agent-loop.ts:254 — kept here so the frozen file can be deleted.
 // Doom-loop: when the model issues the SAME tool with IDENTICAL args this many
@@ -746,18 +747,10 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 // bridges that to Cairn's renderer confirm UI (pi-agent:tool-confirm-required ⇄
 // pi-agent:respond-tool). Read-only tools always pass (never ask).
 
-/** Tools that never need approval (read-only / safe). */
-const APPROVAL_SAFE = new Set<string>([
-  "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
-  "get_active_context", "get_project_context_pack", "get_user_writing_style",
-  "get_note", "search_notes", "search_notes_semantic", "search_tasks_semantic",
-  "get_task", "search_tasks", "list_ready_tasks", "list_overdue_tasks",
-  "list_tasks_due", "list_templates", "get_neighbors", "get_idea_flow",
-  "get_idea_flow_rules",
-  "codebase_search_symbols", "codebase_get_symbol_definition",
-  "codebase_get_references", "codebase_get_file_symbols",
-  "ask_questions", "skill",
-]);
+/** Tools that never need approval (read-only / safe) — canonical list lives in
+ *  shared/agent/tool-risk.ts, the same source the renderer's approval card uses
+ *  so classification and UI can never drift again. */
+const APPROVAL_SAFE = APPROVAL_SAFE_TOOLS;
 
 export interface CairnApprovalConfig {
   /** When true, every tool runs without a confirm prompt (no asks). */
