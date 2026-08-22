@@ -232,6 +232,41 @@ describe("Context Ring & Replay on real saved jsonl sessions", () => {
       title: "Plugin idea: Context Ring",
     });
   });
+
+  it("folds request/context event and extracts model contextWindow capacity", () => {
+    const events: Array<{ type: string; seq?: number; data?: unknown; surfaceOp?: unknown }> = [
+      {
+        seq: 0,
+        type: "request/context",
+        data: {
+          provider: "cairn",
+          model: "claude-3-7-sonnet",
+          contextWindow: 200000,
+        },
+      },
+      {
+        seq: 1,
+        type: "assistant/message",
+        data: {
+          usage: {
+            inputTokens: 15000,
+            outputTokens: 500,
+          },
+          message: {
+            content: [{ type: "text", text: "Hello!" }],
+            source: { model: "claude-3-7-sonnet" },
+          },
+        },
+        surfaceOp: "append",
+      },
+    ];
+
+    const usage = foldSessionUsage(events as any);
+    expect(usage).toBeDefined();
+    expect(usage?.promptTokens).toBe(15000);
+    expect(usage?.contextLimit).toBe(200000);
+    expect(usage?.contextWindow).toBe(200000);
+  });
 });
 
 

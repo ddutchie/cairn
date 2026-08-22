@@ -273,7 +273,7 @@ export async function resumeChatAgent(threadId: string, workspacePath: string, m
 // The pi-ai provider route ("cairn") is registered once; its profile carries
 // the endpoint. Track the last config so a changed baseURL/model remounts it.
 let piAiDisposer: (() => Promise<void>) | null = null;
-let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" } | null = null;
+let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number } | null = null;
 
 export async function getContext(): Promise<Context> {
   if (sharedCtx) return sharedCtx;
@@ -555,12 +555,15 @@ export async function readContextRing(sessionId: string): Promise<{ available: b
  * "cairn" is registered once; if the endpoint/model changed, dispose the old
  * route first (the pi-ai plugin owns a configurable-provider directory + route).
  */
-export async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" }): Promise<void> {  const same =
+export async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number }): Promise<void> {
+  const same =
     piAiDisposer &&
     lastPiAiConfig &&
     lastPiAiConfig.baseUrl === config.baseUrl &&
     lastPiAiConfig.model === config.model &&
-    lastPiAiConfig.api === config.api;
+    lastPiAiConfig.api === config.api &&
+    lastPiAiConfig.contextWindow === config.contextWindow &&
+    lastPiAiConfig.maxTokens === config.maxTokens;
   if (same) return;
 
   if (piAiDisposer) {
@@ -585,7 +588,11 @@ export async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string;
           api: config.api,
           baseURL: config.baseUrl,
           displayName: "Cairn",
-          models: [{ id: config.model, contextWindow: 262144, maxTokens: 32768 }],
+          models: [{
+            id: config.model,
+            contextWindow: config.contextWindow ?? 128000,
+            maxTokens: config.maxTokens ?? 32768,
+          }],
           apiKeyEnv,
           // Declare image input so the pi-ai route accepts ImageBlocks (step 2l).
           // Cairn's endpoint is a multi-provider gateway; images pass through as
@@ -700,6 +707,8 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     model: llmConfig.model,
     apiKey: llmConfig.apiKey,
     api: apiFor(transport.mode),
+    contextWindow: llmConfig.contextWindow,
+    maxTokens: llmConfig.maxTokens,
   });
 
   // Cairn's own plugins: cairn-db owns the handle, cairn-session persists
@@ -1021,6 +1030,8 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
         model: llmConfig.model,
         apiKey: llmConfig.apiKey,
         api: "openai-completions",
+        contextWindow: llmConfig.contextWindow,
+        maxTokens: llmConfig.maxTokens,
       });
       liveText = "";
       liveReasoning = "";

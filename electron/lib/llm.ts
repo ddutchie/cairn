@@ -78,6 +78,8 @@ export interface LLMConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 export type OpenAIMessage = {

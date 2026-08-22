@@ -665,6 +665,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         ),
         // Reasoning models get the `developer` system role (OpenAI convention).
         isReasoningModel: getModelInfo(aiConfig.model)?.reasoning === true,
+        contextLimit: aiConfig.contextLimit,
+        contextWindow: aiConfig.contextLimit,
       },
       systemPrompt,
       // Active chat personality (Default = none). The main process appends it

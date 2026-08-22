@@ -61,6 +61,9 @@ export interface ChatStreamRequest {
     maxTokens?: number;
     /** Whether the selected model is a reasoning/thinking model (from the models.dev catalog). */
     isReasoningModel?: boolean;
+    /** Model token capacity limit (user setting or models.dev detected). */
+    contextLimit?: number;
+    contextWindow?: number;
   };
   systemPrompt?: string;
   /** Active chat personality — a style layer appended to the system prompt.

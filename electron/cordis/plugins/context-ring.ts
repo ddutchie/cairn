@@ -147,6 +147,8 @@ export interface SessionUsageMetrics {
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
   costUsd?: number;
+  contextLimit?: number;
+  contextWindow?: number;
   breakdown?: {
     systemPrompt?: number;
     tools?: number;
@@ -190,6 +192,8 @@ export function foldSessionUsage(events: readonly { type: string; data?: unknown
     cacheReadTokens: usage.cacheReadTokens,
     cacheCreationTokens: usage.cacheCreationTokens,
     costUsd: usage.costUsd,
+    contextLimit: usage.contextLimit,
+    contextWindow: usage.contextWindow,
     breakdown: usage.breakdown,
   };
 }
