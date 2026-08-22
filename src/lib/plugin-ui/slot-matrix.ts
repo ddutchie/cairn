@@ -43,11 +43,20 @@ export interface SlotProps {
   "view.header.actions": { view: CairnView };
   /** Per-tool rich view in the chat transcript (dsh tool.call.toolview parity). */
   "tool.call.toolview": import("../dsh-toolview/contract").ToolCallViewProps;
-  /** A band under the chat composer — the natural home for a cost/context
-   *  widget. Receives Cairn's own live usage (NOT dsh's useProjection). */
   "chat.transcript.footer": {
     threadId: string | null;
-    usage?: { promptTokens: number; completionTokens: number; costUsd?: number; contextTokens?: number; contextLimit?: number };
+    usage?: {
+      promptTokens: number;
+      completionTokens: number;
+      costUsd?: number;
+      contextTokens?: number;
+      contextLimit?: number;
+      contextWindow?: number;
+      reasoningTokens?: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+      breakdown?: import("../../types").TokenBreakdown;
+    };
   };
   /** A section in the Settings view. */
   "settings.section": Record<string, never>;

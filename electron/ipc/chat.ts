@@ -272,13 +272,15 @@ export function registerChatHandler(ctx: DbContext): void {
       } catch (err) {
         console.error("[chat] failed to calculate breakdown:", err);
       }
-      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens });
+      const resolvedLimit = req.config?.contextLimit ?? req.config?.contextWindow;
+      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens, contextLimit: resolvedLimit, contextWindow: resolvedLimit });
     };
 
     // Final usage object attached to chat:done (or undefined when nothing ran —
     // a cost-only report is still retained, not dropped for having no tokens).
-    const finalUsage = () =>
-      promptTokens > 0 || costUsd != null
+    const finalUsage = () => {
+      const resolvedLimit = req.config?.contextLimit ?? req.config?.contextWindow;
+      return promptTokens > 0 || costUsd != null
         ? {
             promptTokens,
             completionTokens,
@@ -287,8 +289,11 @@ export function registerChatHandler(ctx: DbContext): void {
             costUsd: costUsd != null ? costUsd : undefined,
             cacheReadTokens,
             cacheCreationTokens,
+            contextLimit: resolvedLimit,
+            contextWindow: resolvedLimit,
           }
         : undefined;
+    };
 
     // ── Subagent mode ─────────────────────────────────────────────────────────
     // The builtin dispatch → research/write subagent loop (chat-subagent-loop)

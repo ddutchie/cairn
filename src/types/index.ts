@@ -564,6 +564,9 @@ export interface ChatThread {
     breakdown?: TokenBreakdown;
     /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost), when present. */
     costUsd?: number;
+    /** Model capacity / context limit. */
+    contextLimit?: number;
+    contextWindow?: number;
   };
 }
 

@@ -945,7 +945,15 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             small gap above the input only when a plugin has registered. */}
         <ChatFooterSlot
           threadId={threadId ?? null}
-          usage={activeThread?.lastUsage as any}
+          usage={
+            activeThread?.lastUsage
+              ? {
+                  ...activeThread.lastUsage,
+                  contextLimit: activeThread.lastUsage.contextLimit ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000,
+                  contextWindow: activeThread.lastUsage.contextWindow ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000,
+                }
+              : undefined
+          }
         />
 
         <ChatInputArea
