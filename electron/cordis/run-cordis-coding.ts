@@ -216,10 +216,19 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     for (const def of opts.extraTools ?? []) {
       try {
         const { defineTool } = await import("@deepseek-ai/dsh-tools");
+        // Callers may hand us either dsh's property-map shape ({field: schema})
+        // or an OpenAI-style wrapped JSON Schema ({type:"object", properties}).
+        // defineTool compiles the OUTER object itself — passing the wrapped
+        // form makes every key (including `type`) validate as a property
+        // schema and the registration die with JsonSchemaError.
+        const raw = def.parameters as { type?: unknown; properties?: Record<string, unknown> } | undefined;
+        const parameters = (raw && raw.type === "object" && raw.properties && typeof raw.properties === "object")
+          ? raw.properties
+          : ((def.parameters ?? {}) as Record<string, unknown>);
         const tool = defineTool({
           name: def.name,
           description: def.description,
-          parameters: def.parameters as never,
+          parameters: parameters as never,
           output: {
             schema: { type: "json" },
             render: (_args: unknown, value: unknown) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],

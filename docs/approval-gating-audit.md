@@ -203,3 +203,15 @@ Plus: clear/destroy sweep pending maps + grants.
      map native asks use.
 
 Phase A items 1–4 are mechanical and testable; recommend starting there.
+
+## 6. Live validation (2026-08-22) — PASSED
+
+`electron/cordis/approval-pipeline.live.test.ts` (opt-in `CORDIS_LIVE=1`)
+validated the full pipeline against a real model:
+deny records no grant · session grant asks once then rides free (2 writes,
+1 confirm) · doom pilot trips via ctx.cairn.confirm on a genuine repeated
+bash loop and halts gracefully · a plugin extraTool's ctx.cairn.confirm ask
+renders chip+card and returns allowed-once to the model.
+Bonus find: extraTools given OpenAI-wrapped JSON Schema failed dsh tool
+registration silently — bridge now normalizes both shapes (fixed automation
+run_script/write_run_file/deliver_file registration).
