@@ -423,21 +423,36 @@ export interface CairnUsageConfig {
   baseUrl?: string;
 }
 
-/** Record token/cost usage from dsh usage chunks into Cairn's llm_usage table. */
+/** Record token/cost usage from dsh usage chunks and messages into Cairn's llm_usage table. */
 export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
   const { threadId, workspaceId, projectId, provider, model, baseUrl } = config;
   let prompt = 0;
   let completion = 0;
   let reasoning = 0;
+  let recordedInTurn = false;
 
   ctx.on("session/event", (_session: Session, event: SessionEvent) => {
-    if (event.type !== "assistant/chunk") return;
-    const chunk = (event.data as { chunk?: { type?: string; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }).chunk;
-    if (chunk?.type !== "usage" || !chunk.usage) return;
+    let u: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } | undefined = undefined;
 
-    prompt = Math.max(prompt, chunk.usage.inputTokens ?? 0);
-    completion += chunk.usage.outputTokens ?? 0;
-    reasoning += chunk.usage.reasoningTokens ?? 0;
+    if (event.type === "assistant/chunk") {
+      const chunk = (event.data as { chunk?: { type?: string; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }).chunk;
+      if (chunk?.type === "usage" && chunk.usage) {
+        u = chunk.usage;
+      }
+    } else if (event.type === "assistant/message") {
+      const msgUsage = (event.data as { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }).usage;
+      if (msgUsage && !recordedInTurn) {
+        u = msgUsage;
+      }
+      recordedInTurn = false; // Reset for next step/turn
+    }
+
+    if (!u) return;
+
+    recordedInTurn = true;
+    prompt = Math.max(prompt, u.inputTokens ?? 0);
+    completion += u.outputTokens ?? 0;
+    reasoning += u.reasoningTokens ?? 0;
 
     recordLlmUsage({
       source: "chat",
@@ -453,6 +468,7 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
     });
   });
 }
+
 
 // ── cairn-coding ──────────────────────────────────────────────────────────────
 // Bridge the MAIN coding session's dsh events onto Cairn's `pi-agent:*` IPC
