@@ -10,7 +10,7 @@
 import { registerIpcHandle } from "./registry";
 import { err, handle, type DbContext } from "./result-helpers";
 import { generatePrd } from "../lib/prd";
-import { callLLM, isLocalEndpoint, normaliseBaseUrl, buildApiUrl, type LLMConfig } from "../lib/llm";
+import { isLocalEndpoint, normaliseBaseUrl, buildApiUrl, type LLMConfig } from "../lib/llm";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { fetchProvidersManifest } from "../lib/community-registry";

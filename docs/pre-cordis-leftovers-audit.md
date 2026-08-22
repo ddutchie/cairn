@@ -91,14 +91,35 @@ doom-loop as the pilot; reuse the confirm transport for approval-policy later.
 
 ## 4. Execution plan
 
-**Phase 1 — mechanical removal (one PR, low risk):**
+**Phase 1 — mechanical removal — ✅ DONE (2026-08-21, −830 lines across 18 files):**
 items §2.1–§2.9 above, the 🔴 exports in §1 (`streamCompletion`, 7×
 llm-stream, `truncateOutput`, un-export `postChatCompletions`), the dead
 `callLLM` import, and every stale `runToolLoop`/deleted-file comment.
+Also removed: the orphaned store actions `addPiSubagent`/`completePiSubagent`
+(terminal-sessions.ts) left dead by §2.1.
+
+Corrections made during execution (audit vs reality):
+- `supportsDeveloperRole` was NOT deletable — live `resolveSystemRole` calls it
+  internally. Un-exported to module-private instead; its direct-call test
+  dropped (behaviour still covered via `resolveSystemRole` tests).
+- `StreamToolCall`/`StreamUsage` kept — they appear in live
+  `consumeAssistantStream`/`StreamedTurn` signatures (audit over-counted them
+  as dead types).
+- `PiAgentSession.messages` retyped as turn-marker-only
+  (`Array<{ role: "user"; content }>`); nothing reads it — the transcript lives
+  in the dsh jsonl log.
+- llm.ts `LlmCallOpts`/`postChatCompletions` privatized (un-exported), not
+  deleted — both are callLLM internals.
+- Pre-existing baseline note: `type-check:all` shows 13 errors at HEAD caused
+  by `scratch/dsh-repo` confusing module resolution (attachment-store,
+  cairn-plugins Context methods, read-tools/notes-files isolatedModules) —
+  identical before and after this work; not introduced here.
 
 **Phase 2 — decided separately:** fallback retirement + schema drops;
-`reasoningField`/`reasoningModel`; `confirmAction` store removal; move
-`chat-executor.ts` under `cordis/`; fold `parse-tool-args.ts`.
+`reasoningField`/`reasoningModel`; `confirmAction` chat-store removal;
+moving `chat-executor.ts` under `cordis/`;
+fold `parse-tool-args.ts`; remaining orphaned store surface if any
+(`finalisePiSubagentMessage` is still used).
 
 **Phase 3 — plugin-shaped future:** `ctx.cairn.{confirm,skills}` seams →
 doom-loop pilot → approval-policy extraction. Tracked in

@@ -114,13 +114,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const updatePiSubagentUsage    = useCairnStore((s) => s.updatePiSubagentUsage);
   const updatePiToolCall         = useCairnStore((s) => s.updatePiToolCall);
   const updatePiSubagentToolCall = useCairnStore((s) => s.updatePiSubagentToolCall);
-  const addPiSubagent            = useCairnStore((s) => s.addPiSubagent);
+  const addPiSubagentToolCall    = useCairnStore((s) => s.addPiSubagentToolCall);
+  const stepPiSubagent           = useCairnStore((s) => s.stepPiSubagent);
   const appendPiSubagentToken    = useCairnStore((s) => s.appendPiSubagentToken);
   const appendPiSubagentThought  = useCairnStore((s) => s.appendPiSubagentThought);
   const _finalisePiSubagentMessage = useCairnStore((s) => s.finalisePiSubagentMessage);
-  const addPiSubagentToolCall    = useCairnStore((s) => s.addPiSubagentToolCall);
-  const completePiSubagent       = useCairnStore((s) => s.completePiSubagent);
-  const stepPiSubagent           = useCairnStore((s) => s.stepPiSubagent);
   const setPiMode                = useCairnStore((s) => s.setPiMode);
   const setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
   const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
@@ -413,15 +411,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     // ── Subagent events (child session IDs routed back to parent) ──────────
-    const unsubSubagent = electron.piAgent.onSubagent((e) => {
-      if (e.parentSessionId !== sessionId) return;
-      if (e.status === "start") {
-        addPiSubagent(sessionId, e.childSessionId);
-      } else {
-        completePiSubagent(sessionId, e.childSessionId, e.result ?? "");
-      }
-    });
-
     const unsubSubToken = electron.piAgent.onToken((e) => {
       if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
       appendPiSubagentToken(sessionId, e.sessionId, e.delta);
@@ -578,7 +567,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       unsubStep();
       unsubDone();
       unsubError();
-      unsubSubagent();
       unsubSubToken();
       unsubSubThought();
       unsubSubTool();

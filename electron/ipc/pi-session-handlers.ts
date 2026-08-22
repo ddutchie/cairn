@@ -32,8 +32,6 @@ export function registerPiSessionHandlers(ctx: DbContext): void {
   registerIpcHandle("db:piSession:list", (_e, { projectId }) => handle(() => q.getPiSessions(ctx.db, projectId)));
   registerIpcHandle("db:piSession:create", (_e, args: Parameters<typeof q.createPiSession>[1]) => handle(() => q.createPiSession(ctx.db, args)));
   registerIpcHandle("db:piSession:delete", (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
-  registerIpcHandle("db:piSession:messages", (_e, { sessionId }) => handle(() => q.getPiMessages(ctx.db, sessionId)));
-  registerIpcHandle("db:piSession:saveMessages", (_e, { sessionId, messages }) => handle(() => q.savePiMessages(ctx.db, sessionId, messages)));
   registerIpcHandle("db:piSession:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 
   // Session-as-truth load: rebuild the coding session's transcript from the dsh

@@ -16,7 +16,8 @@ export function registerChatDbHandlers(ctx: DbContext): void {
   // Cutover cleanup: chat + pi-agent transcripts now live in dsh's JSONL session
   // log (session-as-truth, read via db:chat:sessionMessages / db:piSession:sessionMessages).
   // The chat_messages / pi_agent_messages SQLite tables are legacy and no longer
-  // written (the renderer stopped calling addMessage/saveMessages). Purge any rows
+  // written (the write handlers were removed with the pre-Cordis engines). Purge
+  // any rows
   // left from before the cutover so a stale SQLite copy can't shadow the jsonl on
   // load. Thread/session INDEX rows (chat_threads / pi_agent_sessions) are kept —
   // they enumerate the sessions; only the message bodies moved to jsonl.
@@ -29,7 +30,6 @@ export function registerChatDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
   registerIpcHandle("db:chat:messages", (_e, { threadId }) => handle(() => q.getChatMessages(ctx.db, threadId)));
   registerIpcHandle("db:chat:upsertThread", (_e, args: Parameters<typeof q.upsertChatThread>[1]) => handle(() => q.upsertChatThread(ctx.db, args)));
-  registerIpcHandle("db:chat:addMessage", (_e, args: Parameters<typeof q.addChatMessage>[1]) => handle(() => q.addChatMessage(ctx.db, args)));
 
   // db:chat:clearThreadMessages — direct SQL DELETE + Cordis jsonl clear.
   // Mirrors pi-agent:clear's brute-force session wipe (pi-agent.ts:684) but for

@@ -133,7 +133,7 @@ export function isSendableMessage(m: {
 }
 
 /** Optional attribution for a one-shot `callLLM` — drives the Usage log row. */
-export interface LlmCallOpts {
+interface LlmCallOpts {
   /** Where the call originated (defaults to "chat"). */
   source?: UsageSource;
   sessionId?: string;
@@ -165,7 +165,7 @@ export interface LlmCallOpts {
  * endpoints reject the `stream_options` field with a 400 — retry once without
  * it so a usage-requesting call still succeeds against them.
  */
-export async function postChatCompletions(
+async function postChatCompletions(
   url: string,
   headers: Record<string, string>,
   body: Record<string, unknown>,
@@ -409,80 +409,6 @@ export async function callLLM(
     record(tok(systemPrompt) + tok(userPrompt), tok(content), 0);
   }
   return content;
-}
-
-/**
- * Stream a chat completion. Yields text delta chunks as they arrive.
- * Handles SSE parsing and authorization headers automatically.
- */
-export async function* streamCompletion(
-  config: LLMConfig,
-  messages: OpenAIMessage[],
-  tools?: object[],
-  onUsage?: (pt: number, ct: number) => void,
-): AsyncGenerator<string> {
-  if (config.provider === "localllm") {
-    const { streamLocalLLMChat } = await import("./local-llm");
-    for await (const chunk of streamLocalLLMChat(messages)) {
-      if (chunk.usage && onUsage) {
-        onUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0);
-      }
-      const delta = chunk.choices?.[0]?.delta?.content ?? "";
-      if (delta) yield delta;
-    }
-    return;
-  }
-
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
-
-  const body: Record<string, unknown> = {
-    model: config.model,
-    messages,
-    max_tokens: 4096,
-    temperature: resolveTemperatureForModel(config.model, 0.3),
-    stream: true,
-  };
-  if (tools && tools.length > 0) {
-    body.tools = tools;
-    body.tool_choice = "none";
-  }
-  if (onUsage) {
-    body.stream_options = { include_usage: true };
-  }
-
-  const response = await fetch(buildApiUrl(config.baseUrl, "chat/completions"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    throw new Error(`LLM stream error ${response.status}: ${await response.text().catch(() => response.statusText)}`);
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No readable stream");
-
-  const decoder = new TextDecoder();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const jsonStr = trimmed.slice(5).trim();
-      if (jsonStr === "[DONE]") return;
-      try {
-        const obj = JSON.parse(jsonStr);
-        if (obj.usage && onUsage) {
-          onUsage(obj.usage.prompt_tokens ?? 0, obj.usage.completion_tokens ?? 0);
-        }
-        const delta: string = obj.choices?.[0]?.delta?.content ?? "";
-        if (delta) yield delta;
-      } catch { /* skip malformed lines */ }
-    }
-  }
 }
 
 export interface TokenBreakdown {

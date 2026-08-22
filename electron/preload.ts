@@ -388,7 +388,6 @@ const api = {
     messages:      (threadId: string) => invoke("db:chat:messages", { threadId }),
     sessionMessages: (threadId: string) => invoke("db:chat:sessionMessages", { threadId }),
     upsertThread:  (args: unknown) => invoke("db:chat:upsertThread", args),
-    addMessage:    (args: unknown) => invoke("db:chat:addMessage", args),
     deleteThread:  (threadId: string) => invoke("db:chat:deleteThread", { threadId }),
     clearThreadMessages: (threadId: string) => invoke("db:chat:clearThreadMessages", { threadId }),
     clearAllThreads: (workspaceId: string, projectId?: string) => invoke("db:chat:clearAllThreads", { workspaceId, projectId }),
@@ -1094,12 +1093,6 @@ const api = {
       ipcRenderer.on("pi-agent:compact-result", handler);
       return () => ipcRenderer.off("pi-agent:compact-result", handler);
     },
-    onSubagent: (cb: (e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => cb(e);
-      ipcRenderer.on("pi-agent:subagent", handler);
-      return () => ipcRenderer.off("pi-agent:subagent", handler);
-    },
     /** Fired when the agent calls ensure_note in plan mode — carries the PRD note ID */
     onPlanNote: (cb: (e: { sessionId: string; noteId: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1154,14 +1147,10 @@ const api = {
     createSession:  (args: unknown) => invoke("db:piSession:create", args),
     /** Delete a pi session and all its messages from SQLite */
     deleteSession:  (id: string) => invoke("db:piSession:delete", { id }),
-    /** Fetch the full message transcript for a session */
-    getMessages:    (sessionId: string) => invoke("db:piSession:messages", { sessionId }),
     /** Fetch session transcript from the dsh JSONL log (session-as-truth), SQLite fallback */
     getSessionMessages: (sessionId: string) => invoke("db:piSession:sessionMessages", { sessionId }),
     /** Fetch the persisted todo list for a session */
     getTodos:       (sessionId: string) => invoke<Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }>>("db:piSession:todos", { sessionId }),
-    /** Bulk-save the full message array for a session (replaces existing rows) */
-    saveMessages:   (sessionId: string, messages: unknown[]) => invoke("db:piSession:saveMessages", { sessionId, messages }),
     /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */
     restoreContext: (sessionId: string) => ipcRenderer.send("pi-agent:restore-context", { sessionId }),
     /**

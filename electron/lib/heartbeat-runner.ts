@@ -4,8 +4,8 @@
  * Executes one scheduled automation as a headless, data-only agent turn.
  *
  * v1 design decisions (see plan note §7 "Persona design"):
- *   - The default persona is the KNOWLEDGE-WORK agent: it runs through
- *     `runToolLoop`, whose `executeTool` surface is Cairn data tools only
+ *   - The default persona is the KNOWLEDGE-WORK agent: it runs through the
+ *     Cordis loop, whose `executeTool` surface is Cairn data tools only
  *     (notes/tasks/tags/idea-flow/dashboards/knowledge-graph) — no bash, no
  *     arbitrary file writes. This keeps a background run's blast radius bounded
  *     to Cairn entities, even when it auto-approves its own writes.
@@ -200,7 +200,7 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
       await runAutomation(ctx, run, automation);
     } catch (err) {
       // runAutomation normally sets its own terminal status, but if it throws
-      // (e.g. a provider/network failure inside runToolLoop) transition the run
+      // (e.g. a provider/network failure inside the Cordis loop) transition the run
       // out of running so it doesn't block later runs / report a phantom run,
       // persist a run-log.json, and emit `finished` so watchers close cleanly.
       failRun(ctx, run, err instanceof Error ? err.message : String(err));

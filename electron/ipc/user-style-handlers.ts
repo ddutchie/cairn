@@ -10,7 +10,7 @@
 import { registerIpcHandle, registerIpcOn } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { getCachedConfig } from "../lib/config-cache";
-import { isLocalEndpoint, normaliseBaseUrl, callLLM, type LLMConfig } from "../lib/llm";
+import { isLocalEndpoint, normaliseBaseUrl, type LLMConfig } from "../lib/llm";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import {
   buildUserStyleFullGuidePrompt,
@@ -221,8 +221,8 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
         const toolsOverride = writingStyleToolsOverride(req.analyseNotes);
 
         // Persist one usage row per tool-loop round so wizard generation shows
-        // up under "Writing style" in the Usage view — not "Chat" (the shared
-        // runToolLoop defers recording to the caller; the chat handler records
+        // up under "Writing style" in the Usage view — not "Chat" (the Cordis
+        // loop defers recording to the caller; the chat handler records
         // source "chat", this path records its own feature source).
         const onUsage = (pt: number, ct: number, rt?: number, cost?: number, cacheRead?: number, cacheCreate?: number) => {
           recordLlmUsage({
@@ -243,10 +243,10 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
         };
 
         const run = async () => {
-          // Cordis path — runCordisLoop is the dsh replacement for runToolLoop.
-          // Keep the same streaming contract (onToken/onUsage/emitToolCall) so
-          // the wizard's live preview is unchanged. toolsOverride is the same
-          // read-only set (WRITING_STYLE_TOOLS) — no writes, no sandbox.
+          // runCordisLoop keeps the same streaming contract (onToken/onUsage/
+          // emitToolCall) so the wizard's live preview is unchanged.
+          // toolsOverride is the same read-only set (WRITING_STYLE_TOOLS) —
+          // no writes, no sandbox.
           const { runCordisLoop } = await import("../cordis/run-cordis-loop");
           const llmConfig = { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: "openai" as const };
           const result = await runCordisLoop({

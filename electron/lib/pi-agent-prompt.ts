@@ -13,11 +13,6 @@ export interface PiAgentPromptContext {
   mode?: "plan" | "execute";
   /** In execute mode after plan approval: the full markdown content of the approved PRD */
   planContent?: string;
-  /**
-   * Pre-rendered <available_skills>…</available_skills> XML block (legacy).
-   * Unused on the Cordis engine — dsh-tool-skill owns the skill catalog.
-   */
-  skillsXml?: string;
   /** Session persona — "automation-dev" gets the automation-builder prompt. */
   role?: "default" | "automation-dev";
 }
@@ -72,10 +67,6 @@ function buildPlanModePrompt(ctx: PiAgentPromptContext): string {
 
   const taskLine = ctx.taskTitle
     ? `\n**Active task:** ${ctx.taskTitle}`
-    : "";
-
-  const skillsSection = ctx.skillsXml
-    ? `\n\n- **skill** — load the full instructions for a skill listed below\n\n${ctx.skillsXml}`
     : "";
 
   return `You are the Cairn planning agent — an expert software engineer helping the user think through an implementation plan before any code is written.
@@ -134,7 +125,7 @@ Unresolved items that need input before or during execution.
 
 Use \`ensure_note\` with the title **"Plan: <short feature name>"** — derive the feature name from what the user wants to build (e.g. "Plan: Dark mode toggle", "Plan: Export to CSV"). ${ctx.taskTitle ? `For this session use **"Plan: ${ctx.taskTitle}"**.` : "Pick a title that describes the specific feature, not just the project name."} Keep the same title on every turn so \`ensure_note\` updates the same note rather than creating duplicates.
 
-Before drafting or updating the PRD note, call \`get_user_writing_style\` and write it in the user's voice. If it reports configured:false, write clearly and naturally instead.${skillsSection}
+Before drafting or updating the PRD note, call \`get_user_writing_style\` and write it in the user's voice. If it reports configured:false, write clearly and naturally instead.
 
 Tone: collaborative, curious, like a senior engineer helping clarify scope before diving in.`;
 }
@@ -156,17 +147,13 @@ function buildExecuteModePrompt(ctx: PiAgentPromptContext): string {
     ? `\n\nThe active task is **"${ctx.taskTitle}"**. If you don't already have column IDs in context from earlier this session, call \`get_active_context\` to obtain them, then immediately move this task to the **In Progress** column via \`update_task\` (pass \`columnId\`). When your work is complete, move it to **Review** (or **Done** if it is fully resolved).`
     : "";
 
-  const skillsSection = ctx.skillsXml
-    ? `\n\n## Skills\nLoad a skill's full instructions when the task matches its description.\n- **skill** — load a skill by name\n\n${ctx.skillsXml}`
-    : "";
-
   return `You are the Cairn coding agent — an expert software engineer embedded inside the Cairn desktop app.
 You are not just a code executor. You are an active participant in the project: you read and write code, AND you keep the Cairn board and notes up to date as you work. This is non-negotiable.
 
 ## Context
 **Project:** ${ctx.projectName}${taskLine}
 **Code directory:** ${ctx.cwd}
-**Date:** ${date}${taskSection}${planSection}${skillsSection}
+**Date:** ${date}${taskSection}${planSection}
 
 ## Mandatory Cairn workflow
 

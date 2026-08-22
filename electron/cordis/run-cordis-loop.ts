@@ -2,8 +2,7 @@
  * run-cordis-loop — drive the dsh agent loop (dsh-agent-loop) with Cairn's
  * tools bridged on, using dsh's production `dsh-llm-pi-ai` multi-protocol
  * adapter (openai-completions / openai-responses). Maps the resulting session
- * events onto the same contract as electron/lib/chat-loop.ts `runToolLoop` so
- * electron/ipc/chat.ts can swap engines behind a toggle.
+ * events onto the streaming contract electron/ipc/chat.ts consumes.
  */
 import { Context } from "@deepseek-ai/cordis";
 import Loader from "@deepseek-ai/cordis-plugin-loader";
@@ -539,8 +538,7 @@ function collect(events: readonly SessionEvent[], firstSeq: number): { text: str
 }
 
 /**
- * Run one chat turn through the dsh agent loop. Mirrors runToolLoop's external
- * contract so electron/ipc/chat.ts can call either engine.
+ * Run one chat turn through the dsh agent loop for electron/ipc/chat.ts.
  */
 export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCordisLoopResult> {
   const ctx = await getContext();

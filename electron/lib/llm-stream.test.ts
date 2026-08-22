@@ -1,11 +1,10 @@
 /**
- * Unit tests for the shared LLM streaming / message-preparation layer
- * (`electron/lib/llm-stream.ts`), which both the chat loop and the agent loop
- * consume so their SSE parsing and reasoning handling can never diverge.
+ * Unit tests for the shared LLM streaming layer (`electron/lib/llm-stream.ts`) —
+ * SSE parsing, system-role resolution, and request-body shaping.
  */
 
 import { describe, it, expect } from "vitest";
-import { consumeAssistantStream, failToolCallsFromTruncatedMessage, prepareContextMessages, resolveSystemRole, supportsDeveloperRole, buildChatCompletionsBody } from "./llm-stream";
+import { consumeAssistantStream, resolveSystemRole, buildChatCompletionsBody } from "./llm-stream";
 
 function sseReader(...chunks: string[]): ReadableStreamDefaultReader<Uint8Array> {
   const encoder = new TextEncoder();
@@ -96,181 +95,6 @@ describe("consumeAssistantStream", () => {
   });
 });
 
-describe("prepareContextMessages", () => {
-  it("prepends the system prompt as a role:system message and keeps normal turns", async () => {
-    const out = await prepareContextMessages({
-      systemPrompt: "You are a helper.",
-      currentModelKey: "a::m",
-      messages: [
-        { role: "user", content: "Hi" },
-        { role: "assistant", content: "Hello" },
-      ],
-    });
-
-    expect(out).toEqual([
-      { role: "system", content: "You are a helper." },
-      { role: "user", content: "Hi" },
-      { role: "assistant", content: "Hello" },
-    ]);
-  });
-
-  it("round-trips reasoning under its native field for the same model", async () => {
-    const out = await prepareContextMessages({
-      systemPrompt: "sys",
-      currentModelKey: "a::m",
-      messages: [
-        { role: "assistant", content: "", reasoning: "THOUGHTS", reasoningField: "reasoning_content", reasoningModel: "a::m" },
-      ],
-    });
-
-    expect(out).toHaveLength(2); // system + assistant
-    expect(out[1]).toMatchObject({ role: "assistant", reasoning_content: "THOUGHTS" });
-    // internal metadata keys are gone
-    expect(JSON.stringify(out[1])).not.toContain("reasoningModel");
-  });
-
-  it("round-trips Responses reasoning items for an items-only assistant turn", async () => {
-    const out = await prepareContextMessages({
-      systemPrompt: "sys",
-      currentModelKey: "a::m",
-      roundTripItems: true,
-      messages: [
-        {
-          role: "assistant",
-          content: null,
-          reasoning: "",
-          reasoningItems: [{ type: "reasoning", id: "rs_1", encrypted_content: "enc" }],
-          reasoningModel: "a::m",
-        },
-      ],
-    });
-
-    // Items-only turn has no text and no tool_calls, but the reasoning items
-    // must survive pruning and be re-attached for the Responses round-trip.
-    expect(out).toHaveLength(2); // system + items-only assistant kept
-    expect(out[1]).toMatchObject({
-      role: "assistant",
-      reasoningItems: [{ type: "reasoning", id: "rs_1", encrypted_content: "enc" }],
-    });
-    expect(JSON.stringify(out[1])).not.toContain("reasoningModel");
-  });
-
-  it("converts reasoning from a different model to plain text (pi behaviour)", async () => {
-    const out = await prepareContextMessages({
-      systemPrompt: "sys",
-      currentModelKey: "a::m",
-      messages: [
-        { role: "assistant", content: "I did things.", reasoning: "OLD_THOUGHTS", reasoningField: "reasoning", reasoningModel: "b::n" },
-      ],
-    });
-
-    expect(out).toHaveLength(2);
-    // The reasoning is NOT sent as a foreign field — it becomes text content
-    expect(JSON.stringify(out[1])).not.toContain("\"reasoning\":\"OLD_THOUGHTS\"");
-    expect(JSON.stringify(out[1])).not.toContain("reasoningField");
-    expect(out[1]).toMatchObject({ role: "assistant", content: "I did things.\n\nOLD_THOUGHTS" });
-  });
-
-  it("appends cross-model reasoning to content even when the reply was otherwise empty", async () => {
-    const out = await prepareContextMessages({
-      systemPrompt: "sys",
-      currentModelKey: "a::m",
-      messages: [
-        { role: "assistant", content: "", reasoning: "ONLY_THOUGHTS", reasoningField: "reasoning_content", reasoningModel: "b::n" },
-      ],
-    });
-
-    expect(out).toHaveLength(2);
-    expect(out[1]).toMatchObject({ role: "assistant", content: "ONLY_THOUGHTS" });
-  });
-
-  it("strips bare reasoning with no round-trip metadata", async () => {
-    const out = await prepareContextMessages({
-      systemPrompt: "sys",
-      currentModelKey: "a::m",
-      messages: [
-        { role: "assistant", content: "Hi", reasoning: "LEGACY_THOUGHTS" },
-      ],
-    });
-
-    expect(JSON.stringify(out[1])).not.toContain("LEGACY_THOUGHTS");
-    expect(out[1]).toMatchObject({ role: "assistant", content: "Hi" });
-  });
-
-  it("drops empty assistant turns that would poison the request", async () => {
-    const out = await prepareContextMessages({
-      systemPrompt: "sys",
-      currentModelKey: "a::m",
-      messages: [
-        { role: "assistant", content: "" },
-        { role: "assistant", content: "kept" },
-      ],
-    });
-
-    expect(out).toHaveLength(2); // system + kept assistant
-    expect(out[1]).toMatchObject({ role: "assistant", content: "kept" });
-  });
-
-  it("never leaks internal round-trip metadata to the provider", async () => {
-    const out = await prepareContextMessages({
-      systemPrompt: "sys",
-      currentModelKey: "a::m",
-      messages: [
-        {
-          role: "assistant",
-          content: null,
-          tool_calls: [{ id: "call_1", type: "function", function: { name: "ls", arguments: "{}" } }],
-          reasoning: undefined,
-          reasoningField: undefined,
-          reasoningModel: "a::m",
-        },
-        {
-          role: "tool",
-          tool_call_id: "call_1",
-          content: "ran",
-        },
-      ],
-    });
-
-    const serialized = JSON.stringify(out);
-    expect(serialized).not.toContain("reasoningModel");
-    expect(serialized).not.toContain("reasoningField");
-    expect(out[1]).toMatchObject({
-      role: "assistant",
-      content: null,
-      tool_calls: [{ id: "call_1", type: "function", function: { name: "ls", arguments: "{}" } }],
-    });
-    expect(out[2]).toMatchObject({ role: "tool", tool_call_id: "call_1", content: "ran" });
-  });
-
-  it("uses the requested system role for the prepended message", async () => {
-    const out = await prepareContextMessages({
-      systemPrompt: "sys",
-      systemRole: "developer",
-      currentModelKey: "a::m",
-      messages: [{ role: "user", content: "Hi" }],
-    });
-
-    expect(out[0]).toEqual({ role: "developer", content: "sys" });
-  });
-
-  it("passes attachment content parts through on user messages (agent image support)", async () => {
-    const parts = [
-      { type: "text" as const, text: "What's in this image?" },
-      { type: "image_url" as const, image_url: { url: "data:image/png;base64,AAAA" } },
-    ];
-    const out = await prepareContextMessages({
-      systemPrompt: "sys",
-      currentModelKey: "a::m",
-      messages: [{ role: "user", content: parts }],
-    });
-
-    expect(out).toHaveLength(2); // system + user
-    expect(out[1]).toMatchObject({ role: "user", content: parts });
-    expect(JSON.stringify(out)).toContain("image_url");
-  });
-});
-
 describe("resolveSystemRole (pi parity)", () => {
   it("uses developer for reasoning models on known-good OpenAI/Azure endpoints", () => {
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://api.openai.com/v1", provider: "openai", modelId: "gpt-5" }))
@@ -306,39 +130,6 @@ describe("resolveSystemRole (pi parity)", () => {
       .toBe("developer");
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://openrouter.ai/api/v1", modelId: "deepseek/deepseek-r1" }))
       .toBe("system");
-  });
-
-  it("exposes the allowlist predicate for consumers", () => {
-    expect(supportsDeveloperRole({ baseUrl: "https://api.openai.com/v1" })).toBe(true);
-    expect(supportsDeveloperRole({ baseUrl: "https://myres.openai.azure.com" })).toBe(true);
-    expect(supportsDeveloperRole({ baseUrl: "https://api.deepseek.com/v1" })).toBe(false);
-    expect(supportsDeveloperRole({ baseUrl: "https://gateway.console.go/v1" })).toBe(false);
-  });
-});
-
-describe("failToolCallsFromTruncatedMessage", () => {
-  it("synthesizes a stable id for tool calls whose id chunk never arrived", () => {
-    const starts: string[] = [];
-    const ends: string[] = [];
-    const results = failToolCallsFromTruncatedMessage(
-      [
-        { id: "", function: { name: "ls" } },
-        { id: "call_ok", function: { name: "ls" } },
-      ],
-      {
-        maxTokens: undefined,
-        labelFor: (n) => n,
-        emitStart: (name, label, callId) => starts.push(`${name}:${callId}`),
-        emitEnd: (name, label, ok, output, callId) => ends.push(`${name}:${callId}:${ok}`),
-      },
-    );
-
-    // The id-less tool got a synthesized id, used for both the chip and result.
-    expect(starts).toHaveLength(2);
-    expect(results[0].tool_call_id).toBe("ls:truncated:0");
-    expect(starts[0]).toBe("ls:ls:truncated:0");
-    expect(results[1].tool_call_id).toBe("call_ok");
-    expect(results.every((r) => r.content.includes("not executed"))).toBe(true);
   });
 });
 

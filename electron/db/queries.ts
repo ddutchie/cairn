@@ -1045,17 +1045,6 @@ export function getChatMessages(db: Database.Database, threadId: string) {
   return db.prepare("SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY created_at").all(threadId).map(toChatMessage);
 }
 
-export function addChatMessage(db: Database.Database, m: {
-  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown; reasoning?: string; reasoningSummary?: string; subagents?: unknown; reasoningItems?: unknown; reasoningField?: string; reasoningModel?: string;
-}) {
-  const now = ts();
-  db.prepare(`
-    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, reasoning, reasoning_summary, reasoning_items, reasoning_field, reasoning_model, subagents, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, m.reasoning ?? null, m.reasoningSummary ?? null, m.reasoningItems ? JSON.stringify(m.reasoningItems) : null, m.reasoningField ?? null, m.reasoningModel ?? null, m.subagents ? JSON.stringify(m.subagents) : null, now);
-  return toChatMessage(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(m.id));
-}
-
 // ── MCP Notifications ─────────────────────────
 
 export function getUnreadMcpNotifications(db: Database.Database): McpNotification[] {
@@ -1699,41 +1688,8 @@ function toPiMessage(row: any): PiMessageRow {
   };
 }
 
-export function upsertPiMessage(
-  db: Database.Database,
-  msg: { id: string; sessionId: string; role: "user" | "assistant" | "error" | "system"; content: string; reasoning?: string | null; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string; order: number },
-) {
-  db.prepare(`
-    INSERT INTO pi_agent_messages (id, session_id, role, content, reasoning, tool_calls, subagents, timestamp, "order")
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      content    = excluded.content,
-      reasoning  = excluded.reasoning,
-      tool_calls = excluded.tool_calls,
-      subagents  = excluded.subagents
-  `).run(
-    msg.id, msg.sessionId, msg.role, msg.content,
-    msg.reasoning ?? null,
-    msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
-    msg.subagents ? JSON.stringify(msg.subagents) : null,
-    msg.timestamp, msg.order,
-  );
-}
-
-export function savePiMessages(
-  db: Database.Database,
-  sessionId: string,
-  messages: Array<{ id: string; role: "user" | "assistant" | "error" | "system"; content: string; reasoning?: string | null; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string }>,
-) {
-  const save = db.transaction(() => {
-    db.prepare("DELETE FROM pi_agent_messages WHERE session_id = ?").run(sessionId);
-    messages.forEach((msg, i) => {
-      upsertPiMessage(db, { ...msg, sessionId, order: i });
-    });
-  });
-  save();
-}
-
+// Legacy read-only fallback: transcripts live in the dsh jsonl session log;
+// this SELECT still serves pre-cutover sessions with no jsonl on load.
 export function getPiMessages(db: Database.Database, sessionId: string): PiMessageRow[] {
   return (db.prepare(`SELECT * FROM pi_agent_messages WHERE session_id = ? ORDER BY "order" ASC`).all(sessionId) as unknown[])
     .map(toPiMessage);

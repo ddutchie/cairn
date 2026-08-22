@@ -65,9 +65,6 @@ interface CordisTurnPayload {
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
 }
 
-// ── Note-writing tool names ────────────────────────────────────────────────────
-const NOTE_WRITE_TOOLS = new Set(["ensure_note", "patch_note", "append_to_note"]);
-
 // ── Request shape ──────────────────────────────────────────────────────────────
 
 interface PiAgentPromptRequest {
@@ -133,25 +130,10 @@ async function runSession(
   toolCtx: AgentToolContext,
   ctx: DbContext,
   send: (channel: string, payload: unknown) => void,
-  cordis?: CordisTurnPayload,
+  cordis: CordisTurnPayload,
 ): Promise<void> {
-  const { sessionId } = toolCtx;
-
   // ── Cordis engine (only path — local models via llama-server are also OpenAI-compatible) ──
-  if (cordis) {
-    return runCordisCodingSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send, cordis);
-  }
-
-  // cordis payload is always provided by both call sites; this path is unreachable.
-  void sessionId;
-  void session;
-  void systemPrompt;
-  void llmConfig;
-  void mode;
-  void toolCtx;
-  void ctx;
-  void send;
-  runningLoops.add(sessionId);
+  return runCordisCodingSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send, cordis);
 }
 
 // ── Cordis coding-session runner ────────────────────────────────────────────
@@ -691,11 +673,6 @@ export function registerPiAgentHandler(
     const session = sessions.get(sessionId);
     if (session) {
       session.messages = [];
-      session.compactionTransformer = undefined;
-      session.lastPromptTokens = undefined;
-      session.approvedTools = new Set();
-      session.recentToolCalls = [];
-      session.doomLoopApproved = false;
     }
     // Persisted transcript — without this, pi-agent:restore-context on next
     // launch reloads old messages from pi_agent_llm_history and the clear

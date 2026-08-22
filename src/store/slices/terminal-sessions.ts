@@ -57,8 +57,6 @@ export interface TerminalSessionsSlice {
   clearPiMessages: (sessionId: string) => void;
   /** Update token usage for a session after a step completes */
   updatePiUsage: (sessionId: string, promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
-  /** Register a new subagent on the last streaming assistant message */
-  addPiSubagent: (sessionId: string, childSessionId: string) => void;
   /** Append a token to a subagent's last streaming message */
   appendPiSubagentToken: (sessionId: string, childSessionId: string, delta: string) => void;
   /** Append a reasoning/thought delta to a subagent's last streaming message */
@@ -69,8 +67,6 @@ export interface TerminalSessionsSlice {
   addPiSubagentToolCall: (sessionId: string, childSessionId: string, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update an existing tool call chip on a subagent message in-place */
   updatePiSubagentToolCall: (sessionId: string, childSessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
-  /** Mark a subagent as done and store its result */
-  completePiSubagent: (sessionId: string, childSessionId: string, result: string) => void;
   /** Update token usage on an inline subagent block */
   updatePiSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
   /** Start a new step in a subagent (finalise current message) */
@@ -379,25 +375,6 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
 
   // ── Subagent helpers ──────────────────────────────────────────────────────
 
-  addPiSubagent(sessionId, childSessionId) {
-    set((s) => ({
-      terminalSessions: s.terminalSessions.map((t) => {
-        if (t.sessionId !== sessionId) return t;
-        const msgs = t.piMessages ?? [];
-        const last = msgs[msgs.length - 1];
-        if (!last?.isStreaming) return t;
-        const newSubagent: PiSubagentMessage = { childSessionId, messages: [], running: true };
-        return {
-          ...t,
-          piMessages: [
-            ...msgs.slice(0, -1),
-            { ...last, subagents: [...(last.subagents ?? []), newSubagent] },
-          ],
-        };
-      }),
-    }));
-  },
-
   appendPiSubagentToken(sessionId, childSessionId, delta) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
@@ -567,24 +544,6 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
                 return { ...m, toolCalls: updated };
               }),
             };
-            return { ...msg, subagents: newSubagents };
-          }),
-        };
-      }),
-    }));
-  },
-
-  completePiSubagent(sessionId, childSessionId, result) {
-    set((s) => ({
-      terminalSessions: s.terminalSessions.map((t) => {
-        if (t.sessionId !== sessionId) return t;
-        return {
-          ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
-            const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
-            if (subIdx === -1) return msg;
-            const newSubagents = [...msg.subagents!];
-            newSubagents[subIdx] = { ...newSubagents[subIdx], running: false, result };
             return { ...msg, subagents: newSubagents };
           }),
         };

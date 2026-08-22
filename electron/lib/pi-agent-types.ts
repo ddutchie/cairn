@@ -1,16 +1,13 @@
 /**
- * pi-agent-types — shared types for the coding agent (Phase 2c).
+ * pi-agent-types — shared types for the coding agent.
  *
- * Extracted from the (now-deleted) `electron/lib/pi-agent-loop.ts` so the
- * frozen builtin loop file could be removed while `electron/ipc/pi-agent.ts`
- * and the Cordis loop keep using these stable shapes. The Cordis engine
- * (`run-cordis-coding.ts`) is the only runtime now; the builtin `runAgentLoop`
- * that consumed these is gone.
+ * `electron/ipc/pi-agent.ts` and the Cordis coding runner
+ * (`run-cordis-coding.ts`) share these stable shapes.
  */
 
 import type { BrowserWindow } from "electron";
 import type { ContentPart } from "../../shared/models/pdf-attach";
-import type { ChatRequest, ToolArgs } from "./tools";
+import type { ChatRequest } from "./tools";
 import type { SkillMeta } from "./skills";
 import type Database from "better-sqlite3";
 
@@ -39,24 +36,6 @@ export interface AgentLLMConfig {
   provider?: string;
 }
 
-// ── Message types ─────────────────────────────────────────────────────────────
-
-export interface AgentUserMessage    { role: "user";      content: string | ContentPart[] }
-export interface AgentAssistantMsg   { role: "assistant"; content: string | null; reasoning?: string; reasoningField?: string; reasoningModel?: string; reasoningItems?: Array<Record<string, unknown>>; tool_calls?: ToolCallSpec[] }
-export interface AgentToolResultMsg  { role: "tool";      tool_call_id: string; content: string }
-
-export type AgentMessage =
-  | AgentUserMessage
-  | AgentAssistantMsg
-  | AgentToolResultMsg;
-
-export interface ToolCallSpec {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
-  thought_signature?: string;
-}
-
 // ── Per-session infrastructure context ───────────────────────────────────────
 
 export interface AgentToolContext {
@@ -75,16 +54,8 @@ export interface AgentToolContext {
 export type AgentSessionRole = "default" | "automation-dev";
 
 export interface PiAgentSession {
-  messages: AgentMessage[];
+  /** Turn markers only — the authoritative transcript lives in the dsh jsonl log. */
+  messages: Array<{ role: "user"; content: string | ContentPart[] }>;
   abortCtrl: AbortController;
   role?: AgentSessionRole;
-  lastPromptTokens?: number;
-  totalCompletionTokens?: number;
-  totalReasoningTokens?: number;
-  compactionTransformer?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
-  approvedTools?: Set<string>;
-  recentToolCalls?: string[];
-  doomLoopApproved?: boolean;
 }
-
-export type ApprovalDecision = { approved: boolean; grant?: "session" | "command" };
