@@ -123,7 +123,19 @@ describe("installPlugin (github, mocked fetch)", () => {
     const rows = yaml.load(fs.readFileSync(path.join(getPluginsRoot(), "plugins.yml"), "utf8")) as Array<Record<string, unknown>>;
     expect(rows.filter((r) => r.id === "dsh-visualize")).toHaveLength(1);
   });
+
+  it("installs local dsh-context-ring package from disk", async () => {
+    const pkgPath = "/Users/gerard/Documents/GitHub/dsh-context-ring";
+    if (!fs.existsSync(pkgPath)) return;
+    const res = await installPlugin(pkgPath);
+    expect(res.id).toBe("dsh-context-ring");
+    expect(res.name).toBe("./installed/dsh-context-ring/lib/index.js");
+    expect(res.ui).toBe("./installed/dsh-context-ring/lib/client/index.js");
+    expect(fs.existsSync(path.join(getPluginsRoot(), "installed/dsh-context-ring/lib/index.js"))).toBe(true);
+    expect(fs.existsSync(path.join(getPluginsRoot(), "installed/dsh-context-ring/lib/client/index.js"))).toBe(true);
+  });
 });
+
 
 describe("uninstallPlugin", () => {
   it("removes the manifest row and the installed files", async () => {
