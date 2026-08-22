@@ -445,6 +445,19 @@ export async function getContext(): Promise<Context> {
       };
     } catch { /* defineTool always resolves in-app; guard is belt-and-braces */ }
 
+    // Permission presets (audit §5 C2): dsh-native switcher over the two
+    // mechanism knobs we already drive natively (sandbox-mode via plugFsChain +
+    // approval-policy via setPolicy). Adds the /permission slash command,
+    // durable per-session permission/preset folds, and a permissions
+    // projection. Guarded: degrades to warn-only if the mounted shell executor
+    // ever stops advertising confinement.
+    try {
+      const { PermissionPresetService } = await import("@deepseek-ai/dsh-permission-presets");
+      ctx.plugin(PermissionPresetService as never, {});
+    } catch (err) {
+      console.warn("[cordis] permission presets unavailable:", err instanceof Error ? err.message : err);
+    }
+
     // Runtime plugin layer (§10 Tier 2/3, opt-in via CAIRN_PLUGINS_DEV=1): after
     // the static tree settles, mount user plugins from <pluginsRoot>/plugins.yml
     // and watch the dir so a plugin authored/edited while the app runs loads live

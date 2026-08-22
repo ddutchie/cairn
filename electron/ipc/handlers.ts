@@ -277,7 +277,7 @@ export function registerAppHandlers(
 
   // ── Reset all data — wipe every table then relaunch ──────────────────────
   registerIpcHandle("app:reset", () => handle(() => {
-    const tables = ["chat_messages", "chat_threads", "mcp_notifications", "task_cards", "board_columns", "notes", "tags", "projects", "workspaces"];
+    const tables = ["chat_threads", "mcp_notifications", "task_cards", "board_columns", "notes", "tags", "projects", "workspaces"];
     for (const t of tables) {
       ctx.db.prepare(`DELETE FROM ${t}`).run();
     }

@@ -568,6 +568,19 @@ export async function runAutomation(
   if (writeRunFileHandler) automationTools.push({ name: WRITE_RUN_FILE_TOOL_NAME, description: writeRunFileToolDefinition.function.description, parameters: writeRunFileToolDefinition.function.parameters, execute: (a) => writeRunFileHandler(a as never) });
   if (deliverFileHandler) automationTools.push({ name: DELIVER_FILE_TOOL_NAME, description: deliverFileToolDefinition.function.description, parameters: deliverFileToolDefinition.function.parameters, execute: (a) => deliverFileHandler(a as never) });
 
+  // Plugin confirmation seam for this run (audit §5 C #9): bind the headless
+  // transport so ctx.cairn.confirm during automation turns routes plugin asks
+  // into the SAME approval inbox + pending map native asks use. Unbound after
+  // the run settles.
+  const { createHeadlessConfirmTransport, setConfirmTransport } = await import("../cordis/approval-transports");
+  setConfirmTransport(run.id, createHeadlessConfirmTransport({
+    emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
+    registerPending: (callId, resolve) => {
+      pendingAutomationApprovals.set(callId, { tool: "plugin_confirm", args: {}, db, runId: run.id, resolve });
+      return () => { pendingAutomationApprovals.delete(callId); };
+    },
+  }));
+
   const codingResult = await runCordisCodingLoop({
     db,
     req,
@@ -602,6 +615,8 @@ export async function runAutomation(
     },
   });
   const result = { content: finalContent || recipe, exhausted: !codingResult.ok, error: codingResult.error };
+  // Run settled — unbind the plugin confirm seam (its asks are all resolved).
+  setConfirmTransport(run.id, undefined);
   emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content, error: result.error });
   log.tokens = result.content;
 

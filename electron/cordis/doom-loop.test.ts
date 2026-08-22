@@ -1,86 +1,92 @@
 /**
- * Unit test for cairnDoomLoopPlugin's tools/pre-execute guard. Uses a fake ctx
- * that captures the registered handler, then fires synthetic pre-execute calls
- * to verify the DOOM_LOOP_THRESHOLD trigger + allow/deny handling — no live model.
+ * Unit tests for the bundled doom-loop pilot plugin
+ * (`electron/cordis/plugins/doom-loop.ts`). The plugin consumes ONLY public
+ * seams: its own tools/pre-execute guard + `ctx.cairn.confirm()`. The fake ctx
+ * captures the pre-execute handler and scripts confirm outcomes. No live model.
  */
 import { describe, it, expect } from "vitest";
-import { cairnDoomLoopPlugin } from "./cairn-plugins";
+import { cairnDoomLoopPlugin, DOOM_LOOP_THRESHOLD } from "./plugins/doom-loop";
 
 type PreHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+type ConfirmOutcome = "allowed-once" | "rejected" | "cancelled";
 
-function makeCtx() {
+function makeCtx(scriptedOutcomes: ConfirmOutcome[]) {
   let preHandler: PreHandler | null = null;
+  const asks: Array<{ title?: string; detail?: string; toolName?: string }> = [];
   const ctx = {
     on: (ev: string, fn: PreHandler) => {
       if (ev === "tools/pre-execute") preHandler = fn;
       return () => { preHandler = null; };
     },
+    cairn: {
+      confirm: async (_sessionId: string, req: { title?: string; detail?: string; toolName?: string }) => {
+        asks.push(req);
+        return scriptedOutcomes.shift() ?? "cancelled";
+      },
+    },
   };
-  return { ctx, invoke: (name: string, args: unknown) => (preHandler as PreHandler)({ name, arguments: args }, async () => ({ kind: "allow" })) };
+  const invoke = (name: string, args: unknown) =>
+    (preHandler as PreHandler)({ name, arguments: args }, async () => ({ kind: "allow" }));
+  return { ctx, invoke, asks };
 }
 
-describe("cairnDoomLoopPlugin", () => {
-  it("pauses on the 3rd identical call and denies when the user rejects", async () => {
-    const { ctx, invoke } = makeCtx();
-    const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
-    let capturedCallId = "";
-    cairnDoomLoopPlugin(ctx as never, {
-      sessionId: "s1",
-      send: (channel, payload) => { sent.push({ channel, payload }); },
-      registerPending: (callId, resolve) => {
-        capturedCallId = callId;
-        // Simulate the user DENYING the doom-loop.
-        setTimeout(() => resolve(false), 0);
-        return () => {};
-      },
-    });
+describe("cairnDoomLoopPlugin (ctx.cairn.confirm pilot)", () => {
+  it("pauses via the host seam on the 3rd identical call and denies when the user rejects", async () => {
+    const { ctx, invoke, asks } = makeCtx(["rejected"]);
+    cairnDoomLoopPlugin(ctx as never, { sessionId: "s1" });
 
     const args = { path: "a.ts", content: "x" };
-    const r1 = await invoke("write", args);
-    const r2 = await invoke("write", args);
-    expect((r1 as { kind: string }).kind).toBe("allow");
-    expect((r2 as { kind: string }).kind).toBe("allow");
-    // 3rd identical call trips the threshold → pause + deny.
+    expect(((await invoke("write", args)) as { kind: string }).kind).toBe("allow");
+    expect(((await invoke("write", args)) as { kind: string }).kind).toBe("allow");
+    // 3rd identical call trips the threshold → host confirm → user rejects.
     const r3 = await invoke("write", args);
-    expect(sent.some((s) => s.channel === "pi-agent:doom-loop")).toBe(true);
-    // callId is `${sessionId}:${signature}` — stable + session-scoped.
-    expect(capturedCallId.startsWith("s1:write:")).toBe(true);
+    expect(asks).toHaveLength(1);
+    expect(asks[0]).toMatchObject({ toolName: "write" });
+    expect(asks[0].detail).toContain(`${DOOM_LOOP_THRESHOLD}×`);
     expect((r3 as { kind: string }).kind).toBe("deny");
+    expect((r3 as { reason?: string }).reason).toContain("Halted by the user");
   });
 
-  it("allows and stops re-pausing once the user approves", async () => {
-    const { ctx, invoke } = makeCtx();
-    const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
-    cairnDoomLoopPlugin(ctx as never, {
-      sessionId: "s2",
-      send: (channel, payload) => { sent.push({ channel, payload }); },
-      registerPending: (_callId, resolve) => { setTimeout(() => resolve(true), 0); return () => {}; },
-    });
+  it("allows and stops re-pausing once the user approves through the seam", async () => {
+    const { ctx, invoke, asks } = makeCtx(["allowed-once"]);
+    cairnDoomLoopPlugin(ctx as never, { sessionId: "s2" });
 
     const args = { command: "ls" };
     await invoke("bash", args);
     await invoke("bash", args);
     const r3 = await invoke("bash", args); // trips → user allows
     expect((r3 as { kind: string }).kind).toBe("allow");
-    const doomCount = sent.filter((s) => s.channel === "pi-agent:doom-loop").length;
-    // 4th+ identical calls do NOT re-pause (approved sticks).
+    // 4th+ identical calls do NOT re-ask (approved sticks).
     await invoke("bash", args);
     await invoke("bash", args);
-    expect(sent.filter((s) => s.channel === "pi-agent:doom-loop").length).toBe(doomCount);
+    expect(asks).toHaveLength(1);
   });
 
   it("does not trip for different tools / args", async () => {
-    const { ctx, invoke } = makeCtx();
-    const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
-    cairnDoomLoopPlugin(ctx as never, {
-      sessionId: "s3",
-      send: (channel, payload) => { sent.push({ channel, payload }); },
-      registerPending: () => () => {},
-    });
+    const { ctx, invoke, asks } = makeCtx([]);
+    cairnDoomLoopPlugin(ctx as never, { sessionId: "s3" });
     await invoke("read", { path: "a.ts" });
     await invoke("read", { path: "b.ts" });
     await invoke("read", { path: "c.ts" });
     await invoke("grep", { pattern: "x" });
-    expect(sent.some((s) => s.channel === "pi-agent:doom-loop")).toBe(false);
+    expect(asks).toHaveLength(0);
+  });
+
+  it("fails closed when the host seam answers 'cancelled' (headless / timeout)", async () => {
+    const { ctx, invoke } = makeCtx([]); // default outcome: cancelled
+    cairnDoomLoopPlugin(ctx as never, { sessionId: "s4" });
+    const args = { command: "make all" };
+    await invoke("bash", args);
+    await invoke("bash", args);
+    const r3 = await invoke("bash", args);
+    expect((r3 as { kind: string }).kind).toBe("deny");
+    expect((r3 as { reason?: string }).reason).toContain("time limit");
+  });
+
+  it("stays inert when no ctx.cairn.confirm seam exists", async () => {
+    const ctx: Record<string, unknown> = {
+      on: (_ev: string, fn: PreHandler) => { void fn; return () => {}; },
+    };
+    expect(cairnDoomLoopPlugin(ctx as never, { sessionId: "s5" })).toBeUndefined();
   });
 });

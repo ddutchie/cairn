@@ -115,9 +115,17 @@ Corrections made during execution (audit vs reality):
   cairn-plugins Context methods, read-tools/notes-files isolatedModules) —
   identical before and after this work; not introduced here.
 
-**Phase 2 — decided separately:** fallback retirement + schema drops;
-`reasoningField`/`reasoningModel`; remaining orphaned store surface if any
-(`finalisePiSubagentMessage` is still used).
+**Phase 2 — resolved (2026-08-21):**
+- Fallback retirement + schema drops — DONE: `chat_messages`,
+  `pi_agent_messages`, and `pi_agent_llm_history` are DROPped on boot and all
+  read fallbacks removed (`db:chat:messages`, SQLite legs of
+  sessionMessages). Pre-Cordis threads/sessions are permanently empty.
+- `reasoningField`/`reasoningModel` — KEPT, with a direction: dsh erases the
+  provider field name at its adapter boundary but persists full reasoning +
+  model attribution (`message.source`, replay envelopes). Surfacing that as a
+  dsh projections plugin ("context ring") is captured in the Cairn project
+  notes; our plumbing stays until that lands.
+- Remaining orphaned store surface: `finalisePiSubagentMessage` is still used.
 Mechanical items **✅ DONE (2026-08-21)**: `confirmAction` + `PendingAction`
 removed from the chat store/types; `chat-executor.ts` relocated to
 `electron/cordis/chat-executor.ts`; `parse-tool-args.ts` shim deleted in favour

@@ -119,13 +119,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
             console.log("[chat] sessionMessages", { threadId: t.id, count: data.length, sample: data.slice(0, 2).map((m) => ({ role: m.role, content: m.content.slice(0, 30), toolCalls: m.toolCalls?.length, subagents: m.subagents?.length })) });
             return data;
           }
-          if (data) console.log("[chat] sessionMessages empty, fallback to SQLite", { threadId: t.id });
-        } catch (e) { console.warn("[chat] sessionMessages failed, fallback", { threadId: t.id, error: String(e) }); }
-        const res = await ipcAwaitResult<ChatMessage[]>(
-          (e) => e.chat.messages(t.id) as Promise<{ data: ChatMessage[] } | { error: string }>
-        );
-        if (Array.isArray(res)) return res as unknown as ChatMessage[];
-        if (res && typeof res === "object" && "data" in res && Array.isArray((res as { data: unknown }).data)) return (res as { data: ChatMessage[] }).data;
+        } catch (e) { console.warn("[chat] sessionMessages failed", { threadId: t.id, error: String(e) }); }
         return [];
       })
     );

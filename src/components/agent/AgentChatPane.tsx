@@ -174,8 +174,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
   /** callId of the blocked ask_questions call — echoed back on answer. */
   const [pendingQuestionCallId, setPendingQuestionCallId] = useState<string | null>(null);
-  /** Active doom-loop pause — the agent repeated a tool call with identical args. */
-  const [doomLoop, setDoomLoop]                   = useState<{ toolName: string; count: number; callId: string; args?: Record<string, unknown> } | null>(null);
   // Live PRD note content — updated whenever the agent writes to the plan note
   const [planNoteContent, setPlanNoteContent]     = useState<string | null>(null);
   // Retry state — shown in status bar when the loop is backing off after a transient error
@@ -289,7 +287,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setRetryInfo(null);
       setPendingQuestions(null);
       setPendingQuestionCallId(null);
-      setDoomLoop(null);
     };
     void sync();
     return () => { cancelled = true; };
@@ -392,7 +389,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setIsCompacting(false);
       setPendingQuestions(null);
       setPendingQuestionCallId(null);
-      setDoomLoop(null);
       // Persist the full message transcript after the turn completes
       persistPiTranscript(sessionId);
     });
@@ -404,7 +400,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setIsCompacting(false);
       setPendingQuestions(null);
       setPendingQuestionCallId(null);
-      setDoomLoop(null);
       addPiMessage(sessionId, {
         id:        id(),
         role:      "error",
@@ -504,10 +499,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     // Doom-loop pause — the agent repeated a tool call with identical args.
-    const unsubDoomLoop = electron.piAgent.onDoomLoop((e) => {
-      if (e.sessionId !== sessionId) return;
-      setDoomLoop({ toolName: e.toolName, count: e.count, callId: e.callId, args: e.args });
-    });
 
     // Initial hydrate — load persisted todos when the pane mounts so a restored
     // session shows its list before the agent touches it again.
@@ -592,7 +583,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       unsubToolConfirmExpired?.();
       unsubNoteUpdated();
       unsubTodos();
-      unsubDoomLoop();
       unsubRetry();
       unsubCompact();
       unsubCompactResult();
@@ -655,7 +645,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     setIsLoading(true);
     setPendingQuestions(null);
     setPendingQuestionCallId(null);
-    setDoomLoop(null);
 
     // Add user message to store (attachments rendered as thumbnails in transcript)
     addPiMessage(session.sessionId, {
@@ -737,12 +726,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Doom-loop decision: allow → the repeated call runs and the session stops
   // re-pausing; deny → the main loop halts with an error.
-  const resolveDoomLoop = useCallback((allow: boolean) => {
-    if (!doomLoop) return;
-    const { sessionId } = session;
-    window.electron?.piAgent.respondDoomLoop(sessionId, doomLoop.callId, allow);
-    setDoomLoop(null);
-  }, [doomLoop, session]);
 
   // Answers to a blocked ask_questions call. The formatted text is returned to
   // the loop as the tool result (opencode-style) rather than starting a new turn.
@@ -779,7 +762,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     setIsLoading(false);
     setPendingQuestions(null);
     setPendingQuestionCallId(null);
-    setDoomLoop(null);
   }
 
   function handleClear() {
@@ -934,41 +916,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
                   onSubmit={submitQuestions}
                   disabled={false}
                 />
-              )}
-              {doomLoop && (
-                <div
-                  data-testid="doom-loop-card"
-                  className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5"
-                >
-                  <div className="flex items-start gap-2">
-                    <Loader2 size={14} className="mt-0.5 text-[var(--warning)] animate-spin shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">
-                        The agent is repeating the same action
-                      </p>
-                      <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">
-                        <span className="font-mono text-[var(--text-secondary)]">{doomLoop.toolName}</span> has been
-                        called {doomLoop.count} times in a row with identical arguments — this looks like a loop.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-2 flex items-center justify-end gap-1.5">
-                    <button
-                      data-testid="doom-loop-deny"
-                      onClick={() => resolveDoomLoop(false)}
-                      className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors"
-                    >
-                      Stop
-                    </button>
-                    <button
-                      data-testid="doom-loop-allow"
-                      onClick={() => resolveDoomLoop(true)}
-                      className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded transition-opacity"
-                    >
-                      Continue anyway
-                    </button>
-                  </div>
-                </div>
               )}
             </div>
           ),

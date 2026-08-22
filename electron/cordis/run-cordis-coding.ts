@@ -30,9 +30,9 @@ import {
   cairnQuestionsPlugin,
   cairnSystemPromptPlugin,
   cairnApprovalPlugin,
-  cairnDoomLoopPlugin,
   CAIRN_DB,
 } from "./cairn-plugins";
+import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { buildCordisUserContent } from "./cairn-attachment-store";
 import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
@@ -75,12 +75,6 @@ export interface RunCordisCodingOptions {
   };
   /**
    * Doom-loop adapter. registerPending stores a resolver keyed by callId
-   * (`${sessionId}:${signature}`) that pi-agent:respond-doom-loop invokes with
-   * the user's allow/deny. Omitted → no doom-loop pausing.
-   */
-  doomLoop?: {
-    registerPending: (callId: string, resolve: (allow: boolean) => void) => () => void;
-  };
   /**
    * Additional tool definitions to register on ctx.tools for this turn (e.g.
    * automation's run_script / write_run_file / deliver_file). Each is
@@ -100,7 +94,7 @@ export interface RunCordisCodingResult {
 
 export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise<RunCordisCodingResult> {
   const ctx = await getContext();
-  let { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, approvals, doomLoop, getWin, signal } = opts;
+  let { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, approvals, getWin, signal } = opts;
   // Local on-device model — ensure the app-spawned llama-server is running and
   // use its OpenAI-compatible endpoint (also via the pi-ai route, no separate plugin).
   if ((llmConfig as { provider?: string }).provider === "localllm") {
@@ -165,20 +159,19 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // Plan mode is owned by dsh (`dsh-plan-mode`, mounted in the coding stack):
     // it drives the plan:policy section + exit_plan_mode via planMode.set(agent).
     // No custom read-only tool guard — dsh's plan mode is advisory state.
-    // Doom-loop guard: pause on repeated identical tool calls. Mounted BEFORE
-    // the approval plugin on purpose: waterfall listeners fire in registration
-    // order, and once the approval classifier claims a call with {kind:"ask"}
-    // (without calling next()) downstream guards never see it. Mounting doom
-    // first means every call — including ones about to be asked — counts toward
-    // loop detection; its next() chains into the approval classifier below.
-    if (doomLoop) {
-      await mount(cairnDoomLoopPlugin, {
-        sessionId,
-        send,
-        registerPending: doomLoop.registerPending,
-        signal,
-      });
-    }
+    // Doom-loop guard (bundled plugin, ctx.cairn.confirm pilot): pause on
+    // repeated identical tool calls. Mounted BEFORE the approval plugin on
+    // purpose: waterfall listeners fire in registration order, and once the
+    // approval classifier claims a call with {kind:"ask"} (without calling
+    // next()) downstream guards never see it. Mounting doom first means every
+    // call — including ones about to be asked — counts toward loop detection;
+    // its next() chains into the approval classifier below. Mounted
+    // unconditionally: sessions without a confirm transport (headless) fail
+    // closed to "cancelled" → deterministic loop-halt.
+    await mount(cairnDoomLoopPlugin, {
+      sessionId,
+      signal,
+    });
     // HITL tool approval (no-op when autoApprove is on).
     if (!autoApprove && approvals) {
       await mount(cairnApprovalPlugin, {

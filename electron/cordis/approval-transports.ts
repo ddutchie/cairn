@@ -124,3 +124,50 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
     },
   };
 }
+
+// ── Headless transport (automation runs) ─────────────────────────────────────
+
+export interface HeadlessConfirmTransportDeps {
+  /** Surface one ask to watchers (automation approval inbox / notifications). */
+  emitApproval: (req: { callId: string; toolName: string; title?: string; detail?: string }) => void;
+  /**
+   * Park one ask until a human answers (durable inbox + live resolver map).
+   * Timeout/fail-closed policy belongs to the inbox side (expireStaleApprovals).
+   */
+  registerPending: (callId: string, resolve: (approved: boolean) => void) => () => void;
+}
+
+/**
+ * Headless sessions have no transcript card — plugin asks land in the SAME
+ * approval inbox native tool asks use (same parking machinery, same resolver
+ * IPC), so ctx.cairn.confirm works identically under automation runs.
+ */
+export function createHeadlessConfirmTransport(deps: HeadlessConfirmTransportDeps): ConfirmTransport {
+  return {
+    confirm(req) {
+      const name = req.toolName ?? "plugin_confirm";
+      const callId = `confirm-${newId()}`;
+      deps.emitApproval({ callId, toolName: name, title: req.title, detail: req.detail });
+      return new Promise<PluginConfirmOutcome>((resolve) => {
+        let settled = false;
+        const onAborts: Array<() => void> = [];
+        let dispose: () => void = () => {};
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const settle = (outcome: PluginConfirmOutcome): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          dispose();
+          for (const off of onAborts) off();
+          resolve(outcome);
+        };
+        const onAbort = () => settle("cancelled");
+        if (req.signal?.aborted) onAbort();
+        req.signal?.addEventListener?.("abort", onAbort, { once: true });
+        onAborts.push(() => req.signal?.removeEventListener?.("abort", onAbort));
+        dispose = deps.registerPending(callId, (approved) => settle(approved ? "allowed-once" : "rejected"));
+        timer = setTimeout(() => settle("cancelled"), APPROVAL_TIMEOUT_MS);
+      });
+    },
+  };
+}

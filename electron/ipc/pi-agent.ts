@@ -52,7 +52,6 @@ const runningLoops = new Set<string>();
 // exactly like the builtin loop's pendingApprovals/pendingDoomLoop maps. Kept
 // module-level so the (single) respond handlers can reach any session's turn.
 const cordisPendingApprovals = new Map<string, (d: { approved: boolean; grant?: "session" | "command" }) => void>();
-const cordisPendingDoomLoop = new Map<string, (allow: boolean) => void>();
 const cordisPendingQuestions = new Map<string, (answersText: string) => void>();
 
 /**
@@ -72,7 +71,7 @@ const pendingAsks = createPendingAskRegistry();
 /** Drop every pending resolver + approval grant belonging to one session. */
 function sweepSessionPendings(sessionId: string): void {
   const prefix = `${sessionId}::`;
-  for (const map of [cordisPendingApprovals, cordisPendingDoomLoop, cordisPendingQuestions]) {
+  for (const map of [cordisPendingApprovals, cordisPendingQuestions]) {
     for (const key of Array.from(map.keys())) {
       if (key.startsWith(prefix)) map.delete(key);
     }
@@ -272,13 +271,6 @@ async function runCordisCodingSession(
           const key = pendingKey(sessionId, callId);
           cordisPendingApprovals.set(key, resolve);
           return () => cordisPendingApprovals.delete(key);
-        },
-      },
-      doomLoop: {
-        registerPending: (callId, resolve) => {
-          const key = pendingKey(sessionId, callId);
-          cordisPendingDoomLoop.set(key, resolve);
-          return () => cordisPendingDoomLoop.delete(key);
         },
       },
     });
@@ -711,18 +703,6 @@ export function registerPiAgentHandler(
     }
   });
 
-  // ── pi-agent:respond-doom-loop ─────────────────────────────────────────────
-  // User decision on a repeated-identical-call pause. Allow → the call runs and
-  // the session stops re-pausing; deny → the loop halts with an error.
-  registerIpcOn("pi-agent:respond-doom-loop", (_event, { sessionId, callId, allow }: { sessionId: string; callId: string; allow: boolean }) => {
-    const key = pendingKey(sessionId, callId);
-    const cordisPending = cordisPendingDoomLoop.get(key);
-    if (cordisPending) {
-      cordisPending(allow);
-      cordisPendingDoomLoop.delete(key);
-    }
-  });
-
   // ── pi-agent:respond-questions ─────────────────────────────────────────────
   // Answers to a blocked ask_questions call. The formatted answer text is fed
   // back to the model as the tool result so it reasons over the answers in the
@@ -754,10 +734,6 @@ export function registerPiAgentHandler(
     }
     // Grants + any stray pendings die with the conversation.
     sweepSessionPendings(sessionId);
-    // Persisted transcript — without this, pi-agent:restore-context on next
-    // launch reloads old messages from pi_agent_llm_history and the clear
-    // appears to not stick after quit/restart.
-    try { ctx.db.prepare("DELETE FROM pi_agent_llm_history WHERE session_id = ?").run(sessionId); } catch { /* ignore */ }
     // Explicit session clearing wipes persisted todos too (the todowrite
     // replacement contract otherwise leaves them until the next write).
     q.saveSessionTodos(ctx.db, sessionId, []);

@@ -191,8 +191,15 @@ Plus: clear/destroy sweep pending maps + grants.
    plugin asks reuse the existing card pipeline, so the renderer needed no
    changes. Per-turn binding lives beside the approvals adapter in
    pi-agent.ts; cleared on turn end / clear / destroy.
-   REMAINING for full consolidation: extract cairnDoomLoopPlugin as the first
-   bundled-plugin consumer of this seam (pilot), then fold the headless
-   automation bridge onto the same registry.
+   REMAINING for full consolidation: DONE (2026-08-21):
+   - cairnDoomLoopPlugin extracted to `electron/cordis/plugins/doom-loop.ts`
+     as the FIRST bundled-plugin consumer — it touches only ctx.cairn.confirm
+     + its own pre-execute guard (inert when the seam is absent; headless runs
+     fail closed to a deterministic loop-halt). The bespoke doom banner/IPC
+     (pi-agent:doom-loop + respond-doom-loop) was removed; asks render through
+     the standard approval card.
+   - Automation runs bind `createHeadlessConfirmTransport` for the run's
+     duration, so plugin confirms land in the SAME approval inbox + pending
+     map native asks use.
 
 Phase A items 1–4 are mechanical and testable; recommend starting there.

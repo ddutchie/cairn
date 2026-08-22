@@ -385,7 +385,6 @@ const api = {
   // ── Chat ─────────────────────────────────────
   chat: {
     threads:       (workspaceId: string) => invoke("db:chat:threads", { workspaceId }),
-    messages:      (threadId: string) => invoke("db:chat:messages", { threadId }),
     sessionMessages: (threadId: string) => invoke("db:chat:sessionMessages", { threadId }),
     upsertThread:  (args: unknown) => invoke("db:chat:upsertThread", args),
     deleteThread:  (threadId: string) => invoke("db:chat:deleteThread", { threadId }),
@@ -1114,15 +1113,6 @@ const api = {
       ipcRenderer.on("pi-agent:todos", handler);
       return () => ipcRenderer.off("pi-agent:todos", handler);
     },
-    /** Fired when the model repeats the same tool call with identical args (doom loop) — blocks until the user responds */
-    onDoomLoop: (cb: (e: { sessionId: string; toolName: string; count: number; args?: Record<string, unknown>; callId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; toolName: string; count: number; args?: Record<string, unknown>; callId: string }) => cb(e);
-      ipcRenderer.on("pi-agent:doom-loop", handler);
-      return () => ipcRenderer.off("pi-agent:doom-loop", handler);
-    },
-    /** Resolve a doom-loop pause: allow → continue the repeated call; deny → halt the loop */
-    respondDoomLoop: (sessionId: string, callId: string, allow: boolean) => ipcRenderer.send("pi-agent:respond-doom-loop", { sessionId, callId, allow }),
     /** Fired when the session mode switches (plan → execute after approval) */
     onModeChange: (cb: (e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

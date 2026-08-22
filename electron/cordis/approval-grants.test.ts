@@ -7,7 +7,8 @@
  * listener). No live model.
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { cairnApprovalPlugin, cairnDoomLoopPlugin } from "./cairn-plugins";
+import { cairnApprovalPlugin } from "./cairn-plugins";
+import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import {
   getSessionGrants, clearSessionGrants, canonicalBashCommand,
   createPendingAskRegistry,
@@ -156,15 +157,19 @@ describe("cairnApprovalPlugin ask-classification", () => {
 });
 
 describe("doom-loop sees calls claimed by the approval classifier", () => {
-  it("emits pi-agent:doom-loop on the 3rd identical mutating call even with approvals denying", async () => {
+  it("doom-loop pauses via ctx.cairn.confirm on the 3rd identical mutating call even with approvals denying", async () => {
     const h = makeCtx();
     const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
-    // Mount order mirrors the fixed run-cordis-coding.ts: doom FIRST.
-    cairnDoomLoopPlugin(h.ctx as never, {
-      sessionId: "s4",
-      send: (channel, payload) => { sent.push({ channel, payload }); },
-      registerPending: (_c, resolve) => { setTimeout(() => resolve(false), 0); return () => {}; },
-    });
+    const doomAsks: Array<{ toolName?: string }> = [];
+    // Mount order mirrors the fixed run-cordis-coding.ts: doom FIRST. The
+    // plugin consumes ctx.cairn.confirm; script it to REJECT (user halt).
+    (h.ctx as unknown as { cairn?: unknown }).cairn = {
+      confirm: async (_sid: string, req: { toolName?: string }) => {
+        doomAsks.push(req);
+        return "rejected" as const;
+      },
+    };
+    cairnDoomLoopPlugin(h.ctx as never, { sessionId: "s4" });
     cairnApprovalPlugin(h.ctx as never, {
       autoApprove: false,
       sessionId: "s4",
@@ -178,8 +183,10 @@ describe("doom-loop sees calls claimed by the approval classifier", () => {
     expect((r1 as { kind: string }).kind).toBe("ask"); // approval asks each time…
     expect((r2 as { kind: string }).kind).toBe("ask");
     const r3 = await h.invokePre("bash", args);
-    // …but the doom guard still counted every identical call and trips 3rd.
-    expect(sent.some((s) => s.channel === "pi-agent:doom-loop")).toBe(true);
+    // …but the doom guard still counted every identical call and trips 3rd,
+    // asking through the host seam before the approval classifier sees it.
+    expect(doomAsks).toHaveLength(1);
+    expect(doomAsks[0].toolName).toBe("bash");
     expect((r3 as { kind: string }).kind).toBe("deny");
   });
 });
@@ -214,24 +221,19 @@ describe("fail-closed timeouts (audit G6)", () => {
     expect((result as { kind: string }).kind).toBe("ask");
   });
 
-  it("doom-loop pause expires into a precautionary deny", async () => {
+  it("doom-loop pause fails closed into a precautionary deny when the seam answers 'cancelled'", async () => {
     const h = makeCtx();
-    const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
-    cairnDoomLoopPlugin(h.ctx as never, {
-      sessionId: "s4",
-      send: (channel, payload) => { sent.push({ channel, payload }); },
-      registerPending: () => () => {}, // never answers
-      timeoutMs: 5,
-    });
+    (h.ctx as unknown as { cairn?: unknown }).cairn = {
+      confirm: async () => "cancelled" as const,
+    };
+    cairnDoomLoopPlugin(h.ctx as never, { sessionId: "s4" });
     const args = { command: "make all" };
     await h.invokePre("bash", args);
     await h.invokePre("bash", args);
     const r3 = await h.invokePre("bash", args);
-    await new Promise((r) => setTimeout(r, 15));
     const denied = r3 as { kind: string; reason?: string };
     expect(denied.kind).toBe("deny");
     expect(denied.reason).toContain("time limit");
-    expect(sent.some((s) => s.channel === "pi-agent:doom-loop")).toBe(true);
   });
 
   it("an answered approval still wins when it arrives before the timeout", async () => {

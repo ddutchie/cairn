@@ -13,22 +13,14 @@ import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 
 export function registerChatDbHandlers(ctx: DbContext): void {
-  // Cutover cleanup: chat + pi-agent transcripts now live in dsh's JSONL session
-  // log (session-as-truth, read via db:chat:sessionMessages / db:piSession:sessionMessages).
-  // The chat_messages / pi_agent_messages SQLite tables are legacy and no longer
-  // written (the write handlers were removed with the pre-Cordis engines). Purge
-  // any rows
-  // left from before the cutover so a stale SQLite copy can't shadow the jsonl on
-  // load. Thread/session INDEX rows (chat_threads / pi_agent_sessions) are kept —
-  // they enumerate the sessions; only the message bodies moved to jsonl.
-  try {
-    ctx.db.prepare("DELETE FROM chat_messages").run();
-  } catch { /* table may not exist yet */ }
-  try {
-    ctx.db.prepare("DELETE FROM pi_agent_messages").run();
-  } catch { /* table may not exist yet */ }
+  // Legacy transcript retirement: chat + pi-agent transcripts live exclusively
+  // in dsh's JSONL session log (session-as-truth). The pre-Cordis SQLite body
+  // tables have no readers left — drop them outright (idempotent; fresh DBs
+  // never had them after this point).
+  for (const t of ["chat_messages", "pi_agent_messages", "pi_agent_llm_history"]) {
+    try { ctx.db.prepare(`DROP TABLE IF EXISTS ${t}`).run(); } catch { /* ignore */ }
+  }
   registerIpcHandle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
-  registerIpcHandle("db:chat:messages", (_e, { threadId }) => handle(() => q.getChatMessages(ctx.db, threadId)));
   registerIpcHandle("db:chat:upsertThread", (_e, args: Parameters<typeof q.upsertChatThread>[1]) => handle(() => q.upsertChatThread(ctx.db, args)));
 
   // db:chat:clearThreadMessages — direct SQL DELETE + Cordis jsonl clear.
@@ -48,7 +40,6 @@ export function registerChatDbHandlers(ctx: DbContext): void {
       const { dropChatAgentForThread } = require("../cordis/run-cordis-loop") as { dropChatAgentForThread: (id: string) => Promise<void> };
       await dropChatAgentForThread(threadId);
     } catch { /* best-effort; wipe still proceeds */ }
-    ctx.db.prepare("DELETE FROM chat_messages WHERE thread_id = ?").run(threadId);
     try {
       const fs = require("node:fs") as typeof import("node:fs");
       const path = require("node:path") as typeof import("node:path");
@@ -184,7 +175,6 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     const ids = threads.map((t) => t.id);
     if (ids.length === 0) return { deletedThreads: 0, deletedMessages: 0 };
     const placeholders = ids.map(() => "?").join(",");
-    ctx.db.prepare(`DELETE FROM chat_messages WHERE thread_id IN (${placeholders})`).run(...ids);
     ctx.db.prepare(`DELETE FROM chat_threads WHERE id IN (${placeholders})`).run(...ids);
     // Also clear Cordis sessions for all deleted threads (best-effort, same brute-force as single clear)
     try {

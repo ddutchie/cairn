@@ -46,7 +46,6 @@ import {
   toTag,
   toSlashCommand,
   toChatThread,
-  toChatMessage,
   toMcpNotification,
   toIdeaFlow,
   toIdeaFlowNode,
@@ -1037,12 +1036,7 @@ export function upsertChatThread(db: Database.Database, t: {
 }
 
 export function deleteChatThread(db: Database.Database, threadId: string) {
-  db.prepare("DELETE FROM chat_messages WHERE thread_id = ?").run(threadId);
   db.prepare("DELETE FROM chat_threads WHERE id = ?").run(threadId);
-}
-
-export function getChatMessages(db: Database.Database, threadId: string) {
-  return db.prepare("SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY created_at").all(threadId).map(toChatMessage);
 }
 
 // ── MCP Notifications ─────────────────────────
@@ -1661,39 +1655,7 @@ export function deletePiSession(db: Database.Database, sessionId: string) {
 
 // ── Pi Agent Messages ───────────────────────────────────────────────────────────────────
 
-export interface PiMessageRow {
-  id: string;
-  sessionId: string;
-  role: "user" | "assistant" | "error" | "system";
-  content: string;
-  reasoning: string | null;
-  toolCalls: unknown[] | null;
-  subagents: unknown[] | null;
-  timestamp: string;
-  order: number;
-}
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toPiMessage(row: any): PiMessageRow {
-  return {
-    id:        row.id as string,
-    sessionId: row.session_id as string,
-    role:      row.role as "user" | "assistant" | "error" | "system",
-    content:   row.content as string,
-    reasoning: (row.reasoning as string | null) ?? null,
-    toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : null,
-    subagents: row.subagents ? JSON.parse(row.subagents as string) : null,
-    timestamp: row.timestamp as string,
-    order:     row.order as number,
-  };
-}
-
-// Legacy read-only fallback: transcripts live in the dsh jsonl session log;
-// this SELECT still serves pre-cutover sessions with no jsonl on load.
-export function getPiMessages(db: Database.Database, sessionId: string): PiMessageRow[] {
-  return (db.prepare(`SELECT * FROM pi_agent_messages WHERE session_id = ? ORDER BY "order" ASC`).all(sessionId) as unknown[])
-    .map(toPiMessage);
-}
 
 // ── Pi Agent Session Todos ─────────────────────────────────────────────────────
 
