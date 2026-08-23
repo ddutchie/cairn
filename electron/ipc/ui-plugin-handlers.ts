@@ -14,7 +14,7 @@ import * as path from "path";
 import { ipcMain, shell, type WebContents } from "electron";
 import * as yaml from "js-yaml";
 import { readEnabledManifest, getPluginsRoot, pluginsDevEnabled } from "../cordis/plugin-loader";
-import { installPlugin, uninstallPlugin } from "../cordis/plugin-installer";
+import { installPlugin, uninstallPlugin, updatePlugin } from "../cordis/plugin-installer";
 
 export interface UiPluginPayload {
   id: string;
@@ -83,6 +83,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
             : "backend",
           name: (r.name as string) ?? null,
           ui: (r.ui as string) ?? null,
+          source: typeof r.source === "string" ? r.source : null,
           disabled: r.disabled === true,
         }));
       return { data: { devEnabled: pluginsDevEnabled(), root: getPluginsRoot(), plugins: list } };
@@ -146,6 +147,21 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
       uninstallPlugin(req.id);
       return { data: { ok: true } };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Update: re-run an installed plugin's recorded source spec (re-fetch github /
+  // re-copy local) to pull the latest build. Dev-gated like install.
+  ipcMain.handle("plugins:update", async (_e, req: { id: string }) => {
+    try {
+      if (!pluginsDevEnabled()) {
+        return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to update." };
+      }
+      if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
+      const result = await updatePlugin(req.id);
+      return { data: result };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }

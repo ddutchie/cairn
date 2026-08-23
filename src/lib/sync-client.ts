@@ -143,7 +143,19 @@ function emit(): void {
   for (const l of listeners) l();
 }
 
+function areSyncStatusesEqual(a: SyncStatus, b: SyncStatus): boolean {
+  if (a === b) return true;
+  return (
+    a.state === b.state &&
+    a.pending === b.pending &&
+    a.conflicts === b.conflicts &&
+    a.lastSyncAt === b.lastSyncAt &&
+    a.connected === b.connected
+  );
+}
+
 function setStatus(next: SyncStatus): void {
+  if (areSyncStatusesEqual(current, next)) return;
   current = next;
   emit();
 }

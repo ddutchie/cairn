@@ -47,7 +47,18 @@ export {
 };
 
 const IMPORT_CONFIG_FILE = ".cairn-import.json";
-const DEFAULT_SKIP_DIRS = new Set(["assets", "attachments", "templates"]);
+const DEFAULT_SKIP_DIRS = new Set([
+  "assets",
+  "attachments",
+  "templates",
+  "node_modules",
+  "dist",
+  "build",
+  "target",
+  "vendor",
+  "out",
+  "coverage",
+]);
 
 export interface VaultImportPreview {
   isObsidianVault: boolean;

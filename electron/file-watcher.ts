@@ -73,6 +73,13 @@ export function startFileWatcher(
   watcher = chokidar.watch(watchPath, {
     ignored: [
       /(^|[/\\])\./,              // dot-prefixed dirs/files (.obsidian, .trash, .git, etc.)
+      /(^|[/\\])node_modules([/\\]|$)/i,
+      /(^|[/\\])dist([/\\]|$)/i,
+      /(^|[/\\])build([/\\]|$)/i,
+      /(^|[/\\])target([/\\]|$)/i,
+      /(^|[/\\])vendor([/\\]|$)/i,
+      /(^|[/\\])out([/\\]|$)/i,
+      /(^|[/\\])coverage([/\\]|$)/i,
       /(^|[/\\])assets([/\\]|$)/i,
       /(^|[/\\])attachments([/\\]|$)/i,
       /(^|[/\\])templates([/\\]|$)/i,

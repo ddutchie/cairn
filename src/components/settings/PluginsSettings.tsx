@@ -9,6 +9,7 @@ interface PluginRow {
   kind: "ui" | "backend" | "both";
   name: string | null;
   ui: string | null;
+  source: string | null;
   disabled: boolean;
 }
 interface PluginList {
@@ -24,6 +25,7 @@ type Electron = {
     openFolder: () => Promise<{ ok: boolean }>;
     onUiChanged: (cb: () => void) => () => void;
     install: (spec: string) => Promise<{ id: string; name: string | null; ui: string | null; kind: PluginRow["kind"] }>;
+    update: (id: string) => Promise<{ id: string; name: string | null; ui: string | null; kind: PluginRow["kind"] }>;
     uninstall: (id: string) => Promise<{ ok: boolean }>;
   };
 };
@@ -80,6 +82,15 @@ export function PluginsSettings() {
     if (!el?.plugins) return;
     setBusy(row.id);
     try { await el.plugins.uninstall(row.id); await refresh(); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(null); }
+  };
+
+  const update = async (row: PluginRow) => {
+    if (!el?.plugins) return;
+    setBusy(row.id);
+    setError(null);
+    try { await el.plugins.update(row.id); await refresh(); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(null); }
   };
@@ -190,6 +201,18 @@ export function PluginsSettings() {
                 disabled={busy === row.id || !data.devEnabled}
                 onCheckedChange={() => void toggle(row)}
               />
+              {isManaged(row) && row.source && (
+                <button
+                  onClick={() => void update(row)}
+                  disabled={busy === row.id || !data.devEnabled}
+                  title={`Update from ${row.source}`}
+                  className="p-1.5 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)] disabled:opacity-40 transition-colors shrink-0"
+                >
+                  {busy === row.id
+                    ? <Loader2 size={13} className="animate-spin" />
+                    : <RefreshCw size={13} />}
+                </button>
+              )}
               {isManaged(row) && (
                 <button
                   onClick={() => void uninstall(row)}

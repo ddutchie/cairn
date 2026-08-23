@@ -106,7 +106,7 @@ describe("installPlugin (github, mocked fetch)", () => {
     expect(fs.existsSync(path.join(getPluginsRoot(), "installed/dsh-visualize/package.json"))).toBe(true);
     // Manifest row written.
     const rows = yaml.load(fs.readFileSync(path.join(getPluginsRoot(), "plugins.yml"), "utf8")) as Array<Record<string, unknown>>;
-    expect(rows).toContainEqual({ id: "dsh-visualize", name: res.name, ui: res.ui });
+    expect(rows).toContainEqual({ id: "dsh-visualize", name: res.name, ui: res.ui, source: "github:Nagi-ovo/dsh-visualize" });
   });
 
   it("rejects a package with no dsh section", async () => {
@@ -130,9 +130,9 @@ describe("installPlugin (github, mocked fetch)", () => {
     const res = await installPlugin(pkgPath);
     expect(res.id).toBe("dsh-context-ring");
     expect(res.name).toBe("./installed/dsh-context-ring/lib/index.js");
-    expect(res.ui).toBe("./installed/dsh-context-ring/lib/client/index.js");
+    expect(res.ui).toBe("./installed/dsh-context-ring/lib/client.js");
     expect(fs.existsSync(path.join(getPluginsRoot(), "installed/dsh-context-ring/lib/index.js"))).toBe(true);
-    expect(fs.existsSync(path.join(getPluginsRoot(), "installed/dsh-context-ring/lib/client/index.js"))).toBe(true);
+    expect(fs.existsSync(path.join(getPluginsRoot(), "installed/dsh-context-ring/lib/client.js"))).toBe(true);
   });
 });
 

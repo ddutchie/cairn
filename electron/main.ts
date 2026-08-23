@@ -652,11 +652,14 @@ app.whenReady().then(async () => {
     const drainInterval = setInterval(() => {
       try {
         if (!getSyncFolder(ctx.db)) return;
-        drainDesktop(ctx.db);
-        // Reflect the current pending/conflict counts in the title-bar indicator.
-        refreshSyncStatus(ctx.db);
+        const drained = drainDesktop(ctx.db);
+        if (drained > 0) {
+          // Reflect the updated pending/conflict counts in the title-bar indicator.
+          refreshSyncStatus(ctx.db);
+        }
       } catch (err) { console.error("[sync] drain:", err); }
     }, 5_000);
+    if (typeof drainInterval.unref === "function") drainInterval.unref();
     // Full folder sync (publish + reconcile peers) as the primary + safety net.
     const syncInterval = setInterval(() => runFullSync("periodic"), 30_000);
 

@@ -63,7 +63,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   activeChatThreadId: null,
 
   setActiveChatThreadId(threadId) {
-    console.log("[chat] setActiveChatThreadId", { threadId, prev: get().activeChatThreadId, stack: new Error().stack?.split("\n")[2]?.trim() });
     set({ activeChatThreadId: threadId });
     // Persist so the last-active thread is restored across restarts. SQLite is
     // the durable source of truth for the threads themselves (see loadChatFromDb);
@@ -84,11 +83,9 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
    * clobber optimistic state.
    */
   async loadChatFromDb(workspaceId) {
-    console.log("[chat] loadChatFromDb start", { workspaceId });
     const threadsRes = await ipcAwaitResult<ChatThread[]>(
       (e) => e.chat.threads(workspaceId) as Promise<{ data: ChatThread[] } | { error: string }>
     );
-    console.log("[chat] threadsRes", threadsRes);
     // ipcAwaitResult returns {data} on success, but handle both wrapped and raw array (defensive)
     let dbThreads: ChatThread[] = [];
     if (Array.isArray(threadsRes)) {
@@ -96,10 +93,8 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     } else if (threadsRes && typeof threadsRes === "object" && "data" in threadsRes && Array.isArray((threadsRes as { data: unknown }).data)) {
       dbThreads = (threadsRes as { data: ChatThread[] }).data;
     } else {
-      console.warn("[chat] no threads data", threadsRes);
       return;
     }
-    console.log("[chat] dbThreads", dbThreads.map((t) => ({ id: t.id, ws: t.workspaceId, proj: t.projectId })) );
 
     // Pull messages for every thread in parallel — dsh session is the source of truth
     // (JsonlSessionPersistence `chat-<threadId>`), not the duplicated `chat_messages` SQLite
@@ -126,10 +121,8 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
             usage = (raw as { usage?: unknown }).usage;
           }
 
-
           if (usage) usageByThreadId.set(t.id, usage);
           if (data && data.length > 0) {
-            console.log("[chat] sessionMessages", { threadId: t.id, count: data.length, sample: data.slice(0, 2).map((m) => ({ role: m.role, content: m.content.slice(0, 30), toolCalls: m.toolCalls?.length, subagents: m.subagents?.length })) });
             return data;
           }
         } catch (e) { console.warn("[chat] sessionMessages failed", { threadId: t.id, error: String(e) }); }
@@ -158,7 +151,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
         ...s.chatThreads.filter((t) => !dbThreadIds.has(t.id)),
       ];
 
-
       // Merge messages: session (dsh) is the source of truth for all loaded threads.
       // Replace in-memory copies for those threads so stale optimistic streaming
       // bubbles (e.g. empty content + tools) do not duplicate alongside replayed turns.
@@ -176,7 +168,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
 
     get().persist();
 
-    console.log("[chat] merged", { threads: get().chatThreads.map((t) => ({ id: t.id, ws: t.workspaceId, proj: t.projectId })), messages: get().chatMessages.length, workspaceId });
     // Prune blank demo threads (1515 → ~30) — keep active + recent with messages
     {
       const activeId = get().activeChatThreadId;
@@ -194,7 +185,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
         const keep = new Set(blanks.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 5).map((t) => t.id));
         const toPrune = blanks.filter((t) => !keep.has(t.id));
         if (toPrune.length > 0) {
-          console.log("[chat] pruning blanks", { totalBlanks: blanks.length, pruning: toPrune.length, sample: toPrune.slice(0, 3).map((t) => t.id) });
           const pruneIds = new Set(toPrune.map((t) => t.id));
           set((s) => ({ chatThreads: s.chatThreads.filter((t) => !pruneIds.has(t.id)) }));
           get().persist();
@@ -209,40 +199,33 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     // created Uhhn5V33xGuG with 0 filtered messages while 698 total exist — pick
     // the most-recent thread with messages instead so old chats actually mount.
     const saved = storage.get<string>(ACTIVE_CHAT_THREAD_KEY);
-    console.log("[chat] restore check", { saved, has: saved ? get().chatThreads.some((t) => t.id === saved && t.workspaceId === workspaceId) : false, workspaceId, threads: get().chatThreads.map((t) => t.id) });
     let toRestore: string | null = null;
     if (saved && get().chatThreads.some((t) => t.id === saved && t.workspaceId === workspaceId)) {
       const hasMessages = get().chatMessages.some((m) => m.threadId === saved);
-      console.log("[chat] saved hasMessages", { saved, hasMessages, totalForSaved: get().chatMessages.filter((m) => m.threadId === saved).length });
       if (hasMessages) {
         toRestore = saved;
       } else {
         const candidates = get().chatThreads
           .filter((t) => t.workspaceId === workspaceId && get().chatMessages.some((m) => m.threadId === t.id))
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-        console.log("[chat] candidates with messages", candidates.map((t) => ({ id: t.id, updatedAt: t.updatedAt, msgCount: get().chatMessages.filter((m) => m.threadId === t.id).length })));
         if (candidates.length > 0) {
           toRestore = candidates[0].id;
-          console.log("[chat] saved empty, restoring most recent with messages", toRestore);
         } else {
           toRestore = saved;
         }
       }
     }
     if (toRestore) {
-      console.log("[chat] restoring activeChatThreadId", toRestore);
       set({ activeChatThreadId: toRestore });
     }
   },
 
   getOrCreateThread(workspaceId, projectId) {
-    console.log("[chat] getOrCreateThread", { workspaceId, projectId, threads: get().chatThreads.filter((t) => t.workspaceId === workspaceId).map((t) => ({ id: t.id, proj: t.projectId, updatedAt: t.updatedAt })), activeThreadId: get().activeChatThreadId });
     const existing = get().chatThreads.find(
       (t) =>
         t.workspaceId === workspaceId &&
         (projectId ? t.projectId === projectId : !t.projectId)
     );
-    console.log("[chat] getOrCreateThread existing", existing?.id ?? null);
     if (existing) return existing;
 
     const thread: ChatThread = {
@@ -260,7 +243,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning, images, subagents, reasoningSummary, reasoningItems, reasoningField, reasoningModel) {
-    console.log("[chat] addMessage", { threadId, role, content: content.slice(0, 80), threadExists: get().chatThreads.some((t) => t.id === threadId), threads: get().chatThreads.map((t) => t.id) });
     const msg: ChatMessage = {
       id: id(),
       threadId,
@@ -410,7 +392,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   async clearThreadMessages(threadId) {
-    console.log("[chat] clearThreadMessages", { threadId, beforeMessages: get().chatMessages.filter((m) => m.threadId === threadId).length, threads: get().chatThreads.map((t) => t.id) });
     set((s) => ({
       chatMessages: s.chatMessages.filter((m) => m.threadId !== threadId),
       chatThreads: s.chatThreads.map((t) =>
@@ -419,14 +400,12 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     }));
     get().persist();
     await ipcAwait((e) => e.chat.clearThreadMessages(threadId));
-    console.log("[chat] after clear", { threadId, remainingMessages: get().chatMessages.filter((m) => m.threadId === threadId).length, activeThreadId: get().activeChatThreadId });
   },
 
   async clearAllThreads(workspaceId, projectId) {
     const toDelete = get().chatThreads.filter(
       (t) => t.workspaceId === workspaceId && (projectId ? t.projectId === projectId : true)
     );
-    console.log("[chat] clearAllThreads", { workspaceId, projectId, count: toDelete.length, ids: toDelete.map((t) => t.id).slice(0, 5) });
     const ids = new Set(toDelete.map((t) => t.id));
     set((s) => ({
       chatThreads: s.chatThreads.filter((t) => !ids.has(t.id)),
@@ -439,7 +418,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       storage.delete(ACTIVE_CHAT_THREAD_KEY);
     }
     await ipcAwait((e) => e.chat.clearAllThreads(workspaceId, projectId ?? undefined));
-    console.log("[chat] after clearAll", { remainingThreads: get().chatThreads.length, remainingMessages: get().chatMessages.length });
     // Create a fresh empty thread so the panel doesn't stay in a null-thread state
     if (workspaceId) {
       const next = get().getOrCreateThread(workspaceId, projectId);

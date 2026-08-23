@@ -459,12 +459,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
 
   const messages = useMemo(
-    () => {
-      const filtered = threadId ? chatMessages.filter((m) => m.threadId === threadId) : [];
-      console.log("[ChatPanel] messages for thread", { threadId, total: chatMessages.length, filtered: filtered.length, chatThreads: chatThreads.map((t) => t.id) });
-      return filtered;
-    },
-    [threadId, chatMessages, chatThreads],
+    () => (threadId ? chatMessages.filter((m) => m.threadId === threadId) : []),
+    [threadId, chatMessages],
   );
 
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -641,7 +637,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     // 20% would send only 20% of history as context and the next turn would lose
     // track (the "bonkers" duplicate Hello! after a scrub).
     const historyForLog = formatChatHistory(messages);
-    console.log("[ChatPanel] sendStream", { threadId, projectId: activeProjectId, workspaceId: activeWorkspaceId, historyLen: historyForLog.length, input: content.slice(0, 50), messagesLen: messages.length, scrubbedVisible: visibleMessages.length, timelineRange });
     sendStream({
       message: resolvedMessage, threadId,
       projectId: activeProjectId,

@@ -57,6 +57,14 @@ export interface SlotProps {
       cacheCreationTokens?: number;
       breakdown?: import("../../types").TokenBreakdown;
     };
+    /**
+     * dsh session-projection accessor, so a purely dsh-native client plugin
+     * (which reads `ctx`/props `useProjection('tokenUsage'|'contextPressure'|
+     * 'contextBreakdown')`) works verbatim in Cairn. Cairn synthesises the dsh
+     * token-meter view shapes from its own live usage — the plugin needs no
+     * Cairn-specific code. Returns undefined for keys Cairn doesn't model.
+     */
+    useProjection?: (key: string) => unknown;
   };
   /** A section in the Settings view. */
   "settings.section": Record<string, never>;

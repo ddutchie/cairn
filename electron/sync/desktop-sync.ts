@@ -220,21 +220,29 @@ function getSourceWorkspaceId(db: Database.Database): string {
 // ── sync-folder persistence (in sync_state) ─────────────────────────────────
 
 const FOLDER_KEY = "sync_folder_path";
+const syncFolderCache = new WeakMap<Database.Database, string | null>();
 
 export function getSyncFolder(db: Database.Database): string | null {
+  if (syncFolderCache.has(db)) {
+    return syncFolderCache.get(db) ?? null;
+  }
   const row = db.prepare("SELECT value FROM sync_state WHERE key = ?").get(FOLDER_KEY) as
     | { value: string }
     | undefined;
-  return row?.value ?? null;
+  const val = row?.value ?? null;
+  syncFolderCache.set(db, val);
+  return val;
 }
 
 export function setSyncFolder(db: Database.Database, folderPath: string): void {
+  syncFolderCache.set(db, folderPath);
   db.prepare(
     "INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(FOLDER_KEY, folderPath);
 }
 
 export function clearSyncFolder(db: Database.Database): void {
+  syncFolderCache.set(db, null);
   db.prepare("DELETE FROM sync_state WHERE key = ?").run(FOLDER_KEY);
 }
 

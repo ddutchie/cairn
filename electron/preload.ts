@@ -1494,13 +1494,16 @@ const api = {
     list: () => invoke<{
       devEnabled: boolean;
       root: string;
-      plugins: Array<{ id: string; kind: "ui" | "backend" | "both"; name: string | null; ui: string | null; disabled: boolean }>;
+      plugins: Array<{ id: string; kind: "ui" | "backend" | "both"; name: string | null; ui: string | null; source: string | null; disabled: boolean }>;
     }>("plugins:list"),
     setEnabled: (id: string, enabled: boolean) => invoke<{ ok: boolean }>("plugins:setEnabled", { id, enabled }),
     openFolder: () => invoke<{ ok: boolean }>("plugins:openFolder"),
     /** Install from a spec (github:owner/repo | owner/repo | local path). Dev-gated. */
     install: (spec: string) =>
       invoke<{ id: string; name: string | null; ui: string | null; kind: "ui" | "backend" | "both" }>("plugins:install", { spec }),
+    /** Update an installed plugin by re-running its recorded source spec. Dev-gated. */
+    update: (id: string) =>
+      invoke<{ id: string; name: string | null; ui: string | null; kind: "ui" | "backend" | "both" }>("plugins:update", { id }),
     uninstall: (id: string) => invoke<{ ok: boolean }>("plugins:uninstall", { id }),
   }
 } as const;

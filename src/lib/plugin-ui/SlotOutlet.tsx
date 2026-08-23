@@ -88,13 +88,60 @@ function StatusBarInner({ props }: { props: SlotProps["app.statusbar"] }) {
  * widgets. Renders nothing (and adds no spacing) when no plugin has registered,
  * so the composer sits flush by default; when populated it gets a small gap
  * above the input.
+ *
+ * Cairn ⇄ dsh remap: a purely dsh-native client plugin reads its data through
+ * `useProjection('tokenUsage'|'contextPressure'|'contextBreakdown')` (the dsh
+ * token-meter contract). Cairn synthesises those exact view shapes from its own
+ * live `usage` and passes `useProjection` down, so the plugin needs zero
+ * Cairn-specific code — the remap lives entirely on Cairn's side.
  */
 export function ChatFooterSlot(props: SlotProps["chat.transcript.footer"]) {
   const entries = useSlotEntries("chat.transcript.footer");
+  const useProjection = React.useMemo(() => makeUseProjection(props.usage), [props.usage]);
   if (entries.length === 0) return null;
   return (
     <div data-chat-footer className="mb-2 flex flex-col gap-1">
-      <SlotOutlet name="chat.transcript.footer" props={props} />
+      <SlotOutlet name="chat.transcript.footer" props={{ ...props, useProjection }} />
     </div>
   );
+}
+
+/**
+ * Build a dsh `useProjection(key)` from Cairn's own usage, returning the dsh
+ * token-meter view shapes (dsh-v0.1.1-rc.2 packages/llm/token-meter):
+ *   tokenUsage      → { uncachedInputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }
+ *   contextPressure → { contextWindow?, pressureTokens?, projectedTokens? }
+ *   contextBreakdown→ { systemTokens, toolsTokens, messageTokens }
+ * Any other key returns undefined (Cairn doesn't model it).
+ */
+function makeUseProjection(usage: SlotProps["chat.transcript.footer"]["usage"]): (key: string) => unknown {
+  return (key: string) => {
+    if (!usage) return undefined;
+    const cacheRead = usage.cacheReadTokens ?? 0;
+    if (key === "tokenUsage") {
+      return {
+        uncachedInputTokens: Math.max(0, (usage.promptTokens ?? 0) - cacheRead),
+        outputTokens: usage.completionTokens ?? 0,
+        cacheReadTokens: cacheRead,
+        cacheWriteTokens: usage.cacheCreationTokens ?? 0,
+      };
+    }
+    if (key === "contextPressure") {
+      const contextWindow = usage.contextWindow ?? usage.contextLimit;
+      return {
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
+        pressureTokens: usage.promptTokens ?? 0,
+      };
+    }
+    if (key === "contextBreakdown") {
+      const b = usage.breakdown;
+      if (!b) return undefined;
+      return {
+        systemTokens: b.systemPrompt ?? 0,
+        toolsTokens: b.tools ?? 0,
+        messageTokens: b.conversation ?? 0,
+      };
+    }
+    return undefined;
+  };
 }

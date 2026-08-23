@@ -264,16 +264,43 @@ export async function installPlugin(rawSpec: string): Promise<InstallResult> {
   linkAppDependencies(destDir, id);
 
   // Upsert the manifest row (replace an existing entry with the same id).
-  const rows = readRows(root).filter((r) => r.id !== id);
+  // `source` records the original spec so the row can be UPDATED later
+  // (re-fetch github / re-copy local) without the user re-typing it. An
+  // existing row's `disabled` state is preserved across a reinstall/update.
+  const allRows = readRows(root);
+  const prior = allRows.find((r) => r.id === id);
+  const rows = allRows.filter((r) => r.id !== id);
   const row: Record<string, unknown> = { id };
   if (name) row.name = name;
   if (ui) row.ui = ui;
+  row.source = rawSpec.trim();
+  if (prior?.disabled === true) row.disabled = true;
   rows.push(row);
   writeRows(root, rows);
 
   const kind: InstallResult["kind"] = name && ui ? "both" : ui ? "ui" : "backend";
   return { id, name, ui, kind };
 }
+
+/**
+ * Update an installed plugin by re-running its original install spec: a github
+ * plugin re-fetches the latest tarball for its ref (default branch when none),
+ * a local plugin re-copies from its source directory. The row's `source` is the
+ * spec captured at install time. Throws when the id is unknown or was added by
+ * hand (no recorded source to update from).
+ */
+export async function updatePlugin(id: string): Promise<InstallResult> {
+  const root = getPluginsRoot();
+  if (!root) throw new Error("no plugins directory configured");
+  const existing = readRows(root).find((r) => r.id === id);
+  if (!existing) throw new Error(`plugin "${id}" is not installed`);
+  const source = typeof existing.source === "string" ? existing.source : undefined;
+  if (!source) {
+    throw new Error(`plugin "${id}" has no recorded source to update from (add it via Install to enable updates)`);
+  }
+  return installPlugin(source);
+}
+
 
 /** Uninstall: remove the manifest row and its extracted files. */
 export function uninstallPlugin(id: string): void {

@@ -117,9 +117,44 @@ via `agent-preset/selected`). The dsh-native future here is NEW functionality:
 author named in-engine agent compositions as preset directories (model, tool
 set, prompt sections) selectable per coding session. Tracked as a future
 feature; no migration path from the CLI-launcher store.
-   commands (`useRegistryCommands()` loads them via `cordis:listCommands`) and
-   merges them above built-ins/custom (precedence: custom > registry >
-   built-in). Send intercepts in chat + agent panes execute any `/name` that
-   matches a registry command through `cordis:executeCommand`; pure
-   prompt-inserters stay renderer-side. User-defined/community commands remain
-   SQLite rows (prompt inserters) — a future registry re-home is optional.
+
+---
+
+## 5. Client-plugin packaging
+
+### dsh's model
+A **client (UI) plugin** is an npm package whose `package.json` declares a
+`dsh.client` block (`platform: "web"`, optional `inject`, `immediately`) and an
+`exports["./client"]` pointing at a **flat** built bundle `./lib/client.js`, with
+`types` conditions resolving to real files under `lib/types/**`. dsh's
+`@deepseek-ai/dsh-client-modules` loader (`scratch/dsh-repo/packages/client/modules/src/index.ts`)
+reads the raw `package.json` by exact path, serves the bundle at
+`/plugins/<id>/client.js`, and the bundle registers itself via
+`window.__ModuleLoader__.load({ id, factory })` (`id` == package name). dsh's own
+build (`packages/client/tsdown.client.ts`) is the canonical shape.
+
+### Cairn today (permissive superset)
+- **Installer** (`electron/cordis/plugin-installer.ts`) resolves
+  `exports["./client"].default`/`.import`, checks the file **exists**, writes a
+  `plugins.yml` row. It never reads `types`, and accepts a `lib/client/index.js`
+  subdir as readily as flat `lib/client.js`.
+- **Renderer loader** (`src/lib/plugin-ui/loader.ts` + `api.ts`) evaluates the CJS
+  body and accepts **either** `activate(ui)` (Cairn-native) **or** `apply(ctx)`
+  (dsh-client). Cairn provides only a `ctx.slots` shim; other dsh-client-* injects
+  are `KNOWN_UNPROVIDED` no-ops.
+- Net: a package can **load in Cairn while being invalid for a real dsh shell** —
+  and did (`dsh-context-ring`, see `docs/context-ring-plugin-load-investigation.md`).
+
+### Migration direction
+1. **Author community plugins to the canonical dsh shape** (tsdown build → flat
+   `lib/client.js` + `lib/types/**` declarations) so one artifact runs in both dsh
+   and Cairn. This is the north-star: Cairn is a *host*, not a fork of the packaging
+   contract.
+2. **Add a conformance gate on install** — a `publint`-style check + a warning when
+   `exports["./client"]` deviates from `lib/client.js` or any `types` condition
+   dangles. This makes Cairn surface the exact error a dsh shell would, instead of
+   silently masking packaging drift.
+3. **Narrow the `apply(ctx)` fallback surface** — the Cairn-only
+   `ctx.registerChatFooter` escape hatch let a plugin render in Cairn without ever
+   exercising its dsh `ctx.slots` path. Prefer routing dsh-client plugins purely
+   through the `slots` shim so "renders in Cairn" ⇒ "renders in dsh".

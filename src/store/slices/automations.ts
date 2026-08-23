@@ -153,7 +153,7 @@ export interface AutomationsSlice {
 // Module-level poller so only one interval runs regardless of how many times the
 // slice is instantiated / mounted.
 let approvalPollTimer: ReturnType<typeof setInterval> | null = null;
-const APPROVAL_POLL_MS = 3_000;
+const APPROVAL_POLL_MS = 15_000;
 
 export const createAutomationsSlice: StateCreator<CairnStore, [], [], AutomationsSlice> = (
   set,
@@ -304,6 +304,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
 
   startRunCountPolling() {
     if (approvalPollTimer) return;
+    void get().fetchRunningCount();
     approvalPollTimer = setInterval(() => {
       void get().fetchRunningCount();
     }, APPROVAL_POLL_MS);

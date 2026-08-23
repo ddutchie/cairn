@@ -70,6 +70,38 @@ the installed `@deepseek-ai/*` versions).
 These are web-shell/dsh-host features (an Electron agent doesn't have a browser
 shell, a settings UI, or a remote client). They are expected gaps, not regressions.
 
+## Client (UI) plugin packaging conformance
+
+Service coverage (above) is only half the story: a **client** plugin also has to be
+**packaged** the way dsh's client-module loader (`@deepseek-ai/dsh-client-modules`,
+`scratch/dsh-repo/packages/client/modules/src/index.ts`) expects. dsh resolves by
+exact string path from the **raw** `package.json` (no Node conditions resolver);
+Cairn's installer + renderer loader are far more permissive. A package can therefore
+**pass in Cairn yet be invalid for a real dsh shell**. Conformance checklist:
+
+| Requirement | dsh loader | Cairn loader | Notes |
+|---|---|---|---|
+| `dsh.client.platform: "web"` | required (else silently skipped, index.ts:447) | ignored | — |
+| `dsh.client.inject` = fiber edges into client graph | real edges; unresolved ⇒ fiber stalls | `KNOWN_UNPROVIDED` dsh-client-* ⇒ no-op | Cairn only provides `slots` shim |
+| `exports["./client"]` present | required — else throw `declares dsh.client but exports no "./client" bundle` (index.ts:453) | required (else no `ui:` row) | — |
+| `exports["./client"]` canonical target = **flat `./lib/client.js`** | resolves `{default}` incl. subdir, but off-convention is brittle | resolves `.default`/`.import`, checks file exists | see investigation §3 |
+| client bundle body = `window.__ModuleLoader__.load({id, factory})`, `id` == package name | required (`system.ts` 78/107/119) | CommonJS fallback also accepted | dual-target bundle OK |
+| `types` / all `exports.*.types` resolve to real files | not read at runtime, **but breaks `tsc`/`publint`/peer builds** → blocks the built artifact dsh serves | not read at all | **the trap** — dangling `./lib/types/**` |
+| slot names target declared dsh slots | required (`slot "x" is not declared` throw) | resolved through dsh⇄Cairn alias map | — |
+
+**Failure mode observed (`dsh-context-ring`, 2026-08-22):** package templated from a
+tsdown-built dsh plugin but built with `tsc` (flat `.d.ts`), so every `types`
+condition dangled at `./lib/types/**` and `./client` pointed at a `lib/client/index.js`
+subdir. **Loads/renders in Cairn** (installer checks file existence; renderer accepts
+`apply` and the plugin has a `registerChatFooter` fallback), **broken for dsh** at the
+build/type + inject-closure layer. Full write-up:
+**`docs/context-ring-plugin-load-investigation.md`**.
+
+**Recommended Cairn hardening:** run a `publint`-style conformance check on install
+and warn when `exports["./client"]` deviates from `lib/client.js`, so a malformed
+community package surfaces the same error a dsh shell would — closing the
+"works in Cairn, breaks in dsh" gap.
+
 ## Verdict
 
 - **Most agent-oriented plugins work unmodified.** The core user/agent seams

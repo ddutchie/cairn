@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import * as React from "react";
-import { AppOverlayLayer, AppStatusBar, SlotOutlet } from "./SlotOutlet";import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "./api";
+import { AppOverlayLayer, AppStatusBar, SlotOutlet, ChatFooterSlot } from "./SlotOutlet";import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "./api";
 import { SLOT_MATRIX, ALL_SLOTS } from "./slot-matrix";
 import { resolveSlotName, DSH_SLOT_ALIAS, dshCompatSummary } from "./dsh-slot-map";
 
@@ -164,5 +164,35 @@ describe("plugin-ui slot system", () => {
     render(<SlotOutlet name="chat.transcript.footer" props={footerProps} />);
     // The plugin received Cairn's live usage as props.
     expect(screen.getByTestId("cost").textContent).toBe("1200|0.0042");
+  });
+
+  it("provides a dsh useProjection() to footer widgets, remapped from Cairn usage", () => {
+    // A purely dsh-native widget reads token-meter projections via useProjection;
+    // Cairn's ChatFooterSlot synthesises those view shapes from its own usage.
+    const widget: UIPluginModule = {
+      activate(ui) {
+        const W = (p: { useProjection?: (k: string) => unknown }) => {
+          const tu = (p.useProjection?.("tokenUsage") ?? {}) as { uncachedInputTokens?: number; outputTokens?: number };
+          const cp = (p.useProjection?.("contextPressure") ?? {}) as { pressureTokens?: number; contextWindow?: number };
+          const cb = (p.useProjection?.("contextBreakdown") ?? {}) as { systemTokens?: number; toolsTokens?: number; messageTokens?: number };
+          return ui.React.createElement("div", { "data-testid": "proj" },
+            `${cp.pressureTokens}/${cp.contextWindow}|in${tu.uncachedInputTokens}|out${tu.outputTokens}|${cb.systemTokens}-${cb.toolsTokens}-${cb.messageTokens}`);
+        };
+        ui.registerChatFooter("proj", W as never);
+      },
+    };
+    act(() => activateUIPlugin("proj", widget));
+    render(<ChatFooterSlot
+      threadId="t1"
+      usage={{
+        promptTokens: 7000,
+        completionTokens: 200,
+        cacheReadTokens: 1000,
+        contextWindow: 1000000,
+        breakdown: { systemPrompt: 300, skills: 0, tools: 5000, conversation: 700, toolOutputs: 0, rules: 0, mcp: 0, subagentDefinitions: 0 },
+      }}
+    />);
+    // pressure=promptTokens; contextWindow passthrough; uncachedInput=prompt-cacheRead; breakdown remapped.
+    expect(screen.getByTestId("proj").textContent).toBe("7000/1000000|in6000|out200|300-5000-700");
   });
 });
