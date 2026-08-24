@@ -13,6 +13,7 @@
 
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "path";
+import { bindChatPopoutSession, type ChatPopoutPayload } from "../shared/agent/chat-popout";
 
 const isDev = !app.isPackaged;
 
@@ -23,7 +24,7 @@ const isDev = !app.isPackaged;
 const chatParticipants = new Set<number>();
 
 /** Session identity sent from the main window, pending delivery to the pop-out. */
-let pendingChatSession: { sessionId: string; activeProjectId: string | null } | null = null;
+let pendingChatSession: ChatPopoutPayload | null = null;
 
 let popoutWindow: BrowserWindow | null = null;
 
@@ -122,7 +123,9 @@ export function broadcastToChat(channel: string, payload: unknown, excludeId?: n
 
 export function registerChatPopoutHandlers(): void {
   // Main window requests a pop-out: stores state, creates pop-out window
-  ipcMain.handle("chat:popOut", (event, payload: { sessionId: string; activeProjectId: string | null }) => {
+  ipcMain.handle("chat:popOut", (event, rawPayload: unknown) => {
+    const payload = bindChatPopoutSession(rawPayload);
+    if (!payload) return { data: { ok: false } };
     mainWindowWebContentsId = event.sender.id;
     chatParticipants.add(event.sender.id);
     pendingChatSession = payload;
@@ -133,12 +136,12 @@ export function registerChatPopoutHandlers(): void {
   // Pop-out page signals it is ready — register as participant, return stored state
   ipcMain.handle("chat:popoutReady", (event) => {
     if (event.sender.id !== popoutWindow?.webContents.id) {
-      return { data: { sessionId: "", activeProjectId: null } };
+      return { data: { sessionId: "", activeProjectId: null, profile: "chat" as const } };
     }
     chatParticipants.add(event.sender.id);
     const session = pendingChatSession;
     pendingChatSession = null;
-    return { data: session ?? { sessionId: "", activeProjectId: null } };
+    return { data: session ?? { sessionId: "", activeProjectId: null, profile: "chat" as const } };
   });
 
   // Main window requests the pop-out to come back (clicked placeholder button)

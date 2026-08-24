@@ -8,13 +8,14 @@ import { bindChatPopoutSession } from "../../../shared/agent/chat-popout";
 export default function ChatPopoutPage() {
   const [ready, setReady] = useState(false);
 
-  const [session, setSession] = useState<{ sessionId: string; activeProjectId: string | null } | null>(null);
+  const [session, setSession] = useState<ReturnType<typeof bindChatPopoutSession>>(null);
 
   useEffect(() => {
     async function init() {
       if (window.electron?.chat.popoutReady) {
         const handedOff = await window.electron.chat.popoutReady();
-        setSession(bindChatPopoutSession(handedOff));
+        const bound = bindChatPopoutSession(handedOff);
+        setSession(bound);
         // Load workspace/config context only. The popout transcript is loaded
         // by SessionPopoutView from the canonical session surface; do not run
         // the cold chat hydration path here.
@@ -24,7 +25,7 @@ export default function ChatPopoutPage() {
           const currentAiConfig = useCairnStore.getState().aiConfig;
           useCairnStore.setState({ aiConfig: { ...currentAiConfig, ...savedAiConfig } });
         }
-        useCairnStore.setState({ activeProjectId: handedOff.activeProjectId });
+        if (bound) useCairnStore.setState({ activeProjectId: bound.activeProjectId });
       }
 
       setReady(true);
@@ -48,7 +49,7 @@ export default function ChatPopoutPage() {
 
   return (
     <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
-      {ready && session && <SessionPopoutView sessionId={session.sessionId} activeProjectId={session.activeProjectId} onPopIn={handlePopIn} />}
+      {ready && session && <SessionPopoutView {...session} onPopIn={handlePopIn} />}
     </main>
   );
 }

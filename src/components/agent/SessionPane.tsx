@@ -157,12 +157,14 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     prevChatOpenRef.current = chatOpen;
   }, [activeView, chatOpen, setActiveSession]);
 
-  // ── Pop-out chat ────────────────────────────────────────────────────────────────
+  // ── Pop-out session ─────────────────────────────────────────────────────────────
   const handlePopOut = useCallback(async () => {
     const state = useCairnStore.getState();
-    const threadId = state.activeChatThreadId;
-    if (!threadId) return;
-    const result = await window.electron?.chat.popOut({ sessionId: chatSessionId(threadId), activeProjectId: state.activeProjectId });
+    const isChat = state.activeSessionId === "chat";
+    const coding = state.terminalSessions.find((session) => (session.sessionId === state.activeSessionId || state.activeSessionId === "agent" && session.sessionId === state.activeCodingSessionId) && session.sessionType === "coding");
+    const sessionId = isChat ? (state.activeChatThreadId ? chatSessionId(state.activeChatThreadId) : null) : coding?.sessionId;
+    if (!sessionId) return;
+    const result = await window.electron?.chat.popOut({ sessionId, activeProjectId: state.activeProjectId, profile: isChat ? "chat" : "coding" });
     if (result?.ok) {
       setChatPoppedOut(true);
     }
@@ -276,8 +278,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
         {/* Header Actions */}
         <div className="flex items-center h-full">
-          {activeSessionId === "chat" && !chatPoppedOut && (
-            <Tooltip content="Pop out chat window" side="bottom">
+          {(activeSessionId === "chat" || activeSessionId === "agent" || persistentSession?.sessionId === activeSessionId) && !chatPoppedOut && (
+            <Tooltip content="Pop out session window" side="bottom">
               <button
                 onClick={handlePopOut}
                 className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
@@ -324,7 +326,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           {chatPoppedOut ? (
             <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center px-6">
               <ExternalLink size={20} className="text-[var(--text-tertiary)]" />
-              <p className="text-xs text-[var(--text-secondary)]">Chat is in a pop-out window</p>
+              <p className="text-xs text-[var(--text-secondary)]">Session is in a pop-out window</p>
               <button
                 onClick={handlePopIn}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[0.714rem] text-[var(--text-primary)] bg-[var(--surface-3)] hover:bg-[var(--surface-4)] transition-colors"
@@ -341,7 +343,13 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
         {hasCodeDirectory && (
           persistentSession ? (
             <div className={pinnedIsActive ? "flex flex-col flex-1 min-h-0 overflow-hidden" : "hidden"}>
-              <AgentChatPane session={persistentSession} isActive={pinnedIsActive} />
+              {chatPoppedOut && (persistentSession.sessionId === activeSessionId || activeSessionId === "agent") ? (
+                <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center px-6">
+                  <ExternalLink size={20} className="text-[var(--text-tertiary)]" />
+                  <p className="text-xs text-[var(--text-secondary)]">Session is in a pop-out window</p>
+                  <button onClick={handlePopIn} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[0.714rem] text-[var(--text-primary)] bg-[var(--surface-3)] hover:bg-[var(--surface-4)] transition-colors"><ArrowLeftFromLine size={11} /> Pop in</button>
+                </div>
+              ) : <AgentChatPane session={persistentSession} isActive={pinnedIsActive} />}
             </div>
           ) : pinnedIsActive ? (
             <div className="flex-1 min-h-0 overflow-hidden">
