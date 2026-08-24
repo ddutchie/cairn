@@ -52,8 +52,12 @@ what is still open after the `feat/cordis-runtime` refactor.
 
 **Session-as-truth.** Chat + coding transcripts live ONLY in dsh's JSONL session
 log (`.jsonl.zstd` via zstd, under `<userData>/sessions/`). SQLite `chat_messages`
-/ `pi_agent_messages` are legacy: never written, purged on launch. Replay reads
-the session log (`electron/ipc/chat-session.ts`, `session-replay.ts`).
+/ `pi_agent_messages` / `pi_agent_llm_history` / `approval_items` were the pre-
+Cordis transcript tables; they are **archived to
+`<workspacePath>/.cairn/archive/2.7.7/<table>-<timestamp>.ndjson` and then
+DROPped by migration v49** on every DB (runs once per DB via `PRAGMA
+user_version`; workspace switching cannot defeat it). Replay reads the session
+log (`electron/ipc/chat-session.ts`, `session-replay.ts`).
 
 ---
 

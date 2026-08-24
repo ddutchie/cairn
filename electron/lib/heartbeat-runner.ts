@@ -116,9 +116,10 @@ export function resolveAutomationApproval(callId: string, approved: boolean, gra
 
 /**
  * Decide whether a tool call is auto-allowed by the automation's approval
- * policy, or must be forwarded to the user for approval. Mirrors the builtin
- * makeApprovalGate classification WITHOUT the blocking parkAndWait (the Cordis
- * seam resolves via resolve({approved}) instead of the DB approval inbox).
+ * policy, or must be forwarded to the user for approval. The Cordis seam
+ * resolves via resolve({approved}) — no DB approval inbox behind it (the
+ * inbox and its makeApprovalGate/parkAndWait mechanics were retired with
+ * the pre-Cordis loop).
  *   - read tools + standing rules → allow
  *   - 'ask' mode → gate every write (forward)
  *   - 'auto' mode → only forward external MCP/service calls when connector-aware
@@ -378,12 +379,13 @@ export async function runAutomation(
   // (MCP servers / custom services) and offer them to the loop as extraTools.
   // getExternalToolDefs filters to enabled + project/global-attached connectors,
   // so a missing/attached-only requirement simply contributes no tools and the
-  // agent works with what's actually in scope. External calls stay gated behind
-  // the approval inbox by makeApprovalGate (never auto-approved side effects).
+  // agent works with what's actually in scope. External calls stay gated by
+  // the Cordis approval waterfall (shouldAutoAllowAutomationTool below +
+  // cairnApprovalPlugin) — never auto-approved side effects.
   // A connector-load failure is NOT degraded away: the recipe declared these
   // connectors as required, so a run that can't assemble their tools is failed
   // up front rather than silently continuing with built-in tools only.
-  // The cast mirrors chat.ts/pi-agent-loop: external defs are OpenAIToolDef[]
+  // The cast mirrors chat.ts's shape: external defs are OpenAIToolDef[]
   // (open tool-name strings), the loop's extraTools slot is the typed TOOLS.
   let _extraTools: typeof TOOLS | undefined;
   if ((automation.requires ?? []).length > 0) {
@@ -570,8 +572,8 @@ export async function runAutomation(
 
   // Plugin confirmation seam for this run (audit §5 C #9): bind the headless
   // transport so ctx.cairn.confirm during automation turns routes plugin asks
-  // into the SAME approval inbox + pending map native asks use. Unbound after
-  // the run settles.
+  // through the SAME pending-approval map + auto-allow classifier that native
+  // asks use. Unbound after the run settles.
   const { createHeadlessConfirmTransport, setConfirmTransport } = await import("../cordis/approval-transports");
   setConfirmTransport(run.id, createHeadlessConfirmTransport({
     emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
@@ -592,7 +594,8 @@ export async function runAutomation(
     llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
     mode: "execute",
     sandboxMode: "workspace-write",
-    // Ask mode gates writes (parked in the approval inbox via makeApprovalGate).
+    // Ask mode gates writes through the Cordis approval waterfall (native
+    // asks + shouldAutoAllowAutomationTool below); Auto skips the gate.
     autoApprove: automation.approvalMode !== "ask",
     signal: abortCtrl.signal,
     send: loopSend,

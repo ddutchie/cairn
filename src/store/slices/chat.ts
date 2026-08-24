@@ -96,10 +96,13 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       return;
     }
 
-    // Pull messages for every thread in parallel — dsh session is the source of truth
-    // (JsonlSessionPersistence `chat-<threadId>`), not the duplicated `chat_messages` SQLite
-    // table (cairnSessionPlugin + useChatStream double-write). Falls back to SQLite for
-    // legacy threads that have no session yet (pre-dsh).
+    // Pull messages for every thread in parallel — dsh's JSONL session log
+    // (JsonlSessionPersistence, stable id `chat-<threadId>`) is the sole
+    // source of truth. The pre-Cordis `chat_messages` SQLite table was
+    // dropped in migration v49; there is no SQLite fallback. A thread that
+    // has no session log yet (a brand-new thread whose first turn hasn't
+    // been persisted) simply renders empty until the first assistant reply
+    // is written — expected behaviour, not a fallback.
     const usageByThreadId = new Map<string, unknown>();
     const messageLists = await Promise.all(
       dbThreads.map(async (t) => {

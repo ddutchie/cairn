@@ -6,8 +6,10 @@
  * user resolves it (approve/deny). In 'auto' mode (default) nothing is gated.
  * Read-only tools are never gated — they cannot change state.
  *
- * This module is deliberately light (only depends on approval-queries + mcp/db)
- * so the policy is unit-testable without pulling in the agent loop.
+ * This module is deliberately light (no dependencies on the agent loop or
+ * approval inbox — those were retired) so the policy is unit-testable in
+ * isolation. Consumed by heartbeat-runner (auto-allow / auto-deny decision)
+ * and the automation-manifest sync path (sanitizeStandingRules on ingest).
  */
 
 import type Database from "better-sqlite3";
