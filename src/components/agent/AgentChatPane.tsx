@@ -39,6 +39,7 @@ import { toConversationMessage } from "@/components/conversation/conversation-me
 import { ConversationHeader } from "@/components/conversation/ConversationHeader";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
+import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -97,7 +98,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const finaliseAgentMessage        = useCairnStore((s) => s.finaliseAgentMessage);
   const addAgentToolCall             = useCairnStore((s) => s.addAgentToolCall);
   const clearAgentMessages          = useCairnStore((s) => s.clearAgentMessages);
-  const ensureAgentStreamingMessage = useCairnStore((s) => s.ensureAgentStreamingMessage);
   const updateAgentUsage            = useCairnStore((s) => s.updateAgentUsage);
   const updateAgentSubagentUsage    = useCairnStore((s) => s.updateAgentSubagentUsage);
   const updateAgentToolCall         = useCairnStore((s) => s.updateAgentToolCall);
@@ -309,96 +309,40 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const { sessionId } = session;
 
-    const unsubToken = electron.session.onToken((e) => {
-      if (e.sessionId !== sessionId) return;
-      appendAgentToken(sessionId, e.delta);
-    });
-
-    const unsubThought = electron.session.onThought?.((e) => {
-      if (e.sessionId !== sessionId) return;
-      appendAgentThought(sessionId, e.delta);
-    });
-
-    const unsubUsage = electron.session.onUsage((e) => {
-      if (e.sessionId === sessionId) {
-        // Parent step — update the parent ring
-        updateAgentUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
-      }
-      // Subagent usage arrives on the chat:subagent-usage bus below, keyed by
-      // parentSession — the old prefix-scheme (`sessionId:sub:*`) was never
-      // emitted by anything on the electron side.
-    });
-
-    const unsubToolsReady = electron.session.onToolsReady((e) => {
-      if (e.sessionId === sessionId) {
-        ensureAgentStreamingMessage(sessionId);
-      }
-    });
-
-    // callId set: tracks in-flight callIds so we can clean up on end.
-    // Keyed by callId (not tool name) so parallel calls to the same tool work correctly.
-    const activeCallIds = new Set<string>();
-
-    const unsubTool = electron.session.onTool((e) => {
-      if (e.sessionId !== sessionId) return;
-      if (e.status === "pending") {
-        // Chip created during SSE streaming — appears immediately with tool name as label.
-        // flushSync ensures React commits this before the stream continues.
-        const callId = e.callId ?? `${e.name}:${Date.now()}`;
-        activeCallIds.add(callId);
-          addAgentToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
-      } else if (e.status === "start") {
-        // Execution starting — update the existing pending chip with the resolved label.
-        const callId = e.callId ?? `${e.name}:${Date.now()}`;
-        activeCallIds.add(callId);
-          addAgentToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
-      } else if (e.status === "end") {
-        const callId = e.callId ?? `${e.name}:unknown`;
-        activeCallIds.delete(callId);
-        updateAgentToolCall(sessionId, callId, {
-           label:    e.label,
-           args:     e.args,
-          running:  false,
-          ok:       e.ok ?? true,
-          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : redactAgentToolCall({ output: e.output }).output,
-          cairnRef: extractCairnRef(e.name, e.output),
+    const fold = createSessionEventFold({
+      onTurnStart: () => {
+        setIsLoading(true);
+        finaliseAgentMessage(sessionId);
+      },
+      onText: (delta) => appendAgentToken(sessionId, delta),
+      onReasoning: (delta) => appendAgentThought(sessionId, delta),
+      onUsage: (u) => updateAgentUsage(sessionId, u.promptTokens, u.completionTokens, u.reasoningTokens, u.breakdown as TokenBreakdown | undefined, u.cacheReadTokens, u.cacheCreationTokens),
+      onToolCall: (call) => addAgentToolCall(sessionId, { callId: call.callId ?? `${call.name}:${Date.now()}`, name: call.name, label: call.name, args: call.args, running: true, ok: true }),
+      onToolResult: (result) => {
+        if (!result.callId) return;
+        updateAgentToolCall(sessionId, result.callId, {
+          label: result.name,
+          args: result.args,
+          running: false,
+          ok: result.ok,
+          output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output,
+          cairnRef: extractCairnRef(result.name, result.output),
         });
-      } else {
-        console.warn("[AgentChatPane] unhandled pi-agent:tool status:", e.status, e);
-      }
+      },
+      onTurnEnd: (reason) => {
+        finaliseAgentMessage(sessionId);
+        setIsLoading(false);
+        setRetryInfo(null);
+        setIsCompacting(false);
+        setPendingQuestions(null);
+        setPendingQuestionCallId(null);
+        if (reason && reason !== "completed" && reason !== "aborted") {
+          addAgentMessage(sessionId, { id: id(), role: "error", content: `Agent turn ended abnormally (${reason})`, timestamp: new Date().toISOString() });
+        }
+      },
     });
-
-    const unsubStep = electron.session.onStep((e) => {
-      if (e.sessionId !== sessionId) return;
-      // Finalise the previous turn's assistant message so the next turn's
-      // tokens appear in a separate bubble.
-      finaliseAgentMessage(sessionId);
-    });
-
-    const unsubDone = electron.session.onDone((e) => {
-      if (e.sessionId !== sessionId) return;
-      finaliseAgentMessage(sessionId);
-      setIsLoading(false);
-      setRetryInfo(null);
-      setIsCompacting(false);
-      setPendingQuestions(null);
-      setPendingQuestionCallId(null);
-    });
-
-    const unsubError = electron.session.onError((e) => {
-      if (e.sessionId !== sessionId) return;
-      finaliseAgentMessage(sessionId);
-      setRetryInfo(null);
-      setIsCompacting(false);
-      setPendingQuestions(null);
-      setPendingQuestionCallId(null);
-      addAgentMessage(sessionId, {
-        id:        id(),
-        role:      "error",
-        content:   e.error,
-        timestamp: new Date().toISOString(),
-      });
-      setIsLoading(false);
+    const unsubEvent = electron.session.onEvent((e) => {
+      if (e.sessionId === sessionId) fold(e.event);
     });
 
     // ── Subagent events ────────────────────────────────────────────────────
@@ -592,15 +536,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     return () => {
-      unsubToken();
-      unsubThought?.();
-      unsubUsage();
-      unsubToolsReady();
-      unsubTool();
-      unsubStep();
-      unsubDone();
-      unsubError();
-      unsubToolConfirmExpired?.();
+      unsubEvent();
       unsubSubToken?.();
       unsubSubThought?.();
       unsubSubToolCall?.();

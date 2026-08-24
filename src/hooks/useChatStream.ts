@@ -20,6 +20,7 @@ import { useState, useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
 import type { SuggestedAction, TokenBreakdown, ChatHistoryEntry, ChatSubagent } from "@/types";
 import { redactSensitiveText, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
+import { createSessionEventFold } from "../../shared/agent/session-event-fold";
 
 export interface ChatToolCall {
   tool: string;
@@ -162,6 +163,9 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   const pendingActionsRef = useRef<SuggestedAction[]>([]);
   // Subagent traces for the current turn (parallel ref so onDone can persist them).
   const subagentsRef = useRef<ChatSubagent[]>([]);
+  const streamedTextRef = useRef("");
+  const streamedThoughtRef = useRef("");
+  const assistantMessageRef = useRef<{ text: string; reasoning: string; contextRefs?: unknown[]; usage?: { promptTokens: number; completionTokens: number; reasoningTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: TokenBreakdown; costUsd?: number } }>({ text: "", reasoning: "" });
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
 
@@ -185,74 +189,61 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     const isForThisThread = (e: { sessionId?: string; threadId?: string }) =>
       e.sessionId == null || e.sessionId === (threadIdRef.current ? `chat-${threadIdRef.current}` : undefined);
 
-    const unsubTool = electron.session.onTool((e) => {
-      if (!isForThisThread(e)) return;
-       if (e.name === "ask_questions") {
-         const qs = (e.args?.questions as PendingQuestion[] | undefined) ?? [];
-        // Store under the thread these questions arrived for, so the form only
-        // renders in that thread (not whichever thread is active later) and a
-        // second thread's questions don't clobber this one's.
-         const forThread = e.sessionId?.startsWith("chat-") ? e.sessionId.slice(5) : threadIdRef.current;
-        if (forThread) {
-          setPendingQuestionsByThread((prev) => ({ ...prev, [forThread]: qs }));
-          setPendingQuestionCallIdByThread((prev) => ({ ...prev, [forThread]: e.callId }));
+    const fold = createSessionEventFold({
+      onTurnStart: () => setIsLoading(true),
+      onText: (delta) => { streamedTextRef.current += delta; setStreamingContent((prev) => prev + delta); },
+      onReasoning: (delta) => { streamedThoughtRef.current += delta; setStreamingThought((prev) => prev + delta); },
+      onUsage: (u) => { if (threadIdRef.current) setThreadUsage(threadIdRef.current, u as never); },
+      onToolCall: (e) => {
+        if (e.name === "ask_questions") {
+          const qs = (e.args?.questions as PendingQuestion[] | undefined) ?? [];
+          const forThread = threadIdRef.current;
+          if (forThread) {
+            setPendingQuestionsByThread((prev) => ({ ...prev, [forThread]: qs }));
+            setPendingQuestionCallIdByThread((prev) => ({ ...prev, [forThread]: e.callId }));
+          }
+          return;
         }
-      } else {
-         if (e.name === "suggest_connections") {
-           const incoming = (e.args?.actions ?? []) as SuggestedAction[];
-          pendingActionsRef.current = incoming;
-        }
-        // Mark the previously-running tool as done, add the new one as running.
+        if (e.name === "suggest_connections") pendingActionsRef.current = (e.args?.actions ?? []) as SuggestedAction[];
         setToolCalls((prev) => {
-          const updated = prev.map((tc) =>
-            tc.status === "running" ? { ...tc, status: "done" as const } : tc
-          );
-          const next = [...updated, {
-             tool: e.name,
-            label: e.label,
-            status: "running" as const,
-            callId: e.callId,
-             args: e.args ? JSON.stringify(redactTranscriptValue(e.args)) : undefined
+          const next = [...prev.map((tc) => tc.status === "running" ? { ...tc, status: "done" as const } : tc), {
+            tool: e.name, label: e.name, status: "running" as const, callId: e.callId,
+            args: e.args ? JSON.stringify(redactTranscriptValue(e.args)) : undefined,
           }];
           toolCallsRef.current = next;
           return next;
         });
-      }
-    });
-
-    const unsubToolDone = electron.session.onTool((e) => {
-       if (e.status !== "end") return;
-      if (!isForThisThread(e)) return;
-      setToolCalls((prev) => {
-        let idx = -1;
-        if (e.callId) {
-           idx = prev.findIndex((tc) => tc.callId === e.callId);
+      },
+      onToolResult: (e) => {
+        setToolCalls((prev) => {
+          const idx = e.callId ? prev.findIndex((tc) => tc.callId === e.callId) : -1;
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status: "done", output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : undefined };
+          toolCallsRef.current = updated;
+          return updated;
+        });
+      },
+      onAssistantMessage: (message) => { assistantMessageRef.current = message as typeof assistantMessageRef.current; },
+      onTurnEnd: (reason) => {
+        const tid = threadIdRef.current;
+        const finalToolCalls = toolCallsRef.current.map((tc) => tc.status === "running" ? { ...tc, status: "done" as const } : tc);
+        if (tid) {
+          const final = assistantMessageRef.current;
+          addMessage(tid, "assistant", streamedTextRef.current, final.contextRefs as never, finalToolCalls, pendingActionsRef.current, streamedThoughtRef.current, undefined, subagentsRef.current, undefined, undefined, undefined, undefined);
+          if (final.usage) setThreadUsage(tid, final.usage);
         }
-        if (idx === -1) {
-             const lastIdx = [...prev].reverse().findIndex((tc) => tc.tool === e.name);
-          if (lastIdx !== -1) {
-            idx = prev.length - 1 - lastIdx;
-          }
+        const isWriteTool = (name: string) => !name.startsWith("get_") && !name.startsWith("list_") && !name.startsWith("search_") && name !== "suggest_connections" && name !== "ask_questions";
+        if (finalToolCalls.some((tc) => isWriteTool(tc.tool)) || subagentsRef.current.flatMap((s) => s.toolCalls ?? []).some((tc) => isWriteTool(tc.tool))) {
+          useCairnStore.getState().hydrateFromElectron(true).catch((err) => console.error("[useChatStream] post-write hydrate failed", err));
         }
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        // Mark done here (not just on the NEXT tool-call) so a single/last tool
-        // call stops spinning as soon as it finishes, instead of staying
-        // "running" until the whole turn ends.
-         updated[idx] = { ...updated[idx], status: "done" as const, cairnRef: e.cairnRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error };
-        toolCallsRef.current = updated;
-        return updated;
-      });
+        setStreamingContent(""); setStreamingThought(""); setIsLoading(false); setToolCalls([]); toolCallsRef.current = [];
+        pendingActionsRef.current = []; setSubagents([]); subagentsRef.current = [];
+        if (reason && reason !== "completed" && reason !== "aborted") console.error("[useChatStream] session turn ended:", reason);
+      },
     });
-
-    const unsubToken = electron.session.onToken((e) => {
-      if (!isForThisThread(e)) return;
-      setStreamingContent((prev) => prev + e.delta);
-    });
-
-    const unsubThought = electron.session.onThought?.((e) => {
-      if (!isForThisThread(e)) return;
-      setStreamingThought((prev) => prev + e.delta);
+    const unsubEvent = electron.session.onEvent((e) => {
+      if (isForThisThread(e)) fold(e.event);
     });
 
     const unsubAskQuestions = electron.session.onAskQuestions((e) => {
@@ -261,15 +252,6 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       if (!forThread) return;
       setPendingQuestionsByThread((prev) => ({ ...prev, [forThread]: e.questions as PendingQuestion[] }));
       setPendingQuestionCallIdByThread((prev) => ({ ...prev, [forThread]: e.callId }));
-    });
-
-    const unsubError = electron.session.onError((e) => {
-      if (!isForThisThread(e)) return;
-      setIsLoading(false);
-      setStreamingContent("");
-      setStreamingThought("");
-      setToolCalls([]);
-      toolCallsRef.current = [];
     });
 
     // ── Subagent live trace (subagent mode) ──────────────────────────────────
@@ -338,82 +320,15 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }));
     });
 
-    const unsubDone = (electron.session.onDone as (cb: (e: { sessionId: string; content: string; reasoning?: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string; contextRefs?: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: TokenBreakdown; costUsd?: number } }) => void) => () => void)((e) => {
-      if (!isForThisThread(e)) return;
-      const tid = threadIdRef.current;
-      // Mark any still-running tool as done before persisting.
-      const finalToolCalls = toolCallsRef.current.map((tc) =>
-        tc.status === "running" ? { ...tc, status: "done" as const } : tc
-      );
-      if (tid) {
-        const capturedActions = pendingActionsRef.current;
-        pendingActionsRef.current = [];
-        const finalSubagents = subagentsRef.current.map((s) => ({ ...s, running: false }));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        addMessage(tid, "assistant", e.content, e.contextRefs as any, finalToolCalls, capturedActions, e.reasoning, undefined, finalSubagents, e.reasoningSummary, e.reasoningItems, e.reasoningField, e.reasoningModel);
-        if (e.usage) {
-          setThreadUsage(tid, e.usage);
-        }
-      }
-      setStreamingContent("");
-      setStreamingThought("");
-      setIsLoading(false);
-      setToolCalls([]);
-      toolCallsRef.current = [];
-      pendingActionsRef.current = [];
-      setSubagents([]);
-      subagentsRef.current = [];
-      // Do NOT clear pendingQuestions here — the form must stay visible until
-      // the user submits their answers. It is cleared in sendStream() instead.
-
-      // Force-refresh the store so AI-written changes (notes, tasks, etc.) are
-      // immediately visible. The db:changed event from the chat tool writes is
-      // suppressed by the ownWriteGuard (touched by the chat IPC call), so we
-      // must explicitly re-hydrate here.
-      // Only trigger for tools that actually persist state — exclude read-only
-      // tools (get_*/list_*/search_*) and suggestion-only tools that stage
-      // pendingActionsRef without writing to the DB.
-      const isWriteTool = (name: string) => {
-        if (name.startsWith("get_") || name.startsWith("list_") || name.startsWith("search_")) return false;
-        if (name === "suggest_connections" || name === "ask_questions") return false;
-        return true;
-      };
-      // In subagent mode, writes happen inside the write sub-agent's tool calls,
-      // not the top-level list — check both so the board/notes still refresh.
-      const subagentToolCalls = subagentsRef.current.flatMap((s) => s.toolCalls ?? []);
-      const hasPersistedWrite =
-        finalToolCalls.some((tc) => isWriteTool(tc.tool)) ||
-        subagentToolCalls.some((tc) => isWriteTool(tc.tool));
-      if (hasPersistedWrite) {
-        useCairnStore.getState().hydrateFromElectron(true).catch((err) => {
-          console.error("[useChatStream] post-write hydrate failed", err);
-        });
-      }
-    });
-
-    const unsubUsage = (electron.session.onUsage as (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; threadId?: string }) => void) => () => void)((e) => {
-      if (!isForThisThread(e)) return;
-      const tid = threadIdRef.current;
-      if (tid) {
-        setThreadUsage(tid, e);
-      }
-    });
-
     return () => {
-      unsubTool();
-      unsubToolDone?.();
-      unsubToken();
-      unsubThought?.();
+      unsubEvent();
       unsubAskQuestions();
-      unsubError();
       unsubSub?.();
       unsubSubToken?.();
       unsubSubThought?.();
       unsubSubTool?.();
       unsubSubToolDone?.();
       unsubSubUsage?.();
-      unsubDone();
-      unsubUsage();
     };
   // addMessage and setThreadUsage are stable (Zustand), intentionally omitted from deps
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -423,6 +338,9 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     setIsLoading(true);
     setToolCalls([]);
     toolCallsRef.current = [];
+    streamedTextRef.current = "";
+    streamedThoughtRef.current = "";
+    assistantMessageRef.current = { text: "", reasoning: "" };
     pendingActionsRef.current = [];
     setSubagents([]);
     subagentsRef.current = [];
@@ -444,6 +362,8 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     subagentsRef.current = [];
     setStreamingContent("");
     setStreamingThought("");
+    streamedTextRef.current = "";
+    streamedThoughtRef.current = "";
     // Keep pendingQuestions — user may still want to answer after stopping
   }
 

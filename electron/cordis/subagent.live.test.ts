@@ -19,10 +19,10 @@ function makeDb() {
 
 // Live proof that dsh's subagent capability is mounted (the model can spawn a
 // child agent) and that cairn-subagent maps child session events to Cairn's
-// chat:subagent* IPC. Model delegation varies, so we assert the tool exists and
+// session:subagent* IPC. Model delegation varies, so we assert the tool exists and
 // capture any subagent events fired. Gated on CORDIS_LIVE=1.
 describe.skipIf(process.env.CORDIS_LIVE !== "1")("cairn-subagent (gated on CORDIS_LIVE=1; SKIPPED by default)", () => {
-  it("registers the subagent tool and maps child events to chat:subagent* IPC", async () => {
+  it("registers the subagent tool and maps child events to session:subagent* IPC", async () => {
     const db = makeDb();
     const subagentEvents: string[] = [];
     const tokenByChild = new Map<string, string>();
@@ -42,14 +42,14 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cairn-subagent (gated on CORDI
       sendSubagent: (channel, payload) => {
         subagentEvents.push(channel + ":" + JSON.stringify(payload));
         const p = payload as { childId?: string; delta?: string };
-        if (channel === "chat:subagent-token" && p.childId && p.delta) tokenByChild.set(p.childId, (tokenByChild.get(p.childId) ?? "") + p.delta);
-        if (channel === "chat:subagent-thought" && p.childId && p.delta) thoughtByChild.set(p.childId, (thoughtByChild.get(p.childId) ?? "") + p.delta);
+        if (channel === "session:subagent-token" && p.childId && p.delta) tokenByChild.set(p.childId, (tokenByChild.get(p.childId) ?? "") + p.delta);
+        if (channel === "session:subagent-thought" && p.childId && p.delta) thoughtByChild.set(p.childId, (thoughtByChild.get(p.childId) ?? "") + p.delta);
       },
     });
     console.log("SUBAGENT RESULT:", JSON.stringify(result));
     console.log("SUBAGENT EVENTS:", subagentEvents.join("\n  "));
-    const starts = subagentEvents.filter((e) => e.startsWith("chat:subagent:") && JSON.parse(e.slice(14)).status === "start");
-    const tokens = subagentEvents.filter((e) => e.startsWith("chat:subagent-token:"));
+    const starts = subagentEvents.filter((e) => e.startsWith("session:subagent:") && JSON.parse(e.slice(18)).status === "start");
+    const tokens = subagentEvents.filter((e) => e.startsWith("session:subagent-token:"));
     expect(result.exhausted).toBe(false);
     console.log("   → subagent start events:", starts.length, "token events:", tokens.length);
 

@@ -7,6 +7,7 @@
  */
 
 import { contextBridge, ipcRenderer } from "electron";
+import type { SessionEventEnvelope } from "../shared/agent/session-event";
 
 // Local structural types for the external-tools namespace. The renderer's
 // canonical types live in src/types; electron's rootDir excludes src, so we
@@ -914,7 +915,7 @@ const api = {
     /** Send a prompt to an existing or new session. Fire-and-forget. */
     prompt: (req: unknown) => ipcRenderer.send("session:prompt", req),
     /** Canonical raw DSH session/event stream shared by Chat and Coding. */
-    onEvent: (cb: (e: { sessionId: string; event: { type: string; seq: number; time: number; data: unknown; [key: string]: unknown } }) => void) => {
+    onEvent: (cb: (e: SessionEventEnvelope) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
       ipcRenderer.on("session:event", handler);
       return () => ipcRenderer.off("session:event", handler);
