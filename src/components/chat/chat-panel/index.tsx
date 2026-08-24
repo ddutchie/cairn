@@ -197,6 +197,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const connectorMap = useCommunityConnectorMap();
 
   const [input, setInput] = useState("");
+  const handleSendRef = useRef<(text?: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => Promise<void>>(async () => {});
   // Messages the user queued while a turn was running — sent (FIFO) when the
   // current reply finishes. Each item carries the thread + attachments captured
   // at enqueue time so a thread switch or queued images/PDFs are never lost.
@@ -542,7 +543,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
         void window.electron?.runtime?.executeCommand({ sessionId: `chat-${threadId}`, line: trimmed }).then((result) => {
           if (commandName === "plan" && commandArgs && commandArgs !== "off" && result?.kind === "success") {
-            void handleSend(commandArgs);
+            void handleSendRef.current(commandArgs);
           }
         }).catch(() => { /* command errors are reported by the runtime layer */ });
         return;
@@ -682,6 +683,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       useSubagents: aiConfig.provider !== "localllm" && (aiConfig.subagentsEnabled ?? false),
     });
   }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, enqueue, registryCommands]);
+
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  }, [handleSend]);
 
   // Drain the queue: when a turn finishes (loading went true → false), send the
   // next queued message. Keep the queue on Stop (the user only cancels the

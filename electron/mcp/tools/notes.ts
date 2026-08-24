@@ -166,7 +166,7 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
 
   // Authoritative existence check against the LIVE DB (not the pre-call
   // snapshot). Two ensure_note calls for the same title can arrive in one agent
-  // turn (pi-agent-loop runs a turn's tools concurrently); a snapshot taken
+  // turn (Cordis runs a turn's tools concurrently); a snapshot taken
   // before either committed would make both create a duplicate. better-sqlite3
   // is synchronous, so this lookup + the create/update below happen with no
   // interleaving as long as they aren't separated by an await — which they are

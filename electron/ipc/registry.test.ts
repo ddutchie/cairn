@@ -36,12 +36,10 @@ describe("isWriteChannel", () => {
       "db:card:addBlocker",
       "db:card:removeBlocker",
       "db:cards:archive-done",
-      "db:chat:addMessage",
       "db:chat:upsertThread",
       "db:chat:deleteThread",
       "db:chat:clearThreadMessages",
       "db:project:updateSettings",
-      "db:piSession:saveMessages",
       "db:graph:recompute",
       "db:embeddings:reindex",
       "db:embeddings:recomputeProjections",
@@ -67,7 +65,6 @@ describe("isWriteChannel", () => {
       "db:chat:threads",
       "db:chat:messages",
       "db:piSession:list",
-      "db:piSession:messages",
       "db:embeddings:search",
     ];
     for (const c of reads) expect(isWriteChannel(c)).toBe(false);

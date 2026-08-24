@@ -29,7 +29,7 @@ import * as q from "../db/queries";
 import { ts } from "../db/utils";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
-import { buildAttachmentParts, validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
+import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { createDeltaBatcher } from "../lib/delta-batcher";
 import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry, readPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
@@ -555,18 +555,11 @@ export function registerPiAgentHandler(
 
     let session = sessions.get(sessionId);
     if (!session) {
-      session = { messages: [], abortCtrl: new AbortController() };
+      session = { abortCtrl: new AbortController() };
       sessions.set(sessionId, session);
     } else {
       session.abortCtrl = new AbortController();
     }
-
-    session.messages.push({
-      role: "user",
-      content: req.attachments?.length
-        ? buildAttachmentParts(prompt, req.attachments)
-        : prompt,
-    });
 
     const projectName = projectId
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
@@ -697,7 +690,7 @@ export function registerPiAgentHandler(
 
     let session = sessions.get(sessionId);
     if (!session) {
-      session = { messages: [], abortCtrl: new AbortController() };
+      session = { abortCtrl: new AbortController() };
       sessions.set(sessionId, session);
     } else {
       session.abortCtrl = new AbortController();
@@ -706,11 +699,6 @@ export function registerPiAgentHandler(
     const planContent = (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? "";
 
     send("pi-agent:mode-change", { sessionId, mode: "execute", planNoteId });
-    session.messages.push({
-      role: "user",
-      content: `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_note if needed.`,
-    });
-
     const projectName = projectId
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
       : "Project";
@@ -919,27 +907,23 @@ export function registerPiAgentHandler(
       broadcastEvent("pi-agent:error", { sessionId, error: (err as Error).message });
       return;
     }
-    // Same guard as the other session mutators: replacing messages while a loop
-    // is running would desync its in-flight context. The renderer stops the run
-    // before clearing, so this is defensive.
+    // Clearing the persisted log while a loop is running would desync its
+    // in-flight context. The renderer stops the run before clearing, so this is
+    // defensive.
     if (runningLoops.has(sessionId)) {
       broadcastEvent("pi-agent:error", { sessionId, error: "Can't clear while the agent is working — stop the run first." });
       return;
     }
-    const session = sessions.get(sessionId);
-    if (session) {
-      session.messages = [];
-    }
+    // The Cordis JSONL session is the transcript source of truth. The in-memory
+    // session entry only retains the abort controller and persona.
     // Grants + any stray pendings die with the conversation.
     sweepSessionPendings(sessionId);
     // Explicit session clearing wipes persisted todos too (the todowrite
     // replacement contract otherwise leaves them until the next write).
     q.saveSessionTodos(ctx.db, sessionId, []);
-    // Cordis path: also clear the dsh jsonl transcript so a resumed session
-    // doesn't see old messages. The builtin path's pi_agent_llm_history is
-    // already cleared above (session.messages = []); for Cordis the transcript
-    // lives in <userData>/sessions/<sessionId>.jsonl via
-    // dsh-session-persistence-jsonl. Best-effort: delete the file/dir if it exists.
+    // Clear the dsh jsonl transcript so a resumed session doesn't see old
+    // messages. The transcript lives in <userData>/sessions/<sessionId>.jsonl
+    // via dsh-session-persistence-jsonl. Best-effort: delete the file/dir if it exists.
     try {
       const primaryRoot = getSessionRoot();
       const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
@@ -1032,7 +1016,6 @@ export function registerPiAgentHandler(
     try {
       const sessionRow = q.getPiSessionById(ctx.db, sessionId);
       sessions.set(sessionId, {
-        messages: [],
         abortCtrl: new AbortController(),
         role: q.normalizeSessionRole(sessionRow?.role),
       });

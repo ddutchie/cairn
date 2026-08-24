@@ -23,10 +23,6 @@ import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } fro
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-// PlanApprovalCard was retired: plan approval now flows through the dsh
-// plan-review card (rendered inside QuestionForm when the model calls
-// exit_plan_mode). The old PRD-note approve-plan IPC path is gone from
-// the UI; see the comment near the render site below.
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
 import { ContextRing } from "./ContextRing";
@@ -75,21 +71,6 @@ function extractCairnRef(
     return undefined;
   }
 }
-
-/**
- * Persist the session's finalised message transcript. Pi-agent transcripts are
- * now persisted by dsh's JSONL session log (session-as-truth), so this is a
- * no-op — see persistPiTranscript below.
- */
-function persistPiTranscript(sessionId: string): void {
-  // Pi-agent transcripts are persisted by dsh's JSONL session log (session-as-truth,
-  // read back via db:piSession:sessionMessages with a SQLite fallback for pre-dsh
-  // sessions). The pi_agent_messages SQLite table is legacy, so we no longer write
-  // to it — the in-memory store keeps the live transcript, and a reload rebuilds it
-  // from the jsonl. Kept as a no-op so the onDone/onError call sites are unchanged.
-  void sessionId;
-}
-
 
 interface AgentChatPaneProps {
   session: TerminalSession;
@@ -302,24 +283,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     return () => { cancelled = true; };
   }, [session.sessionId, finalisePiMessage, setPiToolConfirmRequired, setIsLoading, setRetryInfo, setPendingQuestions, setPendingQuestionCallId]);
 
-  // ── Context Ring badge (reasoning provenance) ─────────────────────────────
-  const [contextRing, setContextRing] = useState<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } } | null>(null);
-  const refreshContextRing = useCallback(async (sid: string) => {
-    try {
-      const res = await window.electron?.piAgent.contextRing(sid);
-      if (res) setContextRing(res);
-    } catch { /* pill is optional decoration */ }
-  }, []);
-  useEffect(() => {
-    // Refresh the context ring badge on session change. The setState inside
-    // refreshContextRing is guarded (only sets when the IPC returns a value),
-    // and this effect intentionally syncs a piece of external state (the
-    // main-process context-ring service) into the UI — one-shot per session,
-    // not per render.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refreshContextRing(session.sessionId);
-  }, [session.sessionId, refreshContextRing]);
-
   // Fire initialPrompt once when the session is loaded (set by SpawnAgentModal).
   // Uses a ref so we always call the current sendPrompt (not a stale closure).
   // Tracks fired session IDs in a Set ref to ensure we only queue this once per session
@@ -409,15 +372,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const unsubDone = electron.piAgent.onDone((e) => {
       if (e.sessionId !== sessionId) return;
-      void refreshContextRing(sessionId);
       finalisePiMessage(sessionId);
       setIsLoading(false);
       setRetryInfo(null);
       setIsCompacting(false);
       setPendingQuestions(null);
       setPendingQuestionCallId(null);
-      // Persist the full message transcript after the turn completes
-      persistPiTranscript(sessionId);
     });
 
     const unsubError = electron.piAgent.onError((e) => {
@@ -434,8 +394,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         timestamp: new Date().toISOString(),
       });
       setIsLoading(false);
-      // Persist the message transcript including the error message
-      setTimeout(() => persistPiTranscript(sessionId), 0);
     });
 
     // ── Subagent events ────────────────────────────────────────────────────
@@ -862,12 +820,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     window.electron?.piAgent.clear(session.sessionId);
   }
 
-  // handleApprovePlan was retired with the PRD-note-based PlanApprovalCard.
-  // Plan approval now flows through dsh's exit_plan_mode tool → the review
-  // ask is answered via pi-agent:respond-questions (see PlanReviewCard in
-  // QuestionForm), which unblocks the tool and lets dsh flip plan/mode off.
-  // No new turn is issued — the same coding turn continues in execute mode
-  // with the plan carried forward via session.planContent.
+  // Plan approval flows through dsh's exit_plan_mode tool and the structured
+  // review ask in QuestionForm. Approval unblocks the same coding turn; dsh
+  // applies the mode exit at the next step boundary.
 
 
   return (
@@ -1027,11 +982,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             )}
           </div>
         )}
-        {/* Plan-review is now handled by the PlanReviewCard inside QuestionForm
-             (dsh-plan-mode's `exit_plan_mode` flow). The pre-Cordis PRD-note
-             PlanApprovalCard was retired — the note (if the agent wrote one)
-             stays visible via the note chip in the header; the approval
-             decision itself flows through the dsh review card. */}
+        {/* Plan review is rendered by QuestionForm from dsh's
+            exit_plan_mode interaction. */}
         {session.mode === "execute" && planNoteContent && (
           <PlanTaskList content={planNoteContent} />
         )}

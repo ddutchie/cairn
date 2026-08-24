@@ -60,10 +60,4 @@ export function registerChatSessionHandlers(_ctx: DbContext): void {
       throw err;
     }
   }));
-
-
-  registerIpcHandle("db:chat:sessionThreads", (_e, { workspaceId }: { workspaceId: string }) => handle(async () => {
-    void workspaceId;
-    return [] as unknown[];
-  }));
 }

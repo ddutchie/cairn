@@ -46,6 +46,12 @@ function kindIcon(kind: SessionKind) {
   return Terminal;
 }
 
+function SessionTypeIcon({ kind, size }: { kind: SessionKind; size: number }) {
+  if (kind === "chat") return <MessageSquare size={size} />;
+  if (kind === "coding") return <Code2 size={size} />;
+  return <Terminal size={size} />;
+}
+
 function matchesQuery(session: UnifiedSession, query: string): boolean {
   if (!query) return true;
   const value = `${session.title} ${kindLabel(session.kind)}`.toLowerCase();
@@ -191,7 +197,7 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
   }
 
   const projectNav = variant === "project";
-  const CurrentIcon = projectNav ? MessageSquare : active ? kindIcon(active.kind) : MessageSquare;
+  const currentKind = projectNav ? "chat" : active?.kind;
   return (
     <div ref={rootRef} className={cn("relative flex-shrink-0", projectNav ? "h-auto" : "h-full")}>
       <button
@@ -206,7 +212,9 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
           open ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "hover:bg-[var(--surface-2)]",
         )}
       >
-        <CurrentIcon size={projectNav ? 11 : 12} className={cn("flex-shrink-0", projectNav ? "text-[var(--text-tertiary)]" : "text-[var(--accent)]")} />
+        <span className={cn("flex-shrink-0", projectNav ? "text-[var(--text-tertiary)]" : "text-[var(--accent)]")}>
+          <SessionTypeIcon kind={currentKind ?? "chat"} size={projectNav ? 11 : 12} />
+        </span>
         <span className="min-w-0 flex-1">
             <span className={cn("block truncate", projectNav ? "text-[var(--text-tertiary)]" : "text-[0.714rem] font-semibold text-[var(--text-primary)]")}>
             {projectNav ? "Conversations" : active?.title ?? "Sessions"}

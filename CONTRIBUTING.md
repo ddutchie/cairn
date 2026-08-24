@@ -149,7 +149,7 @@ cairn/
 │   │   ├── flow/           # Idea Flow canvas + node components
 │   │   ├── graph/          # Knowledge Graph + all analytics canvases + shared analytics modules
 │   │   ├── insights/       # InsightsView (analytics hub)
-│   │   ├── agent/          # Agent workspace (PTY + Cairn native agent): PiAgentPane, PiMessageBubble, ContextRing, SpawnAgentModal, file tree, CM6 editor, xterm terminal, diff viewer
+│   │   ├── agent/          # Agent workspace (PTY + Cairn native agent): AgentChatPane, SessionBrowser, ContextRing, SpawnAgentModal, file tree, CM6 editor, xterm terminal, diff viewer
 │   │   ├── chat/           # AI chat panel (chat-panel/index.tsx + sub-folder)
 │   │   ├── search/         # Global search panel
 │   │   ├── settings/       # Settings sections
@@ -202,14 +202,15 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 
 **External agent workspace** (`electron/ipc/agent.ts`) — PTY sessions spawned via `node-pty` in the main process. File I/O is validated against registered `code_directory` paths before any read/write. Sessions are keyed by `sessionId`; PTY output is streamed to the renderer via `agent:data` IPC events. The renderer-side `TerminalManager` singleton holds `xterm.js` instances so they survive view navigation.
 
-**Cairn native agent** — a stateful multi-turn tool-call loop running entirely in the main process. No external binary required. Session type `"pi"` in the terminal sessions store; rendered by `PiAgentPane` instead of xterm. Key files:
+**Cairn native agent** — a stateful multi-turn dsh/Cordis agent running entirely in the main process. No external binary required. Session type `"pi"` in the terminal sessions store; rendered by `AgentChatPane` instead of xterm. Key files:
 
-- `electron/ipc/pi-agent.ts` — IPC handler; `sessions Map<sessionId, PiAgentSession>`; registers all `pi-agent:*` channels
-- `electron/lib/pi-agent-loop.ts` — `runAgentLoop()`; SSE stream parsing; parallel tool execution (`Promise.all`); callbacks (`onToken`, `onToolsReady`, `onToolPending`, `onToolStart`, `onToolEnd`, `onStepStart`, `onUsage`, `onRetry`, `onSubagent`, `onDone`, `onError`); `transformContext` hook; `AgentToolContext` groups all per-session infrastructure
-- `electron/lib/pi-agent-prompt.ts` — system prompt builder; mandatory Cairn workflow injected here
-- `electron/lib/coding-tools/` — 7 ported file-system tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) + `spawn_subagent` + `file-mutex.ts`
+- `electron/ipc/pi-agent.ts` — IPC handler; abort/persona lifecycle and `pi-agent:*` compatibility channels
+- `electron/cordis/run-cordis-coding.ts` — mounts the dsh coding stack, creates/resumes agents, and bridges coding turns
+- `electron/cordis/cairn-plugins.ts` — Cairn adapters for persistence, usage, questions, approvals, and renderer events
+- `electron/cordis/cordis-coding-tools.ts` — dsh filesystem, search, shell, todo, sandbox, and instruction plugins
+- `electron/lib/pi-agent-prompt.ts` — stable Cairn coding-agent context; plan guidance comes from dsh
 
-The agent has access to a curated subset of Cairn's data tools (notes CRUD, task management, idea flow) via the same `executeTool` path used by the AI chat. `ensure_note` is the preferred write tool — idempotent by title, no duplicates. `AgentView` is always mounted (CSS-hidden when inactive) so `PiAgentPane` refs and IPC subscriptions survive view switches.
+The agent has access to a curated subset of Cairn's data tools (notes CRUD, task management, idea flow) through the dsh tool registry. `ensure_note` is the preferred write tool — idempotent by title, no duplicates. `AgentView` is always mounted (CSS-hidden when inactive) so agent refs and IPC subscriptions survive view switches.
 
 **MCP server** (`electron/mcp-server.ts`) — a separate compiled binary that external AI agents connect to. Shares the same SQLite database and writes `.md` files directly; the Electron UI refreshes automatically via WAL mtime polling. The MCP tool files in `electron/mcp/tools/*` import query helpers from `electron/db/queries.ts` and `electron/db/graph-queries.ts` — these are the same helpers used by the Electron main process. The only ABI-sensitive operation is constructing the `Database` instance (once, in `mcp-server.ts` via `new Database(dbPath, { nativeBinding })`); after that, all `db.prepare(...).run(...)` calls work on that handle regardless of which TS file defines them.
 
@@ -377,14 +378,17 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `electron/file-watcher.ts` | chokidar watcher on workspace root; syncs external `.md` edits to SQLite |
 | `electron/ipc/handlers.ts` | Orchestrator — calls per-domain registrars (`db-handlers`, `flow-handlers`, `ai-handlers`, `llama-handlers`, `graph-handlers`, `chat-db-handlers`, `pi-session-handlers`, `pdf-export`, `url-metadata`, `mobile-handlers`, `migration-handlers`, `settings-handlers`); all wrapped in `handle()` returning `IpcResult<T>` |
 | `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
-| `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
+| `electron/ipc/chat.ts` | AI chat IPC handler and Cordis chat-loop adapter |
 | `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
-| `electron/ipc/pi-agent.ts` | Cairn native agent IPC handler — `sessions` Map, all `pi-agent:*` channels; `runSession()` shared helper wires compaction + callbacks + `runAgentLoop` for both `prompt` and `approve-plan` handlers |
-| `electron/lib/pi-agent-loop.ts` | `runAgentLoop()` — multi-turn SSE loop, parallel tool execution, callbacks, retry, `transformContext` hook, `shouldStopAfterTurn` hook; `AgentToolContext` groups cwd/db/IPC/session state |
-| `electron/lib/compaction.ts` | `buildCompactionTransformer` — async LLM-based compaction, signal read live from session; `compactNow` — synchronous on-demand compaction for `/compact` slash command |
+| `electron/ipc/pi-agent.ts` | Coding-agent IPC adapter — abort/persona lifecycle and `pi-agent:*` compatibility channels |
+| `electron/cordis/run-cordis-loop.ts` | Shared Cordis context, plugin composition, chat agent lifecycle, and session replay helpers |
+| `electron/cordis/run-cordis-coding.ts` | Coding-agent lifecycle, dsh stack mounting, and live-turn bridge |
+| `electron/cordis/cairn-plugins.ts` | Cairn persistence, usage, questions, approval, and renderer-event adapters |
+| `electron/cordis/cordis-coding-tools.ts` | dsh sandbox, filesystem, search, shell, todo, and instruction plugins |
+| `electron/lib/compaction.ts` | Legacy compaction helper retained only for compatibility paths |
 | `electron/lib/truncation.ts` | `truncateOutput(text, opts)` — unified byte+line cap for all coding tool outputs; exports `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_LINES`, `TruncationResult` |
-| `electron/lib/pi-agent-prompt.ts` | System prompt builder; mandatory Cairn workflow; `spawn_subagent` description |
-| `electron/lib/coding-tools/` | 8 coding tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `spawn_subagent`) + `file-mutex.ts`; all tools use `truncateOutput` from `truncation.ts` |
+| `electron/lib/pi-agent-prompt.ts` | Stable Cairn coding-agent context; plan guidance comes from dsh |
+| `electron/cordis/plugins/` | Cairn-owned Cordis plugins, including workspace context and context-ring projections |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint`, `normaliseBaseUrl` |
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
 | `electron/lib/context.ts` | `buildContextResponse` — canonical `get_cairn_context` response |
@@ -423,9 +427,10 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `src/components/graph/RadialTreeCanvas.tsx` | Radial hierarchy tree via D3 |
 | `src/components/graph/analyticsUtils.ts` | Shared constants + pure helpers: `PRIORITY_COLOR`, `PRIORITY_WEIGHT`, `PRIORITY_SORT_ORDER`, `resolveCssVar()`, `truncateName()`, `CANVAS_PAD` |
 | `src/components/agent/AgentView.tsx` | Three-pane layout — drag-resize dividers, Editor/Diff tab bar; always mounted (CSS-hidden when inactive) |
-| `src/components/agent/AgentTerminalPane.tsx` | Session tab strip; branches on `sessionType`: `"pi"` → `PiAgentPane`, `"pty"` → `SessionMount` (xterm.js) |
-| `src/components/agent/PiAgentPane.tsx` | Cairn native agent chat UI — IPC subscriptions, `sendPrompt`, `initialPrompt` effect, context ring |
-| `src/components/agent/PiMessageBubble.tsx` | Message renderer — user/assistant/error bubbles, `ToolChip` (running → done), `CairnRefChip`, `SubagentBlock` |
+| `src/components/agent/SessionPane.tsx` | Session content shell — selected Chat/Coding/PTY view, session creation, and panel actions |
+| `src/components/agent/SessionBrowser.tsx` | Project-scoped Conversations browser — Chat/Coding/PTY session selection and search |
+| `src/components/agent/AgentChatPane.tsx` | Cairn native coding-agent UI — Cordis IPC subscriptions, prompt lifecycle, context ring |
+| `src/components/agent/AgentMessageBubble.tsx` | Coding-agent message renderer — user/assistant/error bubbles, tool calls, Cairn references, and subagent blocks |
 | `src/components/agent/ContextRing.tsx` | Reusable SVG context usage ring; `size` and `stroke` props; colour shifts at 65 % and 85 % |
 | `src/components/agent/AgentEditor.tsx` | Multi-file tabbed editor — tab management, preview toggle, save |
 | `src/components/agent/FileEditorInner.tsx` | Single CM6 editor instance per file — CSS-hidden when inactive |
@@ -555,28 +560,26 @@ The Cairn native agent (`sessionType: "pi"`) runs in the Electron main process. 
 
 **Adding a new coding tool**
 
-1. Create `electron/lib/coding-tools/<name>.ts` — export `<name>Tool(args, cwd)` and `<name>ToolDefinition` (OpenAI function schema)
-2. Add it to the barrel in `electron/lib/coding-tools/index.ts`
-3. Add a `case "<name>":` in `executeSingleTool()` in `pi-agent-loop.ts`
-4. Add it to `CODING_TOOL_DEFS` in `pi-agent-loop.ts`
-5. Add a human-readable label to `CODING_LABELS` if it takes a `path` or `command` arg
-6. If the tool produces output worth expanding in the UI, it will appear automatically. Add the tool name to `READ_ONLY_TOOLS` in `PiAgentPane.tsx` if it is read-only and the output should be suppressed.
+1. Register it through the appropriate dsh/Cordis tool plugin or in `electron/cordis/cairn-tools.ts`.
+2. Mount the plugin in the Cordis composition if it is not already part of the coding stack.
+3. Add presentation metadata or a renderer tool view only when the result needs a specialized display.
+4. Add the tool to the shared risk classification if its approval behavior differs from the default.
 
 **Adding a new Cairn data tool to the agent**
 
-The agent exposes a curated subset of Cairn tools defined in `CAIRN_TOOL_NAMES` in `pi-agent-loop.ts`. To expose a new tool:
+The coding agent exposes Cairn tools through the dsh tool registry. To expose a new tool:
 
-1. Add the tool name to `CAIRN_TOOL_NAMES`
-2. Update the system prompt in `pi-agent-prompt.ts` if the tool warrants explicit mention
-3. If it is a write tool that returns `{ id, title }`, add it to `NOTE_WRITE_TOOLS` or `TASK_WRITE_TOOLS` in `PiAgentPane.tsx` so it renders as a clickable `CairnRefChip`
-4. If it is read-only, add it to `READ_ONLY_TOOLS` to suppress output expansion
+1. Register the tool with `registerCairnTools()` in `electron/cordis/cairn-tools.ts`.
+2. Update the relevant dsh/Cairn system-prompt section if the tool warrants explicit mention.
+3. If it returns a Cairn reference, provide the appropriate `presentationMeta` so replayed results remain linkable.
+4. Add it to the shared approval-risk classification when needed.
 
 **IPC event flow for a single agent turn**
 
 ```
 renderer                         main process
    │                                  │
-   ├─ pi-agent:prompt ──────────────► runAgentLoop()
+   ├─ pi-agent:prompt ──────────────► runCordisCodingLoop()
    │                                  │  POST /v1/chat/completions (stream)
    │ ◄── pi-agent:token (×N) ─────────┤  token deltas arrive
    │                                  │  ← tool name first seen in stream:
@@ -599,23 +602,21 @@ renderer                         main process
 
 The `pending` status fires during streaming as soon as a tool name is seen in the SSE delta — this is what makes the chip appear immediately rather than waiting for the full response. The `start` event reuses the same `callId` to update the chip's label to the resolved human-readable version once argument parsing is complete.
 
-**Parallel tool execution** — all tool calls in a single assistant turn run concurrently via `Promise.all` in `executeSingleTool`. Results are appended to `session.messages` in source order regardless of completion order. Per-file serialisation is handled transparently by `file-mutex.ts`.
+**Parallel tool execution** — dsh owns tool scheduling and session event ordering. Cairn tools must be safe to execute through the dsh tool registry; per-domain persistence and file guards remain in their respective adapters.
 
-**Automatic retry** — `isRetryable(status, body)` in `pi-agent-loop.ts` detects transient errors (429, 5xx, overloaded/rate-limit body patterns). Up to `AgentLLMConfig.maxRetries` attempts (default 3) with exponential backoff starting at `baseRetryDelayMs` (default 2000 ms). `onRetry` callback fires before each sleep; `pi-agent:retry` is emitted to the renderer.
+**Automatic retry** — dsh's retry plugin handles transient provider failures on the request-recovery seam. Cairn forwards the resulting retry events to the renderer; do not add a second retry loop in an IPC handler.
 
-**Context compaction** — `buildCompactionTransformer` in `electron/lib/compaction.ts` returns a `transformContext` function stored on `PiAgentSession.compactionTransformer` (built once, reused across prompts so the `cachedSummary` survives multi-turn sessions). When `session.lastPromptTokens` exceeds 80% of `llmConfig.contextWindow`, it fires a background LLM summarisation call (non-streaming, `temperature: 0.1`). The signal is read live from `session.abortCtrl` each invocation. The current turn uses a sliding-window fallback; subsequent turns use the cached summary. `pi-agent:compact` IPC events drive the `"Compacting context…"` status bar indicator. To change the threshold or number of verbatim turns preserved, edit `COMPACT_THRESHOLD` and `KEEP_RECENT_TURNS` in `compaction.ts`.
+**Context compaction** — dsh's compaction plugin owns automatic and manual compaction. Cairn only supplies the model adapter and forwards compaction lifecycle events to the renderer.
 
-**`/compact` slash command** — typing `/compact` in the chat input calls `compactNow(session, llmConfig)` in `compaction.ts` via the `pi-agent:compact-now` IPC channel. Unlike the automatic transformer (fire-and-forget), `compactNow` awaits the LLM summary call synchronously and emits a `pi-agent:compact-result` event. The renderer shows a centred italic system message: *"Context compacted — session history summarised into N messages."* `PiAgentMessage.role` includes `"system"` for this purpose; `PiMessageBubble` renders it as muted centred text.
+**`/compact` slash command** — the command registry routes `/compact` to the dsh compaction service. Keep command handling in the registry rather than adding another prompt-specific IPC implementation.
 
-**`shouldStopAfterTurn` hook** — `AgentLoopCallbacks.shouldStop?: (messages) => boolean | Promise<boolean>` is checked after each turn's tool results are appended, before the next LLM call. Returning `true` fires `onDone` cleanly. Use for semantic stop conditions (e.g. stop when a linked task card reaches Done) without modifying the loop. Wire it in `runSession()` in `pi-agent.ts`.
+**Cancellation** — call the live dsh agent's `cancel({ kind: "user" })`; aborting a Cairn wrapper controller alone is insufficient. The session log remains the source of truth for the interrupted prefix.
 
-**Output truncation** — all coding tools use `truncateOutput(text, opts)` from `electron/lib/truncation.ts` instead of ad-hoc byte slicing. The library enforces a byte cap (`DEFAULT_MAX_BYTES = 50 000`) and optional line cap (`DEFAULT_MAX_LINES = 2 000`), returns a `TruncationResult` with metadata, and appends a consistent `[Truncated: showed X of Y. Use offset/limit to page.]` hint. When adding a new coding tool, import and call `truncateOutput` on the output before returning.
-
-**`runSession` invariant** — within `pi-agent.ts`, always call `runAgentLoop` via `runSession()` rather than directly. `runSession` is the single place that builds the compaction transformer, wires all IPC-forwarding callbacks, and handles `onDone`/`onError` persistence. The only legitimate direct call site for `runAgentLoop` is `pi-agent-loop.test.ts`.
+**Output limits** — use the limits and retention behavior supplied by dsh tool plugins. Cairn adapters should not introduce a second formatting or truncation contract.
 
 **Subagents**
 
-`spawn_subagent` in `electron/lib/coding-tools/subagent.ts` runs a nested `runAgentLoop` with a child session ID (`${parentId}:sub:${hex}`). All child events are sent on the child session ID — the renderer routes them based on the prefix. Parent context ring and child ring are independent. The child's final assistant message is returned to the parent as the tool result.
+`spawn_subagent` is supplied by the dsh subagent stack. Cairn's bridge forwards child events through the shared subagent channel and keeps parent and child session state separate.
 
 **Plan Mode**
 
@@ -684,13 +685,13 @@ vitest runs **two projects** (see `vitest.config.ts`):
 | `electron/mcp-server.test.ts` | All MCP tools end-to-end via in-memory SQLite — happy path, edge cases, conflict detection |
 | `electron/ipc/chat-executor.test.ts` | Every tool case in `executeTool` |
 | `electron/ipc/handlers.test.ts` | IPC data layer, `executeReadTool`, `buildContextResponse` |
-| `electron/lib/pi-agent-loop.test.ts` | Agent loop SSE streaming — 8 mock scenarios (real Node HTTP server) + 2 live integration tests |
+| `electron/cordis/*.test.ts` | Cordis session, plan-mode, approval, persistence, and runtime integration tests |
 
-**Live integration tests** — copy `.env.test.example` (if present) to `.env.test` and set `TEST_LLM_BASE_URL` to run the two live agent loop tests against a real endpoint. The file is gitignored. Without it the live tests are automatically skipped.
+**Live integration tests** — Cordis live tests are gated by their documented environment variables and are automatically skipped when the required endpoint or key is absent.
 
 **Please add or update tests when:**
 - Adding a new query helper to `queries.ts`
-- Adding a new tool to `chat-executor.ts`
+- Adding a new tool to `electron/cordis/cairn-tools.ts` or a Cordis tool plugin
 - Fixing a bug — a test that would have caught it prevents regression
 
 vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node ABI binary is used instead of the Electron-compiled one. This is handled automatically — you don't need to think about it.

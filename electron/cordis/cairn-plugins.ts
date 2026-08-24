@@ -29,8 +29,6 @@ import { resultContentError } from "../lib/tool-result";
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
 
-// Inlined from pi-agent-loop.ts:254 — kept here so the frozen file can be deleted.
-
 /** Service key under which cairnDbPlugin provides the Database handle. */
 export const CAIRN_DB = "cairnDb";
 
@@ -1019,5 +1017,4 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
 
   return () => { for (const d of disposers) { try { d(); } catch { /* noop */ } } };
 }
-
 

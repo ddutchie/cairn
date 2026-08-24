@@ -1,8 +1,7 @@
 /**
  * run-cordis-coding — drive the dsh agent loop for Cairn's CODING agent
- * (Phase 1.5). This is the Cordis equivalent of electron/lib/pi-agent-loop.ts's
- * runAgentLoop, but the dsh agent loop handles the model↔tool↔model iteration
- * internally — this wrapper only:
+ * The dsh agent loop handles the model↔tool↔model iteration internally — this
+ * wrapper only:
  *
  *   - mounts the shared Cordis tree + pi-ai adapter (protocol auto-selected),
  *   - mounts the coding capability stack (mountCodingStack) + Cairn data tools,

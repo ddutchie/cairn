@@ -352,7 +352,7 @@ export function getNotes(db: Database.Database, projectId?: string) {
  *
  * This is the AUTHORITATIVE existence check for ensure_note — it reads the live
  * DB rather than a pre-call snapshot, so it stays correct when two ensure_note
- * calls for the same title run in the same agent turn (the pi-agent-loop fires a
+  * calls for the same title run in the same agent turn (the Cordis runtime fires a
  * turn's tool calls concurrently). better-sqlite3 is synchronous, so pairing
  * this lookup with the createNote INSERT inside a single db.transaction() makes
  * the check-then-create atomic — no other JS callback can interleave between the

@@ -6,7 +6,6 @@
  */
 
 import type { BrowserWindow } from "electron";
-import type { ContentPart } from "../../shared/models/pdf-attach";
 import type { ChatRequest } from "./tools";
 import type { SkillMeta } from "./skills";
 import type Database from "better-sqlite3";
@@ -54,8 +53,6 @@ export interface AgentToolContext {
 export type AgentSessionRole = "default" | "automation-dev";
 
 export interface PiAgentSession {
-  /** Turn markers only — the authoritative transcript lives in the dsh jsonl log. */
-  messages: Array<{ role: "user"; content: string | ContentPart[] }>;
   abortCtrl: AbortController;
   role?: AgentSessionRole;
 }
