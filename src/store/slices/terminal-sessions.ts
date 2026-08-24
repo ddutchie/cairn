@@ -53,7 +53,7 @@ import type {
   PiSubagentMessage,
   TerminalSession,
   CodingSessionSummary,
-  PiTodo,
+  SessionTodo,
   SessionKind,
   SessionLoadState,
   SessionPresentation,
@@ -123,11 +123,11 @@ export interface TerminalSessionsSlice {
   /** Project-scoped history of persisted coding sessions (from SQLite) */
   codingSessionHistory: CodingSessionSummary[];
   /** Per-session todo lists (todowrite tool) keyed by session id. */
-  piSessionTodos: Record<string, PiTodo[]>;
+  sessionTodos: Record<string, SessionTodo[]>;
   /** Set the persistent pi session (switches what the pinned tab shows) */
   setActiveCodingSession: (sessionId: string | null) => void;
   /** Replace a session's todo list (from pi-agent:todos events / load). */
-  setPiSessionTodos: (sessionId: string, todos: PiTodo[]) => void;
+  setSessionTodos: (sessionId: string, todos: SessionTodo[]) => void;
   /** Fetch session history from SQLite for the given project */
   fetchCodingSessionHistory: (projectId: string) => Promise<void>;
   /** Fetch and merge session history for the projects visible in the sidebar. */
@@ -156,7 +156,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   activeEditorFile: null,
   activeCodingSessionId: null,
   codingSessionHistory: [],
-  piSessionTodos: {},
+  sessionTodos: {},
   sessionLoad: { status: "idle" },
 
   addTerminalSession(session) {
@@ -457,9 +457,9 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  setPiSessionTodos(sessionId, todos) {
+  setSessionTodos(sessionId, todos) {
     set((s) => ({
-      piSessionTodos: { ...s.piSessionTodos, [sessionId]: todos },
+      sessionTodos: { ...s.sessionTodos, [sessionId]: todos },
     }));
   },
 

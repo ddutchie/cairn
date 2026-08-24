@@ -110,7 +110,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const setPiMode                = useCairnStore((s) => s.setPiMode);
   const _setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
   const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
-  const setPiSessionTodos        = useCairnStore((s) => s.setPiSessionTodos);
+  const setSessionTodos          = useCairnStore((s) => s.setSessionTodos);
   const setView                  = useCairnStore((s) => s.setView);
 
   // Reactive state — only values that actually drive re-renders
@@ -122,7 +122,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     customServices:    s.customServices,
   })));
   const sessionPresentation = useCairnStore((s) => s.sessionPresentation);
-    const sessionTodos = useCairnStore((s) => s.piSessionTodos[session.sessionId]);
+  const sessionTodos = useCairnStore((s) => s.sessionTodos[session.sessionId]);
   const customCommands = useCairnStore((s) => s.customCommands);
   const registryCommands = useRegistryCommands();
   const agentCommands = useMemo(
@@ -506,7 +506,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // Todo list updates — live dock as the agent runs the todowrite tool
     const unsubTodos = electron.piAgent.onTodos((e) => {
       if (e.sessionId !== sessionId) return;
-      setPiSessionTodos(sessionId, e.todos);
+      setSessionTodos(sessionId, e.todos);
     });
 
     // Doom-loop pause — the agent repeated a tool call with identical args.
@@ -514,7 +514,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // Initial hydrate — load persisted todos when the pane mounts so a restored
     // session shows its list before the agent touches it again.
     electron.piAgent.getTodos?.(sessionId).then((result) => {
-      if (result?.length) setPiSessionTodos(sessionId, result);
+      if (result?.length) setSessionTodos(sessionId, result);
     }).catch(() => { /* no persisted todos — dock stays hidden */ });
 
     // Retry events — show backoff countdown in the status bar
@@ -821,7 +821,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // otherwise immediately send the queued prompts into a cleared session.
     clearQueue();
     clearPiMessages(session.sessionId);
-    setPiSessionTodos(session.sessionId, []);
+    setSessionTodos(session.sessionId, []);
     window.electron?.piAgent.clear(session.sessionId);
   }
 

@@ -95,7 +95,7 @@ export function useAgentSessionActions() {
             lastUsage = (raw as { usage?: TerminalSession["lastUsage"] }).usage;
             const rawTodos = (raw as { todos?: Array<{ id: string; title: string; status: "pending" | "in_progress" | "completed" }> }).todos;
             if (rawTodos && rawTodos.length > 0) {
-              useCairnStore.getState().setPiSessionTodos(summary.id, rawTodos.map((t) => ({ content: t.title, status: t.status, priority: "medium" as const })));
+              useCairnStore.getState().setSessionTodos(summary.id, rawTodos.map((t) => ({ content: t.title, status: t.status, priority: "medium" as const })));
             }
           }
         }

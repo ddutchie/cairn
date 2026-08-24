@@ -221,7 +221,7 @@ export default function Home() {
                   lastUsage = (raw as { usage?: import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"] }).usage;
                   const rawTodos = (raw as { todos?: Array<{ id: string; title: string; status: string }> }).todos;
                   if (rawTodos && rawTodos.length > 0) {
-                    state.setPiSessionTodos(latest.id, rawTodos.map((t) => ({ content: t.title, status: t.status === "completed" ? "completed" : t.status === "in_progress" ? "in_progress" : "pending", priority: "medium" as const })));
+                    state.setSessionTodos(latest.id, rawTodos.map((t) => ({ content: t.title, status: t.status === "completed" ? "completed" : t.status === "in_progress" ? "in_progress" : "pending", priority: "medium" as const })));
                   }
                 }
               }

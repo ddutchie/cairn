@@ -960,7 +960,7 @@ export interface PiSubagentMessage {
 }
 
 /** One item in the agent session's todo list (todowrite tool). */
-export interface PiTodo {
+export interface SessionTodo {
   content: string;
   status: "pending" | "in_progress" | "completed" | "cancelled";
   priority: "high" | "medium" | "low";
