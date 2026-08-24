@@ -23,6 +23,16 @@ import { createDeltaBatcher } from "../lib/delta-batcher";
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
 
+/**
+ * Threads that currently have an in-flight streaming turn. Prevents two
+ * concurrent chat:stream requests on the SAME thread from writing to the
+ * same session.jsonl.zstd in parallel — dsh's in-process persistence
+ * serialises WRITES (so the file doesn't tear), but the two turns' events
+ * still interleave into an incoherent transcript. Mirrors pi-agent.ts's
+ * `runningLoops` guard on the coding side (review finding M13).
+ */
+const runningThreads = new Set<string>();
+
 // Pending ask_questions requests (Cordis engine): the cairn-questions provider
 // blocks on ask() and stores its resolver here keyed by requestId; the renderer
 // answers via chat:answer-questions, which resolves it (same-turn answer flow).
@@ -132,8 +142,28 @@ export function registerChatHandler(ctx: DbContext): void {
   //   chat:tool-call { tool, label, args } — tool being invoked
   //   chat:done    { content: string, contextRefs: [], error?: string }
   registerIpcOn("chat:stream", async (event, req: ChatRequest) => {
-    // Cancel any previous in-flight request from this renderer
+    // Cancel any previous in-flight request from THIS renderer
     abortControllers.get(event.sender.id)?.abort();
+    // Concurrent-stream guard on the same thread: if another window (pop-out,
+    // second Cairn instance) is already streaming this thread, refuse the
+    // second stream instead of racing on the same session.jsonl.zstd. dsh's
+    // persistence serialises writes, but the two turns would still interleave
+    // into a semantically incoherent transcript.
+    if (req.threadId && runningThreads.has(req.threadId)) {
+      const send = (ch: string, payload: unknown) => {
+        const tagged = (payload && typeof payload === "object")
+          ? { ...(payload as Record<string, unknown>), threadId: req.threadId }
+          : payload;
+        if (!event.sender.isDestroyed()) event.sender.send(ch, tagged);
+      };
+      send("chat:done", {
+        content: "Another turn is already in flight on this conversation — wait for it to finish, or open the conversation in a single window.",
+        contextRefs: [],
+        error: "concurrent-stream-blocked",
+      });
+      return;
+    }
+    if (req.threadId) runningThreads.add(req.threadId);
     const abortCtrl = new AbortController();
     abortControllers.set(event.sender.id, abortCtrl);
     
@@ -350,6 +380,7 @@ export function registerChatHandler(ctx: DbContext): void {
         }
       } finally {
         abortControllers.delete(event.sender.id);
+        if (req.threadId) runningThreads.delete(req.threadId);
       }
       return;
     }
