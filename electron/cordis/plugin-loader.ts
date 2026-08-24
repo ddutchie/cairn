@@ -28,6 +28,7 @@ import * as path from "path";
 import { pathToFileURL } from "url";
 import * as yaml from "js-yaml";
 import type { Context } from "@deepseek-ai/cordis";
+import "./ctx-augment";
 
 let pluginsRoot = process.env.CAIRN_PLUGINS_ROOT || "";
 
@@ -84,7 +85,10 @@ interface LoaderLike {
 }
 
 function loaderOf(ctx: Context): LoaderLike | undefined {
-  const l = (ctx as unknown as { loader?: LoaderLike }).loader;
+  // ctx.loader is provided by cordis-plugin-loader; narrow the augmented
+  // Loader shape to Cairn's local LoaderLike (a compatible subset that
+  // exposes `create` / `await` / `builtins`).
+  const l = ctx.loader as unknown as LoaderLike | undefined;
   return l && typeof l.create === "function" ? l : undefined;
 }
 
@@ -150,6 +154,10 @@ export async function loadUserPlugins(ctx: Context): Promise<void> {
   fs.mkdirSync(pluginsRoot, { recursive: true });
   // The Loader resolves a relative `./x.mjs` entry name against ctx.baseUrl, so
   // point it at the plugins dir (trailing slash required for URL resolution).
+  // NOTE: baseUrl lives on Loader.Config, not on Context — cordis-plugin-loader
+  // reads it off the ambient ctx at import-resolution time. This structural
+  // assignment is the documented way to configure the resolver base for
+  // runtime plugins; keep the narrow cast.
   (ctx as unknown as { baseUrl?: string }).baseUrl = pathToFileURL(pluginsRoot).href + "/";
   await reconcile(ctx, loader);
 }

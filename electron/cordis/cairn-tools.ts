@@ -10,6 +10,7 @@
  * text for the model.
  */
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
+import "./ctx-augment";
 import z from "zod";
 import { TOOL_SCHEMAS } from "../lib/tool-schemas";
 import { executeTool } from "./chat-executor";
@@ -134,7 +135,7 @@ export function buildCairnTool(
       // (same-turn), instead of the shared executor's synchronous echo. The
       // cairnQuestionsPlugin provider bridges ask() ⇄ the renderer form.
       if (name === "ask_questions" && ctx) {
-        const uq = (ctx as unknown as { userQuestions?: { ask: (req: { questions: unknown[] }) => Promise<{ answers: unknown[] }> } }).userQuestions;
+        const uq = ctx.userQuestions;
         const raw = (args as { questions?: unknown[] }).questions ?? [];
         if (uq && Array.isArray(raw) && raw.length > 0) {
           try {

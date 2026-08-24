@@ -22,12 +22,13 @@
 import fs from "fs";
 import path from "path";
 import { getContext } from "./run-cordis-loop";
+import "./ctx-augment";
 import { buildSystemPrompt, TOOLS } from "../lib/tools";
 import { renderPrompt } from "@deepseek-ai/dsh-system-prompt";
 
 async function main(): Promise<void> {
   const ctx = await getContext();
-  const sys = (ctx as unknown as { systemPrompt: { section: (o: unknown) => (() => void) | undefined; assemble: (o: unknown) => Promise<unknown> } }).systemPrompt;
+  const sys = ctx.systemPrompt;
 
   const sampleReq = {
     message: "Summarize this project",
@@ -69,7 +70,7 @@ async function main(): Promise<void> {
 
   let skillsList: Array<{ name: string; description: string }> = [];
   try {
-    const skillsSvc = (ctx as unknown as { skills?: { list: (o: unknown) => Promise<Array<{ name: string; description: string }>> } }).skills;
+    const skillsSvc = ctx.skills;
     if (skillsSvc) skillsList = await skillsSvc.list({ cwd: process.cwd() });
   } catch { /* skills is optional */ }
 

@@ -21,6 +21,7 @@
  * regression for the automation-dev / danger-full-access path.
  */
 import type { Context } from "@deepseek-ai/cordis";
+import "./ctx-augment";
 
 import sandboxLocalPlugin from "@deepseek-ai/dsh-sandbox-local";
 import sandboxPolicyPlugin from "@deepseek-ai/dsh-sandbox-policy";
@@ -101,10 +102,10 @@ async function plugFsChain(
  *  `<workspace>/.chat/viz/…` so agent-generated files stay in ONE hidden dir
  *  instead of littering the project root — see artifact-hygiene.ts. */
 export async function mountFsChain(ctx: Context, opts: { cwd: string; mode?: "workspace-write" | "read-only" | "danger-full-access" }): Promise<void> {
-  if ((ctx as unknown as { get: (n: string) => unknown }).get("fs")) return;
+  if (ctx.get("fs")) return;
   const disposers: Array<() => void> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
-    const fiber = (ctx as unknown as { plugin: (p: unknown, c?: unknown) => Promise<{ dispose: () => void }> }).plugin(plugin, config);
+    const fiber = ctx.plugin(plugin as never, config as never) as unknown as Promise<{ dispose: () => void }>;
     disposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
     await fiber;
   };
@@ -117,7 +118,7 @@ export async function mountFsChain(ctx: Context, opts: { cwd: string; mode?: "wo
  *  chain is patched (coding mounts its own per-turn and stays stock). Harmless
  *  under adoption: nothing legitimate writes a top-level `viz/`. Idempotent. */
 export function remapChatArtifactDirs(ctx: Context): void {
-  const fsSvc = (ctx as unknown as { get: (n: string) => unknown }).get("fs") as
+  const fsSvc = ctx.get("fs") as
     | { resolve: (path: string, opts?: unknown) => Promise<unknown>; __cairnVizRemap?: boolean }
     | undefined;
   if (!fsSvc || typeof fsSvc.resolve !== "function" || fsSvc.__cairnVizRemap) return;
@@ -138,7 +139,7 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
     const name = (plugin as { name?: string })?.name ?? (plugin as { apply?: { name?: string } })?.apply?.name ?? "unknown";
     try {
-      const fiber = (ctx as unknown as { plugin: (p: unknown, c?: unknown) => Promise<{ dispose: () => void }> }).plugin(plugin, config);
+      const fiber = ctx.plugin(plugin as never, config as never) as unknown as Promise<{ dispose: () => void }>;
       disposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
       await fiber;
     } catch (e) {

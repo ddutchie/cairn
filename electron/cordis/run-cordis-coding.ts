@@ -16,6 +16,8 @@
  * plugin's turn/end mapping, or rejects on an unhandled throw.
  */
 import { Context } from "@deepseek-ai/cordis";
+// See ctx-augment.ts for the rationale — same augmentation load.
+import "./ctx-augment";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
@@ -269,8 +271,11 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     }
 
     try {
-      const toolsAny = (ctx as unknown as { tools: { schemas?: (scope?: unknown) => Array<{ function?: { name: string }; name?: string }>; list?: () => Array<{ name: string }> } }).tools;
-      const raw = toolsAny?.schemas?.() ?? toolsAny?.list?.() ?? [];
+      // ctx.tools is dsh-tools; `schemas` returns the registered set. The
+      // `list?.()` fallback covered a pre-dsh alternative surface — kept as
+      // defence, but the primary path is `schemas`.
+      const tools = ctx.tools as unknown as { schemas?: (scope?: unknown) => Array<{ function?: { name: string }; name?: string }>; list?: () => Array<{ name: string }> };
+      const raw = tools?.schemas?.() ?? tools?.list?.() ?? [];
       const toolNames = (raw as Array<{ function?: { name: string }; name?: string }>)
         .map((s) => (s as { function?: { name: string } })?.function?.name ?? (s as { name?: string })?.name ?? "")
         .filter(Boolean)
@@ -310,7 +315,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // Set the dsh plan state so the plan-mode policy section renders and the
     // exit_plan_mode tool works (state is logged + persisted across resume).
     try {
-      (ctx as unknown as { planMode?: { set: (a: unknown, active: boolean) => unknown } }).planMode?.set(agent, mode === "plan");
+      ctx.planMode?.set(agent as never, mode === "plan");
     } catch { /* non-fatal: plan mode falls back to prompt-only guidance */ }
 
     // Native approval-policy fold (audit §5 Phase C2): record autoApprove as
@@ -320,7 +325,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // "never"; HITL ⇒ "ask"). No-op when unchanged across turns; a resumed
     // session folds its own logged history.
     try {
-      (ctx as unknown as { approval?: { setPolicy?: (a: unknown, p: "ask" | "never") => unknown } }).approval?.setPolicy?.(agent, autoApprove ? "never" : "ask");
+      ctx.approval?.setPolicy?.(agent as never, autoApprove ? "never" : "ask");
     } catch { /* non-fatal: the per-turn classifier bridge still gates asks */ }
 
     // Mount the bridge AFTER the agent exists so it knows the dsh session id to
@@ -372,7 +377,7 @@ export async function openCordisAgent(
   const selection = { provider: "cairn", model: llmConfig.model };
   const attemptSessionId = SessionId(sessionId);
 
-  const pers = (ctx as unknown as { sessionPersistence?: { inspect: (id: unknown, signal?: AbortSignal) => Promise<{ events: readonly unknown[] }> } }).sessionPersistence;
+  const pers = ctx.sessionPersistence;
   let exists = false;
   try {
     if (pers) {
@@ -391,15 +396,15 @@ export async function openCordisAgent(
 
   type H = { agent: unknown; dispose?: () => Promise<void> };
   if (exists) {
-    return await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<H> } }).agents.resume({
+    return (await ctx.agents.resume({
       ...base,
       resumeSessionId: attemptSessionId,
       signal,
-    });
+    })) as H;
   }
-  return await (ctx as unknown as { agentLoop: { createAgent: (c: unknown, o: unknown) => Promise<H> } }).agentLoop.createAgent(ctx, {
+  return (await ctx.agentLoop.createAgent(ctx, {
     ...base,
     sessionId: attemptSessionId,
     signal,
-  } as never);
+  } as never)) as H;
 }

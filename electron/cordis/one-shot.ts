@@ -16,6 +16,7 @@
  */
 
 import { getContext, ensurePiAiAdapter } from "./run-cordis-loop";
+import "./ctx-augment";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { resolveTransport, type ApiMode } from "../lib/llm-transport";
 import { recordLlmUsage } from "../lib/usage-recorder";
@@ -67,9 +68,7 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
   let promptTokens = 0, completionTokens = 0, reasoningTokens = 0;
   const seenTypes: Record<string, number> = {};
 
-  for await (const chunk of (ctx as unknown as {
-    llm: { stream: (opts: { provider: string; model: string; system?: string; messages: unknown[]; maxTokens?: number; temperature?: number }) => AsyncIterable<{ type: string; text?: string; block?: { type?: string; text?: string }; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }> };
-  }).llm.stream({
+  for await (const chunk of ctx.llm.stream({
     provider: "cairn",
     model: effectiveConfig.model,
     // dsh GenerateOptions: `system` is a dedicated top-level slot (NOT a

@@ -20,6 +20,8 @@ import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import type Database from "better-sqlite3";
 import { upsertChatThread } from "../db/queries";
 import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
+// See electron/cordis/ctx-augment.ts — same augmentation load.
+import "./ctx-augment";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos, updatePiSession } from "../db/queries";
@@ -66,7 +68,7 @@ export function cairnSystemPromptPlugin(ctx: Context, config: CairnSystemPromptC
   const { systemText } = config;
   if (systemText) activeSystemText = systemText;
 
-  const sp = (ctx as unknown as { systemPrompt?: { section: (s: { name: string; order: number; text: () => string }) => () => void } }).systemPrompt;
+  const sp = ctx.systemPrompt;
   if (!sp || typeof sp.section !== "function") return;
 
   return sp.section({
@@ -94,14 +96,13 @@ export function cairnDbPlugin(ctx: Context, config: CairnDbConfig): (() => void)
   // disposer runs asynchronously — a back-to-back turn (or a test) can re-mount
   // before teardown settles. `provide` throws on a duplicate key, so skip when
   // the handle is already present (it's the same singleton db either way).
-  const existing = (ctx as unknown as { get: (name: string) => unknown }).get(CAIRN_DB);
+  const existing = ctx.get(CAIRN_DB);
   if (existing) return;
   return ctx.provide(CAIRN_DB, config.db);
 }
 
 function getDb(ctx: Context): Database.Database | undefined {
-  const get = (ctx as unknown as { get: (name: string) => unknown }).get;
-  return get(CAIRN_DB) as Database.Database | undefined;
+  return ctx.get(CAIRN_DB) as Database.Database | undefined;
 }
 
 // ── cairn-session ───────────────────────────────────────────────────────────
@@ -354,7 +355,11 @@ interface UserQuestionsSeam {
  */
 export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig): (() => void) | void {
   const { send, registerPending, emitQuestions, signal, questionsTimeoutMs } = config;
-  const uq = (ctx as unknown as { userQuestions?: UserQuestionsSeam }).userQuestions;
+  // ctx.userQuestions is provided by dsh-user-questions (see ctx-augment).
+  // Cast the value through UserQuestionsSeam so Cairn's own dispose-and-
+  // re-register helpers keep their local shape without leaking dsh's
+  // AskUserQuestionItem into every callsite.
+  const uq = ctx.userQuestions as unknown as UserQuestionsSeam | undefined;
   if (!uq) return;
 
   // registerProvider throws DUPLICATE_PROVIDER if a prior turn's provider fiber
@@ -904,7 +909,10 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
   };
 
   // 1) Ask-trigger: mutating tools route to the approval seam.
-  const unsubPre = (ctx as unknown as { on: (ev: string, fn: (...args: unknown[]) => unknown) => () => void }).on(
+  // ctx.on('tools/pre-execute', ...) — the waterfall event dsh-tools drives.
+  // The generic arg is untyped in the augmentation for third-party events;
+  // cast the handler's args narrowly to keep the touch site typed.
+  const unsubPre = (ctx.on as unknown as (ev: string, fn: (...args: unknown[]) => unknown) => () => void)(
     "tools/pre-execute",
     (...args: unknown[]) => {
       const exec = args[0] as { name?: string; arguments?: unknown; callId?: string } | undefined;
@@ -927,7 +935,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
   disposers.push(unsubPre);
 
   // 2) Answerer: bridge the ask to the renderer confirm UI.
-  const unsubAns = (ctx as unknown as { on: (ev: string, fn: (...args: unknown[]) => unknown) => () => void }).on(
+  const unsubAns = (ctx.on as unknown as (ev: string, fn: (...args: unknown[]) => unknown) => () => void)(
     "approval/request",
     (...args: unknown[]) => {
       const req = args[0] as { toolName?: string; callId?: string; reason?: string; signal?: AbortSignal } | undefined;

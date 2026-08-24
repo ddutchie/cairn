@@ -20,6 +20,7 @@
  * document block, and pdfjs would bloat the Electron main bundle).
  */
 import type { Context } from "@deepseek-ai/cordis";
+import "./ctx-augment";
 import type AttachmentStore from "@deepseek-ai/dsh-attachment";
 import type { ImageAttachmentRef, ImageMediaType } from "@deepseek-ai/dsh-attachment";
 
@@ -71,7 +72,7 @@ export async function buildCordisUserContent(
   const blocks: UserContentBlock[] = [{ type: "text", text }];
   if (!attachments || attachments.length === 0) return blocks;
 
-  const store = (ctx as unknown as { get: (n: string) => unknown }).get("attachments") as AttachmentStore | undefined;
+  const store = ctx.get("attachments") as AttachmentStore | undefined;
 
   for (const att of attachments) {
     const parsed = parseDataUrl(att.dataUrl);

@@ -5,6 +5,13 @@
  * events onto the streaming contract electron/ipc/chat.ts consumes.
  */
 import { Context } from "@deepseek-ai/cordis";
+// Side-effect import: pulls in every dsh service augmentation of Context
+// AND Cairn's own `ctx.cairn` addition, so field accesses (ctx.sessions,
+// ctx.approval, ctx.commands, ctx.planMode, ctx.cairn, …) type-check
+// without ad-hoc `as unknown as {…}` casts at every touch site. Changing
+// a dsh service signature upstream is now a compile error, not a silent
+// runtime regression.
+import "./ctx-augment";
 import Loader from "@deepseek-ai/cordis-plugin-loader";
 import sessionPlugin from "@deepseek-ai/dsh-session";
 import { extractCairnRef } from "./session-replay";
@@ -39,6 +46,7 @@ import { createCairnSkillProvider } from "./cairn-skill-provider";
 import path from "path";
 
 import { registerCairnTools, registerExternalCairnTools, CHAT_FORBIDDEN_TOOLS } from "./cairn-tools";
+import { getChatAgentCache, peekChatAgentCache } from "./chat-agent-cache";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnSystemPromptPlugin, cairnQuestionsPlugin, CAIRN_DB } from "./cairn-plugins";
 import { buildSystemPrompt, withPersonality } from "../lib/tools";
 import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
@@ -107,7 +115,7 @@ export function setSessionRoot(root: string): void {
  * which the subsequent file wipe then removes.
  */
 export async function dropChatAgentForThread(threadId: string): Promise<void> {
-  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, { handle?: Record<PropertyKey, unknown>; agent?: Record<PropertyKey, unknown>; whenIdle?: () => Promise<void> }> }).__cairnChatAgents;
+  const map = peekChatAgentCache();
   if (!map) return;
   const entry = map.get(threadId);
   if (entry) {
@@ -140,8 +148,11 @@ export async function dropChatAgentForThread(threadId: string): Promise<void> {
     const { getContext } = await import("./run-cordis-loop");
     const ctx = await getContext();
     const sid = SessionId(`chat-${threadId}`);
-    const s = (ctx as unknown as { sessions?: { get: (id: unknown) => { dispose?: () => void; [Symbol.dispose]?: () => void } | undefined } }).sessions?.get?.(sid);
+    const s = ctx.sessions?.get?.(sid) as (import("@deepseek-ai/dsh-session").Session & { dispose?: () => void; [Symbol.dispose]?: () => void }) | undefined;
     if (s) {
+      // Session doesn't declare a dispose contract in the public d.ts; call
+      // both variants defensively in case a runtime implementation happens
+      // to expose one. Fully best-effort — a missing dispose is expected.
       try { s[Symbol.dispose]?.(); } catch { /* noop */ }
       try { s.dispose?.(); } catch { /* noop */ }
     }
@@ -158,7 +169,7 @@ const toolDefsByName = new Map<string, Record<string, unknown>>();
 function toolDefFor(name: string): Record<string, unknown> | undefined {
   const hit = toolDefsByName.get(name);
   if (hit) return hit;
-  const svc = (sharedCtx as unknown as { tools?: { get?: (n: string) => unknown } } | null)?.tools;
+  const svc = sharedCtx?.tools;
   try {
     const def = typeof svc?.get === "function" ? (svc.get(name) as Record<string, unknown> | undefined) : undefined;
     if (def && typeof def === "object") { toolDefsByName.set(name, def); return def; }
@@ -222,8 +233,8 @@ export async function prepareReplayContext(
     const { pluginsDevEnabled } = await import("./plugin-loader");
     if (!pluginsDevEnabled()) return;
     const ctx = await getContext();
-    const get = (ctx as unknown as { get: (n: string) => unknown }).get;
-    if (!get.call(ctx, "fs")) {
+    // ctx.get is Cordis's own container lookup for named services.
+    if (!ctx.get("fs")) {
       let cwd: string | undefined;
       try {
         cwd = (await pers.inspect(sessionId))?.header?.cwd;
@@ -243,8 +254,7 @@ export async function prepareReplayContext(
  *  back-to-back turn reuses it (see runTurn). Exposed so /compact can run
  *  ctx.compaction.compactNow on the same live agent. */
 export function getCachedChatAgent(threadId: string): unknown {
-  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, unknown> }).__cairnChatAgents;
-  return map?.get(threadId);
+  return peekChatAgentCache()?.get(threadId);
 }
 
 /** Resume (or create) the stable chat Agent for a thread so /compact can operate
@@ -259,16 +269,24 @@ export async function resumeChatAgent(threadId: string, workspacePath: string, m
   const setup = (agentCtx: unknown) => { installModelSelection(agentCtx as never, { current: selection, assembled: undefined }); };
   let agent: unknown;
   try {
-    const resumed = await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<{ agent: unknown }> } }).agents.resume({
-      meta: { cwd: workspacePath }, agentOptions: { provider: selection.provider, model: selection.model }, setup, resumeSessionId: stableId,
+    const resumed = await ctx.agents.resume({
+      // NOTE: `meta` (cwd, parentSession, …) belongs to CreateAgentOptions,
+      // not ResumeAgentOptions — a resumed session already has its meta from
+      // its persisted header. Do NOT pass it here; the pre-refactor cast
+      // hid this and dsh's runtime silently ignored the field.
+      agentOptions: { provider: selection.provider, model: selection.model },
+      setup,
+      resumeSessionId: stableId,
     });
     agent = resumed.agent;
   } catch {
     return undefined; // no session yet — nothing to compact
   }
-  const map = (globalThis as unknown as { __cairnChatAgents?: Map<string, unknown> }).__cairnChatAgents ?? new Map();
-  (globalThis as unknown as { __cairnChatAgents?: typeof map }).__cairnChatAgents = map;
-  map.set(threadId, agent);
+  const map = getChatAgentCache();
+  // Store as an untyped entry — this path uses the agent value directly,
+  // not the surface shape. A cleaner refactor would type ChatAgentEntry
+  // as { agent?: Agent } instead.
+  map.set(threadId, agent as unknown as import("./chat-agent-cache").ChatAgentEntry);
   return agent;
 }
 
@@ -300,6 +318,10 @@ export async function getContext(): Promise<Context> {
     // ctx.tools identical to the old imperative mount.
     const loader = ctx.loader as unknown as {
       builtins: Record<string, unknown>;
+      // .create/.await/.await are already on the public Loader type, but the
+      // `builtins` map is an internal property of cordis-plugin-loader; the
+      // narrow structural cast here is the one cast we keep because the field
+      // is a documented private extension point, not a public service surface.
       create: (o: Record<string, unknown>) => Promise<unknown>;
       await: () => Promise<void>;
     };
@@ -439,7 +461,9 @@ export async function getContext(): Promise<Context> {
     // safety: registerProvider throws on a duplicate within one layer — guard
     // so a re-mounted context can't crash boot.
     try {
-      const skills = (ctx as unknown as { skills?: { registerProvider: (c: unknown) => () => void } }).skills;
+      const skills = ctx.skills;
+      // registerProvider takes a factory (control) => SkillProvider — Cairn's
+      // provider doesn't need the control seam, so ignore its argument.
       if (skills) skills.registerProvider(() => createCairnSkillProvider());
     } catch (err) {
       console.error("[cordis] cairn skill provider registration failed:", err instanceof Error ? err.message : err);
@@ -452,7 +476,7 @@ export async function getContext(): Promise<Context> {
     // documented — it is the runtime plugin contract.
     try {
       const { defineTool } = await import("@deepseek-ai/dsh-tools");
-      (ctx as unknown as { cairn?: Record<string, unknown> }).cairn = {
+      ctx.cairn = {
         defineTool,
         /**
          * Ask the human running this session to confirm something on the
@@ -547,11 +571,11 @@ export async function readContextRing(sessionId: string): Promise<{ available: b
     const cached = cachedContextRing(sessionId);
     if (cached) return { available: true, ring: { currentModel: cached.currentModel, byModel: cached.byModel } };
     const ctx = await getContext();
-    const registry = (ctx as unknown as { sessionProjections?: { stateOf: (session: unknown, key: string) => unknown } }).sessionProjections;
-    const session = (ctx as unknown as { sessions?: { get?: (id: string) => unknown } }).sessions?.get?.(sessionId);
+    const registry = ctx.sessionProjections;
+    const session = ctx.sessions?.get?.(sessionId as never);
     if (!registry || !session) return { available: false };
     type RingBucket = { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number };
-    const state = registry.stateOf(session, "contextRing") as
+    const state = registry.stateOf(session, "contextRing" as never) as
       { currentModel: string | null; byModel: Record<string, RingBucket> } | undefined;
     if (!state) return { available: false };
     return { available: true, ring: { currentModel: state.currentModel, byModel: state.byModel } };
@@ -673,7 +697,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   // user plugins consume ctx.fs.
   try {
     const { pluginsDevEnabled } = await import("./plugin-loader");
-    if (pluginsDevEnabled() && !(ctx as unknown as { get: (n: string) => unknown }).get("fs")) {
+    if (pluginsDevEnabled() && !ctx.get("fs")) {
       const { mountFsChain } = await import("./cordis-coding-tools");
       await mountFsChain(ctx, { cwd: workspacePath });
     }
@@ -826,7 +850,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   // callId → tool name, for pairing tool/result with its tool/call (plugin tools).
   const sessionCallNames = new Map<string, string>();
   const sessionCallArgs = new Map<string, string>();
-  const streamDisposer = (ctx as unknown as { on: (ev: string, fn: (s: unknown, e: SessionEvent) => void) => () => void }).on(
+  const streamDisposer = ctx.on(
     "session/event",
     (session, event) => {
       if ((session as { header?: { origin?: string } }).header?.origin === "subagent") return;
@@ -906,8 +930,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   // "cannot prepare session while it is live" (the previous turn's agent is
   // still in ctx.agents / ctx.sessions as live). This is the dsh-faithful
   // single-Agent-per-SessionId pattern (see agent.ts:64 ReactLoopAgent).
-  const chatAgents = (globalThis as unknown as { __cairnChatAgents?: Map<string, { followup: (msg: unknown) => void; whenIdle: () => Promise<void>; session: { seq: number; events: readonly SessionEvent[] } }> }).__cairnChatAgents ?? new Map();
-  (globalThis as unknown as { __cairnChatAgents?: typeof chatAgents }).__cairnChatAgents = chatAgents;
+  const chatAgents = getChatAgentCache();
 
   const runTurn = async (): Promise<{ text: string; reasoning: string; pt: number; ct: number; rt: number; failedKind?: string }> => {
     const stableId = SessionId(`chat-${req.threadId}`);
@@ -929,8 +952,10 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     }
     if (!cached || !agent!) {
       try {
-        const resumed = await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<{ agent: typeof agent }> } }).agents.resume({
-          meta: { cwd: workspacePath },
+        const resumed = await ctx.agents.resume({
+          // meta belongs to CreateAgentOptions only — resume takes the meta
+          // off the persisted session header. Passing it here was silently
+          // ignored under the old cast and is now a compile-time no-no.
           agentOptions: { provider: selection.provider, model: selection.model },
           setup: (agentCtx: unknown) => {
             installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
@@ -955,8 +980,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
         } catch (e) {
           const msg = (e as Error)?.message ?? String(e);
           if (msg.includes("already exists")) {
-            const resumed2 = await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<{ agent: typeof agent }> } }).agents.resume({
-              meta: { cwd: workspacePath },
+            const resumed2 = await ctx.agents.resume({
               agentOptions: { provider: selection.provider, model: selection.model },
               setup: (agentCtx: unknown) => {
                 installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
@@ -972,8 +996,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
             // dispose on the cached handle, if any) and retry resume once.
             try { await dropChatAgentForThread(req.threadId); } catch { /* best-effort */ }
             try {
-              const resumed3 = await (ctx as unknown as { agents: { resume: (o: unknown) => Promise<{ agent: typeof agent }> } }).agents.resume({
-                meta: { cwd: workspacePath },
+              const resumed3 = await ctx.agents.resume({
                 agentOptions: { provider: selection.provider, model: selection.model },
                 setup: (agentCtx: unknown) => {
                   installModelSelection(agentCtx as never, { current: selection, assembled: undefined });

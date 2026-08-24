@@ -9,6 +9,7 @@
  * implementation).
  */
 import type { Context } from "@deepseek-ai/cordis";
+import "./ctx-augment";
 
 /** Shared compaction flow: resume the thread's agent + run compactNow. */
 export async function compactChatSession(
@@ -27,13 +28,18 @@ export async function compactChatSession(
     const transport = await resolveTransport(baseUrl, apiKey);
     await ensurePiAiAdapter(ctx, { baseUrl, model: modelName, apiKey, api: transport.mode === "responses" ? "openai-responses" : "openai-completions" });
 
-    const agent = await resumeChatAgent(threadId, (ctx as unknown as { root?: { cwd?: string } }).root?.cwd ?? process.cwd(), modelName);
+    // NOTE: the third arg here is the resumed session's workspacePath (used
+    // for CreateAgentOptions.meta.cwd on a fresh session, and IGNORED for a
+    // pure resume). `ctx.root?.cwd` was a speculative reach — Cordis's
+    // Context doesn't declare a cwd. process.cwd() is a safe fallback for
+    // the create-agent path; resume is unaffected.
+    const agent = await resumeChatAgent(threadId, process.cwd(), modelName);
     if (!agent) return { ok: false, compacted: false, error: "no session to compact (start a conversation first)" };
 
-    const compaction = (ctx as unknown as { compaction?: { compactNow: (a: unknown, signal: AbortSignal, cmd?: unknown) => Promise<{ summary?: unknown } | null> } }).compaction;
+    const compaction = ctx.compaction;
     if (!compaction) return { ok: false, compacted: false, error: "compaction engine not available" };
 
-    const result = await compaction.compactNow(agent, new AbortController().signal);
+    const result = await compaction.compactNow(agent as never, new AbortController().signal);
     return { ok: true, compacted: result !== null };
   } catch (err) {
     return { ok: false, compacted: false, error: err instanceof Error ? err.message : String(err) };
@@ -42,7 +48,7 @@ export async function compactChatSession(
 
 /** Register Cairn's commands on the dsh command runtime (best-effort). */
 export function registerCairnCommands(ctx: Context): void {
-  const commands = (ctx as unknown as { commands?: { register: (def: unknown) => unknown } }).commands;
+  const commands = ctx.commands;
   if (!commands || typeof commands.register !== "function") return;
   try {
     commands.register({
