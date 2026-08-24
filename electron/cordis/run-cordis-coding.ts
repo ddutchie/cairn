@@ -19,10 +19,10 @@ import { Context } from "@deepseek-ai/cordis";
 import "./ctx-augment";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import type { Database } from "better-sqlite3";
 
 import { getContext, ensurePiAiAdapter } from "./run-cordis-loop";
+import { openCordisSessionAgent } from "./session-agent";
 import { mountCodingStack } from "./cordis-coding-tools";
 import {
   cairnDbPlugin,
@@ -386,38 +386,5 @@ export async function openCordisAgent(
   ctx: Context,
   opts: { sessionId: string; cwd: string; llmConfig: LLMConfig; signal?: AbortSignal },
 ): Promise<{ agent: unknown; dispose?: () => Promise<void> }> {
-  const { sessionId, cwd, llmConfig, signal } = opts;
-  const selection = { provider: "cairn", model: llmConfig.model };
-  const attemptSessionId = SessionId(sessionId);
-
-  const pers = ctx.sessionPersistence;
-  let exists = false;
-  try {
-    if (pers) {
-      const insp = await pers.inspect(attemptSessionId, signal);
-      exists = insp.events.length > 0;
-    }
-  } catch { /* treat as fresh on any inspection error */ }
-
-  const base = {
-    meta: { cwd },
-    agentOptions: { provider: selection.provider, model: selection.model },
-    setup: (agentCtx: unknown) => {
-      installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
-    },
-  };
-
-  type H = { agent: unknown; dispose?: () => Promise<void> };
-  if (exists) {
-    return (await ctx.agents.resume({
-      ...base,
-      resumeSessionId: attemptSessionId,
-      signal,
-    })) as H;
-  }
-  return (await ctx.agentLoop.createAgent(ctx, {
-    ...base,
-    sessionId: attemptSessionId,
-    signal,
-  } as never)) as H;
+  return openCordisSessionAgent(ctx, opts);
 }
