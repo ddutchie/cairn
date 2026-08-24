@@ -83,17 +83,17 @@ function ApprovalCard({ tc, sessionId }: { tc: ToolChipProps["tc"]; sessionId: s
       </div>
       {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
       <div className="mt-2 flex items-center justify-end gap-1.5">
-        <button data-testid="approval-deny" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors">Deny</button>
-        {grant === "command" && <button data-testid="approval-allow-command" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "command", typeof tc.args?.command === "string" ? tc.args.command : undefined)} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this command</button>}
-        {grant === "session" && <button data-testid="approval-allow-session" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "session")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this tool</button>}
-        <button data-testid="approval-allow-once" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded transition-opacity">Allow once</button>
+        <button data-testid="approval-deny" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, false, undefined, undefined, tc.approvalNonce)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors">Deny</button>
+        {grant === "command" && <button data-testid="approval-allow-command" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "command", typeof tc.args?.command === "string" ? tc.args.command : undefined, tc.approvalNonce)} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this command</button>}
+        {grant === "session" && <button data-testid="approval-allow-session" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, "session", undefined, tc.approvalNonce)} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded transition-colors">Always allow this tool</button>}
+        <button data-testid="approval-allow-once" onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId, true, undefined, undefined, tc.approvalNonce)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded transition-opacity">Allow once</button>
       </div>
     </div>
   );
 }
 
 interface ToolChipProps {
-  tc: { callId: string; name: string; label: string; args?: Record<string, unknown>; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; confirmRequired?: boolean };
+  tc: { callId: string; name: string; label: string; args?: Record<string, unknown>; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; confirmRequired?: boolean; approvalNonce?: string };
   sessionId?: string;
   connectors?: Record<string, AgentConnectorMeta>;
 }

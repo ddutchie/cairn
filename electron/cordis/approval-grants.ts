@@ -108,6 +108,14 @@ export interface PendingAskMeta {
   name: string;
   label: string;
   callId: string;
+  /**
+   * Per-ask random nonce minted when the ask was emitted. The renderer must
+   * echo it back on pi-agent:respond-tool — a compromised page / UI plugin
+   * that only saw the callId can't approve because it never received the
+   * nonce. Absent on legacy sites; the verify path fail-closes when the
+   * expected nonce is missing.
+   */
+  nonce?: string;
 }
 
 export interface PendingAskRegistry {

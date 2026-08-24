@@ -1015,7 +1015,7 @@ const api = {
     contextRing: (sessionId: string) => invoke<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }>("pi-agent:context-ring", { sessionId }),
     isRunning: (sessionId: string) => invoke<{
       running: boolean;
-      pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string }>;
+      pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string; nonce?: string }>;
       /** Outstanding question asks (ask_questions / plan-review). The
        *  renderer surfaces these into pendingQuestions after a reload so a
        *  plan under review isn't lost. */
@@ -1166,10 +1166,10 @@ const api = {
     setMode: (sessionId: string, mode: "plan" | "execute") =>
       ipcRenderer.send("pi-agent:set-mode", { sessionId, mode }),
     /** Approve or deny a pending tool call; grant:"command" echoes the exact bash command to standing-allow */
-    respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command", command?: string) =>
-      ipcRenderer.send("pi-agent:respond-tool", { sessionId, callId, approved, grant, command }),
-    /** Listen for tool call confirmation requests */
-    onToolConfirmRequired: (cb: (e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown> }) => void) => {
+    respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command", command?: string, nonce?: string) =>
+      ipcRenderer.send("pi-agent:respond-tool", { sessionId, callId, approved, grant, command, nonce }),
+
+    onToolConfirmRequired: (cb: (e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown>; nonce?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown> }) => cb(e);
       ipcRenderer.on("pi-agent:tool-confirm-required", handler);

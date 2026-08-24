@@ -967,6 +967,12 @@ export interface PiAgentMessage {
     output?: string;
     cairnRef?: { type: "note" | "task"; id: string; title: string };
     confirmRequired?: boolean;
+    /**
+     * Per-ask nonce minted main-side and echoed back on pi-agent:respond-tool.
+     * Prevents a compromised renderer from approving asks it never saw the
+     * push for. Present when confirmRequired is true; cleared on settle.
+     */
+    approvalNonce?: string;
   }[];
   subagents?: PiSubagentMessage[];
   isStreaming?: boolean;

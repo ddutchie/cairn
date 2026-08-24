@@ -276,7 +276,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // Re-surface approval asks whose original push was lost to a reload —
       // the main-process loop is still blocked waiting on them.
       for (const ask of res?.pendingAsks ?? []) {
-        setPiToolConfirmRequired(session.sessionId, ask.callId, true);
+        setPiToolConfirmRequired(session.sessionId, ask.callId, true, ask.nonce);
       }
       // Re-surface pending question asks (ask_questions / plan-review). The
       // main process kept the full question payload so we can rehydrate a
@@ -521,7 +521,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const unsubToolConfirmRequired = electron.piAgent.onToolConfirmRequired((e) => {
       if (e.sessionId !== sessionId) return;
-      setPiToolConfirmRequired(sessionId, e.callId, true);
+      setPiToolConfirmRequired(sessionId, e.callId, true, e.nonce);
     });
 
     // The ask timed out unanswered and the loop settled it fail-closed —

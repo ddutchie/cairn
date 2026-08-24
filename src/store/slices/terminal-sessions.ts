@@ -88,7 +88,7 @@ export interface TerminalSessionsSlice {
   /** Update an existing tool call chip in-place (start → done) */
   updatePiToolCall: (sessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Set confirmation requirement state for a tool chip */
-  setPiToolConfirmRequired: (sessionId: string, callId: string, confirmRequired: boolean) => void;
+  setPiToolConfirmRequired: (sessionId: string, callId: string, confirmRequired: boolean, approvalNonce?: string) => void;
   /** Clear message history for a pi session */
   clearPiMessages: (sessionId: string) => void;
   /** Update token usage for a session after a step completes */
@@ -378,7 +378,14 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  setPiToolConfirmRequired(sessionId, callId, confirmRequired) {
+  setPiToolConfirmRequired(sessionId, callId, confirmRequired, approvalNonce) {
+    // Approval-card patch: attach both the confirm flag and (when supplied)
+    // the main-side per-ask nonce so pi-agent:respond-tool can verify the
+    // click's provenance. On clear (confirmRequired=false), drop the nonce
+    // too — it's a one-shot secret.
+    const patch = confirmRequired
+      ? { confirmRequired: true, ...(approvalNonce ? { approvalNonce } : {}) }
+      : { confirmRequired: false, approvalNonce: undefined };
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
@@ -390,7 +397,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
               const idx = msg.toolCalls.findIndex((tc) => tc.callId === callId);
               if (idx !== -1) {
                 const updated = [...msg.toolCalls];
-                updated[idx] = { ...updated[idx], confirmRequired };
+                updated[idx] = { ...updated[idx], ...patch };
                 return { ...msg, toolCalls: updated };
               }
             }
@@ -407,7 +414,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
                 if (idx === -1) return m;
                 changed = true;
                 const updated = [...m.toolCalls];
-                updated[idx] = { ...updated[idx], confirmRequired };
+                updated[idx] = { ...updated[idx], ...patch };
                 return { ...m, toolCalls: updated };
               }),
             }));

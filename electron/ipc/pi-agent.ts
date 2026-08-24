@@ -36,6 +36,7 @@ import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordi
 import { assertSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
+import { webcrypto as nodeWebCrypto } from "node:crypto";
 import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 
 // ── Session registry ──────────────────────────────────────────────────────────
@@ -108,6 +109,44 @@ function clearPendingQuestionsForSession(sessionId: string) {
   }
 }
 
+/**
+ * Per-ask random nonce so pi-agent:respond-tool must present proof it
+ * received the original tool-confirm-required push. Without this, any
+ * renderer-side script (a compromised web content, a UI plugin) could
+ * call window.electron.piAgent.respondTool(sid, cid, true) for a
+ * callId it saw broadcast — approving every pending ask silently and
+ * defeating the entire approval gate. Nonces are minted in main-side
+ * when the ask is emitted, sent to the renderer in the confirm-required
+ * event, and required on the respond-tool payload.
+ */
+const pendingAskNonces = new Map<string, string>();
+function nonceKey(sessionId: string, callId: string) {
+  return `${sessionId}::${callId}`;
+}
+function mintAskNonce(sessionId: string, callId: string): string {
+  // 128-bit cryptographic nonce — 32 hex chars, well past guessing range.
+  const bytes = new Uint8Array(16);
+  // globalThis.crypto is present in Node 24 + Electron main; node:crypto
+  // webcrypto is the fallback for older runtimes or unusual bundling paths.
+  (globalThis.crypto ?? nodeWebCrypto).getRandomValues(bytes);
+  const nonce = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  pendingAskNonces.set(nonceKey(sessionId, callId), nonce);
+  return nonce;
+}
+function verifyAskNonce(sessionId: string, callId: string, presented: unknown): boolean {
+  const expected = pendingAskNonces.get(nonceKey(sessionId, callId));
+  return typeof presented === "string" && expected !== undefined && presented === expected;
+}
+function dropAskNonce(sessionId: string, callId: string) {
+  pendingAskNonces.delete(nonceKey(sessionId, callId));
+}
+function clearAskNoncesForSession(sessionId: string) {
+  const prefix = `${sessionId}::`;
+  for (const k of Array.from(pendingAskNonces.keys())) {
+    if (k.startsWith(prefix)) pendingAskNonces.delete(k);
+  }
+}
+
 /** Drop every pending resolver + approval grant belonging to one session. */
 function sweepSessionPendings(sessionId: string): void {
   const prefix = `${sessionId}::`;
@@ -119,6 +158,7 @@ function sweepSessionPendings(sessionId: string): void {
   clearSessionGrants(sessionId);
   pendingAsks.clearSession(sessionId);
   clearPendingQuestionsForSession(sessionId);
+  clearAskNoncesForSession(sessionId);
   forgetSessionApprovalArgs(sessionId);
   setConfirmTransport(sessionId, undefined);
 }
@@ -294,14 +334,23 @@ async function runCordisCodingSession(
           const p = payload as { sessionId?: string; name?: string; label?: string; callId?: string };
           if (p.sessionId) {
             if (channel === "pi-agent:tool-confirm-required") {
+              // Mint a per-ask nonce so pi-agent:respond-tool must present
+              // it — a renderer-side script can't approve an ask it never
+              // received the original push for. The nonce is attached to
+              // the outgoing event (see the payload mutation below) and
+              // consumed / cleared by respond-tool on settle.
+              const nonce = mintAskNonce(p.sessionId, p.callId ?? "");
+              (payload as { nonce?: string }).nonce = nonce;
               pendingAsks.record({
                 sessionId: p.sessionId,
                 name: p.name ?? "tool",
                 label: p.label ?? p.name ?? "tool",
                 callId: p.callId ?? "",
-              });
+                nonce,
+              } as never);
             } else if (channel === "pi-agent:tool-confirm-expired") {
               pendingAsks.resolve(p.sessionId, p.callId ?? "");
+              dropAskNonce(p.sessionId, p.callId ?? "");
             }
 
           }
@@ -793,13 +842,24 @@ export function registerPiAgentHandler(
   // dsh will execute is what we stashed via recordPendingApprovalArgs. If the
   // two disagree (or the renderer's command is absent), the grant is a no-op:
   // fail-closed on the record path.
-  registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string }) => {
+  registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant, nonce }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string; nonce?: string }) => {
+    // Require the per-ask nonce — a compromised renderer (XSS from a
+    // rendered note, an installed UI plugin) that only saw the callId
+    // broadcast on pi-agent:tool-confirm-required must NOT be able to
+    // auto-approve every ask. The nonce is minted main-side and returned
+    // in the confirm-required event; only a legitimate consumer of that
+    // event has it. Fail-closed on absence / mismatch.
+    if (!verifyAskNonce(sessionId, callId, nonce)) {
+      console.warn(`[pi-agent] respond-tool rejected: bad or missing nonce for ${sessionId}/${callId}`);
+      return;
+    }
     const key = pendingKey(sessionId, callId);
     const cordisPending = cordisPendingApprovals.get(key);
     if (!cordisPending) return;
     cordisPending({ approved, grant: approved ? grant : undefined });
     cordisPendingApprovals.delete(key);
     pendingAsks.resolve(sessionId, callId);
+    dropAskNonce(sessionId, callId);
     if (approved && grant === "command") {
       // Read the trusted command from the pre-execute stash — the renderer's
       // command field is ignored (parameter kept in the type signature only
