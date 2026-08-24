@@ -688,7 +688,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       window.electron?.piAgent.compactNow({
         sessionId: session.sessionId,
         config: {
-          provider: agentConfig.baseUrl.includes("localhost") || agentConfig.baseUrl.includes("127.0.0.1") ? "localllm" : "openai",
+          // Never coerce localhost URLs to "localllm" — that slug means the
+          // built-in on-device llama-server (chat-only). Saved providers like
+          // Ollama / LM Studio on localhost are plain OpenAI-compatible
+          // endpoints and must reach the loop with their real baseUrl intact.
+          provider: "openai",
           baseUrl:  agentConfig.baseUrl  || undefined,
           model:    agentConfig.model    || undefined,
           apiKey:   agentConfig.apiKey   || undefined,
@@ -754,7 +758,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       mode:        session.mode ?? "execute",
       attachments: attachments.length > 0 ? attachments : undefined,
       config: {
-        provider:   (agentConfig.baseUrl.includes("localhost") || agentConfig.baseUrl.includes("127.0.0.1")) ? "localllm" : "openai",
+        // See the /compact comment above: localhost ≠ built-in Local Engine.
+        // Ollama / LM Studio providers stay "openai" with their own baseUrl.
+        provider:   "openai",
         baseUrl:     agentConfig.baseUrl     || undefined,
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,

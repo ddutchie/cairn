@@ -196,12 +196,34 @@ export default function Home() {
               const latest = history[0];
               // Load messages for the latest session — session-as-truth (dsh JSONL),
               // SQLite fallback for pre-dsh sessions. Mirrors the chat load path.
-              const rows = await (window.electron.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(latest.id) as Array<{
+              // db:piSession:sessionMessages returns an ENVELOPE
+              // ({ messages, usage?, contextRing?, todos? }) — not a bare array
+              // (and IPC results may be result-wrapped) — so unwrap defensively
+              // exactly like useAgentSessionActions.handleResumeSession.
+              type PiRow = {
                 id: string; role: "user" | "assistant" | "error"; content: string;
                 reasoning: string | null;
                 toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
-              }>;
-              const piMessages = rows.map((r) => ({
+              };
+              const sessRes = await (window.electron.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(latest.id);
+              let rows: PiRow[] | undefined;
+              let lastUsage: import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"];
+              if (Array.isArray(sessRes)) {
+                rows = sessRes as PiRow[];
+              } else if (sessRes && typeof sessRes === "object") {
+                const raw = "data" in sessRes && (sessRes as { data?: unknown }).data ? (sessRes as { data: unknown }).data : sessRes;
+                if (Array.isArray(raw)) {
+                  rows = raw as PiRow[];
+                } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
+                  rows = (raw as { messages: PiRow[] }).messages;
+                  lastUsage = (raw as { usage?: import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"] }).usage;
+                  const rawTodos = (raw as { todos?: Array<{ id: string; title: string; status: string }> }).todos;
+                  if (rawTodos && rawTodos.length > 0) {
+                    state.setPiSessionTodos(latest.id, rawTodos.map((t) => ({ content: t.title, status: t.status === "completed" ? "completed" : t.status === "in_progress" ? "in_progress" : "pending", priority: "medium" as const })));
+                  }
+                }
+              }
+              const piMessages = (rows ?? []).map((r) => ({
                 id: r.id,
                 role: r.role,
                 content: r.content,
@@ -227,6 +249,7 @@ export default function Home() {
                 mode:        latest.mode,
                 planNoteId:  latest.planNoteId ?? undefined,
                 planContent: latest.planContent ?? undefined,
+                lastUsage,
               });
               state.setPersistentPiSession(latest.id);
               // Restore LLM context in main process

@@ -23,7 +23,7 @@ import { handle } from "./result-helpers";
 import type { PiAgentSession, AgentLLMConfig, AgentToolContext } from "../lib/pi-agent-types";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { discoverSkills } from "../lib/skills";
-import { normaliseBaseUrl, isLocalEndpoint } from "../lib/llm";
+import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
@@ -542,7 +542,12 @@ export function registerPiAgentHandler(
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : false,
       isReasoningModel: reqConfig?.isReasoningModel,
-      provider: reqConfig?.provider ?? (isLocalEndpoint(reqConfig?.baseUrl ?? "") ? "localllm" : undefined),
+      // No isLocalEndpoint→"localllm" coercion: a custom local endpoint
+      // (Ollama, LM Studio, user-run llama.cpp) must keep its own baseUrl —
+      // tagging it "localllm" would reroute requests into the app-managed
+      // on-device llama-server in run-cordis-coding.ts. "localllm" only ever
+      // arrives explicitly from the chat surface.
+      provider: reqConfig?.provider,
       contextWindow: reqConfig?.contextWindow,
     };
 
@@ -683,7 +688,8 @@ export function registerPiAgentHandler(
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : false,
       isReasoningModel: reqConfig?.isReasoningModel,
-      provider: reqConfig?.provider ?? (isLocalEndpoint(reqConfig?.baseUrl ?? "") ? "localllm" : undefined),
+      // Same no-coercion rule as pi-agent:prompt (see above).
+      provider: reqConfig?.provider,
       contextWindow: reqConfig?.contextWindow,
     };
 
