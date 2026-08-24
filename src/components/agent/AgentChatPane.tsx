@@ -10,8 +10,6 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
 import { Trash2, FileText, Map as MapIcon } from "lucide-react";
-import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
-import { ConversationComposer } from "@/components/conversation/ConversationComposer";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
 import type { PendingQuestion } from "@/hooks/useChatStream";
 import { useCairnStore } from "@/store";
@@ -33,11 +31,9 @@ import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatal
 import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
 import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
-import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
-import { ConversationMessageBubble } from "@/components/conversation/ConversationMessageBubble";
 import { toConversationMessage } from "@/components/conversation/conversation-message";
-import { ConversationHeader } from "@/components/conversation/ConversationHeader";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
+import { ConversationPane } from "@/components/conversation/ConversationPane";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 import type { SessionProjection } from "../../../shared/agent/session-projection";
@@ -131,7 +127,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     [customCommands, registryCommands]
   );
 
-  const messages    = session.messages ?? [];
+  const messages = session.messages ?? [];
+  const conversationMessages = useMemo(() => (session.messages ?? []).map((message) => toConversationMessage(message)), [session.messages]);
 
   // ── Virtualized transcript (react-virtuoso) ───────────────────────────────
   // Only messages near the viewport are mounted, so a session with thousands of
@@ -791,138 +788,60 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
 
   return (
-    <div className="flex flex-col h-full bg-[var(--surface)]">
-
-      {/* Header */}
-      <ConversationHeader
-        title={session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
-        contextLimit={normalizeContextLimit(agentConfig.contextLimit)}
-        usage={session.lastUsage}
-        actions={(
-          <>
-
-        {/* Passive mode status. DSH owns entry/exit through /plan and
-            exit_plan_mode; this is intentionally not a second toggle. */}
-        {session.mode === "plan" && (
-          <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]">
-            <MapIcon size={9} />
-            PLAN
-          </span>
-        )}
-
-        {/* PRD note chip — shown when plan note exists */}
-        {session.planNoteId && (
-          <Tooltip content="Open plan note" side="left">
-            <button
-              onClick={() => revealNote(setView, session.planNoteId!)}
-              className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"
-            >
-              <FileText size={9} />
-              PRD
-            </button>
-          </Tooltip>
-        )}
-
-
-        <Tooltip content="Clear conversation" side="left">
-          <button
-            onClick={handleClear}
-            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-          >
-            <Trash2 size={12} />
-          </button>
-        </Tooltip>
-          </>
-        )}
-      />
-
-      {/* Messages */}
-      {/* Messages — virtualized so a session with thousands of persisted
-          messages (each with reasoning, tool chips, subagent traces) only ever
-          mounts the items near the viewport, no matter how far you scroll. */}
-      <ConversationTranscript
-        transcriptRef={virtuosoRef}
-        className="flex-1 min-h-0"
-        data={messages}
-        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-        emptyPlaceholder={() => (
-          <ConversationEmptyState
-            title={session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
-            description={session.mode === "plan"
-              ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
-              : "Ask me to read, edit, or run code — or manage your project board."}
-          />
-        )}
-        footer={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
-        itemContent={(_index, msg) => (
-          <div className={cn("px-4 py-1.5", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
-            <ConversationMessageBubble
-              message={toConversationMessage(msg)}
-              sessionId={session.sessionId}
-              connectors={connectorMap}
-            />
-          </div>
-        )}
-      />
-
-      {/* Input — with upward-expanding plan task list docked above it */}
-      <div className={cn("flex-shrink-0", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
-        {/* Keep blocking questions outside Virtuoso's Footer. The footer
-            component is recreated while the transcript streams, which can
-            remount QuestionForm and discard answers typed into the form. */}
-        {pendingQuestions && (
-          <div className="px-3 pt-3">
-            <QuestionForm
-              questions={pendingQuestions}
-              onSubmit={submitQuestions}
-              onSubmitStructured={(json) => { submitQuestions(json); return true; }}
-              disabled={false}
-            />
-          </div>
-        )}
-        {/* Pinned status strip: always visible above the input even when the
-            transcript is scrolled up. Shows the working state and the queued
-            message count — the queue stays collapsed so full message content
-            is only rendered when the user expands it. */}
-        {isLoading && !pendingQuestions && <ConversationWorkingStatus label="Agent is working — you can queue messages below" />}
-        <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
-        {/* Plan review is rendered by QuestionForm from dsh's
-            exit_plan_mode interaction. */}
-        {session.mode === "execute" && planNoteContent && (
-          <PlanTaskList content={planNoteContent} />
-        )}
-        {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && (
-          <AgentTodoDock todos={sessionTodos ?? []} live={false} />
-        )}
-      <div>
-        <ConversationComposer
-          centered={sessionPresentation === "center"}
-          ref={textareaRef}
-          value={input}
-          onChange={setInput}
-          onSubmit={sendPrompt}
-          onStop={handleStop}
-          isLoading={isLoading}
-          queueWhileBusy={isLoading}
-          queuedCount={queued.length}
-          placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
-          commands={agentCommands}
-          onSearchSuggestions={handleSearchFiles}
-          allowImages={allowImages}
-          allowPdf={allowPdf}
-          providerModelTarget="agent"
-          statusText={retryInfo
-            ? `Transient error — retrying (${retryInfo.attempt}/${retryInfo.maxRetries}) in ${Math.round(retryInfo.delayMs / 1000)}s…`
-            : pendingQuestions
-              ? "Waiting for your answers…"
-              : isCompacting
-                ? "Compacting context…"
-                : isLoading
-                  ? "Working… click ◼ to stop"
-                  : "Shift+Enter for new line · Enter to send"}
+    <ConversationPane
+      className="h-full bg-[var(--surface)]"
+      sessionId={session.sessionId}
+      profile={session.role === "automation-dev" ? "automation-dev" : "coding"}
+      messages={conversationMessages}
+      input={input}
+      onInputChange={setInput}
+      onPrompt={sendPrompt}
+      onAbort={handleStop}
+      isLoading={isLoading}
+      transcriptRef={virtuosoRef}
+      composerRef={textareaRef}
+      usage={session.lastUsage}
+      contextLimit={normalizeContextLimit(agentConfig.contextLimit)}
+      connectors={connectorMap}
+      centered={sessionPresentation === "center"}
+      title={session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
+      emptyState={(
+        <ConversationEmptyState
+          title={session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
+          description={session.mode === "plan"
+            ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
+            : "Ask me to read, edit, or run code — or manage your project board."}
         />
-      </div>
-      </div>
-    </div>
+      )}
+      projection={{ pendingQuestions }}
+      onAnswerQuestions={submitQuestions}
+      transcriptFooter={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
+      actions={(
+        <>
+          {session.mode === "plan" && <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]"><MapIcon size={9} /> PLAN</span>}
+          {session.planNoteId && <Tooltip content="Open plan note" side="left"><button onClick={() => revealNote(setView, session.planNoteId!)} className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"><FileText size={9} /> PRD</button></Tooltip>}
+          <Tooltip content="Clear conversation" side="left"><button onClick={handleClear} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"><Trash2 size={12} /></button></Tooltip>
+        </>
+      )}
+      composerBefore={(
+        <div className={cn("flex-shrink-0", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
+          {isLoading && !pendingQuestions && <ConversationWorkingStatus label="Agent is working — you can queue messages below" />}
+          <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
+          {session.mode === "execute" && planNoteContent && <PlanTaskList content={planNoteContent} />}
+          {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && <AgentTodoDock todos={sessionTodos ?? []} live={false} />}
+        </div>
+      )}
+      composerProps={{
+        centered: sessionPresentation === "center",
+        queueWhileBusy: isLoading,
+        queuedCount: queued.length,
+        commands: agentCommands,
+        onSearchSuggestions: handleSearchFiles,
+        allowImages,
+        allowPdf,
+        providerModelTarget: "agent",
+        statusText: retryInfo ? `Transient error — retrying (${retryInfo.attempt}/${retryInfo.maxRetries}) in ${Math.round(retryInfo.delayMs / 1000)}s…` : pendingQuestions ? "Waiting for your answers…" : isCompacting ? "Compacting context…" : isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send",
+      }}
+    />
   );
 }

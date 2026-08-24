@@ -18,7 +18,6 @@ import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
 import type { ChatHistoryEntry, ChatSubagent } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
-import { ConversationComposer } from "@/components/conversation/ConversationComposer";
 import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
 import { ChatQuickSettings } from "./ChatQuickSettings";
@@ -26,7 +25,6 @@ import { SuggestedPrompts } from "./SuggestedPrompts";
 import { ToolCallIndicator } from "./ToolCallIndicator";
 import { useCommunityConnectorMap, type ChatConnectorMeta } from "./connector-context";
 import { QuestionForm } from "./QuestionForm";
-import { ConversationHeader } from "@/components/conversation/ConversationHeader";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
@@ -41,13 +39,12 @@ import {
 } from "@/lib/models-dev";
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
-import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
-import { ConversationMessageBubble } from "@/components/conversation/ConversationMessageBubble";
 import { toConversationMessage } from "@/components/conversation/conversation-message";
 import { toConversationSubagent } from "@/components/conversation/conversation-message";
 import { ConversationSubagentBlock } from "@/components/conversation/ConversationSubagentBlock";
 import { ActionsList } from "./ActionsList";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
+import { ConversationPane } from "@/components/conversation/ConversationPane";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -470,6 +467,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     () => (threadId ? chatMessages.filter((m) => m.threadId === threadId) : []),
     [threadId, chatMessages],
   );
+  const conversationMessages = useMemo(
+    () => messages.map((message) => toConversationMessage(message, message.actions && message.actions.length > 0 ? <ActionsList actions={message.actions} /> : undefined)),
+    [messages],
+  );
 
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [timelineRange, setTimelineRange] = useState<{ start: number; end: number } | null>(null);
@@ -760,9 +761,47 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   return (
     <div className="chat-themed flex flex-1 flex-col min-h-0 overflow-hidden">
-      {/* Sub-header / toolbar */}
-      <ConversationHeader
-        title={popoutMode ? (
+      {timelineOpen && (
+        <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
+          <ChatTimeline
+            spans={timelineSpans}
+            range={timelineRange}
+            onRangeChange={setTimelineRange}
+            onSpanSelect={(idx) => chatVirtuosoRef.current?.scrollToIndex({ index: idx, align: "center", behavior: "smooth" })}
+          />
+          {timelineRange && <div className="text-[0.607rem] text-[var(--text-tertiary)] mt-1">Showing {visibleMessages.length} of {messages.length} messages — drag or wheel to zoom, double-click to reset</div>}
+        </div>
+      )}
+
+      {/* ConversationPane owns the shared transcript, questions, composer, and
+          session-bound rendering. Chat only supplies its live footer and controls. */}
+      <StreamingFooterContext.Provider
+        value={{
+          isLoading,
+          pendingQuestions,
+          subagents,
+          toolCalls,
+          streamingContent,
+          streamingThought,
+          connectorMap,
+          activeView,
+          handleSend,
+          answerQuestions,
+        }}
+      >
+        <ConversationPane
+          className="flex-1 min-h-0"
+          sessionId={`chat-${threadId ?? ""}`}
+          profile="chat"
+          messages={timelineRange ? conversationMessages.slice(Math.floor(timelineRange.start * conversationMessages.length), Math.ceil(timelineRange.end * conversationMessages.length)) : conversationMessages}
+          input={input}
+          onInputChange={setInput}
+          onPrompt={(text, attachments) => handleSend(text, attachments)}
+          onAbort={stopStream}
+          isLoading={isLoading}
+          transcriptRef={chatVirtuosoRef}
+          centered={activeView === "chat"}
+          title={popoutMode ? (
           <div ref={projectRef} className="relative flex-1">
             <button
               onClick={() => setProjectOpen((v) => !v)}
@@ -794,155 +833,37 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             {activeView === "graph" ? "Graph Assistant" : project?.name ?? workspace?.name ?? "AI Assistant"}
           </span>
         )}
-        usage={activeThread?.lastUsage}
-        contextLimit={aiConfig.contextLimit ?? 128000}
-        actions={(
-          <>
-          {threadId && (
-          <ChatQuickSettings disabled={isLoading} />
+          usage={activeThread?.lastUsage}
+          contextLimit={aiConfig.contextLimit ?? 128000}
+          actions={(
+            <>
+              {threadId && <ChatQuickSettings disabled={isLoading} />}
+              <Tooltip content={timelineOpen ? "Hide timeline scrubber" : "Show timeline scrubber"} side="left">
+                <button onClick={() => setTimelineOpen((v) => !v)} className={cn("p-1 rounded transition-colors", timelineOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]")} aria-pressed={timelineOpen}><History size={11} /></button>
+              </Tooltip>
+              {messages.length > 0 && <Tooltip content="Clear conversation" side="left"><button onClick={handleClear} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-3)] transition-colors"><Trash2 size={11} /></button></Tooltip>}
+              {popoutMode && <Tooltip content="Return chat to main window" side="left"><button onClick={handlePopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"><ArrowLeftFromLine size={11} /></button></Tooltip>}
+            </>
           )}
-
-
-        <Tooltip content={timelineOpen ? "Hide timeline scrubber" : "Show timeline scrubber"} side="left">
-          <button
-            onClick={() => setTimelineOpen((v) => !v)}
-            className={cn("p-1 rounded transition-colors", timelineOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]")}
-            aria-pressed={timelineOpen}
-          >
-            <History size={11} />
-          </button>
-        </Tooltip>
-
-        {messages.length > 0 && (
-          <Tooltip content="Clear conversation" side="left">
-            <button onClick={handleClear}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-3)] transition-colors">
-              <Trash2 size={11} />
-            </button>
-          </Tooltip>
-        )}
-
-        {popoutMode && (
-          <Tooltip content="Return chat to main window" side="left">
-            <button onClick={handlePopIn}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
-              <ArrowLeftFromLine size={11} />
-            </button>
-          </Tooltip>
-        )}
-          </>
-        )}
-      />
-
-      {timelineOpen && (
-        <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
-          <ChatTimeline
-            spans={timelineSpans}
-            range={timelineRange}
-            onRangeChange={setTimelineRange}
-            onSpanSelect={(idx) => chatVirtuosoRef.current?.scrollToIndex({ index: idx, align: "center", behavior: "smooth" })}
-          />
-          {timelineRange && <div className="text-[0.607rem] text-[var(--text-tertiary)] mt-1">Showing {visibleMessages.length} of {messages.length} messages — drag or wheel to zoom, double-click to reset</div>}
-        </div>
-      )}
-
-      {/* Messages — virtualized so long threads never balloon the DOM; only the
-          items near the viewport are mounted no matter how far you scroll. The
-          StreamingFooterContext feeds the stable Footer (see ChatFooter) so the
-          streaming indicator stays inside the scroller, growing downward. */}
-      <StreamingFooterContext.Provider
-        value={{
-          isLoading,
-          pendingQuestions,
-          subagents,
-          toolCalls,
-          streamingContent,
-          streamingThought,
-          connectorMap,
-          activeView,
-          handleSend,
-          answerQuestions,
-        }}
-      >
-        <ConversationTranscript
-          transcriptRef={chatVirtuosoRef}
-          className="flex-1 min-h-0"
-          data={timelineRange ? visibleMessages : messages}
-          initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-          emptyPlaceholder={() => (
-            <ConversationEmptyState content={(
-              <SuggestedPrompts
-                onSend={handleSend}
-                disabled={isLoading || !threadId}
-                prompts={activeView === "graph" ? graphPrompts : undefined}
-                subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
-              />
-            )} />
-          )}
-          footer={ChatFooter}
-          itemContent={(_index, message) => (
-            <div className={cn("px-3 py-1.5", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-              <ConversationMessageBubble
-                message={toConversationMessage(message, message.actions && message.actions.length > 0 ? <ActionsList actions={message.actions} /> : undefined)}
-                onRetry={!isLoading ? handleRetry : undefined}
-                connectors={connectorMap}
-              />
+          connectors={connectorMap}
+          onRetry={!isLoading ? handleRetry : undefined}
+          projection={{ pendingQuestions }}
+          onAnswerQuestions={(answers) => { if (!answerQuestions(answers)) void handleSend(answers); }}
+          emptyState={<ConversationEmptyState content={<SuggestedPrompts onSend={handleSend} disabled={isLoading || !threadId} prompts={activeView === "graph" ? graphPrompts : undefined} subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined} />} />}
+          transcriptFooter={ChatFooter}
+          composerBefore={(
+            <div className={cn("flex-shrink-0 border-t border-[var(--border)] bg-[var(--surface)]", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
+              {isLoading && <ConversationWorkingStatus label="Cairn is working — you can queue messages below" />}
+              <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
+              <ChatFooterSlot threadId={threadId ?? null} usage={activeThread?.lastUsage ? { ...activeThread.lastUsage, contextLimit: activeThread.lastUsage.contextLimit ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000, contextWindow: activeThread.lastUsage.contextWindow ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000 } : undefined} />
             </div>
           )}
+          composerRef={inputRef}
+          placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
+          composerProps={{ centered: activeView === "chat", commands: chatCommands, suggestions: mentionSuggestions, allowImages, allowPdf, providerModelTarget: "ai", variant: activeView === "chat" ? "overview" : "default", showSparkles: activeView === "chat", statusText: isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send", queueWhileBusy: isLoading, queuedCount: queued.length, footerTrailing: aiConfig.provider === "localllm" ? <span className="text-[0.625rem] font-bold text-[var(--accent-fg)] bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_srgb,var(--accent)_60%,var(--background))] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">{chatPanelWidth < 360 ? "Local" : "On-Device Llama"}</span> : undefined }}
         />
       </StreamingFooterContext.Provider>
 
-      {/* Input */}
-      {(isLoading || queued.length > 0) && (
-        <div className={cn("border-t border-[var(--border)] bg-[var(--surface)]", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
-          {isLoading && <ConversationWorkingStatus label="Cairn is working — you can queue messages below" />}
-          <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
-        </div>
-      )}
-      <div>
-        {/* Plugin-UI: a band under the composer (chat.transcript.footer) — the
-            home for plugin cost/context widgets. Fed with Cairn's OWN live usage
-            (the thread's lastUsage), NOT dsh's useProjection. Self-hides + adds a
-            small gap above the input only when a plugin has registered. */}
-        <ChatFooterSlot
-          threadId={threadId ?? null}
-          usage={
-            activeThread?.lastUsage
-              ? {
-                  ...activeThread.lastUsage,
-                  contextLimit: activeThread.lastUsage.contextLimit ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000,
-                  contextWindow: activeThread.lastUsage.contextWindow ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000,
-                }
-              : undefined
-          }
-        />
-
-        <ConversationComposer
-          centered={activeView === "chat"}
-          ref={inputRef}
-          value={input}
-          onChange={setInput}
-          onSubmit={(text, attachments) => handleSend(text, attachments)}
-          onStop={stopStream}
-          isLoading={isLoading}
-          placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
-          commands={chatCommands}
-          suggestions={mentionSuggestions}
-          allowImages={allowImages}
-          allowPdf={allowPdf}
-          providerModelTarget="ai"
-          variant={activeView === "chat" ? "overview" : "default"}
-          showSparkles={activeView === "chat"}
-          statusText={isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
-          queueWhileBusy={isLoading}
-          queuedCount={queued.length}
-          footerTrailing={aiConfig.provider === "localllm" ? (
-            <span className="text-[0.625rem] font-bold text-[var(--accent-fg)] bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_srgb,var(--accent)_60%,var(--background))] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
-              {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}
-            </span>
-          ) : undefined}
-        />
-      </div>
     </div>
   );
 }
