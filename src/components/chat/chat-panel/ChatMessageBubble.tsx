@@ -119,7 +119,11 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
           <div className="flex flex-col gap-1 mb-1">
             {message.toolCalls.map((tc, i) => (
-              <ChatToolCallChip key={i} tc={tc} connectors={connectors} />
+              // Stable key: dsh's callId (Cordis provides one for every tool
+              // call) survives array reshuffles. Falling back to a
+              // tool+index composite keeps historical messages keyed
+              // deterministically when callId is missing (pre-Cordis rows).
+              <ChatToolCallChip key={tc.callId ?? `${tc.tool}-${i}`} tc={tc} connectors={connectors} />
             ))}
           </div>
         )}
@@ -131,7 +135,7 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
             {message.images.map((img, i) =>
               img.kind === "pdf" ? (
                 <div
-                  key={i}
+                  key={`${img.name}-${i}`}
                   className="max-w-[200px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] flex items-center gap-2 px-3 py-2"
                   title={img.name}
                 >
@@ -140,7 +144,7 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
                 </div>
               ) : (
                 <img
-                  key={i}
+                  key={`${img.name}-${i}`}
                   src={img.url}
                   alt={img.name}
                   className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--border)] object-cover"
@@ -158,7 +162,7 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
         )}
         {message.contextRefs && message.contextRefs.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {message.contextRefs.map((ref, i) => <ContextRefChip key={i} ref_={ref} />)}
+            {message.contextRefs.map((ref, i) => <ContextRefChip key={`${ref.id ?? ref.title ?? ""}-${i}`} ref_={ref} />)}
           </div>
         )}
         <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "")}>

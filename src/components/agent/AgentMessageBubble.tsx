@@ -243,7 +243,9 @@ function SubagentMessageRow({ msg, sessionId }: { msg: PiAgentMessage; sessionId
         {hasTools && (
           <div className="flex flex-col gap-0.5">
             {msg.toolCalls!.map((tc, i) => (
-              <ToolChip key={i} tc={tc} sessionId={sessionId} />
+              // Stable key: dsh's callId survives array reshuffles / dedup so
+              // the SkillRow disclosure state can't open on the wrong chip.
+              <ToolChip key={tc.callId ?? `${tc.name}-${i}`} tc={tc} sessionId={sessionId} />
             ))}
           </div>
         )}
@@ -304,7 +306,7 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
               {message.images!.map((img, i) =>
                 img.kind === "pdf" ? (
                   <div
-                    key={i}
+                    key={`${img.name}-${i}`}
                     className="max-w-[200px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] flex items-center gap-2 px-3 py-2"
                     title={img.name}
                   >
@@ -313,7 +315,7 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
                   </div>
                 ) : (
                   <img
-                    key={i}
+                    key={`${img.name}-${i}`}
                     src={img.url}
                     alt={img.name}
                     className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--border)] object-cover"
@@ -366,7 +368,7 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
         {hasTools && (
           <div className="flex flex-col gap-0.5">
             {message.toolCalls!.map((tc, i) => (
-              <ToolChip key={i} tc={tc} sessionId={sessionId} connectors={connectors} />
+              <ToolChip key={tc.callId ?? `${tc.name}-${i}`} tc={tc} sessionId={sessionId} connectors={connectors} />
             ))}
           </div>
         )}

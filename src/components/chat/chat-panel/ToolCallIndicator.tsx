@@ -46,29 +46,29 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
             // owns this tool's rendering — vendored SkillRow or a user/community
             // plugin (e.g. visualize). We hand it a Cairn-built ToolCallViewProps.
             <KeyedSlotOutlet
-              key={i}
+              key={tc.callId ?? `${tc.tool}-${i}`}
               name="tool.call.toolview"
               matchKey={tc.tool}
               props={toToolCallViewProps(tc)}
             />
           ) : tc.status === "done" && tc.ok === false ? (
-            <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
+            <div key={tc.callId ?? `${tc.tool}-${i}`} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
               <XCircle size={10} className="text-[var(--danger)] shrink-0" />
               <span className="text-[0.786rem] text-[var(--text-secondary)]">{humanizeTool(tc.tool, parseToolArgs(tc.args)).pre} failed</span>
               {tc.error && <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[220px]">— {tc.error}</span>}
             </div>
           ) : tc.status === "done" && tc.tool === "get_user_writing_style" && tc.ok !== false && writingStyleNeedsSetup(tc.output) ? (
-            <WritingStylePromptChip key={i} output={tc.output} />
+            <WritingStylePromptChip key={tc.callId ?? `${tc.tool}-${i}`} output={tc.output} />
           ) : tc.status === "done" && connectors && connectorForTool(tc.tool, connectors) ? (
-            <ConnectorToolCard key={i} toolCall={{ tool: tc.tool, args: parseToolArgs(tc.args), output: tc.output, externalRef: tc.externalRef }} connector={connectorForTool(tc.tool, connectors)!} testId="chat-connector-card" />
+            <ConnectorToolCard key={tc.callId ?? `${tc.tool}-${i}`} toolCall={{ tool: tc.tool, args: parseToolArgs(tc.args), output: tc.output, externalRef: tc.externalRef }} connector={connectorForTool(tc.tool, connectors)!} testId="chat-connector-card" />
           ) : tc.status === "done" && (tc.cairnRef || (tc.meta as { cairnRef?: CairnRef })?.cairnRef || extractCairnRef(tc.tool, tc.output)) ? (
-            <CairnRefChip key={i} toolName={tc.tool} cairnRef={(tc.cairnRef || (tc.meta as { cairnRef?: CairnRef })?.cairnRef || extractCairnRef(tc.tool, tc.output))!} />
+            <CairnRefChip key={tc.callId ?? `${tc.tool}-${i}`} toolName={tc.tool} cairnRef={(tc.cairnRef || (tc.meta as { cairnRef?: CairnRef })?.cairnRef || extractCairnRef(tc.tool, tc.output))!} />
           ) : tc.status === "done" && tc.externalRef ? (
 
-            <ExternalRefChip key={i} toolName={tc.tool} externalRef={tc.externalRef} />
+            <ExternalRefChip key={tc.callId ?? `${tc.tool}-${i}`} toolName={tc.tool} externalRef={tc.externalRef} />
           ) : (
 
-            <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+            <div key={tc.callId ?? `${tc.tool}-${i}`} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
               {tc.status === "running" ? (
                 <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
               ) : (
