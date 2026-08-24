@@ -24,10 +24,7 @@ import { getContext } from "./run-cordis-loop";
 import { openCordisSessionAgent } from "./session-agent";
 import { mountCodingStack } from "./cordis-coding-tools";
 import {
-  cairnDbPlugin,
-  cairnUsagePlugin,
   cairnCodingPlugin,
-  cairnQuestionsPlugin,
   cairnSystemPromptPlugin,
   cairnApprovalPlugin,
   CAIRN_DB,
@@ -36,7 +33,7 @@ import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { TOOL_SCHEMAS } from "../lib/tool-schemas";
 import { buildCordisUserContent } from "./cairn-attachment-store";
-import { createCordisDisposerStack, prepareCordisRuntime } from "./session-runtime";
+import { createCordisDisposerStack, mountCordisSessionPlugins, prepareCordisRuntime } from "./session-runtime";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
@@ -146,15 +143,10 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   }, cairnToolsExclude ? { exclude: cairnToolsExclude } : undefined);
 
   const run = async (): Promise<RunCordisCodingResult> => {
-    await mount(cairnDbPlugin, { db });
-    await mount(cairnUsagePlugin, {
-      threadId: sessionId,
-      workspaceId: req.workspaceId ?? "",
-      projectId: req.projectId,
-      provider: llmConfig.provider,
-      model: llmConfig.model,
-      baseUrl: llmConfig.baseUrl,
-    });
+    await mountCordisSessionPlugins({ mount, db, req, sessionId, llmConfig, questions: questions ? {
+      ...questions,
+      emitQuestions: (requestId, qs) => questions.send("session:ask-questions", { sessionId, callId: requestId, questions: qs }),
+    } : undefined });
     // Skills (Phase 1.5 step 2i): read the merged skill catalog through the dsh
     // Skills are owned by dsh (`dsh-tool-skill`, mounted globally): it registers
     // the `skill` tool and injects <available_skills> as a per-step
@@ -186,15 +178,6 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
         sessionId,
         send,
         registerPending: approvals.registerPending,
-        signal,
-      });
-    }
-    if (questions) {
-      await mount(cairnQuestionsPlugin, {
-        send: questions.send,
-        registerPending: questions.registerPending,
-        // Coding renderer listens on pi-agent:ask-questions {sessionId,callId,questions}.
-        emitQuestions: (requestId: string, qs: unknown[]) => questions.send("session:ask-questions", { sessionId, callId: requestId, questions: qs }),
         signal,
       });
     }

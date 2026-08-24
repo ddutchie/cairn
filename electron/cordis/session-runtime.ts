@@ -2,6 +2,9 @@ import type { Context } from "@deepseek-ai/cordis";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
 import type { LLMConfig } from "../lib/llm";
 import { resolveTransport, type ApiMode } from "../lib/llm-transport";
+import type { Database } from "better-sqlite3";
+import type { ChatRequest } from "../lib/tools";
+import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnQuestionsPlugin } from "./cairn-plugins";
 
 let piAiDisposer: (() => Promise<void>) | null = null;
 let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number } | null = null;
@@ -30,6 +33,53 @@ export function createCordisDisposerStack(): CordisDisposerStack {
       }
     },
   };
+}
+
+export interface CordisQuestionAdapter {
+  send: (channel: string, payload: Record<string, unknown>) => void;
+  registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void;
+  emitQuestions?: (requestId: string, questions: unknown[]) => void;
+}
+
+export interface MountCordisSessionPluginsOptions {
+  mount: (plugin: unknown, config: unknown) => Promise<void>;
+  db: Database;
+  req: ChatRequest;
+  sessionId: string;
+  llmConfig: LLMConfig;
+  includeSessionIndex?: boolean;
+  sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
+  questions?: CordisQuestionAdapter;
+}
+
+/** Mount the Cairn-owned session services shared by Chat and Coding turns. */
+export async function mountCordisSessionPlugins({
+  mount, db, req, sessionId, llmConfig, includeSessionIndex = false, sendSubagent, questions,
+}: MountCordisSessionPluginsOptions): Promise<void> {
+  await mount(cairnDbPlugin, { db });
+  if (includeSessionIndex) {
+    await mount(cairnSessionPlugin, {
+      threadId: sessionId,
+      workspaceId: req.workspaceId ?? "",
+      projectId: req.projectId,
+    });
+  }
+  await mount(cairnUsagePlugin, {
+    threadId: sessionId,
+    workspaceId: req.workspaceId ?? "",
+    projectId: req.projectId,
+    provider: llmConfig.provider,
+    model: llmConfig.model,
+    baseUrl: llmConfig.baseUrl,
+  });
+  if (sendSubagent) await mount(cairnSubagentPlugin, { send: sendSubagent });
+  if (questions) {
+    await mount(cairnQuestionsPlugin, {
+      send: questions.send,
+      registerPending: questions.registerPending,
+      ...(questions.emitQuestions ? { emitQuestions: questions.emitQuestions } : {}),
+    });
+  }
 }
 
 /** Prepare the shared model route used by every Cairn session kind. */

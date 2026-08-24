@@ -46,12 +46,12 @@ import { runCordisTurn } from "./session-turn";
 
 import { registerCairnTools, registerExternalCairnTools, CHAT_FORBIDDEN_TOOLS } from "./cairn-tools";
 import { getChatAgentCache, peekChatAgentCache } from "./chat-agent-cache";
-import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnSystemPromptPlugin, cairnQuestionsPlugin, CAIRN_DB } from "./cairn-plugins";
+import { cairnSystemPromptPlugin, CAIRN_DB } from "./cairn-plugins";
 import { buildSystemPrompt, withPersonality } from "../lib/tools";
 import { markCompletionsOnly, readCachedMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
-import { createCordisDisposerStack, ensureAgentAiAdapter, prepareCordisRuntime } from "./session-runtime";
+import { createCordisDisposerStack, ensureAgentAiAdapter, mountCordisSessionPlugins, prepareCordisRuntime } from "./session-runtime";
 export { ensureAgentAiAdapter } from "./session-runtime";
 
 export interface RunCordisLoopResult {
@@ -653,30 +653,10 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   // listeners); disposed in finally.
   const turnResources = createCordisDisposerStack();
   const mount = (plugin: unknown, config: unknown) => turnResources.mount(ctx, plugin, config);
-  await mount(cairnDbPlugin, { db });
-  await mount(cairnSessionPlugin, {
-    threadId: req.threadId,
-    workspaceId: req.workspaceId ?? "",
-    projectId: req.projectId,
+  await mountCordisSessionPlugins({
+    mount, db, req, sessionId: req.threadId, llmConfig, includeSessionIndex: true,
+    sendSubagent: opts.sendSubagent, questions: opts.questions,
   });
-  await mount(cairnUsagePlugin, {
-    threadId: req.threadId,
-    workspaceId: req.workspaceId ?? "",
-    projectId: req.projectId,
-    provider: llmConfig.provider,
-    model: llmConfig.model,
-    baseUrl: llmConfig.baseUrl,
-  });
-  if (opts.sendSubagent) {
-    await mount(cairnSubagentPlugin, { send: opts.sendSubagent });
-  }
-  if (opts.questions) {
-    await mount(cairnQuestionsPlugin, {
-      send: opts.questions.send,
-      registerPending: opts.questions.registerPending,
-      signal,
-    });
-  }
 
   // Cairn's system prompt — dsh-faithful split: renderPrompt(sections) → system,
   // renderContextSnapshot(contexts) → snapshot user (form:snapshot). History is
