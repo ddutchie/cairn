@@ -23,11 +23,13 @@ export function useSessionNavigation() {
     piSessionHistory,
     openSession: selectSession,
     setActiveProject,
+    setPersistentPiSession,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId: s.activeProjectId,
     piSessionHistory: s.piSessionHistory,
     openSession: s.openSession,
     setActiveProject: s.setActiveProject,
+    setPersistentPiSession: s.setPersistentPiSession,
   })));
   const { handleResumeSession } = useAgentSessionActions();
   const requestRef = useRef(0);
@@ -51,6 +53,7 @@ export function useSessionNavigation() {
 
     // Re-assert the selection after hydration. The loader intentionally does
     // not activate so an older request can never steal the current session.
+    setPersistentPiSession(target.sourceId);
     selectSession(target.sourceId, target.kind, presentation);
     return true;
   }
