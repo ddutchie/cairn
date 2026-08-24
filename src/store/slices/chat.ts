@@ -151,16 +151,49 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
         ...s.chatThreads.filter((t) => !dbThreadIds.has(t.id)),
       ];
 
-      // Merge messages: session (dsh) is the source of truth for all loaded threads.
-      // Replace in-memory copies for those threads so stale optimistic streaming
-      // bubbles (e.g. empty content + tools) do not duplicate alongside replayed turns.
+      // Merge messages: session (dsh) is the source of truth for all loaded
+      // threads. Replace in-memory copies for those threads so stale optimistic
+      // streaming bubbles (e.g. empty content + tools) do not duplicate
+      // alongside replayed turns.
+      //
+      // Preservation guard for in-flight streams: if the in-memory transcript
+      // for a loaded thread has MORE messages than the DB fold (meaning we
+      // have a just-sent user message + optimistic assistant that haven't
+      // been persisted yet — the classic workspace-switch-mid-stream race),
+      // keep the in-memory copy. The session log is eventually consistent
+      // via the next chat:done write, at which point a subsequent
+      // loadChatFromDb will re-sync cleanly.
       const dbLoadedThreadIds = new Set(dbThreads.map((t) => t.id));
+      const inMemoryByThread = new Map<string, typeof s.chatMessages>();
+      for (const m of s.chatMessages) {
+        const arr = inMemoryByThread.get(m.threadId) ?? [];
+        arr.push(m);
+        inMemoryByThread.set(m.threadId, arr);
+      }
+      const dbByThread = new Map<string, typeof dbMessages>();
+      for (const m of dbMessages) {
+        const arr = dbByThread.get(m.threadId) ?? [];
+        arr.push(m);
+        dbByThread.set(m.threadId, arr);
+      }
+      const preserveInMemory = new Set<string>();
+      for (const tid of dbLoadedThreadIds) {
+        const mem = inMemoryByThread.get(tid) ?? [];
+        const db = dbByThread.get(tid) ?? [];
+        // Heuristic: in-memory has strictly more messages AND the last one is
+        // a user turn (typical mid-stream shape). If both hold, the load
+        // predates the pending turn — keep memory.
+        if (mem.length > db.length && mem[mem.length - 1]?.role === "user") {
+          preserveInMemory.add(tid);
+        }
+      }
       const cleanDbMessages = dbMessages.filter(
-        (m) => !(m.role === "assistant" && !m.content?.trim() && !m.reasoning?.trim() && String(m.id).includes("-trailing"))
+        (m) => !preserveInMemory.has(m.threadId) &&
+          !(m.role === "assistant" && !m.content?.trim() && !m.reasoning?.trim() && String(m.id).includes("-trailing"))
       );
       const mergedMessages = [
         ...cleanDbMessages,
-        ...s.chatMessages.filter((m) => !dbLoadedThreadIds.has(m.threadId)),
+        ...s.chatMessages.filter((m) => !dbLoadedThreadIds.has(m.threadId) || preserveInMemory.has(m.threadId)),
       ];
 
       return { chatThreads: mergedThreads, chatMessages: mergedMessages };
