@@ -188,10 +188,17 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
   const streamedReasoning = new Set<string>();
 
   ctx.on("session/event", (session: Session, event: SessionEvent) => {
-    const isChild = (session as { header?: { origin?: string } }).header?.origin === "subagent";
+    const header = (session as { header?: { origin?: string; parentSession?: unknown } }).header;
+    const isChild = header?.origin === "subagent";
     if (!isChild) return;
 
     const childId = String(session.id);
+    // Parent session id (the calling chat thread OR coding-agent session).
+    // Included in every emitted event so the renderer can filter events for
+    // the pane it drives — historically this was omitted, and AgentChatPane
+    // fell back to a `${sessionId}:sub:` prefix scheme that nothing emitted,
+    // making every coding-agent subagent trace unreachable at runtime.
+    const parentSession = header?.parentSession != null ? String(header.parentSession) : undefined;
     const seq = event.seq;
 
     if (event.type === "user/message") {
@@ -209,7 +216,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
         const full = eventText(event).trim();
         const instruction = full || "subagent";
         const role = full ? full.slice(0, 60) : "subagent";
-        send("chat:subagent", { status: "start", childId, role, instruction });
+        send("chat:subagent", { status: "start", childId, parentSession, role, instruction });
       }
       return;
     }
@@ -217,8 +224,8 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     if (event.type === "assistant/chunk") {
       const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
       if (!c) return;
-      if (c.type === "text-delta" && c.text) { streamedText.add(childId); send("chat:subagent-token", { childId, delta: c.text }); }
-      if (c.type === "reasoning-delta" && c.text) { streamedReasoning.add(childId); send("chat:subagent-thought", { childId, delta: c.text }); }
+      if (c.type === "text-delta" && c.text) { streamedText.add(childId); send("chat:subagent-token", { childId, parentSession, delta: c.text }); }
+      if (c.type === "reasoning-delta" && c.text) { streamedReasoning.add(childId); send("chat:subagent-thought", { childId, parentSession, delta: c.text }); }
       return;
     }
 
@@ -227,7 +234,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       if (d.callId) callName.set(d.callId, d.name);
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(d.arguments ?? "{}") as Record<string, unknown>; } catch { /* keep {} */ }
-      send("chat:subagent-tool-call", { childId, tool: d.name, label: d.name, callId: d.callId, args });
+      send("chat:subagent-tool-call", { childId, parentSession, tool: d.name, label: d.name, callId: d.callId, args });
       return;
     }
 
@@ -239,7 +246,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
       const tool = callId ? (callName.get(callId) ?? "tool") : "tool";
       send("chat:subagent-tool-call-done", {
-        childId, tool, callId,
+        childId, parentSession, tool, callId,
         ok: !isError, error: isError ? (output || "tool error") : undefined,
         output: isError ? undefined : output,
       });
@@ -250,7 +257,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       const usage = (event.data as { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }).usage;
       if (usage) {
         send("chat:subagent-usage", {
-          childId,
+          childId, parentSession,
           promptTokens: usage.inputTokens ?? 0,
           completionTokens: usage.outputTokens ?? 0,
           reasoningTokens: usage.reasoningTokens ?? 0,
@@ -262,11 +269,11 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       // or chain-of-thought leaks into the FINDINGS BRIEF.
       if (!streamedText.has(childId)) {
         const text = eventText(event);
-        if (text) send("chat:subagent-token", { childId, delta: text });
+        if (text) send("chat:subagent-token", { childId, parentSession, delta: text });
       }
       if (!streamedReasoning.has(childId)) {
         const { reasoning } = eventReasoning(event);
-        if (reasoning) send("chat:subagent-thought", { childId, delta: reasoning });
+        if (reasoning) send("chat:subagent-thought", { childId, parentSession, delta: reasoning });
       }
       return;
     }
@@ -274,7 +281,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     if (event.type === "turn/end") {
       const reason = (event.data as { reason?: { kind?: string } }).reason;
       const result = reason?.kind === "completed" ? "" : ` (${reason?.kind ?? "error"})`;
-      send("chat:subagent", { status: "done", childId, result, error: reason?.kind === "completed" ? undefined : reason?.kind });
+      send("chat:subagent", { status: "done", childId, parentSession, result, error: reason?.kind === "completed" ? undefined : reason?.kind });
       void seq;
       return;
     }

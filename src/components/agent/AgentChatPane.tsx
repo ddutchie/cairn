@@ -118,7 +118,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const stepPiSubagent           = useCairnStore((s) => s.stepPiSubagent);
   const appendPiSubagentToken    = useCairnStore((s) => s.appendPiSubagentToken);
   const appendPiSubagentThought  = useCairnStore((s) => s.appendPiSubagentThought);
-  const _finalisePiSubagentMessage = useCairnStore((s) => s.finalisePiSubagentMessage);
+  const finalisePiSubagentMessage = useCairnStore((s) => s.finalisePiSubagentMessage);
   const setPiMode                = useCairnStore((s) => s.setPiMode);
   const setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
   const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
@@ -345,17 +345,15 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       if (e.sessionId === sessionId) {
         // Parent step — update the parent ring
         updatePiUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
-      } else if (e.sessionId.startsWith(`${sessionId}:sub:`)) {
-        // Subagent step — update usage on the subagent inline block, not the parent ring
-        updatePiSubagentUsage(sessionId, e.sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
       }
+      // Subagent usage arrives on the chat:subagent-usage bus below, keyed by
+      // parentSession — the old prefix-scheme (`sessionId:sub:*`) was never
+      // emitted by anything on the electron side.
     });
 
     const unsubToolsReady = electron.piAgent.onToolsReady((e) => {
       if (e.sessionId === sessionId) {
         ensurePiStreamingMessage(sessionId);
-      } else if (e.sessionId.startsWith(`${sessionId}:sub:`)) {
-        // subagent — handled via subagent store (no-op here, subagent messages auto-create)
       }
     });
 
@@ -430,45 +428,59 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setTimeout(() => persistPiTranscript(sessionId), 0);
     });
 
-    // ── Subagent events (child session IDs routed back to parent) ──────────
-    const unsubSubToken = electron.piAgent.onToken((e) => {
-      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      appendPiSubagentToken(sessionId, e.sessionId, e.delta);
-    });
+    // ── Subagent events ────────────────────────────────────────────────────
+    // Coding-agent subagents (dsh child sessions with header.origin=='subagent'
+    // and header.parentSession==sessionId) come through the shared
+    // chat:subagent* bus that cairnSubagentPlugin emits (not the pi-agent:*
+    // bus — the pre-fix code subscribed to `pi-agent:*` with a `${sessionId}:sub:`
+    // prefix that nothing ever emitted, making every delegation trace
+    // invisible during a live run). Each event includes parentSession so we
+    // can filter to just this pane's children.
+    //
+    // We map onto the SAME per-session subagent store the chat pane uses.
+    const matchesParent = (parentSession?: string) => parentSession === sessionId;
 
-    const unsubSubThought = electron.piAgent.onThought?.((e) => {
-      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      appendPiSubagentThought(sessionId, e.sessionId, e.delta);
+    const unsubSubToken = electron.chat.onSubagentToken?.((e) => {
+      if (!matchesParent(e.parentSession)) return;
+      appendPiSubagentToken(sessionId, e.childId, e.delta);
+    });
+    const unsubSubThought = electron.chat.onSubagentThought?.((e) => {
+      if (!matchesParent(e.parentSession)) return;
+      appendPiSubagentThought(sessionId, e.childId, e.delta);
     });
 
     // Keyed by callId (not tool name) so parallel calls to the same tool resolve correctly.
     const activeSubCallIds = new Set<string>();
 
-    const unsubSubTool = electron.piAgent.onTool((e) => {
-      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      if (e.status === "pending" || e.status === "start") {
-        const callId = e.callId ?? `${e.name}:${Date.now()}`;
-        activeSubCallIds.add(callId);
-         addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
-      } else if (e.status === "end") {
-        const callId = e.callId ?? `${e.name}:unknown`;
-        activeSubCallIds.delete(callId);
-        updatePiSubagentToolCall(sessionId, e.sessionId, callId, {
-           label:    e.label,
-           args:     e.args,
-          running:  false,
-          ok:       e.ok ?? true,
-          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : redactAgentToolCall({ output: e.output }).output,
-          cairnRef: extractCairnRef(e.name, e.output),
-        });
-      } else {
-        console.warn("[AgentChatPane] unhandled pi-agent:tool status (subagent):", e.status, e);
-      }
+    const unsubSubToolCall = electron.chat.onSubagentToolCall?.((e) => {
+      if (!matchesParent(e.parentSession)) return;
+      const callId = e.callId ?? `${e.tool}:${Date.now()}`;
+      activeSubCallIds.add(callId);
+      addPiSubagentToolCall(sessionId, e.childId, { callId, name: e.tool, label: e.label, args: e.args, running: true, ok: true });
     });
-
-    const unsubSubStep = electron.piAgent.onStep((e) => {
-      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      stepPiSubagent(sessionId, e.sessionId);
+    const unsubSubToolCallDone = electron.chat.onSubagentToolCallDone?.((e) => {
+      if (!matchesParent(e.parentSession)) return;
+      const callId = e.callId ?? `${e.tool}:unknown`;
+      activeSubCallIds.delete(callId);
+      updatePiSubagentToolCall(sessionId, e.childId, callId, {
+        label:    e.tool,
+        running:  false,
+        ok:       e.ok ?? true,
+        output:   READ_ONLY_TOOLS.has(e.tool) ? undefined : redactAgentToolCall({ output: e.output }).output,
+        cairnRef: e.cairnRef ?? extractCairnRef(e.tool, e.output),
+      });
+    });
+    const unsubSubUsage = electron.chat.onSubagentUsage?.((e) => {
+      if (!matchesParent(e.parentSession)) return;
+      updatePiSubagentUsage(sessionId, e.childId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
+    });
+    const unsubSub = electron.chat.onSubagent?.((e) => {
+      if (!matchesParent(e.parentSession)) return;
+      if (e.status === "done") {
+        // Finalise the child block when its session ends.
+        stepPiSubagent(sessionId, e.childId);
+        finalisePiSubagentMessage(sessionId, e.childId);
+      }
     });
 
     // Plan mode events
@@ -609,10 +621,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       unsubDone();
       unsubError();
       unsubToolConfirmExpired?.();
-      unsubSubToken();
-      unsubSubThought();
-      unsubSubTool();
-      unsubSubStep();
+      unsubSubToken?.();
+      unsubSubThought?.();
+      unsubSubToolCall?.();
+      unsubSubToolCallDone?.();
+      unsubSubUsage?.();
+      unsubSub?.();
       unsubPlanNote();
       unsubModeChange();
       unsubAskQuestions();

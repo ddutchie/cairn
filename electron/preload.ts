@@ -428,37 +428,40 @@ const api = {
       return () => ipcRenderer.off("chat:usage", handler);
     },
     // ── Subagent mode (dispatch → research/write) live trace ────────────────
-    onSubagent: (cb: (e: { childId: string; role: string; instruction?: string; result?: string; status: "start" | "done"; threadId?: string }) => void) => {
+    // parentSession identifies the dispatching parent — chat thread stable id
+    // (`chat-<threadId>`) OR a coding-agent sessionId — so consumers can
+    // filter events for the pane they drive.
+    onSubagent: (cb: (e: { childId: string; parentSession?: string; role: string; instruction?: string; result?: string; status: "start" | "done"; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: any) => cb(e);
       ipcRenderer.on("chat:subagent", handler);
       return () => ipcRenderer.off("chat:subagent", handler);
     },
-    onSubagentToken: (cb: (e: { childId: string; delta: string; threadId?: string }) => void) => {
+    onSubagentToken: (cb: (e: { childId: string; parentSession?: string; delta: string; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: any) => cb(e);
       ipcRenderer.on("chat:subagent-token", handler);
       return () => ipcRenderer.off("chat:subagent-token", handler);
     },
-    onSubagentThought: (cb: (e: { childId: string; delta: string; threadId?: string }) => void) => {
+    onSubagentThought: (cb: (e: { childId: string; parentSession?: string; delta: string; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: any) => cb(e);
       ipcRenderer.on("chat:subagent-thought", handler);
       return () => ipcRenderer.off("chat:subagent-thought", handler);
     },
-    onSubagentToolCall: (cb: (e: { childId: string; tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => void) => {
+    onSubagentToolCall: (cb: (e: { childId: string; parentSession?: string; tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: any) => cb(e);
       ipcRenderer.on("chat:subagent-tool-call", handler);
       return () => ipcRenderer.off("chat:subagent-tool-call", handler);
     },
-    onSubagentToolCallDone: (cb: (e: { childId: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; threadId?: string; ok?: boolean; error?: string }) => void) => {
+    onSubagentToolCallDone: (cb: (e: { childId: string; parentSession?: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; threadId?: string; ok?: boolean; error?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: any) => cb(e);
       ipcRenderer.on("chat:subagent-tool-call-done", handler);
       return () => ipcRenderer.off("chat:subagent-tool-call-done", handler);
     },
-    onSubagentUsage: (cb: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: unknown; threadId?: string }) => void) => {
+    onSubagentUsage: (cb: (e: { childId: string; parentSession?: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: unknown; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: any) => cb(e);
       ipcRenderer.on("chat:subagent-usage", handler);
