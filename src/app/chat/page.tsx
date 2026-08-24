@@ -25,7 +25,7 @@ export default function ChatPopoutPage() {
           const currentAiConfig = useCairnStore.getState().aiConfig;
           useCairnStore.setState({ aiConfig: { ...currentAiConfig, ...savedAiConfig } });
         }
-        if (bound) useCairnStore.setState({ activeProjectId: bound.activeProjectId });
+        if (bound) useCairnStore.setState({ activeProjectId: bound.activeProjectId, activeWorkspaceId: bound.workspaceId });
       }
 
       setReady(true);

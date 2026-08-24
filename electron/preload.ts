@@ -390,9 +390,9 @@ const api = {
     compactThread: (req: unknown) => invoke("chat:compactThread", req),
     // ── Pop-out window ──────────────────────────
     /** Called by main window: sends current chat state, triggers window creation. */
-     popOut: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev" }) => invoke<{ ok: boolean }>("chat:popOut", payload),
+      popOut: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }) => invoke<{ ok: boolean }>("chat:popOut", payload),
     /** Called by pop-out page: signals readiness, returns the shared session id. */
-     popoutReady: () => invoke<{ sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev" }>("chat:popoutReady"),
+      popoutReady: () => invoke<{ sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }>("chat:popoutReady"),
     /** Called by pop-out page: closes the window; session state is not copied. */
     popIn: (payload: { sessionId: string }) => invoke<{ ok: boolean }>("chat:popIn", payload),
     /** Called by main window: asks the pop-out to return (relayed via main process). */

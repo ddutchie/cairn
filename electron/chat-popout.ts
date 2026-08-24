@@ -13,7 +13,7 @@
 
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "path";
-import { bindChatPopoutSession, type ChatPopoutPayload } from "../shared/agent/chat-popout";
+import { bindChatPopoutSession, chatParticipantIdsExcept, resolveChatPopoutSession, type ChatPopoutPayload } from "../shared/agent/chat-popout";
 import type { DbContext } from "./ipc/result-helpers";
 import { getSessionProfile } from "./db/queries";
 
@@ -114,8 +114,7 @@ function findWindowByWebContentsId(id: number): BrowserWindow | null {
  * The originator already receives via event.sender.send in chat.ts.
  */
 export function broadcastToChat(channel: string, payload: unknown, excludeId?: number): void {
-  for (const id of chatParticipants) {
-    if (id === excludeId) continue;
+  for (const id of chatParticipantIdsExcept(chatParticipants, excludeId)) {
     const win = findWindowByWebContentsId(id);
     if (win) {
       win.webContents.send(channel, payload);
@@ -129,10 +128,8 @@ export function registerChatPopoutHandlers(ctx: DbContext): void {
     const payload = bindChatPopoutSession(rawPayload);
     if (!payload) return { data: { ok: false } };
     const stored = getSessionProfile(ctx.db, payload.sessionId);
-    if (stored && stored.profile !== payload.profile) return { data: { ok: false } };
-    const canonical = stored
-      ? { ...payload, profile: stored.profile, activeProjectId: stored.projectId }
-      : payload;
+    const canonical = resolveChatPopoutSession(payload, stored);
+    if (!canonical) return { data: { ok: false } };
     mainWindowWebContentsId = event.sender.id;
     chatParticipants.add(event.sender.id);
     pendingChatSession = canonical;
@@ -149,9 +146,8 @@ export function registerChatPopoutHandlers(ctx: DbContext): void {
     const session = pendingChatSession;
     pendingChatSession = null;
     const stored = session ? getSessionProfile(ctx.db, session.sessionId) : null;
-    return { data: stored && session && stored.profile === session.profile
-      ? { ...session, profile: stored.profile, activeProjectId: stored.projectId }
-      : session ?? { sessionId: "", activeProjectId: null, profile: "chat" as const } };
+    const canonical = session && resolveChatPopoutSession(session, stored);
+    return { data: canonical ?? { sessionId: "", activeProjectId: null, profile: "chat" as const, workspaceId: null, cwd: null } };
   });
 
   // Main window requests the pop-out to come back (clicked placeholder button)
