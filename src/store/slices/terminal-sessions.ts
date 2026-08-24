@@ -49,8 +49,8 @@ const piTokenBuffer = (() => {
 
 import type {
   TokenBreakdown,
-  PiAgentMessage,
-  PiSubagentMessage,
+  AgentMessage,
+  AgentSubagentMessage,
   TerminalSession,
   CodingSessionSummary,
   SessionTodo,
@@ -60,7 +60,7 @@ import type {
 } from "../../types";
 
 // Re-export for backwards compatibility (consumers may import from either location).
-export type { PiAgentMessage, PiSubagentMessage, TerminalSession, CodingSessionSummary };
+export type { AgentMessage, AgentSubagentMessage, TerminalSession, CodingSessionSummary };
 
 // ── Slice ────────────────────────────────────────────────────────────────────
 
@@ -81,7 +81,7 @@ export interface TerminalSessionsSlice {
   setSessionLoad: (state: SessionLoadState) => void;
   markSessionExited: (sessionId: string, exitCode: number) => void;
   /** Add a message to a pi session's message list */
-  addPiMessage: (sessionId: string, msg: PiAgentMessage) => void;
+  addPiMessage: (sessionId: string, msg: AgentMessage) => void;
   /** Append a token delta to the last streaming assistant message */
   appendPiToken: (sessionId: string, delta: string) => void;
   /** Append a reasoning/thinking delta to the last streaming assistant message */
@@ -487,7 +487,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             const sub = msg.subagents![subIdx];
             const subMsgs = sub.messages;
             const lastSub = subMsgs[subMsgs.length - 1];
-            let newSubMsgs: PiAgentMessage[];
+            let newSubMsgs: AgentMessage[];
             if (lastSub?.isStreaming) {
               newSubMsgs = [...subMsgs.slice(0, -1), { ...lastSub, content: lastSub.content + delta }];
             } else {
@@ -520,7 +520,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             const sub = msg.subagents![subIdx];
             const subMsgs = sub.messages;
             const lastSub = subMsgs[subMsgs.length - 1];
-            let newSubMsgs: PiAgentMessage[];
+            let newSubMsgs: AgentMessage[];
             if (lastSub?.isStreaming) {
               newSubMsgs = [...subMsgs.slice(0, -1), { ...lastSub, reasoning: (lastSub.reasoning ?? "") + delta }];
             } else {

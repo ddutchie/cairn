@@ -233,7 +233,7 @@ export default function Home() {
                 toolCalls: r.toolCalls ?? undefined,
                 subagents: r.subagents ?? undefined,
                 timestamp: r.timestamp,
-              })) as import("@/store/slices/terminal-sessions").PiAgentMessage[];
+              })) as import("@/store/slices/terminal-sessions").AgentMessage[];
 
               state.addTerminalSession({
                 sessionId:   latest.id,

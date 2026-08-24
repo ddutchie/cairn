@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ChatMessage, ChatSubagent, ChatToolCallRecord, LinkedContextReference, PiAgentMessage, PiSubagentMessage, TokenBreakdown } from "@/types";
+import type { AgentMessage, AgentSubagentMessage, ChatMessage, ChatSubagent, ChatToolCallRecord, LinkedContextReference, TokenBreakdown } from "@/types";
 
 export interface ConversationToolCall {
   callId?: string;
@@ -78,19 +78,19 @@ function chatToolCall(tool: ChatToolCallRecord): ConversationToolCall {
   };
 }
 
-function agentToolCall(tool: NonNullable<PiAgentMessage["toolCalls"]>[number]): ConversationToolCall {
+function agentToolCall(tool: NonNullable<AgentMessage["toolCalls"]>[number]): ConversationToolCall {
   return { ...tool };
 }
 
 export function toConversationToolCall(
-  tool: ChatToolCallRecord | NonNullable<PiAgentMessage["toolCalls"]>[number],
+  tool: ChatToolCallRecord | NonNullable<AgentMessage["toolCalls"]>[number],
 ): ConversationToolCall {
   return "tool" in tool ? chatToolCall(tool) : agentToolCall(tool);
 }
 
 /** Normalize Chat and Coding records before they reach the shared renderer. */
 export function toConversationMessage(
-  message: ChatMessage | PiAgentMessage,
+  message: ChatMessage | AgentMessage,
   extraContent?: ReactNode,
 ): ConversationMessage {
   const isChat = "threadId" in message;
@@ -114,7 +114,7 @@ export function toConversationMessage(
 }
 
 export function toConversationSubagent(
-  subagent: ChatSubagent | PiSubagentMessage,
+  subagent: ChatSubagent | AgentSubagentMessage,
 ): ConversationSubagent {
   if ("childId" in subagent) {
     return {

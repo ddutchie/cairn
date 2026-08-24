@@ -946,11 +946,11 @@ export function isIpcError<T>(result: IpcResult<T>): result is { error: string }
 // so all domain types live in one place. The slice re-exports them for backwards
 // compatibility.
 
-export interface PiSubagentMessage {
+export interface AgentSubagentMessage {
   /** Unique child session ID */
   childSessionId: string;
   /** Messages streamed by the subagent */
-  messages: PiAgentMessage[];
+  messages: AgentMessage[];
   /** Whether the subagent is still running */
   running: boolean;
   /** Final result returned to the parent */
@@ -966,7 +966,7 @@ export interface SessionTodo {
   priority: "high" | "medium" | "low";
 }
 
-export interface PiAgentMessage {
+export interface AgentMessage {
   id: string;
   role: "user" | "assistant" | "error" | "system";
   content: string;
@@ -992,7 +992,7 @@ export interface PiAgentMessage {
      */
     approvalNonce?: string;
   }[];
-  subagents?: PiSubagentMessage[];
+  subagents?: AgentSubagentMessage[];
   isStreaming?: boolean;
   timestamp: string;
 }
@@ -1009,7 +1009,7 @@ export interface TerminalSession {
   exitCode: number | null;
   spawnedAt: string;
   sessionType: "pty" | "pi";
-  piMessages?: PiAgentMessage[];
+  piMessages?: AgentMessage[];
   initialPrompt?: string;
   lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
   mode?: "plan" | "execute";

@@ -3,7 +3,7 @@
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { id } from "@/lib/utils";
-import type { CodingSessionSummary, PiAgentMessage, SessionPresentation, TerminalSession } from "@/types";
+import type { AgentMessage, CodingSessionSummary, SessionPresentation, TerminalSession } from "@/types";
 
 /**
  * Shared hook for creating new Cairn Agent sessions and resuming existing ones.
@@ -73,7 +73,7 @@ export function useAgentSessionActions() {
   ) {
     const alreadyLoaded = terminalSessions.find((t) => t.sessionId === summary.id);
     if (!alreadyLoaded) {
-      let piMessages: PiAgentMessage[] = [];
+      let piMessages: AgentMessage[] = [];
       let lastUsage: TerminalSession["lastUsage"] = undefined;
       try {
         type RowType = {
@@ -103,9 +103,9 @@ export function useAgentSessionActions() {
         if (rows) {
           piMessages = rows.map((r) => ({
             id: r.id, role: r.role, content: r.content,
-            reasoning: (r.reasoning ?? undefined) as PiAgentMessage["reasoning"],
-            toolCalls: (r.toolCalls ?? undefined) as PiAgentMessage["toolCalls"],
-            subagents: (r.subagents ?? undefined) as PiAgentMessage["subagents"],
+            reasoning: (r.reasoning ?? undefined) as AgentMessage["reasoning"],
+            toolCalls: (r.toolCalls ?? undefined) as AgentMessage["toolCalls"],
+            subagents: (r.subagents ?? undefined) as AgentMessage["subagents"],
             timestamp: r.timestamp,
           }));
         }
