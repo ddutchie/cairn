@@ -17,11 +17,8 @@ import path from "node:path";
 import { dropChatAgentForThread, getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 
 export function registerChatDbHandlers(ctx: DbContext): void {
-  // Legacy transcript retirement is now migration v49 (see electron/db/schema.ts
-  // — archiveAndDropLegacyTranscripts + formatArchiveNotice). Rows are dumped
-  // to <workspacePath>/.cairn/archive/2.7.7/*.ndjson before the tables are
-  // dropped, and it runs on EVERY DB via user_version — not just at IPC
-  // registration — so workspace switching no longer defeats it.
+  // Legacy SQLite transcript tables and pre-Cordis session indexes are reset by
+  // migrations v49/v51. New history is owned by dsh JSONL sessions.
   registerIpcHandle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
   registerIpcHandle("db:chat:upsertThread", (_e, args: Parameters<typeof q.upsertChatThread>[1]) => handle(() => q.upsertChatThread(ctx.db, args)));
 
