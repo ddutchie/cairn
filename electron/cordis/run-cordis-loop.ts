@@ -21,7 +21,6 @@ import agentPlugin from "@deepseek-ai/dsh-agent";
 import toolsPlugin from "@deepseek-ai/dsh-tools";
 import agentLoopPlugin from "@deepseek-ai/dsh-agent-loop";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
-import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import subagentServicePlugin from "@deepseek-ai/dsh-subagent";
 import userQuestionsService from "@deepseek-ai/dsh-user-questions";
@@ -855,8 +854,6 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   });
   toolDisposers.push(...externalDisposers);
 
-  const selection = { provider: "cairn", model: llmConfig.model };
-
   // Live-stream text + reasoning deltas as they arrive on the MAIN session
   // (subagent children are handled by cairnSubagentPlugin). We also keep a
   // running buffer as the durable return value / fallback if no deltas fired.
@@ -969,68 +966,28 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     }
     if (!cached || !agent!) {
       try {
-        const resumed = await ctx.agents.resume({
-          // meta belongs to CreateAgentOptions only — resume takes the meta
-          // off the persisted session header. Passing it here was silently
-          // ignored under the old cast and is now a compile-time no-no.
-          agentOptions: { provider: selection.provider, model: selection.model },
-          setup: (agentCtx: unknown) => {
-            installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
-          },
-          resumeSessionId: stableId,
+        const opened = await openCordisSessionAgent(ctx, {
+          sessionId: String(stableId),
+          cwd: workspacePath,
+          llmConfig,
           signal,
         });
-        activeHandle = resumed as unknown as Record<PropertyKey, unknown>;
-        agent = resumed.agent as typeof agent;
-      } catch {
-        try {
-          const created = await ctx.agentLoop.createAgent(ctx, {
-            sessionId: stableId,
-            meta: { cwd: workspacePath },
-            agentOptions: { provider: selection.provider, model: selection.model },
-            setup: (agentCtx) => {
-              installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
-            },
-          });
-          activeHandle = created as unknown as Record<PropertyKey, unknown>;
-          agent = created.agent as typeof agent;
-        } catch (e) {
-          const msg = (e as Error)?.message ?? String(e);
-          if (msg.includes("already exists")) {
-            const resumed2 = await ctx.agents.resume({
-              agentOptions: { provider: selection.provider, model: selection.model },
-              setup: (agentCtx: unknown) => {
-                installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
-              },
-              resumeSessionId: stableId,
-              signal,
-            });
-            activeHandle = resumed2 as unknown as Record<PropertyKey, unknown>;
-            agent = resumed2.agent as typeof agent;
-          } else if (msg.includes("while it is live")) {
-            // A clear raced this turn: the old session is still live in
-            // ctx.sessions, so prepare/resume refuses. Force-detach (Symbol
-            // dispose on the cached handle, if any) and retry resume once.
-            try { await dropChatAgentForThread(req.threadId); } catch { /* best-effort */ }
-            try {
-              const resumed3 = await ctx.agents.resume({
-                agentOptions: { provider: selection.provider, model: selection.model },
-                setup: (agentCtx: unknown) => {
-                  installModelSelection(agentCtx as never, { current: selection, assembled: undefined });
-                },
-                resumeSessionId: stableId,
-                signal,
-              });
-              activeHandle = resumed3 as unknown as Record<PropertyKey, unknown>;
-              agent = resumed3.agent as typeof agent;
-            } catch (e2) {
-              const m2 = (e2 as Error)?.message ?? String(e2);
-              throw new Error(m2.includes("while it is live") ? `clear left session "${stableId}" live; try clearing again` : m2);
-            }
-          } else {
-            throw e;
-          }
-        }
+        activeHandle = opened as unknown as Record<PropertyKey, unknown>;
+        agent = opened.agent as typeof agent;
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        if (!msg.includes("while it is live")) throw e;
+        // A clear raced this turn: detach the stale cached session before the
+        // shared opener retries its normal inspect/resume/create path.
+        try { await dropChatAgentForThread(req.threadId); } catch { /* best-effort */ }
+        const opened = await openCordisSessionAgent(ctx, {
+          sessionId: String(stableId),
+          cwd: workspacePath,
+          llmConfig,
+          signal,
+        });
+        activeHandle = opened as unknown as Record<PropertyKey, unknown>;
+        agent = opened.agent as typeof agent;
       }
       chatAgents.set(req.threadId, { handle: activeHandle, agent });
     }

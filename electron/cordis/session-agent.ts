@@ -48,10 +48,21 @@ export async function openCordisSessionAgent(
 
   if (!createIfMissing) throw new Error(`session "${sessionId}" not found`);
 
-  return await ctx.agentLoop.createAgent(ctx, {
-    ...base,
-    sessionId: stableId,
-    meta: { cwd },
-    signal,
-  } as never) as CordisSessionAgentHandle;
+  try {
+    return await ctx.agentLoop.createAgent(ctx, {
+      ...base,
+      sessionId: stableId,
+      meta: { cwd },
+      signal,
+    } as never) as CordisSessionAgentHandle;
+  } catch (error) {
+    // Another opener may materialize the same stable session between inspect
+    // and create. Treat that race like the already-existing resume case.
+    if (!(error instanceof Error) || !error.message.includes("already exists")) throw error;
+    return await ctx.agents.resume({
+      ...base,
+      resumeSessionId: stableId,
+      signal,
+    }) as CordisSessionAgentHandle;
+  }
 }
