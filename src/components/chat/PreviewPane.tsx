@@ -49,12 +49,13 @@ function DiffContextContent({ path }: { path?: string }) {
 }
 
 export function PreviewPane() {
-  const { activePreviewItem, activeContextPanel, setActivePreviewItem, setActiveContextPanel, setView, notes, cards } = useCairnStore(useShallow((s) => ({
+  const { activePreviewItem, activeContextPanel, setActivePreviewItem, setActiveContextPanel, setView, openEditorFile, notes, cards } = useCairnStore(useShallow((s) => ({
     activePreviewItem: s.activePreviewItem,
     activeContextPanel: s.activeContextPanel,
     setActivePreviewItem: s.setActivePreviewItem,
     setActiveContextPanel: s.setActiveContextPanel,
     setView: s.setView,
+    openEditorFile: s.openEditorFile,
     notes: s.notes,
     cards: s.cards,
   })));
@@ -126,6 +127,15 @@ export function PreviewPane() {
     setActiveContextPanel(null);
   }
 
+  function handleOpenDeveloper() {
+    if (!panel) return;
+    const path = panel.type === "file" || panel.type === "diff" ? panel.path : undefined;
+    if (path) openEditorFile(path);
+    setActivePreviewItem(null);
+    setActiveContextPanel(null);
+    setView("agent");
+  }
+
   return (
     <aside
       ref={panelRef}
@@ -168,6 +178,20 @@ export function PreviewPane() {
               >
                 <ExternalLink size={11} />
                 Go to {type === "note" ? "Notes" : "Board"}
+              </Button>
+              <div className="w-px h-3 bg-[var(--border)] my-1" />
+            </>
+          )}
+          {(type === "file" || type === "diff") && (
+            <>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={handleOpenDeveloper}
+                className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+              >
+                <ExternalLink size={11} />
+                Open in Developer View
               </Button>
               <div className="w-px h-3 bg-[var(--border)] my-1" />
             </>
