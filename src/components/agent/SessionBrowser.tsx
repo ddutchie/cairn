@@ -85,6 +85,7 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
   const { handleResumeSession } = useAgentSessionActions();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const openRequestRef = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const sessions = useMemo<UnifiedSession[]>(() => {
@@ -146,15 +147,21 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
   }, [open]);
 
   async function selectSession(session: UnifiedSession) {
+    const request = ++openRequestRef.current;
     setOpen(false);
     setQuery("");
+    const presentation = variant === "preview" ? "center" : "drawer";
     if (session.projectId && session.projectId !== activeProjectId) setActiveProject(session.projectId);
-    openSession(session.sourceId, session.kind, variant === "preview" ? "center" : "drawer");
+    openSession(session.sourceId, session.kind, presentation);
     if (session.kind === "chat") {
       onActivate(session.sourceId, session.kind);
     } else if (session.kind === "coding") {
       const summary = piSessionHistory.find((candidate) => candidate.id === session.sourceId);
-      if (summary) await handleResumeSession(summary, variant === "preview" ? "center" : "drawer");
+      if (summary) await handleResumeSession(summary, presentation, false);
+      // A slow history load must not steal the UI from a newer selection.
+      if (request !== openRequestRef.current) return;
+      useCairnStore.getState().setPersistentPiSession(session.sourceId);
+      openSession(session.sourceId, session.kind, presentation);
       onActivate(session.sourceId, session.kind);
     } else {
       onActivate(session.sourceId, session.kind);

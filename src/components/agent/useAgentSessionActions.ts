@@ -63,7 +63,11 @@ export function useAgentSessionActions() {
   }
 
 
-  async function handleResumeSession(summary: PiSessionSummary, presentation: SessionPresentation = "drawer") {
+  async function handleResumeSession(
+    summary: PiSessionSummary,
+    presentation: SessionPresentation = "drawer",
+    activate = true,
+  ) {
     const alreadyLoaded = terminalSessions.find((t) => t.sessionId === summary.id);
     if (!alreadyLoaded) {
       let piMessages: PiAgentMessage[] = [];
@@ -119,8 +123,10 @@ export function useAgentSessionActions() {
 
       window.electron?.piAgent.restoreContext(summary.id);
     }
-    setPersistentPiSession(summary.id);
-    openSession(summary.id, "coding", presentation);
+    if (activate) {
+      setPersistentPiSession(summary.id);
+      openSession(summary.id, "coding", presentation);
+    }
   }
 
   return { handleNewSession, handleResumeSession, project };
