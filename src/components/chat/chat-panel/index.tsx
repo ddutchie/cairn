@@ -26,6 +26,7 @@ import { ToolCallIndicator } from "./ToolCallIndicator";
 import { useCommunityConnectorMap, type ChatConnectorMeta } from "./connector-context";
 import { QuestionForm } from "./QuestionForm";
 import { ConversationHeader } from "@/components/conversation/ConversationHeader";
+import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { cn, id } from "@/lib/utils";
@@ -870,14 +871,14 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           data={timelineRange ? visibleMessages : messages}
           initialTopMostItemIndex={Math.max(0, messages.length - 1)}
           emptyPlaceholder={() => (
-            <div className={cn("px-3 py-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+            <ConversationEmptyState content={(
               <SuggestedPrompts
                 onSend={handleSend}
                 disabled={isLoading || !threadId}
                 prompts={activeView === "graph" ? graphPrompts : undefined}
                 subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
               />
-            </div>
+            )} />
           )}
           footer={ChatFooter}
           itemContent={(_index, message) => (

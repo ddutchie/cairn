@@ -16,7 +16,7 @@ import type { SuggestionItem } from "@/components/chat/ChatInput";
 import type { PendingQuestion } from "@/hooks/useChatStream";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { id } from "@/lib/utils";
+import { cn, id } from "@/lib/utils";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
@@ -37,6 +37,7 @@ import { ConversationTranscript } from "@/components/conversation/ConversationTr
 import { ConversationMessageBubble } from "@/components/conversation/ConversationMessageBubble";
 import { toConversationMessage } from "@/components/conversation/conversation-message";
 import { ConversationHeader } from "@/components/conversation/ConversationHeader";
+import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -119,6 +120,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     mcpServers:        s.mcpServers,
     customServices:    s.customServices,
   })));
+  const sessionPresentation = useCairnStore((s) => s.sessionPresentation);
     const sessionTodos = useCairnStore((s) => s.piSessionTodos[session.sessionId]);
   const customCommands = useCairnStore((s) => s.customCommands);
   const registryCommands = useRegistryCommands();
@@ -883,20 +885,16 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         data={messages}
         initialTopMostItemIndex={Math.max(0, messages.length - 1)}
         emptyPlaceholder={() => (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-3">
-            <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">
-              {session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
-            </p>
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-48">
-              {session.mode === "plan"
-                ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
-                : "Ask me to read, edit, or run code — or manage your project board."}
-            </p>
-          </div>
+          <ConversationEmptyState
+            title={session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
+            description={session.mode === "plan"
+              ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
+              : "Ask me to read, edit, or run code — or manage your project board."}
+          />
         )}
         footer={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
         itemContent={(_index, msg) => (
-          <div className="px-3 pt-3">
+          <div className={cn("px-4 py-1.5", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
             <ConversationMessageBubble
               message={toConversationMessage(msg)}
               sessionId={session.sessionId}
@@ -907,7 +905,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       />
 
       {/* Input — with upward-expanding plan task list docked above it */}
-      <div className="border-t border-[var(--border)] flex-shrink-0">
+      <div className={cn("border-t border-[var(--border)] flex-shrink-0", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
         {/* Keep blocking questions outside Virtuoso's Footer. The footer
             component is recreated while the transcript streams, which can
             remount QuestionForm and discard answers typed into the form. */}
@@ -978,7 +976,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && (
           <AgentTodoDock todos={sessionTodos ?? []} live={false} />
         )}
-      <div className="p-3">
+      <div className={cn("p-3", sessionPresentation === "center" && "border-t-0 bg-transparent p-6")}>
         <ChatInputArea
           ref={textareaRef}
           value={input}
