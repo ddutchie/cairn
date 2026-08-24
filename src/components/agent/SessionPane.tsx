@@ -15,7 +15,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { X, Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2 } from "lucide-react";
 import { useCairnStore } from "@/store";
-import type { ChatThread, ChatMessage } from "@/types";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { modKey } from "@/components/layout/sidebar-utils";
@@ -27,6 +26,7 @@ import { SessionMount } from "./SessionMount";
 import { TerminalTab } from "./TerminalTab";
 import { AgentEmptyState } from "./AgentEmptyState";
 import { useAgentSessionActions } from "./useAgentSessionActions";
+import { chatSessionId } from "../../../shared/agent/session-identity";
 
 interface SessionPaneProps {
   isRightPanel?: boolean;
@@ -160,12 +160,9 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   // ── Pop-out chat ────────────────────────────────────────────────────────────────
   const handlePopOut = useCallback(async () => {
     const state = useCairnStore.getState();
-    const result = await window.electron?.chat.popOut({
-      threadId: state.activeChatThreadId,
-      chatThreads: state.chatThreads,
-      chatMessages: state.chatMessages,
-      activeProjectId: state.activeProjectId,
-    });
+    const threadId = state.activeChatThreadId;
+    if (!threadId) return;
+    const result = await window.electron?.chat.popOut({ sessionId: chatSessionId(threadId), activeProjectId: state.activeProjectId });
     if (result?.ok) {
       setChatPoppedOut(true);
     }
@@ -193,19 +190,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   useEffect(() => {
     const electron = window.electron;
     if (!electron?.chat.onChatPoppedIn) return;
-    const unsub = electron.chat.onChatPoppedIn((payload) => {
-      if (payload.chatThreads) {
-        useCairnStore.setState({
-          chatThreads: payload.chatThreads as ChatThread[],
-          chatMessages: payload.chatMessages as ChatMessage[],
-        });
-      }
-      if (payload.threadId) {
-        useCairnStore.getState().setActiveChatThreadId(payload.threadId);
-      }
-      if (payload.activeProjectId != null) {
-        useCairnStore.setState({ activeProjectId: payload.activeProjectId });
-      }
+    const unsub = electron.chat.onChatPoppedIn((_payload) => {
       setChatPoppedOut(false);
     });
     return () => { unsub?.(); };

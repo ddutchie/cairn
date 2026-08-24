@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import type { ChatThread, ChatMessage } from "@/types";
 import { ChatPanel } from "@/components/chat/chat-panel";
+import { chatSessionId, chatThreadId } from "../../../shared/agent/session-identity";
 
 export default function ChatPopoutPage() {
   const [ready, setReady] = useState(false);
@@ -19,14 +19,11 @@ export default function ChatPopoutPage() {
 
       if (window.electron?.chat.popoutReady) {
         const state = await window.electron.chat.popoutReady();
-        if (state && state.chatThreads) {
-          useCairnStore.setState({
-            chatThreads: state.chatThreads as ChatThread[],
-            chatMessages: state.chatMessages as ChatMessage[],
-          });
-        }
-        if (state?.threadId) {
-          setActiveChatThreadId(state.threadId);
+        if (state?.sessionId) {
+          const threadId = chatThreadId(state.sessionId);
+          setActiveChatThreadId(threadId);
+          const workspaceId = useCairnStore.getState().activeWorkspaceId;
+          if (workspaceId) await useCairnStore.getState().loadChatFromDb(workspaceId);
         }
         if (state?.activeProjectId != null) {
           useCairnStore.setState({ activeProjectId: state.activeProjectId });
@@ -39,13 +36,8 @@ export default function ChatPopoutPage() {
   }, [setActiveChatThreadId]);
 
   const handlePopIn = useCallback(async () => {
-    const state = useCairnStore.getState();
-    await window.electron?.chat.popIn({
-      threadId: state.activeChatThreadId as string | null,
-      chatThreads: state.chatThreads as unknown[],
-      chatMessages: state.chatMessages as unknown[],
-      activeProjectId: state.activeProjectId as string | null,
-    });
+    const threadId = useCairnStore.getState().activeChatThreadId;
+    if (threadId) await window.electron?.chat.popIn({ sessionId: chatSessionId(threadId) });
   }, []);
 
   // Listen for main window's "Pop in" request (relayed via main process)

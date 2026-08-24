@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExtern
 import { type VirtuosoHandle } from "react-virtuoso";
 import { Trash2, ChevronDown, ArrowLeftFromLine, History } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { chatSessionId } from "../../../../shared/agent/session-identity";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
 import type { ChatToolCall, PendingQuestion } from "@/hooks/useChatStream";
@@ -752,12 +753,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   const handlePopIn = useCallback(async () => {
     const state = useCairnStore.getState();
-    await window.electron?.chat.popIn({
-      threadId: state.activeChatThreadId as string | null,
-      chatThreads: state.chatThreads as unknown[],
-      chatMessages: state.chatMessages as unknown[],
-      activeProjectId: state.activeProjectId as string | null,
-    });
+    if (state.activeChatThreadId) {
+      await window.electron?.chat.popIn({ sessionId: chatSessionId(state.activeChatThreadId) });
+    }
   }, []);
 
   return (

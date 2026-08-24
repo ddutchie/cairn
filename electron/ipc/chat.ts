@@ -19,6 +19,7 @@ import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { createDeltaBatcher } from "../lib/delta-batcher";
+import { registerPendingQuestion, recordPendingQuestion } from "../cordis/pending-question-broker";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -33,11 +34,6 @@ const abortControllers = new Map<number, AbortController>();
  * `runningLoops` guard on the coding side (review finding M13).
  */
 const runningThreads = new Set<string>();
-
-// Pending ask_questions requests (Cordis engine): the cairn-questions provider
-// blocks on ask() and stores its resolver here keyed by requestId; the renderer
-// answers via chat:answer-questions, which resolves it (same-turn answer flow).
-const pendingChatQuestions = new Map<string, (answersText: string) => void>();
 
 function resolveAIConfig(config?: {
   provider?: string;
@@ -128,21 +124,12 @@ export function registerChatHandler(ctx: DbContext): void {
     }
   });
 
-  // chat:answer-questions — the renderer's answer to a blocking ask_questions
-  // (Cordis engine). Resolves the pending provider promise so the tool result
-  // (the answers) is fed back to the model in the same turn. answers is the
-  // JSON blob {answers:[{id,selected[],custom?}]} or plain text.
-  registerIpcOn("chat:answer-questions", (_event, req: { requestId: string; answers: string }) => {
-    const resolve = pendingChatQuestions.get(req.requestId);
-    if (resolve) resolve(req.answers ?? "");
-  });
-
   // chat:stream — fire-and-forget (registerIpcOn, not handle).
   // Emits:
-  //   chat:token   { delta: string }   — one SSE content chunk
-  //   chat:tool-call { tool, label, args } — tool being invoked
-  //   chat:done    { content: string, contextRefs: [], error?: string }
+  //   session:token / session:thought / session:tool / session:usage
+  //   session:done / session:error / session:ask-questions
   registerIpcOn("chat:stream", async (event, req: ChatRequest) => {
+    const sessionId = `chat-${req.threadId}`;
     // Cancel any previous in-flight request from THIS renderer
     abortControllers.get(event.sender.id)?.abort();
     // Concurrent-stream guard on the same thread: if another window (pop-out,
@@ -157,9 +144,9 @@ export function registerChatHandler(ctx: DbContext): void {
           : payload;
         if (!event.sender.isDestroyed()) event.sender.send(ch, tagged);
       };
-      send("chat:done", {
+      send("session:error", {
+        sessionId,
         content: "Another turn is already in flight on this conversation — wait for it to finish, or open the conversation in a single window.",
-        contextRefs: [],
         error: "concurrent-stream-blocked",
       });
       return;
@@ -177,17 +164,19 @@ export function registerChatHandler(ctx: DbContext): void {
       // events that aren't theirs. Without this, a spawn stream's chat:done
       // would toggle the chat panel's loading state and disable its input.
       const tagged = (payload && typeof payload === "object")
-        ? { ...(payload as Record<string, unknown>), threadId: req.threadId }
+        ? { sessionId, ...(payload as Record<string, unknown>), threadId: req.threadId }
         : payload;
       if (!event.sender.isDestroyed()) event.sender.send(ch, tagged);
       broadcastToChat(ch, tagged, event.sender.id);
     };
 
     if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {
-      send("chat:done", {
+      send("session:error", {
         content: "AI chat is not configured. Set an API key in **Settings → AI & Chat**, or use a local endpoint (Ollama, LM Studio) with no key needed.",
-        contextRefs: [],
+        error: "AI chat is not configured",
       });
+      abortControllers.delete(event.sender.id);
+      if (req.threadId) runningThreads.delete(req.threadId);
       return;
     }
 
@@ -238,11 +227,11 @@ export function registerChatHandler(ctx: DbContext): void {
     ];
 
     const emitToolCall = (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => {
-      send("chat:tool-call", e);
+      send("session:tool", { name: e.tool, ...e, status: "start" });
     };
 
     const emitToolCallDone = (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => {
-      send("chat:tool-call-done", e);
+      send("session:tool", { name: e.tool, ...e, label: e.tool, status: "end" });
     };
 
     let promptTokens = 0;
@@ -301,7 +290,7 @@ export function registerChatHandler(ctx: DbContext): void {
         console.error("[chat] failed to calculate breakdown:", err);
       }
       const resolvedLimit = req.config?.contextLimit ?? req.config?.contextWindow;
-      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens, contextLimit: resolvedLimit, contextWindow: resolvedLimit });
+      send("session:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens, contextLimit: resolvedLimit, contextWindow: resolvedLimit });
     };
 
     // Final usage object attached to chat:done (or undefined when nothing ran —
@@ -332,8 +321,8 @@ export function registerChatHandler(ctx: DbContext): void {
     // ── Cordis engine (only path — local models via llama-server at 127.0.0.1:<port>/v1 are also OpenAI-compatible) ──
     if (true) {
       const { runCordisLoop } = await import("../cordis/run-cordis-loop");
-      const tokens = createDeltaBatcher((delta) => send("chat:token", { delta }));
-      const thoughts = createDeltaBatcher((delta) => send("chat:thought", { delta }));
+      const tokens = createDeltaBatcher((delta) => send("session:token", { delta }));
+      const thoughts = createDeltaBatcher((delta) => send("session:thought", { delta }));
       const flushStream = () => { tokens.flush(); thoughts.flush(); };
       try {
         const loopResult = await runCordisLoop({
@@ -355,29 +344,33 @@ export function registerChatHandler(ctx: DbContext): void {
           emitToolCall,
           emitToolCallDone,
           getWin,
-          sendSubagent: (channel, payload) => send(channel, payload),
-          questions: {
-            send: (channel, payload) => send(channel, payload),
-            registerPending: (requestId, resolve) => {
-              pendingChatQuestions.set(requestId, resolve);
-              return () => pendingChatQuestions.delete(requestId);
-            },
-          },
-        });
+             sendSubagent: (channel, payload) => send(channel.replace(/^chat:/, "session:"), payload),
+           questions: {
+             send: (channel, payload) => send(channel, payload),
+              emitQuestions: (requestId, questions) => {
+                recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
+                send("session:ask-questions", { callId: requestId, questions });
+              },
+             registerPending: (requestId, resolve) => {
+               return registerPendingQuestion(sessionId, requestId, resolve);
+              },
+           },
+           onSessionEvent: (sessionEvent) => broadcastEvent("session:event", { sessionId, event: sessionEvent }),
+         });
         flushStream();
         if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
         if (abortCtrl.signal.aborted) {
-          send("chat:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
+          send("session:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
         } else {
-          send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
+          send("session:done", { content: loopResult.content, reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
         }
       } catch (err) {
         flushStream();
         if (!abortCtrl.signal.aborted) {
           console.error("[chat] cordis loop failed:", err);
-          send("chat:done", { content: `Chat loop failed: ${(err as Error)?.message ?? String(err)}`, contextRefs: [] });
+           send("session:error", { error: `Chat loop failed: ${(err as Error)?.message ?? String(err)}` });
         } else {
-          send("chat:done", { content: "", contextRefs: [] });
+           send("session:done", { content: "" });
         }
       } finally {
         abortControllers.delete(event.sender.id);

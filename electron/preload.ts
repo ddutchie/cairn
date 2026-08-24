@@ -390,114 +390,17 @@ const api = {
     // Fire-and-forget. Listen with onToken / onDone / onToolCall.
     stream: (req: unknown) => ipcRenderer.send("chat:stream", req),
     abort: () => ipcRenderer.send("chat:abort"),
-    answerQuestions: (req: { requestId: string; answers: string }) => ipcRenderer.send("chat:answer-questions", req),
-    onToken: (cb: (e: { delta: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { delta: string; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:token", handler);
-      return () => ipcRenderer.off("chat:token", handler);
-    },
-    onThought: (cb: (e: { delta: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { delta: string; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:thought", handler);
-      return () => ipcRenderer.off("chat:thought", handler);
-    },
-    onDone: (cb: (e: { content: string; reasoning?: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number } }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:done", handler);
-      return () => ipcRenderer.off("chat:done", handler);
-    },
-    onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:tool-call", handler);
-      return () => ipcRenderer.off("chat:tool-call", handler);
-    },
-    onToolCallDone: (cb: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; threadId?: string; ok?: boolean; error?: string; meta?: unknown }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; threadId?: string; ok?: boolean; error?: string }) => cb(e);
-      ipcRenderer.on("chat:tool-call-done", handler);
-      return () => ipcRenderer.off("chat:tool-call-done", handler);
-    },
-    onUsage: (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:usage", handler);
-      return () => ipcRenderer.off("chat:usage", handler);
-    },
-    // ── Subagent mode (dispatch → research/write) live trace ────────────────
-    // parentSession identifies the dispatching parent — chat thread stable id
-    // (`chat-<threadId>`) OR a coding-agent sessionId — so consumers can
-    // filter events for the pane they drive.
-    onSubagent: (cb: (e: { childId: string; parentSession?: string; role: string; instruction?: string; result?: string; status: "start" | "done"; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent", handler);
-      return () => ipcRenderer.off("chat:subagent", handler);
-    },
-    onSubagentToken: (cb: (e: { childId: string; parentSession?: string; delta: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-token", handler);
-      return () => ipcRenderer.off("chat:subagent-token", handler);
-    },
-    onSubagentThought: (cb: (e: { childId: string; parentSession?: string; delta: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-thought", handler);
-      return () => ipcRenderer.off("chat:subagent-thought", handler);
-    },
-    onSubagentToolCall: (cb: (e: { childId: string; parentSession?: string; tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-tool-call", handler);
-      return () => ipcRenderer.off("chat:subagent-tool-call", handler);
-    },
-    onSubagentToolCallDone: (cb: (e: { childId: string; parentSession?: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; threadId?: string; ok?: boolean; error?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-tool-call-done", handler);
-      return () => ipcRenderer.off("chat:subagent-tool-call-done", handler);
-    },
-    onSubagentUsage: (cb: (e: { childId: string; parentSession?: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: unknown; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-usage", handler);
-      return () => ipcRenderer.off("chat:subagent-usage", handler);
-    },
     // ── Pop-out window ──────────────────────────
     /** Called by main window: sends current chat state, triggers window creation. */
-    popOut: (payload: {
-      threadId: string | null;
-      chatThreads: unknown[];
-      chatMessages: unknown[];
-      activeProjectId: string | null;
-    }) => invoke<{ ok: boolean }>("chat:popOut", payload),
-    /** Called by pop-out page: signals readiness, returns stored chat state. */
-    popoutReady: () => invoke<{
-      threadId: string | null;
-      chatThreads: unknown[];
-      chatMessages: unknown[];
-      activeProjectId: string | null;
-    }>("chat:popoutReady"),
-    /** Called by pop-out page: sends final state back, closes window. */
-    popIn: (payload: {
-      threadId: string | null;
-      chatThreads: unknown[];
-      chatMessages: unknown[];
-      activeProjectId: string | null;
-    }) => invoke<{ ok: boolean }>("chat:popIn", payload),
+    popOut: (payload: { sessionId: string; activeProjectId: string | null }) => invoke<{ ok: boolean }>("chat:popOut", payload),
+    /** Called by pop-out page: signals readiness, returns the shared session id. */
+    popoutReady: () => invoke<{ sessionId: string; activeProjectId: string | null }>("chat:popoutReady"),
+    /** Called by pop-out page: closes the window; session state is not copied. */
+    popIn: (payload: { sessionId: string }) => invoke<{ ok: boolean }>("chat:popIn", payload),
     /** Called by main window: asks the pop-out to return (relayed via main process). */
     requestPopIn: () => invoke<{ ok: boolean }>("chat:requestPopIn"),
     /** Listener on the main window: received when pop-in completes with final state. */
-    onChatPoppedIn: (cb: (payload: {
-      threadId: string | null;
-      chatThreads: unknown[];
-      chatMessages: unknown[];
-      activeProjectId: string | null;
-    }) => void) => {
+    onChatPoppedIn: (cb: (payload: { sessionId: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, payload: any) => cb(payload);
       ipcRenderer.on("chat:poppedIn", handler);
@@ -1010,6 +913,12 @@ const api = {
   session: {
     /** Send a prompt to an existing or new session. Fire-and-forget. */
     prompt: (req: unknown) => ipcRenderer.send("session:prompt", req),
+    /** Canonical raw DSH session/event stream shared by Chat and Coding. */
+    onEvent: (cb: (e: { sessionId: string; event: { type: string; seq: number; time: number; data: unknown; [key: string]: unknown } }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("session:event", handler);
+      return () => ipcRenderer.off("session:event", handler);
+    },
     /** Whether the Cordis coding agent is currently in flight for this session. */
     /** Reasoning-provenance snapshot for the agent panel's Context Ring badge */
     contextRing: (sessionId: string) => invoke<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }>("session:context-ring", { sessionId }),
@@ -1042,13 +951,13 @@ const api = {
       ipcRenderer.on("session:thought", handler);
       return () => ipcRenderer.off("session:thought", handler);
     },
-    onTool: (cb: (e: { sessionId: string; name: string; label: string; args?: Record<string, unknown>; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => void) => {
+    onTool: (cb: (e: { sessionId: string; name: string; label: string; args?: Record<string, unknown>; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string; error?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { sessionId: string; name: string; label: string; args?: Record<string, unknown>; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => cb(e);
       ipcRenderer.on("session:tool", handler);
       return () => ipcRenderer.off("session:tool", handler);
     },
-    onDone: (cb: (e: { sessionId: string }) => void) => {
+    onDone: (cb: (e: { sessionId: string; threadId?: string; content?: string; reasoning?: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string; contextRefs?: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number } }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { sessionId: string }) => cb(e);
       ipcRenderer.on("session:done", handler);
@@ -1077,6 +986,36 @@ const api = {
       const handler = (_: any, e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; cacheReadTokens?: number; cacheCreationTokens?: number }) => cb(e);
       ipcRenderer.on("session:usage", handler);
       return () => ipcRenderer.off("session:usage", handler);
+    },
+    onSubagent: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; role: string; instruction?: string; result?: string; status: "start" | "done" }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("session:subagent", handler);
+      return () => ipcRenderer.off("session:subagent", handler);
+    },
+    onSubagentToken: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; delta: string }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("session:subagent-token", handler);
+      return () => ipcRenderer.off("session:subagent-token", handler);
+    },
+    onSubagentThought: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; delta: string }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("session:subagent-thought", handler);
+      return () => ipcRenderer.off("session:subagent-thought", handler);
+    },
+    onSubagentToolCall: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("session:subagent-tool-call", handler);
+      return () => ipcRenderer.off("session:subagent-tool-call", handler);
+    },
+    onSubagentToolCallDone: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("session:subagent-tool-call-done", handler);
+      return () => ipcRenderer.off("session:subagent-tool-call-done", handler);
+    },
+    onSubagentUsage: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: unknown }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("session:subagent-usage", handler);
+      return () => ipcRenderer.off("session:subagent-usage", handler);
     },
     /** Fired before each automatic retry on a transient error. delayMs is the backoff wait. */
     onRetry: (cb: (e: { sessionId: string; attempt: number; maxRetries: number; delayMs: number; error: string }) => void) => {

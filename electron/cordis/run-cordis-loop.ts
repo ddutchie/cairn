@@ -6,6 +6,7 @@ import { peekChatAgentCache, getChatAgentCache } from "./chat-agent-cache";
 import { getContext, resolvePresentationMeta } from "./cordis-context";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
+import type { SessionEvent } from "@deepseek-ai/dsh-session";
 
 export { getContext, dropChatAgentForThread, resolvePresentationMeta, getSessionRoot, setSessionRoot, __setToolDefForTest } from "./cordis-context";
 export { ensureAgentAiAdapter } from "./session-runtime";
@@ -31,9 +32,10 @@ export interface RunCordisLoopOptions {
   emitToolCall?: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void;
   emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string; meta?: unknown }) => void;
   sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
-  questions?: { send: (channel: string, payload: Record<string, unknown>) => void; registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void };
+  questions?: { send: (channel: string, payload: Record<string, unknown>) => void; emitQuestions?: (requestId: string, questions: unknown[]) => void; registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void };
   getWin?: () => Electron.BrowserWindow | null;
   signal?: AbortSignal;
+  onSessionEvent?: (event: SessionEvent) => void;
 }
 
 export function enrichToolCallsWithMeta<T extends { toolCalls?: Array<{ tool: string; args?: string; output?: string; meta?: unknown }> }>(messages: T[]): T[] {

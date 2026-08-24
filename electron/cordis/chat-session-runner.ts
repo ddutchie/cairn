@@ -92,7 +92,8 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     signal,
     includeSessionIndex: true,
     sendSubagent: opts.sendSubagent,
-    questions: opts.questions,
+      questions: opts.questions,
+    onSessionEvent: (event) => opts.onSessionEvent?.(event),
     retainAgent: true,
     setup: async ({ llmConfig: preparedConfig, resources, mount }) => {
       llmConfig = preparedConfig;

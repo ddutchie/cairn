@@ -7,10 +7,9 @@
  * events to both so they stay in sync.
  *
  * State flow:
- *   popOut  → main renderer sends chat state → main process creates pop-out
- *             → pop-out calls popoutReady → receives stored state → hydrates
- *   popIn   → pop-out sends final state → main process closes pop-out
- *             → main window receives chat:poppedIn event → hydrates
+ *   popOut  → main renderer sends a session id → main process creates pop-out
+ *             → pop-out calls popoutReady → loads the same session history
+ *   popIn   → pop-out sends its session id → main process closes pop-out
  *   stream  → whichever window sends chat:stream → events broadcast to both
  */
 
@@ -25,13 +24,8 @@ const isDev = !app.isPackaged;
  */
 const chatParticipants = new Set<number>();
 
-/** State sent from the main window, pending delivery to the pop-out. */
-let pendingChatState: {
-  threadId: string | null;
-  chatThreads: unknown[];
-  chatMessages: unknown[];
-  activeProjectId: string | null;
-} | null = null;
+/** Session identity sent from the main window, pending delivery to the pop-out. */
+let pendingChatState: { sessionId: string; activeProjectId: string | null } | null = null;
 
 let popoutWindow: BrowserWindow | null = null;
 
@@ -130,12 +124,7 @@ export function broadcastToChat(channel: string, payload: unknown, excludeId?: n
 
 export function registerChatPopoutHandlers(): void {
   // Main window requests a pop-out: stores state, creates pop-out window
-  ipcMain.handle("chat:popOut", (event, payload: {
-    threadId: string | null;
-    chatThreads: unknown[];
-    chatMessages: unknown[];
-    activeProjectId: string | null;
-  }) => {
+  ipcMain.handle("chat:popOut", (event, payload: { sessionId: string; activeProjectId: string | null }) => {
     mainWindowWebContentsId = event.sender.id;
     chatParticipants.add(event.sender.id);
     pendingChatState = payload;
@@ -146,12 +135,12 @@ export function registerChatPopoutHandlers(): void {
   // Pop-out page signals it is ready — register as participant, return stored state
   ipcMain.handle("chat:popoutReady", (event) => {
     if (event.sender.id !== popoutWindow?.webContents.id) {
-      return { data: { threadId: null, chatThreads: [], chatMessages: [], activeProjectId: null } };
+      return { data: { sessionId: "", activeProjectId: null } };
     }
     chatParticipants.add(event.sender.id);
     const state = pendingChatState;
     pendingChatState = null;
-    return { data: state ?? { threadId: null, chatThreads: [], chatMessages: [], activeProjectId: null } };
+    return { data: state ?? { sessionId: "", activeProjectId: null } };
   });
 
   // Main window requests the pop-out to come back (clicked placeholder button)
@@ -165,13 +154,9 @@ export function registerChatPopoutHandlers(): void {
     return { data: { ok: true } };
   });
 
-  // Pop-out window requests pop-in: send final state to main window, close
-  ipcMain.handle("chat:popIn", (event, payload: {
-    threadId: string | null;
-    chatThreads: unknown[];
-    chatMessages: unknown[];
-    activeProjectId: string | null;
-  }) => {
+  // Pop-out window requests pop-in. Conversation state is already shared by
+  // the session log and the session:event broadcast; no final-state merge.
+  ipcMain.handle("chat:popIn", (event, payload: { sessionId: string }) => {
     if (event.sender.id !== popoutWindow?.webContents.id) {
       return { data: { ok: false } };
     }
@@ -179,7 +164,7 @@ export function registerChatPopoutHandlers(): void {
     // Find the main window by its tracked webContents ID (not BrowserWindow.id)
     const mainWin = findMainWindow();
     if (mainWin) {
-      mainWin.webContents.send("chat:poppedIn", payload);
+      mainWin.webContents.send("chat:poppedIn", { sessionId: payload.sessionId });
     }
     closeChatPopoutWindow();
     chatParticipants.delete(senderId);

@@ -4,6 +4,7 @@ import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import { createCordisDisposerStack, mountCordisSessionPlugins, prepareCordisRuntime, type CordisDisposerStack, type CordisQuestionAdapter } from "./session-runtime";
 import type { CordisSessionAgentHandle } from "./session-agent";
+import type { SessionEvent } from "@deepseek-ai/dsh-session";
 
 export interface CordisSessionProfile<T> {
   ctx: Context;
@@ -15,6 +16,8 @@ export interface CordisSessionProfile<T> {
   includeSessionIndex?: boolean;
   sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
   questions?: CordisQuestionAdapter;
+  /** Forward the raw DSH event before any Cairn presentation projection. */
+  onSessionEvent?: (event: SessionEvent) => void;
   /** Mount mode-specific services and register mode-specific tools. */
   setup: (runtime: { llmConfig: LLMConfig; resources: CordisDisposerStack; mount: (plugin: unknown, config?: unknown) => Promise<void> }) => Promise<void>;
   open: (runtime: { llmConfig: LLMConfig }) => Promise<CordisSessionAgentHandle>;
@@ -35,6 +38,13 @@ export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Pro
   let handle: CordisSessionAgentHandle | undefined;
 
   try {
+    if (profile.onSessionEvent) {
+      const disposeEvents = profile.ctx.on("session/event", (session, event) => {
+        if (String((session as { id?: unknown }).id) !== profile.sessionId) return;
+        profile.onSessionEvent?.(event);
+      });
+      resources.add(disposeEvents);
+    }
     await mountCordisSessionPlugins({
       mount,
       db: profile.db,

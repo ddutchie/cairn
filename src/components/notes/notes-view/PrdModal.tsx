@@ -123,15 +123,14 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
   useEffect(() => {
     const electron = window.electron;
     if (!electron) return;
-    const unsub = electron.chat.onDone((e) => {
-      // chat:done doesn't include threadId — this subscription is intentionally
-      // unscoped but low-risk since prd-${projectId} threads are exclusive to this modal.
-      if (e.content) {
-        setMessages((prev) => [...prev, { role: "assistant", content: e.content }]);
+     const unsub = electron.session.onDone((e) => {
+       if (e.sessionId !== `chat-${threadId}`) return;
+       if (e.content) {
+         setMessages((prev) => [...prev, { role: "assistant", content: e.content! }]);
       }
     });
     return () => { unsub(); };
-  }, []);
+   }, [threadId]);
 
   const isEmpty = messages.length === 0 && !isLoading;
   const waitingForUser = !isLoading && !done && messages.some((m) => m.role === "assistant");

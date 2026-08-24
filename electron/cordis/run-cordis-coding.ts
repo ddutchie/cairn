@@ -94,6 +94,7 @@ export interface RunCordisCodingOptions {
   extraTools?: Array<{ name: string; description: string; parameters: unknown; execute: (args: Record<string, unknown>) => unknown | Promise<unknown> }>;
   getWin?: () => Electron.BrowserWindow | null;
   signal?: AbortSignal;
+  onSessionEvent?: (event: import("@deepseek-ai/dsh-session").SessionEvent) => void;
 }
 
 export interface RunCordisCodingResult {
@@ -122,10 +123,11 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     : undefined;
   return runCordisSession<RunCordisCodingResult>({
     ctx, db, req, sessionId, llmConfig: opts.llmConfig, signal,
-    questions: questions ? {
+      questions: questions ? {
       ...questions,
       emitQuestions: (requestId, qs) => questions.send("session:ask-questions", { sessionId, callId: requestId, questions: qs }),
-    } : undefined,
+      } : undefined,
+    onSessionEvent: opts.onSessionEvent,
     setup: async ({ llmConfig, resources, mount }) => {
       const toolDisposers = registerCairnTools(ctx, {
         getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
@@ -277,7 +279,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // Mount the bridge AFTER the agent exists so it knows the dsh session id to
     // match events against (= the caller's sessionId, which is also how events
     // are tagged).
-      await mount(cairnCodingPlugin, { sessionId, matchSessionId: String(attemptSessionId), mode, send: combinedSend, signal });
+      await mount(cairnCodingPlugin, { sessionId, matchSessionId: String(attemptSessionId), mode, send: combinedSend, signal, onSessionEvent: opts.onSessionEvent });
 
     // Build the user message content: text + any image/PDF attachments. Images
     // are admitted through the mounted attachment store and become ImageBlocks

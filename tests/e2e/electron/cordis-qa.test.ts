@@ -209,7 +209,7 @@ test.describe("Cordis loops in the real Electron app", () => {
   test("chat loop — 'summarize this project' produces a non-empty reply", async () => {
     const threadId = "qa-chat-" + Date.now();
 
-    // Subscribe to chat:done inside the renderer (preload bridge), then send.
+    // Subscribe to the shared session:done lifecycle event, then send Chat.
     const done = page.evaluate(async ({ threadId, projectId, workspaceId }) => {
       const w = window as unknown as { __cairnStoreRef?: { getState: () => Record<string, unknown> } };
       const store = w.__cairnStoreRef?.getState();
@@ -217,8 +217,9 @@ test.describe("Cordis loops in the real Electron app", () => {
       const ai = (store as { aiConfig: { provider: string; baseUrl: string; model: string; apiKey: string } }).aiConfig;
 
       return new Promise<{ content: string; error?: string }>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Timed out waiting for chat:done")), 120_000);
-        const unsub = el.chat.onDone((e) => {
+        const timer = setTimeout(() => reject(new Error("Timed out waiting for session:done")), 120_000);
+        const unsub = el.session.onDone((e) => {
+          if (e.sessionId !== `chat-${threadId}`) return;
           if (e.threadId && e.threadId !== threadId) return;
           clearTimeout(timer);
           unsub();

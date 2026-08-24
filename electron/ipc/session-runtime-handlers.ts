@@ -40,6 +40,7 @@ import { webcrypto as nodeWebCrypto } from "node:crypto";
 import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
+import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -60,7 +61,6 @@ const runningLoops = new Set<string>();
 // exactly like the builtin loop's pendingApprovals/pendingDoomLoop maps. Kept
 // module-level so the (single) respond handlers can reach any session's turn.
 const cordisPendingApprovals = new Map<string, (d: { approved: boolean; grant?: "session" | "command" }) => void>();
-const cordisPendingQuestions = new Map<string, (answersText: string) => void>();
 
 /**
  * Pending maps are keyed `${sessionId}::${callId}` so a respond event can only
@@ -83,33 +83,6 @@ const pendingAsks = createPendingAskRegistry();
  * records name/callId — questions need the full payload preserved so the
  * PlanReviewCard can re-render its plan-under-review after reload.
  */
-interface PendingQuestionMeta {
-  sessionId: string;
-  callId: string;
-  questions: Array<{ id: string; [k: string]: unknown }>;
-}
-const pendingQuestionsRegistry = new Map<string, PendingQuestionMeta>();
-function questionKey(sessionId: string, callId: string) {
-  return `${sessionId}::${callId}`;
-}
-function recordPendingQuestion(meta: PendingQuestionMeta) {
-  pendingQuestionsRegistry.set(questionKey(meta.sessionId, meta.callId), meta);
-}
-function resolvePendingQuestion(sessionId: string, callId: string) {
-  pendingQuestionsRegistry.delete(questionKey(sessionId, callId));
-}
-function listPendingQuestionsForSession(sessionId: string): PendingQuestionMeta[] {
-  const prefix = `${sessionId}::`;
-  return Array.from(pendingQuestionsRegistry.entries())
-    .filter(([k]) => k.startsWith(prefix))
-    .map(([, v]) => v);
-}
-function clearPendingQuestionsForSession(sessionId: string) {
-  const prefix = `${sessionId}::`;
-  for (const k of Array.from(pendingQuestionsRegistry.keys())) {
-    if (k.startsWith(prefix)) pendingQuestionsRegistry.delete(k);
-  }
-}
 
 /**
  * Per-ask random nonce so pi-agent:respond-tool must present proof it
@@ -152,14 +125,14 @@ function clearAskNoncesForSession(sessionId: string) {
 /** Drop every pending resolver + approval grant belonging to one session. */
 function sweepSessionPendings(sessionId: string): void {
   const prefix = `${sessionId}::`;
-  for (const map of [cordisPendingApprovals, cordisPendingQuestions]) {
+  for (const map of [cordisPendingApprovals]) {
     for (const key of Array.from(map.keys())) {
       if (key.startsWith(prefix)) map.delete(key);
     }
   }
   clearSessionGrants(sessionId);
   pendingAsks.clearSession(sessionId);
-  clearPendingQuestionsForSession(sessionId);
+  clearPendingQuestions(sessionId);
   clearAskNoncesForSession(sessionId);
   forgetSessionApprovalArgs(sessionId);
   setConfirmTransport(sessionId, undefined);
@@ -181,6 +154,7 @@ interface CordisTurnPayload {
    *  AUTOMATION_DEV_TOOLS. Restored here so the restriction can be applied
    *  to the Cordis tool registrations too. */
   role?: "default" | "automation-dev";
+  onSessionEvent?: (event: SessionEvent) => void;
 }
 
 // ── Request shape ──────────────────────────────────────────────────────────────
@@ -329,6 +303,7 @@ async function runCordisCodingSession(
       autoApprove: payload.autoApprove,
       sandboxMode: payload.sandboxMode,
       role: payload.role,
+      onSessionEvent: payload.onSessionEvent,
       send: (channel, payload) => {
         // Record outstanding approval asks so a reloaded renderer can pull
         // them back via is-running (the original push died with the old page).
@@ -382,12 +357,10 @@ async function runCordisCodingSession(
           send(channel, { sessionId, ...p });
         },
         registerPending: (requestId, resolve) => {
-          const key = pendingKey(sessionId, requestId);
-          cordisPendingQuestions.set(key, resolve);
-          return () => {
-            cordisPendingQuestions.delete(key);
-            resolvePendingQuestion(sessionId, requestId);
-          };
+           const dispose = registerPendingQuestion(sessionId, requestId, resolve);
+           return () => {
+             dispose();
+           };
         },
       },
       approvals: {
@@ -434,7 +407,7 @@ export function registerSessionRuntimeHandlers(
       // Outstanding question asks (ask_questions / plan-review). The renderer
       // uses this to re-open a PlanReviewCard after a reload that swallowed
       // the original pi-agent:ask-questions push.
-      pendingQuestions: listPendingQuestionsForSession(sessionId).map((q) => ({
+      pendingQuestions: listPendingQuestions(sessionId).map((q) => ({
         callId: q.callId,
         questions: q.questions,
       })),
@@ -587,7 +560,7 @@ export function registerSessionRuntimeHandlers(
     const skills = discoverSkills(cwd);
     const systemPrompt = buildAgentSystemPrompt({
       projectName, cwd, taskTitle, workspaceId, projectId, mode, planContent,
-      role,
+       role,
     });
 
     const toolCtx: AgentToolContext = {
@@ -608,7 +581,8 @@ export function registerSessionRuntimeHandlers(
       // restriction — the fs sandbox stays workspace-write so the persona can
       // still edit its scripts.
       sandboxMode: "workspace-write",
-      role,
+       role,
+       onSessionEvent: (sessionEvent: SessionEvent) => broadcastEvent("session:event", { sessionId, event: sessionEvent }),
     });
   });
 
@@ -881,16 +855,10 @@ export function registerSessionRuntimeHandlers(
   // back to the model as the tool result so it reasons over the answers in the
   // same turn. Cordis keys by requestId (which the renderer echoes as callId).
   registerIpcOn("session:respond-questions", (_event, { sessionId, callId, answers }: { sessionId: string; callId: string; answers: string }) => {
-    const key = pendingKey(sessionId, callId);
-    const cordisPending = cordisPendingQuestions.get(key);
-    if (cordisPending) {
-      cordisPending(answers);
-      cordisPendingQuestions.delete(key);
-    }
+    resolvePendingQuestionAnswer(sessionId, callId, answers);
     // Drop the recovery registry entry: whether the user answered normally
     // or dismissed via { __dismissed__: true }, the ask has settled and a
     // subsequent is-running poll must NOT re-surface it.
-    resolvePendingQuestion(sessionId, callId);
   });
 
   // ── pi-agent:clear ────────────────────────────────────────────────────────

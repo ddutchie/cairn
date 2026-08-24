@@ -45,9 +45,9 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cairn-questions (gated on CORD
           sent.push({ channel, payload });
           // Simulate the renderer answering the blocking ask_questions form:
           // resolve the pending request with a structured answer JSON.
-          if (channel === "chat:tool-call" && payload.tool === "ask_questions") {
-            const requestId = String(payload.callId);
-            const questions = (payload.args as { questions?: Array<{ id: string; label?: string }> }).questions ?? [];
+           if (channel === "session:ask-questions") {
+             const requestId = String(payload.callId);
+             const questions = (payload.questions as Array<{ id: string; label?: string }>) ?? [];
             // Distinct answer per question so the assertion proves the model
             // actually READ the returned answers (has context of them), not just
             // that the tool ran. Color→"chartreuse", animal→"axolotl".
@@ -61,7 +61,13 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cairn-questions (gated on CORD
             // blocking tool result comes back.
             setTimeout(() => pending.get(requestId)?.(JSON.stringify({ answers })), 2500);
           }
-        },
+       },
+       emitQuestions: (requestId, questions) => {
+         sent.push({ channel: "session:ask-questions", payload: { callId: requestId, questions } });
+         const items = questions as Array<{ id: string; label?: string }>;
+         const answers = items.map((q) => ({ id: String(q.id), selected: [], custom: String(q.label ?? "").toLowerCase().includes("animal") ? "axolotl" : "chartreuse" }));
+         setTimeout(() => pending.get(requestId)?.(JSON.stringify({ answers })), 2500);
+       },
         registerPending: (requestId, resolve) => {
           pending.set(requestId, resolve);
           return () => pending.delete(requestId);
@@ -73,12 +79,12 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cairn-questions (gated on CORD
     console.log("QUESTIONS SENT:", sent.map((s) => s.channel + (s.payload.tool ? `:${s.payload.tool}` : "")).join(", "));
 
     // The ask_questions form was surfaced to the renderer.
-    const askEvents = sent.filter((s) => s.channel === "chat:tool-call" && s.payload.tool === "ask_questions");
+    const askEvents = sent.filter((s) => s.channel === "session:ask-questions");
     expect(askEvents.length).toBeGreaterThanOrEqual(1);
     // The questions reached the renderer in its PendingQuestion shape
     // ({id,label,prompt}) — NOT remapped to dsh {question,header}, which would
     // render an empty, un-fillable form.
-    const firstQs = (askEvents[0].payload.args as { questions?: Array<{ id?: string; label?: string; prompt?: string; question?: string }> }).questions ?? [];
+    const firstQs = (askEvents[0].payload.questions as Array<{ id?: string; label?: string; prompt?: string; question?: string }>) ?? [];
     console.log("QUESTION SHAPE:", JSON.stringify(firstQs[0]));
     expect(firstQs.length).toBeGreaterThanOrEqual(1);
     expect(typeof firstQs[0].id).toBe("string");

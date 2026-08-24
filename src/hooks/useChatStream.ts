@@ -148,7 +148,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   const [pendingQuestionsByThread, setPendingQuestionsByThread] =
     useState<Record<string, PendingQuestion[]>>({});
   // The blocking ask_questions request id (callId), per thread, for the Cordis
-  // engine. When set, the form answers via chat:answer-questions (same-turn);
+  // engine. When set, the form answers via session:respond-questions (same-turn);
   // when null (built-in engine), the form answers by starting a new user turn.
   const [pendingQuestionCallIdByThread, setPendingQuestionCallIdByThread] =
     useState<Record<string, string | undefined>>({});
@@ -182,24 +182,24 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     // under threadId "spawn-tasks"); without this filter those events would
     // toggle THIS panel's loading/message state and leave the input disabled.
     // Events without a threadId (older payloads) are treated as ours.
-    const isForThisThread = (e: { threadId?: string }) =>
-      e.threadId == null || e.threadId === threadIdRef.current;
+    const isForThisThread = (e: { sessionId?: string; threadId?: string }) =>
+      e.sessionId == null || e.sessionId === (threadIdRef.current ? `chat-${threadIdRef.current}` : undefined);
 
-    const unsubTool = electron.chat.onToolCall((e) => {
+    const unsubTool = electron.session.onTool((e) => {
       if (!isForThisThread(e)) return;
-      if (e.tool === "ask_questions") {
-        const qs = (e.args.questions as PendingQuestion[] | undefined) ?? [];
+       if (e.name === "ask_questions") {
+         const qs = (e.args?.questions as PendingQuestion[] | undefined) ?? [];
         // Store under the thread these questions arrived for, so the form only
         // renders in that thread (not whichever thread is active later) and a
         // second thread's questions don't clobber this one's.
-        const forThread = e.threadId ?? threadIdRef.current;
+         const forThread = e.sessionId?.startsWith("chat-") ? e.sessionId.slice(5) : threadIdRef.current;
         if (forThread) {
           setPendingQuestionsByThread((prev) => ({ ...prev, [forThread]: qs }));
           setPendingQuestionCallIdByThread((prev) => ({ ...prev, [forThread]: e.callId }));
         }
       } else {
-        if (e.tool === "suggest_connections") {
-          const incoming = (e.args.actions ?? []) as SuggestedAction[];
+         if (e.name === "suggest_connections") {
+           const incoming = (e.args?.actions ?? []) as SuggestedAction[];
           pendingActionsRef.current = incoming;
         }
         // Mark the previously-running tool as done, add the new one as running.
@@ -208,7 +208,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
             tc.status === "running" ? { ...tc, status: "done" as const } : tc
           );
           const next = [...updated, {
-            tool: e.tool,
+             tool: e.name,
             label: e.label,
             status: "running" as const,
             callId: e.callId,
@@ -220,15 +220,16 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }
     });
 
-    const unsubToolDone = electron.chat.onToolCallDone?.((e) => {
+    const unsubToolDone = electron.session.onTool((e) => {
+       if (e.status !== "end") return;
       if (!isForThisThread(e)) return;
       setToolCalls((prev) => {
         let idx = -1;
         if (e.callId) {
-          idx = prev.findIndex((tc) => tc.callId === e.callId);
+           idx = prev.findIndex((tc) => tc.callId === e.callId);
         }
         if (idx === -1) {
-          const lastIdx = [...prev].reverse().findIndex((tc) => tc.tool === e.tool);
+             const lastIdx = [...prev].reverse().findIndex((tc) => tc.tool === e.name);
           if (lastIdx !== -1) {
             idx = prev.length - 1 - lastIdx;
           }
@@ -238,20 +239,37 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         // Mark done here (not just on the NEXT tool-call) so a single/last tool
         // call stops spinning as soon as it finishes, instead of staying
         // "running" until the whole turn ends.
-        updated[idx] = { ...updated[idx], status: "done" as const, cairnRef: e.cairnRef, externalRef: e.externalRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error, meta: e.meta as import("@/types").ChatToolCallRecord["meta"] };
+         updated[idx] = { ...updated[idx], status: "done" as const, cairnRef: e.cairnRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error };
         toolCallsRef.current = updated;
         return updated;
       });
     });
 
-    const unsubToken = electron.chat.onToken((e) => {
+    const unsubToken = electron.session.onToken((e) => {
       if (!isForThisThread(e)) return;
       setStreamingContent((prev) => prev + e.delta);
     });
 
-    const unsubThought = electron.chat.onThought?.((e) => {
+    const unsubThought = electron.session.onThought?.((e) => {
       if (!isForThisThread(e)) return;
       setStreamingThought((prev) => prev + e.delta);
+    });
+
+    const unsubAskQuestions = electron.session.onAskQuestions((e) => {
+      if (!isForThisThread(e)) return;
+      const forThread = e.sessionId.startsWith("chat-") ? e.sessionId.slice(5) : threadIdRef.current;
+      if (!forThread) return;
+      setPendingQuestionsByThread((prev) => ({ ...prev, [forThread]: e.questions as PendingQuestion[] }));
+      setPendingQuestionCallIdByThread((prev) => ({ ...prev, [forThread]: e.callId }));
+    });
+
+    const unsubError = electron.session.onError((e) => {
+      if (!isForThisThread(e)) return;
+      setIsLoading(false);
+      setStreamingContent("");
+      setStreamingThought("");
+      setToolCalls([]);
+      toolCallsRef.current = [];
     });
 
     // ── Subagent live trace (subagent mode) ──────────────────────────────────
@@ -263,7 +281,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       });
     };
 
-    const unsubSub = electron.chat.onSubagent?.((e) => {
+    const unsubSub = electron.session.onSubagent?.((e) => {
       if (!isForThisThread(e)) return;
       if (e.status === "start") {
         setSubagents((prev) => {
@@ -280,17 +298,17 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }
     });
 
-    const unsubSubToken = electron.chat.onSubagentToken?.((e) => {
+    const unsubSubToken = electron.session.onSubagentToken?.((e) => {
       if (!isForThisThread(e)) return;
       mutateSub(e.childId, (s) => ({ ...s, content: s.content + e.delta }));
     });
 
-    const unsubSubThought = electron.chat.onSubagentThought?.((e) => {
+    const unsubSubThought = electron.session.onSubagentThought?.((e) => {
       if (!isForThisThread(e)) return;
       mutateSub(e.childId, (s) => ({ ...s, reasoning: (s.reasoning ?? "") + e.delta }));
     });
 
-    const unsubSubTool = electron.chat.onSubagentToolCall?.((e) => {
+    const unsubSubTool = electron.session.onSubagentToolCall?.((e) => {
       if (!isForThisThread(e)) return;
       mutateSub(e.childId, (s) => ({
         ...s,
@@ -298,7 +316,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }));
     });
 
-    const unsubSubToolDone = electron.chat.onSubagentToolCallDone?.((e) => {
+    const unsubSubToolDone = electron.session.onSubagentToolCallDone?.((e) => {
       if (!isForThisThread(e)) return;
       mutateSub(e.childId, (s) => {
         const tcs = [...(s.toolCalls ?? [])];
@@ -312,7 +330,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       });
     });
 
-    const unsubSubUsage = electron.chat.onSubagentUsage?.((e) => {
+    const unsubSubUsage = electron.session.onSubagentUsage?.((e) => {
       if (!isForThisThread(e)) return;
       mutateSub(e.childId, (s) => ({
         ...s,
@@ -320,7 +338,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }));
     });
 
-    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; reasoning?: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: TokenBreakdown; costUsd?: number } }) => void) => () => void)((e) => {
+    const unsubDone = (electron.session.onDone as (cb: (e: { sessionId: string; content: string; reasoning?: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string; contextRefs?: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: TokenBreakdown; costUsd?: number } }) => void) => () => void)((e) => {
       if (!isForThisThread(e)) return;
       const tid = threadIdRef.current;
       // Mark any still-running tool as done before persisting.
@@ -373,7 +391,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }
     });
 
-    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; threadId?: string }) => void) => () => void)((e) => {
+    const unsubUsage = (electron.session.onUsage as (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; threadId?: string }) => void) => () => void)((e) => {
       if (!isForThisThread(e)) return;
       const tid = threadIdRef.current;
       if (tid) {
@@ -386,6 +404,8 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       unsubToolDone?.();
       unsubToken();
       unsubThought?.();
+      unsubAskQuestions();
+      unsubError();
       unsubSub?.();
       unsubSubToken?.();
       unsubSubThought?.();
@@ -450,14 +470,14 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   }
 
   // Answer a blocking ask_questions (Cordis engine): resolve the paused tool via
-  // chat:answer-questions so the answers feed back in the same turn, then clear
+  // session:respond-questions so the answers feed back in the same turn, then clear
   // the form. `answers` is a JSON blob {answers:[{id,selected[],custom?}]} or
   // plain text. Returns true when it dispatched a blocking answer (a callId was
   // present); false lets the caller fall back to a new-turn send (built-in).
   function answerQuestions(answers: string): boolean {
     const callId = threadId ? pendingQuestionCallIdByThread[threadId] : undefined;
     if (!callId) return false;
-    window.electron?.chat?.answerQuestions?.({ requestId: callId, answers });
+    if (threadId) window.electron?.session.respondQuestions(`chat-${threadId}`, callId, answers);
     clearQuestionsForThread(threadId);
     return true;
   }

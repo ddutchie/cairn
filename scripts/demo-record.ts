@@ -379,7 +379,7 @@ async function main() {
 
   const donePromise = page.evaluate(() => {
     return new Promise((resolve) => {
-      const unsub = window.electron.chat.onDone((e: any) => {
+      const unsub = window.electron.session.onDone((e: any) => {
         if (e.error || (e.content && e.content.trim().length > 0)) {
           unsub();
           resolve(e);

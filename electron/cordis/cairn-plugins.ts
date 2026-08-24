@@ -11,8 +11,8 @@
  *                      `chat_threads` / `chat_messages`.
  *  - cairnUsagePlugin  — on usage chunks, call recordLlmUsage (Usage view).
  *
- * These are pure persistence plugins; live IPC streaming (chat:token /
- * chat:usage) stays in run-cordis-loop's drain so the renderer gets realtime
+ * These are pure persistence plugins; live IPC streaming stays in the session
+ * runner's drain so the renderer gets realtime
  * deltas while the DB gets the durable record.
  */
 import type { Context } from "@deepseek-ai/cordis";
@@ -173,7 +173,7 @@ export interface CairnSubagentConfig {
 
 /**
  * Map dsh subagent children (sessions with header.origin === 'subagent') onto
- * Cairn's `chat:subagent*` IPC vocabulary so the renderer's live subagent
+ * Cairn's shared `session:subagent*` IPC vocabulary so the renderer's live subagent
  * traces work over the dsh engine. dsh subagents are general child agents with
  * their own session logs; the role label is the child's delegation label.
  */
@@ -216,7 +216,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
         const full = eventText(event).trim();
         const instruction = full || "subagent";
         const role = full ? full.slice(0, 60) : "subagent";
-        send("chat:subagent", { status: "start", childId, parentSession, role, instruction });
+         send("session:subagent", { status: "start", childId, parentSession, role, instruction });
       }
       return;
     }
@@ -224,8 +224,8 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     if (event.type === "assistant/chunk") {
       const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
       if (!c) return;
-      if (c.type === "text-delta" && c.text) { streamedText.add(childId); send("chat:subagent-token", { childId, parentSession, delta: c.text }); }
-      if (c.type === "reasoning-delta" && c.text) { streamedReasoning.add(childId); send("chat:subagent-thought", { childId, parentSession, delta: c.text }); }
+       if (c.type === "text-delta" && c.text) { streamedText.add(childId); send("session:subagent-token", { childId, parentSession, delta: c.text }); }
+       if (c.type === "reasoning-delta" && c.text) { streamedReasoning.add(childId); send("session:subagent-thought", { childId, parentSession, delta: c.text }); }
       return;
     }
 
@@ -234,7 +234,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       if (d.callId) callName.set(d.callId, d.name);
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(d.arguments ?? "{}") as Record<string, unknown>; } catch { /* keep {} */ }
-      send("chat:subagent-tool-call", { childId, parentSession, tool: d.name, label: d.name, callId: d.callId, args });
+       send("session:subagent-tool-call", { childId, parentSession, tool: d.name, label: d.name, callId: d.callId, args });
       return;
     }
 
@@ -245,7 +245,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       const isError = block?.isError === true;
       const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
       const tool = callId ? (callName.get(callId) ?? "tool") : "tool";
-      send("chat:subagent-tool-call-done", {
+       send("session:subagent-tool-call-done", {
         childId, parentSession, tool, callId,
         ok: !isError, error: isError ? (output || "tool error") : undefined,
         output: isError ? undefined : output,
@@ -256,7 +256,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     if (event.type === "assistant/message") {
       const usage = (event.data as { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }).usage;
       if (usage) {
-        send("chat:subagent-usage", {
+         send("session:subagent-usage", {
           childId, parentSession,
           promptTokens: usage.inputTokens ?? 0,
           completionTokens: usage.outputTokens ?? 0,
@@ -269,11 +269,11 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       // or chain-of-thought leaks into the FINDINGS BRIEF.
       if (!streamedText.has(childId)) {
         const text = eventText(event);
-        if (text) send("chat:subagent-token", { childId, parentSession, delta: text });
+         if (text) send("session:subagent-token", { childId, parentSession, delta: text });
       }
       if (!streamedReasoning.has(childId)) {
         const { reasoning } = eventReasoning(event);
-        if (reasoning) send("chat:subagent-thought", { childId, parentSession, delta: reasoning });
+         if (reasoning) send("session:subagent-thought", { childId, parentSession, delta: reasoning });
       }
       return;
     }
@@ -281,7 +281,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     if (event.type === "turn/end") {
       const reason = (event.data as { reason?: { kind?: string } }).reason;
       const result = reason?.kind === "completed" ? "" : ` (${reason?.kind ?? "error"})`;
-      send("chat:subagent", { status: "done", childId, parentSession, result, error: reason?.kind === "completed" ? undefined : reason?.kind });
+       send("session:subagent", { status: "done", childId, parentSession, result, error: reason?.kind === "completed" ? undefined : reason?.kind });
       void seq;
       return;
     }
@@ -298,9 +298,8 @@ export interface CairnQuestionsConfig {
    */
   registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void;
   /**
-   * How to surface the question form to the renderer. Chat omits this and the
-   * plugin emits the `chat:tool-call` shape; the coding agent supplies one that
-   * emits `pi-agent:ask-questions` (its renderer listens on a different channel).
+   * How to surface the question form to the renderer. All surfaces use the
+   * shared `session:ask-questions` channel.
    * Receives the requestId (echoed back on answer) + the questions.
    */
   emitQuestions?: (requestId: string, questions: CairnQuestionItem[]) => void;
@@ -352,7 +351,7 @@ interface UserQuestionsSeam {
  * dsh-tool-ask-user package.
  */
 export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig): (() => void) | void {
-  const { send, registerPending, emitQuestions, signal, questionsTimeoutMs } = config;
+  const { registerPending, emitQuestions, signal, questionsTimeoutMs } = config;
   // ctx.userQuestions is provided by dsh-user-questions (see ctx-augment).
   // Cast the value through UserQuestionsSeam so Cairn's own dispose-and-
   // re-register helpers keep their local shape without leaking dsh's
@@ -386,13 +385,7 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
         // (e.g. dsh-plan-mode's exit_plan_mode) both render as filled-in
         // forms. This closes the review's plan-mode-blank-form bug.
         const questions = request.questions;
-        if (emitQuestions) {
-          // Coding path: emit on the pi-agent question channel (renderer-specific).
-          emitQuestions(requestId, questions);
-        } else {
-          // Chat path: the chat renderer picks up ask_questions as a tool-call.
-          send("chat:tool-call", { tool: "ask_questions", label: `Asking ${questions.length} question${questions.length === 1 ? "" : "s"}`, callId: requestId, args: { questions } });
-        }
+         if (emitQuestions) emitQuestions(requestId, questions);
 
         const answersText = await new Promise<string>((resolve) => {
           const onAborts: Array<() => void> = [];
@@ -566,6 +559,8 @@ export interface CairnCodingConfig {
   send: (channel: string, payload: Record<string, unknown>) => void;
   /** Resolve/abort when the parent turn completes — used by the loop await. */
   signal?: AbortSignal;
+  /** Forward the raw DSH event without changing or flattening it. */
+  onSessionEvent?: (event: SessionEvent) => void;
 }
 
 /** The dsh `todo/write` snapshot payload (TodoItem[]). */
@@ -591,7 +586,7 @@ interface DshTodoWrite {
  * fills gaps (never re-emits streamed content — same guard as cairnSubagentPlugin).
  */
 export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void {
-  const { sessionId, matchSessionId, mode, send, signal } = config;
+  const { sessionId, matchSessionId, mode, send, signal, onSessionEvent } = config;
 
   // Track per-callId tool names (parallel calls to different tools resolve by callId).
   const callName = new Map<string, string>();
@@ -624,6 +619,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     // Only the parent session (this loop's dsh attempt id) — children are bridged
     // by cairnSubagentPlugin.
     if (String((session as { id?: unknown }).id) !== matchSessionId) return;
+    onSessionEvent?.(event);
     const seq = event.seq;
 
     // ── Plan-mode flips (dsh-owned) ─────────────────────────────────────────

@@ -413,11 +413,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // We map onto the SAME per-session subagent store the chat pane uses.
     const matchesParent = (parentSession?: string) => parentSession === sessionId;
 
-    const unsubSubToken = electron.chat.onSubagentToken?.((e) => {
+    const unsubSubToken = electron.session.onSubagentToken?.((e) => {
       if (!matchesParent(e.parentSession)) return;
       appendAgentSubagentToken(sessionId, e.childId, e.delta);
     });
-    const unsubSubThought = electron.chat.onSubagentThought?.((e) => {
+    const unsubSubThought = electron.session.onSubagentThought?.((e) => {
       if (!matchesParent(e.parentSession)) return;
       appendAgentSubagentThought(sessionId, e.childId, e.delta);
     });
@@ -425,13 +425,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // Keyed by callId (not tool name) so parallel calls to the same tool resolve correctly.
     const activeSubCallIds = new Set<string>();
 
-    const unsubSubToolCall = electron.chat.onSubagentToolCall?.((e) => {
+    const unsubSubToolCall = electron.session.onSubagentToolCall?.((e) => {
       if (!matchesParent(e.parentSession)) return;
       const callId = e.callId ?? `${e.tool}:${Date.now()}`;
       activeSubCallIds.add(callId);
       addAgentSubagentToolCall(sessionId, e.childId, { callId, name: e.tool, label: e.label, args: e.args, running: true, ok: true });
     });
-    const unsubSubToolCallDone = electron.chat.onSubagentToolCallDone?.((e) => {
+    const unsubSubToolCallDone = electron.session.onSubagentToolCallDone?.((e) => {
       if (!matchesParent(e.parentSession)) return;
       const callId = e.callId ?? `${e.tool}:unknown`;
       activeSubCallIds.delete(callId);
@@ -443,11 +443,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         cairnRef: e.cairnRef ?? extractCairnRef(e.tool, e.output),
       });
     });
-    const unsubSubUsage = electron.chat.onSubagentUsage?.((e) => {
+    const unsubSubUsage = electron.session.onSubagentUsage?.((e) => {
       if (!matchesParent(e.parentSession)) return;
       updateAgentSubagentUsage(sessionId, e.childId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
     });
-    const unsubSub = electron.chat.onSubagent?.((e) => {
+    const unsubSub = electron.session.onSubagent?.((e) => {
       if (!matchesParent(e.parentSession)) return;
       if (e.status === "done") {
         // Finalise the child block when its session ends.
