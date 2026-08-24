@@ -3,14 +3,12 @@
  *
  * When a chat pop-out is active, the main window's chat panel shows a
  * placeholder. All chat interactions happen in the pop-out window.
- * The main process relays state between windows and broadcasts streaming
- * events to both so they stay in sync.
+ * The main process relays only session identity between windows. Session
+ * history and events remain owned by the canonical dsh session surface.
  *
  * State flow:
  *   popOut  → main renderer sends a session id → main process creates pop-out
- *             → pop-out calls popoutReady → loads the same session history
  *   popIn   → pop-out sends its session id → main process closes pop-out
- *   stream  → whichever window sends chat:stream → events broadcast to both
  */
 
 import { app, BrowserWindow, ipcMain } from "electron";
@@ -25,7 +23,7 @@ const isDev = !app.isPackaged;
 const chatParticipants = new Set<number>();
 
 /** Session identity sent from the main window, pending delivery to the pop-out. */
-let pendingChatState: { sessionId: string; activeProjectId: string | null } | null = null;
+let pendingChatSession: { sessionId: string; activeProjectId: string | null } | null = null;
 
 let popoutWindow: BrowserWindow | null = null;
 
@@ -127,7 +125,7 @@ export function registerChatPopoutHandlers(): void {
   ipcMain.handle("chat:popOut", (event, payload: { sessionId: string; activeProjectId: string | null }) => {
     mainWindowWebContentsId = event.sender.id;
     chatParticipants.add(event.sender.id);
-    pendingChatState = payload;
+    pendingChatSession = payload;
     createChatPopoutWindow();
     return { data: { ok: true } };
   });
@@ -138,9 +136,9 @@ export function registerChatPopoutHandlers(): void {
       return { data: { sessionId: "", activeProjectId: null } };
     }
     chatParticipants.add(event.sender.id);
-    const state = pendingChatState;
-    pendingChatState = null;
-    return { data: state ?? { sessionId: "", activeProjectId: null } };
+    const session = pendingChatSession;
+    pendingChatSession = null;
+    return { data: session ?? { sessionId: "", activeProjectId: null } };
   });
 
   // Main window requests the pop-out to come back (clicked placeholder button)

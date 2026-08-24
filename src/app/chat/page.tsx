@@ -2,43 +2,39 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useCairnStore } from "@/store";
-import { useShallow } from "zustand/react/shallow";
-import { ChatPanel } from "@/components/chat/chat-panel";
-import { chatSessionId, chatThreadId } from "../../../shared/agent/session-identity";
+import { SessionPopoutView } from "@/components/chat/SessionPopoutView";
+import { bindChatPopoutSession } from "../../../shared/agent/chat-popout";
 
 export default function ChatPopoutPage() {
   const [ready, setReady] = useState(false);
 
-  const { setActiveChatThreadId } = useCairnStore(useShallow((s) => ({
-    setActiveChatThreadId: s.setActiveChatThreadId,
-  })));
+  const [session, setSession] = useState<{ sessionId: string; activeProjectId: string | null } | null>(null);
 
   useEffect(() => {
     async function init() {
-      useCairnStore.getState().hydrate();
-
       if (window.electron?.chat.popoutReady) {
-        const state = await window.electron.chat.popoutReady();
-        if (state?.sessionId) {
-          const threadId = chatThreadId(state.sessionId);
-          setActiveChatThreadId(threadId);
-          const workspaceId = useCairnStore.getState().activeWorkspaceId;
-          if (workspaceId) await useCairnStore.getState().loadChatFromDb(workspaceId);
+        const handedOff = await window.electron.chat.popoutReady();
+        setSession(bindChatPopoutSession(handedOff));
+        // Load workspace/config context only. The popout transcript is loaded
+        // by SessionPopoutView from the canonical session surface; do not run
+        // the cold chat hydration path here.
+        await useCairnStore.getState().hydrateFromElectron(true);
+        const savedAiConfig = await window.electron.getAiSettings?.();
+        if (savedAiConfig) {
+          const currentAiConfig = useCairnStore.getState().aiConfig;
+          useCairnStore.setState({ aiConfig: { ...currentAiConfig, ...savedAiConfig } });
         }
-        if (state?.activeProjectId != null) {
-          useCairnStore.setState({ activeProjectId: state.activeProjectId });
-        }
+        useCairnStore.setState({ activeProjectId: handedOff.activeProjectId });
       }
 
       setReady(true);
     }
     init();
-  }, [setActiveChatThreadId]);
+  }, []);
 
   const handlePopIn = useCallback(async () => {
-    const threadId = useCairnStore.getState().activeChatThreadId;
-    if (threadId) await window.electron?.chat.popIn({ sessionId: chatSessionId(threadId) });
-  }, []);
+    if (session?.sessionId) await window.electron?.chat.popIn({ sessionId: session.sessionId });
+  }, [session]);
 
   // Listen for main window's "Pop in" request (relayed via main process)
   useEffect(() => {
@@ -52,7 +48,7 @@ export default function ChatPopoutPage() {
 
   return (
     <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
-      {ready && <ChatPanel popoutMode />}
+      {ready && session && <SessionPopoutView sessionId={session.sessionId} activeProjectId={session.activeProjectId} onPopIn={handlePopIn} />}
     </main>
   );
 }
