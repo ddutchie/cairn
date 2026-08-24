@@ -29,6 +29,39 @@ interface ToolCallIndicatorProps {
   connectors?: Record<string, ChatConnectorMeta>;
 }
 
+/**
+ * A single tool-call rendered through a registered dsh tool.call.toolview
+ * (SkillRow / visualize / …), memoised so a per-token parent re-render
+ * doesn't rebuild the props object and reset plugin-local state (e.g. the
+ * SkillRow disclosure open/closed flag). Memo is scoped to what actually
+ * changes the visual: callId (identity), status, ok, output, args.
+ */
+const MemoToolViewChip = React.memo(
+  function MemoToolViewChip({ tc }: { tc: ChatToolCall }) {
+    // Recompute the props object only when a discriminating field of `tc`
+    // changes. The ChatToolCall reference itself is recreated on every
+    // stream tick even when its contents don't change, so we can't cache
+    // by reference.
+    const props = React.useMemo(
+      () => toToolCallViewProps(tc),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [tc.callId, tc.tool, tc.status, tc.ok, tc.output, tc.args, tc.cairnRef, tc.externalRef],
+    );
+    return (
+      <KeyedSlotOutlet name="tool.call.toolview" matchKey={tc.tool} props={props} />
+    );
+  },
+  (prev, next) =>
+    prev.tc.callId === next.tc.callId &&
+    prev.tc.tool === next.tc.tool &&
+    prev.tc.status === next.tc.status &&
+    prev.tc.ok === next.tc.ok &&
+    prev.tc.output === next.tc.output &&
+    prev.tc.args === next.tc.args &&
+    prev.tc.cairnRef === next.tc.cairnRef &&
+    prev.tc.externalRef === next.tc.externalRef,
+);
+
 export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCalls, streamingContent, streamingThought, connectors }: ToolCallIndicatorProps) {
   const hasThought = !!streamingThought;
   const hasContent = !!streamingContent;
@@ -44,13 +77,12 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
           toolViewKeys.has(tc.tool) ? (
             // A registered tool.call.toolview (dsh-compatible, keyed by tool name)
             // owns this tool's rendering — vendored SkillRow or a user/community
-            // plugin (e.g. visualize). We hand it a Cairn-built ToolCallViewProps.
-            <KeyedSlotOutlet
-              key={tc.callId ?? `${tc.tool}-${i}`}
-              name="tool.call.toolview"
-              matchKey={tc.tool}
-              props={toToolCallViewProps(tc)}
-            />
+            // plugin (e.g. visualize). MemoToolViewChip memoises the
+            // toToolCallViewProps() call so a per-token parent re-render
+            // doesn't recreate the props object identity, which was
+            // remounting the plugin's SkillRow-style disclosure state on
+            // every stream tick.
+            <MemoToolViewChip key={tc.callId ?? `${tc.tool}-${i}`} tc={tc} />
           ) : tc.status === "done" && tc.ok === false ? (
             <div key={tc.callId ?? `${tc.tool}-${i}`} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
               <XCircle size={10} className="text-[var(--danger)] shrink-0" />

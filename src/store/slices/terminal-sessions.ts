@@ -10,6 +10,42 @@
 import { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import { forgetSessionPrompts } from "../../lib/agent-prompt-guard";
+import { id } from "../../lib/utils";
+
+// ── Per-session token buffer (perf) ──────────────────────────────────────────
+//
+// Coalesces rapid SSE token deltas so appendPiToken doesn't fire a Zustand
+// set() (and therefore Virtuoso list re-diff) on every network chunk. Main
+// already batches to ~20 events/sec via createDeltaBatcher; this second
+// stage collapses same-tick deltas into one set() at the end of the current
+// microtask, so a long transcript pays at most one full-list re-diff per
+// tick even during a burst. The `run` callback is closed over `set` in
+// appendPiToken itself; the buffer just owns the tick timing.
+const piTokenBuffer = (() => {
+  const pending = new Map<string, { delta: string; run: (batched: string) => void }>();
+  let scheduled = false;
+  const flush = () => {
+    scheduled = false;
+    const entries = Array.from(pending.entries());
+    pending.clear();
+    for (const [, { delta, run }] of entries) run(delta);
+  };
+  return {
+    push(sessionId: string, delta: string, run: (batched: string) => void) {
+      const prev = pending.get(sessionId);
+      if (prev) prev.delta += delta;
+      else pending.set(sessionId, { delta, run });
+      if (!scheduled) {
+        scheduled = true;
+        // queueMicrotask is available in all Electron/renderer targets;
+        // rAF would tie us to a browser tick, but streaming can arrive
+        // faster than 60Hz on local models — microtask still collapses
+        // multi-chunk bursts within the same JS turn.
+        queueMicrotask(flush);
+      }
+    },
+  };
+})();
 
 import type {
   TokenBreakdown,
@@ -155,36 +191,48 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   },
 
   appendPiToken(sessionId, delta) {
-    set((s) => ({
-      terminalSessions: s.terminalSessions.map((t) => {
-        if (t.sessionId !== sessionId) return t;
-        const msgs = t.piMessages ?? [];
-        const last = msgs[msgs.length - 1];
-        if (last?.isStreaming) {
+    // Coalesce rapid token deltas so we don't fire a Zustand set() (and
+    // therefore a Virtuoso list re-diff) once per SSE chunk. The main-
+    // process already batches deltas at ~20 events/sec (createDeltaBatcher
+    // in electron/ipc/pi-agent.ts), but on a long transcript even 20
+    // renders/sec of the whole message array is expensive. Buffer per
+    // session across microtasks and flush at the end of the current tick
+    // — user-perceived latency stays under one frame, but multiple deltas
+    // in the same tick collapse to a single set().
+    piTokenBuffer.push(sessionId, delta, (batched) => {
+      set((s) => ({
+        terminalSessions: s.terminalSessions.map((t) => {
+          if (t.sessionId !== sessionId) return t;
+          const msgs = t.piMessages ?? [];
+          const last = msgs[msgs.length - 1];
+          if (last?.isStreaming) {
+            return {
+              ...t,
+              piMessages: [
+                ...msgs.slice(0, -1),
+                { ...last, content: last.content + batched },
+              ],
+            };
+          }
+          // No streaming message yet — create one. Use id() (nanoid) not
+          // stream-${Date.now()} to avoid same-ms collisions between the
+          // token appender and appendPiThought / ensurePiStreamingMessage.
           return {
             ...t,
             piMessages: [
-              ...msgs.slice(0, -1),
-              { ...last, content: last.content + delta },
+              ...msgs,
+              {
+                id: `stream-${id()}`,
+                role: "assistant" as const,
+                content: batched,
+                isStreaming: true,
+                timestamp: new Date().toISOString(),
+              },
             ],
           };
-        }
-        // No streaming message yet — create one
-        return {
-          ...t,
-          piMessages: [
-            ...msgs,
-            {
-              id: `stream-${Date.now()}`,
-              role: "assistant" as const,
-              content: delta,
-              isStreaming: true,
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        };
-      }),
-    }));
+        }),
+      }));
+    });
   },
 
   appendPiThought(sessionId, delta) {
@@ -207,7 +255,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           piMessages: [
             ...msgs,
             {
-              id: `stream-${Date.now()}`,
+              id: `stream-${id()}`,
               role: "assistant" as const,
               content: "",
               reasoning: delta,
@@ -261,7 +309,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           piMessages: [
             ...msgs,
             {
-              id: `stream-${Date.now()}`,
+              id: `stream-${id()}`,
               role: "assistant" as const,
               content: "",
               isStreaming: true,
@@ -299,7 +347,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         }
         // Race condition fallback: create streaming message and attach chip atomically.
         const newMsg = {
-          id: `stream-${Date.now()}`,
+          id: `stream-${id()}`,
           role: "assistant" as const,
           content: "",
           isStreaming: true,
@@ -413,7 +461,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
               newSubMsgs = [...subMsgs.slice(0, -1), { ...lastSub, content: lastSub.content + delta }];
             } else {
               newSubMsgs = [...subMsgs, {
-                id: `sub-stream-${Date.now()}`,
+                id: `sub-stream-${id()}`,
                 role: "assistant" as const,
                 content: delta,
                 isStreaming: true,
@@ -446,7 +494,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
               newSubMsgs = [...subMsgs.slice(0, -1), { ...lastSub, reasoning: (lastSub.reasoning ?? "") + delta }];
             } else {
               newSubMsgs = [...subMsgs, {
-                id: `sub-stream-${Date.now()}`,
+                id: `sub-stream-${id()}`,
                 role: "assistant" as const,
                 content: "",
                 reasoning: delta,
@@ -527,7 +575,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             } else {
               // Same race as parent: create streaming message and attach chip atomically
               const newMsg = {
-                id: `stream-${Date.now()}`,
+                id: `stream-${id()}`,
                 role: "assistant" as const,
                 content: "",
                 isStreaming: true,
