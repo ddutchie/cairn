@@ -95,6 +95,12 @@ interface CordisTurnPayload {
   autoApprove: boolean;
   /** automation-dev → read-only sandbox (file-only, no escape); else workspace-write. */
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
+  /** Session persona ("default" | "automation-dev"). automation-dev is a
+   *  restricted coding session for authoring an automation's scripts — no
+   *  bash, no Cairn data tools; the pre-Cordis loop enforced this via
+   *  AUTOMATION_DEV_TOOLS. Restored here so the restriction can be applied
+   *  to the Cordis tool registrations too. */
+  role?: "default" | "automation-dev";
 }
 
 // ── Request shape ──────────────────────────────────────────────────────────────
@@ -240,6 +246,7 @@ async function runCordisCodingSession(
       mode,
       autoApprove: payload.autoApprove,
       sandboxMode: payload.sandboxMode,
+      role: payload.role,
       send: (channel, payload) => {
         // Record outstanding approval asks so a reloaded renderer can pull
         // them back via is-running (the original push died with the old page).
@@ -472,10 +479,13 @@ export function registerPiAgentHandler(
       projectId,
       workspaceId,
       autoApprove: llmConfig.autoApprove !== false,
-      // Confine fs mutations to cwd for every coding session. automation-dev's
-      // no-shell restriction comes from its file-only persona toolset (no bash),
-      // not the fs sandbox mode — so it still needs workspace-write to edit files.
+      // Confine fs mutations to cwd for every coding session. automation-dev
+      // has its own persona-scoped tool filter (see role below) that removes
+      // bash + Cairn data tools, restoring the pre-Cordis AUTOMATION_DEV_TOOLS
+      // restriction — the fs sandbox stays workspace-write so the persona can
+      // still edit its scripts.
       sandboxMode: "workspace-write",
+      role,
     });
   });
 
@@ -595,6 +605,7 @@ export function registerPiAgentHandler(
       workspaceId,
       autoApprove: llmConfig.autoApprove !== false,
       sandboxMode: "workspace-write",
+      role,
     });
   });
 

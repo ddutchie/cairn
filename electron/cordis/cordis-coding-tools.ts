@@ -46,6 +46,14 @@ export interface CodingStackOptions {
    * once the approval layer lands (Phase 1.5 step 2e/2j).
    */
   sandboxMode?: "danger-full-access" | "workspace-write" | "read-only";
+  /**
+   * Session persona. "automation-dev" is a restricted persona for authoring
+   * automation scripts: SKIP the bash + subprocess registration entirely so
+   * the model cannot invoke shell commands (fs write is still allowed so it
+   * can edit its scripts). Restores the pre-Cordis AUTOMATION_DEV_TOOLS
+   * restriction — file tools only, no shell.
+   */
+  role?: "default" | "automation-dev";
 }
 
 /**
@@ -125,7 +133,7 @@ export function remapChatArtifactDirs(ctx: Context): void {
  * is complete before returning.
  */
 export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): Promise<() => void> {
-  const { cwd, sandboxMode = "danger-full-access" } = opts;
+  const { cwd, sandboxMode = "danger-full-access", role = "default" } = opts;
   const disposers: Array<() => void> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
     const name = (plugin as { name?: string })?.name ?? (plugin as { apply?: { name?: string } })?.apply?.name ?? "unknown";
@@ -143,22 +151,40 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
   await plug({ apply: fsObsApply, name: fsObsName });
   // plan-mode is mounted GLOBALLY in getContext (dsh owns it; /plan command +
   // plan:policy section) — plugging it here too would duplicate the section.
-  await plug(subprocessLocalPlugin);
-  // Bash executor: bash-SANDBOX (not bash-local) so `workspace-write` /
-  // `read-only` sessions are actually confined via `ctx.sandbox` (Seatbelt on
-  // macOS, Landlock on Linux, ACL restricted-token on Windows). `bash-sandbox`
-  // extends `LocalBashExecutor` and passes through unchanged when the resolved
-  // mode is `danger-full-access`, so this is a strict security upgrade —
-  // dangerous-mode sessions behave exactly as before, sandboxed modes get real
-  // enforcement. Peers (dsh-shell, dsh-sandbox, dsh-invariants,
-  // dsh-sandbox-policy, dsh-bash-local) are all already mounted or declared.
-  // NOTE: `bashLocalPlugin` remains imported only so the type import chain
-  // survives — the mount is now unreachable and can be removed once we're
-  // confident the sandbox path is stable across all supported platforms.
-  void bashLocalPlugin;
-  await plug(bashSandboxPlugin);
-  await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
-  await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
+
+  // Bash executor + tool-bash: SKIP for the automation-dev persona. That
+  // session's persona is "author scripts only" — the pre-Cordis loop enforced
+  // this by omitting bash from AUTOMATION_DEV_TOOLS. Without the persona
+  // restriction, an automation-dev session would silently gain a fully-
+  // privileged shell (see review finding H3). fs / str_replace_editor /
+  // tool-fs / tool-fs-search stay mounted so the persona can still read +
+  // edit its script files.
+  if (role !== "automation-dev") {
+    await plug(subprocessLocalPlugin);
+    // Bash executor: bash-SANDBOX (not bash-local) so `workspace-write` /
+    // `read-only` sessions are actually confined via `ctx.sandbox` (Seatbelt on
+    // macOS, Landlock on Linux, ACL restricted-token on Windows). `bash-sandbox`
+    // extends `LocalBashExecutor` and passes through unchanged when the resolved
+    // mode is `danger-full-access`, so this is a strict security upgrade —
+    // dangerous-mode sessions behave exactly as before, sandboxed modes get real
+    // enforcement. Peers (dsh-shell, dsh-sandbox, dsh-invariants,
+    // dsh-sandbox-policy, dsh-bash-local) are all already mounted or declared.
+    // NOTE: `bashLocalPlugin` remains imported only so the type import chain
+    // survives — the mount is now unreachable and can be removed once we're
+    // confident the sandbox path is stable across all supported platforms.
+    void bashLocalPlugin;
+    await plug(bashSandboxPlugin);
+    await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
+    await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
+  } else {
+    // Keep the reference so eslint no-unused-vars doesn't fire; the linter
+    // can't see conditionally-skipped imports.
+    void subprocessLocalPlugin;
+    void bashSandboxPlugin;
+    void bashLocalPlugin;
+    void shellEnvApply; void shellEnvInject; void shellEnvName;
+    void toolBashApply; void toolBashInject; void toolBashName;
+  }
   await plug(
     { apply: toolFsApply, inject: toolFsInject as never, name: toolFsName },
     { readLimit: 2000, readMaxLineLength: 2000, readMaxBytes: 51200, readStreamMinSize: 10485760 },

@@ -34,6 +34,7 @@ import {
 } from "./cairn-plugins";
 import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
+import { TOOL_SCHEMAS } from "../lib/tool-schemas";
 import { buildCordisUserContent } from "./cairn-attachment-store";
 import { resolveTransport, type ApiMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
@@ -58,6 +59,17 @@ export interface RunCordisCodingOptions {
    * "workspace-write" so an agent cannot escape the project root.
    */
   sandboxMode?: "read-only" | "workspace-write" | "danger-full-access";
+  /**
+   * Session persona. "default" is the coding agent (full toolset).
+   * "automation-dev" is the Develop session for authoring an automation's
+   * scripts: the pre-Cordis loop restricted this persona to file tools only
+   * (read/write/edit/grep/find/ls) via AUTOMATION_DEV_TOOLS. The Cordis
+   * equivalent excludes ALL Cairn data tools + bash so the persona cannot
+   * write notes/tasks or run shell commands — it can only author the
+   * automation's script files (which are executed at run time by a separate,
+   * user-consented path).
+   */
+  role?: "default" | "automation-dev";
   /** Emit a pi-agent:* IPC event (sessionId NOT yet tagged by the caller). */
   send: (channel: string, payload: Record<string, unknown>) => void;
   /** Interactive questions (ask_questions) adapter for the coding session. */
@@ -131,6 +143,16 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   // Disposes the active dsh agent handle at turn end so its session is detached
   // from the live registry (persisted jsonl remains, enabling resume).
   const handleDisposers: Array<() => Promise<void> | void> = [];
+  // automation-dev persona: exclude every Cairn data tool. The pre-Cordis
+  // AUTOMATION_DEV_TOOLS whitelist was {read, write, edit, grep, find, ls} —
+  // all dsh tools from mountCodingStack, no Cairn data tools. Restoring the
+  // exclusion at the Cairn-tools registration is the direct equivalent; the
+  // bash exclusion happens below (opts.role check on the mountCodingStack
+  // side). This prevents an automation-dev session from touching notes,
+  // tasks, or the board via any Cairn tool.
+  const cairnToolsExclude = opts.role === "automation-dev"
+    ? new Set(Object.keys(TOOL_SCHEMAS))
+    : undefined;
   const toolDisposers = registerCairnTools(ctx, {
     getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
     req,
@@ -139,7 +161,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     getWin,
     emit: undefined,
     emitDone: undefined,
-  });
+  }, cairnToolsExclude ? { exclude: cairnToolsExclude } : undefined);
 
   const run = async (): Promise<RunCordisCodingResult> => {
     await mount(cairnDbPlugin, { db });
@@ -198,7 +220,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // cwd-scoped. Order per dsh-base. Mounted before the agent so the tools are
     // registered when the model first requests them.
     try {
-      codingDisposers.push(await mountCodingStack(ctx, { cwd, sandboxMode }));
+      codingDisposers.push(await mountCodingStack(ctx, { cwd, sandboxMode, role: opts.role }));
     } catch (e) {
       console.error(`[cordis-coding] mountCodingStack failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
       throw e;
