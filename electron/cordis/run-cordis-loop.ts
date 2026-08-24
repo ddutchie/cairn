@@ -51,7 +51,7 @@ import { buildSystemPrompt, withPersonality } from "../lib/tools";
 import { markCompletionsOnly, readCachedMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
-import { ensureAgentAiAdapter, prepareCordisRuntime } from "./session-runtime";
+import { createCordisDisposerStack, ensureAgentAiAdapter, prepareCordisRuntime } from "./session-runtime";
 export { ensureAgentAiAdapter } from "./session-runtime";
 
 export interface RunCordisLoopResult {
@@ -651,12 +651,8 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   // Cairn's own plugins: cairn-db owns the handle, cairn-session persists
   // messages, cairn-usage records usage. Mounted per call (lightweight event
   // listeners); disposed in finally.
-  const pluginDisposers: Array<() => void> = [];
-  const mount = async (plugin: unknown, config: unknown): Promise<void> => {
-    const fiber = ctx.plugin(plugin as never, config as never);
-    pluginDisposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
-    await fiber;
-  };
+  const turnResources = createCordisDisposerStack();
+  const mount = (plugin: unknown, config: unknown) => turnResources.mount(ctx, plugin, config);
   await mount(cairnDbPlugin, { db });
   await mount(cairnSessionPlugin, {
     threadId: req.threadId,
@@ -966,6 +962,6 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   } finally {
     try { streamDisposer(); } catch { /* noop */ }
     toolDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
-    pluginDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
+    turnResources.dispose();
   }
 }

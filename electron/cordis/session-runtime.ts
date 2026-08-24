@@ -1,16 +1,42 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
 import type { LLMConfig } from "../lib/llm";
-import { ensureLlamaServerRunning } from "../lib/llama-server";
 import { resolveTransport, type ApiMode } from "../lib/llm-transport";
 
 let piAiDisposer: (() => Promise<void>) | null = null;
 let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number } | null = null;
 
+export interface CordisDisposerStack {
+  mount: (ctx: Context, plugin: unknown, config?: unknown) => Promise<void>;
+  add: (dispose: () => void) => void;
+  dispose: () => void;
+}
+
+/** Mount per-turn plugins and unwind their fibers in one place. */
+export function createCordisDisposerStack(): CordisDisposerStack {
+  const disposers: Array<() => void> = [];
+  return {
+    add(dispose) { disposers.push(dispose); },
+    async mount(ctx, plugin, config) {
+      const fiber = ctx.plugin(plugin as never, config as never);
+      disposers.push(() => {
+        fiber.then((mounted) => { try { mounted.dispose(); } catch { /* noop */ } }, () => {});
+      });
+      await fiber;
+    },
+    dispose() {
+      for (const dispose of disposers.splice(0).reverse()) {
+        try { dispose(); } catch { /* noop */ }
+      }
+    },
+  };
+}
+
 /** Prepare the shared model route used by every Cairn session kind. */
 export async function prepareCordisRuntime(ctx: Context, input: LLMConfig): Promise<{ llmConfig: LLMConfig; transport: ApiMode }> {
   let llmConfig = input;
   if (llmConfig.provider === "localllm") {
+    const { ensureLlamaServerRunning } = await import("../lib/llama-server");
     const port = await ensureLlamaServerRunning();
     llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
   }

@@ -36,7 +36,7 @@ import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { TOOL_SCHEMAS } from "../lib/tool-schemas";
 import { buildCordisUserContent } from "./cairn-attachment-store";
-import { prepareCordisRuntime } from "./session-runtime";
+import { createCordisDisposerStack, prepareCordisRuntime } from "./session-runtime";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
@@ -119,12 +119,8 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   const prepared = await prepareCordisRuntime(ctx, llmConfig);
   llmConfig = prepared.llmConfig;
 
-  const pluginDisposers: Array<() => void> = [];
-  const mount = async (plugin: unknown, config: unknown): Promise<void> => {
-    const fiber = ctx.plugin(plugin as never, config as never);
-    pluginDisposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
-    await fiber;
-  };
+  const turnResources = createCordisDisposerStack();
+  const mount = (plugin: unknown, config: unknown) => turnResources.mount(ctx, plugin, config);
   const codingDisposers: Array<() => void> = [];
   // Disposes the active dsh agent handle at turn end so its session is detached
   // from the live registry (persisted jsonl remains, enabling resume).
@@ -332,7 +328,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     for (const d of handleDisposers) { try { await d(); } catch { /* noop */ } }
     codingDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
     toolDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
-    pluginDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
+    turnResources.dispose();
   }
   return result;
 }
