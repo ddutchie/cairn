@@ -31,7 +31,7 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts, validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { createDeltaBatcher } from "../lib/delta-batcher";
-import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry } from "../cordis/approval-grants";
+import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry, readPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { assertSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
@@ -82,6 +82,7 @@ function sweepSessionPendings(sessionId: string): void {
   }
   clearSessionGrants(sessionId);
   pendingAsks.clearSession(sessionId);
+  forgetSessionApprovalArgs(sessionId);
   setConfirmTransport(sessionId, undefined);
 }
 
@@ -712,9 +713,14 @@ export function registerPiAgentHandler(
 
   // ── pi-agent:respond-tool ──────────────────────────────────────────────────
   // Resolve the Cordis loop's approval adapter (keyed `${sessionId}::${callId}`).
-  // grant:"command" records the exact canonicalized bash command (echoed by the
-  // renderer from the approval card's args) in the session's durable grants.
-  registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant, command }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string }) => {
+  // grant:"command" records the exact canonicalized bash command in the
+  // session's durable grants — using the TRUSTED args recorded at
+  // tools/pre-execute time (main-side), NOT the renderer's echo. A compromised
+  // renderer / UI plugin can send anything in `command`; the actual command
+  // dsh will execute is what we stashed via recordPendingApprovalArgs. If the
+  // two disagree (or the renderer's command is absent), the grant is a no-op:
+  // fail-closed on the record path.
+  registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string }) => {
     const key = pendingKey(sessionId, callId);
     const cordisPending = cordisPendingApprovals.get(key);
     if (!cordisPending) return;
@@ -722,7 +728,13 @@ export function registerPiAgentHandler(
     cordisPendingApprovals.delete(key);
     pendingAsks.resolve(sessionId, callId);
     if (approved && grant === "command") {
-      const cmd = canonicalBashCommand(command);
+      // Read the trusted command from the pre-execute stash — the renderer's
+      // command field is ignored (parameter kept in the type signature only
+      // so old renderers don't get a payload-validation error at the IPC
+      // boundary; it's intentionally unused).
+      const trusted = readPendingApprovalArgs(sessionId, callId);
+      const trustedCommand = trusted && typeof trusted.command === "string" ? trusted.command : undefined;
+      const cmd = canonicalBashCommand(trustedCommand);
       if (cmd) getSessionGrants(sessionId).bashCommands.add(cmd);
     }
   });

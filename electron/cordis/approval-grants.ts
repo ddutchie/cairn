@@ -51,6 +51,55 @@ export function canonicalBashCommand(command: unknown): string | null {
   return canonical.length > 0 ? canonical : null;
 }
 
+// ── Trusted per-callId argument store ────────────────────────────────────────
+//
+// The pi-agent:respond-tool IPC handler needs to know the EXECUTED command
+// text (not the renderer's echo of what it thinks was asked) so a
+// grant:'command' click grants exactly what dsh will run — not whatever
+// string a compromised renderer or UI plugin can inject via the IPC. dsh's
+// ApprovalRequest deliberately carries no arguments (see
+// dsh-user-approval/src/index.ts:147), so we stash them at
+// tools/pre-execute time (main-side, trusted) keyed by `${sessionId}::${callId}`
+// and retrieve them when the approve response arrives.
+//
+// Cleared per-callId when the ask settles (approve / deny / expire / abort).
+
+const pendingApprovalArgs = new Map<string, Record<string, unknown>>();
+
+function argsKey(sessionId: string, callId: string): string {
+  return `${sessionId}::${callId}`;
+}
+
+/** Record the trusted args for a pending approval ask. */
+export function recordPendingApprovalArgs(
+  sessionId: string,
+  callId: string,
+  args: Record<string, unknown>,
+): void {
+  pendingApprovalArgs.set(argsKey(sessionId, callId), args);
+}
+
+/** Read the trusted args for a callId (returns undefined if never recorded). */
+export function readPendingApprovalArgs(
+  sessionId: string,
+  callId: string,
+): Record<string, unknown> | undefined {
+  return pendingApprovalArgs.get(argsKey(sessionId, callId));
+}
+
+/** Drop the trusted args for a callId (settled). */
+export function forgetPendingApprovalArgs(sessionId: string, callId: string): void {
+  pendingApprovalArgs.delete(argsKey(sessionId, callId));
+}
+
+/** Drop every pending arg entry for a session (session cleared / closed). */
+export function forgetSessionApprovalArgs(sessionId: string): void {
+  const prefix = `${sessionId}::`;
+  for (const k of Array.from(pendingApprovalArgs.keys())) {
+    if (k.startsWith(prefix)) pendingApprovalArgs.delete(k);
+  }
+}
+
 // ── Pending-ask registry ─────────────────────────────────────────────────────
 
 /** One outstanding HITL prompt, enough to re-surface it after a renderer reload. */

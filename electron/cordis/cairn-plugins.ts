@@ -23,7 +23,7 @@ import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos } from "../db/queries";
 import { resultContentError } from "../lib/tool-result";
-import { getSessionGrants, canonicalBashCommand } from "./approval-grants";
+import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
 
 // Inlined from pi-agent-loop.ts:254 — kept here so the frozen file can be deleted.
@@ -841,11 +841,18 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
   const unsubPre = (ctx as unknown as { on: (ev: string, fn: (...args: unknown[]) => unknown) => () => void }).on(
     "tools/pre-execute",
     (...args: unknown[]) => {
-      const exec = args[0] as { name?: string; arguments?: unknown } | undefined;
+      const exec = args[0] as { name?: string; arguments?: unknown; callId?: string } | undefined;
       const next = args[1] as (() => Promise<unknown>) | undefined;
       const name = exec?.name;
       const argsObj = (exec?.arguments && typeof exec.arguments === "object") ? exec.arguments as Record<string, unknown> : {};
       if (typeof name === "string" && !APPROVAL_SAFE.has(name) && !isGranted(name, argsObj)) {
+        // Stash the TRUSTED args so pi-agent:respond-tool can record a
+        // grant:'command' against what dsh will actually execute — not
+        // whatever string a compromised renderer echoes back. dsh's
+        // ApprovalRequest deliberately carries no arguments (upstream
+        // decision), so this main-side side-channel is the only way to keep
+        // the grant target bound to the executed call.
+        if (exec?.callId) recordPendingApprovalArgs(sessionId, exec.callId, argsObj);
         return Promise.resolve({ kind: "ask", reason: `"${name}" needs your approval before it runs.` });
       }
       return next ? next() : undefined;
@@ -902,6 +909,8 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           clearTimeout(timer);
           disposeRef.current?.();
           for (const off of onAborts) off();
+          // Drop the trusted args stash for this callId — the ask settled.
+          forgetPendingApprovalArgs(sessionId, callId);
           resolve(outcome);
         };
         disposeRef.current = registerPending(callId, (decision) => {
