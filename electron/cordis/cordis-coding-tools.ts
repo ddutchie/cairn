@@ -10,9 +10,15 @@
  *
  * Ordering matters (dsh-base):
  *   sandbox-local → sandbox-policy → fs-sandbox → fs-observation-policy →
- *   plan-mode → subprocess-local → bash-local → shell-env →
+ *   plan-mode → subprocess-local → bash-sandbox → shell-env →
  *   tool-bash → tool-fs → tool-fs-search → tool-str-replace-editor →
  *   tool-todo → agent-instructions
+ *
+ * bash-SANDBOX (not bash-local) is mounted so `workspace-write` and
+ * `read-only` sessions are actually confined via `ctx.sandbox`. It falls
+ * through to unconfined execution when the resolved mode is
+ * `danger-full-access`, so this is a strict security upgrade — no behaviour
+ * regression for the automation-dev / danger-full-access path.
  */
 import type { Context } from "@deepseek-ai/cordis";
 
@@ -29,6 +35,7 @@ import { apply as shellEnvApply, inject as shellEnvInject, name as shellEnvName 
 import { apply as agentInstApply, name as agentInstName } from "@deepseek-ai/dsh-agent-instructions";
 import subprocessLocalPlugin from "@deepseek-ai/dsh-subprocess-local";
 import bashLocalPlugin from "@deepseek-ai/dsh-bash-local";
+import bashSandboxPlugin from "@deepseek-ai/dsh-bash-sandbox";
 
 export interface CodingStackOptions {
   /** Working directory the coding tools are scoped to (the session cwd). */
@@ -137,7 +144,19 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
   // plan-mode is mounted GLOBALLY in getContext (dsh owns it; /plan command +
   // plan:policy section) — plugging it here too would duplicate the section.
   await plug(subprocessLocalPlugin);
-  await plug(bashLocalPlugin);
+  // Bash executor: bash-SANDBOX (not bash-local) so `workspace-write` /
+  // `read-only` sessions are actually confined via `ctx.sandbox` (Seatbelt on
+  // macOS, Landlock on Linux, ACL restricted-token on Windows). `bash-sandbox`
+  // extends `LocalBashExecutor` and passes through unchanged when the resolved
+  // mode is `danger-full-access`, so this is a strict security upgrade —
+  // dangerous-mode sessions behave exactly as before, sandboxed modes get real
+  // enforcement. Peers (dsh-shell, dsh-sandbox, dsh-invariants,
+  // dsh-sandbox-policy, dsh-bash-local) are all already mounted or declared.
+  // NOTE: `bashLocalPlugin` remains imported only so the type import chain
+  // survives — the mount is now unreachable and can be removed once we're
+  // confident the sandbox path is stable across all supported platforms.
+  void bashLocalPlugin;
+  await plug(bashSandboxPlugin);
   await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
   await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
   await plug(
