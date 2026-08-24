@@ -254,7 +254,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // could read false in the split second before runningLoops is populated —
       // which would wrongly flip the input to idle and finalise a live bubble.
       await new Promise((resolve) => setTimeout(resolve, 150));
-      const res = await window.electron?.piAgent.isRunning(session.sessionId);
+      const res = await window.electron?.session.isRunning(session.sessionId);
       if (cancelled) return;
       const running = res?.running ?? false;
       // Re-surface approval asks whose original push was lost to a reload —
@@ -309,17 +309,17 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const { sessionId } = session;
 
-    const unsubToken = electron.piAgent.onToken((e) => {
+    const unsubToken = electron.session.onToken((e) => {
       if (e.sessionId !== sessionId) return;
       appendPiToken(sessionId, e.delta);
     });
 
-    const unsubThought = electron.piAgent.onThought?.((e) => {
+    const unsubThought = electron.session.onThought?.((e) => {
       if (e.sessionId !== sessionId) return;
       appendPiThought(sessionId, e.delta);
     });
 
-    const unsubUsage = electron.piAgent.onUsage((e) => {
+    const unsubUsage = electron.session.onUsage((e) => {
       if (e.sessionId === sessionId) {
         // Parent step — update the parent ring
         updatePiUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
@@ -329,7 +329,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // emitted by anything on the electron side.
     });
 
-    const unsubToolsReady = electron.piAgent.onToolsReady((e) => {
+    const unsubToolsReady = electron.session.onToolsReady((e) => {
       if (e.sessionId === sessionId) {
         ensurePiStreamingMessage(sessionId);
       }
@@ -339,7 +339,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // Keyed by callId (not tool name) so parallel calls to the same tool work correctly.
     const activeCallIds = new Set<string>();
 
-    const unsubTool = electron.piAgent.onTool((e) => {
+    const unsubTool = electron.session.onTool((e) => {
       if (e.sessionId !== sessionId) return;
       if (e.status === "pending") {
         // Chip created during SSE streaming — appears immediately with tool name as label.
@@ -368,14 +368,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       }
     });
 
-    const unsubStep = electron.piAgent.onStep((e) => {
+    const unsubStep = electron.session.onStep((e) => {
       if (e.sessionId !== sessionId) return;
       // Finalise the previous turn's assistant message so the next turn's
       // tokens appear in a separate bubble.
       finalisePiMessage(sessionId);
     });
 
-    const unsubDone = electron.piAgent.onDone((e) => {
+    const unsubDone = electron.session.onDone((e) => {
       if (e.sessionId !== sessionId) return;
       finalisePiMessage(sessionId);
       setIsLoading(false);
@@ -385,7 +385,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setPendingQuestionCallId(null);
     });
 
-    const unsubError = electron.piAgent.onError((e) => {
+    const unsubError = electron.session.onError((e) => {
       if (e.sessionId !== sessionId) return;
       finalisePiMessage(sessionId);
       setRetryInfo(null);
@@ -457,7 +457,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     // Plan mode events
-    const unsubPlanNote = electron.piAgent.onPlanNote((e) => {
+    const unsubPlanNote = electron.session.onPlanNote((e) => {
       if (e.sessionId !== sessionId) return;
       // Two shapes carry this event today:
       //   - dsh-plan-mode's exit_plan_mode: e.planContent is the full plan
@@ -469,31 +469,31 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setPiMode(sessionId, "plan", e.noteId);
     });
 
-    const unsubModeChange = electron.piAgent.onModeChange((e) => {
+    const unsubModeChange = electron.session.onModeChange((e) => {
       if (e.sessionId !== sessionId) return;
       setPiMode(sessionId, e.mode, e.planNoteId);
     });
 
-    const unsubAskQuestions = electron.piAgent.onAskQuestions((e) => {
+    const unsubAskQuestions = electron.session.onAskQuestions((e) => {
       if (e.sessionId !== sessionId) return;
       setPendingQuestions(e.questions);
       setPendingQuestionCallId(e.callId);
     });
 
-    const unsubToolConfirmRequired = electron.piAgent.onToolConfirmRequired((e) => {
+    const unsubToolConfirmRequired = electron.session.onToolConfirmRequired((e) => {
       if (e.sessionId !== sessionId) return;
       setPiToolConfirmRequired(sessionId, e.callId, true, e.nonce);
     });
 
     // The ask timed out unanswered and the loop settled it fail-closed —
     // retire the card so no dead approve/deny buttons linger.
-    const unsubToolConfirmExpired = electron.piAgent.onToolConfirmExpired?.((e) => {
+    const unsubToolConfirmExpired = electron.session.onToolConfirmExpired?.((e) => {
       if (e.sessionId !== sessionId) return;
       setPiToolConfirmRequired(sessionId, e.callId, false);
     });
 
     // Live plan note content updates — keep task list in sync as agent patches the PRD
-    const unsubNoteUpdated = electron.piAgent.onNoteUpdated((e) => {
+    const unsubNoteUpdated = electron.session.onNoteUpdated((e) => {
       if (e.sessionId !== sessionId) return;
       // Only track updates to this session's plan note
       const currentPlanNoteId = useCairnStore.getState().terminalSessions.find(
@@ -504,7 +504,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     // Todo list updates — live dock as the agent runs the todowrite tool
-    const unsubTodos = electron.piAgent.onTodos((e) => {
+    const unsubTodos = electron.session.onTodos((e) => {
       if (e.sessionId !== sessionId) return;
       setSessionTodos(sessionId, e.todos);
     });
@@ -513,12 +513,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     // Initial hydrate — load persisted todos when the pane mounts so a restored
     // session shows its list before the agent touches it again.
-    electron.piAgent.getTodos?.(sessionId).then((result) => {
+    electron.session.getTodos?.(sessionId).then((result) => {
       if (result?.length) setSessionTodos(sessionId, result);
     }).catch(() => { /* no persisted todos — dock stays hidden */ });
 
     // Retry events — show backoff countdown in the status bar
-    const unsubRetry = electron.piAgent.onRetry((e) => {
+    const unsubRetry = electron.session.onRetry((e) => {
       if (e.sessionId !== sessionId) return;
       setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs });
       // Auto-clear the retry badge once enough time has passed (delayMs + 500ms grace)
@@ -526,7 +526,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     // Compaction events — show "Compacting…" in status bar while LLM summary is in flight
-    const unsubCompact = electron.piAgent.onCompact((e) => {
+    const unsubCompact = electron.session.onCompact((e) => {
       if (e.sessionId !== sessionId) return;
       setIsCompacting(e.status === "start");
       if (e.status === "end" && e.auto) {
@@ -543,7 +543,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // summary replace node). Reload the transcript from the JSONL session log
     // (session-as-truth) so the in-memory view matches the compacted history and
     // survives reload, then append a confirmation system message.
-    const unsubCompactResult = electron.piAgent.onCompactResult((e) => {
+    const unsubCompactResult = electron.session.onCompactResult((e) => {
       if (e.sessionId !== sessionId) return;
       void (async () => {
         try {
@@ -551,7 +551,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             id: string; role: "user" | "assistant" | "error"; content: string;
             reasoning?: string | null; toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
           };
-          const sessRes = await (electron.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId);
+          const sessRes = await (electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId);
           let rows: RowType[] | undefined = undefined;
           let usage: TerminalSession["lastUsage"] = undefined;
 
@@ -646,7 +646,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // ── Slash commands ─────────────────────────────────────────────────────
     if (trimmed === "/compact") {
       setInput("");
-      window.electron?.piAgent.compactNow({
+      window.electron?.session.compactNow({
         sessionId: session.sessionId,
         config: {
           // Never coerce localhost URLs to "localllm" — that slug means the
@@ -760,7 +760,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
        },
     };
-    window.electron?.piAgent.prompt(promptPayload);
+    window.electron?.session.prompt(promptPayload);
   }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, enqueue, registryCommands]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
@@ -785,7 +785,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       void sendPrompt(answersText);
       return;
     }
-    window.electron?.piAgent.respondQuestions(session.sessionId, pendingQuestionCallId, answersText);
+    window.electron?.session.respondQuestions(session.sessionId, pendingQuestionCallId, answersText);
     setPendingQuestions(null);
     setPendingQuestionCallId(null);
   }, [pendingQuestionCallId, session, sendPrompt]);
@@ -807,7 +807,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   }, [session.cwd]);
 
   function handleStop() {
-    window.electron?.piAgent.abort(session.sessionId);
+    window.electron?.session.abort(session.sessionId);
     finalisePiMessage(session.sessionId);
     setIsLoading(false);
     setPendingQuestions(null);
@@ -822,7 +822,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     clearQueue();
     clearPiMessages(session.sessionId);
     setSessionTodos(session.sessionId, []);
-    window.electron?.piAgent.clear(session.sessionId);
+    window.electron?.session.clear(session.sessionId);
   }
 
   // Plan approval flows through dsh's exit_plan_mode tool and the structured

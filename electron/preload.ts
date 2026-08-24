@@ -1007,7 +1007,7 @@ const api = {
   },
 
   // ── Cairn native agent (pi) ───────────────────
-  piAgent: {
+  session: {
     /** Send a prompt to an existing or new session. Fire-and-forget. */
     prompt: (req: unknown) => ipcRenderer.send("pi-agent:prompt", req),
     /** Whether the Cordis coding agent is currently in flight for this session. */

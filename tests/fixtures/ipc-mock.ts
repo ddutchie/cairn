@@ -357,7 +357,7 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     },
 
     // ── Cairn native agent (pi) ───────────────────────────────────────────────
-    piAgent: {
+    session: {
       prompt:         noop,
       isRunning:      () => Promise.resolve(false),
       abort:          noop,

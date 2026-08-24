@@ -292,7 +292,7 @@ export function AutomationsView() {
       if (forceNew) {
         const stale = automationDevSessions[a.id];
         if (stale && terminalSessions.some((t) => t.sessionId === stale)) {
-          electron.piAgent.destroy(stale);
+          electron.session.destroy(stale);
           removeTerminalSession(stale);
         }
         clearAutomationDevSession(a.id);
@@ -300,7 +300,7 @@ export function AutomationsView() {
       const sessionId = id();
       const now = new Date().toISOString();
       const taskTitle = `Develop: ${a.name}`;
-      await electron.piAgent.createSession({
+      await electron.session.createSession({
         id: sessionId,
         projectId,
         taskTitle,

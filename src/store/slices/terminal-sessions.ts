@@ -721,7 +721,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   async fetchCodingSessionHistory(projectId) {
     if (typeof window === "undefined" || !window.electron) return;
     try {
-      const history = await window.electron.piAgent.listSessions(projectId) as CodingSessionSummary[];
+      const history = await window.electron.session.listSessions(projectId) as CodingSessionSummary[];
       set({ codingSessionHistory: history });
     } catch (err) {
       console.error("[coding-sessions] fetchCodingSessionHistory error", err);
@@ -732,7 +732,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     if (typeof window === "undefined" || !window.electron) return;
     try {
       const histories = await Promise.all(
-        projectIds.map(async (projectId) => window.electron!.piAgent.listSessions(projectId) as Promise<CodingSessionSummary[]>),
+        projectIds.map(async (projectId) => window.electron!.session.listSessions(projectId) as Promise<CodingSessionSummary[]>),
       );
       const merged = histories.flat().sort((a, b) =>
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -751,7 +751,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
       activeCodingSessionId: s.activeCodingSessionId === sessionId ? null : s.activeCodingSessionId,
     }));
     try {
-      await window.electron.piAgent.deleteSession(sessionId);
+      await window.electron.session.deleteSession(sessionId);
     } catch (err) {
       console.error("[coding-sessions] deleteCodingSessionFromHistory error", err);
     }

@@ -97,7 +97,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
         const now = new Date().toISOString();
         // Persist the session row to SQLite immediately
         try {
-          await window.electron!.piAgent.createSession({
+          await window.electron!.session.createSession({
             id: sessionId,
             projectId: project.id,
             taskTitle,

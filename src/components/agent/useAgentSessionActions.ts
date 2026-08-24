@@ -50,7 +50,7 @@ export function useAgentSessionActions() {
       spawnedAt: now,
       updatedAt: now,
     };
-    try { await window.electron?.piAgent.createSession(summary); } catch (e) {
+    try { await window.electron?.session.createSession(summary); } catch (e) {
       console.debug("[useAgentSessionActions] createSession failed:", e);
     }
     addTerminalSession({
@@ -81,7 +81,7 @@ export function useAgentSessionActions() {
           reasoning?: string | null;
           toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
         };
-        const sessRes = await (window.electron?.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> })?.getSessionMessages(summary.id);
+        const sessRes = await (window.electron?.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> })?.getSessionMessages(summary.id);
         let rows: RowType[] | undefined = undefined;
 
         if (Array.isArray(sessRes)) {
@@ -111,7 +111,7 @@ export function useAgentSessionActions() {
         }
       } catch { /* ok */ }
 
-      window.electron?.piAgent.restoreContext(summary.id);
+      window.electron?.session.restoreContext(summary.id);
       addTerminalSession({
         sessionId: summary.id, taskId: summary.taskId ?? summary.id,
         taskTitle: summary.taskTitle, agentId: "cairn-agent", agentName: "Cairn Agent",
@@ -124,7 +124,7 @@ export function useAgentSessionActions() {
     } else {
 
 
-      window.electron?.piAgent.restoreContext(summary.id);
+      window.electron?.session.restoreContext(summary.id);
     }
     if (activate) {
       setActiveCodingSession(summary.id);

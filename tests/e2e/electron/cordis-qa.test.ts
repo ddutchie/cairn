@@ -9,7 +9,7 @@
  *
  * Loops covered:
  *   - Chat loop:      window.electron.chat.stream → runCordisLoop → chat:done
- *   - Coding loop:    window.electron.piAgent.prompt → runCordisCodingLoop → pi-agent:done
+  *   - Coding loop:    window.electron.session.prompt → runCordisCodingLoop → pi-agent:done
  *   - Heartbeat loop: automation.runNow → runAutomationNow → runAutomation → finished
  *
  * Gated behind CORDIS_LIVE=1 (+ CORDIS_DUMMY_KEY=local), like the unit live
@@ -259,10 +259,10 @@ test.describe("Cordis loops in the real Electron app", () => {
         let tokens = 0;
         let toolEnds = 0;
         const timer = setTimeout(() => reject(new Error("Timed out waiting for pi-agent:done")), 120_000);
-        const unsubToken = el.piAgent.onToken((e) => {
+        const unsubToken = el.session.onToken((e) => {
           if (e.sessionId === sessionId) tokens += e.delta.length;
         });
-        const unsubTool = el.piAgent.onTool((e) => {
+        const unsubTool = el.session.onTool((e) => {
           if (e.sessionId === sessionId && e.status === "end") toolEnds += 1;
         });
         const finish = (done: boolean, error?: string) => {
@@ -270,13 +270,13 @@ test.describe("Cordis loops in the real Electron app", () => {
           unsubToken(); unsubTool(); unsubDone(); unsubError();
           resolve({ tokens, toolEnds, done, error });
         };
-        const unsubDone = el.piAgent.onDone((e) => {
+        const unsubDone = el.session.onDone((e) => {
           if (e.sessionId === sessionId) finish(true);
         });
-        const unsubError = el.piAgent.onError((e) => {
+        const unsubError = el.session.onError((e) => {
           if (e.sessionId === sessionId) finish(false, e.error);
         });
-        el.piAgent.prompt({
+        el.session.prompt({
           sessionId,
           prompt: "Open the note titled 'Readme' (use the read_note tool) and tell me the first bullet point.",
           projectId,

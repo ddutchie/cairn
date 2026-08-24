@@ -52,7 +52,7 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
   const command = typeof toolCall.args?.command === "string" ? toolCall.args.command : undefined;
   if (!sessionId || !toolCall.callId) return <ToolCallBody toolCall={toolCall} />;
   const respond = (approved: boolean, grant?: "command" | "session") => {
-    void window.electron?.piAgent.respondTool(sessionId, toolCall.callId!, approved, grant, grant === "command" ? command : undefined, toolCall.approvalNonce);
+    void window.electron?.session.respondTool(sessionId, toolCall.callId!, approved, grant, grant === "command" ? command : undefined, toolCall.approvalNonce);
   };
   return (
     <div data-testid="approval-card" className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5">

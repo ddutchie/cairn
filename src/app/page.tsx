@@ -207,7 +207,7 @@ export default function Home() {
                 reasoning: string | null;
                 toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
               };
-              const sessRes = await (window.electron.piAgent as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(latest.id);
+              const sessRes = await (window.electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(latest.id);
               let rows: PiRow[] | undefined;
               let lastUsage: import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"];
               if (Array.isArray(sessRes)) {
@@ -255,7 +255,7 @@ export default function Home() {
               });
                     state.setActiveCodingSession(latest.id);
               // Restore LLM context in main process
-              window.electron.piAgent.restoreContext(latest.id);
+              window.electron.session.restoreContext(latest.id);
             }
           } catch (e) {
             console.error("[startup] failed to restore pi session", e);
