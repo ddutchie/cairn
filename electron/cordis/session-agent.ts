@@ -8,6 +8,7 @@ export interface OpenCordisSessionAgentOptions {
   cwd: string;
   llmConfig: LLMConfig;
   signal?: AbortSignal;
+  createIfMissing?: boolean;
 }
 
 export interface CordisSessionAgentHandle {
@@ -18,7 +19,7 @@ export interface CordisSessionAgentHandle {
 /** Open a stable DSH session by resuming its log or creating it when absent. */
 export async function openCordisSessionAgent(
   ctx: Context,
-  { sessionId, cwd, llmConfig, signal }: OpenCordisSessionAgentOptions,
+  { sessionId, cwd, llmConfig, signal, createIfMissing = true }: OpenCordisSessionAgentOptions,
 ): Promise<CordisSessionAgentHandle> {
   const stableId = SessionId(sessionId);
   const selection = { provider: "cairn", model: llmConfig.model };
@@ -44,6 +45,8 @@ export async function openCordisSessionAgent(
       signal,
     }) as CordisSessionAgentHandle;
   }
+
+  if (!createIfMissing) throw new Error(`session "${sessionId}" not found`);
 
   return await ctx.agentLoop.createAgent(ctx, {
     ...base,

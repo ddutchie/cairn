@@ -44,6 +44,7 @@ import { LocalAttachmentStore } from "@deepseek-ai/dsh-attachment-local";
 import { app as electronApp } from "electron";
 import { createCairnSkillProvider } from "./cairn-skill-provider";
 import path from "path";
+import { openCordisSessionAgent } from "./session-agent";
 
 import { registerCairnTools, registerExternalCairnTools, CHAT_FORBIDDEN_TOOLS } from "./cairn-tools";
 import { getChatAgentCache, peekChatAgentCache } from "./chat-agent-cache";
@@ -265,20 +266,16 @@ export async function resumeChatAgent(threadId: string, workspacePath: string, m
   if (cached) { try { await (cached as { whenIdle: () => Promise<void> }).whenIdle(); } catch { /* fallthrough */ } return cached; }
   const ctx = await getContext();
   const stableId = SessionId(`chat-${threadId}`);
-  const selection = { provider: "cairn", model };
-  const setup = (agentCtx: unknown) => { installModelSelection(agentCtx as never, { current: selection, assembled: undefined }); };
   let agent: unknown;
+  let opened: { agent: unknown };
   try {
-    const resumed = await ctx.agents.resume({
-      // NOTE: `meta` (cwd, parentSession, …) belongs to CreateAgentOptions,
-      // not ResumeAgentOptions — a resumed session already has its meta from
-      // its persisted header. Do NOT pass it here; the pre-refactor cast
-      // hid this and dsh's runtime silently ignored the field.
-      agentOptions: { provider: selection.provider, model: selection.model },
-      setup,
-      resumeSessionId: stableId,
+    opened = await openCordisSessionAgent(ctx, {
+      sessionId: String(stableId),
+      cwd: workspacePath,
+      llmConfig: { provider: "openai", baseUrl: "", model, apiKey: "" },
+      createIfMissing: false,
     });
-    agent = resumed.agent;
+    agent = opened.agent;
   } catch {
     return undefined; // no session yet — nothing to compact
   }
@@ -286,7 +283,7 @@ export async function resumeChatAgent(threadId: string, workspacePath: string, m
   // Store as an untyped entry — this path uses the agent value directly,
   // not the surface shape. A cleaner refactor would type ChatAgentEntry
   // as { agent?: Agent } instead.
-  map.set(threadId, agent as unknown as import("./chat-agent-cache").ChatAgentEntry);
+  map.set(threadId, { handle: opened, agent: agent as Record<PropertyKey, unknown> });
   return agent;
 }
 
