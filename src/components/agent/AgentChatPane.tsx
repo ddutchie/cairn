@@ -21,7 +21,7 @@ import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
-import { SubagentBlock, ToolChip, type AgentConnectorMeta } from "./AgentMessageBubble";
+import { SubagentBlock, type AgentConnectorMeta } from "./AgentCapabilityRenderers";
 import { type VirtuosoHandle } from "react-virtuoso";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
@@ -908,25 +908,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             <ConversationMessageBubble
               message={toConversationMessage(msg)}
               sessionId={session.sessionId}
-              renderToolCall={(toolCall, index) => (
-                <ToolChip
-                  key={toolCall.callId ?? `${toolCall.name}-${index}`}
-                  tc={{
-                    callId: toolCall.callId ?? `${toolCall.name}-${index}`,
-                    name: toolCall.name,
-                    label: toolCall.label,
-                    args: toolCall.args,
-                    running: toolCall.running,
-                    ok: toolCall.ok,
-                    output: toolCall.output,
-                    cairnRef: toolCall.cairnRef,
-                    confirmRequired: toolCall.confirmRequired,
-                    approvalNonce: toolCall.approvalNonce,
-                  }}
-                  sessionId={session.sessionId}
-                  connectors={connectorMap}
-                />
-              )}
+              connectors={connectorMap}
               renderSubagent={(subagent, index) => <SubagentBlock key={index} sub={subagent as import("@/types").PiSubagentMessage} />}
             />
           </div>

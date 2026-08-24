@@ -20,7 +20,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ChatInputArea } from "../ChatInputArea";
 import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
-import { ChatToolCallChip } from "./ChatMessageBubble";
 import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SuggestedPrompts } from "./SuggestedPrompts";
@@ -893,24 +892,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
               <ConversationMessageBubble
                 message={toConversationMessage(message, message.actions && message.actions.length > 0 ? <ActionsList actions={message.actions} /> : undefined)}
                 onRetry={!isLoading ? handleRetry : undefined}
-                renderToolCall={(toolCall, index) => (
-                  <ChatToolCallChip
-                    key={toolCall.callId ?? `${toolCall.name}-${index}`}
-                    tc={{
-                      tool: toolCall.name,
-                      label: toolCall.label,
-                      callId: toolCall.callId,
-                      args: toolCall.args ? JSON.stringify(toolCall.args) : undefined,
-                      output: toolCall.output,
-                      ok: toolCall.ok,
-                      error: toolCall.error,
-                      cairnRef: toolCall.cairnRef,
-                      externalRef: toolCall.externalRef,
-                      meta: toolCall.meta,
-                    }}
-                    connectors={connectorMap}
-                  />
-                )}
+                connectors={connectorMap}
                 renderSubagent={(subagent, index) => <ChatSubagentBlock key={index} sub={subagent as ChatSubagent} />}
               />
             </div>

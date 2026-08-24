@@ -8,14 +8,16 @@ import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { ThinkingPanel } from "@/components/chat/chat-panel/ThinkingPanel";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
 import type { LinkedContextReference } from "@/types";
-import type { ConversationMessage, ConversationToolCall } from "./conversation-message";
+import type { ConversationMessage } from "./conversation-message";
+import { ConversationToolCall } from "./ConversationToolCall";
+import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 
 interface ConversationMessageBubbleProps {
   message: ConversationMessage;
   sessionId?: string;
   onRetry?: (content: string) => void;
-  renderToolCall?: (toolCall: ConversationToolCall, index: number) => React.ReactNode;
   renderSubagent?: (subagent: unknown, index: number) => React.ReactNode;
+  connectors?: Record<string, ConnectorMeta>;
 }
 
 function ContextRefChip({ ref_ }: { ref_: LinkedContextReference }) {
@@ -31,8 +33,8 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
   message,
   sessionId: _sessionId,
   onRetry,
-  renderToolCall,
   renderSubagent,
+  connectors,
 }: ConversationMessageBubbleProps) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -69,9 +71,9 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
             {message.subagents.map((subagent, index) => renderSubagent(subagent, index))}
           </div>
         )}
-        {!isUser && message.toolCalls && message.toolCalls.length > 0 && renderToolCall && (
+        {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
           <div className="flex flex-col gap-1 mb-1">
-            {message.toolCalls.map((toolCall, index) => renderToolCall(toolCall, index))}
+            {message.toolCalls.map((toolCall, index) => <ConversationToolCall key={toolCall.callId ?? `${toolCall.name}-${index}`} toolCall={toolCall} sessionId={_sessionId} connectors={connectors} />)}
           </div>
         )}
         {!isUser && (message.reasoning || message.reasoningSummary) && (

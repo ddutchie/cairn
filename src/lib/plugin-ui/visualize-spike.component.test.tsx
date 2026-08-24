@@ -114,7 +114,7 @@ describe("dsh-visualize spike (community-plugin UI shape in Cairn)", () => {
   });
 
   it("routes a PERSISTED (reloaded) tool-call record to the toolview, not the generic chip", async () => {
-    // Both the live (ToolCallIndicator) and reloaded (ChatMessageBubble) paths
+    // Both the live (ToolCallIndicator) and reloaded conversation-renderer paths
     // dispatch through the same plugin-ui slot + adapter. Persisted records lack
     // `status`; the bubble maps them to status:"done". Prove the adapter builds a
     // settled block that renders the card.

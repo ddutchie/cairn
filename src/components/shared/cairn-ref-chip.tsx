@@ -3,11 +3,10 @@
 /**
  * Shared Cairn reference chip + action lookup tables.
  *
- * Used by both `AgentMessageBubble` and `ChatMessageBubble` for rendering the
+ * Used by the shared conversation renderer and live tool indicators for rendering the
  * clickable chip that results from a tool call writing a note or task.
  *
- * Previously duplicated byte-for-byte across `agent/AgentMessageBubble.tsx` and
- * `chat/chat-panel/ChatMessageBubble.tsx` (P3-2 of the cleanup plan).
+ * Previously duplicated across the Chat and Agent message bubbles.
  */
 
 import { FileText, SquareCheck, CheckCircle, ExternalLink } from "lucide-react";
