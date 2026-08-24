@@ -76,7 +76,7 @@ export function CairnRefChip({ toolName, cairnRef, ok = true }: {
   ok?: boolean;
 }) {
   const setView = useCairnStore((s) => s.setView);
-  const activeView = useCairnStore((s) => s.activeView);
+  const sessionPresentation = useCairnStore((s) => s.sessionPresentation);
   const setActivePreviewItem = useCairnStore((s) => s.setActivePreviewItem);
   const isNote = cairnRef.type === "note";
   const actionLabel = isNote
@@ -84,7 +84,7 @@ export function CairnRefChip({ toolName, cairnRef, ok = true }: {
     : (CAIRN_TASK_ACTIONS[toolName] ?? "Updated task");
 
   function handleClick() {
-    if (activeView === "chat") {
+    if (sessionPresentation === "center") {
       setActivePreviewItem({ type: cairnRef.type, id: cairnRef.id });
     } else if (isNote) {
       revealNote(setView, cairnRef.id);
