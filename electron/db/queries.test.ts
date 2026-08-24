@@ -67,6 +67,8 @@ import {
   saveSessionTodos,
   getSessionTodos,
   deleteCodingSession,
+  upsertSessionProfile,
+  getSessionProfile,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -84,6 +86,22 @@ function seedWorkspace(db: Database.Database, id = "ws1") {
 function seedProject(db: Database.Database, workspaceId = "ws1", id = "proj1") {
   return createProject(db, { id, workspaceId, name: "Test Project" });
 }
+
+describe("session_profiles migration and queries", () => {
+  it("creates v53 metadata and upserts it by session id", () => {
+    const db = makeDb();
+    expect(db.pragma("user_version", { simple: true })).toBe(53);
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_profiles'").get()).toBeTruthy();
+
+    expect(upsertSessionProfile(db, {
+      sessionId: "chat-thread-1", profile: "chat", workspaceId: "ws1", projectId: "proj1", cwd: "/workspace",
+      updatedAt: "2026-08-24T10:00:00.000Z",
+    })).toEqual({ sessionId: "chat-thread-1", profile: "chat", workspaceId: "ws1", projectId: "proj1", cwd: "/workspace", updatedAt: "2026-08-24T10:00:00.000Z" });
+    expect(upsertSessionProfile(db, { sessionId: "chat-thread-1", profile: "coding", projectId: "proj2", cwd: "/project" }).profile).toBe("coding");
+    expect(getSessionProfile(db, "missing")).toBeNull();
+    db.close();
+  });
+});
 
 function seedColumn(
   db: Database.Database,

@@ -1,5 +1,7 @@
 /** Profiles supported by the shared session-bound popout surface. */
-export type SessionPopoutProfile = "chat" | "coding";
+import { isSessionProfileId, type SessionProfileId } from "./session-profile";
+
+export type SessionPopoutProfile = SessionProfileId;
 
 /** Identity-only contract shared by the Electron handoff and popout route. */
 export interface ChatPopoutPayload {
@@ -13,7 +15,7 @@ export function bindChatPopoutSession(value: unknown): ChatPopoutPayload | null 
   const payload = value as Partial<ChatPopoutPayload>;
   if (typeof payload.sessionId !== "string" || payload.sessionId.length === 0) return null;
   if (payload.activeProjectId !== null && typeof payload.activeProjectId !== "string") return null;
-  if (payload.profile !== "chat" && payload.profile !== "coding") return null;
+  if (!isSessionProfileId(payload.profile)) return null;
   return { sessionId: payload.sessionId, activeProjectId: payload.activeProjectId ?? null, profile: payload.profile };
 }
 

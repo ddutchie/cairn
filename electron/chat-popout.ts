@@ -14,6 +14,8 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "path";
 import { bindChatPopoutSession, type ChatPopoutPayload } from "../shared/agent/chat-popout";
+import type { DbContext } from "./ipc/result-helpers";
+import { getSessionProfile } from "./db/queries";
 
 const isDev = !app.isPackaged;
 
@@ -121,14 +123,19 @@ export function broadcastToChat(channel: string, payload: unknown, excludeId?: n
   }
 }
 
-export function registerChatPopoutHandlers(): void {
+export function registerChatPopoutHandlers(ctx: DbContext): void {
   // Main window requests a pop-out: stores state, creates pop-out window
   ipcMain.handle("chat:popOut", (event, rawPayload: unknown) => {
     const payload = bindChatPopoutSession(rawPayload);
     if (!payload) return { data: { ok: false } };
+    const stored = getSessionProfile(ctx.db, payload.sessionId);
+    if (stored && stored.profile !== payload.profile) return { data: { ok: false } };
+    const canonical = stored
+      ? { ...payload, profile: stored.profile, activeProjectId: stored.projectId }
+      : payload;
     mainWindowWebContentsId = event.sender.id;
     chatParticipants.add(event.sender.id);
-    pendingChatSession = payload;
+    pendingChatSession = canonical;
     createChatPopoutWindow();
     return { data: { ok: true } };
   });
@@ -141,7 +148,10 @@ export function registerChatPopoutHandlers(): void {
     chatParticipants.add(event.sender.id);
     const session = pendingChatSession;
     pendingChatSession = null;
-    return { data: session ?? { sessionId: "", activeProjectId: null, profile: "chat" as const } };
+    const stored = session ? getSessionProfile(ctx.db, session.sessionId) : null;
+    return { data: stored && session && stored.profile === session.profile
+      ? { ...session, profile: stored.profile, activeProjectId: stored.projectId }
+      : session ?? { sessionId: "", activeProjectId: null, profile: "chat" as const } };
   });
 
   // Main window requests the pop-out to come back (clicked placeholder button)

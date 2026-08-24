@@ -164,7 +164,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     const coding = state.terminalSessions.find((session) => (session.sessionId === state.activeSessionId || state.activeSessionId === "agent" && session.sessionId === state.activeCodingSessionId) && session.sessionType === "coding");
     const sessionId = isChat ? (state.activeChatThreadId ? chatSessionId(state.activeChatThreadId) : null) : coding?.sessionId;
     if (!sessionId) return;
-    const result = await window.electron?.chat.popOut({ sessionId, activeProjectId: state.activeProjectId, profile: isChat ? "chat" : "coding" });
+    const result = await window.electron?.chat.popOut({ sessionId, activeProjectId: state.activeProjectId, profile: isChat ? "chat" : coding?.role === "automation-dev" ? "automation-dev" : "coding" });
     if (result?.ok) {
       setChatPoppedOut(true);
     }

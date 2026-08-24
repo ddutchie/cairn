@@ -1282,6 +1282,23 @@ const MIGRATIONS: Migration[] = [
     if (tableExists(db, "session_todos")) db.exec("CREATE INDEX IF NOT EXISTS idx_session_todos_session ON session_todos(session_id)");
     if (tableExists(db, "agent_session_metadata")) db.exec("CREATE INDEX IF NOT EXISTS idx_session_metadata_project ON agent_session_metadata(project_id)");
   },
+
+  // v53: Neutral Cordis session profiles. This is deliberately separate from
+  // the coding-session index: chat, coding, and automation-dev all need the
+  // same durable identity for deterministic reopen/popout.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS session_profiles (
+        session_id  TEXT PRIMARY KEY,
+        profile     TEXT NOT NULL CHECK (profile IN ('chat', 'coding', 'automation-dev')),
+        workspace_id TEXT,
+        project_id  TEXT,
+        cwd         TEXT,
+        updated_at  TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_profiles_updated ON session_profiles(updated_at);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

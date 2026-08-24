@@ -330,7 +330,7 @@ app.whenReady().then(async () => {
   registerCommunityRegistryHandlers();
   registerGitHandlers(ctx);
   registerSessionRuntimeHandlers(ctx);
-  registerChatPopoutHandlers();
+  registerChatPopoutHandlers(ctx);
 
   // ── Splash + boot sequence ────────────────────────────────────────────
   // Create the splash window immediately so the user sees something while

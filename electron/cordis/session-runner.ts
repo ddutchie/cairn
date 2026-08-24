@@ -5,12 +5,18 @@ import type { LLMConfig } from "../lib/llm";
 import { createCordisDisposerStack, mountCordisSessionPlugins, prepareCordisRuntime, type CordisDisposerStack, type CordisQuestionAdapter } from "./session-runtime";
 import type { CordisSessionAgentHandle } from "./session-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
+import { upsertSessionProfile } from "../db/queries";
+import type { SessionProfileId } from "../../shared/agent/session-profile";
 
 export interface CordisSessionProfile<T> {
   ctx: Context;
   db: Database;
   req: ChatRequest;
   sessionId: string;
+  profileId: SessionProfileId;
+  cwd?: string;
+  workspaceId?: string;
+  projectId?: string;
   llmConfig: LLMConfig;
   signal?: AbortSignal;
   includeSessionIndex?: boolean;
@@ -32,6 +38,13 @@ export interface CordisSessionProfile<T> {
  * same for every session kind.
  */
 export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Promise<T> {
+  upsertSessionProfile(profile.db, {
+    sessionId: profile.sessionId,
+    profile: profile.profileId,
+    cwd: profile.cwd,
+    workspaceId: profile.workspaceId,
+    projectId: profile.projectId,
+  });
   const prepared = await prepareCordisRuntime(profile.ctx, profile.llmConfig);
   const resources = createCordisDisposerStack();
   const mount = (plugin: unknown, config?: unknown) => resources.mount(profile.ctx, plugin, config);

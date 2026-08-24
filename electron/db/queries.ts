@@ -54,9 +54,45 @@ import {
 } from "../shared/db-mappers";
 import { normalizeNoteTitle, stripMarkdown } from "../shared/text-utils";
 import { ftsMatchQuery } from "../../shared/notes/text";
+import type { SessionProfileId } from "../../shared/agent/session-profile";
 
 /** Re-export for callers that only need a new ID without importing utils directly. */
 export { newId as generateId };
+
+export interface SessionProfileRow {
+  sessionId: string;
+  profile: SessionProfileId;
+  workspaceId: string | null;
+  projectId: string | null;
+  cwd: string | null;
+  updatedAt: string;
+}
+
+export function upsertSessionProfile(db: Database.Database, profile: {
+  sessionId: string;
+  profile: SessionProfileId;
+  workspaceId?: string | null;
+  projectId?: string | null;
+  cwd?: string | null;
+  updatedAt?: string;
+}): SessionProfileRow {
+  const updatedAt = profile.updatedAt ?? ts();
+  db.prepare(`
+    INSERT INTO session_profiles (session_id, profile, workspace_id, project_id, cwd, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      profile = excluded.profile, workspace_id = excluded.workspace_id,
+      project_id = excluded.project_id, cwd = excluded.cwd, updated_at = excluded.updated_at
+  `).run(profile.sessionId, profile.profile, profile.workspaceId ?? null, profile.projectId ?? null, profile.cwd ?? null, updatedAt);
+  return getSessionProfile(db, profile.sessionId)!;
+}
+
+export function getSessionProfile(db: Database.Database, sessionId: string): SessionProfileRow | null {
+  const row = db.prepare("SELECT session_id, profile, workspace_id, project_id, cwd, updated_at FROM session_profiles WHERE session_id = ?").get(sessionId) as {
+    session_id: string; profile: SessionProfileId; workspace_id: string | null; project_id: string | null; cwd: string | null; updated_at: string;
+  } | undefined;
+  return row ? { sessionId: row.session_id, profile: row.profile, workspaceId: row.workspace_id, projectId: row.project_id, cwd: row.cwd, updatedAt: row.updated_at } : null;
+}
 
 // ── Workspace ─────────────────────────────────
 

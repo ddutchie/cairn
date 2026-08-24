@@ -124,6 +124,10 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     : undefined;
   return runCordisSession<RunCordisCodingResult>({
     ctx, db, req, sessionId, llmConfig: opts.llmConfig, signal,
+      profileId: opts.role === "automation-dev" ? "automation-dev" : "coding",
+      cwd,
+      workspaceId: req.workspaceId,
+      projectId: req.projectId,
       questions: questions ? {
       ...questions,
        emitQuestions: (requestId, qs) => questions.send("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions: qs }) as never),
