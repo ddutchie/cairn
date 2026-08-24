@@ -75,20 +75,36 @@ export function PluginsSettings() {
     try {
       await el.plugins.install(spec.trim());
       setSpec("");
-      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      // Refresh on BOTH success and failure — a partial install (files
+      // written but resolveEntries threw) leaves the manifest in a state
+      // the UI must re-read to reflect. See review finding H14 for the
+      // full 'failed install destroys the previously-working plugin'
+      // shape; the atomic staging fix is a follow-up, this at least
+      // stops the UI from stale-showing the pre-install list.
+      await refresh();
       setInstalling(false);
     }
   };
 
   const uninstall = async (row: PluginRow) => {
     if (!el?.plugins) return;
+    // Confirm destructive action. Uninstall runs fs.rmSync(pluginDir,
+    // {recursive:true}) on the installed plugin folder; if the user was
+    // editing a local plugin in-place, that folder can hold unpushed work.
+    // The prompt says exactly what will happen so a misclick doesn't
+    // silently trash files.
+    const label = row.name || row.id;
+    if (!window.confirm(
+      `Uninstall "${label}"?\n\nThis removes the plugin's files from your plugins folder and takes it off the enabled list. Any local edits inside that folder will be lost.`,
+    )) return;
     setBusy(row.id);
-    try { await el.plugins.uninstall(row.id); await refresh(); }
+    setError(null);
+    try { await el.plugins.uninstall(row.id); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setBusy(null); }
+    finally { await refresh(); setBusy(null); }
   };
 
   const update = async (row: PluginRow) => {

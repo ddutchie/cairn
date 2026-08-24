@@ -35,11 +35,28 @@ export function hasKeyedEntry(name: SlotName, matchKey: string): boolean {
   return slotHasKey(name, matchKey);
 }
 
-/** A single plugin component must never crash the app — isolate its failures. */
+/** A single plugin component must never crash the app — isolate its failures.
+ *  On plugin hot-reload (children identity changes because activateUIPlugin
+ *  re-evaluates the source), reset `failed` so a fixed plugin renders again
+ *  instead of staying blank until the whole app remounts. React's key-based
+ *  reset also handles the "different plugin registered at the same id" case,
+ *  but componentDidUpdate is belt-and-braces for the eval-and-re-register
+ *  path the loader uses. */
 class PluginBoundary extends React.Component<{ id: string; children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
-  componentDidCatch(err: unknown) { console.error(`[plugin-ui] component '${this.props.id}' crashed:`, err); }
+  componentDidCatch(err: unknown) {
+    console.error(`[plugin-ui] component '${this.props.id}' crashed:`, err);
+  }
+  componentDidUpdate(prevProps: { id: string; children: React.ReactNode }) {
+    // Children reference changed (typical after activateUIPlugin re-evals
+    // the source): clear the failed flag so the retry renders. If it
+    // crashes AGAIN, getDerivedStateFromError sets failed on the next
+    // render — no infinite loop because state only flips on a real throw.
+    if (this.state.failed && prevProps.children !== this.props.children) {
+      this.setState({ failed: false });
+    }
+  }
   render() { return this.state.failed ? null : this.props.children; }
 }
 
