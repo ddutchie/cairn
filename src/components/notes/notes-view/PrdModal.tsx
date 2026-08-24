@@ -10,6 +10,7 @@ import { effectiveTemperatureForModel } from "@/lib/models-dev";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { cn, prettifyToolLabel } from "@/lib/utils";
+import { createSessionEventFold } from "../../../../shared/agent/session-event-fold";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -117,20 +118,25 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
     }
   }, [isLoading]);
 
-  // Simpler: subscribe to onDone ourselves just to capture assistant content
-  // into local messages (useChatStream already persists to the thread store,
+  // Subscribe to the canonical DSH stream to capture assistant content into
+  // local messages (useChatStream already persists to the thread store,
   // but we need it in our local messages array for display in this modal).
   useEffect(() => {
     const electron = window.electron;
     if (!electron) return;
-     const unsub = electron.session.onDone((e) => {
-       if (e.sessionId !== `chat-${threadId}`) return;
-       if (e.content) {
-         setMessages((prev) => [...prev, { role: "assistant", content: e.content! }]);
-      }
+    let content = "";
+    const fold = createSessionEventFold({
+      onTurnStart: () => { content = ""; },
+      onAssistantMessage: (message) => { content = message.text; },
+      onTurnEnd: () => {
+        if (content) setMessages((prev) => [...prev, { role: "assistant", content }]);
+      },
+    });
+    const unsub = electron.session.onEvent((e) => {
+      if (e.sessionId === `chat-${threadId}`) fold(e.event);
     });
     return () => { unsub(); };
-   }, [threadId]);
+  }, [threadId]);
 
   const isEmpty = messages.length === 0 && !isLoading;
   const waitingForUser = !isLoading && !done && messages.some((m) => m.role === "assistant");
