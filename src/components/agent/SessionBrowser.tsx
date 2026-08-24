@@ -154,7 +154,7 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
       onActivate(session.sourceId, session.kind);
     } else if (session.kind === "coding") {
       const summary = piSessionHistory.find((candidate) => candidate.id === session.sourceId);
-      if (summary) await handleResumeSession(summary);
+      if (summary) await handleResumeSession(summary, variant === "preview" ? "center" : "drawer");
       onActivate(session.sourceId, session.kind);
     } else {
       onActivate(session.sourceId, session.kind);

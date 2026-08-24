@@ -3,7 +3,7 @@
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { id } from "@/lib/utils";
-import type { PiSessionSummary, PiAgentMessage, TerminalSession } from "@/types";
+import type { PiSessionSummary, PiAgentMessage, SessionPresentation, TerminalSession } from "@/types";
 
 /**
  * Shared hook for creating new Cairn Agent sessions and resuming existing ones.
@@ -30,7 +30,7 @@ export function useAgentSessionActions() {
 
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
 
-  async function handleNewSession() {
+  async function handleNewSession(presentation: SessionPresentation = "drawer") {
     if (!project?.codeDirectory || !activeProjectId) return;
     const sessionId = id();
     const now = new Date().toISOString();
@@ -59,11 +59,11 @@ export function useAgentSessionActions() {
     });
     upsertPiSessionSummary(summary);
     setPersistentPiSession(sessionId);
-    openSession(sessionId, "coding", "drawer");
+    openSession(sessionId, "coding", presentation);
   }
 
 
-  async function handleResumeSession(summary: PiSessionSummary) {
+  async function handleResumeSession(summary: PiSessionSummary, presentation: SessionPresentation = "drawer") {
     const alreadyLoaded = terminalSessions.find((t) => t.sessionId === summary.id);
     if (!alreadyLoaded) {
       let piMessages: PiAgentMessage[] = [];
@@ -120,7 +120,7 @@ export function useAgentSessionActions() {
       window.electron?.piAgent.restoreContext(summary.id);
     }
     setPersistentPiSession(summary.id);
-    openSession(summary.id, "coding", "drawer");
+    openSession(summary.id, "coding", presentation);
   }
 
   return { handleNewSession, handleResumeSession, project };

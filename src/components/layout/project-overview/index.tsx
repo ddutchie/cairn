@@ -338,8 +338,7 @@ export function ProjectOverview() {
             variant="preview"
             limit={4}
             activeSessionId={activeSessionId}
-            onActivate={(sessionId, _kind: SessionKind) => {
-              void sessionId;
+            onActivate={(_sessionId, _kind: SessionKind) => {
               setSessionPresentation("center");
               setView("chat");
             }}

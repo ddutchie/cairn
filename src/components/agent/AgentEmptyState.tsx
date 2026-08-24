@@ -22,7 +22,7 @@ export function AgentEmptyState() {
       </div>
 
       <button
-        onClick={handleNewSession}
+        onClick={() => { void handleNewSession(); }}
         disabled={!project?.codeDirectory}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--background)] text-[0.714rem] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
       >
