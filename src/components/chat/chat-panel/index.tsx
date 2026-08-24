@@ -20,7 +20,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ChatInputArea } from "../ChatInputArea";
 import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
-import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SuggestedPrompts } from "./SuggestedPrompts";
 import { ToolCallIndicator } from "./ToolCallIndicator";
@@ -43,6 +42,8 @@ import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
 import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
 import { ConversationMessageBubble } from "@/components/conversation/ConversationMessageBubble";
 import { toConversationMessage } from "@/components/conversation/conversation-message";
+import { toConversationSubagent } from "@/components/conversation/conversation-message";
+import { ConversationSubagentBlock } from "@/components/conversation/ConversationSubagentBlock";
 import { ActionsList } from "./ActionsList";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
@@ -130,7 +131,7 @@ function ChatFooter() {
       {s.isLoading && s.subagents.length > 0 && (
         <div className="flex flex-col gap-1">
           {s.subagents.map((sub) => (
-            <ChatSubagentBlock key={sub.childId} sub={sub} />
+            <ConversationSubagentBlock key={sub.childId} subagent={toConversationSubagent(sub)} />
           ))}
         </div>
       )}
@@ -893,7 +894,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
                 message={toConversationMessage(message, message.actions && message.actions.length > 0 ? <ActionsList actions={message.actions} /> : undefined)}
                 onRetry={!isLoading ? handleRetry : undefined}
                 connectors={connectorMap}
-                renderSubagent={(subagent, index) => <ChatSubagentBlock key={index} sub={subagent as ChatSubagent} />}
               />
             </div>
           )}

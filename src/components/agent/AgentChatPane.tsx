@@ -21,7 +21,7 @@ import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
-import { SubagentBlock, type AgentConnectorMeta } from "./AgentCapabilityRenderers";
+import type { ConnectorMeta as AgentConnectorMeta } from "@/components/shared/ConnectorToolCard";
 import { type VirtuosoHandle } from "react-virtuoso";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
@@ -909,7 +909,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
               message={toConversationMessage(msg)}
               sessionId={session.sessionId}
               connectors={connectorMap}
-              renderSubagent={(subagent, index) => <SubagentBlock key={index} sub={subagent as import("@/types").PiSubagentMessage} />}
             />
           </div>
         )}

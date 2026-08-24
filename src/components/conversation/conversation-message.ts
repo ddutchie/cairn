@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ChatMessage, ChatToolCallRecord, LinkedContextReference, PiAgentMessage } from "@/types";
+import type { ChatMessage, ChatSubagent, ChatToolCallRecord, LinkedContextReference, PiAgentMessage, PiSubagentMessage, TokenBreakdown } from "@/types";
 
 export interface ConversationToolCall {
   callId?: string;
@@ -32,6 +32,26 @@ export interface ConversationMessage {
   createdAt: string;
 }
 
+export interface ConversationSubagent {
+  id: string;
+  label: string;
+  instruction?: string;
+  content?: string;
+  result?: string;
+  running: boolean;
+  toolCalls?: ConversationToolCall[];
+  messages?: ConversationMessage[];
+  lastUsage?: {
+    promptTokens: number;
+    completionTokens: number;
+    reasoningTokens?: number;
+    breakdown?: TokenBreakdown;
+    costUsd?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  };
+}
+
 function parseArgs(args: string | undefined): Record<string, unknown> | undefined {
   if (!args) return undefined;
   try {
@@ -62,6 +82,12 @@ function agentToolCall(tool: NonNullable<PiAgentMessage["toolCalls"]>[number]): 
   return { ...tool };
 }
 
+export function toConversationToolCall(
+  tool: ChatToolCallRecord | NonNullable<PiAgentMessage["toolCalls"]>[number],
+): ConversationToolCall {
+  return "tool" in tool ? chatToolCall(tool) : agentToolCall(tool);
+}
+
 /** Normalize Chat and Coding records before they reach the shared renderer. */
 export function toConversationMessage(
   message: ChatMessage | PiAgentMessage,
@@ -84,5 +110,30 @@ export function toConversationMessage(
     extraContent,
     isStreaming: isChat ? undefined : message.isStreaming,
     createdAt: isChat ? message.createdAt : message.timestamp,
+  };
+}
+
+export function toConversationSubagent(
+  subagent: ChatSubagent | PiSubagentMessage,
+): ConversationSubagent {
+  if ("childId" in subagent) {
+    return {
+      id: subagent.childId,
+      label: subagent.role === "research" ? "Research agent" : subagent.role === "write" ? "Writing agent" : subagent.role || "Sub-agent",
+      instruction: subagent.instruction,
+      content: subagent.content,
+      result: subagent.result,
+      running: subagent.running,
+      toolCalls: subagent.toolCalls?.map(toConversationToolCall),
+      lastUsage: subagent.lastUsage,
+    };
+  }
+  return {
+    id: subagent.childSessionId,
+    label: "Sub-agent",
+    result: subagent.result,
+    running: subagent.running,
+    messages: subagent.messages.map((message) => toConversationMessage(message)),
+    lastUsage: subagent.lastUsage,
   };
 }

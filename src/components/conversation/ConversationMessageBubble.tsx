@@ -8,15 +8,16 @@ import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { ThinkingPanel } from "@/components/chat/chat-panel/ThinkingPanel";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
 import type { LinkedContextReference } from "@/types";
+import { toConversationSubagent } from "./conversation-message";
 import type { ConversationMessage } from "./conversation-message";
 import { ConversationToolCall } from "./ConversationToolCall";
+import { ConversationSubagentBlock } from "./ConversationSubagentBlock";
 import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 
 interface ConversationMessageBubbleProps {
   message: ConversationMessage;
   sessionId?: string;
   onRetry?: (content: string) => void;
-  renderSubagent?: (subagent: unknown, index: number) => React.ReactNode;
   connectors?: Record<string, ConnectorMeta>;
 }
 
@@ -33,7 +34,6 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
   message,
   sessionId: _sessionId,
   onRetry,
-  renderSubagent,
   connectors,
 }: ConversationMessageBubbleProps) {
   const isUser = message.role === "user";
@@ -66,9 +66,9 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
     <div className={cn("group flex gap-2 items-start", isUser && "flex-row-reverse")}>
       <MessageAvatar role={isUser ? "user" : "bot"} size={isUser ? "lg" : "md"} />
       <div className={cn("flex-1 min-w-0 space-y-1.5", isUser && "items-end flex flex-col")}>
-        {!isUser && message.subagents && message.subagents.length > 0 && renderSubagent && (
+        {!isUser && message.subagents && message.subagents.length > 0 && (
           <div className="flex flex-col gap-1 mb-1">
-            {message.subagents.map((subagent, index) => renderSubagent(subagent, index))}
+            {message.subagents.map((subagent, index) => <ConversationSubagentBlock key={index} subagent={toConversationSubagent(subagent as never)} sessionId={_sessionId} connectors={connectors} />)}
           </div>
         )}
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
