@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
-import { Trash2, FileText, Map as MapIcon, Loader2, Clock, ChevronDown } from "lucide-react";
+import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
@@ -38,6 +38,7 @@ import { ConversationMessageBubble } from "@/components/conversation/Conversatio
 import { toConversationMessage } from "@/components/conversation/conversation-message";
 import { ConversationHeader } from "@/components/conversation/ConversationHeader";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
+import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -923,51 +924,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             transcript is scrolled up. Shows the working state and the queued
             message count — the queue stays collapsed so full message content
             is only rendered when the user expands it. */}
-        {isLoading && !pendingQuestions && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)]">
-            <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
-            <span className="text-[0.714rem] text-[var(--text-secondary)]">
-              Agent is working — you can queue messages below
-            </span>
-          </div>
-        )}
-        {queued.length > 0 && (
-          <div className="border-b border-[var(--border)] bg-[var(--surface)]">
-            <button
-              type="button"
-              onClick={() => setQueueExpanded((v) => !v)}
-              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-[var(--surface-2)] transition-colors"
-            >
-              <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">
-                {queued.length} message{queued.length === 1 ? "" : "s"} queued — will send after the current run
-              </span>
-              <ChevronDown
-                size={11}
-                className={`ml-auto text-[var(--text-tertiary)] shrink-0 transition-transform ${queueExpanded ? "rotate-180" : ""}`}
-              />
-            </button>
-            {queueExpanded && (
-              <div className="px-3 pb-2 space-y-2">
-                {queued.map((q) => (
-                  <div key={q.id} className="flex items-start gap-2">
-                    <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
-                      {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
-                      {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : null}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removeQueued(q.id)}
-                      className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0 transition-colors"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {isLoading && !pendingQuestions && <ConversationWorkingStatus label="Agent is working — you can queue messages below" />}
+        <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
         {/* Plan review is rendered by QuestionForm from dsh's
             exit_plan_mode interaction. */}
         {session.mode === "execute" && planNoteContent && (

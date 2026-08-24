@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { type VirtuosoHandle } from "react-virtuoso";
-import { Trash2, ChevronDown, ArrowLeftFromLine, Loader2, Clock, History } from "lucide-react";
+import { Trash2, ChevronDown, ArrowLeftFromLine, History } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -46,6 +46,7 @@ import { toConversationMessage } from "@/components/conversation/conversation-me
 import { toConversationSubagent } from "@/components/conversation/conversation-message";
 import { ConversationSubagentBlock } from "@/components/conversation/ConversationSubagentBlock";
 import { ActionsList } from "./ActionsList";
+import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -896,49 +897,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       {/* Input */}
       {(isLoading || queued.length > 0) && (
         <div className={cn("border-t border-[var(--border)] bg-[var(--surface)]", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
-          {isLoading && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5">
-              <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">Cairn is working — you can queue messages below</span>
-            </div>
-          )}
-          {queued.length > 0 && (
-            <div className={isLoading ? "border-t border-[var(--border)]" : undefined}>
-              <button
-                type="button"
-                onClick={() => setQueueExpanded((v) => !v)}
-                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-[var(--surface-2)] transition-colors"
-              >
-                <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
-                <span className="text-[0.714rem] text-[var(--text-secondary)]">
-                  {queued.length} message{queued.length === 1 ? "" : "s"} queued — will send after the current reply
-                </span>
-                <ChevronDown
-                  size={11}
-                  className={`ml-auto text-[var(--text-tertiary)] shrink-0 transition-transform ${queueExpanded ? "rotate-180" : ""}`}
-                />
-              </button>
-              {queueExpanded && (
-                <div className="px-3 pb-2 space-y-2">
-                  {queued.map((q) => (
-                    <div key={q.id} className="flex items-start gap-2">
-                      <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
-                        {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
-                        {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : null}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeQueued(q.id)}
-                        className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0 transition-colors"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {isLoading && <ConversationWorkingStatus label="Cairn is working — you can queue messages below" />}
+          <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
         </div>
       )}
       <div className={cn("border-t border-[var(--border)] p-3 flex-shrink-0", activeView === "chat" && "border-t-0 bg-transparent p-6 max-w-3xl mx-auto w-full")}>
