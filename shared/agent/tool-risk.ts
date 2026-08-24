@@ -20,11 +20,13 @@ export type GrantScope = "none" | "command" | "session";
  */
 export const APPROVAL_SAFE_TOOLS = new Set<string>([
   "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
-  "get_active_context", "get_project_context_pack", "get_user_writing_style",
+  "get_active_context", "get_cairn_context", "get_project_context_pack",
+  "get_user_writing_style", "get_dashboard_constants",
   "get_note", "search_notes", "search_notes_semantic", "search_tasks_semantic",
   "get_task", "search_tasks", "list_ready_tasks", "list_overdue_tasks",
-  "list_tasks_due", "list_templates", "get_neighbors", "get_idea_flow",
-  "get_idea_flow_rules",
+  "list_tasks_due", "list_templates", "list_folders",
+  "get_neighbors", "get_semantic_neighbors", "get_idea_flow",
+  "get_idea_flow_rules", "get_knowledge_graph",
   "codebase_search_symbols", "codebase_get_symbol_definition",
   "codebase_get_references", "codebase_get_file_symbols",
   "ask_questions", "skill",
@@ -32,7 +34,8 @@ export const APPROVAL_SAFE_TOOLS = new Set<string>([
 
 /** Mutating Cairn-data tools (notes/tasks/tags/boards/dashboards/idea flow). */
 const CAIRN_WRITE_TOOLS = new Set<string>([
-  "create_note", "ensure_note", "patch_note", "append_to_note", "rename_note",
+  // create_note was removed — the actual tool is ensure_note (create-or-update).
+  "ensure_note", "patch_note", "append_to_note", "rename_note",
   "delete_note", "bulk_move_notes", "instantiate_template",
   "create_task", "update_task", "delete_task", "bulk_update_task_status",
   "spawn_tasks_from_note", "link_note_to_task", "unlink_note_from_task",
@@ -40,6 +43,9 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "create_dashboard", "update_dashboard",
   "create_idea_flow_node", "update_idea_flow_node",
   "create_idea_flow_edge", "delete_idea_flow_edge", "delete_idea_flow_node",
+  // layout_idea_flow rewrites node x/y for every node in a flow → mutating.
+  // codebase_reindex writes the local semantic index → mutating (local data).
+  "layout_idea_flow", "codebase_reindex",
   "generate_prd", "suggest_connections",
 ]);
 
