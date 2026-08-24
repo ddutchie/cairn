@@ -17,6 +17,8 @@ export interface SessionConversationToolCall {
   ok?: boolean;
   error?: string;
   meta?: Record<string, unknown>;
+  confirmRequired?: boolean;
+  approvalNonce?: string;
 }
 
 export type SessionConversationQuestion = {
@@ -167,7 +169,13 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
         else if (data.trace === "thought") updateSubagent(childId, (item) => ({ ...item, reasoning: (item.reasoning ?? "") + String(data.delta ?? "") }));
         else if (data.trace === "tool-call") updateSubagent(childId, (item) => ({ ...item, toolCalls: [...(item.toolCalls ?? []), { tool: String(data.tool), label: String(data.label ?? data.tool), callId: typeof data.callId === "string" ? data.callId : undefined, args: data.args ? JSON.stringify(redactTranscriptValue(data.args)) : undefined }] }));
         else if (data.trace === "tool-done") updateSubagent(childId, (item) => ({ ...item, toolCalls: (item.toolCalls ?? []).map((tool) => tool.callId === data.callId ? { ...tool, output: redactToolOutput(typeof data.output === "string" ? data.output : undefined), ok: data.ok !== false, error: typeof data.error === "string" ? redactSensitiveText(data.error) : undefined } : tool) }));
-        else if (data.trace === "usage") updateSubagent(childId, (item) => ({ ...item, lastUsage: { promptTokens: Number(data.promptTokens ?? 0), completionTokens: Number(data.completionTokens ?? 0), reasoningTokens: Number(data.reasoningTokens ?? 0), costUsd: typeof data.costUsd === "number" ? data.costUsd : undefined, breakdown: data.breakdown as TokenBreakdown | undefined } }));
+         else if (data.trace === "usage") updateSubagent(childId, (item) => ({ ...item, lastUsage: { promptTokens: Number(data.promptTokens ?? 0), completionTokens: Number(data.completionTokens ?? 0), reasoningTokens: Number(data.reasoningTokens ?? 0), costUsd: typeof data.costUsd === "number" ? data.costUsd : undefined, breakdown: data.breakdown as TokenBreakdown | undefined } }));
+      } else if (projection.kind === "approval" && typeof data.callId === "string") {
+        const next = toolsRef.current.map((item) => item.callId === data.callId
+          ? { ...item, confirmRequired: data.status === "required", approvalNonce: typeof data.nonce === "string" ? data.nonce : undefined }
+          : item);
+        toolsRef.current = next;
+        setToolCalls(next);
       }
       adapterRef.current.onProjection?.(projection);
     });
@@ -185,6 +193,14 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     if (!id || !callId) return false;
     window.electron?.session.respondQuestions(id, callId, answers); clearQuestionsFor(id); return true;
   };
+  const syncRunning = (running: boolean) => setIsLoading(running);
+  const setToolApproval = (callId: string, required: boolean, nonce?: string) => {
+    const next = toolsRef.current.map((item) => item.callId === callId
+      ? { ...item, confirmRequired: required, approvalNonce: required ? nonce : undefined }
+      : item);
+    toolsRef.current = next;
+    setToolCalls(next);
+  };
 
   return {
     isLoading,
@@ -195,6 +211,8 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     pendingQuestions: sessionId ? questionsBySession[sessionId] ?? null : null,
     pendingQuestionCallId: sessionId ? questionCallsBySession[sessionId] : undefined,
     startPrompt,
+    syncRunning,
+    setToolApproval,
     stop,
     clearQuestions,
     setQuestions: (questions: SessionConversationQuestion[] | null, callId?: string) => {
