@@ -10,28 +10,13 @@
 import { registerIpcHandle, broadcastEvent } from "./registry";
 import { broadcastToChat } from "../chat-popout";
 import type { DbContext } from "./result-helpers";
-import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown, isSendableMessage } from "../lib/llm";
-import { TOOLS, buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
-import { getExternalToolDefs } from "../lib/external-tools";
+import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
+import type { ChatRequest } from "../lib/tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
-import { resolveSystemRole } from "../lib/llm-stream";
 import { resolveLlmApiKey } from "../lib/secure-store";
-import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 import { recordLlmUsage } from "../lib/usage-recorder";
-import { createDeltaBatcher } from "../lib/delta-batcher";
 import { registerPendingQuestion, recordPendingQuestion } from "../cordis/pending-question-broker";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
-
-function projectChatEvent(sessionId: string, channel: string, payload: unknown): unknown {
-  if (channel === "session:projection") return payload;
-  const kind = channel.startsWith("session:") ? channel.slice(8) : "";
-  const allowed = new Set(["token", "thought", "tool", "done", "error", "usage", "question", "subagent-trace"]);
-  if (!allowed.has(kind)) return payload;
-  const data = payload && typeof payload === "object" ? { ...(payload as Record<string, unknown>) } : {};
-  delete data.sessionId;
-  delete data.threadId;
-  return makeSessionProjection(sessionId, kind as never, data as never);
-}
 
 // One controller and concurrency slot per canonical session, regardless of
 // which renderer issued the prompt.
@@ -145,16 +130,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     // persistence serialises writes, but the two turns would still interleave
     // into a semantically incoherent transcript.
     if (req.threadId && runningThreads.has(req.threadId)) {
-      const send = (ch: string, payload: unknown) => {
-        const tagged = (payload && typeof payload === "object")
-          ? { ...(payload as Record<string, unknown>), threadId: req.threadId }
-          : payload;
-        if (!event.sender.isDestroyed()) event.sender.send(ch, tagged);
-      };
-       send("session:projection", makeSessionProjection(sessionId, "error", {
-         error: "concurrent-stream-blocked",
-       }));
-      return;
+       return;
     }
     if (req.threadId) runningThreads.add(req.threadId);
     const abortCtrl = new AbortController();
@@ -166,22 +142,18 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     const send = (ch: string, payload: unknown) => {
       // Tag every streaming event with the originating threadId so renderer
       // consumers (chat panel vs. the note "Spawn tasks" one-shot) can filter
-      // events that aren't theirs. Without this, a spawn stream's chat:done
+      // events that aren't theirs. Without this, a spawn stream's completion
       // would toggle the chat panel's loading state and disable its input.
       const tagged = (payload && typeof payload === "object")
         ? { sessionId, ...(payload as Record<string, unknown>), threadId: req.threadId }
         : payload;
-       const outChannel = ch.startsWith("session:") ? "session:projection" : ch;
-       const outPayload = projectChatEvent(sessionId, ch, tagged);
+        const outChannel = ch;
+        const outPayload = tagged;
        if (!event.sender.isDestroyed()) event.sender.send(outChannel, outPayload);
        broadcastToChat(outChannel, outPayload, event.sender.id);
     };
 
     if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {
-      send("session:error", {
-        content: "AI chat is not configured. Set an API key in **Settings → AI & Chat**, or use a local endpoint (Ollama, LM Studio) with no key needed.",
-        error: "AI chat is not configured",
-      });
        abortControllers.delete(sessionId);
       if (req.threadId) runningThreads.delete(req.threadId);
       return;
@@ -193,71 +165,6 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     // id — cloud APIs, custom OpenAI-compatible endpoints, and on-device models
     // all expose arbitrary names. The renderer gates what may attach (it knows
     // the catalog), so a part that arrives here is meant for this model / endpoint.
-
-    const userMessage: OpenAIMessage = req.images?.length
-      ? ({
-          role: "user",
-          content: buildAttachmentParts(req.message, req.images),
-        } as unknown as OpenAIMessage)
-      : { role: "user", content: req.message };
-
-    // Compose the system prompt ONCE — buildSystemPrompt embeds the current
-    // date, so recomputing it later (the token-usage breakdown) could measure a
-    // different string if a turn crosses midnight.
-    const systemContent = withPersonality(buildSystemPrompt(req), req.personality);
-
-    const messages: OpenAIMessage[] = [
-      {
-        role: resolveSystemRole({ isReasoningModel: req.config?.isReasoningModel, baseUrl, provider, modelId: model }),
-        content: systemContent,
-      },
-      ...(req.history ?? [])
-        // Drop assistant turns that carry neither content nor tool_calls — a
-        // thinking model that timed out or stopped mid-reasoning leaves such a
-        // turn behind, and replaying it makes the provider reject the whole
-        // request with "content or tool_calls must be set" (400).
-        .filter(isSendableMessage)
-        .map((m) => {
-          const out: OpenAIMessage = { role: m.role, content: m.content };
-          if (m.tool_calls) out.tool_calls = m.tool_calls;
-          if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
-          if (m.name) out.name = m.name;
-          // Round-trip reasoning metadata persisted on the message so a resumed
-          // thread keeps its chain-of-thought (chat-loop gates on model key).
-          if (m.reasoning) out.reasoning = m.reasoning;
-          if (m.reasoningField) out.reasoningField = m.reasoningField;
-          if (m.reasoningModel) out.reasoningModel = m.reasoningModel;
-          if (m.reasoningItems) out.reasoningItems = m.reasoningItems;
-          return out;
-        }),
-      userMessage,
-    ];
-
-    const emitToolCall = (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => {
-      send("session:tool", { name: e.tool, ...e, status: "start" });
-    };
-
-    const emitToolCallDone = (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => {
-      send("session:tool", { name: e.tool, ...e, label: e.tool, status: "end" });
-    };
-
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let reasoningTokens = 0;
-    let cacheReadTokens = 0;
-    let cacheCreationTokens = 0;
-    let costUsd: number | undefined = undefined;
-    let lastBreakdown: TokenBreakdown | undefined = undefined;
-
-    // Assemble external tool defs (MCP servers + custom services) in scope for
-    // this workspace/project. Failures degrade to no external tools.
-    let externalDefs: typeof TOOLS = [];
-    try {
-      externalDefs = (await getExternalToolDefs(ctx.db, req.workspaceId ?? "", req.projectId ?? "")) as typeof TOOLS;
-    } catch (err) {
-      console.error("[chat] failed to assemble external tools:", err);
-    }
-    const allTools = externalDefs.length > 0 ? [...TOOLS, ...externalDefs] : TOOLS;
 
     const addUsage = (pt: number, ct: number, rt?: number, cost?: number, cacheRead?: number, cacheCreate?: number) => {
       // Persist one usage row per tool-loop round (source = chat) for the Usage view.
@@ -276,47 +183,6 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
         cacheCreationTokens: cacheCreate,
         costUsd: cost,
       });
-      promptTokens = pt;
-      completionTokens += ct;
-      if (typeof rt === "number") reasoningTokens += rt;
-      // Cache tokens are last-round only, mirroring promptTokens (the context
-      // window shown is the current round's, not a running sum).
-      if (typeof cacheRead === "number") cacheReadTokens = cacheRead;
-      if (typeof cacheCreate === "number") cacheCreationTokens = cacheCreate;
-      // Provider-reported USD cost of this call (e.g. Neuralwatt usage.cost);
-      // accumulated across tool-loop rounds like completion tokens. Only
-      // non-negative finite values are accepted; an explicitly reported 0 is
-      // preserved, and nothing is set when the provider reports no cost.
-      if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) {
-        costUsd = (costUsd ?? 0) + cost;
-      }
-      try {
-        const rawBreakdown = calculatePromptBreakdown(systemContent, messages, allTools);
-        lastBreakdown = scaleBreakdown(rawBreakdown, promptTokens);
-      } catch (err) {
-        console.error("[chat] failed to calculate breakdown:", err);
-      }
-      const resolvedLimit = req.config?.contextLimit ?? req.config?.contextWindow;
-      send("session:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens, contextLimit: resolvedLimit, contextWindow: resolvedLimit });
-    };
-
-    // Final usage object attached to chat:done (or undefined when nothing ran —
-    // a cost-only report is still retained, not dropped for having no tokens).
-    const finalUsage = () => {
-      const resolvedLimit = req.config?.contextLimit ?? req.config?.contextWindow;
-      return promptTokens > 0 || costUsd != null
-        ? {
-            promptTokens,
-            completionTokens,
-            reasoningTokens,
-            breakdown: lastBreakdown,
-            costUsd: costUsd != null ? costUsd : undefined,
-            cacheReadTokens,
-            cacheCreationTokens,
-            contextLimit: resolvedLimit,
-            contextWindow: resolvedLimit,
-          }
-        : undefined;
     };
 
     // ── Subagent mode ─────────────────────────────────────────────────────────
@@ -328,11 +194,8 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     // ── Cordis engine (only path — local models via llama-server at 127.0.0.1:<port>/v1 are also OpenAI-compatible) ──
     if (true) {
       const { runCordisLoop } = await import("../cordis/run-cordis-loop");
-      const tokens = createDeltaBatcher((delta) => send("session:token", { delta }));
-      const thoughts = createDeltaBatcher((delta) => send("session:thought", { delta }));
-      const flushStream = () => { tokens.flush(); thoughts.flush(); };
       try {
-        const loopResult = await runCordisLoop({
+         await runCordisLoop({
           db: ctx.db,
           req,
           workspacePath: ctx.workspacePath,
@@ -345,11 +208,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
             maxTokens: req.config?.maxTokens,
           },
           signal: abortCtrl.signal,
-          onToken: (d) => tokens.push(d),
-          onThought: (d) => thoughts.push(d),
-          onUsage: addUsage,
-          emitToolCall,
-          emitToolCallDone,
+           onUsage: addUsage,
           getWin,
              sendSubagent: (channel, payload) => send(channel.replace(/^chat:/, "session:"), payload),
            questions: {
@@ -364,21 +223,11 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
            },
            onSessionEvent: (sessionEvent) => broadcastEvent("session:event", { sessionId, event: sessionEvent }),
          });
-        flushStream();
-        if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
-        if (abortCtrl.signal.aborted) {
-          send("session:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: finalUsage() });
-        } else {
-          send("session:done", { content: loopResult.content, reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
-        }
-      } catch (err) {
-        flushStream();
-        if (!abortCtrl.signal.aborted) {
-          console.error("[chat] cordis loop failed:", err);
-           send("session:error", { error: `Chat loop failed: ${(err as Error)?.message ?? String(err)}` });
-        } else {
-           send("session:done", { content: "" });
-        }
+         if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
+       } catch (err) {
+         if (!abortCtrl.signal.aborted) {
+           console.error("[chat] cordis loop failed:", err);
+         }
       } finally {
          abortControllers.delete(sessionId);
         if (req.threadId) runningThreads.delete(req.threadId);

@@ -1,20 +1,15 @@
 /**
  * Cairn coding session runtime — IPC handlers
  *
- * Registers pi-agent:* channels. Each session is a stateful AgentSession
+ * Registers session command, raw-event, and projection channels. Each session is a stateful AgentSession
  * (message history + AbortController) held in a Map for the app lifetime.
  *
  * Channels (fire-and-forget, renderer → main):
  *   pi-agent:prompt  { sessionId, prompt, projectId, cwd, taskTitle?, config }
  *   pi-agent:abort   { sessionId }
  *
- * Events (main → renderer):
- *   pi-agent:token     { sessionId, delta: string }
- *   pi-agent:tool      { sessionId, name: string, label: string, status: "start"|"end", ok?: boolean }
- *   pi-agent:done      { sessionId }
- *   pi-agent:error     { sessionId, error: string }
- *   pi-agent:retry     { sessionId, attempt: number, maxRetries: number, delayMs: number, error: string }
- *   pi-agent:compact   { sessionId, status: "start" | "end" }
+ * Events (main → renderer): session:event (raw DSH events) and
+ * session:projection (typed presentation updates).
  */
 
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
@@ -31,7 +26,6 @@ import { ts } from "../db/utils";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
-import { createDeltaBatcher } from "../lib/delta-batcher";
 import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry, readPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { assertSafeId, resolveWithinRoot } from "./path-safety";
@@ -42,7 +36,7 @@ import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
-import { makeSessionProjection, type SessionProjection } from "../../shared/agent/session-projection";
+import { type SessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { runChatPrompt, abortChatSession } from "./chat";
 
@@ -263,17 +257,11 @@ async function runCordisCodingSession(
 
   const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
 
-  // Coalesce streamed deltas into ~20 IPC events/sec (same as the builtin path).
-  const tokens = createDeltaBatcher((delta) => send("session:projection", makeSessionProjection(sessionId, "token", { delta })));
-  const thoughts = createDeltaBatcher((delta) => send("session:projection", makeSessionProjection(sessionId, "thought", { delta })));
-
-  // Route the loop's raw pi-agent:* events through the delta batchers, then out.
+  // Forward only Cairn-derived projections. Parent lifecycle is folded from raw
+  // session:event in the renderers.
   const loopSend = (channel: string, evtPayload: Record<string, unknown>) => {
     if (channel !== "session:projection") return;
     const projection = evtPayload as unknown as SessionProjection;
-    if (projection.kind === "token" && typeof projection.data.delta === "string") { tokens.push(projection.data.delta); return; }
-    if (projection.kind === "thought" && typeof projection.data.delta === "string") { thoughts.push(projection.data.delta); return; }
-    if (projection.kind === "done" || projection.kind === "error") { tokens.flush(); thoughts.flush(); }
     if (projection.kind === "plan-note" && typeof projection.data.noteId === "string") {
       try { q.updateCodingSession(ctx.db, sessionId, { planNoteId: projection.data.noteId, updatedAt: ts() }); } catch { /* non-critical */ }
     }
@@ -386,10 +374,8 @@ async function runCordisCodingSession(
       },
     });
   } catch (err) {
-    tokens.flush();
-    thoughts.flush();
     if (!session.abortCtrl.signal.aborted) {
-      send("session:projection", makeSessionProjection(sessionId, "error", { error: (err as Error)?.message ?? String(err) }));
+      console.error("[session] coding loop failed:", err);
     }
   } finally {
     runningLoops.delete(sessionId);
@@ -397,8 +383,6 @@ async function runCordisCodingSession(
     // timed out). Drop any registry residue so the next turn starts clean.
     pendingAsks.clearSession(sessionId);
     setConfirmTransport(sessionId, undefined);
-    tokens.flush();
-    thoughts.flush();
   }
 }
 
@@ -454,9 +438,6 @@ export function registerSessionRuntimeHandlers(
     const storedProfile = q.getSessionProfile(ctx.db, req.sessionId)?.profile;
     const selected = selectSessionProfile(storedProfile, req.profile);
     if (!selected.profile) {
-      broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "error", {
-        error: selected.error ?? "Unable to select session profile.",
-      }));
       return;
     }
     const profile = selected.profile;
@@ -483,13 +464,9 @@ export function registerSessionRuntimeHandlers(
         broadcastEvent(channel, payload);
         return;
       }
-      const kind = channel.startsWith("session:") ? channel.slice("session:".length) : undefined;
-      if (!kind || !["token", "thought", "tool", "done", "error", "usage", "approval", "question", "retry", "compact", "compact-result", "plan-note", "note-updated", "todos", "mode-change", "tools-ready", "step"].includes(kind)) return;
-      const value = payload as Record<string, unknown>;
-      const sid = typeof value.sessionId === "string" ? value.sessionId : sessionId;
-      const data = { ...value };
-      delete data.sessionId;
-      broadcastEvent("session:projection", makeSessionProjection(sid, kind as never, data as never));
+      // Raw DSH events and typed projections are the parent lifecycle APIs.
+      // Other session channels are reserved for commands/recovery transports.
+      broadcastEvent(channel, payload);
     };
 
     // Reject a second prompt for a session whose loop is already running —
@@ -497,7 +474,6 @@ export function registerSessionRuntimeHandlers(
     // the is-running state inconsistent. The renderer queues prompts while busy,
     // so this is a defensive guard, not the normal path.
     if (runningLoops.has(sessionId)) {
-      send("session:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before sending another prompt." });
       return;
     }
 
@@ -508,20 +484,12 @@ export function registerSessionRuntimeHandlers(
       for (const a of req.attachments) {
         const problem = validateAttachmentDataUrl(a?.dataUrl);
         if (problem) {
-          send("session:error", {
-            sessionId,
-            error: `Invalid attachment${a?.name ? ` "${a.name}"` : ""}: ${problem}`,
-          });
           return;
         }
       }
     }
 
     if (req.config?.provider === "localllm") {
-      send("session:error", {
-        sessionId,
-        error: "Local Engine (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
-      });
       return;
     }
 
@@ -653,15 +621,10 @@ export function registerSessionRuntimeHandlers(
     // Same concurrency guard as pi-agent:prompt — a plan approval is also a
     // loop run and must never stack on an in-flight loop for this session.
     if (runningLoops.has(sessionId)) {
-      send("session:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before approving the plan." });
       return;
     }
 
     if (req.config?.provider === "localllm") {
-      send("session:error", {
-        sessionId,
-        error: "Local Engine (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
-      });
       return;
     }
 
@@ -877,7 +840,7 @@ export function registerSessionRuntimeHandlers(
   registerIpcOn("session:respond-tool", (_event, { sessionId, callId, approved, grant, nonce }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string; nonce?: string }) => {
     // Require the per-ask nonce — a compromised renderer (XSS from a
     // rendered note, an installed UI plugin) that only saw the callId
-    // broadcast on pi-agent:tool-confirm-required must NOT be able to
+    // broadcast on session:tool-confirm-required must NOT be able to
     // auto-approve every ask. The nonce is minted main-side and returned
     // in the confirm-required event; only a legitimate consumer of that
     // event has it. Fail-closed on absence / mismatch.
@@ -925,15 +888,13 @@ export function registerSessionRuntimeHandlers(
     // passes; `..`, `/`, `\`, empty, over-length, control chars all fail here.
     try {
       assertSafeId(sessionId, "sessionId");
-    } catch (err) {
-      broadcastEvent("session:error", { sessionId, error: (err as Error).message });
+    } catch (_err) {
       return;
     }
     // Clearing the persisted log while a loop is running would desync its
     // in-flight context. The renderer stops the run before clearing, so this is
     // defensive.
     if (runningLoops.has(sessionId)) {
-      broadcastEvent("session:error", { sessionId, error: "Can't clear while the agent is working — stop the run first." });
       return;
     }
     // The Cordis JSONL session is the transcript source of truth. The in-memory

@@ -77,7 +77,6 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, onPopIn
       const data = projection.data as Record<string, unknown>;
       if (projection.kind === "approval") setMessages((current) => current.map((message) => message.role === "assistant" ? { ...message, toolCalls: message.toolCalls?.map((tool) => tool.callId === data.callId ? { ...tool, confirmRequired: data.status === "required", approvalNonce: typeof data.nonce === "string" ? data.nonce : undefined } : tool) } : message));
       if (projection.kind === "question" && Array.isArray(data.questions)) { setQuestions(data.questions as PendingQuestion[]); setQuestionCallId(typeof data.callId === "string" ? data.callId : null); }
-      if (projection.kind === "error" || projection.kind === "done") void refresh();
     });
     return () => { unsubEvent?.(); unsubProjection?.(); };
     // The handed-off session is immutable for this window.

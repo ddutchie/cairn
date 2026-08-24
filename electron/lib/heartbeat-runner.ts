@@ -38,6 +38,7 @@ import {
 import { isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance } from "./automation-approval";
 import { getExternalToolDefs, checkRequirements, externalToolLabel } from "./external-tools";
 import { recordLlmUsage } from "./usage-recorder";
+import { createSessionEventFold } from "../../shared/agent/session-event-fold";
 import {
   automationFolderDir,
   automationOutDir,
@@ -504,66 +505,36 @@ export async function runAutomation(
   const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
   let finalContent = "";
   // Tool name per pending approval callId, captured from the coding agent's
-  // `pi-agent:tool-confirm-required` event (the seam doesn't carry the name).
+  // `session:tool-confirm-required` event (the seam doesn't carry the name).
   const confirmToolByCallId = new Map<string, string>();
   const loopSend = (channel: string, payload: Record<string, unknown>) => {
     if (channel !== "session:projection") return;
     const projection = payload as unknown as SessionProjection;
     const data = projection.data as Record<string, unknown>;
-    const status = data.status as string | undefined;
     if (projection.kind === "approval" && data.status === "required" && typeof data.callId === "string") {
       confirmToolByCallId.set(data.callId as string, (data.name as string | undefined) ?? "tool");
       emitRun("toolConfirmRequired", { tool: data.name, callId: data.callId, label: data.label });
       return;
     }
-    if (projection.kind === "token" && typeof data.delta === "string") {
-      finalContent += data.delta;
-      emitRun("token", { delta: data.delta });
-      return;
-    }
-    if (projection.kind === "thought" && typeof data.delta === "string") {
-      log.thoughts += data.delta;
-      emitRun("thought", { delta: data.delta });
-      return;
-    }
-    if (projection.kind === "tool") {
-      const callId = data.callId as string | undefined;
-      // Prettify the tool label the same way chat/agent views do — raw MCP
-      // names like mcp__<id>__search-designs become "Search designs" (or
-      // "Canva · Search designs" when the server name resolves).
-      const toolName = data.name as string | undefined;
-      const cleanLabel = externalToolLabel(toolName ?? "tool", db);
-      if (status === "pending" || status === "start") {
-        currentTool(toolName ?? "tool");
-        logTool(toolName ?? "tool", cleanLabel, data.args as Record<string, unknown> | undefined);
-        emitRun("tool", { tool: toolName, label: cleanLabel, args: data.args, status: "start", callId });
-      } else if (status === "end") {
-        recordArtifact(toolName ?? "", data.cairnRef as { type: "note" | "task"; id: string; title: string } | undefined);
-        logToolDone(toolName ?? "tool", data.ok as boolean | undefined, data.output as string | undefined, data.error as string | undefined);
-        flushLog();
-        emitRun("toolDone", { tool: toolName, ok: data.ok, output: data.output, error: data.error, callId });
-      }
-      return;
-    }
-    if (projection.kind === "usage") {
-      recordLlmUsage({
-        source: "automation",
-        sessionId: run.id,
-        projectId: automation.projectId ?? undefined,
-        workspaceId: automation.workspaceId,
-        provider,
-        model: cachedModel,
-        baseUrl: cachedBaseUrl,
-         promptTokens: (data.promptTokens as number) ?? 0,
-         completionTokens: (data.completionTokens as number) ?? 0,
-         reasoningTokens: (data.reasoningTokens as number) ?? 0,
-         cacheReadTokens: data.cacheReadTokens as number,
-         cacheCreationTokens: data.cacheCreationTokens as number,
-         costUsd: data.costUsd as number,
-      });
-      return;
-    }
   };
+
+  const fold = createSessionEventFold({
+    onText: (text) => { finalContent += text; emitRun("token", { delta: text }); },
+    onReasoning: (text) => { log.thoughts += text; emitRun("thought", { delta: text }); },
+    onToolCall: (call) => {
+      const label = externalToolLabel(call.name, db);
+      currentTool(call.name);
+      logTool(call.name, label, call.args);
+      emitRun("tool", { tool: call.name, label, args: call.args, status: "start", callId: call.callId });
+    },
+    onToolResult: (result) => {
+      recordArtifact(result.name, result.meta?.cairnRef as { type: "note" | "task"; id: string; title: string } | undefined);
+      logToolDone(result.name, result.ok, result.output, result.error);
+      flushLog();
+      emitRun("toolDone", { tool: result.name, ok: result.ok, output: result.output, error: result.error, callId: result.callId });
+    },
+    onUsage: (usage) => recordLlmUsage({ source: "automation", sessionId: run.id, projectId: automation.projectId ?? undefined, workspaceId: automation.workspaceId, provider, model: cachedModel, baseUrl: cachedBaseUrl, promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, reasoningTokens: usage.reasoningTokens, cacheReadTokens: usage.cacheReadTokens, cacheCreationTokens: usage.cacheCreationTokens, costUsd: usage.costUsd }),
+  });
 
   // The automation-specific tools registered on the coding agent: run_script,
   // write_run_file (agent→script data bridge into runDir), deliver_file (copy
@@ -621,6 +592,7 @@ export async function runAutomation(
         return () => { pendingAutomationApprovals.delete(callId); };
       },
     },
+    onSessionEvent: fold,
   });
   const result = { content: finalContent || recipe, exhausted: !codingResult.ok, error: codingResult.error };
   // Run settled — unbind the plugin confirm seam (its asks are all resolved).

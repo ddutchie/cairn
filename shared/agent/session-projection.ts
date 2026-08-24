@@ -1,18 +1,10 @@
 /** Typed, non-durable UI projections for a Cairn agent session. */
 
 export type SessionProjectionKind =
-  | "token" | "thought" | "tool" | "done" | "error" | "usage"
   | "approval" | "question" | "subagent-trace" | "todos" | "plan-note"
-  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result"
-  | "tools-ready" | "step";
+  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result";
 
 export type SessionProjectionData = {
-  token: { delta: string };
-  thought: { delta: string };
-  tool: Record<string, unknown>;
-  done: Record<string, unknown>;
-  error: { error: string };
-  usage: Record<string, unknown>;
   approval: Record<string, unknown>;
   question: { callId: string; questions: unknown[] };
   "subagent-trace": Record<string, unknown>;
@@ -23,8 +15,6 @@ export type SessionProjectionData = {
   retry: { attempt: number; maxRetries: number; delayMs: number; error: string };
   compact: { status: "start" | "end"; auto?: boolean };
   "compact-result": { messageCount: number; summary: string };
-  "tools-ready": Record<string, never>;
-  step: Record<string, never>;
 };
 
 export type SessionProjection<K extends SessionProjectionKind = SessionProjectionKind> = {

@@ -9,10 +9,9 @@ describe("session projection envelope", () => {
 
   it("dispatches only the matching kind", () => {
     const seen: string[] = [];
-    dispatchSessionProjection(makeSessionProjection("s1", "step", {}), {
-      step: () => { seen.push("step"); },
+    dispatchSessionProjection(makeSessionProjection("s1", "retry", { attempt: 1, maxRetries: 3, delayMs: 10, error: "busy" }), {
       retry: () => { seen.push("retry"); },
     });
-    expect(seen).toEqual(["step"]);
+    expect(seen).toEqual(["retry"]);
   });
 });

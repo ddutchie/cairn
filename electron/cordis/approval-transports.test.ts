@@ -51,21 +51,20 @@ describe("confirm transport registry", () => {
 });
 
 describe("interactive confirm transport", () => {
-  it("approve: synthesizes pending chip → card → completion, records grant:'session'", async () => {
+  it("approve: emits approval state and records grant:'session'", async () => {
     const { transport, sent } = makeDeps("px", { decide: () => ({ approved: true, grant: "session" }) });
     const outcome = await transport.confirm({ title: "Publish draft?", toolName: "publish_note", args: { id: "n1" } });
     expect(outcome).toBe<PluginConfirmOutcome>("allowed-once");
-    expect(events(sent, "tool")).toBe(2); // pending + end
-    expect(sent[0].payload).toMatchObject({ data: { name: "publish_note", status: "pending" } });
-    expect(sent[sent.length - 1].payload).toMatchObject({ data: { status: "end", ok: true } });
+    expect(events(sent, "tool")).toBe(0);
+    expect(sent[0].payload).toMatchObject({ data: { name: "publish_note", status: "required" } });
     expect(getSessionGrants("px").tools.has("publish_note")).toBe(true);
   });
 
-  it("deny: settles rejected with a denied completion and no grant", async () => {
+  it("deny: settles rejected with no grant", async () => {
     const { transport, sent } = makeDeps("px", { decide: () => ({ approved: false }) });
     const outcome = await transport.confirm({ toolName: "publish_note" });
     expect(outcome).toBe("rejected");
-    expect(sent[sent.length - 1].payload).toMatchObject({ data: { status: "end", ok: false } });
+    expect(sent[sent.length - 1].payload).toMatchObject({ data: { status: "required" } });
     expect(getSessionGrants("px").tools.size).toBe(0);
   });
 
@@ -77,7 +76,7 @@ describe("interactive confirm transport", () => {
     expect(sent.filter((s) => s.payload.kind === "approval" && (s.payload.data as { status?: string }).status === "expired")).toHaveLength(1);
     // The timeout won — no standing grant may leak through.
     expect(getSessionGrants("px").tools.has("deploy")).toBe(false);
-    expect(sent[sent.length - 1].payload).toMatchObject({ data: { status: "end", ok: false } });
+    expect(sent[sent.length - 1].payload).toMatchObject({ data: { status: "expired" } });
   });
 
   it("pre-aborted signal settles cancelled immediately without asking", async () => {

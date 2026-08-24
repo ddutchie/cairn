@@ -121,7 +121,7 @@ export function buildCairnTool(
 
     async execute(args, runContext) {
       // Subagent-originated tool calls must NOT fire the MAIN thread's emit/emitDone
-      // (session:tool) — those chips belong to the parent
+      // (tool projection) — those chips belong to the parent
       // chat bubble. A child session (header.origin === 'subagent') is already
       // bridged to session:subagent-tool-call by cairnSubagentPlugin via session/event.
       // Without this guard, a subagent's get_active_context/get_note leaked chips

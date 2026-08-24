@@ -25,7 +25,6 @@ import "./ctx-augment";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos, updateCodingSession } from "../db/queries";
-import { resultContentError } from "../lib/tool-result";
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
@@ -205,7 +204,6 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     // fell back to a `${sessionId}:sub:` prefix scheme that nothing emitted,
     // making every coding-agent subagent trace unreachable at runtime.
     const parentSession = header?.parentSession != null ? String(header.parentSession) : undefined;
-    const seq = event.seq;
 
     if (event.type === "user/message") {
       // The child's first non-snapshot user/message is the delegated prompt.
@@ -288,7 +286,6 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       const reason = (event.data as { reason?: { kind?: string } }).reason;
       const result = reason?.kind === "completed" ? "" : ` (${reason?.kind ?? "error"})`;
        sendProjection(send, sessionId, "subagent-trace", { trace: "status", status: "done", childId, parentSession, result, error: reason?.kind === "completed" ? undefined : reason?.kind });
-      void seq;
       return;
     }
   });
@@ -575,18 +572,14 @@ interface DshTodoWrite {
 }
 
 /**
- * Map the parent coding session's `session/event` stream to `pi-agent:*` events.
+ * Map the parent coding session's `session/event` stream to typed Cairn
+ * projections.
  * Mirrors the built-in runSession() wiring in electron/ipc/session-runtime-handlers.ts, but
  * driven entirely from dsh events (the dsh agent loop runs the model↔tools loop
  * internally — we only translate what it emits).
  *
- * Emitted channels (payloads match the built-in contract exactly):
- *   pi-agent:token/{delta}, pi-agent:thought/{delta},
- *   pi-agent:usage/{promptTokens,completionTokens,reasoningTokens},
- *   pi-agent:tools-ready/{}, pi-agent:tool/{name,label,args,callId,status,ok,output},
- *   pi-agent:step/{}, pi-agent:done/{}, pi-agent:error/{error},
- *   pi-agent:note-updated/{noteId,content}, pi-agent:todos/{todos},
- *   pi-agent:plan-note/{noteId}
+ * The projection kinds mirror the renderer's presentation contract; raw DSH
+ * events remain available through the session:event stream.
  *
  * Token/reasoning deltas are streamed live; the final assistant/message only
  * fills gaps (never re-emits streamed content — same guard as cairnSubagentPlugin).
@@ -596,16 +589,6 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 
   // Track per-callId tool names (parallel calls to different tools resolve by callId).
   const callName = new Map<string, string>();
-  const callLabel = new Map<string, string>();
-  // Set when the first tool/call of the session is seen — emit tools-ready once.
-  let toolsReadyFired = false;
-  // Whether we've seen a turn/start past the first (dsh emits one per step).
-  let firstTurnStarted = false;
-  // Delays: streamed deltas must not be re-emitted by the final assistant/message.
-  const streamedText = new Set<string>();
-  const streamedReasoning = new Set<string>();
-  // Terminal-guard: emit done/error exactly once per turn.
-  let ended = false;
   // Latest compaction summary text, captured on compaction/summary and reported
   // to the renderer on compaction/end (auto-compaction is step-boundary driven).
   let lastCompactSummary = "";
@@ -613,20 +596,13 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 
   const emit = (kind: SessionProjectionKind, payload: Record<string, unknown>) => sendProjection(send, sessionId, kind, payload);
 
-  const finish = (kind: "done" | "error", error?: string) => {
-    if (ended) return;
-    ended = true;
-    if (kind === "done") emit("done", {});
-    else emit("error", { error: error ?? "Agent error" });
-  };
-  if (signal?.aborted) finish("done");
+  void signal;
 
   ctx.on("session/event", (session: Session, event: SessionEvent) => {
     // Only the parent session (this loop's dsh attempt id) — children are bridged
     // by cairnSubagentPlugin.
     if (String((session as { id?: unknown }).id) !== matchSessionId) return;
     onSessionEvent?.(event);
-    const seq = event.seq;
 
     // ── Plan-mode flips (dsh-owned) ─────────────────────────────────────────
     // /plan (or planMode.set) commits a log-only plan/mode event; forward it so
@@ -637,55 +613,12 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       return;
     }
 
-    // ── Step boundary ────────────────────────────────────────────────────────
-    // dsh opens a durable turn per step. The builtin fires onStepStart for every
-    // step after the first so the renderer finalises the previous assistant
-    // message. Map the first turn/start as tools/stream start and later ones as
-    // step boundaries.
-    if (event.type === "turn/start") {
-      if (!firstTurnStarted) firstTurnStarted = true;
-       else emit("step", {});
-      return;
-    }
-
-    // ── Token / reasoning deltas ─────────────────────────────────────────────
-    if (event.type === "assistant/chunk") {
-      const c = (event.data as { chunk?: { type?: string; text?: string; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }).chunk;
-      if (!c) return;
-      if (c.type === "text-delta" && c.text) {
-        streamedText.add(sessionId);
-         emit("token", { delta: c.text });
-        return;
-      }
-      if (c.type === "reasoning-delta" && c.text) {
-        streamedReasoning.add(sessionId);
-         emit("thought", { delta: c.text });
-        return;
-      }
-      if (c.type === "usage" && c.usage) {
-         emit("usage", {
-          promptTokens: c.usage.inputTokens ?? 0,
-          completionTokens: c.usage.outputTokens ?? 0,
-          reasoningTokens: c.usage.reasoningTokens ?? 0,
-        });
-        return;
-      }
-      return;
-    }
-
     // ── Tool call (model's request, before execution) ────────────────────────
     if (event.type === "tool/call") {
-      if (!toolsReadyFired) {
-        toolsReadyFired = true;
-         emit("tools-ready", {});
-      }
       const d = event.data as { name: string; arguments?: string; callId?: string };
       if (d.callId) callName.set(d.callId, d.name);
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(d.arguments ?? "{}") as Record<string, unknown>; } catch { /* keep {} */ }
-      const callId = d.callId ?? `${d.name}:${seq}`;
-      const label = d.name;
-      callLabel.set(callId, label);
 
       // Plan-mode approval capture (dsh-native flow): when the model calls
       // exit_plan_mode, the FULL markdown plan is in args.plan. Persist it
@@ -708,9 +641,6 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
         }
       }
 
-      // "pending" chip (same as builtin onToolPending) — frontend treats it as a
-      // running chip immediately, matching the streaming pending-state UX.
-       emit("tool", { name: d.name, label, args, callId, status: "pending" });
       return;
     }
 
@@ -719,18 +649,9 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       const msg = (event.data as { message?: { source?: { callId?: string }; content?: Array<{ type?: string; isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } }).message;
       const callId = msg?.source?.callId;
       const block = msg?.content?.[0];
-      const isError = block?.isError === true;
       const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
       const name = callId ? (callName.get(callId) ?? "tool") : "tool";
-      const label = callId ? (callLabel.get(callId) ?? name) : name;
-      // ok = !isError and not a Cairn `{error:…}` return (same detection as builtin).
-      const ok = !isError && resultContentError(output) === undefined;
-       emit("tool", {
-        name, label, callId, status: "end", ok,
-        output: isError ? undefined : output,
-        args: undefined,
-      });
-
+      const ok = block?.isError !== true;
       // ── note-updated: after a note-write tool, push fresh note content so the
       // plan task list updates live (mirrors builtin NOTE_WRITE_TOOLS handling).
       const db = getDb(ctx);
@@ -767,19 +688,6 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
           saveSessionTodos(db, sessionId, list);
           emit("todos", { todos: getSessionTodos(db, sessionId) });
         } catch { /* non-critical */ }
-      }
-      return;
-    }
-
-    // ── Final assistant message: fill text/reasoning gaps only ───────────────
-    if (event.type === "assistant/message") {
-      if (!streamedText.has(sessionId)) {
-        const text = eventText(event);
-         if (text) emit("token", { delta: text });
-      }
-      if (!streamedReasoning.has(sessionId)) {
-        const { reasoning } = eventReasoning(event);
-         if (reasoning) emit("thought", { delta: reasoning });
       }
       return;
     }
@@ -822,22 +730,6 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       return;
     }
 
-    // ── Turn end: map completion to done/error ───────────────────────────────
-    // A user turn is multiple steps (LLM → tool → LLM → tool → answer).
-    // Only the final turn/end is "completed"; intermediate steps surface as
-    // `step/end`, and a turn that ends for any other terminal reason (aborted,
-    // blocked, error, max-tokens) is the failure case. Do NOT treat a
-    // non-completed turn as an error while steps are still in flight — the
-    // loop will keep stepping until it truly completes.
-    if (event.type === "turn/end") {
-      const reason = (event.data as { reason?: { kind?: string } }).reason?.kind;
-      if (reason === "completed") finish("done");
-      else if (reason === "aborted" || reason === "blocked" || reason === "error" || reason === "max-tokens") {
-        if (reason === "error") console.error("[cordis] turn/end error reason:", JSON.stringify((event.data as { reason?: unknown }).reason));
-        finish("error", reason ? `Agent turn ended abnormally (${reason})` : "Agent turn ended abnormally");
-      }
-      return;
-    }
   });
 }
 
@@ -847,8 +739,8 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 // they run. dsh's approval seam (ctx.approval) + tools pipeline provide the
 // mechanism: a `tools/pre-execute` handler returns {kind:'ask'} for a mutating
 // tool, the pipeline calls ctx.approval.request, and this plugin's answerer
-// bridges that to Cairn's renderer confirm UI (pi-agent:tool-confirm-required ⇄
-// pi-agent:respond-tool). Read-only tools always pass (never ask).
+// bridges that to Cairn's renderer confirm UI (session:tool-confirm-required ⇄
+// session:respond-tool). Read-only tools always pass (never ask).
 
 /** Tools that never need approval (read-only / safe) — canonical list lives in
  *  shared/agent/tool-risk.ts, the same source the renderer's approval card uses
@@ -886,8 +778,8 @@ export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
  * No-op when autoApprove is true. Otherwise:
  *   1. tools/pre-execute → {kind:'ask'} for any non-safe tool (mutating) whose
  *      tool name / exact bash command hasn't been granted for the session.
- *   2. approval/request answerer → emit pi-agent:tool-confirm-required, block on
- *      pi-agent:respond-tool, map to allowed-once / rejected.
+ *   2. approval/request answerer → emit session:tool-confirm-required, block on
+ *      session:respond-tool, map to allowed-once / rejected.
  * Grants (grant:'session' for a tool, grant:'command' for an exact bash
  * command) live in the per-session approval-grants store so they survive this
  * turn — this mount is disposed with it.

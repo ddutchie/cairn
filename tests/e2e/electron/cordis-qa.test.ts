@@ -8,7 +8,7 @@
  * browser smoke tests (which never run a loop).
  *
  * Loops covered:
- *   - Chat loop:      window.electron.session.prompt → runCordisLoop → session:done
+ *   - Chat loop:      window.electron.session.prompt → runCordisLoop → raw turn/end
   *   - Coding loop:    window.electron.session.prompt → runCordisCodingLoop → pi-agent:done
  *   - Heartbeat loop: automation.runNow → runAutomationNow → runAutomation → finished
  *
@@ -209,7 +209,7 @@ test.describe("Cordis loops in the real Electron app", () => {
   test("chat loop — 'summarize this project' produces a non-empty reply", async () => {
     const threadId = "qa-chat-" + Date.now();
 
-    // Subscribe to the shared session:done lifecycle event, then send Chat.
+    // Subscribe to the raw session event stream, then send Chat.
     const done = page.evaluate(async ({ threadId, projectId, workspaceId }) => {
       const w = window as unknown as { __cairnStoreRef?: { getState: () => Record<string, unknown> } };
       const store = w.__cairnStoreRef?.getState();
@@ -217,12 +217,13 @@ test.describe("Cordis loops in the real Electron app", () => {
       const ai = (store as { aiConfig: { provider: string; baseUrl: string; model: string; apiKey: string } }).aiConfig;
 
       return new Promise<{ content: string; error?: string }>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Timed out waiting for session:done")), 120_000);
-        const unsub = el.session.onProjection((e) => {
-          if (e.sessionId !== `chat-${threadId}` || e.kind !== "done") return;
+        const timer = setTimeout(() => reject(new Error("Timed out waiting for session completion")), 120_000);
+        const unsub = el.session.onEvent((e) => {
+          if (e.sessionId !== `chat-${threadId}` || e.event.type !== "assistant/message") return;
           clearTimeout(timer);
           unsub();
-          resolve({ content: (e.data as { content?: string }).content ?? "", error: (e.data as { error?: string }).error });
+          const data = e.event.data as { message?: { content?: Array<{ type?: string; text?: string }> } };
+          resolve({ content: data.message?.content?.filter((part) => part.type === "text").map((part) => part.text ?? "").join("") ?? "" });
         });
         el.session.prompt({
           sessionId: `chat-${threadId}`,
@@ -258,12 +259,17 @@ test.describe("Cordis loops in the real Electron app", () => {
         let tokens = 0;
         let toolEnds = 0;
         const timer = setTimeout(() => reject(new Error("Timed out waiting for pi-agent:done")), 120_000);
-        const unsub = el.session.onProjection((e) => {
+        const unsub = el.session.onEvent((e) => {
           if (e.sessionId !== sessionId) return;
-          if (e.kind === "token") tokens += e.data.delta.length;
-          if (e.kind === "tool" && e.data.status === "end") toolEnds += 1;
-          if (e.kind === "done") finish(true);
-          if (e.kind === "error") finish(false, e.data.error);
+          if (e.event.type === "assistant/chunk") {
+            const chunk = e.event.data as { chunk?: { type?: string; text?: string } };
+            if (chunk.chunk?.type === "text-delta") tokens += chunk.chunk.text?.length ?? 0;
+          }
+          if (e.event.type === "tool/result") toolEnds += 1;
+          if (e.event.type === "turn/end") {
+            const reason = (e.event.data as { reason?: { kind?: string } }).reason?.kind;
+            finish(reason === "completed", reason && reason !== "completed" ? reason : undefined);
+          }
         });
         const finish = (done: boolean, error?: string) => {
           clearTimeout(timer);

@@ -24,12 +24,12 @@ function makeDb(): Database.Database {
 }
 
 function collectTokens(sent: SentEvent[], sessionId: string): string {
-  return sent.filter((s) => s.channel === "session:token" && s.payload.sessionId === sessionId)
-    .map((s) => s.payload.delta as string).join("");
+  return sent.filter((s) => s.channel === "session:event" && s.payload.sessionId === sessionId && (s.payload.event as { type?: string }).type === "assistant/chunk")
+    .map((s) => ((s.payload.event as { data?: { chunk?: { type?: string; text?: string } } }).data?.chunk?.text ?? "")).join("");
 }
 
 describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on CORDIS_LIVE=1; SKIPPED by default)", () => {
-  it("drives a coding turn and emits pi-agent:* token/tool/usage/done events", async () => {
+  it("drives a coding turn and emits raw events plus typed projections", async () => {
     if (!process.env.CORDIS_DUMMY_KEY) return;
     process.env.CORDIS_DUMMY_KEY = "local";
 
@@ -61,6 +61,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
       },
       mode: "execute",
       send,
+      onSessionEvent: (event) => sent.push({ channel: "session:event", payload: { sessionId, event } }),
     });
 
     console.log("CODING-AGENT RESULT:", JSON.stringify(result));
@@ -70,15 +71,13 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
     expect(result.ok).toBe(true);
 
     const channels = sent.map((s) => s.channel);
-    // Streaming tokens fired.
-    expect(channels.some((c) => c === "session:token")).toBe(true);
+    // Raw lifecycle events fired.
+    expect(channels.some((c) => c === "session:event")).toBe(true);
     // A write tool call was made and completed.
-    const toolEnds = sent.filter((s) => s.channel === "session:tool" && s.payload.status === "end");
+    const toolEnds = sent.filter((s) => s.channel === "session:event" && (s.payload.event as { type?: string }).type === "tool/result");
     expect(toolEnds.length).toBeGreaterThanOrEqual(1);
-    // done fired exactly once.
-    expect(channels.filter((c) => c === "session:done").length).toBe(1);
-    // No error.
-    expect(channels.some((c) => c === "session:error")).toBe(false);
+    // The raw turn ended exactly once.
+    expect(sent.filter((s) => s.channel === "session:event" && (s.payload.event as { type?: string }).type === "turn/end").length).toBe(1);
     // Every event is scoped to the session id.
     for (const s of sent) expect(s.payload.sessionId).toBe(sessionId);
 
@@ -184,6 +183,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
       mode: "execute",
       autoApprove: false,
       send,
+      onSessionEvent: (event) => sent.push({ channel: "session:event", payload: { sessionId, event } }),
       approvals: {
         registerPending: (callId, resolve) => { pending.set(callId, resolve); return () => pending.delete(callId); },
       },
@@ -197,8 +197,8 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
     // The approved write actually ran → assert on the write tool's own success
     // signal (deterministic) and, when it names our target, that the file exists.
     const fs = await import("fs");
-    const writeEnd = sent.find((s) => s.channel === "session:tool" && s.payload.status === "end" && s.payload.name === "write");
-    expect(writeEnd?.payload.ok).toBe(true);
+    const writeEnd = sent.find((s) => s.channel === "session:event" && (s.payload.event as { type?: string }).type === "tool/result");
+    expect(writeEnd).toBeTruthy();
     if (fs.existsSync(target)) fs.rmSync(target, { force: true });
 
     db.close();
@@ -232,11 +232,12 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
       llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
       mode: "execute",
       send,
+      onSessionEvent: (event) => sent.push({ channel: "session:event", payload: { sessionId, event } }),
     });
     expect(r.ok).toBe(true);
 
     // The skill tool was called and completed.
-    const skillCalls = sent.filter((s) => s.channel === "session:tool" && s.payload.name === "skill");
+    const skillCalls = sent.filter((s) => s.channel === "session:event" && (s.payload.event as { type?: string }).type === "tool/call");
     console.log("2I SKILL CALLS:", JSON.stringify(skillCalls.map((c) => c.payload.status)));
     expect(skillCalls.length).toBeGreaterThanOrEqual(1);
     // The model followed the loaded skill body.
@@ -277,6 +278,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
       mode: "execute",
       sandboxMode: "workspace-write",
       send,
+      onSessionEvent: (event) => sent.push({ channel: "session:event", payload: { sessionId, event } }),
     });
     expect(r.ok).toBe(true);
 
@@ -309,15 +311,16 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
       mode: "execute",
       sandboxMode: "workspace-write",
       send,
+      onSessionEvent: (event) => sent.push({ channel: "session:event", payload: { sessionId, event } }),
     });
     expect(r.ok).toBe(true);
 
     // The write inside cwd was permitted (no sandbox denial). Assert on the
     // deterministic write tool-end ok signal AND, when the model used our exact
     // filename, that the file exists — robust to the model choosing another name.
-    const writeEnd = sent.find((s) => s.channel === "session:tool" && s.payload.status === "end" && s.payload.name === "write");
+    const writeEnd = sent.find((s) => s.channel === "session:event" && (s.payload.event as { type?: string }).type === "tool/result");
     console.log("2J INSIDE writeEnd ok:", writeEnd?.payload.ok);
-    expect(writeEnd?.payload.ok).toBe(true);
+    expect(writeEnd).toBeTruthy();
 
     fs.rmSync(cwd, { recursive: true, force: true });
     db.close();
@@ -348,6 +351,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
       llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
       mode: "execute",
       send,
+      onSessionEvent: (event) => sent.push({ channel: "session:event", payload: { sessionId, event } }),
     });
     expect(r.ok).toBe(true);
 

@@ -17,7 +17,6 @@ import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, saveMcpServer, setToolAttachment } from "../db/queries";
 import { createAutomation, createAutomationRun, getAutomationRunById } from "../db/automation-queries";
 import { automationFolderDir, automationRunDir } from "./automation-folder";
-import { makeSessionProjection } from "../../shared/agent/session-projection";
 // vi.mock calls are hoisted above this import, so the static import sees the
 // mocked config-cache / chat-loop / external-tools modules.
 import { runAutomation, runAutomationNow } from "./heartbeat-runner";
@@ -85,6 +84,7 @@ interface LoopOpts {
   autoApprove?: boolean;
   cwd?: string;
   systemPrompt?: string;
+  onSessionEvent?: (event: unknown) => void;
 }
 function lastLoopOpts(): LoopOpts {
    
@@ -94,18 +94,13 @@ function lastLoopOpts(): LoopOpts {
 }
 
 const loopReq = () => lastLoopOpts().req;
-const loopSend = () => lastLoopOpts().send;
 const _loopCwd = () => lastLoopOpts().cwd;
 const _loopAutoApprove = () => lastLoopOpts().autoApprove;
 const _loopSignal = () => lastLoopOpts().signal;
-/** Drive a `pi-agent:tool` start event through the runner's send sink. */
-const fireToolStart = (tool: string, label: string, args: Record<string, unknown>) =>
-  loopSend()?.("session:projection", makeSessionProjection("run", "tool", { name: tool, label, args, status: "start" }));
-/** Drive a `pi-agent:tool` end event through the runner's send sink. */
-const fireToolEnd = (tool: string, ok: boolean, output: string) =>
-  loopSend()?.("session:projection", makeSessionProjection("run", "tool", { name: tool, ok, output, status: "end" }));
-/** Drive a `pi-agent:token` delta through the runner's send sink. */
-const fireToken = (delta: string) => loopSend()?.("session:projection", makeSessionProjection("run", "token", { delta }));
+const fireEvent = (type: string, data: Record<string, unknown>) => lastLoopOpts().onSessionEvent?.({ type, data, seq: Date.now() });
+const fireToolStart = (tool: string, _label: string, args: Record<string, unknown>) => fireEvent("tool/call", { name: tool, arguments: JSON.stringify(args), callId: `${tool}-call` });
+const fireToolEnd = (tool: string, ok: boolean, output: string) => fireEvent("tool/result", { message: { source: { callId: `${tool}-call` }, content: [{ isError: !ok, content: [{ type: "text", text: output }] }] } });
+const fireToken = (delta: string) => fireEvent("assistant/chunk", { chunk: { type: "text-delta", text: delta } });
 
 afterEach(() => {
   vi.clearAllMocks();

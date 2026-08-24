@@ -5,14 +5,13 @@
  *
  *   - mounts the shared Cordis tree + pi-ai adapter (protocol auto-selected),
  *   - mounts the coding capability stack (mountCodingStack) + Cairn data tools,
- *   - mounts cairnCodingPlugin (bridges dsh session/event → pi-agent:* IPC),
+ *   - mounts cairnCodingPlugin (bridges dsh session/event → Cairn projections),
  *   - creates a dsh agent for one turn, follows up with the user message,
  *     and awaits idle (the dsh loop runs all tool steps to completion).
  *
- * Every `pi-agent:*` event (token/thought/tool/usage/step/done/error/
- * note-updated/todos/plan-note) is emitted by cairnCodingPlugin via `send`.
- * The terminal promise resolves on `pi-agent:done`/`pi-agent:error` from the
- * plugin's turn/end mapping, or rejects on an unhandled throw.
+ * Presentation updates are emitted as typed session projections. The terminal
+ * promise resolves from the raw DSH `turn/end` event, or rejects on an
+ * unhandled throw.
  */
 import { Context } from "@deepseek-ai/cordis";
 // See ctx-augment.ts for the rationale — same augmentation load.
@@ -69,7 +68,7 @@ export interface RunCordisCodingOptions {
    * user-consented path).
    */
   role?: "default" | "automation-dev";
-  /** Emit a pi-agent:* IPC event (sessionId NOT yet tagged by the caller). */
+  /** Emit a session projection (sessionId NOT yet tagged by the caller). */
   send: (channel: string, payload: Record<string, unknown>) => void;
   /** Interactive questions (ask_questions) adapter for the coding session. */
   questions?: {
@@ -111,6 +110,16 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   const sandboxMode = opts.sandboxMode ?? "workspace-write";  // autoApprove defaults ON; forced ON if no approvals adapter was supplied
   // (no way to prompt → don't block on an approval that can never resolve).
   const autoApprove = opts.autoApprove !== false ? true : (approvals ? false : true);
+  let resolveTerminal: (r: RunCordisCodingResult) => void = () => {};
+  const onSessionEvent = (event: import("@deepseek-ai/dsh-session").SessionEvent) => {
+    opts.onSessionEvent?.(event);
+    if (event.type !== "turn/end") return;
+    const reason = (event.data as { reason?: { kind?: string } }).reason?.kind;
+    if (reason === "completed") resolveTerminal({ ok: true });
+    else if (["aborted", "blocked", "error", "max-tokens"].includes(reason ?? "")) {
+      resolveTerminal({ ok: false, error: reason ? `Agent turn ended abnormally (${reason})` : "Agent turn ended abnormally" });
+    }
+  };
 
   // automation-dev persona: exclude every Cairn data tool. The pre-Cordis
   // AUTOMATION_DEV_TOOLS whitelist was {read, write, edit, grep, find, ls} —
@@ -132,7 +141,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       ...questions,
        emitQuestions: (requestId, qs) => questions.send("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions: qs }) as never),
       } : undefined,
-    onSessionEvent: opts.onSessionEvent,
+     onSessionEvent,
     setup: async ({ llmConfig, resources, mount }) => {
       const toolDisposers = registerCairnTools(ctx, {
         getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
@@ -251,16 +260,10 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // gives the coding agent stateful, resumable multi-turn sessions WITHOUT
     // storing transcripts in Cairn's SQLite (the DB is for MCP/tool access).
     const attemptSessionId = SessionId(sessionId);
-    // Route every pi-agent:* event to BOTH the renderer (frontend `send`) and a
-    // terminal resolver so the turn promise settles on done/error. cairnCodingPlugin
-    // is mounted with `send` = this combined function.
-    let resolveTerminal: (r: RunCordisCodingResult) => void = () => {};
+    // Route presentation projections to the renderer. Terminal resolution is
+    // handled separately from the raw DSH event callback above.
     const terminal = new Promise<RunCordisCodingResult>((resolve) => { resolveTerminal = resolve; });
-    const combinedSend = (channel: string, payload: Record<string, unknown>) => {
-      if (channel === "session:projection" && payload.kind === "done") { resolveTerminal({ ok: true }); }
-      else if (channel === "session:projection" && payload.kind === "error") { resolveTerminal({ ok: false, error: ((payload.data as { error?: string })?.error) ?? "Agent error" }); }
-      send(channel, payload);
-    };
+    const combinedSend = (channel: string, payload: Record<string, unknown>) => send(channel, payload);
 
     // Seed plan state only for a new/legacy session. Once dsh has a plan/mode
     // event, its session log is authoritative and must not be overwritten by
@@ -284,7 +287,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // Mount the bridge AFTER the agent exists so it knows the dsh session id to
     // match events against (= the caller's sessionId, which is also how events
     // are tagged).
-      await mount(cairnCodingPlugin, { sessionId, matchSessionId: String(attemptSessionId), mode, send: combinedSend, signal, onSessionEvent: opts.onSessionEvent });
+      await mount(cairnCodingPlugin, { sessionId, matchSessionId: String(attemptSessionId), mode, send: combinedSend, signal });
 
     // Build the user message content: text + any image/PDF attachments. Images
     // are admitted through the mounted attachment store and become ImageBlocks

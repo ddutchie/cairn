@@ -9,7 +9,7 @@
  *
  * Design notes:
  *  - Reuses the NATIVE approval UI end-to-end: a synthetic pending chip makes
- *    the ask visible in the transcript, `pi-agent:tool-confirm-required` turns
+ *    the ask visible in the transcript, `session:tool-confirm-required` turns
  *    it into an ApprovalCard (risk label/grants from shared/agent/tool-risk),
  *    and resolution rides the same `pi-agent:respond-tool` pairing as native
  *    asks — including standing-grant recording.
@@ -68,24 +68,15 @@ export interface InteractiveConfirmTransportDeps {
 export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransportDeps): ConfirmTransport {
   const { sessionId, send, registerPending, timeoutMs } = deps;
 
-  const emitEnd = (callId: string, name: string, args: Record<string, unknown>, ok: boolean, output: string): void => {
-    send("session:projection", makeSessionProjection(sessionId, "tool", { name, label: name, args, callId, status: "end", ok, output }) as never);
-  };
-
   return {
     confirm(req) {
       // Already-dead request: never surface UI, never register anything.
       if (req.signal?.aborted) return Promise.resolve<PluginConfirmOutcome>("cancelled");
       const name = req.toolName ?? "plugin_confirm";
       const title = req.title ?? name;
-      const args = { ...(req.args ?? {}), ...(req.detail ? { detail: req.detail } : {}) };
       const callId = `confirm-${newId()}`;
       const grants = getSessionGrants(sessionId);
 
-      // Synthetic pending chip → ApprovalCard. Same channels/payload shapes as
-      // cairnCodingPlugin's tool/call bridging so the renderer needs zero new
-      // surfaces for a plugin ask.
-      send("session:projection", makeSessionProjection(sessionId, "tool", { name, label: title, args, callId, status: "pending" }) as never);
       send("session:projection", makeSessionProjection(sessionId, "approval", { status: "required", name, label: title, callId }) as never);
 
       return new Promise<PluginConfirmOutcome>((resolve) => {
@@ -102,16 +93,11 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
           for (const off of onAborts) off();
           resolve(outcome);
         };
-        const finish = (approved: boolean, output: string): void => {
-          emitEnd(callId, name, args, approved, output);
-        };
         disposeRef.current = registerPending(callId, (decision) => {
           if (decision.approved && decision.grant === "session") grants.tools.add(name);
-          finish(decision.approved, decision.approved ? "Approved." : "Denied.");
           settle(decision.approved ? "allowed-once" : "rejected");
         });
         const onAbort = () => {
-          finish(false, "Cancelled while awaiting confirmation.");
           settle("cancelled");
         };
         req.signal?.addEventListener?.("abort", onAbort, { once: true });
@@ -119,7 +105,6 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
         timer = setTimeout(() => {
           if (settled) return;
           send("session:projection", makeSessionProjection(sessionId, "approval", { status: "expired", name, label: title, callId }) as never);
-          finish(false, "No response within the time limit — not executed.");
           settle("cancelled");
         }, timeoutMs ?? APPROVAL_TIMEOUT_MS);
       });
