@@ -17,6 +17,9 @@ import { useCairnStore } from "@/store";
 
 registerBuiltinToolViews();
 
+const FILE_CONTEXT_TOOLS = new Set(["read", "grep", "find", "codebase_file_symbols", "codebase_reindex_file"]);
+const DIFF_CONTEXT_TOOLS = new Set(["edit", "write", "write_file"]);
+
 interface ConversationToolCallProps {
   toolCall: ConversationToolCall;
   sessionId?: string;
@@ -31,8 +34,13 @@ function connectorForTool(name: string, connectors?: Record<string, ConnectorMet
 function referencedPath(toolCall: ConversationToolCall): string | undefined {
   const args = toolCall.args;
   if (!args) return undefined;
-  for (const key of ["path", "filePath", "file_path", "filename"]) {
-    if (typeof args[key] === "string" && args[key].trim()) return args[key];
+  for (const key of ["filePath", "file_path", "filename", "path", "file"]) {
+    if (typeof args[key] !== "string" || !args[key].trim()) continue;
+    const path = args[key].trim();
+    // Search tools often receive a directory in `path`; only expose a file
+    // action when the argument identifies a concrete file-like path.
+    if ((key === "path" || key === "file") && !/[\\/][^\\/]+\.[^\\/]+$/.test(path)) continue;
+    return path;
   }
   return undefined;
 }
@@ -73,7 +81,7 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
   const hasOutput = Boolean(toolCall.output);
   const summary = humanizeTool(toolCall.name, toolCall.args);
   const path = referencedPath(toolCall);
-  const contextType = toolCall.name === "read" ? "file" : toolCall.name === "edit" || toolCall.name === "write" ? "diff" : undefined;
+  const contextType = FILE_CONTEXT_TOOLS.has(toolCall.name) ? "file" : DIFF_CONTEXT_TOOLS.has(toolCall.name) ? "diff" : undefined;
   return (
     <div>
       <button type="button" onClick={() => hasOutput && setExpanded((value) => !value)} className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit text-left", hasOutput && "hover:border-[var(--accent)] cursor-pointer", !hasOutput && "cursor-default")}>
