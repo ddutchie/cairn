@@ -6,7 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatDateCompact } from "@/lib/utils";
 import type { ChatThread, PiSessionSummary, SessionKind, TerminalSession } from "@/types";
-import { useAgentSessionActions } from "./useAgentSessionActions";
+import { useSessionNavigation } from "./useSessionNavigation";
 
 interface SessionBrowserProps {
   activeSessionId: string | null;
@@ -62,11 +62,9 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
     chatMessages,
     activeChatThreadId,
     activeProjectId,
-    setActiveProject,
     piSessionHistory,
     terminalSessions,
     persistentPiSessionId,
-    openSession,
     deleteThread,
     deletePiSessionFromHistory,
   } = useCairnStore(useShallow((s) => ({
@@ -74,19 +72,16 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
     chatMessages: s.chatMessages,
     activeChatThreadId: s.activeChatThreadId,
     activeProjectId: s.activeProjectId,
-    setActiveProject: s.setActiveProject,
     piSessionHistory: s.piSessionHistory,
     terminalSessions: s.terminalSessions,
     persistentPiSessionId: s.persistentPiSessionId,
-    openSession: s.openSession,
     deleteThread: s.deleteThread,
     deletePiSessionFromHistory: s.deletePiSessionFromHistory,
   })));
-  const { handleResumeSession } = useAgentSessionActions();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const openRequestRef = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { openSession } = useSessionNavigation();
 
   const sessions = useMemo<UnifiedSession[]>(() => {
     const scopedProjectId = projectId ?? activeProjectId;
@@ -147,25 +142,15 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
   }, [open]);
 
   async function selectSession(session: UnifiedSession) {
-    const request = ++openRequestRef.current;
     setOpen(false);
     setQuery("");
     const presentation = variant === "preview" ? "center" : "drawer";
-    if (session.projectId && session.projectId !== activeProjectId) setActiveProject(session.projectId);
-    openSession(session.sourceId, session.kind, presentation);
-    if (session.kind === "chat") {
-      onActivate(session.sourceId, session.kind);
-    } else if (session.kind === "coding") {
-      const summary = piSessionHistory.find((candidate) => candidate.id === session.sourceId);
-      if (summary) await handleResumeSession(summary, presentation, false);
-      // A slow history load must not steal the UI from a newer selection.
-      if (request !== openRequestRef.current) return;
-      useCairnStore.getState().setPersistentPiSession(session.sourceId);
-      openSession(session.sourceId, session.kind, presentation);
-      onActivate(session.sourceId, session.kind);
-    } else {
-      onActivate(session.sourceId, session.kind);
-    }
+    const opened = await openSession({
+      sourceId: session.sourceId,
+      kind: session.kind,
+      projectId: session.projectId,
+    }, presentation);
+    if (opened) onActivate(session.sourceId, session.kind);
   }
 
   if (variant === "preview") {
