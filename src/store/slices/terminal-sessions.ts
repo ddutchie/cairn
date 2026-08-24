@@ -123,6 +123,8 @@ export interface TerminalSessionsSlice {
   setPiSessionTodos: (sessionId: string, todos: PiTodo[]) => void;
   /** Fetch session history from SQLite for the given project */
   fetchPiSessionHistory: (projectId: string) => Promise<void>;
+  /** Fetch and merge session history for the projects visible in the sidebar. */
+  fetchPiSessionHistoryForProjects: (projectIds: string[]) => Promise<void>;
   /** Remove a session from history (also calls the IPC delete) */
   deletePiSessionFromHistory: (sessionId: string) => Promise<void>;
   /** Add or update a session in the local history list (optimistic) */
@@ -701,6 +703,21 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
       set({ piSessionHistory: history });
     } catch (err) {
       console.error("[pi-sessions] fetchPiSessionHistory error", err);
+    }
+  },
+
+  async fetchPiSessionHistoryForProjects(projectIds) {
+    if (typeof window === "undefined" || !window.electron) return;
+    try {
+      const histories = await Promise.all(
+        projectIds.map(async (projectId) => window.electron!.piAgent.listSessions(projectId) as Promise<PiSessionSummary[]>),
+      );
+      const merged = histories.flat().sort((a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+      set({ piSessionHistory: merged });
+    } catch (err) {
+      console.error("[pi-sessions] project history fetch error", err);
     }
   },
 

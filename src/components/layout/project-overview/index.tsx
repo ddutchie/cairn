@@ -20,6 +20,7 @@ import type { SuggestionItem } from "@/components/chat/ChatInput";
 import { ProgressRing, CollapsibleSection } from "./primitives";
 import { ToolsAttachPanel } from "./ToolsAttachPanel";
 import { ProjectSettingsButton } from "./project-settings";
+import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import {
   TaskFlowCard,
   PriorityBreakdownCard,
@@ -32,9 +33,11 @@ import {
 } from "./sections";
 
 export function ProjectOverview() {
-  const { activeProjectId, activeWorkspaceId, projects, setView, chatOpen, setSettingsSection, overviewCollapsedSections, toggleOverviewSection, recentProjectRuns, fetchRecentProjectRuns } = useCairnStore(useShallow((s) => ({
+  const { activeProjectId, activeWorkspaceId, activeSessionId, projects, setActiveSession, setView, chatOpen, setSettingsSection, overviewCollapsedSections, toggleOverviewSection, recentProjectRuns, fetchRecentProjectRuns } = useCairnStore(useShallow((s) => ({
     activeProjectId: s.activeProjectId,
     activeWorkspaceId: s.activeWorkspaceId,
+    activeSessionId: s.activeSessionId,
+    setActiveSession: s.setActiveSession,
     projects:        s.projects,
     setView:         s.setView,
     chatOpen:        s.chatOpen,
@@ -319,6 +322,26 @@ export function ProjectOverview() {
             </div>
           </div>
         )}
+
+        {/* ── Recent sessions ─────────────────────────────────── */}
+        <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <div className="flex items-center justify-between mb-2.5">
+            <div>
+              <h2 className="text-[0.786rem] font-semibold text-[var(--text-primary)]">Recent sessions</h2>
+              <p className="text-[0.643rem] text-[var(--text-tertiary)]">Chat and coding history for this project</p>
+            </div>
+            <button type="button" onClick={() => { setActiveSession("chat"); setView("chat"); }} className="text-[0.643rem] text-[var(--accent)] hover:text-[var(--text-primary)]">Open sessions</button>
+          </div>
+          <SessionBrowser
+            variant="preview"
+            limit={4}
+            activeSessionId={activeSessionId}
+            onActivate={(sessionId) => {
+              setActiveSession(sessionId);
+              setView(sessionId === "chat" ? "chat" : "agent");
+            }}
+          />
+        </section>
 
         </div>
       </div>

@@ -24,8 +24,6 @@ import { TerminalManager } from "./TerminalManager";
 import { AgentChatPane } from "./AgentChatPane";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { SessionMount } from "./SessionMount";
-import { AIChatTab } from "./AIChatTab";
-import { AgentSessionTab } from "./AgentSessionTab";
 import { TerminalTab } from "./TerminalTab";
 import { AgentEmptyState } from "./AgentEmptyState";
 import { useAgentSessionActions } from "./useAgentSessionActions";
@@ -44,7 +42,6 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     removeTerminalSession,
     persistentPiSessionId,
     activeProjectId,
-    fetchPiSessionHistory,
     toggleChat,
     activeView,
     chatOpen,
@@ -61,7 +58,6 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     removeTerminalSession: s.removeTerminalSession,
     persistentPiSessionId: s.persistentPiSessionId,
     activeProjectId: s.activeProjectId,
-    fetchPiSessionHistory: s.fetchPiSessionHistory,
     toggleChat: s.toggleChat,
     activeView: s.activeView,
     chatOpen: s.chatOpen,
@@ -82,6 +78,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   const createNewThread = useCairnStore((s) => s.createNewThread);
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
+  const fetchPiSessionHistoryForProjects = useCairnStore((s) => s.fetchPiSessionHistoryForProjects);
   const { handleNewSession } = useAgentSessionActions();
 
   useEffect(() => {
@@ -109,8 +106,12 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   }
 
   useEffect(() => {
-    if (activeProjectId) fetchPiSessionHistory(activeProjectId);
-  }, [activeProjectId, fetchPiSessionHistory]);
+    if (!activeWorkspaceId) return;
+    const projectIds = projects
+      .filter((project) => project.workspaceId === activeWorkspaceId)
+      .map((project) => project.id);
+    void fetchPiSessionHistoryForProjects(projectIds);
+  }, [activeWorkspaceId, fetchPiSessionHistoryForProjects, projects]);
 
   const handleClose = useCallback((sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -220,24 +221,6 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Tab bar */}
       <div className="flex items-center h-11 border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)]">
-        <AIChatTab
-          isActive={activeSessionId === "chat"}
-          onActivate={() => setActiveSession("chat")}
-        />
-
-        {hasCodeDirectory && (
-          <AgentSessionTab
-            isActive={pinnedIsActive}
-            onActivate={() => {
-              if (persistentPiSessionId) {
-                setActiveSession(persistentPiSessionId);
-              } else {
-                setActiveSession("agent");
-              }
-            }}
-          />
-        )}
-
         <div className="flex-1 flex items-center overflow-x-auto min-w-0 h-full">
           {ptySessions.map((session) => (
             <TerminalTab

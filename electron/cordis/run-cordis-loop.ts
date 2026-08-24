@@ -790,6 +790,26 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   // src/index.ts:212 renderPrompt vs 224 renderContextSnapshot and
   // docs/subsystems/session.md:5 surfaceOp.
   const baseSystem = withPersonality(buildSystemPrompt(req), req.personality);
+  // Populate DSH's per-session runtime snapshot before the first assembly. The
+  // context provider is mounted globally, but its values are scoped by the
+  // stable chat session so concurrent chats cannot leak project context.
+  try {
+    const { updateWorkspaceContext } = await import("./plugins/workspace-context");
+    const project = req.projectId
+      ? db.prepare("SELECT name, description, code_directory FROM projects WHERE id = ?").get(req.projectId) as { name?: string; description?: string; code_directory?: string } | undefined
+      : undefined;
+    const workspace = req.workspaceId
+      ? db.prepare("SELECT name FROM workspaces WHERE id = ?").get(req.workspaceId) as { name?: string } | undefined
+      : undefined;
+    updateWorkspaceContext(`chat-${req.threadId}`, {
+      workspaceName: workspace?.name,
+      projectName: project?.name,
+      projectDescription: project?.description,
+      cwd: project?.code_directory,
+    });
+  } catch (err) {
+    console.warn("[cordis] workspace context update failed:", err instanceof Error ? err.message : err);
+  }
   console.log("[cordis] mount systemText", { threadId: req.threadId, historyLen: (req.history ?? []).length, historySample: (req.history ?? []).slice(-2).map((h) => ({ role: h.role, content: (h.content as string)?.slice(0, 30) })), baseSystemLen: baseSystem.length });
   await mount(cairnSystemPromptPlugin, { systemText: baseSystem });
 

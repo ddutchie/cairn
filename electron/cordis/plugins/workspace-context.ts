@@ -18,32 +18,34 @@ export interface WorkspaceContextInfo {
   gitBranch?: string;
 }
 
-let currentContextInfo: WorkspaceContextInfo = {};
+const contextBySession = new Map<string, WorkspaceContextInfo>();
 
-export function updateWorkspaceContext(info: Partial<WorkspaceContextInfo>): void {
-  currentContextInfo = { ...currentContextInfo, ...info };
+export function updateWorkspaceContext(sessionId: string, info: Partial<WorkspaceContextInfo>): void {
+  contextBySession.set(sessionId, { ...contextBySession.get(sessionId), ...info });
 }
 
-export function getWorkspaceContext(): WorkspaceContextInfo {
-  return currentContextInfo;
+export function getWorkspaceContext(sessionId: string): WorkspaceContextInfo {
+  return contextBySession.get(sessionId) ?? {};
 }
 
-export function clearWorkspaceContext(): void {
-  currentContextInfo = {};
+export function clearWorkspaceContext(sessionId: string): void {
+  contextBySession.delete(sessionId);
 }
 
 export function mountWorkspaceContext(ctx: Context): void {
   (ctx as unknown as { inject: (deps: string[], fn: (c: unknown) => void) => void }).inject(
     ["systemPrompt"],
     (c: unknown) => {
-      const sp = (c as { systemPrompt: { context: (spec: { name: string; order?: number; text: () => string }) => void } }).systemPrompt;
+      const sp = (c as { systemPrompt: { context: (spec: { name: string; order?: number; text: (assembly?: { agent?: { session?: { id?: unknown } } }) => string }) => void } }).systemPrompt;
       if (!sp || typeof sp.context !== "function") return;
 
       sp.context({
         name: "cairn:workspace",
         order: 100,
-        text: () => {
+        text: (assembly?: { agent?: { session?: { id?: unknown } } }) => {
           const lines: string[] = [];
+          const sessionId = String(assembly?.agent?.session?.id ?? "");
+          const currentContextInfo = contextBySession.get(sessionId) ?? {};
           const { workspaceName, projectName, projectDescription, cwd, activeNotePath, activeColumn, focusedTaskTitle, gitBranch } = currentContextInfo;
           if (workspaceName) lines.push(`Workspace: ${workspaceName}`);
           if (projectName) lines.push(`Project: ${projectName}${projectDescription ? ` (${projectDescription})` : ""}`);
