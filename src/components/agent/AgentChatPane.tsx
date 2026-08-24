@@ -22,7 +22,7 @@ import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { type VirtuosoHandle } from "react-virtuoso";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
 import { ContextRing } from "./ContextRing";
@@ -35,6 +35,7 @@ import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
 import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
+import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -883,30 +884,24 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       {/* Messages — virtualized so a session with thousands of persisted
           messages (each with reasoning, tool chips, subagent traces) only ever
           mounts the items near the viewport, no matter how far you scroll. */}
-      <Virtuoso
-        ref={virtuosoRef}
+      <ConversationTranscript
+        transcriptRef={virtuosoRef}
         className="flex-1 min-h-0"
         data={messages}
         initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-        followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
-        components={{
-          EmptyPlaceholder: () => (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-3">
-              <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">
-                {session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
-              </p>
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-48">
-                {session.mode === "plan"
-                  ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
-                  : "Ask me to read, edit, or run code — or manage your project board."}
-              </p>
-            </div>
-          ),
-          Footer: () => (
-            <div className="px-3 pt-3 pb-3 space-y-3">
-            </div>
-          ),
-        }}
+        emptyPlaceholder={() => (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-3">
+            <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">
+              {session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
+            </p>
+            <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-48">
+              {session.mode === "plan"
+                ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
+                : "Ask me to read, edit, or run code — or manage your project board."}
+            </p>
+          </div>
+        )}
+        footer={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
         itemContent={(_index, msg) => (
           <div className="px-3 pt-3">
             <AgentMessageBubble

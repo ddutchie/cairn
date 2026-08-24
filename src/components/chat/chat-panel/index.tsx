@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { type VirtuosoHandle } from "react-virtuoso";
 import { Trash2, ChevronDown, ArrowLeftFromLine, Loader2, Clock, History } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -41,6 +41,7 @@ import {
 } from "@/lib/models-dev";
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
+import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -868,25 +869,22 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           answerQuestions,
         }}
       >
-        <Virtuoso
-          ref={chatVirtuosoRef}
+        <ConversationTranscript
+          transcriptRef={chatVirtuosoRef}
           className="flex-1 min-h-0"
           data={timelineRange ? visibleMessages : messages}
           initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-          followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
-          components={{
-            EmptyPlaceholder: () => (
-              <div className={cn("px-3 py-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-                <SuggestedPrompts
-                  onSend={handleSend}
-                  disabled={isLoading || !threadId}
-                  prompts={activeView === "graph" ? graphPrompts : undefined}
-                  subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
-                />
-              </div>
-            ),
-            Footer: ChatFooter,
-          }}
+          emptyPlaceholder={() => (
+            <div className={cn("px-3 py-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+              <SuggestedPrompts
+                onSend={handleSend}
+                disabled={isLoading || !threadId}
+                prompts={activeView === "graph" ? graphPrompts : undefined}
+                subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
+              />
+            </div>
+          )}
+          footer={ChatFooter}
           itemContent={(_index, message) => (
             <div className={cn("px-3 py-1.5", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
               <ChatMessageBubble
