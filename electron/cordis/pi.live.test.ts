@@ -50,9 +50,8 @@ function makeDb() {
 // dsh agent loop with Cairn's tools bridged on, using the production
 // dsh-llm-pi-ai responses adapter. Gated on CORDIS_LIVE=1 (needs a reachable
 // OpenAI-compatible endpoint — the Rork bridge at localhost:3042 in dev).
-describe("runCordisLoop (gated on CORDIS_LIVE=1)", () => {
+describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisLoop (gated on CORDIS_LIVE=1; SKIPPED by default)", () => {
   it("drives a tool-calling turn through the dsh agent loop", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     const db = makeDb();
     // Point the usage recorder at this in-memory DB so cairn-usage writes are
     // visible (in production the cairnDb handle == the recorder's activeDb).
@@ -82,7 +81,6 @@ describe("runCordisLoop (gated on CORDIS_LIVE=1)", () => {
   }, 120000);
 
   it("streams token deltas live and carries prior-turn context via the persisted session", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     const db = makeDb();
     initUsageRecorder(db);
     // Context is carried by the stable SessionId (chat-<threadId>) + persisted

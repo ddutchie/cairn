@@ -33,11 +33,10 @@ async function waitFor(pred: () => boolean, timeoutMs = 4000): Promise<boolean> 
   return pred();
 }
 
-describe("runtime plugin loading (gated on CAIRN_PLUGINS_DEV=1)", () => {
+describe.skipIf(!RUN)("runtime plugin loading (gated on CAIRN_PLUGINS_DEV=1; SKIPPED by default)", () => {
   afterEach(() => stopWatchingUserPlugins());
 
   it("loads/updates/removes plugins authored live, incl. the shipped hello-tool example", async () => {
-    if (!RUN) return;
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-plugins-"));
     setPluginsRoot(root);
     expect(getPluginsRoot()).toBe(root);

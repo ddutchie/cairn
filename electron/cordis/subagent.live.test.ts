@@ -21,9 +21,8 @@ function makeDb() {
 // child agent) and that cairn-subagent maps child session events to Cairn's
 // chat:subagent* IPC. Model delegation varies, so we assert the tool exists and
 // capture any subagent events fired. Gated on CORDIS_LIVE=1.
-describe("cairn-subagent (gated on CORDIS_LIVE=1)", () => {
+describe.skipIf(process.env.CORDIS_LIVE !== "1")("cairn-subagent (gated on CORDIS_LIVE=1; SKIPPED by default)", () => {
   it("registers the subagent tool and maps child events to chat:subagent* IPC", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     const db = makeDb();
     const subagentEvents: string[] = [];
     const tokenByChild = new Map<string, string>();

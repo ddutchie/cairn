@@ -84,9 +84,8 @@ const finalText = (sent: SentEvent[]) =>
   sent.filter((s) => s.channel === "pi-agent:token")
     .map((s) => (s.payload as { delta?: string }).delta ?? "").join("");
 
-describe("approval pipeline (LIVE, gated on CORDIS_LIVE=1)", () => {
+describe.skipIf(process.env.CORDIS_LIVE !== "1")("approval pipeline (LIVE, gated on CORDIS_LIVE=1) (SKIPPED by default)", () => {
   it("scenarios 1+2+4 share one session: deny → session-grant → doom reject", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     const db = makeDb();
     const cwd = makeSandbox();
     const sessionId = `pi-appr-${Date.now()}`;
@@ -158,7 +157,6 @@ describe("approval pipeline (LIVE, gated on CORDIS_LIVE=1)", () => {
   }, 300_000);
 
   it("scenario 3: plugin confirm seam end-to-end inside a real turn", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     const db = makeDb();
     const cwd = makeSandbox();
     const sessionId = `pi-plug-${Date.now()}`;
@@ -214,7 +212,6 @@ describe("approval pipeline (LIVE, gated on CORDIS_LIVE=1)", () => {
   }, 180_000);
 
   it("context ring projection populates after a real turn", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     const db = makeDb();
     const cwd = makeSandbox();
     const sessionId = `pi-ring-${Date.now()}`;

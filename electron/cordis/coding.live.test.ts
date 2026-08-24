@@ -20,9 +20,8 @@ import { mountCodingStack } from "./cordis-coding-tools";
 const BASE = process.env.CORDIS_TEST_BASE_URL ?? "http://localhost:3042/v1";
 const MODEL = process.env.CORDIS_TEST_MODEL ?? "claude-sonnet-4-5";
 
-describe("cordis coding stack (gated on CORDIS_LIVE=1)", () => {
+describe.skipIf(process.env.CORDIS_LIVE !== "1")("cordis coding stack (gated on CORDIS_LIVE=1; SKIPPED by default)", () => {
   it("mounts coding tools via mountCodingStack and runs a bash turn", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     const ctx = new Context();
     await ctx.plugin(sessionPlugin);
     await ctx.plugin(llmPlugin);

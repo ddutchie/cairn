@@ -21,9 +21,8 @@ function makeDb() {
 // the turn (via ctx.userQuestions.ask()) until the "renderer" answers through
 // registerPending, and the answer is fed back as the tool result IN THE SAME
 // TURN — so the model can use it to complete its reply. Gated on CORDIS_LIVE=1.
-describe("cairn-questions (gated on CORDIS_LIVE=1)", () => {
+describe.skipIf(process.env.CORDIS_LIVE !== "1")("cairn-questions (gated on CORDIS_LIVE=1; SKIPPED by default)", () => {
   it("blocks on ask_questions and feeds the answer back same-turn", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     const db = makeDb();
     const sent: Array<{ channel: string; payload: Record<string, unknown> }> = [];
     const pending = new Map<string, (t: string) => void>();

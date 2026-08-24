@@ -28,9 +28,8 @@ function collectTokens(sent: SentEvent[], sessionId: string): string {
     .map((s) => s.payload.delta as string).join("");
 }
 
-describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
+describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on CORDIS_LIVE=1; SKIPPED by default)", () => {
   it("drives a coding turn and emits pi-agent:* token/tool/usage/done events", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     if (!process.env.CORDIS_DUMMY_KEY) return;
     process.env.CORDIS_DUMMY_KEY = "local";
 
@@ -87,7 +86,6 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
   }, 120000);
 
   it("persists the session in dsh jsonl and resumes context across turns (no transcript in DB)", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     if (!process.env.CORDIS_DUMMY_KEY) return;
     process.env.CORDIS_DUMMY_KEY = "local";
 
@@ -133,7 +131,6 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
   }, 120000);
 
   it("plan mode is advisory (dsh): produces a plan; writes are guided, not hard-gated", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     if (!process.env.CORDIS_DUMMY_KEY) return;
     process.env.CORDIS_DUMMY_KEY = "local";
 
@@ -161,7 +158,6 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
   }, 120000);
 
   it("HITL approval: mutating tool asks, decision is honored (auto-approve confirm)", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     if (!process.env.CORDIS_DUMMY_KEY) return;
     process.env.CORDIS_DUMMY_KEY = "local";
 
@@ -209,7 +205,6 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
   }, 120000);
 
   it("skills: <available_skills> is injected and the skill tool loads the body (2i)", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     if (!process.env.CORDIS_DUMMY_KEY) return;
     process.env.CORDIS_DUMMY_KEY = "local";
 
@@ -254,7 +249,6 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
   }, 120000);
 
   it("sandbox: workspace-write confines writes to cwd (outside-cwd write denied) (2j)", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     if (!process.env.CORDIS_DUMMY_KEY) return;
     process.env.CORDIS_DUMMY_KEY = "local";
 
@@ -295,7 +289,6 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
   }, 120000);
 
   it("sandbox: workspace-write allows writes inside cwd (2j)", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     if (!process.env.CORDIS_DUMMY_KEY) return;
     process.env.CORDIS_DUMMY_KEY = "local";
 
@@ -331,7 +324,6 @@ describe("runCordisCodingLoop (gated on CORDIS_LIVE=1)", () => {
   }, 120000);
 
   it("attachments: an image attachment reaches the model (round-trips the store) (2l)", async () => {
-    if (process.env.CORDIS_LIVE !== "1") return;
     if (!process.env.CORDIS_DUMMY_KEY) return;
     process.env.CORDIS_DUMMY_KEY = "local";
 
