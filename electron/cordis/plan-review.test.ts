@@ -4,7 +4,7 @@
  * These guard the end-to-end contract with dsh-plan-mode:
  *
  *   1. When the model calls exit_plan_mode(plan), the plan text is
- *      persisted to pi_agent_sessions.plan_content so execute-mode's
+ *      persisted to agent_session_metadata.plan_content so execute-mode's
  *      system prompt on the next turn carries it forward without
  *      re-folding the session log.
  *   2. The Cairn ask-questions provider forwards the dsh

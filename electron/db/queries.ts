@@ -187,7 +187,7 @@ export interface MergeProjectResult {
  *   - task_cards     → target project + workspace + remapped column_id
  *   - idea_flow      → source flow's nodes/edges are moved into the target's flow
  *   - chat_threads   → repointed (no FK, so a bare project delete would orphan them)
- *   - tool_attachments, pi_agent_sessions → repointed
+ *   - tool_attachments, agent_session_metadata → repointed
  *
  * Returns the moved notes so the caller can relocate their .md files (the DB
  * move alone leaves the files under the old project's folder).
@@ -296,7 +296,7 @@ export function mergeProject(db: Database.Database, sourceId: string, targetId: 
        SELECT ?, tool_type, tool_id, enabled FROM tool_attachments WHERE project_id = ?`,
     ).run(targetId, sourceId);
     db.prepare("DELETE FROM tool_attachments WHERE project_id = ?").run(sourceId);
-    db.prepare("UPDATE pi_agent_sessions SET project_id = ? WHERE project_id = ?").run(targetId, sourceId);
+    db.prepare("UPDATE agent_session_metadata SET project_id = ? WHERE project_id = ?").run(targetId, sourceId);
 
     // ── 5. Delete the emptied source project ──────────────────────────────
     // Everything owned by it has been repointed; a direct row delete (rather
@@ -1621,19 +1621,19 @@ export function createCodingSession(
   const now = ts();
   const role = normalizeSessionRole(session.role);
   db.prepare(`
-    INSERT INTO pi_agent_sessions (id, project_id, task_title, task_id, cwd, mode, role, status, spawned_at, updated_at)
+    INSERT INTO agent_session_metadata (id, project_id, task_title, task_id, cwd, mode, role, status, spawned_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)
   `).run(session.id, session.projectId, session.taskTitle, session.taskId ?? null, session.cwd, session.mode, role, session.spawnedAt, now);
   return getCodingSessionById(db, session.id)!;
 }
 
 export function getCodingSessionById(db: Database.Database, id: string): CodingSessionRow | null {
-  const row = db.prepare("SELECT * FROM pi_agent_sessions WHERE id = ?").get(id);
+  const row = db.prepare("SELECT * FROM agent_session_metadata WHERE id = ?").get(id);
   return row ? toCodingSession(row) : null;
 }
 
 export function getCodingSessions(db: Database.Database, projectId: string): CodingSessionRow[] {
-  return (db.prepare("SELECT * FROM pi_agent_sessions WHERE project_id = ? ORDER BY updated_at DESC LIMIT 50").all(projectId) as unknown[])
+  return (db.prepare("SELECT * FROM agent_session_metadata WHERE project_id = ? ORDER BY updated_at DESC LIMIT 50").all(projectId) as unknown[])
     .map(toCodingSession);
 }
 
@@ -1644,24 +1644,24 @@ export function updateCodingSession(
 ) {
   const now = patch.updatedAt ?? ts();
   if (patch.mode !== undefined) {
-    db.prepare("UPDATE pi_agent_sessions SET mode = ?, updated_at = ? WHERE id = ?").run(patch.mode, now, sessionId);
+    db.prepare("UPDATE agent_session_metadata SET mode = ?, updated_at = ? WHERE id = ?").run(patch.mode, now, sessionId);
   }
   if (patch.planNoteId !== undefined) {
-    db.prepare("UPDATE pi_agent_sessions SET plan_note_id = ?, updated_at = ? WHERE id = ?").run(patch.planNoteId, now, sessionId);
+    db.prepare("UPDATE agent_session_metadata SET plan_note_id = ?, updated_at = ? WHERE id = ?").run(patch.planNoteId, now, sessionId);
   }
   if (patch.planContent !== undefined) {
-    db.prepare("UPDATE pi_agent_sessions SET plan_content = ?, updated_at = ? WHERE id = ?").run(patch.planContent, now, sessionId);
+    db.prepare("UPDATE agent_session_metadata SET plan_content = ?, updated_at = ? WHERE id = ?").run(patch.planContent, now, sessionId);
   }
   if (patch.status !== undefined) {
-    db.prepare("UPDATE pi_agent_sessions SET status = ?, updated_at = ? WHERE id = ?").run(patch.status, now, sessionId);
+    db.prepare("UPDATE agent_session_metadata SET status = ?, updated_at = ? WHERE id = ?").run(patch.status, now, sessionId);
   }
   if (patch.mode === undefined && patch.planNoteId === undefined && patch.planContent === undefined && patch.status === undefined) {
-    db.prepare("UPDATE pi_agent_sessions SET updated_at = ? WHERE id = ?").run(now, sessionId);
+    db.prepare("UPDATE agent_session_metadata SET updated_at = ? WHERE id = ?").run(now, sessionId);
   }
 }
 
 export function deleteCodingSession(db: Database.Database, sessionId: string) {
-  db.prepare("DELETE FROM pi_agent_sessions WHERE id = ?").run(sessionId);
+  db.prepare("DELETE FROM agent_session_metadata WHERE id = ?").run(sessionId);
 }
 
 // ── Coding Agent Messages ───────────────────────────────────────────────────────────────
@@ -1696,9 +1696,9 @@ function toSessionTodo(row: SessionTodoRow): SessionTodo {
  */
 export function saveSessionTodos(db: Database.Database, sessionId: string, todos: SessionTodo[]) {
   const save = db.transaction(() => {
-    db.prepare("DELETE FROM pi_session_todos WHERE session_id = ?").run(sessionId);
+    db.prepare("DELETE FROM session_todos WHERE session_id = ?").run(sessionId);
     todos.forEach((todo, position) => {
-      db.prepare("INSERT INTO pi_session_todos (session_id, content, status, priority, position) VALUES (?, ?, ?, ?, ?)")
+      db.prepare("INSERT INTO session_todos (session_id, content, status, priority, position) VALUES (?, ?, ?, ?, ?)")
         .run(sessionId, todo.content, todo.status, todo.priority, position);
     });
   });
@@ -1706,7 +1706,7 @@ export function saveSessionTodos(db: Database.Database, sessionId: string, todos
 }
 
 export function getSessionTodos(db: Database.Database, sessionId: string): SessionTodo[] {
-  return (db.prepare("SELECT content, status, priority FROM pi_session_todos WHERE session_id = ? ORDER BY position ASC").all(sessionId) as SessionTodoRow[])
+  return (db.prepare("SELECT content, status, priority FROM session_todos WHERE session_id = ? ORDER BY position ASC").all(sessionId) as SessionTodoRow[])
     .map(toSessionTodo);
 }
 

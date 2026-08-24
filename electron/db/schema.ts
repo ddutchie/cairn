@@ -180,6 +180,14 @@ END;
 
 type Migration = (db: Database.Database) => void;
 
+function tableExists(db: Database.Database, name: string): boolean {
+  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
+}
+
+function sessionMetadataTable(db: Database.Database): "pi_agent_sessions" | "agent_session_metadata" {
+  return tableExists(db, "agent_session_metadata") ? "agent_session_metadata" : "pi_agent_sessions";
+}
+
 const MIGRATIONS: Migration[] = [
   // v1: Add notes.type column (was ALTER TABLE in the old ad-hoc approach)
   (db) => {
@@ -1224,9 +1232,10 @@ const MIGRATIONS: Migration[] = [
   // (read/write/edit/bash/grep/find/ls) so a Develop session can author an
   // automation's scripts without ever touching notes/tasks/board.
   (db) => {
-    const cols = db.prepare("PRAGMA table_info(pi_agent_sessions)").all() as { name: string }[];
+    const table = sessionMetadataTable(db);
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === "role")) {
-      db.exec("ALTER TABLE pi_agent_sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'default'");
+      db.exec(`ALTER TABLE ${table} ADD COLUMN role TEXT NOT NULL DEFAULT 'default'`);
     }
   },
 
@@ -1249,9 +1258,10 @@ const MIGRATIONS: Migration[] = [
   // Nullable: sessions predating this column, and sessions that never
   // called exit_plan_mode, keep plan_content = NULL.
   (db) => {
-    const cols = db.prepare("PRAGMA table_info(pi_agent_sessions)").all() as { name: string }[];
+    const table = sessionMetadataTable(db);
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === "plan_content")) {
-      db.exec("ALTER TABLE pi_agent_sessions ADD COLUMN plan_content TEXT");
+      db.exec(`ALTER TABLE ${table} ADD COLUMN plan_content TEXT`);
     }
   },
 
@@ -1259,7 +1269,18 @@ const MIGRATIONS: Migration[] = [
   // session metadata are not compatible enough to resume across this cutover.
   // Users start new Chat/Coding sessions after the migration.
   (db) => {
-    db.exec("DELETE FROM chat_threads; DELETE FROM pi_agent_sessions;");
+    db.exec("DELETE FROM chat_threads;");
+    db.exec(`DELETE FROM ${sessionMetadataTable(db)};`);
+  },
+
+  // v52: Rename the now-empty pre-Cordis metadata tables. Historical migration
+  // bodies remain unchanged; all current queries use the neutral names below.
+  (db) => {
+    if (tableExists(db, "pi_session_todos") && !tableExists(db, "session_todos")) db.exec("ALTER TABLE pi_session_todos RENAME TO session_todos");
+    if (tableExists(db, "pi_agent_sessions") && !tableExists(db, "agent_session_metadata")) db.exec("ALTER TABLE pi_agent_sessions RENAME TO agent_session_metadata");
+    db.exec("DROP INDEX IF EXISTS idx_pi_todos_session; DROP INDEX IF EXISTS idx_pi_sessions_project;");
+    if (tableExists(db, "session_todos")) db.exec("CREATE INDEX IF NOT EXISTS idx_session_todos_session ON session_todos(session_id)");
+    if (tableExists(db, "agent_session_metadata")) db.exec("CREATE INDEX IF NOT EXISTS idx_session_metadata_project ON agent_session_metadata(project_id)");
   },
 ];
 
@@ -1302,8 +1323,8 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "requires", "requires TEXT");
   ensure("automations", "env", "env TEXT");
   ensure("automation_runs", "run_dir", "run_dir TEXT");
-  ensure("pi_agent_sessions", "role", "role TEXT NOT NULL DEFAULT 'default'");
-  ensure("pi_agent_sessions", "plan_content", "plan_content TEXT");
+  ensure("agent_session_metadata", "role", "role TEXT NOT NULL DEFAULT 'default'");
+  ensure("agent_session_metadata", "plan_content", "plan_content TEXT");
   ensure("mcp_notifications", "target_type", "target_type TEXT");
   ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");

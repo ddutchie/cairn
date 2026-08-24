@@ -751,7 +751,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       }
 
       // ── todos: the dsh `todo_write` tool writes `todo/write` snapshots; map
-      // the latest to Cairn's pi_session_todos + emit pi-agent:todos.
+      // the latest to Cairn's session_todos + emit session:todos.
       if (name === "todo_write" && db) {
         try {
           const parsed = JSON.parse(output) as DshTodoWrite;
