@@ -41,6 +41,7 @@ export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Pro
       req: profile.req,
       sessionId: profile.sessionId,
       llmConfig: prepared.llmConfig,
+      signal: profile.signal,
       includeSessionIndex: profile.includeSessionIndex,
       sendSubagent: profile.sendSubagent,
       questions: profile.questions,

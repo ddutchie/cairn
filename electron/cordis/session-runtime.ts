@@ -47,6 +47,7 @@ export interface MountCordisSessionPluginsOptions {
   req: ChatRequest;
   sessionId: string;
   llmConfig: LLMConfig;
+  signal?: AbortSignal;
   includeSessionIndex?: boolean;
   sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
   questions?: CordisQuestionAdapter;
@@ -54,7 +55,7 @@ export interface MountCordisSessionPluginsOptions {
 
 /** Mount the Cairn-owned session services shared by Chat and Coding turns. */
 export async function mountCordisSessionPlugins({
-  mount, db, req, sessionId, llmConfig, includeSessionIndex = false, sendSubagent, questions,
+  mount, db, req, sessionId, llmConfig, signal, includeSessionIndex = false, sendSubagent, questions,
 }: MountCordisSessionPluginsOptions): Promise<void> {
   await mount(cairnDbPlugin, { db });
   if (includeSessionIndex) {
@@ -77,6 +78,7 @@ export async function mountCordisSessionPlugins({
     await mount(cairnQuestionsPlugin, {
       send: questions.send,
       registerPending: questions.registerPending,
+      signal,
       ...(questions.emitQuestions ? { emitQuestions: questions.emitQuestions } : {}),
     });
   }
