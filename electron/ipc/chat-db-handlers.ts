@@ -11,6 +11,7 @@
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
+import { assertSafeId, resolveWithinRoot, isSafeId } from "./path-safety";
 
 export function registerChatDbHandlers(ctx: DbContext): void {
   // Legacy transcript retirement is now migration v49 (see electron/db/schema.ts
@@ -29,6 +30,10 @@ export function registerChatDbHandlers(ctx: DbContext): void {
   // like bb4c63a3… — the prefix scan alone would leave them orphaned and they'd
   // reappear as 6 blocks on reload). Also drop in-memory agents.
   registerIpcHandle("db:chat:clearThreadMessages", (_e, { threadId }) => handle(async () => {
+    // Reject renderer-supplied ids that could path-traverse before they reach
+    // fs.rmSync() below. Any legitimate `thr-<nanoid>` passes; `..`, `/`, `\`,
+    // empty, over-length, control chars all fail here.
+    assertSafeId(threadId, "threadId");
     // Drop the cached live chat agent FIRST (see dropChatAgentForThread): the
     // module-global cache survives jsonl/ctx.agents wipes, and reusing a stale
     // agent both leaks pre-clear context into the next turn and writes to
@@ -109,7 +114,17 @@ export function registerChatDbHandlers(ctx: DbContext): void {
             } catch { /* ignore */ }
           }
         } catch { /* ignore */ }
-        for (const p of [path.join(root, stableId, "session.jsonl.zstd"), path.join(root, stableId, "session.jsonl"), path.join(root, stableId) + ".jsonl", path.join(root, stableId), path.join(root, threadId) + ".jsonl", path.join(path.join(root, threadId), "session.jsonl"), path.join(path.join(root, threadId), "session.jsonl.zstd"), path.join(root, threadId)]) {
+        // Flat fallbacks (root-level session dirs / .jsonl variants). threadId
+        // is assertSafeId-validated at the handler entry; every path below is
+        // additionally containment-checked via resolveWithinRoot as defence
+        // in depth. Composed paths that would escape `root` are silently
+        // skipped (already-safe ids never trigger the null branch).
+        const stableDir = resolveWithinRoot(root, stableId);
+        const threadDir = resolveWithinRoot(root, threadId);
+        const candidates: string[] = [];
+        if (stableDir) candidates.push(path.join(stableDir, "session.jsonl.zstd"), path.join(stableDir, "session.jsonl"), stableDir + ".jsonl", stableDir);
+        if (threadDir) candidates.push(threadDir + ".jsonl", path.join(threadDir, "session.jsonl"), path.join(threadDir, "session.jsonl.zstd"), threadDir);
+        for (const p of candidates) {
           try {
             if (fs.existsSync(p)) {
               const stat = fs.statSync(p);
@@ -117,8 +132,8 @@ export function registerChatDbHandlers(ctx: DbContext): void {
               else fs.unlinkSync(p);
             }
           } catch { /* ignore */ }
-          }
         }
+      }
       // In-memory: drop any dsh agent whose id matches the thread (stable or legacy prefix).
       getContext().then((c: unknown) => {
         const maybeAgents: unknown = (c as { agents?: unknown })?.agents;
@@ -170,7 +185,10 @@ export function registerChatDbHandlers(ctx: DbContext): void {
 
   registerIpcHandle("db:chat:clearAllThreads", (_e, { workspaceId, projectId }: { workspaceId: string; projectId?: string | null }) => handle(() => {
     const threads = q.getChatThreads(ctx.db, workspaceId).filter((t) => !projectId || t.projectId === projectId);
-    const ids = threads.map((t) => t.id);
+    // Ids come from SQLite, but filter for path-safety anyway — a corrupt row
+    // (e.g. from a compromised sync peer or a manual DB edit) must not turn
+    // this handler into a path-traversal sink.
+    const ids = threads.map((t) => t.id).filter(isSafeId);
     if (ids.length === 0) return { deletedThreads: 0, deletedMessages: 0 };
     const placeholders = ids.map(() => "?").join(",");
     ctx.db.prepare(`DELETE FROM chat_threads WHERE id IN (${placeholders})`).run(...ids);

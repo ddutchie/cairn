@@ -34,6 +34,7 @@ import { buildAttachmentParts, validateAttachmentDataUrl } from "../../shared/mo
 import { createDeltaBatcher } from "../lib/delta-batcher";
 import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry } from "../cordis/approval-grants";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
+import { assertSafeId, resolveWithinRoot } from "./path-safety";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -731,6 +732,15 @@ export function registerPiAgentHandler(
   // Also resets the compaction transformer so the new conversation starts
   // with a fresh cachedSummary.
   registerIpcOn("pi-agent:clear", (_event, { sessionId }: { sessionId: string }) => {
+    // Reject renderer-supplied ids that could path-traverse before they reach
+    // fs.rmSync() below. Any legitimate session id (pi-<nanoid>, subagent uuid)
+    // passes; `..`, `/`, `\`, empty, over-length, control chars all fail here.
+    try {
+      assertSafeId(sessionId, "sessionId");
+    } catch (err) {
+      broadcastEvent("pi-agent:error", { sessionId, error: (err as Error).message });
+      return;
+    }
     // Same guard as the other session mutators: replacing messages while a loop
     // is running would desync its in-flight context. The renderer stops the run
     // before clearing, so this is defensive.
@@ -763,10 +773,14 @@ export function registerPiAgentHandler(
       for (const root of roots) {
         // dsh nests as <root>/<encoded-cwd>/<sessionId>/session.jsonl.zstd — brute-force
         // every project dir and check the session id inside it, plus the flat fallbacks.
+        // The sessionId was assertSafeId-validated above; every path composed here
+        // is additionally containment-checked via resolveWithinRoot as
+        // defence-in-depth against future refactors of `roots`.
         try {
           const projectDirs = fs.readdirSync(root, { withFileTypes: true }).filter((d: { isDirectory: () => boolean }) => d.isDirectory()).map((d: { name: string }) => d.name);
           for (const proj of projectDirs) {
-            const base = path.join(root, proj, sessionId);
+            const base = resolveWithinRoot(root, proj, sessionId);
+            if (!base) continue;
             for (const p of [path.join(base, "session.jsonl.zstd"), path.join(base, "session.jsonl"), base + ".jsonl", path.join(base, "session.jsonl"), base]) {
               try {
                 if (fs.existsSync(p)) {
@@ -780,7 +794,8 @@ export function registerPiAgentHandler(
           }
         } catch { /* root not readable */ }
         // Flat fallbacks (old layout or if projectDir is _no-cwd)
-        const flatBase = path.join(root, sessionId);
+        const flatBase = resolveWithinRoot(root, sessionId);
+        if (!flatBase) continue;
         for (const p of [flatBase + ".jsonl", path.join(flatBase, "session.jsonl"), path.join(flatBase, "session.jsonl.zstd"), flatBase]) {
           try {
             if (fs.existsSync(p)) {
