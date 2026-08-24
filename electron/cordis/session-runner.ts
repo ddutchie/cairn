@@ -1,0 +1,57 @@
+import type { Context } from "@deepseek-ai/cordis";
+import type { Database } from "better-sqlite3";
+import type { ChatRequest } from "../lib/tools";
+import type { LLMConfig } from "../lib/llm";
+import { createCordisDisposerStack, mountCordisSessionPlugins, prepareCordisRuntime, type CordisDisposerStack, type CordisQuestionAdapter } from "./session-runtime";
+import type { CordisSessionAgentHandle } from "./session-agent";
+
+export interface CordisSessionProfile<T> {
+  ctx: Context;
+  db: Database;
+  req: ChatRequest;
+  sessionId: string;
+  llmConfig: LLMConfig;
+  signal?: AbortSignal;
+  includeSessionIndex?: boolean;
+  sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
+  questions?: CordisQuestionAdapter;
+  /** Mount mode-specific services and register mode-specific tools. */
+  setup: (runtime: { llmConfig: LLMConfig; resources: CordisDisposerStack; mount: (plugin: unknown, config?: unknown) => Promise<void> }) => Promise<void>;
+  open: (runtime: { llmConfig: LLMConfig }) => Promise<CordisSessionAgentHandle>;
+  run: (runtime: { agent: CordisSessionAgentHandle["agent"]; llmConfig: LLMConfig; resources: CordisDisposerStack; mount: (plugin: unknown, config?: unknown) => Promise<void> }) => Promise<T>;
+  /** Chat keeps its ReactLoopAgent alive for the next turn; Coding disposes it. */
+  retainAgent?: boolean;
+}
+
+/**
+ * Shared DSH ReactLoopAgent lifecycle. Profiles own capabilities and event
+ * policy, while this helper owns the ordering and teardown that must remain the
+ * same for every session kind.
+ */
+export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Promise<T> {
+  const prepared = await prepareCordisRuntime(profile.ctx, profile.llmConfig);
+  const resources = createCordisDisposerStack();
+  const mount = (plugin: unknown, config?: unknown) => resources.mount(profile.ctx, plugin, config);
+  let handle: CordisSessionAgentHandle | undefined;
+
+  try {
+    await mountCordisSessionPlugins({
+      mount,
+      db: profile.db,
+      req: profile.req,
+      sessionId: profile.sessionId,
+      llmConfig: prepared.llmConfig,
+      includeSessionIndex: profile.includeSessionIndex,
+      sendSubagent: profile.sendSubagent,
+      questions: profile.questions,
+    });
+    await profile.setup({ llmConfig: prepared.llmConfig, resources, mount });
+    handle = await profile.open({ llmConfig: prepared.llmConfig });
+    return await profile.run({ agent: handle.agent, llmConfig: prepared.llmConfig, resources, mount });
+  } finally {
+    if (!profile.retainAgent) {
+      try { await handle?.dispose?.(); } catch { /* best-effort agent teardown */ }
+    }
+    resources.dispose();
+  }
+}

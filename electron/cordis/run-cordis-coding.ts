@@ -33,7 +33,7 @@ import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { TOOL_SCHEMAS } from "../lib/tool-schemas";
 import { buildCordisUserContent } from "./cairn-attachment-store";
-import { createCordisDisposerStack, mountCordisSessionPlugins, prepareCordisRuntime } from "./session-runtime";
+import { runCordisSession } from "./session-runner";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
@@ -105,23 +105,11 @@ export interface RunCordisCodingResult {
 export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise<RunCordisCodingResult> {
   const ctx = await getContext();
   const { db, req, workspacePath, sessionId, cwd, systemPrompt, mode, send, questions, approvals, getWin, signal } = opts;
-  // llmConfig is mutated below (local-model rewrite); every other opts field
-  // is read-only.
-  let { llmConfig } = opts;
   // Sandbox: confine fs/bash mutations to cwd by default (workspace-write).
   const sandboxMode = opts.sandboxMode ?? "workspace-write";  // autoApprove defaults ON; forced ON if no approvals adapter was supplied
   // (no way to prompt → don't block on an approval that can never resolve).
   const autoApprove = opts.autoApprove !== false ? true : (approvals ? false : true);
 
-  const prepared = await prepareCordisRuntime(ctx, llmConfig);
-  llmConfig = prepared.llmConfig;
-
-  const turnResources = createCordisDisposerStack();
-  const mount = (plugin: unknown, config: unknown) => turnResources.mount(ctx, plugin, config);
-  const codingDisposers: Array<() => void> = [];
-  // Disposes the active dsh agent handle at turn end so its session is detached
-  // from the live registry (persisted jsonl remains, enabling resume).
-  const handleDisposers: Array<() => Promise<void> | void> = [];
   // automation-dev persona: exclude every Cairn data tool. The pre-Cordis
   // AUTOMATION_DEV_TOOLS whitelist was {read, write, edit, grep, find, ls} —
   // all dsh tools from mountCodingStack, no Cairn data tools. Restoring the
@@ -132,21 +120,23 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   const cairnToolsExclude = opts.role === "automation-dev"
     ? new Set(Object.keys(TOOL_SCHEMAS))
     : undefined;
-  const toolDisposers = registerCairnTools(ctx, {
-    getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
-    req,
-    workspacePath,
-    llmConfig,
-    getWin,
-    emit: undefined,
-    emitDone: undefined,
-  }, cairnToolsExclude ? { exclude: cairnToolsExclude } : undefined);
-
-  const run = async (): Promise<RunCordisCodingResult> => {
-    await mountCordisSessionPlugins({ mount, db, req, sessionId, llmConfig, questions: questions ? {
+  return runCordisSession<RunCordisCodingResult>({
+    ctx, db, req, sessionId, llmConfig: opts.llmConfig, signal,
+    questions: questions ? {
       ...questions,
       emitQuestions: (requestId, qs) => questions.send("session:ask-questions", { sessionId, callId: requestId, questions: qs }),
-    } : undefined });
+    } : undefined,
+    setup: async ({ llmConfig, resources, mount }) => {
+      const toolDisposers = registerCairnTools(ctx, {
+        getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
+        req,
+        workspacePath,
+        llmConfig,
+        getWin,
+        emit: undefined,
+        emitDone: undefined,
+      }, cairnToolsExclude ? { exclude: cairnToolsExclude } : undefined);
+      toolDisposers.forEach((dispose) => resources.add(dispose));
     // Skills (Phase 1.5 step 2i): read the merged skill catalog through the dsh
     // Skills are owned by dsh (`dsh-tool-skill`, mounted globally): it registers
     // the `skill` tool and injects <available_skills> as a per-step
@@ -154,7 +144,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // SKILL.md provider). So the system prompt here needs no skills XML and we
     // register no skill tool — the section is just the caller's systemPrompt.
     const systemText = systemPrompt;
-    await mount(cairnSystemPromptPlugin, { systemText });
+      await mount(cairnSystemPromptPlugin, { systemText });
     // Plan mode is owned by dsh (`dsh-plan-mode`, mounted in the coding stack):
     // it drives the plan:policy section + exit_plan_mode via planMode.set(agent).
     // No custom read-only tool guard — dsh's plan mode is advisory state.
@@ -167,10 +157,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // its next() chains into the approval classifier below. Mounted
     // unconditionally: sessions without a confirm transport (headless) fail
     // closed to "cancelled" → deterministic loop-halt.
-    await mount(cairnDoomLoopPlugin, {
-      sessionId,
-      signal,
-    });
+      await mount(cairnDoomLoopPlugin, { sessionId, signal });
     // HITL tool approval (no-op when autoApprove is on).
     if (!autoApprove && approvals) {
       await mount(cairnApprovalPlugin, {
@@ -185,7 +172,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // cwd-scoped. Order per dsh-base. Mounted before the agent so the tools are
     // registered when the model first requests them.
     try {
-      codingDisposers.push(await mountCodingStack(ctx, { cwd, sandboxMode, role: opts.role }));
+      resources.add(await mountCodingStack(ctx, { cwd, sandboxMode, role: opts.role }));
     } catch (e) {
       console.error(`[cordis-coding] mountCodingStack failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
       throw e;
@@ -200,7 +187,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     } catch (e) {
       console.error(`[cordis-coding] registerExternalCairnTools failed:`, (e as Error)?.message ?? e);
     }
-    toolDisposers.push(...externalDisposers);
+      externalDisposers.forEach((dispose) => resources.add(dispose));
     // Automation-specific tools (run_script / write_run_file / deliver_file) —
     // registered from the heartbeat caller via extraTools.
     for (const def of opts.extraTools ?? []) {
@@ -227,12 +214,15 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
             return def.execute(args as Record<string, unknown>) as never;
           },
         });
-        toolDisposers.push(ctx.tools.register(tool));
+        resources.add(ctx.tools.register(tool));
       } catch (e) {
         console.error(`[cordis-coding] register extraTool ${def.name} failed:`, e);
       }
     }
-
+    },
+    open: ({ llmConfig }) => openCordisAgent(ctx, { sessionId, cwd, llmConfig, signal }),
+    run: async ({ agent, mount }) => {
+      const typedAgent = agent as CordisTurnAgent & { session: { events: unknown[] } };
     try {
       // ctx.tools is dsh-tools; `schemas` returns the registered set. The
       // `list?.()` fallback covered a pre-dsh alternative surface — kept as
@@ -248,17 +238,12 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       console.error(`[cordis-coding] tools diagnostic failed:`, e);
     }
 
-    const _selection = { provider: "cairn", model: llmConfig.model };
     // Stable dsh session id = the caller's pi sessionId. With dsh jsonl
     // persistence mounted, createAgent with a stable id auto-RESUMES the
     // session's materialized history on a remount (first use creates it). This
     // gives the coding agent stateful, resumable multi-turn sessions WITHOUT
     // storing transcripts in Cairn's SQLite (the DB is for MCP/tool access).
     const attemptSessionId = SessionId(sessionId);
-    const handle = await openCordisAgent(ctx, { sessionId, cwd, llmConfig, signal });
-    const agent = handle.agent as CordisTurnAgent & { session: { events: unknown[] } };
-    handleDisposers.push(() => handle.dispose?.() ?? Promise.resolve());
-
     // Route every pi-agent:* event to BOTH the renderer (frontend `send`) and a
     // terminal resolver so the turn promise settles on done/error. cairnCodingPlugin
     // is mounted with `send` = this combined function.
@@ -274,9 +259,9 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // event, its session log is authoritative and must not be overwritten by
     // Cairn's legacy SQLite mode index on every resumed turn.
     try {
-      const events = (agent.session.events ?? []) as Array<{ type?: string }>;
+      const events = (typedAgent.session.events ?? []) as Array<{ type?: string }>;
       const hasLoggedMode = events.some((event) => event.type === "plan/mode");
-      if (!hasLoggedMode && mode === "plan") ctx.planMode?.set(agent as never, true);
+      if (!hasLoggedMode && mode === "plan") ctx.planMode?.set(typedAgent as never, true);
     } catch { /* non-fatal: plan mode falls back to prompt-only guidance */ }
 
     // Native approval-policy fold (audit §5 Phase C2): record autoApprove as
@@ -286,34 +271,22 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // "never"; HITL ⇒ "ask"). No-op when unchanged across turns; a resumed
     // session folds its own logged history.
     try {
-      ctx.approval?.setPolicy?.(agent as never, autoApprove ? "never" : "ask");
+      ctx.approval?.setPolicy?.(typedAgent as never, autoApprove ? "never" : "ask");
     } catch { /* non-fatal: the per-turn classifier bridge still gates asks */ }
 
     // Mount the bridge AFTER the agent exists so it knows the dsh session id to
     // match events against (= the caller's sessionId, which is also how events
     // are tagged).
-    await mount(cairnCodingPlugin, { sessionId, matchSessionId: String(attemptSessionId), mode, send: combinedSend, signal });
+      await mount(cairnCodingPlugin, { sessionId, matchSessionId: String(attemptSessionId), mode, send: combinedSend, signal });
 
     // Build the user message content: text + any image/PDF attachments. Images
     // are admitted through the mounted attachment store and become ImageBlocks
     // (step 2l); without this, req.images would be silently dropped.
     const content = await buildCordisUserContent(ctx, req.message, req.images);
-    const turn = await runCordisTurn({ agent, content, signal, completion: terminal });
+    const turn = await runCordisTurn({ agent: typedAgent, content, signal, completion: terminal });
     return (turn.completion as RunCordisCodingResult | undefined) ?? { ok: true };
-  };
-
-  let result: RunCordisCodingResult;
-  try {
-    result = await run();
-  } catch (e) {
-    result = { ok: false, error: (e as Error)?.message ?? String(e) };
-  } finally {
-    for (const d of handleDisposers) { try { await d(); } catch { /* noop */ } }
-    codingDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
-    toolDisposers.forEach((d) => { try { d(); } catch { /* noop */ } });
-    turnResources.dispose();
-  }
-  return result;
+    },
+  }).catch((e) => ({ ok: false, error: (e as Error)?.message ?? String(e) }));
 }
 
 /**
