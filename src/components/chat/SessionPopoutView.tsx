@@ -10,13 +10,12 @@ import { type ChatPopoutPayload } from "../../../shared/agent/chat-popout";
 import { normalizeSessionMessages, applyApprovalProjection } from "@/components/conversation/conversation-session";
 import { useSessionConversation } from "@/hooks/useSessionConversation";
 
-type Props = Omit<ChatPopoutPayload, "profile"> & { profile: ChatPopoutPayload["profile"]; onPopIn: () => void };
+type Props = ChatPopoutPayload & { onPopIn: () => void };
 
 /** One session-bound conversation surface for both Chat and Coding profiles. */
-export function SessionPopoutView({ sessionId, activeProjectId, profile, onPopIn }: Props) {
+export function SessionPopoutView({ sessionId, activeProjectId, profile, workspaceId, cwd, onPopIn }: Props) {
   const threadId = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
-  const { aiConfig, agentConfig, activeWorkspaceId, projects, terminalSessions } = useCairnStore(useShallow((s) => ({ aiConfig: s.aiConfig, agentConfig: s.agentConfig, activeWorkspaceId: s.activeWorkspaceId, projects: s.projects, terminalSessions: s.terminalSessions })));
-  const codingSession = terminalSessions.find((item) => item.sessionId === sessionId);
+  const { aiConfig, agentConfig, projects } = useCairnStore(useShallow((s) => ({ aiConfig: s.aiConfig, agentConfig: s.agentConfig, projects: s.projects })));
   const project = projects.find((item) => item.id === activeProjectId);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [input, setInput] = useState("");
@@ -67,8 +66,8 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, onPopIn
     const optimistic: ConversationMessage = { id: `popout-${Date.now()}`, role: "user", content, createdAt: new Date().toISOString() };
     setMessages((current) => [...current, optimistic]);
     sessionConversation.startPrompt(() => window.electron?.session.prompt(profile === "chat"
-      ? { sessionId, profile, prompt: content, projectId: activeProjectId ?? undefined, workspaceId: activeWorkspaceId ?? undefined, config: { provider: aiConfig.provider || "openai", baseUrl: aiConfig.baseUrl || undefined, model: aiConfig.model || undefined, apiKey: aiConfig.apiKey || undefined, maxSteps: aiConfig.maxSteps ?? 30, contextLimit: aiConfig.contextLimit, contextWindow: aiConfig.contextLimit } }
-      : { sessionId, profile, prompt: content, projectId: activeProjectId ?? codingSession?.projectId, workspaceId: activeWorkspaceId ?? undefined, cwd: codingSession?.cwd, mode: "execute", config: agentConfig }));
+      ? { sessionId, profile, prompt: content, projectId: activeProjectId ?? undefined, workspaceId: workspaceId ?? undefined, config: { provider: aiConfig.provider || "openai", baseUrl: aiConfig.baseUrl || undefined, model: aiConfig.model || undefined, apiKey: aiConfig.apiKey || undefined, maxSteps: aiConfig.maxSteps ?? 30, contextLimit: aiConfig.contextLimit, contextWindow: aiConfig.contextLimit } }
+      : { sessionId, profile, prompt: content, projectId: activeProjectId ?? undefined, workspaceId: workspaceId ?? undefined, cwd: cwd ?? undefined, mode: "execute", config: agentConfig }));
   }
 
   return <ConversationPane
