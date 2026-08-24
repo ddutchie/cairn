@@ -20,7 +20,6 @@ import systemPromptPlugin from "@deepseek-ai/dsh-system-prompt";
 import agentPlugin from "@deepseek-ai/dsh-agent";
 import toolsPlugin from "@deepseek-ai/dsh-tools";
 import agentLoopPlugin from "@deepseek-ai/dsh-agent-loop";
-import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import subagentServicePlugin from "@deepseek-ai/dsh-subagent";
 import userQuestionsService from "@deepseek-ai/dsh-user-questions";
@@ -49,9 +48,11 @@ import { registerCairnTools, registerExternalCairnTools, CHAT_FORBIDDEN_TOOLS } 
 import { getChatAgentCache, peekChatAgentCache } from "./chat-agent-cache";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnSystemPromptPlugin, cairnQuestionsPlugin, CAIRN_DB } from "./cairn-plugins";
 import { buildSystemPrompt, withPersonality } from "../lib/tools";
-import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
+import { markCompletionsOnly, readCachedMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
+import { ensureAgentAiAdapter, prepareCordisRuntime } from "./session-runtime";
+export { ensureAgentAiAdapter } from "./session-runtime";
 
 export interface RunCordisLoopResult {
   exhausted: boolean;
@@ -285,11 +286,6 @@ export async function resumeChatAgent(threadId: string, workspacePath: string, m
   map.set(threadId, { handle: opened, agent: agent as Record<PropertyKey, unknown> });
   return agent;
 }
-
-// The pi-ai provider route ("cairn") is registered once; its profile carries
-// the endpoint. Track the last config so a changed baseURL/model remounts it.
-let piAiDisposer: (() => Promise<void>) | null = null;
-let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number } | null = null;
 
 export async function getContext(): Promise<Context> {
   if (sharedCtx) return sharedCtx;
@@ -580,72 +576,6 @@ export async function readContextRing(sessionId: string): Promise<{ available: b
   }
 }
 
-/**
- * (Re)mount the pi-ai adapter for the current endpoint. The provider route
- * "cairn" is registered once; if the endpoint/model changed, dispose the old
- * route first (the pi-ai plugin owns a configurable-provider directory + route).
- */
-export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number }): Promise<void> {
-  const same =
-    piAiDisposer &&
-    lastPiAiConfig &&
-    lastPiAiConfig.baseUrl === config.baseUrl &&
-    lastPiAiConfig.model === config.model &&
-    lastPiAiConfig.api === config.api &&
-    lastPiAiConfig.contextWindow === config.contextWindow &&
-    lastPiAiConfig.maxTokens === config.maxTokens;
-  if (same) return;
-
-  if (piAiDisposer) {
-    try { await piAiDisposer(); } catch { /* noop */ }
-    // Give the Cordis plugin system a tick to fully unregister the old
-    // "cairn" provider route before re-registering with a new baseURL —
-    // otherwise the pi-ai adapter sees "already declared".
-    await new Promise<void>((r) => setTimeout(r, 0));
-  }
-  piAiDisposer = null;
-
-  // pi-ai resolves credentials through an apiKeyEnv; the endpoint ignores auth
-  // for local endpoints, so surface a literal key when one is configured and a
-  // harmless placeholder otherwise (never sent meaningfully).
-  process.env.CAIRN_LLM_API_KEY = config.apiKey || "local";
-  const apiKeyEnv = "CAIRN_LLM_API_KEY";
-  const handle = ctx.plugin(
-    { name: llmPiAiName, inject: llmPiAiInject, apply: llmPiAiApply },
-    {
-      providers: {
-        cairn: {
-          api: config.api,
-          baseURL: config.baseUrl,
-          displayName: "Cairn",
-          models: [{
-            id: config.model,
-            contextWindow: config.contextWindow ?? 128000,
-            maxTokens: config.maxTokens ?? 32768,
-          }],
-          apiKeyEnv,
-          // Declare image input so the pi-ai route accepts ImageBlocks (step 2l).
-          // Cairn's endpoint is a multi-provider gateway; images pass through as
-          // OpenAI image_url parts. Text-only models still work (an image is only
-          // sent when the user actually attaches one).
-          defaultInput: ["text", "image"],
-          // Provider-owned transient-failure retry policy; executed by
-          // dsh-llm-retry on the agent loop's request-recovery seam. Bounded
-          // exponential backoff, mirroring Cairn's built-in loop retry behaviour.
-          retryPolicy: {
-            mode: "normal",
-            maxRetries: 5,
-            backoff: { initialDelayMs: 500, maxDelayMs: 10000, jitterRatio: 0.1 },
-          },
-        },
-      },
-    },
-  );
-  await handle;
-  piAiDisposer = async () => { try { const h = await handle; h.dispose(); } catch { /* noop */ } };
-  lastPiAiConfig = config;
-}
-
 /** Collect final assistant text + reasoning + usage from new session events. */
 function collect(events: readonly SessionEvent[], firstSeq: number): { text: string; reasoning: string; pt: number; ct: number; rt: number } {
   let text = "";
@@ -715,32 +645,8 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   } catch (err) {
     console.error("[cordis] fs chain mount for plugins failed:", err instanceof Error ? err.message : err);
   }
-  // Local on-device model — ensure the app-spawned llama-server is running and
-  // use its OpenAI-compatible endpoint (also via the pi-ai route, no separate plugin).
-  if (llmConfig.provider === "localllm") {
-    const { ensureLlamaServerRunning } = await import("../lib/llama-server");
-    const port = await ensureLlamaServerRunning();
-    llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
-  }
-
-  // Pick the wire protocol the SAME way the built-in loop does: reuse Cairn's
-  // probe-and-cache transport resolver (electron/lib/llm-transport.ts). It
-  // resolves /responses vs /chat/completions ONCE per base URL (static allowlist
-  // for OpenAI/Azure; an empty-body /responses route probe for everything else)
-  // and caches the answer for the app session. We then map that to pi-ai's
-  // adapter mode. A runtime fallback below downgrades a provider that turns out
-  // not to speak /responses after all (markCompletionsOnly + retry).
-  const transport = await resolveTransport(llmConfig.baseUrl, llmConfig.apiKey);
-  const apiFor = (mode: ApiMode): "openai-responses" | "openai-completions" =>
-    mode === "responses" ? "openai-responses" : "openai-completions";
-  await ensureAgentAiAdapter(ctx, {
-    baseUrl: llmConfig.baseUrl,
-    model: llmConfig.model,
-    apiKey: llmConfig.apiKey,
-    api: apiFor(transport.mode),
-    contextWindow: llmConfig.contextWindow,
-    maxTokens: llmConfig.maxTokens,
-  });
+  const prepared = await prepareCordisRuntime(ctx, llmConfig);
+  llmConfig = prepared.llmConfig;
 
   // Cairn's own plugins: cairn-db owns the handle, cairn-session persists
   // messages, cairn-usage records usage. Mounted per call (lightweight event

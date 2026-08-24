@@ -20,7 +20,7 @@ import "./ctx-augment";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import type { Database } from "better-sqlite3";
 
-import { getContext, ensureAgentAiAdapter } from "./run-cordis-loop";
+import { getContext } from "./run-cordis-loop";
 import { openCordisSessionAgent } from "./session-agent";
 import { mountCodingStack } from "./cordis-coding-tools";
 import {
@@ -36,7 +36,7 @@ import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { TOOL_SCHEMAS } from "../lib/tool-schemas";
 import { buildCordisUserContent } from "./cairn-attachment-store";
-import { resolveTransport, type ApiMode } from "../lib/llm-transport";
+import { prepareCordisRuntime } from "./session-runtime";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
@@ -111,28 +111,13 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   // llmConfig is mutated below (local-model rewrite); every other opts field
   // is read-only.
   let { llmConfig } = opts;
-  // Local on-device model — ensure the app-spawned llama-server is running and
-  // use its OpenAI-compatible endpoint (also via the pi-ai route, no separate plugin).
-  if ((llmConfig as { provider?: string }).provider === "localllm") {
-    const { ensureLlamaServerRunning } = await import("../lib/llama-server");
-    const port = await ensureLlamaServerRunning();
-    llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
-  }
   // Sandbox: confine fs/bash mutations to cwd by default (workspace-write).
   const sandboxMode = opts.sandboxMode ?? "workspace-write";  // autoApprove defaults ON; forced ON if no approvals adapter was supplied
   // (no way to prompt → don't block on an approval that can never resolve).
   const autoApprove = opts.autoApprove !== false ? true : (approvals ? false : true);
 
-  // Pick the wire protocol the same way chat + the built-in loop do.
-  const transport = await resolveTransport(llmConfig.baseUrl, llmConfig.apiKey);
-  const apiFor = (m: ApiMode): "openai-responses" | "openai-completions" =>
-    m === "responses" ? "openai-responses" : "openai-completions";
-  await ensureAgentAiAdapter(ctx, {
-    baseUrl: llmConfig.baseUrl,
-    model: llmConfig.model,
-    apiKey: llmConfig.apiKey,
-    api: apiFor(transport.mode),
-  });
+  const prepared = await prepareCordisRuntime(ctx, llmConfig);
+  llmConfig = prepared.llmConfig;
 
   const pluginDisposers: Array<() => void> = [];
   const mount = async (plugin: unknown, config: unknown): Promise<void> => {
