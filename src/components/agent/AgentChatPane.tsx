@@ -25,7 +25,6 @@ import type { ConnectorMeta as AgentConnectorMeta } from "@/components/shared/Co
 import { type VirtuosoHandle } from "react-virtuoso";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
-import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
@@ -37,6 +36,7 @@ import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
 import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
 import { ConversationMessageBubble } from "@/components/conversation/ConversationMessageBubble";
 import { toConversationMessage } from "@/components/conversation/conversation-message";
+import { ConversationHeader } from "@/components/conversation/ConversationHeader";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -831,10 +831,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     <div className="flex flex-col h-full bg-[var(--surface)]">
 
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
-        <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1">
-          {session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
-        </span>
+      <ConversationHeader
+        title={session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
+        contextLimit={normalizeContextLimit(agentConfig.contextLimit)}
+        usage={session.lastUsage}
+        actions={(
+          <>
 
         {/* Passive mode status. DSH owns entry/exit through /plan and
             exit_plan_mode; this is intentionally not a second toggle. */}
@@ -859,18 +861,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         )}
 
 
-        {session.lastUsage && (
-          <ContextRing
-            promptTokens={session.lastUsage.promptTokens}
-            contextLimit={normalizeContextLimit(agentConfig.contextLimit)}
-            breakdown={session.lastUsage.breakdown}
-            completionTokens={session.lastUsage.completionTokens}
-            reasoningTokens={session.lastUsage.reasoningTokens}
-            cacheReadTokens={session.lastUsage.cacheReadTokens}
-            cacheCreationTokens={session.lastUsage.cacheCreationTokens}
-            costUsd={session.lastUsage.costUsd}
-          />
-        )}
         <Tooltip content="Clear conversation" side="left">
           <button
             onClick={handleClear}
@@ -879,7 +869,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             <Trash2 size={12} />
           </button>
         </Tooltip>
-      </div>
+          </>
+        )}
+      />
 
       {/* Messages */}
       {/* Messages — virtualized so a session with thousands of persisted

@@ -25,7 +25,7 @@ import { SuggestedPrompts } from "./SuggestedPrompts";
 import { ToolCallIndicator } from "./ToolCallIndicator";
 import { useCommunityConnectorMap, type ChatConnectorMeta } from "./connector-context";
 import { QuestionForm } from "./QuestionForm";
-import { ContextRing } from "@/components/agent/ContextRing";
+import { ConversationHeader } from "@/components/conversation/ConversationHeader";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { cn, id } from "@/lib/utils";
@@ -761,8 +761,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   return (
     <div className="chat-themed flex flex-1 flex-col min-h-0 overflow-hidden">
       {/* Sub-header / toolbar */}
-      <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
-        {popoutMode ? (
+      <ConversationHeader
+        title={popoutMode ? (
           <div ref={projectRef} className="relative flex-1">
             <button
               onClick={() => setProjectOpen((v) => !v)}
@@ -794,23 +794,13 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             {activeView === "graph" ? "Graph Assistant" : project?.name ?? workspace?.name ?? "AI Assistant"}
           </span>
         )}
-
-        {activeThread?.lastUsage && (
-          <ContextRing
-            promptTokens={activeThread.lastUsage.promptTokens}
-            contextLimit={aiConfig.contextLimit ?? 128000}
-            breakdown={activeThread.lastUsage.breakdown}
-            completionTokens={activeThread.lastUsage.completionTokens}
-            reasoningTokens={activeThread.lastUsage.reasoningTokens}
-            cacheReadTokens={activeThread.lastUsage.cacheReadTokens}
-            cacheCreationTokens={activeThread.lastUsage.cacheCreationTokens}
-            costUsd={activeThread.lastUsage.costUsd}
-          />
-        )}
-
-        {threadId && (
+        usage={activeThread?.lastUsage}
+        contextLimit={aiConfig.contextLimit ?? 128000}
+        actions={(
+          <>
+          {threadId && (
           <ChatQuickSettings disabled={isLoading} />
-        )}
+          )}
 
 
         <Tooltip content={timelineOpen ? "Hide timeline scrubber" : "Show timeline scrubber"} side="left">
@@ -840,7 +830,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             </button>
           </Tooltip>
         )}
-      </div>
+          </>
+        )}
+      />
 
       {timelineOpen && (
         <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
