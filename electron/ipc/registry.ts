@@ -26,6 +26,7 @@ export type IpcOnHandler<T extends unknown[] = unknown[]> = (
 
 const handlers = new Map<string, IpcHandler>();
 const listeners = new Map<string, IpcHandler>();
+const registeredListeners = new Map<string, IpcHandler>();
 
 let mobileBroadcastCallback: ((channel: string, payload: unknown) => void) | null = null;
 
@@ -80,6 +81,10 @@ export function registerIpcHandle<T extends unknown[]>(
   channel: string,
   handler: IpcHandleHandler<T>
 ): void {
+  // Workspace reinitialisation re-registers the live surface. Electron rejects
+  // duplicate invoke handlers, and duplicate listeners would run a turn twice.
+  ipcMain.removeHandler?.(channel);
+  ipcMain.removeAllListeners?.(channel);
   const wrappedHandler = async (event: unknown, ...args: unknown[]) => {
     const result = await handler(event as IpcMainInvokeEvent, ...(args as T));
     if (isWriteChannel(channel)) {
@@ -98,8 +103,13 @@ export function registerIpcOn<T extends unknown[]>(
   channel: string,
   handler: IpcOnHandler<T>
 ): void {
+  ipcMain.removeHandler?.(channel);
+  const previous = registeredListeners.get(channel);
+  if (previous) ipcMain.removeListener?.(channel, previous as never);
   listeners.set(channel, handler as IpcHandler);
-  ipcMain.on(channel, handler as IpcHandler);
+  const registered = handler as IpcHandler;
+  registeredListeners.set(channel, registered);
+  ipcMain.on(channel, registered);
 }
 
 /**

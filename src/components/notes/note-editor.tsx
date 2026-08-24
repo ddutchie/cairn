@@ -398,9 +398,10 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
            const unsub = electron.session.onEvent((e) => {
              if (e.sessionId === "chat-ai-text-action") fold(e.event);
            });
-           electron.chat.stream({
-             message: prompt,
-             threadId: "ai-text-action",
+            electron.session.prompt({
+              sessionId: "chat-ai-text-action",
+              profile: "chat",
+              prompt,
              config: { provider: aiConfig.provider, baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
            });
         });
@@ -496,9 +497,10 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         const unsub = electron.session.onEvent((e) => {
           if (e.sessionId === "chat-spawn-tasks") fold(e.event);
         });
-        electron.chat.stream({
-          message: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
-          threadId: "spawn-tasks",
+         electron.session.prompt({
+           sessionId: "chat-spawn-tasks",
+           profile: "chat",
+           prompt: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
           projectId: activeProjectId,
           config: { provider: aiConfig.provider, baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
         });

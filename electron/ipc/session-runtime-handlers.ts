@@ -21,6 +21,7 @@ import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 
 import type { AgentSession, AgentLLMConfig, AgentToolContext } from "../lib/session-runtime-types";
+import type { ChatRequest } from "../lib/tools";
 import { buildAgentSystemPrompt } from "../lib/coding-session-prompt";
 import { discoverSkills } from "../lib/skills";
 import { normaliseBaseUrl } from "../lib/llm";
@@ -42,6 +43,8 @@ import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 import { makeSessionProjection, type SessionProjection } from "../../shared/agent/session-projection";
+import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
+import { runChatPrompt, abortChatSession } from "./chat";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -163,6 +166,8 @@ interface CordisTurnPayload {
 interface AgentPromptRequest {
   sessionId: string;
   prompt: string;
+  /** Required when creating a session; existing sessions use persisted metadata. */
+  profile?: SessionProfileId;
   projectId?: string;
   workspaceId?: string;
   cwd: string;
@@ -170,6 +175,10 @@ interface AgentPromptRequest {
   mode?: "plan" | "execute";
   /** Image/PDF attachments staged in the input — serialized to content parts. */
   attachments?: Array<{ kind?: "image" | "pdf"; dataUrl: string; name?: string }>;
+  history?: ChatRequest["history"];
+  systemPrompt?: string;
+  personality?: ChatRequest["personality"];
+  useSubagents?: boolean;
   config?: {
     provider?: string;
     baseUrl?: string;
@@ -182,6 +191,8 @@ interface AgentPromptRequest {
     isReasoningModel?: boolean;
     /** The agent's context-window size — drives the sliding-window pruner. */
     contextWindow?: number;
+    /** Chat's legacy name for the same context limit. */
+    contextLimit?: number;
   };
 }
 
@@ -427,6 +438,11 @@ export function registerSessionRuntimeHandlers(
 
   // ── pi-agent:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
+    const profile = q.getSessionProfile(ctx.db, sessionId)?.profile;
+    if (profile === "chat") {
+      abortChatSession(sessionId);
+      return;
+    }
     const session = sessions.get(sessionId);
     if (session) {
       session.abortCtrl.abort();
@@ -435,6 +451,31 @@ export function registerSessionRuntimeHandlers(
 
   // ── pi-agent:prompt ───────────────────────────────────────────────────────
   registerIpcOn("session:prompt", async (event, req: AgentPromptRequest) => {
+    const storedProfile = q.getSessionProfile(ctx.db, req.sessionId)?.profile;
+    const selected = selectSessionProfile(storedProfile, req.profile);
+    if (!selected.profile) {
+      broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "error", {
+        error: selected.error ?? "Unable to select session profile.",
+      }));
+      return;
+    }
+    const profile = selected.profile;
+    if (profile === "chat") {
+      const chatReq = {
+        message: req.prompt,
+        threadId: req.sessionId.startsWith("chat-") ? req.sessionId.slice(5) : req.sessionId,
+        projectId: req.projectId,
+        workspaceId: req.workspaceId,
+        images: req.attachments?.map((attachment) => ({ ...attachment, name: attachment.name ?? "attachment" })),
+        history: req.history,
+        systemPrompt: req.systemPrompt,
+        personality: req.personality,
+        useSubagents: req.useSubagents,
+        config: req.config,
+      };
+      await runChatPrompt(ctx, event, chatReq);
+      return;
+    }
     const { sessionId, prompt, projectId, workspaceId, cwd, taskTitle, mode = "execute" } = req;
 
     const send = (channel: string, payload: unknown) => {

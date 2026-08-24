@@ -12,8 +12,8 @@ import { toConversationMessage, type ConversationMessage } from "@/components/co
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { cn } from "@/lib/utils";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
-import { sessionPopoutCommand, type ChatPopoutPayload } from "../../../shared/agent/chat-popout";
-import type { AgentMessage, ChatHistoryEntry, ChatMessage } from "@/types";
+import { type ChatPopoutPayload } from "../../../shared/agent/chat-popout";
+import type { AgentMessage, ChatMessage } from "@/types";
 import type { PendingQuestion } from "@/hooks/useChatStream";
 import type { SessionProjection } from "../../../shared/agent/session-projection";
 
@@ -24,15 +24,6 @@ function unwrap(value: unknown): Array<ChatMessage | AgentMessage> {
   if (Array.isArray(raw)) return raw as Array<ChatMessage | AgentMessage>;
   if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) return (raw as { messages: Array<ChatMessage | AgentMessage> }).messages;
   return [];
-}
-
-function historyFor(messages: ConversationMessage[]): ChatHistoryEntry[] {
-  return messages.map((message) => ({
-    role: message.role,
-    content: message.content || "",
-    ...(message.toolCalls?.length ? { tool_calls: message.toolCalls.filter((call) => call.callId).map((call) => ({ id: call.callId!, type: "function" as const, function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) } })) } : {}),
-    ...(message.reasoning ? { reasoning: message.reasoning } : {}),
-  }));
 }
 
 /** One session-bound conversation surface for both Chat and Coding profiles. */
@@ -102,17 +93,15 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, onPopIn
     setMessages(next);
     loadingRef.current = true;
     setLoading(true);
-    if (sessionPopoutCommand(profile) === "chat:stream") {
-      window.electron?.chat.stream({ message: content, threadId, projectId: activeProjectId, workspaceId: activeWorkspaceId, history: historyFor(messagesRef.current.slice(0, -1)), config: { provider: aiConfig.provider || "openai", baseUrl: aiConfig.baseUrl || undefined, model: aiConfig.model || undefined, apiKey: aiConfig.apiKey || undefined, maxSteps: aiConfig.maxSteps ?? 30, contextLimit: aiConfig.contextLimit, contextWindow: aiConfig.contextLimit } });
-    } else {
-      window.electron?.session.prompt({ sessionId, prompt: content, projectId: activeProjectId ?? codingSession?.projectId, workspaceId: activeWorkspaceId ?? undefined, cwd: codingSession?.cwd, mode: "execute", config: agentConfig });
-    }
+    window.electron?.session.prompt(profile === "chat"
+      ? { sessionId, profile, prompt: content, projectId: activeProjectId ?? undefined, workspaceId: activeWorkspaceId ?? undefined, config: { provider: aiConfig.provider || "openai", baseUrl: aiConfig.baseUrl || undefined, model: aiConfig.model || undefined, apiKey: aiConfig.apiKey || undefined, maxSteps: aiConfig.maxSteps ?? 30, contextLimit: aiConfig.contextLimit, contextWindow: aiConfig.contextLimit } }
+      : { sessionId, profile, prompt: content, projectId: activeProjectId ?? codingSession?.projectId, workspaceId: activeWorkspaceId ?? undefined, cwd: codingSession?.cwd, mode: "execute", config: agentConfig });
   }
 
   return <div className="chat-themed flex flex-1 flex-col min-h-0 overflow-hidden">
     <ConversationHeader title={<span className="text-[0.714rem] font-semibold text-[var(--text-primary)]">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>} contextLimit={aiConfig.contextLimit ?? 128000} actions={<button onClick={onPopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Return session to main window"><ArrowLeftFromLine size={11} /></button>} />
     <ConversationTranscript className="flex-1 min-h-0" data={messages} initialTopMostItemIndex={Math.max(0, messages.length - 1)} emptyPlaceholder={() => <ConversationEmptyState />} footer={() => <div className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{loading ? "Cairn is working…" : ""}</div>} itemContent={(_index, message) => <div className={cn("px-3 py-1.5")}><ConversationMessageBubble message={message} sessionId={sessionId} /></div>} />
     {questions && <QuestionForm questions={questions} onSubmit={send} onSubmitStructured={questionCallId ? (answers) => { window.electron?.session.respondQuestions(sessionId, questionCallId, answers); setQuestions(null); setQuestionCallId(null); return true; } : undefined} />}
-    <ConversationComposer value={input} onChange={setInput} onSubmit={send} onStop={() => profile === "chat" ? window.electron?.chat.abort() : window.electron?.session.abort(sessionId)} isLoading={loading} placeholder={profile === "coding" ? "Ask about your code…" : "Ask about your project…"} statusText="Shift+Enter for new line · Enter to send" />
+    <ConversationComposer value={input} onChange={setInput} onSubmit={send} onStop={() => window.electron?.session.abort(sessionId)} isLoading={loading} placeholder={profile === "coding" ? "Ask about your code…" : "Ask about your project…"} statusText="Shift+Enter for new line · Enter to send" />
   </div>;
 }

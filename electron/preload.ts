@@ -391,7 +391,6 @@ const api = {
     // ── AI Chat streaming ──────────────────────
     // Fire-and-forget. Listen with onToken / onDone / onToolCall.
     stream: (req: unknown) => ipcRenderer.send("chat:stream", req),
-    abort: () => ipcRenderer.send("chat:abort"),
     // ── Pop-out window ──────────────────────────
     /** Called by main window: sends current chat state, triggers window creation. */
      popOut: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev" }) => invoke<{ ok: boolean }>("chat:popOut", payload),

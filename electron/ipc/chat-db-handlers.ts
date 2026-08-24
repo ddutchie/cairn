@@ -1,7 +1,7 @@
 /**
  * Cairn — IPC handler for chat-thread CRUD channels (`db:chat:*`).
  *
- * Note: the streaming chat (`chat:stream` / `chat:abort` / `chat:compactThread`)
+ * Note: the streaming chat (`session:prompt` / `session:abort` / `chat:compactThread`)
  * lives in `electron/ipc/chat.ts`. These handlers are the simpler CRUD surface
  * used by the renderer to populate the thread list + message history.
  *

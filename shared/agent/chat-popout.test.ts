@@ -21,7 +21,8 @@ describe("bindChatPopoutSession", () => {
 
   it("selects transport without selecting a renderer", async () => {
     const { sessionPopoutCommand } = await import("./chat-popout");
-    expect(sessionPopoutCommand("chat")).toBe("chat:stream");
+    expect(sessionPopoutCommand("chat")).toBe("session:prompt");
     expect(sessionPopoutCommand("coding")).toBe("session:prompt");
+    expect(sessionPopoutCommand("automation-dev")).toBe("session:prompt");
   });
 });

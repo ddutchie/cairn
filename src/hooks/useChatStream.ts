@@ -302,11 +302,23 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       setThreadUsage(threadId, undefined);
     }
     setStreamingThought("");
-    window.electron?.chat.stream(req);
+    window.electron?.session.prompt({
+      sessionId: `chat-${req.threadId}`,
+      profile: "chat",
+      prompt: req.message,
+      projectId: req.projectId ?? undefined,
+      workspaceId: req.workspaceId ?? undefined,
+      attachments: req.images,
+      history: req.history,
+      systemPrompt: req.systemPrompt,
+      personality: req.personality,
+      useSubagents: req.useSubagents,
+      config: req.config,
+    });
   }
 
   function stopStream() {
-    window.electron?.chat.abort();
+    if (threadId) window.electron?.session.abort(`chat-${threadId}`);
     setIsLoading(false);
     setToolCalls([]);
     toolCallsRef.current = [];

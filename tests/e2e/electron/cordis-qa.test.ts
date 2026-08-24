@@ -8,7 +8,7 @@
  * browser smoke tests (which never run a loop).
  *
  * Loops covered:
- *   - Chat loop:      window.electron.chat.stream → runCordisLoop → chat:done
+ *   - Chat loop:      window.electron.session.prompt → runCordisLoop → session:done
   *   - Coding loop:    window.electron.session.prompt → runCordisCodingLoop → pi-agent:done
  *   - Heartbeat loop: automation.runNow → runAutomationNow → runAutomation → finished
  *
@@ -224,13 +224,12 @@ test.describe("Cordis loops in the real Electron app", () => {
           unsub();
           resolve({ content: (e.data as { content?: string }).content ?? "", error: (e.data as { error?: string }).error });
         });
-        el.chat.stream({
-          threadId,
+        el.session.prompt({
+          sessionId: `chat-${threadId}`,
+          profile: "chat",
+          prompt: "Summarize this project in 2-3 bullet points. Keep it brief.",
           workspaceId,
           projectId,
-          message: "Summarize this project in 2-3 bullet points. Keep it brief.",
-          history: [],
-          personality: "helpful",
           config: {
             provider: ai.provider,
             baseUrl: ai.baseUrl,

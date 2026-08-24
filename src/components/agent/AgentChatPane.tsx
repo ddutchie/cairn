@@ -683,6 +683,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const promptPayload = {
       sessionId:   session.sessionId,
+      profile:     session.role === "automation-dev" ? "automation-dev" : "coding",
       prompt:      resolvedPrompt,
       projectId:   session.projectId,
       workspaceId: activeWorkspaceId ?? undefined,

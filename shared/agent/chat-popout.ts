@@ -20,6 +20,6 @@ export function bindChatPopoutSession(value: unknown): ChatPopoutPayload | null 
 }
 
 /** Transport strategy only; both profiles use the same session-bound pane. */
-export function sessionPopoutCommand(profile: SessionPopoutProfile): "chat:stream" | "session:prompt" {
-  return profile === "chat" ? "chat:stream" : "session:prompt";
+export function sessionPopoutCommand(_profile: SessionPopoutProfile): "session:prompt" {
+  return "session:prompt";
 }

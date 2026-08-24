@@ -33,8 +33,9 @@ function projectChatEvent(sessionId: string, channel: string, payload: unknown):
   return makeSessionProjection(sessionId, kind as never, data as never);
 }
 
-// Track one AbortController per renderer webContents ID
-const abortControllers = new Map<number, AbortController>();
+// One controller and concurrency slot per canonical session, regardless of
+// which renderer issued the prompt.
+const abortControllers = new Map<string, AbortController>();
 
 /**
  * Threads that currently have an in-flight streaming turn. Prevents two
@@ -46,6 +47,11 @@ const abortControllers = new Map<number, AbortController>();
  * `runningLoops` guard on the coding side (review finding M13).
  */
 const runningThreads = new Set<string>();
+
+export function abortChatSession(sessionId: string): void {
+  abortControllers.get(sessionId)?.abort();
+  abortControllers.delete(sessionId);
+}
 
 function resolveAIConfig(config?: {
   provider?: string;
@@ -100,8 +106,6 @@ export { callLLM } from "../lib/llm";
  * chat bound to the throwaway boot DB until the app was restarted.
  */
 export function registerChatHandler(ctx: DbContext): void {
-  const getWin = ctx.getWin;
-
   registerIpcHandle("chat:compactThread", async (_event, req: {
     messages: Array<{ role: string; content: string }>;
     threadId?: string;
@@ -127,23 +131,22 @@ export function registerChatHandler(ctx: DbContext): void {
     }
   });
 
-  // chat:abort — cancel the in-flight stream for this renderer
-  registerIpcOn("chat:abort", (event) => {
-    const ctrl = abortControllers.get(event.sender.id);
-    if (ctrl) {
-      ctrl.abort();
-      abortControllers.delete(event.sender.id);
-    }
-  });
-
-  // chat:stream — fire-and-forget (registerIpcOn, not handle).
+  // Temporary compatibility alias. Canonical callers use session:prompt.
+  // chat:stream remains only for older integrations and calls the same runner.
   // Emits:
   //   session:token / session:thought / session:tool / session:usage
   //   session:done / session:error / session:ask-questions
-  registerIpcOn("chat:stream", async (event, req: ChatRequest) => {
+  registerIpcOn("chat:stream", (event, req: ChatRequest) => {
+    void runChatPrompt(ctx, event, req);
+  });
+}
+
+/** Shared Chat profile runner used by both the legacy alias and session:prompt. */
+export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent, req: ChatRequest): Promise<void> {
+    const getWin = ctx.getWin;
     const sessionId = `chat-${req.threadId}`;
-    // Cancel any previous in-flight request from THIS renderer
-    abortControllers.get(event.sender.id)?.abort();
+    // A new turn supersedes a previous turn from the same session.
+    abortChatSession(sessionId);
     // Concurrent-stream guard on the same thread: if another window (pop-out,
     // second Cairn instance) is already streaming this thread, refuse the
     // second stream instead of racing on the same session.jsonl.zstd. dsh's
@@ -163,7 +166,7 @@ export function registerChatHandler(ctx: DbContext): void {
     }
     if (req.threadId) runningThreads.add(req.threadId);
     const abortCtrl = new AbortController();
-    abortControllers.set(event.sender.id, abortCtrl);
+     abortControllers.set(sessionId, abortCtrl);
     
     const { provider, baseUrl, model, apiKey } = resolveAIConfig(req.config);
     const isLocalEndpointUrl = isLocalEndpoint(baseUrl);
@@ -187,7 +190,7 @@ export function registerChatHandler(ctx: DbContext): void {
         content: "AI chat is not configured. Set an API key in **Settings → AI & Chat**, or use a local endpoint (Ollama, LM Studio) with no key needed.",
         error: "AI chat is not configured",
       });
-      abortControllers.delete(event.sender.id);
+       abortControllers.delete(sessionId);
       if (req.threadId) runningThreads.delete(req.threadId);
       return;
     }
@@ -385,10 +388,9 @@ export function registerChatHandler(ctx: DbContext): void {
            send("session:done", { content: "" });
         }
       } finally {
-        abortControllers.delete(event.sender.id);
+         abortControllers.delete(sessionId);
         if (req.threadId) runningThreads.delete(req.threadId);
       }
       return;
     }
-  });
 }
