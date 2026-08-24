@@ -11,7 +11,6 @@ import { useSessionNavigation } from "./useSessionNavigation";
 
 interface SessionBrowserProps {
   activeSessionId: string | null;
-  onActivate: (sessionId: string, kind: SessionKind) => void;
   projectId?: string;
   variant?: "dropdown" | "preview" | "project";
   limit?: number;
@@ -41,7 +40,7 @@ function matchesQuery(session: SessionSummary, query: string): boolean {
   return value.includes(query.toLowerCase());
 }
 
-export function SessionBrowser({ activeSessionId, onActivate, projectId, variant = "dropdown", limit = 5 }: SessionBrowserProps) {
+export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown", limit = 5 }: SessionBrowserProps) {
   const {
     chatThreads,
     chatMessages,
@@ -50,6 +49,9 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
     piSessionHistory,
     terminalSessions,
     persistentPiSessionId,
+    chatOpen,
+    setView,
+    toggleChat,
     deleteThread,
     deletePiSessionFromHistory,
   } = useCairnStore(useShallow((s) => ({
@@ -60,6 +62,9 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
     piSessionHistory: s.piSessionHistory,
     terminalSessions: s.terminalSessions,
     persistentPiSessionId: s.persistentPiSessionId,
+    chatOpen: s.chatOpen,
+    setView: s.setView,
+    toggleChat: s.toggleChat,
     deleteThread: s.deleteThread,
     deletePiSessionFromHistory: s.deletePiSessionFromHistory,
   })));
@@ -106,7 +111,12 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
       kind: session.kind,
       projectId: session.projectId,
     }, presentation);
-    if (opened) onActivate(session.sourceId, session.kind);
+    if (!opened) return;
+    if (variant === "preview") {
+      setView("chat");
+    } else if (!chatOpen) {
+      toggleChat();
+    }
   }
 
   if (variant === "preview") {

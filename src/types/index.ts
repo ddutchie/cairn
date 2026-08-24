@@ -840,6 +840,12 @@ export type SessionPresentation = "center" | "drawer" | "workbench";
 /** Session families shown by the unified conversation browser. */
 export type SessionKind = "chat" | "coding" | "terminal";
 
+export type SessionLoadState =
+  | { status: "idle" }
+  | { status: "loading"; sessionId: string }
+  | { status: "ready"; sessionId: string }
+  | { status: "error"; sessionId: string; message: string };
+
 export interface GraphFilters {
   projectIds: string[];
   nodeTypes: GraphNodeType[];

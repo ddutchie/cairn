@@ -39,4 +39,14 @@ describe("createTerminalSessionsSlice — openSession", () => {
     expect(get().activeSessionId).toBe("pty-1");
     expect(get().sessionPresentation).toBe("workbench");
   });
+
+  it("tracks transient session loading state", () => {
+    const { get } = setup();
+
+    get().setSessionLoad({ status: "loading", sessionId: "coding-1" });
+    expect(get().sessionLoad).toEqual({ status: "loading", sessionId: "coding-1" });
+
+    get().setSessionLoad({ status: "ready", sessionId: "coding-1" });
+    expect(get().sessionLoad).toEqual({ status: "ready", sessionId: "coding-1" });
+  });
 });

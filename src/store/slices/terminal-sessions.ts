@@ -55,6 +55,7 @@ import type {
   PiSessionSummary,
   PiTodo,
   SessionKind,
+  SessionLoadState,
   SessionPresentation,
 } from "../../types";
 
@@ -76,6 +77,8 @@ export interface TerminalSessionsSlice {
   setActiveSession: (sessionId: string | null) => void;
   /** Select one browser session and its presentation as a single intent. */
   openSession: (sessionId: string, kind: SessionKind, presentation?: SessionPresentation) => void;
+  sessionLoad: SessionLoadState;
+  setSessionLoad: (state: SessionLoadState) => void;
   markSessionExited: (sessionId: string, exitCode: number) => void;
   /** Add a message to a pi session's message list */
   addPiMessage: (sessionId: string, msg: PiAgentMessage) => void;
@@ -154,6 +157,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   persistentPiSessionId: null,
   piSessionHistory: [],
   piSessionTodos: {},
+  sessionLoad: { status: "idle" },
 
   addTerminalSession(session) {
     set((s) => ({
@@ -186,6 +190,10 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
       get().setActiveSession(sessionId);
     }
     get().setSessionPresentation(presentation);
+  },
+
+  setSessionLoad(state) {
+    set({ sessionLoad: state });
   },
 
   markSessionExited(sessionId, exitCode) {

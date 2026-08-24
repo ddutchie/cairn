@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
-import type { SessionKind } from "@/types";
 import { ProgressRing, CollapsibleSection } from "./primitives";
 import { ToolsAttachPanel } from "./ToolsAttachPanel";
 import { ProjectSettingsButton } from "./project-settings";
@@ -350,10 +349,6 @@ export function ProjectOverview() {
             variant="preview"
             limit={4}
             activeSessionId={activeSessionId}
-            onActivate={(_sessionId, _kind: SessionKind) => {
-              setSessionPresentation("center");
-              setView("chat");
-            }}
           />
         </section>
 

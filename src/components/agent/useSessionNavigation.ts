@@ -24,12 +24,14 @@ export function useSessionNavigation() {
     openSession: selectSession,
     setActiveProject,
     setPersistentPiSession,
+    setSessionLoad,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId: s.activeProjectId,
     piSessionHistory: s.piSessionHistory,
     openSession: s.openSession,
     setActiveProject: s.setActiveProject,
     setPersistentPiSession: s.setPersistentPiSession,
+    setSessionLoad: s.setSessionLoad,
   })));
   const { handleResumeSession } = useAgentSessionActions();
   const requestRef = useRef(0);
@@ -44,17 +46,33 @@ export function useSessionNavigation() {
     }
 
     selectSession(target.sourceId, target.kind, presentation);
+    setSessionLoad({ status: "loading", sessionId: target.sourceId });
 
-    if (target.kind !== "coding") return true;
+    if (target.kind !== "coding") {
+      setSessionLoad({ status: "ready", sessionId: target.sourceId });
+      return true;
+    }
 
-    const summary = piSessionHistory.find((candidate: PiSessionSummary) => candidate.id === target.sourceId);
-    if (summary) await handleResumeSession(summary, presentation, false);
+    try {
+      const summary = piSessionHistory.find((candidate: PiSessionSummary) => candidate.id === target.sourceId);
+      if (summary) await handleResumeSession(summary, presentation, false);
+    } catch (error) {
+      if (request === requestRef.current) {
+        setSessionLoad({
+          status: "error",
+          sessionId: target.sourceId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return false;
+    }
     if (request !== requestRef.current) return false;
 
     // Re-assert the selection after hydration. The loader intentionally does
     // not activate so an older request can never steal the current session.
     setPersistentPiSession(target.sourceId);
     selectSession(target.sourceId, target.kind, presentation);
+    setSessionLoad({ status: "ready", sessionId: target.sourceId });
     return true;
   }
 

@@ -22,7 +22,7 @@ import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
 import { buildShortcutMap, modKey, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
 import { getActiveCrossProjectDrag, setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
 import { SlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
-import type { Project, SessionKind } from "@/types";
+import type { Project } from "@/types";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 
 // ── View nav config ───────────────────────────────────────────────────────────
@@ -286,11 +286,6 @@ export function Sidebar() {
                     activeView={activeView}
                      onSelectView={(view) => { setActiveProject(project.id); setView(view); closeSidebarOnMobile(); }}
                      activeSessionId={activeSessionId}
-                     onOpenSession={(_sessionId, _kind: SessionKind) => {
-                       setActiveProject(project.id);
-                       if (!chatOpen) toggleChat();
-                       closeSidebarOnMobile();
-                     }}
                     onRename={(name) => updateProject(project.id, { name })}
                     onDelete={() => deleteProject(project.id)}
                     mergeTargets={projects.filter((p) => p.id !== project.id)}
@@ -384,7 +379,6 @@ interface ProjectItemProps {
   onToggleExpand: () => void; onSelectProject: () => void;
   activeView: string;
   activeSessionId: string | null;
-  onOpenSession: (sessionId: string, kind: SessionKind) => void;
   onSelectView: (view: "overview" | "notes" | "board" | "calendar" | "flow" | "graph" | "chat" | "agent") => void;
   onRename: (name: string) => void; onDelete: () => void;
   /** Other projects in this workspace this one can be merged into. */
@@ -397,7 +391,7 @@ interface ProjectItemProps {
   onCrossProjectDrop: (targetProjectId: string) => boolean;
 }
 
-function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, activeSessionId, onOpenSession, onSelectView, onRename, onDelete, mergeTargets, onMerge, openCardCount, hiddenViews: _hiddenViews, visibleNavItems, onCrossProjectDrop }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, activeSessionId, onSelectView, onRename, onDelete, mergeTargets, onMerge, openCardCount, hiddenViews: _hiddenViews, visibleNavItems, onCrossProjectDrop }: ProjectItemProps) {
   const [renaming, setRenaming]             = useState(false);
   const [renameValue, setRenameValue]       = useState(project.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -612,7 +606,6 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
               projectId={project.id}
               variant="project"
               activeSessionId={activeSessionId}
-              onActivate={onOpenSession}
             />
           </div>
         )}
