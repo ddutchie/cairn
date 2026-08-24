@@ -312,10 +312,13 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       send(channel, payload);
     };
 
-    // Set the dsh plan state so the plan-mode policy section renders and the
-    // exit_plan_mode tool works (state is logged + persisted across resume).
+    // Seed plan state only for a new/legacy session. Once dsh has a plan/mode
+    // event, its session log is authoritative and must not be overwritten by
+    // Cairn's legacy SQLite mode index on every resumed turn.
     try {
-      ctx.planMode?.set(agent as never, mode === "plan");
+      const events = (agent.session.events ?? []) as Array<{ type?: string }>;
+      const hasLoggedMode = events.some((event) => event.type === "plan/mode");
+      if (!hasLoggedMode && mode === "plan") ctx.planMode?.set(agent as never, true);
     } catch { /* non-fatal: plan mode falls back to prompt-only guidance */ }
 
     // Native approval-policy fold (audit §5 Phase C2): record autoApprove as
@@ -337,16 +340,27 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // are admitted through the mounted attachment store and become ImageBlocks
     // (step 2l); without this, req.images would be silently dropped.
     const content = await buildCordisUserContent(ctx, req.message, req.images);
-    agent.followup(
-      createUserMessage({ content: content as never, source: { kind: "user" } }),
-    );
+    // The caller's AbortSignal is not retained by dsh after agent creation.
+    // Bridge it to the live agent so the renderer's stop action cancels the
+    // actual model/tool loop, including a blocked question or tool call.
+    const cancellableAgent = agent as typeof agent & { cancel?: (cause: { kind: "user" }) => void };
+    const cancelAgent = () => cancellableAgent.cancel?.({ kind: "user" });
+    if (signal?.aborted) cancelAgent();
+    else signal?.addEventListener("abort", cancelAgent, { once: true });
+    try {
+      agent.followup(
+        createUserMessage({ content: content as never, source: { kind: "user" } }),
+      );
 
-    // Wait for the turn to fully settle (the dsh loop runs all tool steps).
-    const doneP = Promise.race([
-      terminal,
-      agent.whenIdle().then(() => ({ ok: true }) as RunCordisCodingResult),
-    ]);
-    return await doneP;
+      // Wait for the turn to fully settle (the dsh loop runs all tool steps).
+      const doneP = Promise.race([
+        terminal,
+        agent.whenIdle().then(() => ({ ok: true }) as RunCordisCodingResult),
+      ]);
+      return await doneP;
+    } finally {
+      signal?.removeEventListener("abort", cancelAgent);
+    }
   };
 
   let result: RunCordisCodingResult;

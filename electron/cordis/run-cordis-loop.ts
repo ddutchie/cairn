@@ -930,9 +930,9 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   // "cannot prepare session while it is live" (the previous turn's agent is
   // still in ctx.agents / ctx.sessions as live). This is the dsh-faithful
   // single-Agent-per-SessionId pattern (see agent.ts:64 ReactLoopAgent).
-  const chatAgents = getChatAgentCache();
+    const chatAgents = getChatAgentCache();
 
-  const runTurn = async (): Promise<{ text: string; reasoning: string; pt: number; ct: number; rt: number; failedKind?: string }> => {
+    const runTurn = async (): Promise<{ text: string; reasoning: string; pt: number; ct: number; rt: number; failedKind?: string }> => {
     const stableId = SessionId(`chat-${req.threadId}`);
     currentAttemptSessionId = stableId;
     // Reuse the live agent for this thread if we have one and it's still for the
@@ -1028,13 +1028,24 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     // systemPromptPlugin as a user/form:snapshot alongside this followup in the
     // same turn/start→step/start batch (see agent.ts:283).
     const userContent = await buildCordisUserContent(ctx, req.message, req.images);
-    agent.followup(
-      createUserMessage({
-        content: userContent as never,
-        source: { kind: "user" },
-      }),
-    );
-    await agent.whenIdle();
+    // The caller's AbortSignal is not retained by dsh after agent creation.
+    // Bridge it to the live agent so the renderer's stop action cancels the
+    // actual model/tool loop, including a blocked question or tool call.
+    const cancellableAgent = agent as typeof agent & { cancel?: (cause: { kind: "user" }) => void };
+    const cancelAgent = () => cancellableAgent.cancel?.({ kind: "user" });
+    if (signal?.aborted) cancelAgent();
+    else signal?.addEventListener("abort", cancelAgent, { once: true });
+    try {
+      agent.followup(
+        createUserMessage({
+          content: userContent as never,
+          source: { kind: "user" },
+        }),
+      );
+      await agent.whenIdle();
+    } finally {
+      signal?.removeEventListener("abort", cancelAgent);
+    }
 
     const collected = collect(agent.session.events, firstSeq);
     // Keep the session alive for the next turn's resume — do NOT dispose the

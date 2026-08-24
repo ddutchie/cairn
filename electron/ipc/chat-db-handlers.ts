@@ -37,6 +37,11 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     // fs.rmSync() below. Any legitimate `thr-<nanoid>` passes; `..`, `/`, `\`,
     // empty, over-length, control chars all fail here.
     assertSafeId(threadId, "threadId");
+    // Chat todo snapshots use the dsh session id, not the chat-thread id. Clear
+    // both forms so a stale todo list cannot reappear when the thread resumes
+    // after its transcript has been wiped.
+    q.saveSessionTodos(ctx.db, `chat-${threadId}`, []);
+    q.saveSessionTodos(ctx.db, threadId, []);
     // Drop the cached live chat agent FIRST (see dropChatAgentForThread): the
     // module-global cache survives jsonl/ctx.agents wipes, and reusing a stale
     // agent both leaks pre-clear context into the next turn and writes to

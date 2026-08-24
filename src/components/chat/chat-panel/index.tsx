@@ -530,12 +530,21 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
       // Other dsh registry commands (e.g. /plan from a future chat surface,
       // plugin commands) execute through the runtime on this thread's agent.
-      const commandMatch = trimmed.startsWith("/")
-        ? registryCommands.find((c) => c.name === trimmed.slice(1).trim())
+      const commandName = trimmed.startsWith("/")
+        ? trimmed.slice(1).trim().split(/\s+/, 1)[0]
+        : "";
+      const commandMatch = commandName
+        ? registryCommands.find((c) => c.name === commandName)
+          ?? (commandName === "plan" ? { name: "plan", description: "Enter or leave plan mode" } : undefined)
         : undefined;
       if (commandMatch) {
         setInput("");
-        void window.electron?.runtime?.executeCommand({ sessionId: `chat-${threadId}`, line: trimmed });
+        const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
+        void window.electron?.runtime?.executeCommand({ sessionId: `chat-${threadId}`, line: trimmed }).then((result) => {
+          if (commandName === "plan" && commandArgs && commandArgs !== "off" && result?.kind === "success") {
+            void handleSend(commandArgs);
+          }
+        }).catch(() => { /* command errors are reported by the runtime layer */ });
         return;
       }
     }

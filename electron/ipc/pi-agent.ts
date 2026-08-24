@@ -38,6 +38,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { webcrypto as nodeWebCrypto } from "node:crypto";
 import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
+import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
+import type { SessionEvent } from "@deepseek-ai/dsh-session";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -801,16 +803,11 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:set-mode ─────────────────────────────────────────────────────
-  // Plan mode is dsh-owned: the toggle EXECUTES dsh's /plan command through
-  // ctx.commands on a short-lived resumed agent, so the flip is logged as
-  // command/run+done + plan/mode in the session jsonl (durable — resume folds
-  // it back). The DB `mode` column remains as a Cairn-domain index for listing.
+  // Plan mode is dsh-owned. The toggle executes dsh's /plan command through
+  // ctx.commands on a short-lived resumed agent. The session log is the source
+  // of truth; SQLite is updated only after a successful command and a committed
+  // plan/mode event have been observed.
   registerIpcOn("pi-agent:set-mode", (_event, { sessionId, mode }: { sessionId: string; mode: "plan" | "execute" }) => {
-    try {
-      q.updatePiSession(ctx.db, sessionId, { mode, updatedAt: ts() });
-    } catch (e) {
-      console.warn("[pi-agent] failed to update session mode:", e);
-    }
     void (async () => {
       try {
         const agentConfig = getCachedConfig().agentConfig;
@@ -826,16 +823,29 @@ export function registerPiAgentHandler(
           const commands = (cordisCtx as unknown as { commands?: { execute: (a: unknown, line: string, images: unknown[], signal?: AbortSignal) => Promise<unknown> } }).commands;
           if (!commands) throw new Error("commands runtime unavailable");
           const result = await commands.execute((handle as { agent: unknown }).agent, mode === "plan" ? "/plan" : "/plan off", [], new AbortController().signal);
-          console.log("[pi-agent] /plan command:", JSON.stringify(result)?.slice(0, 120));
+          const commandResult = (result as { result?: { kind?: string; text?: string } } | undefined)?.result;
+          if (commandResult?.kind !== "success") {
+            throw new Error(commandResult?.text ?? "plan mode command was not accepted");
+          }
+          const events = ((handle as { agent: { session?: { events?: readonly SessionEvent[] } } }).agent.session?.events ?? []);
+          const committedMode = foldPlanMode(events) ? "plan" : "execute";
+          if (committedMode !== mode) {
+            throw new Error(`plan mode command did not commit ${mode}`);
+          }
+          try {
+            q.updatePiSession(ctx.db, sessionId, { mode: committedMode, updatedAt: ts() });
+          } catch (e) {
+            console.warn("[pi-agent] failed to update session mode index:", e);
+          }
+          broadcastEvent("pi-agent:mode-change", { sessionId, mode: committedMode });
         } finally {
           try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
         }
       } catch (e) {
-        // Non-fatal: the DB row already flipped; next turn's planMode.set()
-        // reconciles dsh state with it anyway.
-        console.warn("[pi-agent] /plan execution failed (DB index still updated):", e instanceof Error ? e.message : e);
+        // Do not update or broadcast a requested mode when dsh rejected it.
+        // The durable session log remains authoritative and the UI can retry.
+        console.warn("[pi-agent] /plan execution failed:", e instanceof Error ? e.message : e);
       }
-      broadcastEvent("pi-agent:mode-change", { sessionId, mode });
     })();
   });
 

@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
-import { Trash2, FileText, Zap, Map as MapIcon, Loader2, Clock, ChevronDown, Brain } from "lucide-react";
+import { Trash2, FileText, Map as MapIcon, Loader2, Clock, ChevronDown } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
@@ -228,11 +228,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Scroll to bottom on new messages / streaming growth, and whenever the
   // Scroll to the very END of the virtualized content when the pane becomes
-  // active or the ask_questions form appears (the form renders in Virtuoso's
-  // Footer, so it can otherwise stay below the viewport if the user had
-  // scrolled up when the model asked its questions). Streaming follow is
-  // handled by Virtuoso's followOutput. Use a scalar (pendingQuestions?.length)
-  // rather than the array so React doesn't flag the dependency change.
+  // active or the ask_questions form appears. Streaming follow is handled by
+  // Virtuoso's followOutput. Use a scalar (pendingQuestions?.length) rather
+  // than the array so React doesn't flag the dependency change.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (isActive && virtuosoRef.current && messages.length > 0) {
@@ -706,12 +704,25 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     // Other registry commands (/plan, plugin commands) execute through the dsh
     // command runtime on this session's resumed agent.
-    const commandMatch = trimmed.startsWith("/")
-      ? registryCommands.find((c) => c.name === trimmed.slice(1).trim())
+    const commandName = trimmed.startsWith("/")
+      ? trimmed.slice(1).trim().split(/\s+/, 1)[0]
+      : "";
+    const commandMatch = commandName
+      ? registryCommands.find((c) => c.name === commandName)
+        ?? (commandName === "plan" ? { name: "plan", description: "Enter or leave plan mode" } : undefined)
       : undefined;
     if (commandMatch) {
       setInput("");
-      void window.electron?.runtime?.executeCommand({ sessionId: session.sessionId, line: trimmed });
+      const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
+      void window.electron?.runtime?.executeCommand({ sessionId: session.sessionId, line: trimmed }).then((result) => {
+        // dsh's /plan handler uses agent.steer() for its suffix. That works
+        // while a live turn is open, but this command runs on an idle resumed
+        // agent in Cairn. Submit the suffix as a normal user turn after the
+        // command commits so it is not stranded in the disposed agent inbox.
+        if (commandName === "plan" && commandArgs && commandArgs !== "off" && result?.kind === "success") {
+          void sendPromptRef.current(commandArgs);
+        }
+      }).catch(() => { /* command errors are reported by the runtime layer */ });
       return;
     }
 
@@ -868,26 +879,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           {session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
         </span>
 
-        {/* Mode badge */}
-        {session.mode === "plan" ? (
-          <button
-            disabled={isLoading}
-            onClick={() => window.electron?.piAgent.setMode(session.sessionId, "execute")}
-            className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)] hover:bg-[color-mix(in_srgb,var(--warning,#f59e0b)_25%,transparent)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
+        {/* Passive mode status. DSH owns entry/exit through /plan and
+            exit_plan_mode; this is intentionally not a second toggle. */}
+        {session.mode === "plan" && (
+          <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]">
             <MapIcon size={9} />
             PLAN
-          </button>
-        ) : session.mode === "execute" ? (
-          <button
-            disabled={isLoading}
-            onClick={() => window.electron?.piAgent.setMode(session.sessionId, "plan")}
-            className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Zap size={9} />
-            EXECUTE
-          </button>
-        ) : null}
+          </span>
+        )}
 
         {/* PRD note chip — shown when plan note exists */}
         {session.planNoteId && (
@@ -949,33 +948,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             </div>
           ),
           Footer: () => (
-            <div className="px-3 pb-3 space-y-3">
-              {contextRing?.available && contextRing.ring && Object.keys(contextRing.ring.byModel).length > 0 && (
-                <div data-testid="context-ring" className="w-full max-w-xl rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Brain size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-                    {Object.entries(contextRing.ring.byModel).sort((a, b) => b[1].reasoningChars - a[1].reasoningChars).map(([key, bucket]) => {
-                      const modelShort = key.split("::").pop() ?? key;
-                      const degraded = bucket.degradedBlocks - bucket.replayedBlocks >= 0 && bucket.replayedBlocks === 0;
-                      return (
-                        <span key={key} className="text-[0.643rem] text-[var(--text-secondary)]" title={`${bucket.turns} turn(s) with reasoning · ${bucket.reasoningChars} chars${degraded ? " · replay envelope lost (degrades to text)" : ""}`}>
-                          <span className="font-medium text-[var(--text-primary)]">{modelShort}</span>
-                          {" "}· {(bucket.reasoningChars / 1024).toFixed(1)}k think
-                          {bucket.degradedBlocks > 0 && <span className="text-[var(--warning,#f59e0b)]"> · {bucket.degradedBlocks} degraded</span>}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {pendingQuestions && (
-                <QuestionForm
-                  questions={pendingQuestions}
-                  onSubmit={submitQuestions}
-                  onSubmitStructured={(json) => { submitQuestions(json); return true; }}
-                  disabled={false}
-                />
-              )}
+            <div className="px-3 pt-3 pb-3 space-y-3">
             </div>
           ),
         }}
@@ -992,6 +965,19 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
       {/* Input — with upward-expanding plan task list docked above it */}
       <div className="border-t border-[var(--border)] flex-shrink-0">
+        {/* Keep blocking questions outside Virtuoso's Footer. The footer
+            component is recreated while the transcript streams, which can
+            remount QuestionForm and discard answers typed into the form. */}
+        {pendingQuestions && (
+          <div className="px-3 pt-3">
+            <QuestionForm
+              questions={pendingQuestions}
+              onSubmit={submitQuestions}
+              onSubmitStructured={(json) => { submitQuestions(json); return true; }}
+              disabled={false}
+            />
+          </div>
+        )}
         {/* Pinned status strip: always visible above the input even when the
             transcript is scrolled up. Shows the working state and the queued
             message count — the queue stays collapsed so full message content

@@ -619,11 +619,11 @@ The `pending` status fires during streaming as soon as a tool name is seen in th
 
 **Plan Mode**
 
-Launch with `mode: "plan"` to produce a PRD before writing code. Plan Mode restricts the available tools to read-only coding tools plus `ensure_note`. The system prompt instructs the agent to write a structured plan note and then stop. The renderer shows an **Approve Plan** button; clicking it calls `pi-agent:approve-plan`, which switches the session to `mode: "execute"` and injects the full PRD content as context. Implemented in `pi-agent-prompt.ts` (`buildPlanModePrompt`, `buildExecuteModePrompt`) and `pi-agent.ts` (`approve-plan` IPC channel). The `PLAN_MODE_ALLOWED` set in `pi-agent-loop.ts` controls which tools are available in plan mode.
+Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is logged by dsh as `plan/mode`, adds the configured plan policy, and keeps the stable `exit_plan_mode` tool available. The renderer presents the plan-review card supplied by dsh; approval unblocks the current tool call and dsh applies the exit at the next step boundary. Cairn's base system prompt remains unchanged between modes. Implemented in `@deepseek-ai/dsh-plan-mode`, `electron/cordis/run-cordis-coding.ts`, and `src/components/chat/chat-panel/QuestionForm.tsx`.
 
 **System prompt**
 
-`buildPlanModePrompt()` / `buildExecuteModePrompt()` in `pi-agent-prompt.ts` inject the project name, `cwd`, active task title, date, and (in execute mode) the full PRD content. The mandatory workflow section (orient → document → capture → wrap up) is enforced here — if you want the agent to adopt a new habit, add it to this file rather than relying on per-turn instructions.
+`buildExecuteModePrompt()` in `pi-agent-prompt.ts` provides the stable Cairn coding-agent context, including the project name, `cwd`, active task title, date, and (when available) the approved plan for execution. Plan-mode behavior belongs to dsh's configured `plan:policy` section, not to a second Cairn system-prompt variant.
 
 ### Adding a new analytics canvas
 

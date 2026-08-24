@@ -142,7 +142,7 @@ function PlanReviewCard({ question, disabled, onDecide, onDismiss }: PlanReviewC
               doKeepPlanning();
             }
           }}
-          placeholder="Feedback (leave blank to just keep planning)…"
+          placeholder="What should change?"
           rows={2}
           disabled={disabled || busy}
           className="w-full px-2.5 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] resize-none disabled:opacity-50 transition-colors leading-relaxed"
@@ -154,9 +154,9 @@ function PlanReviewCard({ question, disabled, onDecide, onDismiss }: PlanReviewC
             onClick={doDismiss}
             disabled={disabled || busy}
             data-testid="plan-review-discuss"
-            title="Dismiss the plan review — I want to say something the options don't cover"
+            title="Chat about the plan instead of choosing an option"
           >
-            Discuss
+            Chat about it
           </Button>
           <Button
             variant="ghost"
@@ -166,7 +166,7 @@ function PlanReviewCard({ question, disabled, onDecide, onDismiss }: PlanReviewC
             data-testid="plan-review-keep"
             title={(keepDesc && optionDescription(keepDesc)) || "Reject the plan and keep planning"}
           >
-            {feedback.trim() ? "Send feedback" : keepLabel}
+            {feedback.trim() ? "Send feedback" : "Refuse"}
           </Button>
           <Button
             variant="accent"
@@ -289,7 +289,7 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
         "flex-1 min-w-0 rounded-xl rounded-tl-sm border px-3 py-2.5 flex flex-col gap-2.5 transition-opacity",
         submitted ? "bg-[var(--surface)] border-[var(--border)] opacity-60" : "bg-[var(--surface-2)] border-[var(--border)]",
       )}>
-        {questions.map((q) => {
+        {questions.map((q, questionIndex) => {
           const head = questionHeader(q);
           const body = questionBody(q);
           const opts = q.options && q.options.length > 0 ? q.options : null;
@@ -305,7 +305,7 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
             });
           };
           return (
-            <div key={q.id} className="flex flex-col gap-1">
+            <div key={`${q.id}-${questionIndex}`} className="flex flex-col gap-1">
               {/* Head (short label) and body (full question) are BOTH rendered
                   as persistent text — NOT as the textarea placeholder — so
                   the user's context stays visible while typing. */}
@@ -320,12 +320,12 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
               )}
               {opts && (
                 <div className="flex flex-wrap gap-1.5">
-                  {opts.map((opt) => {
+                  {opts.map((opt, optionIndex) => {
                     const label = optionLabel(opt);
                     const desc = optionDescription(opt);
                     return (
                       <button
-                        key={label}
+                        key={`${q.id}-${questionIndex}-${label}-${optionIndex}`}
                         type="button"
                         title={desc}
                         onClick={() => toggleOption(label)}

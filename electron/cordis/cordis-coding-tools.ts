@@ -192,7 +192,10 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
   );
   await plug(
     { apply: toolFsSearchApply, inject: toolFsSearchInject as never, name: toolFsSearchName },
-    { globMaxResults: 1000, grepMaxMatches: 500, grepMaxLineBytes: 4096, searchMetaMaxBytes: 10000, rawOutputMaxBytes: 100000, graceMs: 100, stderrMaxBytes: 10000, timeoutMs: 30000, sampleOverCapGlobResults: false },
+    // Search results are still bounded inline by globMaxResults/grepMaxMatches,
+    // but the raw rg stream must be large enough to parse a broad repository
+    // before those caps can be applied.
+    { globMaxResults: 1000, grepMaxMatches: 500, grepMaxLineBytes: 4096, searchMetaMaxBytes: 10000, rawOutputMaxBytes: 2_000_000, graceMs: 100, stderrMaxBytes: 10000, timeoutMs: 30000, sampleOverCapGlobResults: false },
   );
   await plug({ apply: toolStrApply, inject: toolStrInject as never, name: toolStrName }, { maxOutputChars: 16000 });
   await plug({ apply: toolTodoApply, inject: toolTodoInject as never, name: toolTodoName }, { allowParallelInProgress: true });

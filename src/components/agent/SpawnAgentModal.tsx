@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Terminal, MessageSquare, AlertTriangle, Zap, Map as MapIcon } from "lucide-react";
+import { Terminal, MessageSquare, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -52,7 +52,6 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   const codeDirectory = project?.codeDirectory ?? null;
 
   const [sessionType, setSessionType]   = useState<"pi" | "pty">("pi");
-  const [agentMode, setAgentMode]       = useState<"execute" | "plan">("execute");
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [prompt, setPrompt]             = useState("");
   const [spawning, setSpawning]         = useState(false);
@@ -104,7 +103,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             taskTitle,
             taskId: card?.id ?? null,
             cwd: codeDirectory,
-            mode: agentMode,
+            mode: "execute",
             spawnedAt: now,
           });
         } catch (e) {
@@ -124,7 +123,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           spawnedAt:     now,
           sessionType:   "pi",
           piMessages:    [],
-          mode:          agentMode,
+          mode:          "execute",
           initialPrompt: prompt.trim() || undefined,
         });
 
@@ -204,28 +203,6 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             )}
           </div>
 
-          {/* Plan / Execute mode toggle — Cairn Agent only */}
-          {sessionType === "pi" && (
-            <div>
-              <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">
-                Mode
-              </p>
-              <SegmentedControl
-                options={[
-                  { value: "execute", label: "Execute", icon: <Zap size={12} /> },
-                  { value: "plan", label: "Plan", icon: <MapIcon size={12} /> },
-                ]}
-                value={agentMode}
-                onChange={setAgentMode}
-              />
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
-                {agentMode === "plan"
-                  ? "Discuss and refine a plan first — no code written until you approve"
-                  : "Jump straight into implementation"}
-              </p>
-            </div>
-          )}
-
           {/* Task label — only shown when launched from a card */}
           {card && (
             <div>
@@ -287,7 +264,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           {/* Prompt textarea */}
           <div>
             <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-              {sessionType === "pi" && agentMode === "plan" ? "What do you want to build?" : sessionType === "pi" ? "Initial prompt (optional)" : "Prompt"}
+              {sessionType === "pi" ? "Initial prompt (optional)" : "Prompt"}
             </label>
             <textarea
               value={prompt}
@@ -296,9 +273,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               rows={5}
               className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-2 font-mono resize-y focus:outline-none"
               placeholder={
-                sessionType === "pi" && agentMode === "plan"
-                  ? "Describe what you want to build — the agent will ask questions and build a plan…"
-                  : sessionType === "pi"
+                sessionType === "pi"
                   ? "Describe what you want the agent to do…"
                   : "Describe the task for the agent…"
               }

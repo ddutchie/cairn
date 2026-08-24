@@ -1,7 +1,10 @@
-import { registerIpcHandle } from "./registry";
+import { registerIpcHandle, broadcastEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
+import * as q from "../db/queries";
+import { ts } from "../db/utils";
+import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
 
 let progressForwarderSetUp = false;
 
@@ -48,7 +51,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
       const cordisCtx = await getContext();
       const commands = (cordisCtx as unknown as { commands?: { list?: () => Array<{ name: string; description?: string }> } }).commands;
       const list = commands?.list?.() ?? [];
-      return { data: list.map((c) => ({ name: c.name, description: c.description ?? "" })) };
+      return list.map((c) => ({ name: c.name, description: c.description ?? "" }));
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
@@ -75,7 +78,17 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
         if (!commands) return { error: "commands runtime unavailable" };
         const out = await commands.execute((handle as { agent: unknown }).agent, req.line, [], new AbortController().signal) as { result?: { kind?: string; text?: string } } | undefined;
         const r = out?.result ?? (out as { kind?: string; text?: string } | undefined);
-        return { data: { kind: r?.kind, text: r?.text } };
+        const commandName = req.line.trim().replace(/^\//, "").split(/\s+/, 1)[0];
+        if (commandName === "plan" && r?.kind === "success") {
+          const agent = (handle as { agent: { session?: { id?: string; events?: readonly unknown[] } } }).agent;
+          const events = (agent.session?.events ?? []) as Parameters<typeof foldPlanMode>[0];
+          const mode = foldPlanMode(events) ? "plan" : "execute";
+          try {
+            q.updatePiSession(ctx.db, req.sessionId, { mode, updatedAt: ts() });
+          } catch { /* chat sessions do not have a Cairn pi-session row */ }
+          broadcastEvent("pi-agent:mode-change", { sessionId: req.sessionId, mode });
+        }
+        return { kind: r?.kind, text: r?.text };
       } finally {
         try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
       }
