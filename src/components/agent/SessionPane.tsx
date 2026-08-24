@@ -47,7 +47,6 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     activeView,
     chatOpen,
     projects,
-    setActiveChatThreadId,
     chatPoppedOut,
     setChatPoppedOut,
     setView,
@@ -65,7 +64,6 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     activeView: s.activeView,
     chatOpen: s.chatOpen,
     projects: s.projects,
-    setActiveChatThreadId: s.setActiveChatThreadId,
     chatPoppedOut: s.chatPoppedOut,
     setChatPoppedOut: s.setChatPoppedOut,
     setView: s.setView,
@@ -100,9 +98,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     if (!activeWorkspaceId) return;
     setNewMenuOpen(false);
     const thread = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
-    setActiveChatThreadId(thread.id);
-    setActiveSession("chat");
-    setSessionPresentation("drawer");
+    openSession(thread.id, "chat", "drawer");
   }
 
   async function handleNewAgentSession() {

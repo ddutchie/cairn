@@ -34,12 +34,13 @@ import {
 } from "./sections";
 
 export function ProjectOverview() {
-  const { activeProjectId, activeWorkspaceId, activeSessionId, projects, setActiveSession, setView, setSessionPresentation, chatOpen, setSettingsSection, overviewCollapsedSections, toggleOverviewSection, recentProjectRuns, fetchRecentProjectRuns } = useCairnStore(useShallow((s) => ({
+  const { activeProjectId, activeWorkspaceId, activeSessionId, activeChatThreadId, projects, openSession, setView, setSessionPresentation, chatOpen, setSettingsSection, overviewCollapsedSections, toggleOverviewSection, recentProjectRuns, fetchRecentProjectRuns } = useCairnStore(useShallow((s) => ({
     activeProjectId: s.activeProjectId,
     activeWorkspaceId: s.activeWorkspaceId,
     activeSessionId: s.activeSessionId,
-    setActiveSession: s.setActiveSession,
+    activeChatThreadId: s.activeChatThreadId,
     projects:        s.projects,
+    openSession:     s.openSession,
     setView:         s.setView,
     setSessionPresentation: s.setSessionPresentation,
     chatOpen:        s.chatOpen,
@@ -332,7 +333,11 @@ export function ProjectOverview() {
               <h2 className="text-[0.786rem] font-semibold text-[var(--text-primary)]">Recent sessions</h2>
               <p className="text-[0.643rem] text-[var(--text-tertiary)]">Chat and coding history for this project</p>
             </div>
-            <button type="button" onClick={() => { setActiveSession("chat"); setSessionPresentation("center"); setView("chat"); }} className="text-[0.643rem] text-[var(--accent)] hover:text-[var(--text-primary)]">Open sessions</button>
+            <button type="button" onClick={() => {
+              if (activeChatThreadId) openSession(activeChatThreadId, "chat", "center");
+              else setSessionPresentation("center");
+              setView("chat");
+            }} className="text-[0.643rem] text-[var(--accent)] hover:text-[var(--text-primary)]">Open sessions</button>
           </div>
           <SessionBrowser
             variant="preview"
