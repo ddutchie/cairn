@@ -73,7 +73,7 @@ export async function mountCordisSessionPlugins({
     model: llmConfig.model,
     baseUrl: llmConfig.baseUrl,
   });
-  if (sendSubagent) await mount(cairnSubagentPlugin, { send: sendSubagent });
+  if (sendSubagent) await mount(cairnSubagentPlugin, { send: sendSubagent, sessionId });
   if (questions) {
     await mount(cairnQuestionsPlugin, {
       send: questions.send,

@@ -40,6 +40,7 @@ import { ConversationHeader } from "@/components/conversation/ConversationHeader
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
+import type { SessionProjection } from "../../../shared/agent/session-projection";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -345,7 +346,43 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       if (e.sessionId === sessionId) fold(e.event);
     });
 
-    // ── Subagent events ────────────────────────────────────────────────────
+    const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
+      if (projection.sessionId !== sessionId) return;
+      const e = projection.data as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (projection.kind === "subagent-trace" && e.parentSession === sessionId) {
+        if (e.trace === "token") appendAgentSubagentToken(sessionId, e.childId, e.delta);
+        else if (e.trace === "thought") appendAgentSubagentThought(sessionId, e.childId, e.delta);
+        else if (e.trace === "tool-call") addAgentSubagentToolCall(sessionId, e.childId, { callId: e.callId ?? `${e.tool}:${Date.now()}`, name: e.tool, label: e.label, args: e.args, running: true, ok: true });
+        else if (e.trace === "tool-done") updateAgentSubagentToolCall(sessionId, e.childId, e.callId ?? `${e.tool}:unknown`, { label: e.tool, running: false, ok: e.ok ?? true, output: READ_ONLY_TOOLS.has(e.tool) ? undefined : redactAgentToolCall({ output: e.output }).output, cairnRef: e.cairnRef ?? extractCairnRef(e.tool, e.output) });
+        else if (e.trace === "usage") updateAgentSubagentUsage(sessionId, e.childId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
+        else if (e.trace === "status" && e.status === "done") { stepAgentSubagent(sessionId, e.childId); finaliseAgentSubagentMessage(sessionId, e.childId); }
+        else if (e.trace === "status" && e.status === "start") addAgentSubagentToolCall(sessionId, e.childId, { callId: `${e.childId}:start`, name: "subagent", label: e.role ?? "subagent", running: false, ok: true });
+        return;
+      }
+      if (projection.kind === "plan-note") { if (e.planContent) setPlanNoteContent(e.planContent); setAgentMode(sessionId, "plan", e.noteId); }
+      else if (projection.kind === "mode-change") setAgentMode(sessionId, e.mode, e.planNoteId);
+      else if (projection.kind === "question") { setPendingQuestions(e.questions as PendingQuestion[]); setPendingQuestionCallId(e.callId); }
+      else if (projection.kind === "approval") setAgentToolConfirmRequired(sessionId, e.callId, e.status === "required", e.nonce);
+      else if (projection.kind === "note-updated") {
+        const planId = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.planNoteId;
+        if (planId && e.noteId === planId) setPlanNoteContent(e.content);
+      } else if (projection.kind === "todos") setSessionTodos(sessionId, e.todos as never);
+      else if (projection.kind === "retry") { setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs }); setTimeout(() => setRetryInfo(null), e.delayMs + 500); }
+      else if (projection.kind === "compact") { setIsCompacting(e.status === "start"); if (e.status === "end" && e.auto) addAgentMessage(sessionId, { id: id(), role: "system" as const, content: "----- Session Compacted -----", timestamp: new Date().toISOString() }); }
+      else if (projection.kind === "compact-result") {
+        void (async () => {
+          try {
+            const result = await (electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId);
+            const raw = result && typeof result === "object" && "data" in result ? (result as { data: unknown }).data : result;
+            const rows = Array.isArray(raw) ? raw : (raw && typeof raw === "object" && "messages" in raw ? (raw as { messages: unknown[] }).messages : []);
+            if (rows.length) useCairnStore.setState((s) => ({ terminalSessions: s.terminalSessions.map((t) => t.sessionId === sessionId ? { ...t, messages: rows as never } : t) }));
+          } catch (err) { console.warn("[AgentChatPane] compact reload failed", err); }
+          addAgentMessage(sessionId, { id: id(), role: "system" as const, content: e.messageCount > 0 ? `Context compacted — session history summarised into ${e.messageCount} messages.` : "Nothing to compact — session history is too short.", timestamp: new Date().toISOString() });
+        })();
+      }
+    });
+
+    /* ── Subagent events (handled by the single projection subscription above) ──
     // Coding-agent subagents (dsh child sessions with header.origin=='subagent'
     // and header.parentSession==sessionId) come through the shared
     // chat:subagent* bus that cairnSubagentPlugin emits (not the pi-agent:*
@@ -459,7 +496,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // session shows its list before the agent touches it again.
     electron.session.getTodos?.(sessionId).then((result) => {
       if (result?.length) setSessionTodos(sessionId, result);
-    }).catch(() => { /* no persisted todos — dock stays hidden */ });
+    }).catch(() => { // no persisted todos; dock stays hidden
+    });
 
     // Retry events — show backoff countdown in the status bar
     const unsubRetry = electron.session.onRetry((e) => {
@@ -533,26 +571,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           : "Nothing to compact — session history is too short.";
         addAgentMessage(sessionId, { id: id(), role: "system" as const, content: msg, timestamp: new Date().toISOString() });
       })();
-    });
+    }); */
 
     return () => {
       unsubEvent();
-      unsubSubToken?.();
-      unsubSubThought?.();
-      unsubSubToolCall?.();
-      unsubSubToolCallDone?.();
-      unsubSubUsage?.();
-      unsubSub?.();
-      unsubPlanNote();
-      unsubModeChange();
-      unsubAskQuestions();
-      unsubToolConfirmRequired();
-      unsubToolConfirmExpired?.();
-      unsubNoteUpdated();
-      unsubTodos();
-      unsubRetry();
-      unsubCompact();
-      unsubCompactResult();
+      unsubProjection();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);

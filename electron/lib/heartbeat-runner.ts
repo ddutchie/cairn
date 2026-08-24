@@ -71,6 +71,7 @@ import type { RunCordisCodingOptions } from "../cordis/run-cordis-coding";
 import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
 import { getSecretValue } from "./secure-store";
 import { toSlug } from "../shared/text-utils";
+import type { SessionProjection } from "../../shared/agent/session-projection";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -506,42 +507,45 @@ export async function runAutomation(
   // `pi-agent:tool-confirm-required` event (the seam doesn't carry the name).
   const confirmToolByCallId = new Map<string, string>();
   const loopSend = (channel: string, payload: Record<string, unknown>) => {
-    const name = payload.name as string | undefined;
-    const status = payload.status as string | undefined;
-    if (channel === "session:tool-confirm-required" && typeof payload.callId === "string") {
-      confirmToolByCallId.set(payload.callId as string, name ?? "tool");
-      emitRun("toolConfirmRequired", { tool: name, callId: payload.callId, label: payload.label });
+    if (channel !== "session:projection") return;
+    const projection = payload as unknown as SessionProjection;
+    const data = projection.data as Record<string, unknown>;
+    const status = data.status as string | undefined;
+    if (projection.kind === "approval" && data.status === "required" && typeof data.callId === "string") {
+      confirmToolByCallId.set(data.callId as string, (data.name as string | undefined) ?? "tool");
+      emitRun("toolConfirmRequired", { tool: data.name, callId: data.callId, label: data.label });
       return;
     }
-    if (channel === "session:token" && typeof payload.delta === "string") {
-      finalContent += payload.delta;
-      emitRun("token", { delta: payload.delta });
+    if (projection.kind === "token" && typeof data.delta === "string") {
+      finalContent += data.delta;
+      emitRun("token", { delta: data.delta });
       return;
     }
-    if (channel === "session:thought" && typeof payload.delta === "string") {
-      log.thoughts += payload.delta;
-      emitRun("thought", { delta: payload.delta });
+    if (projection.kind === "thought" && typeof data.delta === "string") {
+      log.thoughts += data.delta;
+      emitRun("thought", { delta: data.delta });
       return;
     }
-    if (channel === "session:tool") {
-      const callId = payload.callId as string | undefined;
+    if (projection.kind === "tool") {
+      const callId = data.callId as string | undefined;
       // Prettify the tool label the same way chat/agent views do — raw MCP
       // names like mcp__<id>__search-designs become "Search designs" (or
       // "Canva · Search designs" when the server name resolves).
-      const cleanLabel = externalToolLabel(name ?? "tool", db);
+      const toolName = data.name as string | undefined;
+      const cleanLabel = externalToolLabel(toolName ?? "tool", db);
       if (status === "pending" || status === "start") {
-        currentTool(name ?? "tool");
-        logTool(name ?? "tool", cleanLabel, payload.args as Record<string, unknown> | undefined);
-        emitRun("tool", { tool: name, label: cleanLabel, args: payload.args, status: "start", callId });
+        currentTool(toolName ?? "tool");
+        logTool(toolName ?? "tool", cleanLabel, data.args as Record<string, unknown> | undefined);
+        emitRun("tool", { tool: toolName, label: cleanLabel, args: data.args, status: "start", callId });
       } else if (status === "end") {
-        recordArtifact(name ?? "", payload.cairnRef as { type: "note" | "task"; id: string; title: string } | undefined);
-        logToolDone(name ?? "tool", payload.ok as boolean | undefined, payload.output as string | undefined, payload.error as string | undefined);
+        recordArtifact(toolName ?? "", data.cairnRef as { type: "note" | "task"; id: string; title: string } | undefined);
+        logToolDone(toolName ?? "tool", data.ok as boolean | undefined, data.output as string | undefined, data.error as string | undefined);
         flushLog();
-        emitRun("toolDone", { tool: name, ok: payload.ok, output: payload.output, error: payload.error, callId });
+        emitRun("toolDone", { tool: toolName, ok: data.ok, output: data.output, error: data.error, callId });
       }
       return;
     }
-    if (channel === "session:usage") {
+    if (projection.kind === "usage") {
       recordLlmUsage({
         source: "automation",
         sessionId: run.id,
@@ -550,12 +554,12 @@ export async function runAutomation(
         provider,
         model: cachedModel,
         baseUrl: cachedBaseUrl,
-        promptTokens: (payload.promptTokens as number) ?? 0,
-        completionTokens: (payload.completionTokens as number) ?? 0,
-        reasoningTokens: (payload.reasoningTokens as number) ?? 0,
-        cacheReadTokens: payload.cacheReadTokens as number,
-        cacheCreationTokens: payload.cacheCreationTokens as number,
-        costUsd: payload.costUsd as number,
+         promptTokens: (data.promptTokens as number) ?? 0,
+         completionTokens: (data.completionTokens as number) ?? 0,
+         reasoningTokens: (data.reasoningTokens as number) ?? 0,
+         cacheReadTokens: data.cacheReadTokens as number,
+         cacheCreationTokens: data.cacheCreationTokens as number,
+         costUsd: data.costUsd as number,
       });
       return;
     }

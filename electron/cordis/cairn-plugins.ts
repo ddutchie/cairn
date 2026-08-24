@@ -28,6 +28,11 @@ import { saveSessionTodos, getSessionTodos, updateCodingSession } from "../db/qu
 import { resultContentError } from "../lib/tool-result";
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
+import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
+
+function sendProjection(send: (channel: string, payload: Record<string, unknown>) => void, sessionId: string, kind: SessionProjectionKind, data: Record<string, unknown>): void {
+  send("session:projection", makeSessionProjection(sessionId, kind, data as never) as unknown as Record<string, unknown>);
+}
 
 /** Service key under which cairnDbPlugin provides the Database handle. */
 export const CAIRN_DB = "cairnDb";
@@ -169,6 +174,7 @@ export function cairnSessionPlugin(ctx: Context, config: CairnSessionConfig): vo
 export interface CairnSubagentConfig {
   /** Emit a Cairn IPC event (threadId already tagged by the caller). */
   send: (channel: string, payload: Record<string, unknown>) => void;
+  sessionId: string;
 }
 
 /**
@@ -178,7 +184,7 @@ export interface CairnSubagentConfig {
  * their own session logs; the role label is the child's delegation label.
  */
 export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): void {
-  const { send } = config;
+  const { send, sessionId } = config;
   const started = new Set<string>();
   const callName = new Map<string, string>();
   // Track whether a child streamed text / reasoning as deltas, so the final
@@ -216,7 +222,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
         const full = eventText(event).trim();
         const instruction = full || "subagent";
         const role = full ? full.slice(0, 60) : "subagent";
-         send("session:subagent", { status: "start", childId, parentSession, role, instruction });
+         sendProjection(send, sessionId, "subagent-trace", { trace: "status", status: "start", childId, parentSession, role, instruction });
       }
       return;
     }
@@ -224,8 +230,8 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     if (event.type === "assistant/chunk") {
       const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
       if (!c) return;
-       if (c.type === "text-delta" && c.text) { streamedText.add(childId); send("session:subagent-token", { childId, parentSession, delta: c.text }); }
-       if (c.type === "reasoning-delta" && c.text) { streamedReasoning.add(childId); send("session:subagent-thought", { childId, parentSession, delta: c.text }); }
+       if (c.type === "text-delta" && c.text) { streamedText.add(childId); sendProjection(send, sessionId, "subagent-trace", { trace: "token", childId, parentSession, delta: c.text }); }
+       if (c.type === "reasoning-delta" && c.text) { streamedReasoning.add(childId); sendProjection(send, sessionId, "subagent-trace", { trace: "thought", childId, parentSession, delta: c.text }); }
       return;
     }
 
@@ -234,7 +240,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       if (d.callId) callName.set(d.callId, d.name);
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(d.arguments ?? "{}") as Record<string, unknown>; } catch { /* keep {} */ }
-       send("session:subagent-tool-call", { childId, parentSession, tool: d.name, label: d.name, callId: d.callId, args });
+       sendProjection(send, sessionId, "subagent-trace", { trace: "tool-call", childId, parentSession, tool: d.name, label: d.name, callId: d.callId, args });
       return;
     }
 
@@ -245,7 +251,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       const isError = block?.isError === true;
       const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
       const tool = callId ? (callName.get(callId) ?? "tool") : "tool";
-       send("session:subagent-tool-call-done", {
+       sendProjection(send, sessionId, "subagent-trace", { trace: "tool-done",
         childId, parentSession, tool, callId,
         ok: !isError, error: isError ? (output || "tool error") : undefined,
         output: isError ? undefined : output,
@@ -256,7 +262,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     if (event.type === "assistant/message") {
       const usage = (event.data as { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }).usage;
       if (usage) {
-         send("session:subagent-usage", {
+         sendProjection(send, sessionId, "subagent-trace", { trace: "usage",
           childId, parentSession,
           promptTokens: usage.inputTokens ?? 0,
           completionTokens: usage.outputTokens ?? 0,
@@ -269,11 +275,11 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       // or chain-of-thought leaks into the FINDINGS BRIEF.
       if (!streamedText.has(childId)) {
         const text = eventText(event);
-         if (text) send("session:subagent-token", { childId, parentSession, delta: text });
+          if (text) sendProjection(send, sessionId, "subagent-trace", { trace: "token", childId, parentSession, delta: text });
       }
       if (!streamedReasoning.has(childId)) {
         const { reasoning } = eventReasoning(event);
-         if (reasoning) send("session:subagent-thought", { childId, parentSession, delta: reasoning });
+          if (reasoning) sendProjection(send, sessionId, "subagent-trace", { trace: "thought", childId, parentSession, delta: reasoning });
       }
       return;
     }
@@ -281,7 +287,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     if (event.type === "turn/end") {
       const reason = (event.data as { reason?: { kind?: string } }).reason;
       const result = reason?.kind === "completed" ? "" : ` (${reason?.kind ?? "error"})`;
-       send("session:subagent", { status: "done", childId, parentSession, result, error: reason?.kind === "completed" ? undefined : reason?.kind });
+       sendProjection(send, sessionId, "subagent-trace", { trace: "status", status: "done", childId, parentSession, result, error: reason?.kind === "completed" ? undefined : reason?.kind });
       void seq;
       return;
     }
@@ -605,13 +611,13 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
   let lastCompactSummary = "";
   let lastCompactCount = 0;
 
-  const emit = (channel: string, payload: Record<string, unknown>) => send(channel, { sessionId, ...payload });
+  const emit = (kind: SessionProjectionKind, payload: Record<string, unknown>) => sendProjection(send, sessionId, kind, payload);
 
   const finish = (kind: "done" | "error", error?: string) => {
     if (ended) return;
     ended = true;
-    if (kind === "done") emit("session:done", {});
-    else emit("session:error", { error: error ?? "Agent error" });
+    if (kind === "done") emit("done", {});
+    else emit("error", { error: error ?? "Agent error" });
   };
   if (signal?.aborted) finish("done");
 
@@ -627,7 +633,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     // the renderer's toggle reflects the authoritative session state.
     if (event.type === "plan/mode") {
       const active = (event.data as { active?: boolean } | undefined)?.active === true;
-      emit("session:mode-change", { sessionId, mode: active ? "plan" : "execute" });
+       emit("mode-change", { mode: active ? "plan" : "execute" });
       return;
     }
 
@@ -638,7 +644,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     // step boundaries.
     if (event.type === "turn/start") {
       if (!firstTurnStarted) firstTurnStarted = true;
-      else emit("session:step", {});
+       else emit("step", {});
       return;
     }
 
@@ -648,16 +654,16 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       if (!c) return;
       if (c.type === "text-delta" && c.text) {
         streamedText.add(sessionId);
-        emit("session:token", { delta: c.text });
+         emit("token", { delta: c.text });
         return;
       }
       if (c.type === "reasoning-delta" && c.text) {
         streamedReasoning.add(sessionId);
-        emit("session:thought", { delta: c.text });
+         emit("thought", { delta: c.text });
         return;
       }
       if (c.type === "usage" && c.usage) {
-        emit("session:usage", {
+         emit("usage", {
           promptTokens: c.usage.inputTokens ?? 0,
           completionTokens: c.usage.outputTokens ?? 0,
           reasoningTokens: c.usage.reasoningTokens ?? 0,
@@ -671,7 +677,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     if (event.type === "tool/call") {
       if (!toolsReadyFired) {
         toolsReadyFired = true;
-        emit("session:tools-ready", {});
+         emit("tools-ready", {});
       }
       const d = event.data as { name: string; arguments?: string; callId?: string };
       if (d.callId) callName.set(d.callId, d.name);
@@ -695,7 +701,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
         if (db) {
           try {
             updateCodingSession(db, sessionId, { planContent: args.plan });
-            emit("session:plan-note", { noteId: undefined, planContent: args.plan });
+             emit("plan-note", { noteId: undefined, planContent: args.plan });
           } catch (err) {
             console.warn("[cordis] failed to persist plan_content:", err);
           }
@@ -704,7 +710,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 
       // "pending" chip (same as builtin onToolPending) — frontend treats it as a
       // running chip immediately, matching the streaming pending-state UX.
-      emit("session:tool", { name: d.name, label, args, callId, status: "pending" });
+       emit("tool", { name: d.name, label, args, callId, status: "pending" });
       return;
     }
 
@@ -719,7 +725,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       const label = callId ? (callLabel.get(callId) ?? name) : name;
       // ok = !isError and not a Cairn `{error:…}` return (same detection as builtin).
       const ok = !isError && resultContentError(output) === undefined;
-      emit("session:tool", {
+       emit("tool", {
         name, label, callId, status: "end", ok,
         output: isError ? undefined : output,
         args: undefined,
@@ -733,7 +739,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
           const parsed = JSON.parse(output) as { id?: string };
           if (parsed?.id) {
             const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
-            if (row) emit("session:note-updated", { noteId: parsed.id, content: row.content ?? "" });
+             if (row) emit("note-updated", { noteId: parsed.id, content: row.content ?? "" });
           }
         } catch { /* non-JSON output — ignore */ }
       }
@@ -742,7 +748,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       if (mode === "plan" && ok && name === "ensure_note") {
         try {
           const parsed = JSON.parse(output) as { id?: string };
-          if (parsed?.id) emit("session:plan-note", { noteId: parsed.id });
+           if (parsed?.id) emit("plan-note", { noteId: parsed.id });
         } catch { /* non-JSON output — ignore */ }
       }
 
@@ -759,7 +765,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
               }))
             : [];
           saveSessionTodos(db, sessionId, list);
-          emit("session:todos", { todos: getSessionTodos(db, sessionId) });
+          emit("todos", { todos: getSessionTodos(db, sessionId) });
         } catch { /* non-critical */ }
       }
       return;
@@ -769,11 +775,11 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     if (event.type === "assistant/message") {
       if (!streamedText.has(sessionId)) {
         const text = eventText(event);
-        if (text) emit("session:token", { delta: text });
+         if (text) emit("token", { delta: text });
       }
       if (!streamedReasoning.has(sessionId)) {
         const { reasoning } = eventReasoning(event);
-        if (reasoning) emit("session:thought", { delta: reasoning });
+         if (reasoning) emit("thought", { delta: reasoning });
       }
       return;
     }
@@ -781,7 +787,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     // ── Retry: dsh-llm-retry records a durable llm/retry before each wait ─────
     if (event.type === "llm/retry") {
       const d = event.data as { retry?: number; maxRetries?: number; delayMs?: number; failure?: { message?: string; code?: string } };
-      emit("session:retry", {
+       emit("retry", {
         attempt: (d.retry ?? 0) + 1,
         maxRetries: d.maxRetries ?? 0,
         delayMs: d.delayMs ?? 0,
@@ -792,7 +798,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 
     // ── Compaction: BasicCompactionEngine auto-compacts at 80% context ────────
     if (event.type === "compaction/start") {
-      emit("session:compact", { status: "start" });
+       emit("compact", { status: "start" });
       return;
     }
     if (event.type === "compaction/summary") {
@@ -807,9 +813,9 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     if (event.type === "compaction/end") {
       // A failed close records an `error` on the end marker — don't claim success.
       const failed = (event.data as { error?: unknown }).error !== undefined;
-      emit("session:compact", { status: "end", auto: true });
+       emit("compact", { status: "end", auto: true });
       if (!failed) {
-        emit("session:compact-result", { messageCount: lastCompactCount, summary: lastCompactSummary });
+         emit("compact-result", { messageCount: lastCompactCount, summary: lastCompactSummary });
       }
       lastCompactSummary = "";
       lastCompactCount = 0;
@@ -936,7 +942,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const toolName = req?.toolName ?? "tool";
       const callId = req?.callId ?? `approve-${newId()}`;
       if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
-      send("session:tool-confirm-required", { sessionId, name: toolName, label: toolName, callId });
+       sendProjection(send, sessionId, "approval", { status: "required", name: toolName, label: toolName, callId });
       return new Promise<string>((resolve) => {
         // Single-settle guard: exactly one of respond / abort / timeout wins,
         // and the abort listeners never linger after a normal settle.
@@ -1003,7 +1009,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
         }
         timer = setTimeout(() => {
           if (settled) return;
-          send("session:tool-confirm-expired", { sessionId, name: toolName, label: toolName, callId });
+           sendProjection(send, sessionId, "approval", { status: "expired", name: toolName, label: toolName, callId });
           settle("cancelled");
         }, timeoutMs ?? APPROVAL_TIMEOUT_MS);
       });

@@ -37,6 +37,7 @@ import { runCordisSession } from "./session-runner";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
+import { makeSessionProjection } from "../../shared/agent/session-projection";
 
 export interface RunCordisCodingOptions {
   db: Database;
@@ -125,7 +126,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     ctx, db, req, sessionId, llmConfig: opts.llmConfig, signal,
       questions: questions ? {
       ...questions,
-      emitQuestions: (requestId, qs) => questions.send("session:ask-questions", { sessionId, callId: requestId, questions: qs }),
+       emitQuestions: (requestId, qs) => questions.send("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions: qs }) as never),
       } : undefined,
     onSessionEvent: opts.onSessionEvent,
     setup: async ({ llmConfig, resources, mount }) => {
@@ -252,8 +253,8 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     let resolveTerminal: (r: RunCordisCodingResult) => void = () => {};
     const terminal = new Promise<RunCordisCodingResult>((resolve) => { resolveTerminal = resolve; });
     const combinedSend = (channel: string, payload: Record<string, unknown>) => {
-      if (channel === "session:done") { resolveTerminal({ ok: true }); }
-      else if (channel === "session:error") { resolveTerminal({ ok: false, error: (payload.error as string) ?? "Agent error" }); }
+      if (channel === "session:projection" && payload.kind === "done") { resolveTerminal({ ok: true }); }
+      else if (channel === "session:projection" && payload.kind === "error") { resolveTerminal({ ok: false, error: ((payload.data as { error?: string })?.error) ?? "Agent error" }); }
       send(channel, payload);
     };
 

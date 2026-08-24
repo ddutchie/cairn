@@ -20,6 +20,18 @@ import { buildAttachmentParts } from "../../shared/models/pdf-attach";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { createDeltaBatcher } from "../lib/delta-batcher";
 import { registerPendingQuestion, recordPendingQuestion } from "../cordis/pending-question-broker";
+import { makeSessionProjection } from "../../shared/agent/session-projection";
+
+function projectChatEvent(sessionId: string, channel: string, payload: unknown): unknown {
+  if (channel === "session:projection") return payload;
+  const kind = channel.startsWith("session:") ? channel.slice(8) : "";
+  const allowed = new Set(["token", "thought", "tool", "done", "error", "usage", "question", "subagent-trace"]);
+  if (!allowed.has(kind)) return payload;
+  const data = payload && typeof payload === "object" ? { ...(payload as Record<string, unknown>) } : {};
+  delete data.sessionId;
+  delete data.threadId;
+  return makeSessionProjection(sessionId, kind as never, data as never);
+}
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -144,11 +156,9 @@ export function registerChatHandler(ctx: DbContext): void {
           : payload;
         if (!event.sender.isDestroyed()) event.sender.send(ch, tagged);
       };
-      send("session:error", {
-        sessionId,
-        content: "Another turn is already in flight on this conversation — wait for it to finish, or open the conversation in a single window.",
-        error: "concurrent-stream-blocked",
-      });
+       send("session:projection", makeSessionProjection(sessionId, "error", {
+         error: "concurrent-stream-blocked",
+       }));
       return;
     }
     if (req.threadId) runningThreads.add(req.threadId);
@@ -166,8 +176,10 @@ export function registerChatHandler(ctx: DbContext): void {
       const tagged = (payload && typeof payload === "object")
         ? { sessionId, ...(payload as Record<string, unknown>), threadId: req.threadId }
         : payload;
-      if (!event.sender.isDestroyed()) event.sender.send(ch, tagged);
-      broadcastToChat(ch, tagged, event.sender.id);
+       const outChannel = ch.startsWith("session:") ? "session:projection" : ch;
+       const outPayload = projectChatEvent(sessionId, ch, tagged);
+       if (!event.sender.isDestroyed()) event.sender.send(outChannel, outPayload);
+       broadcastToChat(outChannel, outPayload, event.sender.id);
     };
 
     if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {
@@ -349,7 +361,7 @@ export function registerChatHandler(ctx: DbContext): void {
              send: (channel, payload) => send(channel, payload),
               emitQuestions: (requestId, questions) => {
                 recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
-                send("session:ask-questions", { callId: requestId, questions });
+                 send("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions }));
               },
              registerPending: (requestId, resolve) => {
                return registerPendingQuestion(sessionId, requestId, resolve);

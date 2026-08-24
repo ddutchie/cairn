@@ -22,6 +22,7 @@
 import { newId } from "../db/utils";
 import { APPROVAL_TIMEOUT_MS } from "./cairn-plugins";
 import { getSessionGrants } from "./approval-grants";
+import { makeSessionProjection } from "../../shared/agent/session-projection";
 
 export interface PluginConfirmRequest {
   /** Card headline. Falls back to the tool name. */
@@ -68,7 +69,7 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
   const { sessionId, send, registerPending, timeoutMs } = deps;
 
   const emitEnd = (callId: string, name: string, args: Record<string, unknown>, ok: boolean, output: string): void => {
-    send("session:tool", { name, label: name, args, callId, status: "end", ok, output });
+    send("session:projection", makeSessionProjection(sessionId, "tool", { name, label: name, args, callId, status: "end", ok, output }) as never);
   };
 
   return {
@@ -84,8 +85,8 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
       // Synthetic pending chip → ApprovalCard. Same channels/payload shapes as
       // cairnCodingPlugin's tool/call bridging so the renderer needs zero new
       // surfaces for a plugin ask.
-      send("session:tool", { name, label: title, args, callId, status: "pending" });
-      send("session:tool-confirm-required", { sessionId, name, label: title, callId });
+      send("session:projection", makeSessionProjection(sessionId, "tool", { name, label: title, args, callId, status: "pending" }) as never);
+      send("session:projection", makeSessionProjection(sessionId, "approval", { status: "required", name, label: title, callId }) as never);
 
       return new Promise<PluginConfirmOutcome>((resolve) => {
         let settled = false;
@@ -117,7 +118,7 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
         onAborts.push(() => req.signal?.removeEventListener?.("abort", onAbort));
         timer = setTimeout(() => {
           if (settled) return;
-          send("session:tool-confirm-expired", { sessionId, name, label: title, callId });
+          send("session:projection", makeSessionProjection(sessionId, "approval", { status: "expired", name, label: title, callId }) as never);
           finish(false, "No response within the time limit — not executed.");
           settle("cancelled");
         }, timeoutMs ?? APPROVAL_TIMEOUT_MS);

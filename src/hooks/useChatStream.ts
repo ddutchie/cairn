@@ -21,6 +21,7 @@ import { useCairnStore } from "@/store";
 import type { SuggestedAction, TokenBreakdown, ChatHistoryEntry, ChatSubagent } from "@/types";
 import { redactSensitiveText, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
 import { createSessionEventFold } from "../../shared/agent/session-event-fold";
+import type { SessionProjection } from "../../shared/agent/session-projection";
 
 export interface ChatToolCall {
   tool: string;
@@ -246,15 +247,6 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       if (isForThisThread(e)) fold(e.event);
     });
 
-    const unsubAskQuestions = electron.session.onAskQuestions((e) => {
-      if (!isForThisThread(e)) return;
-      const forThread = e.sessionId.startsWith("chat-") ? e.sessionId.slice(5) : threadIdRef.current;
-      if (!forThread) return;
-      setPendingQuestionsByThread((prev) => ({ ...prev, [forThread]: e.questions as PendingQuestion[] }));
-      setPendingQuestionCallIdByThread((prev) => ({ ...prev, [forThread]: e.callId }));
-    });
-
-    // ── Subagent live trace (subagent mode) ──────────────────────────────────
     const mutateSub = (childId: string, fn: (s: ChatSubagent) => ChatSubagent) => {
       setSubagents((prev) => {
         const next = prev.map((s) => (s.childId === childId ? fn(s) : s));
@@ -263,72 +255,33 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       });
     };
 
-    const unsubSub = electron.session.onSubagent?.((e) => {
-      if (!isForThisThread(e)) return;
-      if (e.status === "start") {
-        setSubagents((prev) => {
+    const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
+      if (!isForThisThread(projection)) return;
+      const forThread = projection.sessionId.startsWith("chat-") ? projection.sessionId.slice(5) : threadIdRef.current;
+      if (!forThread) return;
+      // Projection payloads are narrowed by their kind branches below.
+      const e = projection.data as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (projection.kind === "question") {
+        setPendingQuestionsByThread((prev) => ({ ...prev, [forThread]: e.questions as PendingQuestion[] }));
+        setPendingQuestionCallIdByThread((prev) => ({ ...prev, [forThread]: e.callId }));
+      } else if (projection.kind === "subagent-trace") {
+        if (e.parentSession !== projection.sessionId) return;
+        if (e.trace === "status" && e.status === "start") setSubagents((prev) => {
           if (prev.some((s) => s.childId === e.childId)) return prev;
-          const next = [...prev, {
-            childId: e.childId, role: e.role, instruction: e.instruction ?? "",
-            content: "", toolCalls: [], running: true,
-          } as ChatSubagent];
-          subagentsRef.current = next;
-          return next;
+          const next = [...prev, { childId: e.childId, role: e.role, instruction: e.instruction ?? "", content: "", toolCalls: [], running: true } as ChatSubagent]; subagentsRef.current = next; return next;
         });
-      } else {
-        mutateSub(e.childId, (s) => ({ ...s, running: false, result: e.result ?? s.content }));
+        else if (e.trace === "status" && e.status === "done") mutateSub(e.childId, (s) => ({ ...s, running: false, result: e.result ?? s.content }));
+        else if (e.trace === "token") mutateSub(e.childId, (s) => ({ ...s, content: s.content + e.delta }));
+        else if (e.trace === "thought") mutateSub(e.childId, (s) => ({ ...s, reasoning: (s.reasoning ?? "") + e.delta }));
+        else if (e.trace === "tool-call") mutateSub(e.childId, (s) => ({ ...s, toolCalls: [...(s.toolCalls ?? []), { tool: e.tool, label: e.label, callId: e.callId, args: e.args ? JSON.stringify(redactTranscriptValue(e.args)) : undefined }] }));
+        else if (e.trace === "tool-done") mutateSub(e.childId, (s) => { const tcs = [...(s.toolCalls ?? [])]; const idx = e.callId ? tcs.findIndex((t) => t.callId === e.callId) : -1; if (idx !== -1) tcs[idx] = { ...tcs[idx], output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error }; return { ...s, toolCalls: tcs }; });
+        else if (e.trace === "usage") mutateSub(e.childId, (s) => ({ ...s, lastUsage: { promptTokens: e.promptTokens, completionTokens: e.completionTokens, reasoningTokens: e.reasoningTokens, costUsd: e.costUsd, cacheReadTokens: e.cacheReadTokens, cacheCreationTokens: e.cacheCreationTokens, breakdown: e.breakdown as TokenBreakdown | undefined } }));
       }
-    });
-
-    const unsubSubToken = electron.session.onSubagentToken?.((e) => {
-      if (!isForThisThread(e)) return;
-      mutateSub(e.childId, (s) => ({ ...s, content: s.content + e.delta }));
-    });
-
-    const unsubSubThought = electron.session.onSubagentThought?.((e) => {
-      if (!isForThisThread(e)) return;
-      mutateSub(e.childId, (s) => ({ ...s, reasoning: (s.reasoning ?? "") + e.delta }));
-    });
-
-    const unsubSubTool = electron.session.onSubagentToolCall?.((e) => {
-      if (!isForThisThread(e)) return;
-      mutateSub(e.childId, (s) => ({
-        ...s,
-         toolCalls: [...(s.toolCalls ?? []), { tool: e.tool, label: e.label, callId: e.callId, args: e.args ? JSON.stringify(redactTranscriptValue(e.args)) : undefined }],
-      }));
-    });
-
-    const unsubSubToolDone = electron.session.onSubagentToolCallDone?.((e) => {
-      if (!isForThisThread(e)) return;
-      mutateSub(e.childId, (s) => {
-        const tcs = [...(s.toolCalls ?? [])];
-        let idx = e.callId ? tcs.findIndex((t) => t.callId === e.callId) : -1;
-        if (idx === -1) {
-          const rev = [...tcs].reverse().findIndex((t) => t.tool === e.tool);
-          if (rev !== -1) idx = tcs.length - 1 - rev;
-        }
-        if (idx !== -1) tcs[idx] = { ...tcs[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: redactToolOutput(e.output), ok: e.ok, error: e.error ? redactSensitiveText(e.error) : e.error };
-        return { ...s, toolCalls: tcs };
-      });
-    });
-
-    const unsubSubUsage = electron.session.onSubagentUsage?.((e) => {
-      if (!isForThisThread(e)) return;
-      mutateSub(e.childId, (s) => ({
-        ...s,
-        lastUsage: { promptTokens: e.promptTokens, completionTokens: e.completionTokens, reasoningTokens: e.reasoningTokens, costUsd: e.costUsd, cacheReadTokens: e.cacheReadTokens, cacheCreationTokens: e.cacheCreationTokens, breakdown: e.breakdown as TokenBreakdown | undefined },
-      }));
     });
 
     return () => {
       unsubEvent();
-      unsubAskQuestions();
-      unsubSub?.();
-      unsubSubToken?.();
-      unsubSubThought?.();
-      unsubSubTool?.();
-      unsubSubToolDone?.();
-      unsubSubUsage?.();
+      unsubProjection();
     };
   // addMessage and setThreadUsage are stable (Zustand), intentionally omitted from deps
   // eslint-disable-next-line react-hooks/exhaustive-deps

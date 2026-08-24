@@ -218,12 +218,11 @@ test.describe("Cordis loops in the real Electron app", () => {
 
       return new Promise<{ content: string; error?: string }>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("Timed out waiting for session:done")), 120_000);
-        const unsub = el.session.onDone((e) => {
-          if (e.sessionId !== `chat-${threadId}`) return;
-          if (e.threadId && e.threadId !== threadId) return;
+        const unsub = el.session.onProjection((e) => {
+          if (e.sessionId !== `chat-${threadId}` || e.kind !== "done") return;
           clearTimeout(timer);
           unsub();
-          resolve({ content: e.content ?? "", error: e.error });
+          resolve({ content: (e.data as { content?: string }).content ?? "", error: (e.data as { error?: string }).error });
         });
         el.chat.stream({
           threadId,
@@ -260,23 +259,18 @@ test.describe("Cordis loops in the real Electron app", () => {
         let tokens = 0;
         let toolEnds = 0;
         const timer = setTimeout(() => reject(new Error("Timed out waiting for pi-agent:done")), 120_000);
-        const unsubToken = el.session.onToken((e) => {
-          if (e.sessionId === sessionId) tokens += e.delta.length;
-        });
-        const unsubTool = el.session.onTool((e) => {
-          if (e.sessionId === sessionId && e.status === "end") toolEnds += 1;
+        const unsub = el.session.onProjection((e) => {
+          if (e.sessionId !== sessionId) return;
+          if (e.kind === "token") tokens += e.data.delta.length;
+          if (e.kind === "tool" && e.data.status === "end") toolEnds += 1;
+          if (e.kind === "done") finish(true);
+          if (e.kind === "error") finish(false, e.data.error);
         });
         const finish = (done: boolean, error?: string) => {
           clearTimeout(timer);
-          unsubToken(); unsubTool(); unsubDone(); unsubError();
+          unsub();
           resolve({ tokens, toolEnds, done, error });
         };
-        const unsubDone = el.session.onDone((e) => {
-          if (e.sessionId === sessionId) finish(true);
-        });
-        const unsubError = el.session.onError((e) => {
-          if (e.sessionId === sessionId) finish(false, e.error);
-        });
         el.session.prompt({
           sessionId,
           prompt: "Open the note titled 'Readme' (use the read_note tool) and tell me the first bullet point.",

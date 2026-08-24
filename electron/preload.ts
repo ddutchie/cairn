@@ -8,6 +8,7 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 import type { SessionEventEnvelope } from "../shared/agent/session-event";
+import type { SessionProjection } from "../shared/agent/session-projection";
 
 // Local structural types for the external-tools namespace. The renderer's
 // canonical types live in src/types; electron's rootDir excludes src, so we
@@ -940,104 +941,10 @@ const api = {
     /** Trigger immediate LLM-based compaction on demand (/compact command). */
     compactNow: (req: unknown) => ipcRenderer.send("session:compact-now", req),
 
-    onToken: (cb: (e: { sessionId: string; delta: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; delta: string }) => cb(e);
-      ipcRenderer.on("session:token", handler);
-      return () => ipcRenderer.off("session:token", handler);
-    },
-    onThought: (cb: (e: { sessionId: string; delta: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; delta: string }) => cb(e);
-      ipcRenderer.on("session:thought", handler);
-      return () => ipcRenderer.off("session:thought", handler);
-    },
-    onTool: (cb: (e: { sessionId: string; name: string; label: string; args?: Record<string, unknown>; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string; error?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; name: string; label: string; args?: Record<string, unknown>; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => cb(e);
-      ipcRenderer.on("session:tool", handler);
-      return () => ipcRenderer.off("session:tool", handler);
-    },
-    onDone: (cb: (e: { sessionId: string; threadId?: string; content?: string; reasoning?: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string; contextRefs?: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number } }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string }) => cb(e);
-      ipcRenderer.on("session:done", handler);
-      return () => ipcRenderer.off("session:done", handler);
-    },
-    onError: (cb: (e: { sessionId: string; error: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; error: string }) => cb(e);
-      ipcRenderer.on("session:error", handler);
-      return () => ipcRenderer.off("session:error", handler);
-    },
-    onToolsReady: (cb: (e: { sessionId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string }) => cb(e);
-      ipcRenderer.on("session:tools-ready", handler);
-      return () => ipcRenderer.off("session:tools-ready", handler);
-    },
-    onStep: (cb: (e: { sessionId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string }) => cb(e);
-      ipcRenderer.on("session:step", handler);
-      return () => ipcRenderer.off("session:step", handler);
-    },
-    onUsage: (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; cacheReadTokens?: number; cacheCreationTokens?: number }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; cacheReadTokens?: number; cacheCreationTokens?: number }) => cb(e);
-      ipcRenderer.on("session:usage", handler);
-      return () => ipcRenderer.off("session:usage", handler);
-    },
-    onSubagent: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; role: string; instruction?: string; result?: string; status: "start" | "done" }) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
-      ipcRenderer.on("session:subagent", handler);
-      return () => ipcRenderer.off("session:subagent", handler);
-    },
-    onSubagentToken: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; delta: string }) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
-      ipcRenderer.on("session:subagent-token", handler);
-      return () => ipcRenderer.off("session:subagent-token", handler);
-    },
-    onSubagentThought: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; delta: string }) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
-      ipcRenderer.on("session:subagent-thought", handler);
-      return () => ipcRenderer.off("session:subagent-thought", handler);
-    },
-    onSubagentToolCall: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
-      ipcRenderer.on("session:subagent-tool-call", handler);
-      return () => ipcRenderer.off("session:subagent-tool-call", handler);
-    },
-    onSubagentToolCallDone: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
-      ipcRenderer.on("session:subagent-tool-call-done", handler);
-      return () => ipcRenderer.off("session:subagent-tool-call-done", handler);
-    },
-    onSubagentUsage: (cb: (e: { sessionId?: string; childId: string; parentSession?: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: unknown }) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
-      ipcRenderer.on("session:subagent-usage", handler);
-      return () => ipcRenderer.off("session:subagent-usage", handler);
-    },
-    /** Fired before each automatic retry on a transient error. delayMs is the backoff wait. */
-    onRetry: (cb: (e: { sessionId: string; attempt: number; maxRetries: number; delayMs: number; error: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; attempt: number; maxRetries: number; delayMs: number; error: string }) => cb(e);
-      ipcRenderer.on("session:retry", handler);
-      return () => ipcRenderer.off("session:retry", handler);
-    },
-    /** Fired when the session starts or finishes an LLM-based compaction pass. */
-    onCompact: (cb: (e: { sessionId: string; status: "start" | "end"; auto?: boolean }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; status: "start" | "end"; auto?: boolean }) => cb(e);
-      ipcRenderer.on("session:compact", handler);
-      return () => ipcRenderer.off("session:compact", handler);
-    },
-    /** Fired after a /compact slash command completes with the result. */
-    onCompactResult: (cb: (e: { sessionId: string; messageCount: number; summary: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; messageCount: number; summary: string }) => cb(e);
-      ipcRenderer.on("session:compact-result", handler);
-      return () => ipcRenderer.off("session:compact-result", handler);
+    onProjection: (cb: (projection: SessionProjection) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: SessionProjection) => cb(payload);
+      ipcRenderer.on("session:projection", handler);
+      return () => ipcRenderer.off("session:projection", handler);
     },
     /** Fired when the agent calls ensure_note in plan mode — carries the PRD note ID */
     /**
@@ -1051,42 +958,9 @@ const api = {
      * A given session may emit both over its lifetime; the renderer uses
      * whichever fields are populated to update the UI.
      */
-    onPlanNote: (cb: (e: { sessionId: string; noteId?: string; planContent?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; noteId: string }) => cb(e);
-      ipcRenderer.on("session:plan-note", handler);
-      return () => ipcRenderer.off("session:plan-note", handler);
-    },
-    /** Fired after any note-write tool (patch_note, ensure_note, append_to_note) completes — delivers fresh note content for live task-list updates */
-    onNoteUpdated: (cb: (e: { sessionId: string; noteId: string; content: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; noteId: string; content: string }) => cb(e);
-      ipcRenderer.on("session:note-updated", handler);
-      return () => ipcRenderer.off("session:note-updated", handler);
-    },
-    /** Fired after the todowrite tool persists a new list — live todo-dock updates */
-    onTodos: (cb: (e: { sessionId: string; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }> }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }> }) => cb(e);
-      ipcRenderer.on("session:todos", handler);
-      return () => ipcRenderer.off("session:todos", handler);
-    },
-    /** Fired when the session mode switches (plan → execute after approval) */
-    onModeChange: (cb: (e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => cb(e);
-      ipcRenderer.on("session:mode-change", handler);
-      return () => ipcRenderer.off("session:mode-change", handler);
-    },
     /** Approve the plan — switches session to execute mode and starts implementation */
     approvePlan: (req: unknown) => ipcRenderer.send("session:approve-plan", req),
     /** Fired when the agent calls ask_questions — renderer should render an inline form */
-    onAskQuestions: (cb: (e: { sessionId: string; callId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; callId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => cb(e);
-      ipcRenderer.on("session:ask-questions", handler);
-      return () => ipcRenderer.off("session:ask-questions", handler);
-    },
     /** Answer a blocked ask_questions call — the text is fed back to the model as the tool result */
     respondQuestions: (sessionId: string, callId: string, answers: string) => ipcRenderer.send("session:respond-questions", { sessionId, callId, answers }),
     /** List all persisted coding sessions for a project (project-scoped history) */
@@ -1109,19 +983,6 @@ const api = {
     respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command", command?: string, nonce?: string) =>
       ipcRenderer.send("session:respond-tool", { sessionId, callId, approved, grant, command, nonce }),
 
-    onToolConfirmRequired: (cb: (e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown>; nonce?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown> }) => cb(e);
-      ipcRenderer.on("session:tool-confirm-required", handler);
-      return () => ipcRenderer.off("session:tool-confirm-required", handler);
-    },
-    /** A pending confirmation expired unanswered — the loop settled it fail-closed. */
-    onToolConfirmExpired: (cb: (e: { sessionId: string; callId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; callId: string }) => cb(e);
-      ipcRenderer.on("session:tool-confirm-expired", handler);
-      return () => ipcRenderer.off("session:tool-confirm-expired", handler);
-    },
   },
 
   // ── AI Tool Builder (streaming builder session) ───────────────

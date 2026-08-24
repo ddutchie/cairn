@@ -5,6 +5,7 @@ import { BrowserWindow } from "electron";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
 import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
+import { makeSessionProjection } from "../../shared/agent/session-projection";
 
 let progressForwarderSetUp = false;
 
@@ -86,7 +87,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
           try {
             q.updateCodingSession(ctx.db, req.sessionId, { mode, updatedAt: ts() });
           } catch { /* chat sessions do not have a Cairn coding-session row */ }
-          broadcastEvent("session:mode-change", { sessionId: req.sessionId, mode });
+          broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "mode-change", { mode }));
         }
         return { kind: r?.kind, text: r?.text };
       } finally {

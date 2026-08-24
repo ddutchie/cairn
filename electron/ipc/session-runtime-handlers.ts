@@ -41,6 +41,7 @@ import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
+import { makeSessionProjection, type SessionProjection } from "../../shared/agent/session-projection";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -252,18 +253,20 @@ async function runCordisCodingSession(
   const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
 
   // Coalesce streamed deltas into ~20 IPC events/sec (same as the builtin path).
-  const tokens = createDeltaBatcher((delta) => send("session:token", { sessionId, delta }));
-  const thoughts = createDeltaBatcher((delta) => send("session:thought", { sessionId, delta }));
+  const tokens = createDeltaBatcher((delta) => send("session:projection", makeSessionProjection(sessionId, "token", { delta })));
+  const thoughts = createDeltaBatcher((delta) => send("session:projection", makeSessionProjection(sessionId, "thought", { delta })));
 
   // Route the loop's raw pi-agent:* events through the delta batchers, then out.
   const loopSend = (channel: string, evtPayload: Record<string, unknown>) => {
-    if (channel === "session:token" && typeof evtPayload.delta === "string") { tokens.push(evtPayload.delta); return; }
-    if (channel === "session:thought" && typeof evtPayload.delta === "string") { thoughts.push(evtPayload.delta); return; }
-    if (channel === "session:done" || channel === "session:error") { tokens.flush(); thoughts.flush(); }
-    if (channel === "session:plan-note" && typeof evtPayload.noteId === "string") {
-      try { q.updateCodingSession(ctx.db, sessionId, { planNoteId: evtPayload.noteId, updatedAt: ts() }); } catch { /* non-critical */ }
+    if (channel !== "session:projection") return;
+    const projection = evtPayload as unknown as SessionProjection;
+    if (projection.kind === "token" && typeof projection.data.delta === "string") { tokens.push(projection.data.delta); return; }
+    if (projection.kind === "thought" && typeof projection.data.delta === "string") { thoughts.push(projection.data.delta); return; }
+    if (projection.kind === "done" || projection.kind === "error") { tokens.flush(); thoughts.flush(); }
+    if (projection.kind === "plan-note" && typeof projection.data.noteId === "string") {
+      try { q.updateCodingSession(ctx.db, sessionId, { planNoteId: projection.data.noteId, updatedAt: ts() }); } catch { /* non-critical */ }
     }
-    send(channel, { sessionId, ...evtPayload });
+    send(channel, projection);
   };
 
   const req = {
@@ -375,7 +378,7 @@ async function runCordisCodingSession(
     tokens.flush();
     thoughts.flush();
     if (!session.abortCtrl.signal.aborted) {
-      send("session:error", { sessionId, error: (err as Error)?.message ?? String(err) });
+      send("session:projection", makeSessionProjection(sessionId, "error", { error: (err as Error)?.message ?? String(err) }));
     }
   } finally {
     runningLoops.delete(sessionId);
@@ -435,7 +438,17 @@ export function registerSessionRuntimeHandlers(
     const { sessionId, prompt, projectId, workspaceId, cwd, taskTitle, mode = "execute" } = req;
 
     const send = (channel: string, payload: unknown) => {
-      broadcastEvent(channel, payload);
+      if (channel === "session:projection") {
+        broadcastEvent(channel, payload);
+        return;
+      }
+      const kind = channel.startsWith("session:") ? channel.slice("session:".length) : undefined;
+      if (!kind || !["token", "thought", "tool", "done", "error", "usage", "approval", "question", "retry", "compact", "compact-result", "plan-note", "note-updated", "todos", "mode-change", "tools-ready", "step"].includes(kind)) return;
+      const value = payload as Record<string, unknown>;
+      const sid = typeof value.sessionId === "string" ? value.sessionId : sessionId;
+      const data = { ...value };
+      delete data.sessionId;
+      broadcastEvent("session:projection", makeSessionProjection(sid, kind as never, data as never));
     };
 
     // Reject a second prompt for a session whose loop is already running —

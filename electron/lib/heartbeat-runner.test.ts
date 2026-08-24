@@ -17,6 +17,7 @@ import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, saveMcpServer, setToolAttachment } from "../db/queries";
 import { createAutomation, createAutomationRun, getAutomationRunById } from "../db/automation-queries";
 import { automationFolderDir, automationRunDir } from "./automation-folder";
+import { makeSessionProjection } from "../../shared/agent/session-projection";
 // vi.mock calls are hoisted above this import, so the static import sees the
 // mocked config-cache / chat-loop / external-tools modules.
 import { runAutomation, runAutomationNow } from "./heartbeat-runner";
@@ -99,12 +100,12 @@ const _loopAutoApprove = () => lastLoopOpts().autoApprove;
 const _loopSignal = () => lastLoopOpts().signal;
 /** Drive a `pi-agent:tool` start event through the runner's send sink. */
 const fireToolStart = (tool: string, label: string, args: Record<string, unknown>) =>
-  loopSend()?.("session:tool", { name: tool, label, args, status: "start" });
+  loopSend()?.("session:projection", makeSessionProjection("run", "tool", { name: tool, label, args, status: "start" }));
 /** Drive a `pi-agent:tool` end event through the runner's send sink. */
 const fireToolEnd = (tool: string, ok: boolean, output: string) =>
-  loopSend()?.("session:tool", { name: tool, ok, output, status: "end" });
+  loopSend()?.("session:projection", makeSessionProjection("run", "tool", { name: tool, ok, output, status: "end" }));
 /** Drive a `pi-agent:token` delta through the runner's send sink. */
-const fireToken = (delta: string) => loopSend()?.("session:token", { delta });
+const fireToken = (delta: string) => loopSend()?.("session:projection", makeSessionProjection("run", "token", { delta }));
 
 afterEach(() => {
   vi.clearAllMocks();
