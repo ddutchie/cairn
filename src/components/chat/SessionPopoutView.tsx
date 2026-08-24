@@ -1,31 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeftFromLine } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { ConversationComposer } from "@/components/conversation/ConversationComposer";
-import { ConversationHeader } from "@/components/conversation/ConversationHeader";
-import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
-import { ConversationMessageBubble } from "@/components/conversation/ConversationMessageBubble";
-import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
-import { toConversationMessage, type ConversationMessage } from "@/components/conversation/conversation-message";
-import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
-import { cn } from "@/lib/utils";
+import { ConversationPane } from "@/components/conversation/ConversationPane";
+import type { ConversationMessage } from "@/components/conversation/conversation-message";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 import { type ChatPopoutPayload } from "../../../shared/agent/chat-popout";
-import type { AgentMessage, ChatMessage } from "@/types";
 import type { PendingQuestion } from "@/hooks/useChatStream";
 import type { SessionProjection } from "../../../shared/agent/session-projection";
+import { normalizeSessionMessages, applyApprovalProjection } from "@/components/conversation/conversation-session";
 
 type Props = Omit<ChatPopoutPayload, "profile"> & { profile: ChatPopoutPayload["profile"]; onPopIn: () => void };
-
-function unwrap(value: unknown): Array<ChatMessage | AgentMessage> {
-  const raw = value && typeof value === "object" && "data" in value ? (value as { data?: unknown }).data : value;
-  if (Array.isArray(raw)) return raw as Array<ChatMessage | AgentMessage>;
-  if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) return (raw as { messages: Array<ChatMessage | AgentMessage> }).messages;
-  return [];
-}
 
 /** One session-bound conversation surface for both Chat and Coding profiles. */
 export function SessionPopoutView({ sessionId, activeProjectId, profile, onPopIn }: Props) {
@@ -40,17 +27,19 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, onPopIn
   const [questionCallId, setQuestionCallId] = useState<string | null>(null);
   const messagesRef = useRef(messages);
   const loadingRef = useRef(false);
-  const refresh = async () => {
+  const loadHistory = useCallback(async () => {
     const result = profile === "chat" ? await window.electron?.chat.sessionMessages(threadId) : await window.electron?.session.getSessionMessages(sessionId);
-    const next = unwrap(result).map((message) => toConversationMessage(message));
+    return normalizeSessionMessages(result);
+  }, [profile, sessionId, threadId]);
+  const handleHistoryLoaded = useCallback((next: ConversationMessage[]) => {
     messagesRef.current = next;
     setMessages(next);
+  }, []);
+  const refresh = async () => {
+    handleHistoryLoaded(await loadHistory());
   };
 
   useEffect(() => {
-    // The transcript is an external, asynchronously loaded session log.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
     const electron = window.electron;
     if (!electron?.session?.onEvent) return;
     void electron.session.isRunning(sessionId).then((state) => {
@@ -75,7 +64,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, onPopIn
     const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
       if (projection.sessionId !== sessionId) return;
       const data = projection.data as Record<string, unknown>;
-      if (projection.kind === "approval") setMessages((current) => current.map((message) => message.role === "assistant" ? { ...message, toolCalls: message.toolCalls?.map((tool) => tool.callId === data.callId ? { ...tool, confirmRequired: data.status === "required", approvalNonce: typeof data.nonce === "string" ? data.nonce : undefined } : tool) } : message));
+      if (projection.kind === "approval") setMessages((current) => applyApprovalProjection(current, data));
       if (projection.kind === "question" && Array.isArray(data.questions)) { setQuestions(data.questions as PendingQuestion[]); setQuestionCallId(typeof data.callId === "string" ? data.callId : null); }
     });
     return () => { unsubEvent?.(); unsubProjection?.(); };
@@ -98,10 +87,23 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, onPopIn
       : { sessionId, profile, prompt: content, projectId: activeProjectId ?? codingSession?.projectId, workspaceId: activeWorkspaceId ?? undefined, cwd: codingSession?.cwd, mode: "execute", config: agentConfig });
   }
 
-  return <div className="chat-themed flex flex-1 flex-col min-h-0 overflow-hidden">
-    <ConversationHeader title={<span className="text-[0.714rem] font-semibold text-[var(--text-primary)]">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>} contextLimit={aiConfig.contextLimit ?? 128000} actions={<button onClick={onPopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Return session to main window"><ArrowLeftFromLine size={11} /></button>} />
-    <ConversationTranscript className="flex-1 min-h-0" data={messages} initialTopMostItemIndex={Math.max(0, messages.length - 1)} emptyPlaceholder={() => <ConversationEmptyState />} footer={() => <div className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{loading ? "Cairn is working…" : ""}</div>} itemContent={(_index, message) => <div className={cn("px-3 py-1.5")}><ConversationMessageBubble message={message} sessionId={sessionId} /></div>} />
-    {questions && <QuestionForm questions={questions} onSubmit={send} onSubmitStructured={questionCallId ? (answers) => { window.electron?.session.respondQuestions(sessionId, questionCallId, answers); setQuestions(null); setQuestionCallId(null); return true; } : undefined} />}
-    <ConversationComposer value={input} onChange={setInput} onSubmit={send} onStop={() => window.electron?.session.abort(sessionId)} isLoading={loading} placeholder={profile === "coding" ? "Ask about your code…" : "Ask about your project…"} statusText="Shift+Enter for new line · Enter to send" />
-  </div>;
+  return <ConversationPane
+    sessionId={sessionId}
+    profile={profile}
+    messages={messages}
+    input={input}
+    onInputChange={setInput}
+    onPrompt={(text) => send(text)}
+    onAbort={() => window.electron?.session.abort(sessionId)}
+    isLoading={loading}
+    historyLoader={loadHistory}
+    onHistoryLoaded={handleHistoryLoaded}
+    title={<span className="text-[0.714rem] font-semibold text-[var(--text-primary)]">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>}
+    contextLimit={aiConfig.contextLimit ?? 128000}
+    actions={<button onClick={onPopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Return session to main window"><ArrowLeftFromLine size={11} /></button>}
+    projection={{ pendingQuestions: questions, questionCallId }}
+    onAnswerQuestions={(answers) => { if (questionCallId) window.electron?.session.respondQuestions(sessionId, questionCallId, answers); setQuestions(null); setQuestionCallId(null); }}
+    placeholder={profile === "coding" ? "Ask about your code…" : "Ask about your project…"}
+    composerProps={{ statusText: "Shift+Enter for new line · Enter to send" }}
+  />;
 }
