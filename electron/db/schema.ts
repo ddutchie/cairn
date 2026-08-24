@@ -13,6 +13,7 @@
  */
 
 import type Database from "better-sqlite3";
+import { archiveAndDropLegacyTranscripts, formatArchiveNotice } from "./legacy-transcript-archive";
 
 /**
  * The tables replicated by Device Sync, as of migrations v25/v26. Hoisted to a
@@ -1227,6 +1228,37 @@ const MIGRATIONS: Migration[] = [
     const cols = db.prepare("PRAGMA table_info(pi_agent_sessions)").all() as { name: string }[];
     if (!cols.some((c) => c.name === "role")) {
       db.exec("ALTER TABLE pi_agent_sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'default'");
+    }
+  },
+
+  // v49: Archive-and-drop the pre-Cordis SQLite transcript tables.
+  //
+  // The Cordis runtime moved chat + coding-agent transcripts to the dsh JSONL
+  // session log (session-as-truth), so `chat_messages`, `pi_agent_messages`,
+  // `pi_agent_llm_history` and `approval_items` have no readers left. Before
+  // this migration the drop ran from `registerChatDbHandlers` once at boot,
+  // which meant (a) users upgrading from 2.7.6 lost populated rows silently
+  // and (b) the drop was defeated by workspace-switching (which calls
+  // `applySchema` again and recreates the tables via SCHEMA_SQL + v15 + v33).
+  //
+  // Doing it as a proper migration fixes both: runs exactly once per DB
+  // regardless of workspace switches, and archives any rows that existed
+  // before dropping so users can recover their history from
+  // `<workspacePath>/.cairn/archive/2.7.7/<table>-<timestamp>.ndjson`.
+  //
+  // Fresh installs no-op because the tables were just CREATE-IF-NOT-EXISTS'd
+  // empty by SCHEMA_SQL / v15 / v33 (see the "SCHEMA_SQL and v15/v33 still
+  // CREATE these tables" note above). We accept the microseconds-of-create-
+  // then-drop churn on fresh installs rather than editing those historical
+  // definitions (see the "NEVER edit an existing migration" rule above).
+  (db) => {
+    const result = archiveAndDropLegacyTranscripts(db);
+    const notice = formatArchiveNotice(result);
+    if (notice) {
+      // Surfaced in the main-process log; the app's boot sequence can also
+      // read `result.archiveDir` back via a settings notice if wanted.
+      // eslint-disable-next-line no-console
+      console.log(`[migration v49] ${notice}`);
     }
   },
 ];

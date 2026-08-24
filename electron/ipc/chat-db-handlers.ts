@@ -13,13 +13,11 @@ import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 
 export function registerChatDbHandlers(ctx: DbContext): void {
-  // Legacy transcript retirement: chat + pi-agent transcripts live exclusively
-  // in dsh's JSONL session log (session-as-truth). The pre-Cordis SQLite body
-  // tables have no readers left — drop them outright (idempotent; fresh DBs
-  // never had them after this point).
-  for (const t of ["chat_messages", "pi_agent_messages", "pi_agent_llm_history", "approval_items"]) {
-    try { ctx.db.prepare(`DROP TABLE IF EXISTS ${t}`).run(); } catch { /* ignore */ }
-  }
+  // Legacy transcript retirement is now migration v49 (see electron/db/schema.ts
+  // — archiveAndDropLegacyTranscripts + formatArchiveNotice). Rows are dumped
+  // to <workspacePath>/.cairn/archive/2.7.7/*.ndjson before the tables are
+  // dropped, and it runs on EVERY DB via user_version — not just at IPC
+  // registration — so workspace switching no longer defeats it.
   registerIpcHandle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
   registerIpcHandle("db:chat:upsertThread", (_e, args: Parameters<typeof q.upsertChatThread>[1]) => handle(() => q.upsertChatThread(ctx.db, args)));
 
