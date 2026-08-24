@@ -53,7 +53,7 @@
   overflow: hidden;
   display: flex;
   align-items: center;
-  height: 24px;
+  height: 1.714rem;
   min-width: 0;
 }
 
@@ -121,8 +121,8 @@
 
 .dsh-toolview-scope .dsh-skill-title {
   flex: none;
-  font-size: 14px;
-  line-height: 24px;
+  font-size: 1rem;
+  line-height: 1.714rem;
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -141,8 +141,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
-  line-height: 24px;
+  font-size: 1rem;
+  line-height: 1.714rem;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -171,7 +171,7 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-markdown-code-block-banner);
-  font-size: 11px;
+  font-size: 0.786rem;
   font-weight: 500;
   line-height: 16px;
   color: var(--dsw-alias-label-caption);
@@ -215,7 +215,7 @@
   border-radius: 999px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
+  font-size: 0.786rem;
   line-height: 16px;
   cursor: pointer;
   opacity: 0;
