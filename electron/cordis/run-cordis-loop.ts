@@ -37,7 +37,7 @@ import { buildCordisUserContent } from "./cairn-attachment-store";
 import { createCairnSkillProvider } from "./cairn-skill-provider";
 import path from "path";
 
-import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
+import { registerCairnTools, registerExternalCairnTools, CHAT_FORBIDDEN_TOOLS } from "./cairn-tools";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnSystemPromptPlugin, cairnQuestionsPlugin, CAIRN_DB } from "./cairn-plugins";
 import { buildSystemPrompt, withPersonality } from "../lib/tools";
 import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
@@ -787,6 +787,15 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     getWin: opts.getWin,
     emit: wrappedEmit,
     emitDone: wrappedEmitDone,
+  }, {
+    // Chat has NO per-tool approval gate — cairnApprovalPlugin is only
+    // mounted on the coding-agent path (run-cordis-coding.ts:176). Destructive
+    // Cairn-data deletions therefore have to be withheld from chat entirely:
+    // otherwise the chat model can call delete_project / delete_note /
+    // delete_task with no confirmation, and there is no UI to intercept it.
+    // If a user WANTS the chat agent to delete something, they can invite
+    // the coding agent to do it (where the approval card fires).
+    exclude: CHAT_FORBIDDEN_TOOLS,
   });
   // User-configured MCP servers + custom services onto ctx.tools.
   const externalDisposers = await registerExternalCairnTools(ctx, {

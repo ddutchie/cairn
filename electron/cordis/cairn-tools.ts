@@ -162,10 +162,35 @@ export function buildCairnTool(
   });
 }
 
-/** Register every Cairn tool onto a dsh context. Returns disposers. */
-export function registerCairnTools(ctx: import("@deepseek-ai/cordis").Context, exec: ExecutionCtx): Array<() => void> {
+/** Tool names that MUTATE user data destructively and MUST NOT be registered
+ *  on the chat context. Chat has no per-tool approval gate (approvals live on
+ *  the coding-agent path only), so any deletion request from the chat
+ *  assistant would run without confirmation. The coding agent, on which
+ *  deletions are gated, still registers these normally.
+ *
+ *  Read-only counterparts (get_note, get_task, get_project_context_pack, …)
+ *  and non-destructive writes (upsert_project, update_task, etc.) are NOT on
+ *  this list — the chat can still create/update, just not delete. */
+export const CHAT_FORBIDDEN_TOOLS = new Set([
+  "delete_note",
+  "delete_task",
+  "delete_project",
+]);
+
+/**
+ * Register every Cairn tool onto a dsh context. Returns disposers.
+ * Optional exclude set skips specific tool names — used by the chat path to
+ * withhold destructive deletions that have no approval gate on that surface.
+ */
+export function registerCairnTools(
+  ctx: import("@deepseek-ai/cordis").Context,
+  exec: ExecutionCtx,
+  opts: { exclude?: ReadonlySet<string> } = {},
+): Array<() => void> {
   const disposers: Array<() => void> = [];
+  const exclude = opts.exclude;
   for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS) as Array<[string, { description: string; schema: z.ZodType }]>) {
+    if (exclude?.has(name)) continue;
     try {
       // In the Cordis engine, ask_questions BLOCKS and returns the user's actual
       // answers (via ctx.userQuestions.ask()) — unlike the built-in loop where it
@@ -178,7 +203,7 @@ export function registerCairnTools(ctx: import("@deepseek-ai/cordis").Context, e
       const def = buildCairnTool(name, desc, schema, exec, ctx);
       disposers.push(ctx.tools.register(def));
     } catch (err) {
-       
+
       console.error(`[cordis] failed to register tool ${name}:`, err);
     }
   }
