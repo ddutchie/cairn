@@ -246,4 +246,34 @@ describe("fail-closed timeouts (audit G6)", () => {
     expect(sent.some((s) => s.channel === "pi-agent:tool-confirm-expired")).toBe(false); // …answered, not expired
     expect(getSessionGrants("s3").tools.has("bash")).toBe(true);
   });
+
+  it("SYNCHRONOUS registerPending resolve does not TDZ-throw (heartbeat auto-allow path)", async () => {
+    // Regression for the pre-fix bug: settle() → dispose() would read `const
+    // dispose` before its initializer ran when registerPending resolved on
+    // the same tick (heartbeat-runner.ts:605-611 does exactly this). dsh's
+    // ApprovalService.decide caught the ReferenceError and returned
+    // 'unavailable' → deny — silently breaking standing rules. Verify the
+    // ref indirection lets a sync-resolve settle cleanly and record grants.
+    const h = makeCtx();
+    let disposedCleanly = false;
+    const dispose = cairnApprovalPlugin(h.ctx as never, {
+      autoApprove: false,
+      sessionId: "sync-s",
+      send: () => {},
+      // Resolve synchronously (no setTimeout) — this is the exact shape of
+      // heartbeat's auto-allow branch which returns resolve({approved:true})
+      // immediately without a microtask.
+      registerPending: (_callId, resolve) => {
+        resolve({ approved: true, grant: "session" });
+        return () => { disposedCleanly = true; };
+      },
+      timeoutMs: 10_000,
+    });
+    const res = (await h.invokeTool("bash", { command: "ls" })) as { kind: string };
+    expect(res.kind).toBe("ask"); // classifier claimed the call
+    // No TDZ throw → the standing grant was recorded and dispose ran.
+    expect(getSessionGrants("sync-s").tools.has("bash")).toBe(true);
+    expect(disposedCleanly).toBe(true);
+    dispose?.();
+  });
 });

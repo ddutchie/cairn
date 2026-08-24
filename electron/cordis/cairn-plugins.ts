@@ -363,15 +363,29 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
         const answersText = await new Promise<string>((resolve) => {
           const onAborts: Array<() => void> = [];
           let settled = false;
+          // Synchronous-resolve safety — see the identical pattern in the
+          // approval answerer below for the full rationale. Buffer the
+          // outcome + replay after registerPending returns so dispose runs.
+          const disposeRef: { current: (() => void) | null } = { current: null };
+          let syncOutcome: string | null = null;
           const settle = (text: string) => {
             if (settled) return;
+            if (disposeRef.current === null && syncOutcome === null) {
+              syncOutcome = text;
+              return;
+            }
             settled = true;
             clearTimeout(timer);
-            dispose();
+            disposeRef.current?.();
             for (const off of onAborts) off();
             resolve(text);
           };
-          const dispose = registerPending(requestId, (text) => settle(text));
+          disposeRef.current = registerPending(requestId, (text) => settle(text));
+          if (syncOutcome !== null && !settled) {
+            const captured = syncOutcome;
+            syncOutcome = null;
+            settle(captured);
+          }
           const onAbort = () => settle('{"cancelled":true,"answers":[]}');
           if (request.signal?.aborted || signal?.aborted) onAbort();
           for (const sig of [request?.signal, signal]) {
@@ -839,24 +853,57 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       return new Promise<string>((resolve) => {
         // Single-settle guard: exactly one of respond / abort / timeout wins,
         // and the abort listeners never linger after a normal settle.
+        //
+        // Synchronous-resolve safety: some transports (heartbeat-runner
+        // auto-allow at :605-611, or a future optimistic-allow) call the
+        // provided `resolve()` inside their `registerPending(callId, cb)`
+        // call — before registerPending has returned its dispose function.
+        // Two symptoms of naive code here:
+        //   (a) `const dispose = registerPending(...)`: the callback runs
+        //       during the initializer, hits `settle()` → `dispose()` and
+        //       throws `ReferenceError: Cannot access 'dispose' before
+        //       initialization` (TDZ). dsh catches → unavailable → deny.
+        //   (b) A ref indirection alone (`disposeRef.current = registerPending`)
+        //       has `disposeRef.current` still null when the synchronous
+        //       callback runs, so dispose is never invoked and any registry
+        //       entry leaks.
+        // Fix: also buffer the outcome in `syncOutcome`. If the callback runs
+        // synchronously, settle() early-returns and stashes it; after
+        // registerPending returns we assign disposeRef.current and, if a sync
+        // outcome was captured, replay settle() to run dispose + resolve.
         let settled = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
         const onAborts: Array<() => void> = [];
+        const disposeRef: { current: (() => void) | null } = { current: null };
+        let syncOutcome: "allowed-once" | "rejected" | "cancelled" | null = null;
         const settle = (outcome: "allowed-once" | "rejected" | "cancelled") => {
           if (settled) return;
+          // Synchronous callback path: disposeRef.current isn't set yet.
+          // Buffer the outcome; the initializer-tail replay below will run
+          // this again with disposeRef.current populated.
+          if (disposeRef.current === null && syncOutcome === null) {
+            syncOutcome = outcome;
+            return;
+          }
           settled = true;
           clearTimeout(timer);
-          dispose();
+          disposeRef.current?.();
           for (const off of onAborts) off();
           resolve(outcome);
         };
-        const dispose = registerPending(callId, (decision) => {
+        disposeRef.current = registerPending(callId, (decision) => {
           if (decision.approved && decision.grant === "session") grants.tools.add(toolName);
           // grant:"command" is recorded by the pi-agent:respond-tool handler,
           // which owns the canonicalized command text (dsh's ApprovalRequest
           // deliberately carries no args).
           settle(decision.approved ? "allowed-once" : "rejected");
         });
+        // Replay a buffered sync outcome now that disposeRef is populated.
+        if (syncOutcome !== null && !settled) {
+          const captured = syncOutcome;
+          syncOutcome = null;
+          settle(captured);
+        }
         const onAbort = () => settle("cancelled");
         if (req?.signal?.aborted || signal?.aborted) onAbort();
         for (const sig of [req?.signal, signal]) {
