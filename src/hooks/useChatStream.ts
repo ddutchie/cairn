@@ -38,10 +38,35 @@ export interface ChatToolCall {
   meta?: Record<string, unknown>;
 }
 
+/**
+ * A pending clarification question the assistant asked the user to answer
+ * inline. Two shapes are accepted so both Cairn's own `ask_questions` tool
+ * and dsh-native providers (like plan-mode's `exit_plan_mode`, which uses
+ * dsh's `AskUserQuestionItem`) render correctly:
+ *
+ *   * Cairn shape: `{id, label, prompt}` — how ask_questions has always
+ *     handed off to the renderer. `label` is the short heading, `prompt`
+ *     is the full question.
+ *   * dsh shape: `{id, question, header?, options?, intent?}` — what the
+ *     dsh-plan-mode plugin (and any future dsh-native ask surface) emits.
+ *     Its `question` is the full text; `header` is the short label; the
+ *     other fields are structured-answer extras we currently render as a
+ *     text-free-form fallback.
+ *
+ * The form component prefers dsh fields if they're present, so a payload
+ * from either surface renders a filled-in card instead of a blank one.
+ */
 export interface PendingQuestion {
   id: string;
-  label: string;
-  prompt: string;
+  /** Cairn shape */
+  label?: string;
+  prompt?: string;
+  /** dsh shape */
+  question?: string;
+  header?: string;
+  options?: string[];
+  multiSelect?: boolean;
+  intent?: unknown;
 }
 
 export interface ChatStreamRequest {

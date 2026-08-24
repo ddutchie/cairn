@@ -312,7 +312,26 @@ export interface CairnQuestionsConfig {
 /** The question shape that flows through ask() — Cairn's ask_questions schema
  *  ({id,label,prompt}), which is already the renderer's PendingQuestion shape.
  *  dsh's user-questions service forwards the questions array opaquely. */
-interface CairnQuestionItem { id: string; label?: string; prompt?: string }
+/**
+ * A pending question forwarded to the renderer. Two shapes are accepted so
+ * both Cairn's own `ask_questions` tool (which emits `{id, label, prompt}`)
+ * AND any dsh-native provider (dsh-plan-mode's `exit_plan_mode` uses
+ * `AskUserQuestionItem = {id, question, header?, options?, intent?}`) render
+ * as a filled-in form. Previously we only forwarded Cairn's shape and dsh's
+ * plan-review card came through empty and unapprovable.
+ */
+interface CairnQuestionItem {
+  id: string;
+  /** Cairn shape */
+  label?: string;
+  prompt?: string;
+  /** dsh AskUserQuestionItem shape */
+  question?: string;
+  header?: string;
+  options?: readonly string[];
+  multiSelect?: boolean;
+  intent?: unknown;
+}
 
 /** dsh AskUserQuestionAnswer shape returned by the provider. */
 interface DshAnswer { answers: Array<{ id: string; selected: string[]; custom?: string }> }
@@ -353,11 +372,13 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
     providerDispose = uq.registerProvider({
       ask: async (request) => {
         const requestId = `q-${newId()}`;
-        // The ask_questions tool passes Cairn-shaped questions ({id,label,prompt})
-        // straight through ctx.userQuestions.ask(), and that IS exactly the
-        // renderer's PendingQuestion shape — so forward them UNCHANGED. (Do not
-        // remap to dsh's {question,header} fields: those are undefined here and
-        // would render an empty, un-fillable form.)
+        // Forward the raw question objects to the renderer unchanged. The
+        // renderer's QuestionForm now understands BOTH the Cairn shape
+        // ({id, label, prompt}) and dsh's AskUserQuestionItem shape
+        // ({id, question, header?, options?, intent?}), so a payload from
+        // Cairn's own ask_questions tool AND one from a dsh-native provider
+        // (e.g. dsh-plan-mode's exit_plan_mode) both render as filled-in
+        // forms. This closes the review's plan-mode-blank-form bug.
         const questions = request.questions;
         if (emitQuestions) {
           // Coding path: emit on the pi-agent question channel (renderer-specific).
