@@ -388,9 +388,6 @@ const api = {
     clearThreadMessages: (threadId: string) => invoke("db:chat:clearThreadMessages", { threadId }),
     clearAllThreads: (workspaceId: string, projectId?: string) => invoke("db:chat:clearAllThreads", { workspaceId, projectId }),
     compactThread: (req: unknown) => invoke("chat:compactThread", req),
-    // ── AI Chat streaming ──────────────────────
-    // Fire-and-forget. Listen with onToken / onDone / onToolCall.
-    stream: (req: unknown) => ipcRenderer.send("chat:stream", req),
     // ── Pop-out window ──────────────────────────
     /** Called by main window: sends current chat state, triggers window creation. */
      popOut: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev" }) => invoke<{ ok: boolean }>("chat:popOut", payload),

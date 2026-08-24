@@ -4,10 +4,10 @@
  * Runs the OpenAI-compatible completions loop in the Electron main process
  * so it works in the packaged app (no Next.js server needed).
  *
- * Registered as: registerIpcOn("chat:stream", ...)
+ * Registered through the canonical session:prompt IPC handler.
  */
 
-import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { registerIpcHandle, broadcastEvent } from "./registry";
 import { broadcastToChat } from "../chat-popout";
 import type { DbContext } from "./result-helpers";
 import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown, isSendableMessage } from "../lib/llm";
@@ -39,7 +39,7 @@ const abortControllers = new Map<string, AbortController>();
 
 /**
  * Threads that currently have an in-flight streaming turn. Prevents two
- * concurrent chat:stream requests on the SAME thread from writing to the
+ * concurrent session:prompt requests on the SAME thread from writing to the
  * same session.jsonl.zstd in parallel — dsh's in-process persistence
  * serialises WRITES (so the file doesn't tear), but the two turns' events
  * still interleave into an incoherent transcript. Mirrors the coding session
@@ -105,7 +105,7 @@ export { callLLM } from "../lib/llm";
  * them by value here is what previously left a freshly-onboarded workspace's
  * chat bound to the throwaway boot DB until the app was restarted.
  */
-export function registerChatHandler(ctx: DbContext): void {
+export function registerChatHandler(_ctx: DbContext): void {
   registerIpcHandle("chat:compactThread", async (_event, req: {
     messages: Array<{ role: string; content: string }>;
     threadId?: string;
@@ -131,17 +131,9 @@ export function registerChatHandler(ctx: DbContext): void {
     }
   });
 
-  // Temporary compatibility alias. Canonical callers use session:prompt.
-  // chat:stream remains only for older integrations and calls the same runner.
-  // Emits:
-  //   session:token / session:thought / session:tool / session:usage
-  //   session:done / session:error / session:ask-questions
-  registerIpcOn("chat:stream", (event, req: ChatRequest) => {
-    void runChatPrompt(ctx, event, req);
-  });
 }
 
-/** Shared Chat profile runner used by both the legacy alias and session:prompt. */
+/** Shared Chat profile runner used by the canonical session:prompt handler. */
 export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent, req: ChatRequest): Promise<void> {
     const getWin = ctx.getWin;
     const sessionId = `chat-${req.threadId}`;

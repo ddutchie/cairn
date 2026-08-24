@@ -21,7 +21,7 @@ import { __isWriteChannel as isWriteChannel } from "./registry";
 
 describe("isWriteChannel", () => {
   it("treats non-db channels as non-writes (they never broadcast db:changed)", () => {
-    for (const c of ["app:setTheme", "git:status", "chat:stream", "updater:install"]) {
+    for (const c of ["app:setTheme", "git:status", "session:prompt", "updater:install"]) {
       expect(isWriteChannel(c)).toBe(false);
     }
   });
