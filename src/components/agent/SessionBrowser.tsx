@@ -5,7 +5,8 @@ import { Code2, ChevronDown, ChevronRight, MessageSquare, Search, Terminal, Tras
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatDateCompact } from "@/lib/utils";
-import type { ChatThread, PiSessionSummary, SessionKind, TerminalSession } from "@/types";
+import type { SessionKind } from "@/types";
+import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
 import { useSessionNavigation } from "./useSessionNavigation";
 
 interface SessionBrowserProps {
@@ -14,22 +15,6 @@ interface SessionBrowserProps {
   projectId?: string;
   variant?: "dropdown" | "preview" | "project";
   limit?: number;
-}
-
-interface UnifiedSession {
-  id: string;
-  sourceId: string;
-  kind: SessionKind;
-  title: string;
-  updatedAt: string;
-  projectId: string;
-  status?: "running" | "exited";
-  mode?: "plan" | "execute";
-  messageCount?: number;
-}
-
-function sourceIdFor(kind: SessionKind, id: string): string {
-  return kind === "chat" ? `chat:${id}` : kind === "coding" ? `coding:${id}` : `terminal:${id}`;
 }
 
 function kindLabel(kind: SessionKind): string {
@@ -50,7 +35,7 @@ function SessionTypeIcon({ kind, size }: { kind: SessionKind; size: number }) {
   return <Terminal size={size} />;
 }
 
-function matchesQuery(session: UnifiedSession, query: string): boolean {
+function matchesQuery(session: SessionSummary, query: string): boolean {
   if (!query) return true;
   const value = `${session.title} ${kindLabel(session.kind)}`.toLowerCase();
   return value.includes(query.toLowerCase());
@@ -83,44 +68,15 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
   const rootRef = useRef<HTMLDivElement>(null);
   const { openSession } = useSessionNavigation();
 
-  const sessions = useMemo<UnifiedSession[]>(() => {
+  const sessions = useMemo<SessionSummary[]>(() => {
     const scopedProjectId = projectId ?? activeProjectId;
-    const chats: UnifiedSession[] = chatThreads
-      .filter((thread) => thread.projectId === scopedProjectId)
-      .map((thread: ChatThread) => ({
-        id: sourceIdFor("chat", thread.id),
-        sourceId: thread.id,
-        kind: "chat",
-        projectId: thread.projectId ?? scopedProjectId ?? "",
-        title: thread.title || chatMessages.find((message) => message.threadId === thread.id && message.role === "user")?.content.slice(0, 60) || "New chat",
-        updatedAt: thread.updatedAt,
-        messageCount: chatMessages.filter((message) => message.threadId === thread.id).length,
-      }));
-    const coding: UnifiedSession[] = piSessionHistory
-      .filter((session) => session.projectId === scopedProjectId)
-      .map((session: PiSessionSummary) => ({
-        id: sourceIdFor("coding", session.id),
-        sourceId: session.id,
-        kind: "coding",
-        projectId: session.projectId,
-        title: session.taskTitle || "Coding session",
-        updatedAt: session.updatedAt,
-        status: session.status,
-        mode: session.mode,
-      }));
-    const terminals: UnifiedSession[] = terminalSessions
-      .filter((session: TerminalSession) => session.sessionType === "pty" && session.projectId === scopedProjectId)
-      .map((session) => ({
-        id: sourceIdFor("terminal", session.sessionId),
-        sourceId: session.sessionId,
-        kind: "terminal",
-        projectId: session.projectId,
-        title: session.taskTitle || session.agentName || "External terminal",
-        updatedAt: session.spawnedAt,
-        status: session.status,
-      }));
-    return [...chats, ...coding, ...terminals]
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return buildSessionRegistry({
+      chatThreads,
+      chatMessages,
+      codingSessions: piSessionHistory,
+      terminalSessions,
+      projectId: scopedProjectId,
+    });
   }, [activeProjectId, chatMessages, chatThreads, piSessionHistory, projectId, terminalSessions]);
 
   const visibleSessions = sessions.filter((session) => matchesQuery(session, query.trim()));
@@ -141,7 +97,7 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
 
-  async function selectSession(session: UnifiedSession) {
+  async function selectSession(session: SessionSummary) {
     setOpen(false);
     setQuery("");
     const presentation = variant === "preview" ? "center" : "drawer";
@@ -179,7 +135,7 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
     );
   }
 
-  function removeSession(event: ReactMouseEvent, session: UnifiedSession) {
+  function removeSession(event: ReactMouseEvent, session: SessionSummary) {
     event.stopPropagation();
     if (session.kind === "chat") {
       void deleteThread(session.sourceId);
