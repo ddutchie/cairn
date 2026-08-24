@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeftFromLine } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { ConversationComposer } from "@/components/conversation/ConversationComposer";
 import { ConversationHeader } from "@/components/conversation/ConversationHeader";
 import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
@@ -29,7 +30,7 @@ function unwrap(value: unknown): Array<ChatMessage | AgentMessage> {
 /** One session-bound conversation surface for both Chat and Coding profiles. */
 export function SessionPopoutView({ sessionId, activeProjectId, profile, onPopIn }: Props) {
   const threadId = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
-  const { aiConfig, agentConfig, activeWorkspaceId, projects, terminalSessions } = useCairnStore((s) => ({ aiConfig: s.aiConfig, agentConfig: s.agentConfig, activeWorkspaceId: s.activeWorkspaceId, projects: s.projects, terminalSessions: s.terminalSessions }));
+  const { aiConfig, agentConfig, activeWorkspaceId, projects, terminalSessions } = useCairnStore(useShallow((s) => ({ aiConfig: s.aiConfig, agentConfig: s.agentConfig, activeWorkspaceId: s.activeWorkspaceId, projects: s.projects, terminalSessions: s.terminalSessions })));
   const codingSession = terminalSessions.find((item) => item.sessionId === sessionId);
   const project = projects.find((item) => item.id === activeProjectId);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
