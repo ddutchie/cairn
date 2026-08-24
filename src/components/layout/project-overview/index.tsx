@@ -22,6 +22,7 @@ import { ProgressRing, CollapsibleSection } from "./primitives";
 import { ToolsAttachPanel } from "./ToolsAttachPanel";
 import { ProjectSettingsButton } from "./project-settings";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
+import { useAgentSessionActions } from "@/components/agent/useAgentSessionActions";
 import {
   TaskFlowCard,
   PriorityBreakdownCard,
@@ -52,6 +53,8 @@ export function ProjectOverview() {
   })));
   const project = projects.find((p) => p.id === activeProjectId);
   const metrics = useProjectMetrics(activeProjectId);
+  const { handleNewSession: handleNewAgentSession } = useAgentSessionActions();
+  const [sessionKind, setSessionKind] = useState<"chat" | "coding">("chat");
 
   // Fetch recent automation runs for the active project so the "Recent run
   // results" feed on the Overview has data. Re-fetches on project/workspace
@@ -96,6 +99,10 @@ export function ProjectOverview() {
     const text = chatInput.trim();
     if (!text) return;
     setChatInput("");
+    if (sessionKind === "coding" && project?.codeDirectory) {
+      void handleNewAgentSession("center", text);
+      return;
+    }
     setView("chat");
     window.dispatchEvent(CairnEvents.openChat(text, true));
   }
@@ -357,12 +364,40 @@ export function ProjectOverview() {
       {!chatOpen && (
         <div ref={bottomBarRef} className="absolute bottom-0 left-0 right-0 p-6 overview-chat-overlay pointer-events-none z-10">
           <div className="max-w-3xl mx-auto pointer-events-auto">
+            {project.codeDirectory && (
+              <div className="flex items-center gap-1 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setSessionKind("chat")}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-[0.643rem] transition-colors",
+                    sessionKind === "chat"
+                      ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+                      : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-secondary)]",
+                  )}
+                >
+                  Chat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSessionKind("coding")}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-[0.643rem] transition-colors",
+                    sessionKind === "coding"
+                      ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+                      : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-secondary)]",
+                  )}
+                >
+                  Coding agent
+                </button>
+              </div>
+            )}
             <ChatInputArea
               ref={chatInputRef}
               value={chatInput}
               onChange={setChatInput}
               onSubmit={() => handleSendChat()}
-              placeholder="What would you like to do today?"
+              placeholder={sessionKind === "coding" ? "Describe what you want the coding agent to do" : "What would you like to do today?"}
               variant="overview"
               showSparkles
               suggestions={mentionSuggestions}

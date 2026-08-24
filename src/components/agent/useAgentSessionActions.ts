@@ -30,7 +30,10 @@ export function useAgentSessionActions() {
 
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
 
-  async function handleNewSession(presentation: SessionPresentation = "drawer") {
+  async function handleNewSession(
+    presentation: SessionPresentation = "drawer",
+    initialPrompt?: string,
+  ) {
     if (!project?.codeDirectory || !activeProjectId) return;
     const sessionId = id();
     const now = new Date().toISOString();
@@ -54,8 +57,8 @@ export function useAgentSessionActions() {
       sessionId, taskId: sessionId, taskTitle: "Ad-hoc session",
       agentId: "cairn-agent", agentName: "Cairn Agent",
       projectId: activeProjectId, cwd: project.codeDirectory,
-      status: "running", exitCode: null, spawnedAt: now,
-      sessionType: "pi", piMessages: [], mode: "execute",
+       status: "running", exitCode: null, spawnedAt: now,
+       sessionType: "pi", piMessages: [], mode: "execute", initialPrompt,
     });
     upsertPiSessionSummary(summary);
     setPersistentPiSession(sessionId);
