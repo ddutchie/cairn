@@ -12,7 +12,7 @@ import { writeNoteFile } from "../notes-files";
 import { generatePrd } from "../lib/prd";
 import { executeReadTool, type CairnSnapshot } from "../lib/read-tools";
 import { newId } from "../db/utils";
-import { callLLM, type LLMConfig } from "../lib/llm";
+import { type LLMConfig } from "../lib/llm";
 import { TOOL_LABELS, type ChatRequest, type ToolArgs } from "../lib/tools";
 import { aiWriteLock } from "../lib/ai-write-lock";
 import { executeTool as executeMcpTool } from "../mcp/tools";

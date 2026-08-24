@@ -5,6 +5,9 @@ import { KeyedSlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
 import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "@/lib/plugin-ui/api";
 import type { ToolCallViewProps } from "@/lib/dsh-toolview/contract";
 import { esmToCjsForTest } from "@/lib/plugin-ui/loader";
+// Simulates the loader's CJS require() table for the real dsh-visualize
+// bundle shape; require() is unavoidable here.
+/* eslint-disable @typescript-eslint/no-require-imports */
 
 /**
  * dsh-visualize spike: the community plugin's UI SHAPE runs in Cairn —
@@ -27,7 +30,7 @@ function evalPlugin(source: string): UIPluginModule {
   const src = /(^|[\n;])\s*export\s|(^|[\n;])\s*import\s.+\sfrom\s/m.test(source) ? esmToCjsForTest(source) : source;
   const mod = { exports: {} as Record<string, unknown> };
   const req = (n: string) => { if (n in platform) return platform[n]; throw new Error(`require(${n})`); };
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+   
   new Function("module", "exports", "require", src)(mod, mod.exports, req);
   const raw = mod.exports;
   return (raw.activate || raw.apply ? raw : raw.default) as UIPluginModule;

@@ -16,8 +16,18 @@ describe("db-hygiene", () => {
     applySchema(db);
   });
 
-  it("reports a 0 free-page ratio on an empty DB", () => {
-    expect(freePageRatio(db)).toBe(0);
+  it("reports a small free-page ratio on a fresh DB (space freed by migration v49's legacy-table drop)", () => {
+    // Before migration v49, this expected 0 — a fresh empty DB had no free
+    // pages. v49 now creates chat_messages / pi_agent_messages / approval_items
+    // via SCHEMA_SQL + v15 + v33 (kept for backwards-compat with the
+    // "never edit an existing migration" rule) and then DROPs them, leaving
+    // a small pool of free pages. This is exactly the "existing install"
+    // shape reclaimFreeSpace / materializeIncrementalVacuum are for. The
+    // ratio is small (< 20%) but non-zero. reclaimFreeSpace's tests below
+    // still guard the real vacuum contract.
+    const ratio = freePageRatio(db);
+    expect(ratio).toBeGreaterThanOrEqual(0);
+    expect(ratio).toBeLessThan(0.2);
   });
 
   it("materialises incremental auto-vacuum with a one-time VACUUM", () => {

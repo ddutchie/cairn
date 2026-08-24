@@ -13,7 +13,7 @@ import { PluginsSettings } from "./PluginsSettings";
 type PluginRow = { id: string; kind: "ui" | "backend" | "both"; name: string | null; ui: string | null; disabled: boolean };
 
 function mockPlugins(initial: { devEnabled: boolean; plugins: PluginRow[] }) {
-  let state = structuredClone(initial);
+  const state = structuredClone(initial);
   const setEnabled = vi.fn(async (id: string, enabled: boolean) => {
     const r = state.plugins.find((p) => p.id === id);
     if (r) r.disabled = !enabled;

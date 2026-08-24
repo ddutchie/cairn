@@ -161,7 +161,7 @@ Injected on step 1 by \`@deepseek-ai/dsh-tool-skill\` inside \`<available_skills
   fs.mkdirSync(outDir, { recursive: true });
   const outPath = path.join(outDir, "assembled-system-prompt.md");
   fs.writeFileSync(outPath, md, "utf-8");
-  // eslint-disable-next-line no-console
+   
   console.log(`Wrote inspection report to ${outPath}`);
 
   dispose?.();
@@ -171,7 +171,7 @@ Injected on step 1 by \`@deepseek-ai/dsh-tool-skill\` inside \`<available_skills
 // tests that import `main` for coverage don't fire the whole assembly.
 if (require.main === module) {
   main().catch((err) => {
-    // eslint-disable-next-line no-console
+     
     console.error("[dump-prompt] failed:", err);
     process.exit(1);
   });

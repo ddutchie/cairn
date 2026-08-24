@@ -214,11 +214,11 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
           projectId: req.projectId,
           config: { maxSteps: 6, temperature: 0.3, reasoningEffort: "none" as const },
         };
-        const messages = [
+        const _messages = [
           { role: "system" as const, content: systemPrompt },
           { role: "user" as const, content: userPrompt },
         ];
-        const toolsOverride = writingStyleToolsOverride(req.analyseNotes);
+        const _toolsOverride = writingStyleToolsOverride(req.analyseNotes);
 
         // Persist one usage row per tool-loop round so wizard generation shows
         // up under "Writing style" in the Usage view — not "Chat" (the Cordis

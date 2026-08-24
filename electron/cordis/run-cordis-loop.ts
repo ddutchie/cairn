@@ -7,6 +7,7 @@
 import { Context } from "@deepseek-ai/cordis";
 import Loader from "@deepseek-ai/cordis-plugin-loader";
 import sessionPlugin from "@deepseek-ai/dsh-session";
+import { extractCairnRef } from "./session-replay";
 import llmPlugin from "@deepseek-ai/dsh-llm";
 import systemPromptPlugin from "@deepseek-ai/dsh-system-prompt";
 import agentPlugin from "@deepseek-ai/dsh-agent";
@@ -15,7 +16,7 @@ import agentLoopPlugin from "@deepseek-ai/dsh-agent-loop";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
-import { createUserMessage, createAssistantMessage } from "@deepseek-ai/dsh-llm";
+import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import subagentServicePlugin from "@deepseek-ai/dsh-subagent";
 import userQuestionsService from "@deepseek-ai/dsh-user-questions";
 import { apply as spawnProviderApply, inject as spawnProviderInject, name as spawnProviderName } from "@deepseek-ai/dsh-subagent-spawn-in-process";
@@ -111,7 +112,7 @@ export async function dropChatAgentForThread(threadId: string): Promise<void> {
   if (entry) {
     map.delete(threadId);
     const agent = (entry.agent ?? entry) as Record<PropertyKey, unknown>;
-    const handle = (entry.handle ?? entry) as Record<PropertyKey, unknown>;
+    const _handle = (entry.handle ?? entry) as Record<PropertyKey, unknown>;
 
     // Let an in-flight turn settle so dispose doesn't race mid-step.
     try {
@@ -654,7 +655,8 @@ function collect(events: readonly SessionEvent[], firstSeq: number): { text: str
  */
 export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCordisLoopResult> {
   const ctx = await getContext();
-  let { db, req, workspacePath, llmConfig, signal } = opts;
+  const { db, req, workspacePath, signal } = opts;
+  let { llmConfig } = opts;
   // Plugin backends that inject "fs" (e.g. dsh-visualize) need the sandbox/fs
   // chain to exist to activate AND to execute. Coding turns mount their own
   // per-turn; on chat turns, mount it ONCE here (kept alive for the process —
@@ -846,7 +848,6 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
         if (!meta && !isError) {
           meta = resolvePresentationMeta(toolName, callId ? sessionCallArgs.get(callId) : undefined, output || undefined) as Record<string, unknown> | undefined;
         }
-        const { extractCairnRef } = require("./session-replay") as { extractCairnRef: (name: string, output: unknown) => { type: "note" | "task"; id: string; title: string } | undefined };
         const cairnRef = (meta?.cairnRef ?? extractCairnRef(toolName, output)) as { type: "note" | "task"; id: string; title: string } | undefined;
         opts.emitToolCallDone?.({
           tool: toolName,

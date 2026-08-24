@@ -11,7 +11,7 @@
  */
 
 import type Database from "better-sqlite3";
-import { getAutomationById, getAutomationRunById, updateAutomation, type Automation, type AutomationRun } from "../db/automation-queries";
+import { getAutomationById, getAutomationRunById, updateAutomation } from "../db/automation-queries";
 import { RUN_SCRIPT_TOOL_NAME } from "./automation-script";
 
 

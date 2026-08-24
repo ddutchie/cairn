@@ -247,7 +247,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
         img: ({ src, alt }) => {
           const s = typeof src === "string" ? src.trim() : "";
           if (!s) return null;
-          // eslint-disable-next-line @next/next/no-img-element
+           
           return <img src={s} alt={alt ?? ""} className="max-w-full rounded my-1.5" />;
         },
         table: ({ children }) => (

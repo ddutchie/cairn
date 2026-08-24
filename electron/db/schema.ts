@@ -1257,7 +1257,7 @@ const MIGRATIONS: Migration[] = [
     if (notice) {
       // Surfaced in the main-process log; the app's boot sequence can also
       // read `result.archiveDir` back via a settings notice if wanted.
-      // eslint-disable-next-line no-console
+       
       console.log(`[migration v49] ${notice}`);
     }
   },

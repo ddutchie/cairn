@@ -38,7 +38,6 @@ import {
 } from "../db/automation-queries";
 import { runAutomationNow, resolveAutomationApproval } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
-import { recordStandingAllowance } from "../lib/automation-approval";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog, removeAutomationDir } from "../lib/automation-folder";
 import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";

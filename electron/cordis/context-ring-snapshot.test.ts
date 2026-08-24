@@ -1,7 +1,12 @@
+// Session-event `data` fields are heterogeneous unions across every event
+// type dsh emits; the tests probe specific runtime shapes via `as any` on
+// paths where a full discriminated cast would triple the test size for
+// zero value. Kept as `any` at the test boundary.
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
-import { foldSessionUsage, foldContextRing, foldSessionTodos } from "./plugins/context-ring";
+import { foldSessionUsage } from "./plugins/context-ring";
 import { collapseDerivedToMessages } from "./session-replay";
 import { foldSurface, deriveEventMessage, type SessionEvent } from "@deepseek-ai/dsh-session";
 

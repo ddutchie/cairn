@@ -1,3 +1,7 @@
+// Live-mounted plugin fibers expose dsh services through the ambient
+// `ctx.<name>` shape; probes here read into those via `any` rather than
+// re-declaring dsh's service interfaces in test code.
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from "vitest";
 import { Context } from "@deepseek-ai/cordis";
 import sessionPlugin from "@deepseek-ai/dsh-session";

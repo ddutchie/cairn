@@ -1,19 +1,18 @@
+// Diagnostic dumper for real session logs; heterogeneous event shapes.
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from "vitest";
 
 import { getContext } from "./run-cordis-loop";
-import { SessionId } from "@deepseek-ai/dsh-session";
-import { foldSessionUsage } from "./plugins/context-ring";
 
 describe("Inspect Active Session", () => {
   it("loads and analyzes chat-HTKCO2CQPuv0", async () => {
-    const sessionDir = "/Users/gerard/Library/Application Support/Electron/sessions/--Users-gerard-Documents-Cairn--";
     const ctx = await getContext();
     const pers = (ctx as any).sessionPersistence;
     const list = await pers.list();
 
     console.log("Found sessions:", list);
     if (list.length === 0) return;
-    const { deriveMessagesFromEvents, collapseDerivedToMessages, loadSessionMessages } = await import("./session-replay");
+    const { deriveMessagesFromEvents, collapseDerivedToMessages } = await import("./session-replay");
 
     const inspect = await pers.inspect("chat-thr-live-2");
     const derived = deriveMessagesFromEvents(inspect.events);

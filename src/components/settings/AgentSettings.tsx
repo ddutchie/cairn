@@ -251,7 +251,7 @@ function SkillsPreviewSection() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const activeProject = projects.find((p) => p.id === activeProjectId) ?? projects[0];
+  const _activeProject = projects.find((p) => p.id === activeProjectId) ?? projects[0];
 
   useEffect(() => {
     window.electron?.getWorkspacePath().then((p) => setWorkspacePath(p ?? null));

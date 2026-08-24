@@ -184,7 +184,7 @@ export function ChatTimeline({ spans, range, onRangeChange, onSpanSelect, totalD
 // deriveTrajectoryTimeline(turns, mode) when the full dsh projection is wired.
 export function deriveSpansFromMessages(
   messages: Array<{ role: string; toolCalls?: unknown[]; reasoning?: string }>,
-  opts?: { totalDurationMs?: number }
+  _opts?: { totalDurationMs?: number }
 ): TimelineSpan[] {
   if (messages.length === 0) return [];
   const spans: TimelineSpan[] = [];

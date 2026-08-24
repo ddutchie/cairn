@@ -2,6 +2,11 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { AppOverlayLayer } from "./SlotOutlet";
 import { activateUIPlugin, deactivateUIPlugin, activeUIPluginIds, type UIPluginModule } from "./api";
+// This test simulates the loader's CJS require table; the platform table
+// intentionally uses require() for `react/jsx-runtime` because the loader
+// itself does (a plugin cannot statically import from us — it goes through
+// require()). Suppress the lint rule for this file only.
+/* eslint-disable @typescript-eslint/no-require-imports */
 
 /**
  * Loader eval-path coverage: a plugin can be authored as CJS (module.exports +
@@ -23,7 +28,7 @@ function evalCjs(source: string, React: typeof import("react")): UIPluginModule 
   const platform: Record<string, unknown> = { react: React, "react/jsx-runtime": require("react/jsx-runtime") };
   const mod = { exports: {} as Record<string, unknown> };
   const req = (n: string) => { if (n in platform) return platform[n]; throw new Error(`require(${n})`); };
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+   
   new Function("module", "exports", "require", "React", source)(mod, mod.exports, req, React);
   return (mod.exports.activate ? mod.exports : mod.exports.default) as UIPluginModule;
 }

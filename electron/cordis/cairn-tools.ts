@@ -178,7 +178,7 @@ export function registerCairnTools(ctx: import("@deepseek-ai/cordis").Context, e
       const def = buildCairnTool(name, desc, schema, exec, ctx);
       disposers.push(ctx.tools.register(def));
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.error(`[cordis] failed to register tool ${name}:`, err);
     }
   }
@@ -222,7 +222,7 @@ export async function registerExternalCairnTools(ctx: import("@deepseek-ai/cordi
     const { getExternalToolDefs } = await import("../lib/external-tools");
     defs = (await getExternalToolDefs(exec.db, exec.workspaceId, exec.projectId)) as typeof defs;
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.error("[cordis] failed to resolve external tool defs:", err);
     return disposers;
   }
@@ -245,7 +245,7 @@ export async function registerExternalCairnTools(ctx: import("@deepseek-ai/cordi
       });
       disposers.push(ctx.tools.register(tool));
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.error(`[cordis] failed to register external tool ${name}:`, err);
     }
   }

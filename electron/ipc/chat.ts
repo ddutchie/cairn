@@ -17,10 +17,7 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveSystemRole } from "../lib/llm-stream";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAttachmentParts } from "../../shared/models/pdf-attach";
-import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
-import { fetchProvidersManifest } from "../lib/community-registry";
 import { recordLlmUsage } from "../lib/usage-recorder";
-import { applyRecoveredTurnCost } from "../db/usage-queries";
 import { createDeltaBatcher } from "../lib/delta-batcher";
 
 // Track one AbortController per renderer webContents ID

@@ -21,7 +21,6 @@ import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 
 import type { PiAgentSession, AgentLLMConfig, AgentToolContext } from "../lib/pi-agent-types";
-import type { Database } from "better-sqlite3";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { discoverSkills } from "../lib/skills";
 import { normaliseBaseUrl, isLocalEndpoint } from "../lib/llm";
@@ -35,6 +34,9 @@ import { createDeltaBatcher } from "../lib/delta-batcher";
 import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry } from "../cordis/approval-grants";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { assertSafeId, resolveWithinRoot } from "./path-safety";
+import fs from "node:fs";
+import path from "node:path";
+import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -763,10 +765,7 @@ export function registerPiAgentHandler(
     // lives in <userData>/sessions/<sessionId>.jsonl via
     // dsh-session-persistence-jsonl. Best-effort: delete the file/dir if it exists.
     try {
-      const fs = require("node:fs") as typeof import("node:fs");
-      const path = require("node:path") as typeof import("node:path");
-      const { getSessionRoot, getContext } = require("../cordis/run-cordis-loop");
-      const primaryRoot = (getSessionRoot as () => string)();
+      const primaryRoot = getSessionRoot();
       const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
       const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
       let deleted = false;
@@ -815,7 +814,7 @@ export function registerPiAgentHandler(
         const maybeAgents = (c as { agents?: { get?: (id: unknown) => unknown; delete?: (id: unknown) => void; remove?: (id: unknown) => void; dispose?: (id: unknown) => void } })?.agents;
         const sid = { toString: () => sessionId } as unknown as string;
         // Try every plausible delete/remove/dispose shape — dsh-agent's API has shifted across rc's.
-        let removed = false;
+        const removed = false;
         for (const k of ["delete", "remove", "dispose", "destroy"] as const) {
           try {
             const fn = (maybeAgents as Record<string, unknown>)?.[k] as ((id: unknown) => unknown) | undefined;

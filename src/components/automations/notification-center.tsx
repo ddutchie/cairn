@@ -110,7 +110,7 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
             const targetable =
               n.targetId !== null &&
               (n.targetType === "note" || n.targetType === "task" || n.targetType === "automation");
-            const isApproval = false;
+            const _isApproval = false;
             const onClick = targetable
               ? () => {
                   if (n.targetType === "note") revealNote(setView, n.targetId!);

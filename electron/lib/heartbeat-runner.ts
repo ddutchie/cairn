@@ -369,7 +369,7 @@ export async function runAutomation(
     },
   };
 
-  const messages: OpenAIMessage[] = [
+  const _messages: OpenAIMessage[] = [
     { role: "system", content: buildSystemPrompt(req) },
     { role: "user", content: recipe },
   ];
@@ -385,10 +385,10 @@ export async function runAutomation(
   // up front rather than silently continuing with built-in tools only.
   // The cast mirrors chat.ts/pi-agent-loop: external defs are OpenAIToolDef[]
   // (open tool-name strings), the loop's extraTools slot is the typed TOOLS.
-  let extraTools: typeof TOOLS | undefined;
+  let _extraTools: typeof TOOLS | undefined;
   if ((automation.requires ?? []).length > 0) {
     try {
-      extraTools = (await getExternalToolDefs(
+      _extraTools = (await getExternalToolDefs(
         db,
         automation.workspaceId,
         automation.projectId ?? "",

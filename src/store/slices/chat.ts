@@ -105,7 +105,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       dbThreads.map(async (t) => {
         try {
           const sessRes = await ipcAwaitResult<unknown>(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             (e) => (e.chat as unknown as { sessionMessages: (id: string) => Promise<{ data: unknown } | { error: string }> }).sessionMessages(t.id)
           );
           let data: ChatMessage[] | null = null;
@@ -362,7 +362,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       // messages to avoid disturbing other threads' in-memory state.
       try {
         const sessRes = await ipcAwaitResult<unknown>(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           (e) => (e.chat as unknown as { sessionMessages: (id: string) => Promise<{ data: unknown } | { error: string }> }).sessionMessages(threadId)
         );
         let fresh: ChatMessage[] = [];

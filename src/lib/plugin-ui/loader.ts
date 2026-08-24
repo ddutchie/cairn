@@ -115,7 +115,11 @@ function namedBindings(clause: string): string {
 }
 
 function evalCjs(id: string, source: string): PluginModule | null {
-  const module = { exports: {} as Record<string, unknown> };
+  // NB: local name isn't `module` — Next/webpack forbids reassignment to
+  // a variable literally named `module` in renderer code. We still pass
+  // it into the eval'd factory as `module` (CommonJS trio: module,
+  // exports, require) so the plugin sees the standard shape.
+  const modShim = { exports: {} as Record<string, unknown> };
   try {
     // Real dsh client bundles (tsdown) are wrapped as
     //   window.__ModuleLoader__.load({ id, factory: (require) => { …; return module.exports } })
@@ -127,11 +131,11 @@ function evalCjs(id: string, source: string): PluginModule | null {
     // `const React = require("react")` (dsh bundles, ours) never collides with a
     // wrapper param.
     const fn = new Function("module", "exports", "require", source);
-    fn(module, module.exports, makeRequire(id));
+    fn(modShim, modShim.exports, makeRequire(id));
     captured.restore();
     // Prefer the __ModuleLoader__-captured exports (wrapped bundle), else the
     // module.exports written directly (bare CJS / transpiled ESM).
-    const rawExports = (captured.exports ?? module.exports) as Record<string, unknown>;
+    const rawExports = (captured.exports ?? modShim.exports) as Record<string, unknown>;
     // Accept the Cairn-native shape (activate) OR the dsh client shape (apply).
     // The default export (some bundles) is unwrapped too.
     const mod = (rawExports.activate || rawExports.apply ? rawExports : (rawExports.default as Record<string, unknown> | undefined)) as (Record<string, unknown>) | undefined;

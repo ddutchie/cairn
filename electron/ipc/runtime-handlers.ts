@@ -140,7 +140,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
         } catch { /* informational */ }
         // Tools: enumerate the global view (per-turn Cairn tools register inside
         // a loop, so this reflects globally-registered + plugin tools).
-        let tools: Array<{ name: string; description?: string }> = [];
+        const tools: Array<{ name: string; description?: string }> = [];
         try {
           const toolsSvc = (ctx as unknown as { tools?: { view: (s?: unknown) => { visible: Map<string, unknown> } } }).tools;
           const vis = toolsSvc?.view?.()?.visible;

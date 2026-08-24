@@ -12,6 +12,9 @@ import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { assertSafeId, resolveWithinRoot, isSafeId } from "./path-safety";
+import fs from "node:fs";
+import path from "node:path";
+import { dropChatAgentForThread, getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 
 export function registerChatDbHandlers(ctx: DbContext): void {
   // Legacy transcript retirement is now migration v49 (see electron/db/schema.ts
@@ -40,14 +43,10 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     // deleted files (turns stop persisting). Dispose may flush pending events,
     // so this must run before the file wipe below removes them.
     try {
-      const { dropChatAgentForThread } = require("../cordis/run-cordis-loop") as { dropChatAgentForThread: (id: string) => Promise<void> };
       await dropChatAgentForThread(threadId);
     } catch { /* best-effort; wipe still proceeds */ }
     try {
-      const fs = require("node:fs") as typeof import("node:fs");
-      const path = require("node:path") as typeof import("node:path");
-      const { getSessionRoot, getContext } = require("../cordis/run-cordis-loop");
-      const primaryRoot = (getSessionRoot as () => string)();
+      const primaryRoot = getSessionRoot();
       const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
       const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
     const stableId = `chat-${threadId}`;
@@ -194,10 +193,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     ctx.db.prepare(`DELETE FROM chat_threads WHERE id IN (${placeholders})`).run(...ids);
     // Also clear Cordis sessions for all deleted threads (best-effort, same brute-force as single clear)
     try {
-      const fs = require("node:fs") as typeof import("node:fs");
-      const path = require("node:path") as typeof import("node:path");
-      const { getSessionRoot, getContext } = require("../cordis/run-cordis-loop");
-      const primaryRoot = (getSessionRoot as () => string)();
+      const primaryRoot = getSessionRoot();
       const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
       const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
       for (const threadId of ids) {

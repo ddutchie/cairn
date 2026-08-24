@@ -49,6 +49,11 @@ export function PluginsSettings() {
     try { setData(await el.plugins.list()); } catch { setData({ devEnabled: false, root: "", plugins: [] }); }
   }, [el]);
 
+  // Initial fetch on mount. This is the standard "sync external state into
+  // React" pattern the lint rule is broadly warning about but that dsh's
+  // plugin manifest reasonably requires — refresh() reads main-process disk
+  // state which cannot be represented as a controlled prop.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void refresh(); }, [refresh]);
   // Re-pull when the plugins dir changes (edit/add/remove on disk).
   useEffect(() => {

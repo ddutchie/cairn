@@ -363,6 +363,11 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
         const answersText = await new Promise<string>((resolve) => {
           const onAborts: Array<() => void> = [];
           let settled = false;
+          // Hoist the timer binding so settle() can clearTimeout(timer) even
+          // when called from the synchronous-replay path below — a const
+          // declaration at the tail would be in TDZ during a sync replay.
+          // eslint-disable-next-line prefer-const -- reassigned at end of block; declaration must precede settle() to avoid TDZ during sync replay.
+          let timer: ReturnType<typeof setTimeout> | undefined;
           // Synchronous-resolve safety — see the identical pattern in the
           // approval answerer below for the full rationale. Buffer the
           // outcome + replay after registerPending returns so dispose runs.
@@ -396,7 +401,7 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
           // Same fail-closed budget as approvals: an unanswered form must not
           // block the loop forever. No expiry IPC needed — the loop settles
           // with the cancelled answers and the pane clears its state on done.
-          const timer = setTimeout(() => settle('{"cancelled":true,"answers":[]}'), questionsTimeoutMs ?? APPROVAL_TIMEOUT_MS);
+          timer = setTimeout(() => settle('{"cancelled":true,"answers":[]}'), questionsTimeoutMs ?? APPROVAL_TIMEOUT_MS);
         });
 
         // The renderer answers with a JSON blob {answers:[{id,selected[],custom?}]}
@@ -872,6 +877,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
         // registerPending returns we assign disposeRef.current and, if a sync
         // outcome was captured, replay settle() to run dispose + resolve.
         let settled = false;
+        // eslint-disable-next-line prefer-const -- reassigned at end of block; declaration must precede settle() to avoid TDZ during sync replay.
         let timer: ReturnType<typeof setTimeout> | undefined;
         const onAborts: Array<() => void> = [];
         const disposeRef: { current: (() => void) | null } = { current: null };

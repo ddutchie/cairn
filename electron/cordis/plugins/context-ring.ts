@@ -20,7 +20,7 @@
 
 import type { Context } from "@deepseek-ai/cordis";
 import * as z from "zod";
-import { foldSessionUsage as dshFoldSessionUsage, type ContextRingUsage } from "dsh-context-ring";
+import { foldSessionUsage as dshFoldSessionUsage } from "dsh-context-ring";
 
 export const CONTEXT_RING_KEY = "contextRing";
 
@@ -183,7 +183,11 @@ export function foldContextRing(events: readonly { type: string; data?: unknown 
  * app restarts and thread reloads.
  */
 export function foldSessionUsage(events: readonly { type: string; data?: unknown }[]): SessionUsageMetrics | undefined {
-  const usage = dshFoldSessionUsage(events as any);
+  // dsh-context-ring's fold accepts its own SessionEvent shape; ours carries
+  // the same discriminators (`type` + `data`) but is nominally typed. Cast
+  // through unknown to satisfy the structural boundary — dsh reads only the
+  // `type` + `data.usage` fields we already provide.
+  const usage = dshFoldSessionUsage(events as unknown as Parameters<typeof dshFoldSessionUsage>[0]);
   if (!usage) return undefined;
   return {
     promptTokens: usage.promptTokens,

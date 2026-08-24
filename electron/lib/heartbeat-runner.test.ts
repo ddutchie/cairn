@@ -86,7 +86,7 @@ interface LoopOpts {
   systemPrompt?: string;
 }
 function lastLoopOpts(): LoopOpts {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const calls = (runCordisCodingLoopMock as unknown as { mock: { calls: Array<[unknown]> } }).mock.calls;
   const last = calls[calls.length - 1]?.[0] as LoopOpts | undefined;
   return last ?? {};
@@ -94,9 +94,9 @@ function lastLoopOpts(): LoopOpts {
 
 const loopReq = () => lastLoopOpts().req;
 const loopSend = () => lastLoopOpts().send;
-const loopCwd = () => lastLoopOpts().cwd;
-const loopAutoApprove = () => lastLoopOpts().autoApprove;
-const loopSignal = () => lastLoopOpts().signal;
+const _loopCwd = () => lastLoopOpts().cwd;
+const _loopAutoApprove = () => lastLoopOpts().autoApprove;
+const _loopSignal = () => lastLoopOpts().signal;
 /** Drive a `pi-agent:tool` start event through the runner's send sink. */
 const fireToolStart = (tool: string, label: string, args: Record<string, unknown>) =>
   loopSend()?.("pi-agent:tool", { name: tool, label, args, status: "start" });
@@ -113,7 +113,7 @@ afterEach(() => {
     // Also clean the dsh session that was nested under .cairn-sessions/<encoded-cwd>/
     // (the fallback sessionRoot used before main.ts sets the real <userData>/sessions).
     try {
-      const encoded = root.replace(/[^a-zA-Z0-9._-]/g, (c) => `-${c.charCodeAt(0).toString(16)}-`).replace(/^-/, "--").replace(/-$/, "--") || "_";
+      const _encoded = root.replace(/[^a-zA-Z0-9._-]/g, (c) => `-${c.charCodeAt(0).toString(16)}-`).replace(/^-/, "--").replace(/-$/, "--") || "_";
       // The actual dsh encoding is more complex, so brute-force: delete any
       // .cairn-sessions dir that contains this root's encoded form as a substring,
       // plus the common case of cleaning the whole .cairn-sessions after the suite.

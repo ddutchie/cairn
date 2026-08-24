@@ -33,7 +33,7 @@ import { resolvePromptContext } from "@/lib/context-resolver";
 import { useChatMessageQueue, useQueueDrain } from "@/hooks/useChatMessageQueue";
 import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion, effectiveTemperatureForModel } from "@/lib/models-dev";
 import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
-import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
+import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
 
@@ -290,7 +290,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     };
     void sync();
     return () => { cancelled = true; };
-  }, [session.sessionId, finalisePiMessage]);
+  }, [session.sessionId, finalisePiMessage, setPiToolConfirmRequired, setIsLoading, setRetryInfo, setPendingQuestions, setPendingQuestionCallId]);
 
   // ── Context Ring badge (reasoning provenance) ─────────────────────────────
   const [contextRing, setContextRing] = useState<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } } | null>(null);
@@ -301,6 +301,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     } catch { /* pill is optional decoration */ }
   }, []);
   useEffect(() => {
+    // Refresh the context ring badge on session change. The setState inside
+    // refreshContextRing is guarded (only sets when the IPC returns a value),
+    // and this effect intentionally syncs a piece of external state (the
+    // main-process context-ring service) into the UI — one-shot per session,
+    // not per render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshContextRing(session.sessionId);
   }, [session.sessionId, refreshContextRing]);
 
@@ -742,7 +748,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
        },
     };
     window.electron?.piAgent.prompt(promptPayload);
-  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, enqueue]);
+  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, enqueue, registryCommands]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date

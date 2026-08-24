@@ -89,6 +89,7 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
 
       return new Promise<PluginConfirmOutcome>((resolve) => {
         let settled = false;
+        // eslint-disable-next-line prefer-const -- reassigned at end of block; declaration must precede settle() to avoid TDZ during sync replay.
         let timer: ReturnType<typeof setTimeout> | undefined;
         const onAborts: Array<() => void> = [];
         const disposeRef: { current: () => void } = { current: () => {} };
@@ -152,6 +153,7 @@ export function createHeadlessConfirmTransport(deps: HeadlessConfirmTransportDep
         let settled = false;
         const onAborts: Array<() => void> = [];
         let dispose: () => void = () => {};
+        // eslint-disable-next-line prefer-const -- reassigned at end of block; declaration must precede settle().
         let timer: ReturnType<typeof setTimeout> | undefined;
         const settle = (outcome: PluginConfirmOutcome): void => {
           if (settled) return;

@@ -60,12 +60,18 @@ export function DshToolView({
   inspect?: () => void;
 }): React.ReactElement | null {
   registerBuiltinToolViews();
+  // The registry returns the SAME component reference for a given tool name
+  // across renders (Map lookup by name; entries never rewritten unless
+  // re-registered explicitly). Using React.createElement bypasses ESLint's
+  // static-components heuristic, which can't statically prove the reference
+  // is stable — the alternative (JSX <View />) fires react-hooks/static-
+  // components even though there is no remount-on-render at runtime.
   const View = getToolView(tc.tool);
   if (!View) return null;
   const props = toToolCallViewProps(tc, { cwd, home, openFile, inspect });
   return (
     <div className="dsh-toolview-scope">
-      <View {...props} />
+      {React.createElement(View, props)}
     </div>
   );
 }

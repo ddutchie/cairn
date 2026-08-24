@@ -35,7 +35,7 @@ import {
 import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { buildCordisUserContent } from "./cairn-attachment-store";
-import { resolveTransport, markCompletionsOnly, readCachedMode, type ApiMode } from "../lib/llm-transport";
+import { resolveTransport, type ApiMode } from "../lib/llm-transport";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 
@@ -94,7 +94,10 @@ export interface RunCordisCodingResult {
 
 export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise<RunCordisCodingResult> {
   const ctx = await getContext();
-  let { db, req, workspacePath, sessionId, cwd, systemPrompt, llmConfig, mode, send, questions, approvals, getWin, signal } = opts;
+  const { db, req, workspacePath, sessionId, cwd, systemPrompt, mode, send, questions, approvals, getWin, signal } = opts;
+  // llmConfig is mutated below (local-model rewrite); every other opts field
+  // is read-only.
+  let { llmConfig } = opts;
   // Local on-device model — ensure the app-spawned llama-server is running and
   // use its OpenAI-compatible endpoint (also via the pi-ai route, no separate plugin).
   if ((llmConfig as { provider?: string }).provider === "localllm") {
@@ -255,7 +258,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       console.error(`[cordis-coding] tools diagnostic failed:`, e);
     }
 
-    const selection = { provider: "cairn", model: llmConfig.model };
+    const _selection = { provider: "cairn", model: llmConfig.model };
     // Stable dsh session id = the caller's pi sessionId. With dsh jsonl
     // persistence mounted, createAgent with a stable id auto-RESUMES the
     // session's materialized history on a remount (first use creates it). This

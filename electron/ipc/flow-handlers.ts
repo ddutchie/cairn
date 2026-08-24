@@ -18,7 +18,7 @@ import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { stripMarkdown } from "../shared/text-utils";
-import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
+import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 
