@@ -1150,15 +1150,15 @@ const api = {
     /** Answer a blocked ask_questions call — the text is fed back to the model as the tool result */
     respondQuestions: (sessionId: string, callId: string, answers: string) => ipcRenderer.send("pi-agent:respond-questions", { sessionId, callId, answers }),
     /** List all persisted pi sessions for a project (project-scoped history) */
-    listSessions:   (projectId: string) => invoke("db:piSession:list", { projectId }),
+    listSessions:   (projectId: string) => invoke("db:session:list", { projectId }),
     /** Persist a new pi session row to SQLite */
-    createSession:  (args: unknown) => invoke("db:piSession:create", args),
+    createSession:  (args: unknown) => invoke("db:session:create", args),
     /** Delete a pi session and all its messages from SQLite */
-    deleteSession:  (id: string) => invoke("db:piSession:delete", { id }),
+    deleteSession:  (id: string) => invoke("db:session:delete", { id }),
     /** Fetch session transcript from the dsh JSONL log (session-as-truth), SQLite fallback */
-    getSessionMessages: (sessionId: string) => invoke("db:piSession:sessionMessages", { sessionId }),
+    getSessionMessages: (sessionId: string) => invoke("db:session:messages", { sessionId }),
     /** Fetch the persisted todo list for a session */
-    getTodos:       (sessionId: string) => invoke<Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }>>("db:piSession:todos", { sessionId }),
+    getTodos:       (sessionId: string) => invoke<Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }>>("db:session:todos", { sessionId }),
     /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */
     restoreContext: (sessionId: string) => ipcRenderer.send("pi-agent:restore-context", { sessionId }),
     /**

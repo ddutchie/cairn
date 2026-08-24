@@ -198,7 +198,7 @@ export default function Home() {
               const latest = history[0];
               // Load messages for the latest session — session-as-truth (dsh JSONL),
               // SQLite fallback for pre-dsh sessions. Mirrors the chat load path.
-              // db:piSession:sessionMessages returns an ENVELOPE
+              // db:session:messages returns an ENVELOPE
               // ({ messages, usage?, contextRing?, todos? }) — not a bare array
               // (and IPC results may be result-wrapped) — so unwrap defensively
               // exactly like useAgentSessionActions.handleResumeSession.

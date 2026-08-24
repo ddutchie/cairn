@@ -64,7 +64,7 @@ describe("isWriteChannel", () => {
       "db:tag:list",
       "db:chat:threads",
       "db:chat:messages",
-      "db:piSession:list",
+      "db:session:list",
       "db:embeddings:search",
     ];
     for (const c of reads) expect(isWriteChannel(c)).toBe(false);

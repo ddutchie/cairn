@@ -1,5 +1,5 @@
 /**
- * Cairn — IPC handlers for Pi Agent session persistence (`db:piSession:*`).
+ * Cairn — IPC handlers for session persistence (`db:session:*`).
  *
  * The agent loop itself lives in `electron/ipc/pi-agent.ts` (streaming events
  * via `pi-agent:*`). These channels are the READ surface used by the
@@ -46,10 +46,10 @@ function isMissingSessionError(err: unknown): boolean {
 }
 
 export function registerPiSessionHandlers(ctx: DbContext): void {
-  registerIpcHandle("db:piSession:list", (_e, { projectId }) => handle(() => q.getPiSessions(ctx.db, projectId)));
-  registerIpcHandle("db:piSession:create", (_e, args: Parameters<typeof q.createPiSession>[1]) => handle(() => q.createPiSession(ctx.db, args)));
-  registerIpcHandle("db:piSession:delete", (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
-  registerIpcHandle("db:piSession:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
+  registerIpcHandle("db:session:list", (_e, { projectId }) => handle(() => q.getPiSessions(ctx.db, projectId)));
+  registerIpcHandle("db:session:create", (_e, args: Parameters<typeof q.createPiSession>[1]) => handle(() => q.createPiSession(ctx.db, args)));
+  registerIpcHandle("db:session:delete", (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
+  registerIpcHandle("db:session:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 
   // Session-as-truth load: rebuild the coding session's transcript from the dsh
   // JSONL session log (same source the agent resumes from) via the shared
@@ -64,7 +64,7 @@ export function registerPiSessionHandlers(ctx: DbContext): void {
   // rethrown so the renderer can surface it — an empty transcript is
   // indistinguishable from data loss, and hiding a version mismatch on a
   // silent upgrade would strand every pre-bump session with no diagnostic.
-  registerIpcHandle("db:piSession:sessionMessages", (_e, { sessionId }: { sessionId: string }) => handle(async () => {
+  registerIpcHandle("db:session:messages", (_e, { sessionId }: { sessionId: string }) => handle(async () => {
     if (!sessionId) return { messages: [] as ReturnType<typeof toPiMessages> };
     try {
       const { getContext, prepareReplayContext } = await import("../cordis/run-cordis-loop");
@@ -95,5 +95,4 @@ export function registerPiSessionHandlers(ctx: DbContext): void {
     }
   }));
 }
-
 
