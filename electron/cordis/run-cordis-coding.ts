@@ -18,7 +18,6 @@ import { Context } from "@deepseek-ai/cordis";
 // See ctx-augment.ts for the rationale — same augmentation load.
 import "./ctx-augment";
 import { SessionId } from "@deepseek-ai/dsh-session";
-import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { Database } from "better-sqlite3";
 
 import { getContext, ensureAgentAiAdapter } from "./run-cordis-loop";
@@ -38,6 +37,7 @@ import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { TOOL_SCHEMAS } from "../lib/tool-schemas";
 import { buildCordisUserContent } from "./cairn-attachment-store";
 import { resolveTransport, type ApiMode } from "../lib/llm-transport";
+import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 
@@ -292,13 +292,8 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // storing transcripts in Cairn's SQLite (the DB is for MCP/tool access).
     const attemptSessionId = SessionId(sessionId);
     const handle = await openCordisAgent(ctx, { sessionId, cwd, llmConfig, signal });
-    const agent = handle.agent as {
-      whenIdle: () => Promise<unknown>;
-      followup: (m: unknown) => unknown;
-      session: { events: unknown[] };
-    };
+    const agent = handle.agent as CordisTurnAgent & { session: { events: unknown[] } };
     handleDisposers.push(() => handle.dispose?.() ?? Promise.resolve());
-    await agent.whenIdle();
 
     // Route every pi-agent:* event to BOTH the renderer (frontend `send`) and a
     // terminal resolver so the turn promise settles on done/error. cairnCodingPlugin
@@ -339,27 +334,8 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // are admitted through the mounted attachment store and become ImageBlocks
     // (step 2l); without this, req.images would be silently dropped.
     const content = await buildCordisUserContent(ctx, req.message, req.images);
-    // The caller's AbortSignal is not retained by dsh after agent creation.
-    // Bridge it to the live agent so the renderer's stop action cancels the
-    // actual model/tool loop, including a blocked question or tool call.
-    const cancellableAgent = agent as typeof agent & { cancel?: (cause: { kind: "user" }) => void };
-    const cancelAgent = () => cancellableAgent.cancel?.({ kind: "user" });
-    if (signal?.aborted) cancelAgent();
-    else signal?.addEventListener("abort", cancelAgent, { once: true });
-    try {
-      agent.followup(
-        createUserMessage({ content: content as never, source: { kind: "user" } }),
-      );
-
-      // Wait for the turn to fully settle (the dsh loop runs all tool steps).
-      const doneP = Promise.race([
-        terminal,
-        agent.whenIdle().then(() => ({ ok: true }) as RunCordisCodingResult),
-      ]);
-      return await doneP;
-    } finally {
-      signal?.removeEventListener("abort", cancelAgent);
-    }
+    const turn = await runCordisTurn({ agent, content, signal, completion: terminal });
+    return (turn.completion as RunCordisCodingResult | undefined) ?? { ok: true };
   };
 
   let result: RunCordisCodingResult;

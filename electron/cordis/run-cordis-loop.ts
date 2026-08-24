@@ -23,7 +23,6 @@ import agentLoopPlugin from "@deepseek-ai/dsh-agent-loop";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
-import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import subagentServicePlugin from "@deepseek-ai/dsh-subagent";
 import userQuestionsService from "@deepseek-ai/dsh-user-questions";
 import { apply as spawnProviderApply, inject as spawnProviderInject, name as spawnProviderName } from "@deepseek-ai/dsh-subagent-spawn-in-process";
@@ -45,6 +44,7 @@ import { app as electronApp } from "electron";
 import { createCairnSkillProvider } from "./cairn-skill-provider";
 import path from "path";
 import { openCordisSessionAgent } from "./session-agent";
+import { runCordisTurn } from "./session-turn";
 
 import { registerCairnTools, registerExternalCairnTools, CHAT_FORBIDDEN_TOOLS } from "./cairn-tools";
 import { getChatAgentCache, peekChatAgentCache } from "./chat-agent-cache";
@@ -1036,33 +1036,13 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
     }
 
 
-    await agent.whenIdle();
-    const firstSeq = agent.session.seq;
-
     // No history replay — the stable SessionId already contains prior turns via
     // the persisted jsonl (session.deriveMessages()). Just followup the new user
     // message; the snapshot (Current runtime context...) is handled by
     // systemPromptPlugin as a user/form:snapshot alongside this followup in the
     // same turn/start→step/start batch (see agent.ts:283).
     const userContent = await buildCordisUserContent(ctx, req.message, req.images);
-    // The caller's AbortSignal is not retained by dsh after agent creation.
-    // Bridge it to the live agent so the renderer's stop action cancels the
-    // actual model/tool loop, including a blocked question or tool call.
-    const cancellableAgent = agent as typeof agent & { cancel?: (cause: { kind: "user" }) => void };
-    const cancelAgent = () => cancellableAgent.cancel?.({ kind: "user" });
-    if (signal?.aborted) cancelAgent();
-    else signal?.addEventListener("abort", cancelAgent, { once: true });
-    try {
-      agent.followup(
-        createUserMessage({
-          content: userContent as never,
-          source: { kind: "user" },
-        }),
-      );
-      await agent.whenIdle();
-    } finally {
-      signal?.removeEventListener("abort", cancelAgent);
-    }
+    const { firstSeq } = await runCordisTurn({ agent, content: userContent, signal });
 
     const collected = collect(agent.session.events, firstSeq);
     // Keep the session alive for the next turn's resume — do NOT dispose the
