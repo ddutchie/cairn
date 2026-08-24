@@ -846,6 +846,12 @@ export type SessionLoadState =
   | { status: "ready"; sessionId: string }
   | { status: "error"; sessionId: string; message: string };
 
+/** Transient object preview shown beside a centered conversation. */
+export type ContextPanel =
+  | { type: "note" | "task"; id: string }
+  | { type: "file"; path: string }
+  | { type: "diff"; path?: string };
+
 export interface GraphFilters {
   projectIds: string[];
   nodeTypes: GraphNodeType[];

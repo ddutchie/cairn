@@ -4,7 +4,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ID, AppUIState, SessionPresentation, SettingsSection } from "@/types";
+import type { ContextPanel, ID, AppUIState, SessionPresentation, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
 import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
@@ -702,6 +702,8 @@ export interface UISlice extends AppUIState {
   // Active preview item for chat-centric layout
   activePreviewItem: { type: "note" | "task"; id: ID } | null;
   setActivePreviewItem: (item: { type: "note" | "task"; id: ID } | null) => void;
+  activeContextPanel: ContextPanel | null;
+  setActiveContextPanel: (panel: ContextPanel | null) => void;
 
   // Chat panel resizing state
   chatPanelResizing: boolean;
@@ -760,6 +762,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   chatOpen: false,
   searchOpen: false,
   activePreviewItem: null,
+  activeContextPanel: null,
   chatPanelResizing: false,
   lastContentView: "overview",
   sessionPresentation: "drawer",
@@ -1162,6 +1165,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       activeProjectId: projects[0]?.id ?? null,
       activeView: "overview",
       activePreviewItem: null,
+      activeContextPanel: null,
   lastContentView: "overview",
     });
     // Pull this workspace's chat threads/messages from SQLite (the durable
@@ -1170,7 +1174,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   },
 
   setActiveProject(projId) {
-    set({ activeProjectId: projId, activeView: "overview", activePreviewItem: null, lastContentView: "overview" });
+    set({ activeProjectId: projId, activeView: "overview", activePreviewItem: null, activeContextPanel: null, lastContentView: "overview" });
     if (projId) storage.set(ACTIVE_PROJECT_KEY, projId);
   },
 
@@ -1199,7 +1203,11 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   },
 
   setActivePreviewItem(item) {
-    set({ activePreviewItem: item });
+    set({ activePreviewItem: item, activeContextPanel: item });
+  },
+
+  setActiveContextPanel(panel) {
+    set({ activeContextPanel: panel });
   },
 
   setChatPanelResizing(resizing) {

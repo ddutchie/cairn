@@ -21,6 +21,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     setChatPanelWidth,
     sidebarCollapsed,
     activePreviewItem,
+    activeContextPanel,
     chatPanelResizing,
     setChatPanelResizing,
   } = useCairnStore(useShallow((s) => ({
@@ -30,6 +31,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     setChatPanelWidth: s.setChatPanelWidth,
     sidebarCollapsed: s.sidebarCollapsed,
     activePreviewItem: s.activePreviewItem,
+    activeContextPanel: s.activeContextPanel,
     chatPanelResizing: s.chatPanelResizing,
     setChatPanelResizing: s.setChatPanelResizing,
   })));
@@ -155,7 +157,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
       </div>
 
       {/* Side-by-side preview panel (renders only in Center Mode when note/task is clicked) */}
-      {isCenterMode && activePreviewItem && <PreviewPane />}
+      {isCenterMode && (activeContextPanel ?? activePreviewItem) && <PreviewPane />}
     </aside>
   );
 }

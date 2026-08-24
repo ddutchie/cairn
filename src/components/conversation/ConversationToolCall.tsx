@@ -13,6 +13,7 @@ import { toToolCallViewProps } from "@/lib/dsh-toolview/adapter";
 import { KeyedSlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
 import { useSlotEntries } from "@/lib/plugin-ui/registry";
 import type { ConversationToolCall } from "./conversation-message";
+import { useCairnStore } from "@/store";
 
 registerBuiltinToolViews();
 
@@ -25,6 +26,15 @@ interface ConversationToolCallProps {
 function connectorForTool(name: string, connectors?: Record<string, ConnectorMeta>): ConnectorMeta | undefined {
   if (!connectors) return undefined;
   return Object.entries(connectors).find(([key]) => name.startsWith(key))?.[1];
+}
+
+function referencedPath(toolCall: ConversationToolCall): string | undefined {
+  const args = toolCall.args;
+  if (!args) return undefined;
+  for (const key of ["path", "filePath", "file_path", "filename"]) {
+    if (typeof args[key] === "string" && args[key].trim()) return args[key];
+  }
+  return undefined;
 }
 
 function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
@@ -58,8 +68,12 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
 
 function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
   const [expanded, setExpanded] = useState(false);
+  const setActiveContextPanel = useCairnStore((state) => state.setActiveContextPanel);
+  const setSessionPresentation = useCairnStore((state) => state.setSessionPresentation);
   const hasOutput = Boolean(toolCall.output);
   const summary = humanizeTool(toolCall.name, toolCall.args);
+  const path = referencedPath(toolCall);
+  const contextType = toolCall.name === "read" ? "file" : toolCall.name === "edit" || toolCall.name === "write" ? "diff" : undefined;
   return (
     <div>
       <button type="button" onClick={() => hasOutput && setExpanded((value) => !value)} className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit text-left", hasOutput && "hover:border-[var(--accent)] cursor-pointer", !hasOutput && "cursor-default")}>
@@ -68,6 +82,18 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
         {hasOutput && (expanded ? <ChevronDown size={9} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={9} className="text-[var(--text-tertiary)]" />)}
       </button>
       {expanded && <pre className="mt-1 max-h-48 overflow-auto rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-all">{toolCall.output}</pre>}
+      {path && contextType && (
+        <button
+          type="button"
+          onClick={() => {
+            setActiveContextPanel(contextType === "file" ? { type: "file", path } : { type: "diff", path });
+            setSessionPresentation("center");
+          }}
+          className="mt-1 text-[0.643rem] text-[var(--accent)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          {contextType === "file" ? "Open file" : "View diff"}
+        </button>
+      )}
     </div>
   );
 }
