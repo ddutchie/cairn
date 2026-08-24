@@ -1,5 +1,14 @@
 "use client";
 
+/**
+ * @deprecated (2.7.7) Plan approval now flows through dsh-plan-mode's
+ * `exit_plan_mode` tool → PlanReviewCard inside QuestionForm. This
+ * component is unmounted from AgentChatPane and its test file is kept
+ * only until a follow-up branch retires them alongside the pi-agent:
+ * approve-plan IPC handler (still shipped for a session that predates
+ * this cutover and has a planNoteId set, but no UI drives it).
+ */
+
 import { useState } from "react";
 import { CheckCircle, MessageSquare, Play, Send } from "lucide-react";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";

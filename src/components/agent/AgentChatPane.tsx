@@ -23,7 +23,10 @@ import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } fro
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
 import { AgentMessageBubble } from "./AgentMessageBubble";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { PlanApprovalCard } from "./PlanApprovalCard";
+// PlanApprovalCard was retired: plan approval now flows through the dsh
+// plan-review card (rendered inside QuestionForm when the model calls
+// exit_plan_mode). The old PRD-note approve-plan IPC path is gone from
+// the UI; see the comment near the render site below.
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
 import { ContextRing } from "./ContextRing";
@@ -120,7 +123,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const appendPiSubagentThought  = useCairnStore((s) => s.appendPiSubagentThought);
   const finalisePiSubagentMessage = useCairnStore((s) => s.finalisePiSubagentMessage);
   const setPiMode                = useCairnStore((s) => s.setPiMode);
-  const setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
+  const _setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
   const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
   const setPiSessionTodos        = useCairnStore((s) => s.setPiSessionTodos);
   const setView                  = useCairnStore((s) => s.setView);
@@ -274,6 +277,15 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // the main-process loop is still blocked waiting on them.
       for (const ask of res?.pendingAsks ?? []) {
         setPiToolConfirmRequired(session.sessionId, ask.callId, true);
+      }
+      // Re-surface pending question asks (ask_questions / plan-review). The
+      // main process kept the full question payload so we can rehydrate a
+      // plan-review card after reload — otherwise the review would hang
+      // forever with no visible answer path.
+      const pq = res?.pendingQuestions?.[0];
+      if (pq && pq.questions.length > 0) {
+        setPendingQuestions(pq.questions as never);
+        setPendingQuestionCallId(pq.callId);
       }
       if (running) {
         setIsLoading(true);
@@ -486,6 +498,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // Plan mode events
     const unsubPlanNote = electron.piAgent.onPlanNote((e) => {
       if (e.sessionId !== sessionId) return;
+      // Two shapes carry this event today:
+      //   - dsh-plan-mode's exit_plan_mode: e.planContent is the full plan
+      //     text (from the tool call args), e.noteId is undefined. Show the
+      //     plan immediately without waiting for a note round-trip.
+      //   - Legacy PRD-note flow: e.noteId is a real note id, e.planContent
+      //     is undefined; the plan will be re-fetched via onNoteUpdated.
+      if (e.planContent) setPlanNoteContent(e.planContent);
       setPiMode(sessionId, "plan", e.noteId);
     });
 
@@ -826,49 +845,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     window.electron?.piAgent.clear(session.sessionId);
   }
 
-  function handleApprovePlan(autoApprove: boolean) {
-    if (!session.planNoteId || isLoading || !session.cwd) return;
-    setPiAutoApprove(session.sessionId, autoApprove);
-    setIsLoading(true);
-    // Add a system-style user message to mark the transition in the chat
-    addPiMessage(session.sessionId, {
-      id:        id(),
-      role:      "user",
-      content:   "Plan approved. Begin implementation.",
-      timestamp: new Date().toISOString(),
-    });
-    addPiMessage(session.sessionId, {
-      id:          id(),
-      role:        "assistant",
-      content:     "",
-      isStreaming: true,
-      timestamp:   new Date().toISOString(),
-    });
-    window.electron?.piAgent.approvePlan({
-      sessionId:   session.sessionId,
-      planNoteId:  session.planNoteId,
-      projectId:   session.projectId,
-      workspaceId: activeWorkspaceId ?? undefined,
-      cwd:         session.cwd,
-      taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
-      config: {
-        provider:   (agentConfig.baseUrl.includes("localhost") || agentConfig.baseUrl.includes("127.0.0.1")) ? "localllm" : "openai",
-        baseUrl:     agentConfig.baseUrl     || undefined,
-        model:       agentConfig.model       || undefined,
-        apiKey:      agentConfig.apiKey      || undefined,
-        maxSteps:    agentConfig.maxSteps    ?? 30,
-         // Same effective-temperature resolution as the prompt path.
-         temperature: effectiveTemperatureForModel(agentConfig.model, agentConfig.temperature),
-         contextWindow: agentConfig.contextLimit,
-         maxTokens:   resolveMaxOutputTokens(
-           agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,
-           getModelInfo(agentConfig.model)?.maxOutput,
-         ),
-         autoApprove,
-         isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
-      },
-    });
-  }
+  // handleApprovePlan was retired with the PRD-note-based PlanApprovalCard.
+  // Plan approval now flows through dsh's exit_plan_mode tool → the review
+  // ask is answered via pi-agent:respond-questions (see PlanReviewCard in
+  // QuestionForm), which unblocks the tool and lets dsh flip plan/mode off.
+  // No new turn is issued — the same coding turn continues in execute mode
+  // with the plan carried forward via session.planContent.
+
 
   return (
     <div className="flex flex-col h-full bg-[var(--surface)]">
@@ -983,6 +966,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
                 <QuestionForm
                   questions={pendingQuestions}
                   onSubmit={submitQuestions}
+                  onSubmitStructured={(json) => { submitQuestions(json); return true; }}
                   disabled={false}
                 />
               )}
@@ -1051,14 +1035,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             )}
           </div>
         )}
-        {session.mode === "plan" && planNoteContent && session.planNoteId && (
-          <PlanApprovalCard
-            content={planNoteContent}
-            busy={isLoading}
-            onApprove={handleApprovePlan}
-            onRequestChanges={(feedback) => void sendPrompt(`Please revise the plan based on this feedback:\n\n${feedback}`)}
-          />
-        )}
+        {/* Plan-review is now handled by the PlanReviewCard inside QuestionForm
+             (dsh-plan-mode's `exit_plan_mode` flow). The pre-Cordis PRD-note
+             PlanApprovalCard was retired — the note (if the agent wrote one)
+             stays visible via the note chip in the header; the approval
+             decision itself flows through the dsh review card. */}
         {session.mode === "execute" && planNoteContent && (
           <PlanTaskList content={planNoteContent} />
         )}

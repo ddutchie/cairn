@@ -39,6 +39,12 @@ export interface ChatToolCall {
 }
 
 /**
+ * One option in a dsh AskUserQuestionItem. dsh emits objects with a `label`
+ * and (usually) a `description`; some ad-hoc callers pass strings.
+ */
+export type PendingQuestionOption = string | { label: string; description?: string };
+
+/**
  * A pending clarification question the assistant asked the user to answer
  * inline. Two shapes are accepted so both Cairn's own `ask_questions` tool
  * and dsh-native providers (like plan-mode's `exit_plan_mode`, which uses
@@ -47,11 +53,15 @@ export interface ChatToolCall {
  *   * Cairn shape: `{id, label, prompt}` — how ask_questions has always
  *     handed off to the renderer. `label` is the short heading, `prompt`
  *     is the full question.
- *   * dsh shape: `{id, question, header?, options?, intent?}` — what the
- *     dsh-plan-mode plugin (and any future dsh-native ask surface) emits.
- *     Its `question` is the full text; `header` is the short label; the
- *     other fields are structured-answer extras we currently render as a
- *     text-free-form fallback.
+ *   * dsh shape: `{id, question, header?, detail?, options?, intent?}` —
+ *     what the dsh-plan-mode plugin (and any future dsh-native ask surface)
+ *     emits. `question` is the full question, `header` a short label,
+ *     `detail` is a longer body block (plan-mode uses it to carry the FULL
+ *     markdown plan for review — this is the load-bearing field for the
+ *     plan-approval flow), `options` are the click-selectable choices, and
+ *     `intent` is a UI-presentation hint (e.g. `{kind:'plan-review',
+ *     approve:'Approve'}`) that lets a capable UI render a plan-review
+ *     card instead of a generic question.
  *
  * The form component prefers dsh fields if they're present, so a payload
  * from either surface renders a filled-in card instead of a blank one.
@@ -64,9 +74,10 @@ export interface PendingQuestion {
   /** dsh shape */
   question?: string;
   header?: string;
-  options?: string[];
+  detail?: string;
+  options?: PendingQuestionOption[];
   multiSelect?: boolean;
-  intent?: unknown;
+  intent?: { kind?: string; approve?: string; [k: string]: unknown };
 }
 
 export interface ChatStreamRequest {

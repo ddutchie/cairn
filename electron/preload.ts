@@ -1013,7 +1013,14 @@ const api = {
     /** Whether a runAgentLoop is currently in flight for this session. */
     /** Reasoning-provenance snapshot for the agent panel's Context Ring badge */
     contextRing: (sessionId: string) => invoke<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }>("pi-agent:context-ring", { sessionId }),
-    isRunning: (sessionId: string) => invoke<{ running: boolean; pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string }> }>("pi-agent:is-running", { sessionId }),
+    isRunning: (sessionId: string) => invoke<{
+      running: boolean;
+      pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string }>;
+      /** Outstanding question asks (ask_questions / plan-review). The
+       *  renderer surfaces these into pendingQuestions after a reload so a
+       *  plan under review isn't lost. */
+      pendingQuestions?: Array<{ callId: string; questions: Array<{ id: string; [k: string]: unknown }> }>;
+    }>("pi-agent:is-running", { sessionId }),
     /** Abort the current in-flight turn for this session. */
     abort: (sessionId: string) => ipcRenderer.send("pi-agent:abort", { sessionId }),
     /** Clear message history for a session (start fresh). */
@@ -1093,7 +1100,18 @@ const api = {
       return () => ipcRenderer.off("pi-agent:compact-result", handler);
     },
     /** Fired when the agent calls ensure_note in plan mode — carries the PRD note ID */
-    onPlanNote: (cb: (e: { sessionId: string; noteId: string }) => void) => {
+    /**
+     * Fired when the agent produces a plan for user review. Two shapes carry
+     * this today:
+     *   - dsh-plan-mode's `exit_plan_mode` tool call (planContent is set,
+     *     noteId is undefined) — the plan is in the tool call args and dsh's
+     *     userQuestions.ask surfaces the review card;
+     *   - the legacy PRD-note flow (noteId is set, planContent is undefined)
+     *     where the agent calls `ensure_note` while in plan mode.
+     * A given session may emit both over its lifetime; the renderer uses
+     * whichever fields are populated to update the UI.
+     */
+    onPlanNote: (cb: (e: { sessionId: string; noteId?: string; planContent?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { sessionId: string; noteId: string }) => cb(e);
       ipcRenderer.on("pi-agent:plan-note", handler);

@@ -43,9 +43,10 @@ import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 const sessions = new Map<string, PiAgentSession>();
 
 /**
- * Session IDs with a runAgentLoop currently in flight. The renderer polls this
- * via `pi-agent:is-running` when a pane (re)mounts so a session that kept
- * working while its UI was closed (e.g. the automation Develop modal) comes
+ * Session IDs with a runCordisCodingLoop currently in flight. The renderer
+ * polls this via `pi-agent:is-running` when a pane (re)mounts so a session
+ * that kept working while its UI was closed (e.g. the automation Develop
+ * modal) comes
  * back already showing the busy state, instead of briefly looking idle.
  */
 const runningLoops = new Set<string>();
@@ -72,6 +73,41 @@ const pendingKey = (sessionId: string, callId: string): string => `${sessionId}:
  */
 const pendingAsks = createPendingAskRegistry();
 
+/**
+ * Outstanding QUESTION asks (ask_questions / exit_plan_mode's plan-review),
+ * so a reloading renderer can pull the question payload back via
+ * pi-agent:is-running. The tool-approval registry above (pendingAsks) only
+ * records name/callId — questions need the full payload preserved so the
+ * PlanReviewCard can re-render its plan-under-review after reload.
+ */
+interface PendingQuestionMeta {
+  sessionId: string;
+  callId: string;
+  questions: Array<{ id: string; [k: string]: unknown }>;
+}
+const pendingQuestionsRegistry = new Map<string, PendingQuestionMeta>();
+function questionKey(sessionId: string, callId: string) {
+  return `${sessionId}::${callId}`;
+}
+function recordPendingQuestion(meta: PendingQuestionMeta) {
+  pendingQuestionsRegistry.set(questionKey(meta.sessionId, meta.callId), meta);
+}
+function resolvePendingQuestion(sessionId: string, callId: string) {
+  pendingQuestionsRegistry.delete(questionKey(sessionId, callId));
+}
+function listPendingQuestionsForSession(sessionId: string): PendingQuestionMeta[] {
+  const prefix = `${sessionId}::`;
+  return Array.from(pendingQuestionsRegistry.entries())
+    .filter(([k]) => k.startsWith(prefix))
+    .map(([, v]) => v);
+}
+function clearPendingQuestionsForSession(sessionId: string) {
+  const prefix = `${sessionId}::`;
+  for (const k of Array.from(pendingQuestionsRegistry.keys())) {
+    if (k.startsWith(prefix)) pendingQuestionsRegistry.delete(k);
+  }
+}
+
 /** Drop every pending resolver + approval grant belonging to one session. */
 function sweepSessionPendings(sessionId: string): void {
   const prefix = `${sessionId}::`;
@@ -82,6 +118,7 @@ function sweepSessionPendings(sessionId: string): void {
   }
   clearSessionGrants(sessionId);
   pendingAsks.clearSession(sessionId);
+  clearPendingQuestionsForSession(sessionId);
   forgetSessionApprovalArgs(sessionId);
   setConfirmTransport(sessionId, undefined);
 }
@@ -156,10 +193,12 @@ interface PiAgentApprovePlanRequest {
 // ── Shared session runner ──────────────────────────────────────────────────────
 
 /**
- * Wires the compaction transformer, builds all IPC-forwarding callbacks, and
- * calls runAgentLoop. Extracted to eliminate duplication between the
- * pi-agent:prompt and pi-agent:approve-plan handlers — both handlers resolve
- * their differences (system prompt, initial message) before calling this.
+ * Cordis wrapper — builds all IPC-forwarding callbacks and calls
+ * runCordisCodingSession (which drives the dsh agent loop). Extracted to
+ * eliminate duplication between the pi-agent:prompt and pi-agent:approve-plan
+ * handlers — both resolve their differences (system prompt, initial message)
+ * before calling this. The compaction transformer + tool loop are owned by
+ * dsh now; this thin wrapper only wires the send/emit adapters.
  */
 async function runSession(
   session: PiAgentSession,
@@ -272,11 +311,32 @@ async function runCordisCodingSession(
       getWin: toolCtx.getWin,
       signal: session.abortCtrl.signal,
       questions: {
-        send: (channel, p) => send(channel, { sessionId, ...p }),
+        send: (channel, p) => {
+          // Record the outstanding question payload so a reloading renderer
+          // can pull the full question (including plan-review detail +
+          // options) back via pi-agent:is-running — the original push dies
+          // with the old page, and losing it would strand the review with
+          // no UI to answer it.
+          if (channel === "pi-agent:ask-questions") {
+            const requestId = typeof p.callId === "string" ? p.callId : undefined;
+            const qs = Array.isArray(p.questions) ? p.questions : undefined;
+            if (requestId && qs) {
+              recordPendingQuestion({
+                sessionId,
+                callId: requestId,
+                questions: qs as Array<{ id: string; [k: string]: unknown }>,
+              });
+            }
+          }
+          send(channel, { sessionId, ...p });
+        },
         registerPending: (requestId, resolve) => {
           const key = pendingKey(sessionId, requestId);
           cordisPendingQuestions.set(key, resolve);
-          return () => cordisPendingQuestions.delete(key);
+          return () => {
+            cordisPendingQuestions.delete(key);
+            resolvePendingQuestion(sessionId, requestId);
+          };
         },
       },
       approvals: {
@@ -320,6 +380,13 @@ export function registerPiAgentHandler(
     return {
       running: runningLoops.has(sessionId),
       pendingAsks: pendingAsks.listForSession(sessionId),
+      // Outstanding question asks (ask_questions / plan-review). The renderer
+      // uses this to re-open a PlanReviewCard after a reload that swallowed
+      // the original pi-agent:ask-questions push.
+      pendingQuestions: listPendingQuestionsForSession(sessionId).map((q) => ({
+        callId: q.callId,
+        questions: q.questions,
+      })),
     };
   });
 
@@ -451,9 +518,15 @@ export function registerPiAgentHandler(
 
     const sessionRow = q.getPiSessionById(ctx.db, sessionId);
     const planNoteId = sessionRow?.planNoteId;
-    const planContent = planNoteId
-      ? (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? ""
-      : undefined;
+    // Plan carried into execute-mode's system prompt: prefer the plan text
+    // captured when the model called dsh-plan-mode's `exit_plan_mode`
+    // (session_row.plan_content), fall back to the legacy PRD-note lookup
+    // for sessions that predate the dsh flow or that used ensure_note only.
+    const planContent = sessionRow?.planContent?.trim()
+      ? sessionRow.planContent
+      : planNoteId
+        ? (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? ""
+        : undefined;
 
     // Session persona (persisted on the row) — "automation-dev" restricts the
     // toolset to file tools so a Develop session can't touch notes/tasks.
@@ -750,6 +823,10 @@ export function registerPiAgentHandler(
       cordisPending(answers);
       cordisPendingQuestions.delete(key);
     }
+    // Drop the recovery registry entry: whether the user answered normally
+    // or dismissed via { __dismissed__: true }, the ask has settled and a
+    // subsequent is-running poll must NOT re-surface it.
+    resolvePendingQuestion(sessionId, callId);
   });
 
   // ── pi-agent:clear ────────────────────────────────────────────────────────

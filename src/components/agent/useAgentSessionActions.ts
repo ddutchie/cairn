@@ -42,6 +42,7 @@ export function useAgentSessionActions() {
       cwd: project.codeDirectory,
       mode: "execute" as const,
       planNoteId: null,
+      planContent: null,
       status: "running" as const,
       spawnedAt: now,
       updatedAt: now,
@@ -110,6 +111,7 @@ export function useAgentSessionActions() {
         projectId: summary.projectId, cwd: summary.cwd, status: summary.status,
         exitCode: null, spawnedAt: summary.spawnedAt, sessionType: "pi",
         piMessages, mode: summary.mode, planNoteId: summary.planNoteId ?? undefined,
+        planContent: summary.planContent ?? undefined,
         lastUsage,
       });
     } else {

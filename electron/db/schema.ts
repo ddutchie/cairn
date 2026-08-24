@@ -1257,8 +1257,22 @@ const MIGRATIONS: Migration[] = [
     if (notice) {
       // Surfaced in the main-process log; the app's boot sequence can also
       // read `result.archiveDir` back via a settings notice if wanted.
-       
       console.log(`[migration v49] ${notice}`);
+    }
+  },
+
+  // v50: pi_agent_sessions.plan_content — the last plan the agent committed
+  // via dsh-plan-mode's `exit_plan_mode` tool for this session. Cached here
+  // so the execute-mode system prompt can carry the approved plan forward
+  // without folding the entire session log every turn. Approvals may also
+  // come from the legacy PRD-note flow (plan_note_id + notes.content) —
+  // execute-mode's prompt builder prefers plan_content when both are set.
+  // Nullable: sessions predating this column, and sessions that never
+  // called exit_plan_mode, keep plan_content = NULL.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(pi_agent_sessions)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "plan_content")) {
+      db.exec("ALTER TABLE pi_agent_sessions ADD COLUMN plan_content TEXT");
     }
   },
 ];
@@ -1303,6 +1317,7 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "env", "env TEXT");
   ensure("automation_runs", "run_dir", "run_dir TEXT");
   ensure("pi_agent_sessions", "role", "role TEXT NOT NULL DEFAULT 'default'");
+  ensure("pi_agent_sessions", "plan_content", "plan_content TEXT");
   ensure("mcp_notifications", "target_type", "target_type TEXT");
   ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");

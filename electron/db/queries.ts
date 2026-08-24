@@ -1571,6 +1571,13 @@ export interface PiSessionRow {
   cwd: string;
   mode: "plan" | "execute";
   planNoteId: string | null;
+  /**
+   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`
+   * tool for this session. Cached so the execute-mode system prompt can
+   * carry the approved plan forward without folding the entire session log.
+   * NULL when the session never called exit_plan_mode.
+   */
+  planContent: string | null;
   status: "running" | "exited";
   spawnedAt: string;
   updatedAt: string;
@@ -1587,6 +1594,7 @@ function toPiSession(row: any): PiSessionRow {
     cwd:         row.cwd as string,
     mode:        (row.mode ?? "execute") as "plan" | "execute",
     planNoteId:  row.plan_note_id as string | null,
+    planContent: (row.plan_content ?? null) as string | null,
     status:      (row.status ?? "running") as "running" | "exited",
     spawnedAt:   row.spawned_at as string,
     updatedAt:   row.updated_at as string,
@@ -1632,7 +1640,7 @@ export function getPiSessions(db: Database.Database, projectId: string): PiSessi
 export function updatePiSession(
   db: Database.Database,
   sessionId: string,
-  patch: { mode?: "plan" | "execute"; planNoteId?: string | null; status?: "running" | "exited"; updatedAt?: string },
+  patch: { mode?: "plan" | "execute"; planNoteId?: string | null; planContent?: string | null; status?: "running" | "exited"; updatedAt?: string },
 ) {
   const now = patch.updatedAt ?? ts();
   if (patch.mode !== undefined) {
@@ -1641,10 +1649,13 @@ export function updatePiSession(
   if (patch.planNoteId !== undefined) {
     db.prepare("UPDATE pi_agent_sessions SET plan_note_id = ?, updated_at = ? WHERE id = ?").run(patch.planNoteId, now, sessionId);
   }
+  if (patch.planContent !== undefined) {
+    db.prepare("UPDATE pi_agent_sessions SET plan_content = ?, updated_at = ? WHERE id = ?").run(patch.planContent, now, sessionId);
+  }
   if (patch.status !== undefined) {
     db.prepare("UPDATE pi_agent_sessions SET status = ?, updated_at = ? WHERE id = ?").run(patch.status, now, sessionId);
   }
-  if (patch.mode === undefined && patch.planNoteId === undefined && patch.status === undefined) {
+  if (patch.mode === undefined && patch.planNoteId === undefined && patch.planContent === undefined && patch.status === undefined) {
     db.prepare("UPDATE pi_agent_sessions SET updated_at = ? WHERE id = ?").run(now, sessionId);
   }
 }

@@ -19,9 +19,10 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import type Database from "better-sqlite3";
 import { upsertChatThread } from "../db/queries";
+import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
-import { saveSessionTodos, getSessionTodos } from "../db/queries";
+import { saveSessionTodos, getSessionTodos, updatePiSession } from "../db/queries";
 import { resultContentError } from "../lib/tool-result";
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
@@ -316,8 +317,9 @@ export interface CairnQuestionsConfig {
  * A pending question forwarded to the renderer. Two shapes are accepted so
  * both Cairn's own `ask_questions` tool (which emits `{id, label, prompt}`)
  * AND any dsh-native provider (dsh-plan-mode's `exit_plan_mode` uses
- * `AskUserQuestionItem = {id, question, header?, options?, intent?}`) render
- * as a filled-in form. Previously we only forwarded Cairn's shape and dsh's
+ * `AskUserQuestionItem = {id, question, header?, detail?, options?, intent?}`,
+ * where `detail` carries the FULL markdown plan for plan-review) render as
+ * a filled-in form. Previously we only forwarded Cairn's shape and dsh's
  * plan-review card came through empty and unapprovable.
  */
 interface CairnQuestionItem {
@@ -325,12 +327,13 @@ interface CairnQuestionItem {
   /** Cairn shape */
   label?: string;
   prompt?: string;
-  /** dsh AskUserQuestionItem shape */
+  /** dsh AskUserQuestionItem shape — see dsh-user-questions/lib/types/types.d.ts. */
   question?: string;
   header?: string;
-  options?: readonly string[];
+  detail?: string;
+  options?: ReadonlyArray<string | { label: string; description?: string }>;
   multiSelect?: boolean;
-  intent?: unknown;
+  intent?: { kind?: string; approve?: string; [k: string]: unknown };
 }
 
 /** dsh AskUserQuestionAnswer shape returned by the provider. */
@@ -434,12 +437,32 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
 
         // The renderer answers with a JSON blob {answers:[{id,selected[],custom?}]}
         // (structured) or plain text. Map both back to dsh's answer structure.
+        //
+        // Two special sentinels the renderer can send:
+        //   { __dismissed__: true } — the user closed the question without
+        //     answering (Discuss button on plan-review, or aborted the pane).
+        //     Throw UserQuestionError with code 'ASK_CANCELLED' so
+        //     dsh-plan-mode's `exit_plan_mode` reports "user dismissed to
+        //     speak instead" instead of "user chose to keep planning".
+        //   { cancelled: true, answers: [] } — legacy shape emitted on the
+        //     turn-abort / timeout paths; treated as an empty answer batch
+        //     (dsh maps that to a generic decline / keep-planning).
         try {
-          const parsed = JSON.parse(answersText) as { answers?: Array<{ id?: string; selected?: string[]; custom?: string }> };
+          const parsed = JSON.parse(answersText) as { answers?: Array<{ id?: string; selected?: string[]; custom?: string }>; __dismissed__?: boolean; cancelled?: boolean };
+          if (parsed?.__dismissed__ === true) {
+            throw new UserQuestionError(
+              "ask_user_question was dismissed by the user",
+              "ASK_CANCELLED",
+            );
+          }
           if (Array.isArray(parsed.answers)) {
             return { answers: parsed.answers.map((a, i) => ({ id: a.id ?? request.questions[i]?.id ?? String(i), selected: a.selected ?? [], custom: a.custom })) };
           }
-        } catch { /* fall through to plain-text */ }
+        } catch (err) {
+          // Re-throw UserQuestionError so plan-mode's dismiss handling fires.
+          // Any other parse error falls through to plain-text treatment below.
+          if (err instanceof UserQuestionError) throw err;
+        }
         return { answers: request.questions.map((q, i) => ({ id: q.id, selected: [], custom: i === 0 ? answersText : undefined })) };
       },
     }) as unknown as (() => void) | undefined;
@@ -658,6 +681,28 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       const callId = d.callId ?? `${d.name}:${seq}`;
       const label = d.name;
       callLabel.set(callId, label);
+
+      // Plan-mode approval capture (dsh-native flow): when the model calls
+      // exit_plan_mode, the FULL markdown plan is in args.plan. Persist it
+      // eagerly on tool/call — before the user has actually approved — so
+      // that if the user reloads mid-review or the app crashes, we can
+      // re-present the same plan without losing it. If the user chooses
+      // "Keep planning", the model will call exit_plan_mode again with a
+      // revised plan, which overwrites this value. If the user Approves,
+      // plan/mode flips off and execute-mode's next turn reads this cached
+      // plan_content to keep the plan in its system prompt.
+      if (d.name === "exit_plan_mode" && typeof args.plan === "string" && args.plan.trim().length > 0) {
+        const db = getDb(ctx);
+        if (db) {
+          try {
+            updatePiSession(db, sessionId, { planContent: args.plan });
+            emit("pi-agent:plan-note", { noteId: undefined, planContent: args.plan });
+          } catch (err) {
+            console.warn("[cordis] failed to persist plan_content:", err);
+          }
+        }
+      }
+
       // "pending" chip (same as builtin onToolPending) — frontend treats it as a
       // running chip immediately, matching the streaming pending-state UX.
       emit("pi-agent:tool", { name: d.name, label, args, callId, status: "pending" });

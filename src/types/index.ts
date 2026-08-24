@@ -992,6 +992,12 @@ export interface TerminalSession {
   /** Session persona — "automation-dev" restricts the toolset to file tools. */
   role?: "default" | "automation-dev";
   planNoteId?: string;
+  /**
+   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`,
+   * hydrated from the DB on session load. Preferred over planNoteId for the
+   * plan-review card in plan mode and for the PlanTaskList in execute mode.
+   */
+  planContent?: string;
   /** Explicit plan approval choice for this session, if one was made. */
   autoApprove?: boolean;
 }
@@ -1004,6 +1010,13 @@ export interface PiSessionSummary {
   cwd: string;
   mode: "plan" | "execute";
   planNoteId: string | null;
+  /**
+   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`
+   * for this session (persisted by the coding-plugin's tool/call handler).
+   * NULL when the session never called exit_plan_mode; sessions that used
+   * the legacy PRD-note flow only will have planNoteId set instead.
+   */
+  planContent: string | null;
   status: "running" | "exited";
   spawnedAt: string;
   updatedAt: string;

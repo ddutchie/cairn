@@ -226,6 +226,7 @@ export default function Home() {
                 piMessages,
                 mode:        latest.mode,
                 planNoteId:  latest.planNoteId ?? undefined,
+                planContent: latest.planContent ?? undefined,
               });
               state.setPersistentPiSession(latest.id);
               // Restore LLM context in main process
