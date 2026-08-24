@@ -3,7 +3,7 @@
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { id } from "@/lib/utils";
-import type { PiSessionSummary, PiAgentMessage, SessionPresentation, TerminalSession } from "@/types";
+import type { CodingSessionSummary, PiAgentMessage, SessionPresentation, TerminalSession } from "@/types";
 
 /**
  * Shared hook for creating new Cairn Agent sessions and resuming existing ones.
@@ -16,16 +16,16 @@ export function useAgentSessionActions() {
     terminalSessions,
     activeProjectId,
     projects,
-    upsertPiSessionSummary,
-    setPersistentPiSession,
+    upsertCodingSessionSummary,
+    setActiveCodingSession,
   } = useCairnStore(useShallow((s) => ({
     addTerminalSession: s.addTerminalSession,
     openSession: s.openSession,
     terminalSessions: s.terminalSessions,
     activeProjectId: s.activeProjectId,
     projects: s.projects,
-    upsertPiSessionSummary: s.upsertPiSessionSummary,
-    setPersistentPiSession: s.setPersistentPiSession,
+    upsertCodingSessionSummary: s.upsertCodingSessionSummary,
+    setActiveCodingSession: s.setActiveCodingSession,
   })));
 
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
@@ -37,7 +37,7 @@ export function useAgentSessionActions() {
     if (!project?.codeDirectory || !activeProjectId) return;
     const sessionId = id();
     const now = new Date().toISOString();
-    const summary: PiSessionSummary = {
+    const summary: CodingSessionSummary = {
       id: sessionId,
       projectId: activeProjectId,
       taskTitle: "Ad-hoc session",
@@ -60,14 +60,14 @@ export function useAgentSessionActions() {
        status: "running", exitCode: null, spawnedAt: now,
        sessionType: "pi", piMessages: [], mode: "execute", initialPrompt,
     });
-    upsertPiSessionSummary(summary);
-    setPersistentPiSession(sessionId);
+    upsertCodingSessionSummary(summary);
+    setActiveCodingSession(sessionId);
     openSession(sessionId, "coding", presentation);
   }
 
 
   async function handleResumeSession(
-    summary: PiSessionSummary,
+    summary: CodingSessionSummary,
     presentation: SessionPresentation = "drawer",
     activate = true,
   ) {
@@ -127,7 +127,7 @@ export function useAgentSessionActions() {
       window.electron?.piAgent.restoreContext(summary.id);
     }
     if (activate) {
-      setPersistentPiSession(summary.id);
+      setActiveCodingSession(summary.id);
       openSession(summary.id, "coding", presentation);
     }
   }

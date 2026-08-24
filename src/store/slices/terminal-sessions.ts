@@ -52,7 +52,7 @@ import type {
   PiAgentMessage,
   PiSubagentMessage,
   TerminalSession,
-  PiSessionSummary,
+  CodingSessionSummary,
   PiTodo,
   SessionKind,
   SessionLoadState,
@@ -60,7 +60,7 @@ import type {
 } from "../../types";
 
 // Re-export for backwards compatibility (consumers may import from either location).
-export type { PiAgentMessage, PiSubagentMessage, TerminalSession, PiSessionSummary };
+export type { PiAgentMessage, PiSubagentMessage, TerminalSession, CodingSessionSummary };
 
 // ── Slice ────────────────────────────────────────────────────────────────────
 
@@ -119,23 +119,23 @@ export interface TerminalSessionsSlice {
   /** Record the explicit auto-approval choice for the session lifetime. */
   setPiAutoApprove: (sessionId: string, autoApprove: boolean) => void;
   /** ID of the session currently shown in the persistent Cairn Agent pinned tab */
-  persistentPiSessionId: string | null;
-  /** Project-scoped history of persisted pi sessions (from SQLite) */
-  piSessionHistory: PiSessionSummary[];
+  activeCodingSessionId: string | null;
+  /** Project-scoped history of persisted coding sessions (from SQLite) */
+  codingSessionHistory: CodingSessionSummary[];
   /** Per-session todo lists (todowrite tool) keyed by session id. */
   piSessionTodos: Record<string, PiTodo[]>;
   /** Set the persistent pi session (switches what the pinned tab shows) */
-  setPersistentPiSession: (sessionId: string | null) => void;
+  setActiveCodingSession: (sessionId: string | null) => void;
   /** Replace a session's todo list (from pi-agent:todos events / load). */
   setPiSessionTodos: (sessionId: string, todos: PiTodo[]) => void;
   /** Fetch session history from SQLite for the given project */
-  fetchPiSessionHistory: (projectId: string) => Promise<void>;
+  fetchCodingSessionHistory: (projectId: string) => Promise<void>;
   /** Fetch and merge session history for the projects visible in the sidebar. */
-  fetchPiSessionHistoryForProjects: (projectIds: string[]) => Promise<void>;
+  fetchCodingSessionHistoryForProjects: (projectIds: string[]) => Promise<void>;
   /** Remove a session from history (also calls the IPC delete) */
-  deletePiSessionFromHistory: (sessionId: string) => Promise<void>;
+  deleteCodingSessionFromHistory: (sessionId: string) => Promise<void>;
   /** Add or update a session in the local history list (optimistic) */
-  upsertPiSessionSummary: (summary: PiSessionSummary) => void;
+  upsertCodingSessionSummary: (summary: CodingSessionSummary) => void;
   /** Open a file tab (no-op if already open) and make it active. */
   openEditorFile: (path: string) => void;
   /** Close a file tab; activates the nearest remaining tab. */
@@ -154,8 +154,8 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   activeSessionId: null,
   openEditorFiles: [],
   activeEditorFile: null,
-  persistentPiSessionId: null,
-  piSessionHistory: [],
+  activeCodingSessionId: null,
+  codingSessionHistory: [],
   piSessionTodos: {},
   sessionLoad: { status: "idle" },
 
@@ -714,59 +714,59 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  setPersistentPiSession(sessionId) {
-    set({ persistentPiSessionId: sessionId });
+  setActiveCodingSession(sessionId) {
+    set({ activeCodingSessionId: sessionId });
   },
 
-  async fetchPiSessionHistory(projectId) {
+  async fetchCodingSessionHistory(projectId) {
     if (typeof window === "undefined" || !window.electron) return;
     try {
-      const history = await window.electron.piAgent.listSessions(projectId) as PiSessionSummary[];
-      set({ piSessionHistory: history });
+      const history = await window.electron.piAgent.listSessions(projectId) as CodingSessionSummary[];
+      set({ codingSessionHistory: history });
     } catch (err) {
-      console.error("[pi-sessions] fetchPiSessionHistory error", err);
+      console.error("[coding-sessions] fetchCodingSessionHistory error", err);
     }
   },
 
-  async fetchPiSessionHistoryForProjects(projectIds) {
+  async fetchCodingSessionHistoryForProjects(projectIds) {
     if (typeof window === "undefined" || !window.electron) return;
     try {
       const histories = await Promise.all(
-        projectIds.map(async (projectId) => window.electron!.piAgent.listSessions(projectId) as Promise<PiSessionSummary[]>),
+        projectIds.map(async (projectId) => window.electron!.piAgent.listSessions(projectId) as Promise<CodingSessionSummary[]>),
       );
       const merged = histories.flat().sort((a, b) =>
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
       );
-      set({ piSessionHistory: merged });
+      set({ codingSessionHistory: merged });
     } catch (err) {
-      console.error("[pi-sessions] project history fetch error", err);
+      console.error("[coding-sessions] project history fetch error", err);
     }
   },
 
-  async deletePiSessionFromHistory(sessionId) {
+  async deleteCodingSessionFromHistory(sessionId) {
     if (typeof window === "undefined" || !window.electron) return;
     // Optimistic removal
     set((s) => ({
-      piSessionHistory: s.piSessionHistory.filter((h) => h.id !== sessionId),
-      persistentPiSessionId: s.persistentPiSessionId === sessionId ? null : s.persistentPiSessionId,
+      codingSessionHistory: s.codingSessionHistory.filter((h) => h.id !== sessionId),
+      activeCodingSessionId: s.activeCodingSessionId === sessionId ? null : s.activeCodingSessionId,
     }));
     try {
       await window.electron.piAgent.deleteSession(sessionId);
     } catch (err) {
-      console.error("[pi-sessions] deletePiSessionFromHistory error", err);
+      console.error("[coding-sessions] deleteCodingSessionFromHistory error", err);
     }
   },
 
-  upsertPiSessionSummary(summary) {
+  upsertCodingSessionSummary(summary) {
     set((s) => {
-      const exists = s.piSessionHistory.some((h) => h.id === summary.id);
+      const exists = s.codingSessionHistory.some((h) => h.id === summary.id);
       if (exists) {
         return {
-          piSessionHistory: s.piSessionHistory.map((h) => h.id === summary.id ? summary : h),
+          codingSessionHistory: s.codingSessionHistory.map((h) => h.id === summary.id ? summary : h),
         };
       }
       return {
-        piSessionHistory: [summary, ...s.piSessionHistory],
+        codingSessionHistory: [summary, ...s.codingSessionHistory],
       };
     });
   },

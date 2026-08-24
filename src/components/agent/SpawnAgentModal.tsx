@@ -33,7 +33,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   const {
     agents, fetchAgents, activeProjectId, projects,
     addTerminalSession, setActiveSession, setView, updateProject, agentConfig,
-    setPersistentPiSession, fetchPiSessionHistory,
+    setActiveCodingSession, fetchCodingSessionHistory,
   } = useCairnStore(useShallow((s) => ({
     agents:                  s.agents,
     fetchAgents:             s.fetchAgents,
@@ -44,8 +44,8 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     setView:                 s.setView,
     updateProject:           s.updateProject,
     agentConfig:             s.agentConfig,
-    setPersistentPiSession:  s.setPersistentPiSession,
-    fetchPiSessionHistory:   s.fetchPiSessionHistory,
+    setActiveCodingSession:  s.setActiveCodingSession,
+    fetchCodingSessionHistory:   s.fetchCodingSessionHistory,
   })));
 
   const project      = projects.find((p) => p.id === activeProjectId) ?? null;
@@ -127,9 +127,9 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           initialPrompt: prompt.trim() || undefined,
         });
 
-        setPersistentPiSession(sessionId);
+        setActiveCodingSession(sessionId);
         // Refresh history so the new session appears in the dropdown
-        fetchPiSessionHistory(project.id);
+        fetchCodingSessionHistory(project.id);
         setActiveSession(sessionId);
         setView("agent");
         onClose();

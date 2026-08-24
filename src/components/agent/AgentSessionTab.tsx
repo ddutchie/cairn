@@ -6,7 +6,7 @@ import { ChevronDown, History, Code2, Trash2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatDateCompact } from "@/lib/utils";
 import { useAgentSessionActions } from "./useAgentSessionActions";
-import type { PiSessionSummary } from "@/types";
+import type { CodingSessionSummary } from "@/types";
 
 interface AgentSessionTabProps {
   isActive: boolean;
@@ -15,16 +15,16 @@ interface AgentSessionTabProps {
 
 export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) {
   const {
-    piSessionHistory,
-    persistentPiSessionId,
-    fetchPiSessionHistory,
-    deletePiSessionFromHistory,
+    codingSessionHistory,
+    activeCodingSessionId,
+    fetchCodingSessionHistory,
+    deleteCodingSessionFromHistory,
     activeProjectId,
   } = useCairnStore(useShallow((s) => ({
-    piSessionHistory: s.piSessionHistory,
-    persistentPiSessionId: s.persistentPiSessionId,
-    fetchPiSessionHistory: s.fetchPiSessionHistory,
-    deletePiSessionFromHistory: s.deletePiSessionFromHistory,
+    codingSessionHistory: s.codingSessionHistory,
+    activeCodingSessionId: s.activeCodingSessionId,
+    fetchCodingSessionHistory: s.fetchCodingSessionHistory,
+    deleteCodingSessionFromHistory: s.deleteCodingSessionFromHistory,
     activeProjectId: s.activeProjectId,
   })));
 
@@ -46,19 +46,19 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
 
   useEffect(() => {
     if (dropdownOpen && activeProjectId) {
-      fetchPiSessionHistory(activeProjectId);
+      fetchCodingSessionHistory(activeProjectId);
     }
-  }, [dropdownOpen, activeProjectId, fetchPiSessionHistory]);
+  }, [dropdownOpen, activeProjectId, fetchCodingSessionHistory]);
 
-  async function handleResumeSession(summary: PiSessionSummary) {
+  async function handleResumeSession(summary: CodingSessionSummary) {
     setDropdownOpen(false);
-    if (summary.id === persistentPiSessionId) return;
+    if (summary.id === activeCodingSessionId) return;
     await _handleResumeSession(summary);
   }
 
   async function handleDeleteSession(e: React.MouseEvent, sessionId: string) {
     e.stopPropagation();
-    await deletePiSessionFromHistory(sessionId);
+    await deleteCodingSessionFromHistory(sessionId);
   }
 
   return (
@@ -97,15 +97,15 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
             </div>
           </div>
           <div className="max-h-64 overflow-y-auto">
-            {piSessionHistory.length === 0 ? (
+            {codingSessionHistory.length === 0 ? (
               <p className="px-3 py-3 text-[0.714rem] text-[var(--text-tertiary)] text-center">No saved sessions</p>
             ) : (
-              piSessionHistory.map((summary) => (
+              codingSessionHistory.map((summary) => (
                 <div
                   key={summary.id}
                   className={cn(
                     "flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--surface-2)] transition-colors group",
-                    summary.id === persistentPiSessionId && "bg-[var(--surface-2)]"
+                    summary.id === activeCodingSessionId && "bg-[var(--surface-2)]"
                   )}
                 >
                   <button

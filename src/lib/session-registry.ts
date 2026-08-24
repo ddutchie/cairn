@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatThread, PiSessionSummary, SessionKind, TerminalSession } from "@/types";
+import type { ChatMessage, ChatThread, CodingSessionSummary, SessionKind, TerminalSession } from "@/types";
 
 export interface SessionSummary {
   id: string;
@@ -15,7 +15,7 @@ export interface SessionSummary {
 interface SessionRegistryInput {
   chatThreads: ChatThread[];
   chatMessages: ChatMessage[];
-  codingSessions: PiSessionSummary[];
+  codingSessions: CodingSessionSummary[];
   terminalSessions: TerminalSession[];
   projectId?: string | null;
 }

@@ -46,27 +46,27 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     chatMessages,
     activeChatThreadId,
     activeProjectId,
-    piSessionHistory,
+    codingSessionHistory,
     terminalSessions,
-    persistentPiSessionId,
+    activeCodingSessionId,
     chatOpen,
     setView,
     toggleChat,
     deleteThread,
-    deletePiSessionFromHistory,
+    deleteCodingSessionFromHistory,
   } = useCairnStore(useShallow((s) => ({
     chatThreads: s.chatThreads,
     chatMessages: s.chatMessages,
     activeChatThreadId: s.activeChatThreadId,
     activeProjectId: s.activeProjectId,
-    piSessionHistory: s.piSessionHistory,
+    codingSessionHistory: s.codingSessionHistory,
     terminalSessions: s.terminalSessions,
-    persistentPiSessionId: s.persistentPiSessionId,
+    activeCodingSessionId: s.activeCodingSessionId,
     chatOpen: s.chatOpen,
     setView: s.setView,
     toggleChat: s.toggleChat,
     deleteThread: s.deleteThread,
-    deletePiSessionFromHistory: s.deletePiSessionFromHistory,
+    deleteCodingSessionFromHistory: s.deleteCodingSessionFromHistory,
   })));
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -78,18 +78,18 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     return buildSessionRegistry({
       chatThreads,
       chatMessages,
-      codingSessions: piSessionHistory,
+      codingSessions: codingSessionHistory,
       terminalSessions,
       projectId: scopedProjectId,
     });
-  }, [activeProjectId, chatMessages, chatThreads, piSessionHistory, projectId, terminalSessions]);
+  }, [activeProjectId, chatMessages, chatThreads, codingSessionHistory, projectId, terminalSessions]);
 
   const visibleSessions = sessions.filter((session) => matchesQuery(session, query.trim()));
   const active = sessions.find((session) =>
     session.kind === "chat"
       ? activeSessionId === "chat" && session.sourceId === activeChatThreadId
       : session.kind === "coding"
-        ? session.sourceId === persistentPiSessionId
+        ? session.sourceId === activeCodingSessionId
         : session.sourceId === activeSessionId,
   );
 
@@ -150,7 +150,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     if (session.kind === "chat") {
       void deleteThread(session.sourceId);
     } else if (session.kind === "coding") {
-      void deletePiSessionFromHistory(session.sourceId);
+      void deleteCodingSessionFromHistory(session.sourceId);
     }
   }
 

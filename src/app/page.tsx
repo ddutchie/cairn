@@ -192,8 +192,8 @@ export default function Home() {
         const projId = state.activeProjectId;
         if (projId && window.electron) {
           try {
-            await state.fetchPiSessionHistory(projId);
-            const history = useCairnStore.getState().piSessionHistory;
+            await state.fetchCodingSessionHistory(projId);
+            const history = useCairnStore.getState().codingSessionHistory;
             if (history.length > 0) {
               const latest = history[0];
               // Load messages for the latest session — session-as-truth (dsh JSONL),
@@ -253,7 +253,7 @@ export default function Home() {
                 planContent: latest.planContent ?? undefined,
                 lastUsage,
               });
-              state.setPersistentPiSession(latest.id);
+                    state.setActiveCodingSession(latest.id);
               // Restore LLM context in main process
               window.electron.piAgent.restoreContext(latest.id);
             }
@@ -390,8 +390,8 @@ export default function Home() {
       // Only auto-activate the Cairn Agent (coding) session when the project has a codebase.
       const hasCodeDirectory = !!state.projects.find((p) => p.id === state.activeProjectId)?.codeDirectory;
       if (hasCodeDirectory && (state.activeSessionId === null || state.activeSessionId === "chat")) {
-        if (state.persistentPiSessionId) {
-          state.setActiveSession(state.persistentPiSessionId);
+        if (state.activeCodingSessionId) {
+          state.setActiveSession(state.activeCodingSessionId);
         }
       }
     }

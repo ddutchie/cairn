@@ -1026,7 +1026,7 @@ export interface TerminalSession {
   autoApprove?: boolean;
 }
 
-export interface PiSessionSummary {
+export interface CodingSessionSummary {
   id: string;
   projectId: string;
   taskTitle: string;

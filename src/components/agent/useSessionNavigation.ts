@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
-import type { PiSessionSummary, SessionKind, SessionPresentation } from "@/types";
+import type { CodingSessionSummary, SessionKind, SessionPresentation } from "@/types";
 import { useAgentSessionActions } from "./useAgentSessionActions";
 
 export interface SessionNavigationTarget {
@@ -20,17 +20,17 @@ export interface SessionNavigationTarget {
 export function useSessionNavigation() {
   const {
     activeProjectId,
-    piSessionHistory,
+    codingSessionHistory,
     openSession: selectSession,
     setActiveProject,
-    setPersistentPiSession,
+    setActiveCodingSession,
     setSessionLoad,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId: s.activeProjectId,
-    piSessionHistory: s.piSessionHistory,
+    codingSessionHistory: s.codingSessionHistory,
     openSession: s.openSession,
     setActiveProject: s.setActiveProject,
-    setPersistentPiSession: s.setPersistentPiSession,
+    setActiveCodingSession: s.setActiveCodingSession,
     setSessionLoad: s.setSessionLoad,
   })));
   const { handleResumeSession } = useAgentSessionActions();
@@ -54,7 +54,7 @@ export function useSessionNavigation() {
     }
 
     try {
-      const summary = piSessionHistory.find((candidate: PiSessionSummary) => candidate.id === target.sourceId);
+      const summary = codingSessionHistory.find((candidate: CodingSessionSummary) => candidate.id === target.sourceId);
       if (summary) await handleResumeSession(summary, presentation, false);
     } catch (error) {
       if (request === requestRef.current) {
@@ -70,7 +70,7 @@ export function useSessionNavigation() {
 
     // Re-assert the selection after hydration. The loader intentionally does
     // not activate so an older request can never steal the current session.
-    setPersistentPiSession(target.sourceId);
+    setActiveCodingSession(target.sourceId);
     selectSession(target.sourceId, target.kind, presentation);
     setSessionLoad({ status: "ready", sessionId: target.sourceId });
     return true;

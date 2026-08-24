@@ -41,7 +41,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     setActiveSession,
     openSession,
     removeTerminalSession,
-    persistentPiSessionId,
+    activeCodingSessionId,
     activeProjectId,
     toggleChat,
     activeView,
@@ -58,7 +58,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     setActiveSession: s.setActiveSession,
     openSession: s.openSession,
     removeTerminalSession: s.removeTerminalSession,
-    persistentPiSessionId: s.persistentPiSessionId,
+    activeCodingSessionId: s.activeCodingSessionId,
     activeProjectId: s.activeProjectId,
     toggleChat: s.toggleChat,
     activeView: s.activeView,
@@ -80,7 +80,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   const createNewThread = useCairnStore((s) => s.createNewThread);
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
-  const fetchPiSessionHistoryForProjects = useCairnStore((s) => s.fetchPiSessionHistoryForProjects);
+  const fetchCodingSessionHistoryForProjects = useCairnStore((s) => s.fetchCodingSessionHistoryForProjects);
   const { handleNewSession } = useAgentSessionActions();
 
   useEffect(() => {
@@ -112,8 +112,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     const projectIds = projects
       .filter((project) => project.workspaceId === activeWorkspaceId)
       .map((project) => project.id);
-    void fetchPiSessionHistoryForProjects(projectIds);
-  }, [activeWorkspaceId, fetchPiSessionHistoryForProjects, projects]);
+    void fetchCodingSessionHistoryForProjects(projectIds);
+  }, [activeWorkspaceId, fetchCodingSessionHistoryForProjects, projects]);
 
   const handleClose = useCallback((sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -122,7 +122,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     window.electron?.agent.kill(sessionId).catch(console.error);
   }, [removeTerminalSession]);
 
-  const persistentSession = terminalSessions.find((t) => t.sessionId === persistentPiSessionId && t.sessionType === "pi");
+  const persistentSession = terminalSessions.find((t) => t.sessionId === activeCodingSessionId && t.sessionType === "pi");
   const ptySessions = terminalSessions.filter((t) => t.sessionType === "pty");
 
   useEffect(() => {
@@ -135,10 +135,10 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     if (!hasCodeDirectory && activeSessionId !== "chat" && activeSessionId !== null) {
       const isAgentSession =
         activeSessionId === "agent" ||
-        (persistentPiSessionId !== null && activeSessionId === persistentPiSessionId);
+        (activeCodingSessionId !== null && activeSessionId === activeCodingSessionId);
       if (isAgentSession) setActiveSession("chat");
     }
-  }, [hasCodeDirectory, activeSessionId, persistentPiSessionId, setActiveSession]);
+  }, [hasCodeDirectory, activeSessionId, activeCodingSessionId, setActiveSession]);
 
   const prevChatOpenRef = useRef(chatOpen);
 
@@ -223,7 +223,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   const pinnedIsActive =
     activeSessionId === "agent" ||
-    (persistentPiSessionId !== null && activeSessionId === persistentPiSessionId);
+    (activeCodingSessionId !== null && activeSessionId === activeCodingSessionId);
 
   return (
     <>
