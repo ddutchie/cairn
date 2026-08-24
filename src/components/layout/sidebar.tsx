@@ -22,7 +22,7 @@ import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
 import { buildShortcutMap, modKey, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
 import { getActiveCrossProjectDrag, setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
 import { SlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
-import type { Project } from "@/types";
+import type { Project, SessionKind } from "@/types";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 
 // ── View nav config ───────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ export function Sidebar() {
     sidebarCollapsed, toggleSidebar,
      activeWorkspaceId, activeProjectId, activeSessionId, activeView,
     workspaces, projects: allProjects, getWorkspaceProjects,
-     setActiveProject, setActiveSession, setView, toggleSearch, toggleChat,
+     setActiveProject, setView, toggleSearch, toggleChat,
     createProject, updateProject, deleteProject, mergeProject,
      cards, chatOpen, searchOpen,
      hiddenViews,
@@ -72,7 +72,6 @@ export function Sidebar() {
      projects:            s.projects,
      getWorkspaceProjects: s.getWorkspaceProjects,
       setActiveProject:    s.setActiveProject,
-      setActiveSession:    s.setActiveSession,
      setView:             s.setView,
      toggleSearch:        s.toggleSearch,
      toggleChat:          s.toggleChat,
@@ -287,15 +286,9 @@ export function Sidebar() {
                     activeView={activeView}
                      onSelectView={(view) => { setActiveProject(project.id); setView(view); closeSidebarOnMobile(); }}
                      activeSessionId={activeSessionId}
-                     onOpenSession={(sessionId) => {
+                     onOpenSession={(_sessionId, _kind: SessionKind) => {
                        setActiveProject(project.id);
-                       if (sessionId === "chat") {
-                         setActiveSession("chat");
-                         if (!chatOpen) toggleChat();
-                       } else {
-                         setActiveSession(sessionId);
-                         setView("agent");
-                       }
+                       if (!chatOpen) toggleChat();
                        closeSidebarOnMobile();
                      }}
                     onRename={(name) => updateProject(project.id, { name })}
@@ -391,7 +384,7 @@ interface ProjectItemProps {
   onToggleExpand: () => void; onSelectProject: () => void;
   activeView: string;
   activeSessionId: string | null;
-  onOpenSession: (sessionId: string) => void;
+  onOpenSession: (sessionId: string, kind: SessionKind) => void;
   onSelectView: (view: "overview" | "notes" | "board" | "calendar" | "flow" | "graph" | "chat" | "agent") => void;
   onRename: (name: string) => void; onDelete: () => void;
   /** Other projects in this workspace this one can be merged into. */

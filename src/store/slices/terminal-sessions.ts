@@ -54,6 +54,8 @@ import type {
   TerminalSession,
   PiSessionSummary,
   PiTodo,
+  SessionKind,
+  SessionPresentation,
 } from "../../types";
 
 // Re-export for backwards compatibility (consumers may import from either location).
@@ -72,6 +74,8 @@ export interface TerminalSessionsSlice {
   addTerminalSession: (session: TerminalSession) => void;
   removeTerminalSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string | null) => void;
+  /** Select one browser session and its presentation as a single intent. */
+  openSession: (sessionId: string, kind: SessionKind, presentation?: SessionPresentation) => void;
   markSessionExited: (sessionId: string, exitCode: number) => void;
   /** Add a message to a pi session's message list */
   addPiMessage: (sessionId: string, msg: PiAgentMessage) => void;
@@ -141,7 +145,7 @@ export interface TerminalSessionsSlice {
 
 export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], TerminalSessionsSlice> = (
   set,
-  _get
+  get
 ) => ({
   terminalSessions: [],
   activeSessionId: null,
@@ -172,6 +176,16 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
 
   setActiveSession(sessionId) {
     set({ activeSessionId: sessionId });
+  },
+
+  openSession(sessionId, kind, presentation = "drawer") {
+    if (kind === "chat") {
+      get().setActiveChatThreadId(sessionId);
+      get().setActiveSession("chat");
+    } else {
+      get().setActiveSession(sessionId);
+    }
+    get().setSessionPresentation(presentation);
   },
 
   markSessionExited(sessionId, exitCode) {

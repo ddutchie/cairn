@@ -4,7 +4,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ID, AppUIState, SettingsSection } from "@/types";
+import type { ID, AppUIState, SessionPresentation, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
 import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
@@ -710,6 +710,10 @@ export interface UISlice extends AppUIState {
   // Last content view before entering chat or search mode
   lastContentView: AppUIState["lastContentView"];
 
+  /** Transient placement of the selected conversation; intentionally not persisted. */
+  sessionPresentation: SessionPresentation;
+  setSessionPresentation: (presentation: SessionPresentation) => void;
+
   /** Optional target section for the Settings view (consumed once on open). */
   settingsSection: SettingsSection | null;
   setSettingsSection: (section: SettingsSection | null) => void;
@@ -758,6 +762,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   activePreviewItem: null,
   chatPanelResizing: false,
   lastContentView: "overview",
+  sessionPresentation: "drawer",
   settingsSection: null,
   notificationOpen: false,
   calendarProjectIds: [],
@@ -1171,10 +1176,18 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   setView(view) {
     if (view !== "chat" && view !== "search") {
-      set({ activeView: view, lastContentView: view as AppUIState["lastContentView"] });
+      set({
+        activeView: view,
+        lastContentView: view as AppUIState["lastContentView"],
+        ...(view === "agent" ? { sessionPresentation: "drawer" as const } : {}),
+      });
     } else {
-      set({ activeView: view });
+      set({ activeView: view, ...(view === "chat" ? { sessionPresentation: "center" as const } : {}) });
     }
+  },
+
+  setSessionPresentation(presentation) {
+    set({ sessionPresentation: presentation });
   },
 
   setSettingsSection(section) {
@@ -1198,7 +1211,12 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   },
 
   toggleChat() {
-    set((s) => ({ chatOpen: !s.chatOpen }));
+    set((s) => ({
+      chatOpen: !s.chatOpen,
+      // The global Chat affordance opens the drawer. The center view has its
+      // own explicit setView("chat") transition.
+      ...(s.chatOpen ? {} : { sessionPresentation: "drawer" as const }),
+    }));
   },
 
   toggleSearch() {

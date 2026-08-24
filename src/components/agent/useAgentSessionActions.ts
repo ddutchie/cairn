@@ -12,7 +12,7 @@ import type { PiSessionSummary, PiAgentMessage, TerminalSession } from "@/types"
 export function useAgentSessionActions() {
   const {
     addTerminalSession,
-    setActiveSession,
+    openSession,
     terminalSessions,
     activeProjectId,
     projects,
@@ -20,7 +20,7 @@ export function useAgentSessionActions() {
     setPersistentPiSession,
   } = useCairnStore(useShallow((s) => ({
     addTerminalSession: s.addTerminalSession,
-    setActiveSession: s.setActiveSession,
+    openSession: s.openSession,
     terminalSessions: s.terminalSessions,
     activeProjectId: s.activeProjectId,
     projects: s.projects,
@@ -59,7 +59,7 @@ export function useAgentSessionActions() {
     });
     upsertPiSessionSummary(summary);
     setPersistentPiSession(sessionId);
-    setActiveSession(sessionId);
+    openSession(sessionId, "coding", "drawer");
   }
 
 
@@ -120,7 +120,7 @@ export function useAgentSessionActions() {
       window.electron?.piAgent.restoreContext(summary.id);
     }
     setPersistentPiSession(summary.id);
-    setActiveSession(summary.id);
+    openSession(summary.id, "coding", "drawer");
   }
 
   return { handleNewSession, handleResumeSession, project };

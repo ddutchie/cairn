@@ -51,6 +51,7 @@ export default function Home() {
     hydrate,
     hydrateFromElectron,
     activeView,
+    sessionPresentation,
     chatOpen,
     searchOpen,
     toggleSearch,
@@ -74,6 +75,7 @@ export default function Home() {
     hydrate:             s.hydrate,
     hydrateFromElectron: s.hydrateFromElectron,
     activeView:          s.activeView,
+    sessionPresentation: s.sessionPresentation,
     chatOpen:            s.chatOpen,
     searchOpen:          s.searchOpen,
     toggleSearch:        s.toggleSearch,
@@ -497,7 +499,7 @@ export default function Home() {
             !chatPanelResizing && "transition-[margin-right] duration-300 ease-in-out"
           )}
           style={{
-            marginRight: (activeView !== "chat" && chatOpen) ? "var(--chat-panel-width, 320px)" : "0px",
+            marginRight: (sessionPresentation !== "center" && chatOpen) ? "var(--chat-panel-width, 320px)" : "0px",
           }}
         >
           <Topbar />

@@ -834,6 +834,12 @@ export interface KnowledgeGraph {
 
 export type GraphLayoutMode = "force" | "radial";
 
+/** How the currently selected conversation is presented in the app shell. */
+export type SessionPresentation = "center" | "drawer" | "workbench";
+
+/** Session families shown by the unified conversation browser. */
+export type SessionKind = "chat" | "coding" | "terminal";
+
 export interface GraphFilters {
   projectIds: string[];
   nodeTypes: GraphNodeType[];

@@ -39,6 +39,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     terminalSessions,
     activeSessionId,
     setActiveSession,
+    openSession,
     removeTerminalSession,
     persistentPiSessionId,
     activeProjectId,
@@ -50,11 +51,13 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     chatPoppedOut,
     setChatPoppedOut,
     setView,
+    setSessionPresentation,
     lastContentView,
   } = useCairnStore(useShallow((s) => ({
     terminalSessions: s.terminalSessions,
     activeSessionId: s.activeSessionId,
     setActiveSession: s.setActiveSession,
+    openSession: s.openSession,
     removeTerminalSession: s.removeTerminalSession,
     persistentPiSessionId: s.persistentPiSessionId,
     activeProjectId: s.activeProjectId,
@@ -66,6 +69,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     chatPoppedOut: s.chatPoppedOut,
     setChatPoppedOut: s.setChatPoppedOut,
     setView: s.setView,
+    setSessionPresentation: s.setSessionPresentation,
     lastContentView: s.lastContentView,
   })));
 
@@ -98,10 +102,12 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     const thread = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
     setActiveChatThreadId(thread.id);
     setActiveSession("chat");
+    setSessionPresentation("drawer");
   }
 
   async function handleNewAgentSession() {
     setNewMenuOpen(false);
+    setSessionPresentation("drawer");
     await handleNewSession();
   }
 
@@ -227,7 +233,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
               key={session.sessionId}
               session={session}
               isActive={session.sessionId === activeSessionId}
-              onActivate={() => setActiveSession(session.sessionId)}
+              onActivate={() => openSession(session.sessionId, "terminal", "drawer")}
               onClose={(e) => handleClose(session.sessionId, e)}
             />
           ))}
@@ -296,7 +302,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           {isRightPanel ? (
             <Tooltip content="Expand to central view" side="bottom">
               <button
-                onClick={() => setView("chat")}
+                onClick={() => { setSessionPresentation("center"); setView("chat"); }}
                 className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
               >
                 <Maximize2 size={11} />
@@ -305,7 +311,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           ) : (
             <Tooltip content={`Collapse to sidebar (${mod}/)`} side="bottom">
               <button
-                onClick={() => setView(lastContentView)}
+                onClick={() => { setSessionPresentation("drawer"); setView(lastContentView); }}
                 className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
               >
                 <Minimize2 size={11} />

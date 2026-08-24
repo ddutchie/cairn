@@ -5,18 +5,16 @@ import { Code2, ChevronDown, ChevronRight, MessageSquare, Search, Terminal, Tras
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatDateCompact } from "@/lib/utils";
-import type { ChatThread, PiSessionSummary, TerminalSession } from "@/types";
+import type { ChatThread, PiSessionSummary, SessionKind, TerminalSession } from "@/types";
 import { useAgentSessionActions } from "./useAgentSessionActions";
 
 interface SessionBrowserProps {
   activeSessionId: string | null;
-  onActivate: (sessionId: string) => void;
+  onActivate: (sessionId: string, kind: SessionKind) => void;
   projectId?: string;
   variant?: "dropdown" | "preview" | "project";
   limit?: number;
 }
-
-type SessionKind = "chat" | "coding" | "terminal";
 
 interface UnifiedSession {
   id: string;
@@ -68,6 +66,7 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
     piSessionHistory,
     terminalSessions,
     persistentPiSessionId,
+    openSession,
     deleteThread,
     deletePiSessionFromHistory,
   } = useCairnStore(useShallow((s) => ({
@@ -79,6 +78,7 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
     piSessionHistory: s.piSessionHistory,
     terminalSessions: s.terminalSessions,
     persistentPiSessionId: s.persistentPiSessionId,
+    openSession: s.openSession,
     deleteThread: s.deleteThread,
     deletePiSessionFromHistory: s.deletePiSessionFromHistory,
   })));
@@ -149,15 +149,15 @@ export function SessionBrowser({ activeSessionId, onActivate, projectId, variant
     setOpen(false);
     setQuery("");
     if (session.projectId && session.projectId !== activeProjectId) setActiveProject(session.projectId);
+    openSession(session.sourceId, session.kind, variant === "preview" ? "center" : "drawer");
     if (session.kind === "chat") {
-      useCairnStore.getState().setActiveChatThreadId(session.sourceId);
-      onActivate("chat");
+      onActivate(session.sourceId, session.kind);
     } else if (session.kind === "coding") {
       const summary = piSessionHistory.find((candidate) => candidate.id === session.sourceId);
       if (summary) await handleResumeSession(summary);
-      onActivate(session.sourceId);
+      onActivate(session.sourceId, session.kind);
     } else {
-      onActivate(session.sourceId);
+      onActivate(session.sourceId, session.kind);
     }
   }
 

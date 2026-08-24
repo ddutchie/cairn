@@ -16,6 +16,7 @@ interface UnifiedChatPanelProps {
 export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPanelProps) {
   const {
     activeView,
+    sessionPresentation,
     chatOpen,
     setChatPanelWidth,
     sidebarCollapsed,
@@ -24,6 +25,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     setChatPanelResizing,
   } = useCairnStore(useShallow((s) => ({
     activeView: s.activeView,
+    sessionPresentation: s.sessionPresentation,
     chatOpen: s.chatOpen,
     setChatPanelWidth: s.setChatPanelWidth,
     sidebarCollapsed: s.sidebarCollapsed,
@@ -99,7 +101,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     };
   }, [setChatPanelWidth, setChatPanelResizing, activeView]);
 
-  const isCenterMode = activeView === "chat";
+  const isCenterMode = sessionPresentation === "center";
 
   // Determine positioning coordinates
   let positioningClasses = "";
