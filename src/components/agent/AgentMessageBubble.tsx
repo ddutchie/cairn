@@ -103,7 +103,7 @@ function connectorForTool(toolName: string, connectors?: Record<string, AgentCon
   return Object.entries(connectors).find(([key]) => toolName.startsWith(key))?.[1];
 }
 
-function ToolChip({ tc, sessionId, connectors }: ToolChipProps) {
+export function ToolChip({ tc, sessionId, connectors }: ToolChipProps) {
   const [expanded, setExpanded] = useState(false);
 
   // While paused waiting for user confirmation
@@ -166,7 +166,7 @@ function ToolChip({ tc, sessionId, connectors }: ToolChipProps) {
 
 // ── Subagent inline block ─────────────────────────────────────────────────────
 
-function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
+export function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
   const [expanded, setExpanded] = useState(false);
   // The subagent runs the CODING AGENT's model (inherits the parent's llmConfig),
   // so its context ring must use the agent's context limit — NOT the chat AI

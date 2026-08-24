@@ -20,7 +20,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ChatInputArea } from "../ChatInputArea";
 import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
-import { ChatMessageBubble } from "./ChatMessageBubble";
+import { ChatToolCallChip } from "./ChatMessageBubble";
 import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SuggestedPrompts } from "./SuggestedPrompts";
@@ -42,6 +42,9 @@ import {
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
 import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
+import { ConversationMessageBubble } from "@/components/conversation/ConversationMessageBubble";
+import { toConversationMessage } from "@/components/conversation/conversation-message";
+import { ActionsList } from "./ActionsList";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -887,10 +890,28 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           footer={ChatFooter}
           itemContent={(_index, message) => (
             <div className={cn("px-3 py-1.5", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-              <ChatMessageBubble
-                message={message}
+              <ConversationMessageBubble
+                message={toConversationMessage(message, message.actions && message.actions.length > 0 ? <ActionsList actions={message.actions} /> : undefined)}
                 onRetry={!isLoading ? handleRetry : undefined}
-                connectors={connectorMap}
+                renderToolCall={(toolCall, index) => (
+                  <ChatToolCallChip
+                    key={toolCall.callId ?? `${toolCall.name}-${index}`}
+                    tc={{
+                      tool: toolCall.name,
+                      label: toolCall.label,
+                      callId: toolCall.callId,
+                      args: toolCall.args ? JSON.stringify(toolCall.args) : undefined,
+                      output: toolCall.output,
+                      ok: toolCall.ok,
+                      error: toolCall.error,
+                      cairnRef: toolCall.cairnRef,
+                      externalRef: toolCall.externalRef,
+                      meta: toolCall.meta,
+                    }}
+                    connectors={connectorMap}
+                  />
+                )}
+                renderSubagent={(subagent, index) => <ChatSubagentBlock key={index} sub={subagent as ChatSubagent} />}
               />
             </div>
           )}

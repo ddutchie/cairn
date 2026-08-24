@@ -24,7 +24,7 @@ import { useSlotEntries } from "@/lib/plugin-ui/registry";
 
 registerBuiltinToolViews();
 
-function ChatToolCallChip({ tc, connectors }: { tc: ChatToolCallRecord; connectors?: Record<string, ChatConnectorMeta> }) {
+export function ChatToolCallChip({ tc, connectors }: { tc: ChatToolCallRecord; connectors?: Record<string, ChatConnectorMeta> }) {
   // A registered tool.call.toolview (vendored SkillRow or a user/community
   // plugin like `visualize`) owns this tool's rendering. Persisted records are
   // always settled, so mark status "done" for the adapter.

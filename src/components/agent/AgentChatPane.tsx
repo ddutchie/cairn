@@ -21,7 +21,7 @@ import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
-import { AgentMessageBubble } from "./AgentMessageBubble";
+import { SubagentBlock, ToolChip, type AgentConnectorMeta } from "./AgentMessageBubble";
 import { type VirtuosoHandle } from "react-virtuoso";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
@@ -33,9 +33,10 @@ import { useChatMessageQueue, useQueueDrain } from "@/hooks/useChatMessageQueue"
 import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion, effectiveTemperatureForModel } from "@/lib/models-dev";
 import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
 import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
-import type { AgentConnectorMeta } from "./AgentMessageBubble";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
 import { ConversationTranscript } from "@/components/conversation/ConversationTranscript";
+import { ConversationMessageBubble } from "@/components/conversation/ConversationMessageBubble";
+import { toConversationMessage } from "@/components/conversation/conversation-message";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -904,10 +905,29 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         footer={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
         itemContent={(_index, msg) => (
           <div className="px-3 pt-3">
-            <AgentMessageBubble
-              message={msg}
+            <ConversationMessageBubble
+              message={toConversationMessage(msg)}
               sessionId={session.sessionId}
-              connectors={connectorMap}
+              renderToolCall={(toolCall, index) => (
+                <ToolChip
+                  key={toolCall.callId ?? `${toolCall.name}-${index}`}
+                  tc={{
+                    callId: toolCall.callId ?? `${toolCall.name}-${index}`,
+                    name: toolCall.name,
+                    label: toolCall.label,
+                    args: toolCall.args,
+                    running: toolCall.running,
+                    ok: toolCall.ok,
+                    output: toolCall.output,
+                    cairnRef: toolCall.cairnRef,
+                    confirmRequired: toolCall.confirmRequired,
+                    approvalNonce: toolCall.approvalNonce,
+                  }}
+                  sessionId={session.sessionId}
+                  connectors={connectorMap}
+                />
+              )}
+              renderSubagent={(subagent, index) => <SubagentBlock key={index} sub={subagent as import("@/types").PiSubagentMessage} />}
             />
           </div>
         )}
