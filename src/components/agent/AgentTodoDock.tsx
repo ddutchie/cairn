@@ -4,7 +4,7 @@
  * AgentTodoDock — collapsible todo list for a coding-agent session.
  *
  * Rendered above the input area in AgentChatPane. Data comes from the
- * `todowrite` tool (via pi-agent:todos IPC events + SQLite). Mirrors opencode's
+ * `todowrite` tool (via the coding-agent todos IPC events + SQLite). Mirrors opencode's
  * SessionTodoDock: a compact summary line ([3/5 todos - Current task]) that
  * expands to the full checklist. Status is derived purely from each todo's
  * `status` field.

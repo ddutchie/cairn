@@ -4,7 +4,7 @@
  * Context-aware: includes project name, cwd, active task title, and date.
  */
 
-export interface PiAgentPromptContext {
+export interface AgentPromptContext {
   projectName: string;
   cwd: string;
   taskTitle?: string;
@@ -17,7 +17,7 @@ export interface PiAgentPromptContext {
   role?: "default" | "automation-dev";
 }
 
-export function buildPiAgentSystemPrompt(ctx: PiAgentPromptContext): string {
+export function buildAgentSystemPrompt(ctx: AgentPromptContext): string {
   if (ctx.role === "automation-dev") {
     return buildAutomationDevPrompt(ctx);
   }
@@ -29,7 +29,7 @@ export function buildPiAgentSystemPrompt(ctx: PiAgentPromptContext): string {
  * folder. It authors scripts/ and manifest.json — it must never create or edit
  * notes, tasks, tags, or boards (those tools are not offered at all).
  */
-function buildAutomationDevPrompt(ctx: PiAgentPromptContext): string {
+function buildAutomationDevPrompt(ctx: AgentPromptContext): string {
   const date = new Date().toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
@@ -57,7 +57,7 @@ At run time the automation resolves scripts by NAME from \`scripts/\` and runs t
 Summarise what you built and what changed in \`manifest.json\`. Tell the user to open the Automations view → this automation's details → "Sync from manifest" → "Run now". Date: ${date}`;
 }
 
-function buildExecuteModePrompt(ctx: PiAgentPromptContext): string {
+function buildExecuteModePrompt(ctx: AgentPromptContext): string {
   const planSection = ctx.planContent
     ? `\n\n## Approved implementation plan\nThe user has reviewed and approved the following plan. Follow it closely:\n\n${ctx.planContent}`
     : "";

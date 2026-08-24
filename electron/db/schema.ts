@@ -359,7 +359,7 @@ const MIGRATIONS: Migration[] = [
     }
   },
 
-  // v15: Pi Agent persistent tab & session history — stores per-project agent
+  // v15: Coding Agent persistent tab & session history — stores per-project agent
   // sessions, their display messages, and the raw LLM context window so sessions
   // can be resumed across app restarts.
   (db) => {

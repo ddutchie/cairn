@@ -28,7 +28,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
-import { createPiSession, getPiSessionById, updatePiSession, createWorkspace, createProject } from "../db/queries";
+import { createCodingSession, getCodingSessionById, updateCodingSession, createWorkspace, createProject } from "../db/queries";
 import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
 
 let db: Database.Database;
@@ -45,7 +45,7 @@ describe("plan-review — plan_content persistence", () => {
   function seed() {
     createWorkspace(db, { id: "ws", name: "Test" });
     createProject(db, { id: "proj", workspaceId: "ws", name: "Proj" });
-    return createPiSession(db, {
+    return createCodingSession(db, {
       id: "pi-plan-1",
       projectId: "proj",
       taskTitle: "Add archive",
@@ -56,11 +56,11 @@ describe("plan-review — plan_content persistence", () => {
     });
   }
 
-  it("updatePiSession stores planContent and returns it via getPiSessionById", () => {
+  it("updateCodingSession stores planContent and returns it via getCodingSessionById", () => {
     seed();
     const plan = "# Add archive\n\n## Approach\n1. Do the thing.";
-    updatePiSession(db, "pi-plan-1", { planContent: plan });
-    const row = getPiSessionById(db, "pi-plan-1");
+    updateCodingSession(db, "pi-plan-1", { planContent: plan });
+    const row = getCodingSessionById(db, "pi-plan-1");
     expect(row?.planContent).toBe(plan);
   });
 
@@ -71,8 +71,8 @@ describe("plan-review — plan_content persistence", () => {
     // exercise the DB precedence to lock the invariant that a session with
     // both must prefer planContent.
     seed();
-    updatePiSession(db, "pi-plan-1", { planContent: "# From exit_plan_mode", planNoteId: "note-stale" });
-    const row = getPiSessionById(db, "pi-plan-1");
+    updateCodingSession(db, "pi-plan-1", { planContent: "# From exit_plan_mode", planNoteId: "note-stale" });
+    const row = getCodingSessionById(db, "pi-plan-1");
     expect(row?.planContent?.trim()).toBe("# From exit_plan_mode");
     expect(row?.planNoteId).toBe("note-stale");
     // The precedence check: if planContent is populated + trimmed, use it.
@@ -82,8 +82,8 @@ describe("plan-review — plan_content persistence", () => {
 
   it("null planContent falls back to legacy path (planNoteId → notes.content)", () => {
     seed();
-    updatePiSession(db, "pi-plan-1", { planNoteId: "note-1" });
-    const row = getPiSessionById(db, "pi-plan-1");
+    updateCodingSession(db, "pi-plan-1", { planNoteId: "note-1" });
+    const row = getCodingSessionById(db, "pi-plan-1");
     expect(row?.planContent).toBeNull();
     const chosen = row?.planContent?.trim() ? row.planContent : "fallback";
     expect(chosen).toBe("fallback");

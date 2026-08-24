@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildPiAgentSystemPrompt } from "./pi-agent-prompt";
+import { buildAgentSystemPrompt } from "./pi-agent-prompt";
 
-describe("buildPiAgentSystemPrompt", () => {
+describe("buildAgentSystemPrompt", () => {
   it("keeps Cairn's base prompt stable across dsh plan-mode transitions", () => {
     const context = {
       projectName: "Cairn",
@@ -11,7 +11,7 @@ describe("buildPiAgentSystemPrompt", () => {
       projectId: "project",
     };
 
-    expect(buildPiAgentSystemPrompt({ ...context, mode: "plan" }))
-      .toBe(buildPiAgentSystemPrompt({ ...context, mode: "execute" }));
+    expect(buildAgentSystemPrompt({ ...context, mode: "plan" }))
+      .toBe(buildAgentSystemPrompt({ ...context, mode: "execute" }));
   });
 });

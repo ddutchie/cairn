@@ -200,7 +200,7 @@ interface GitStatus {
 
 // ── Inline types for the Usage view (usage:overview / usage:recent) ──────────
 type UsageSource =
-  | "chat" | "pi-agent" | "chat-subagent" | "pi-subagent" | "automation"
+  | "chat" | "coding-agent" | "chat-subagent" | "coding-subagent" | "automation"
   | "prd" | "commit-message" | "pr-description" | "explain" | "flow-ai-summary"
   | "summary" | "tool-builder";
 interface UsageTotals {
@@ -1149,11 +1149,11 @@ const api = {
     },
     /** Answer a blocked ask_questions call — the text is fed back to the model as the tool result */
     respondQuestions: (sessionId: string, callId: string, answers: string) => ipcRenderer.send("session:respond-questions", { sessionId, callId, answers }),
-    /** List all persisted pi sessions for a project (project-scoped history) */
+    /** List all persisted coding sessions for a project (project-scoped history) */
     listSessions:   (projectId: string) => invoke("db:session:list", { projectId }),
-    /** Persist a new pi session row to SQLite */
+    /** Persist a new coding session row to SQLite */
     createSession:  (args: unknown) => invoke("db:session:create", args),
-    /** Delete a pi session and all its messages from SQLite */
+    /** Delete a coding session and all its messages from SQLite */
     deleteSession:  (id: string) => invoke("db:session:delete", { id }),
     /** Fetch session transcript from the dsh JSONL log (session-as-truth), SQLite fallback */
     getSessionMessages: (sessionId: string) => invoke("db:session:messages", { sessionId }),

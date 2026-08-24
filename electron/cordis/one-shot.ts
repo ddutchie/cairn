@@ -7,7 +7,7 @@
  * adapter, token metering, and retry policy.
  *
  * This helper re-uses the already-mounted `cairn` pi-ai route (via
- * `ensurePiAiAdapter` at `run-cordis-loop.ts:158`) and `ctx.llm.stream`
+ * `ensureAgentAiAdapter` at `run-cordis-loop.ts:158`) and `ctx.llm.stream`
  * (`dsh-llm` at `node_modules/@deepseek-ai/dsh-llm/lib/types/index.d.ts:32`).
  * `provider:"cairn"` is the internal route key — its `baseURL` is the user's
  * selected endpoint (OpenAI, Rork, etc. via `run-cordis-loop.ts:188`), not a
@@ -15,7 +15,7 @@
  * calling `callLLM` directly.
  */
 
-import { getContext, ensurePiAiAdapter } from "./run-cordis-loop";
+import { getContext, ensureAgentAiAdapter } from "./run-cordis-loop";
 import "./ctx-augment";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { resolveTransport, type ApiMode } from "../lib/llm-transport";
@@ -57,7 +57,7 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
   const transport = await resolveTransport(effectiveConfig.baseUrl, effectiveConfig.apiKey);
   const apiFor = (m: ApiMode): "openai-completions" | "openai-responses" =>
     m === "responses" ? "openai-responses" : "openai-completions";
-  await ensurePiAiAdapter(ctx, {
+  await ensureAgentAiAdapter(ctx, {
     baseUrl: effectiveConfig.baseUrl,
     model: effectiveConfig.model,
     apiKey: effectiveConfig.apiKey,

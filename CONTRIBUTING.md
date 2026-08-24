@@ -202,7 +202,7 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 
 **External agent workspace** (`electron/ipc/agent.ts`) — PTY sessions spawned via `node-pty` in the main process. File I/O is validated against registered `code_directory` paths before any read/write. Sessions are keyed by `sessionId`; PTY output is streamed to the renderer via `agent:data` IPC events. The renderer-side `TerminalManager` singleton holds `xterm.js` instances so they survive view navigation.
 
-**Cairn native agent** — a stateful multi-turn dsh/Cordis agent running entirely in the main process. No external binary required. Session type `"pi"` in the terminal sessions store; rendered by `AgentChatPane` instead of xterm. Key files:
+**Cairn coding agent** — a stateful multi-turn dsh/Cordis agent running entirely in the main process. No external binary required. Session type `"coding"` in the terminal sessions store; rendered by `AgentChatPane` instead of xterm. Key files:
 
 - `electron/ipc/pi-agent.ts` — IPC handler; abort/persona lifecycle and `pi-agent:*` compatibility channels
 - `electron/cordis/run-cordis-coding.ts` — mounts the dsh coding stack, creates/resumes agents, and bridges coding turns
@@ -556,7 +556,7 @@ The Agent workspace has its own IPC namespace (`agent:*`) entirely separate from
 
 ### Working on the Cairn Agent
 
-The Cairn native agent (`sessionType: "pi"`) runs in the Electron main process. Its IPC namespace is `pi-agent:*`, entirely separate from `agent:*` (PTY) and `db:*` (data).
+The Cairn coding agent (`sessionType: "coding"`) runs in the Electron main process. Its IPC namespace is `pi-agent:*`, entirely separate from `agent:*` (PTY) and `db:*` (data).
 
 **Adding a new coding tool**
 

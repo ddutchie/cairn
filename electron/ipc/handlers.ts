@@ -31,7 +31,7 @@ export { type DbContext } from "./result-helpers";
 import { registerDbHandlers } from "./db-handlers";
 import { registerChatDbHandlers } from "./chat-db-handlers";
 import { registerChatSessionHandlers } from "./chat-session";
-import { registerPiSessionHandlers } from "./pi-session-handlers";
+import { registerSessionHandlers } from "./pi-session-handlers";
 import { registerFlowHandlers } from "./flow-handlers";
 import { registerAiHandlers } from "./ai-handlers";
 import { registerLlamaHandlers } from "./llama-handlers";
@@ -70,7 +70,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   registerChatDbHandlers(ctx);
   registerChatSessionHandlers(ctx);
   registerUserStyleHandlers(ctx);
-  registerPiSessionHandlers(ctx);
+  registerSessionHandlers(ctx);
   registerFlowHandlers(ctx);
   registerAiHandlers(ctx);
   registerLlamaHandlers(ctx);

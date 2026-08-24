@@ -1,7 +1,7 @@
 /**
  * Cairn Native Agent — IPC handler
  *
- * Registers pi-agent:* channels. Each session is a stateful PiAgentSession
+ * Registers pi-agent:* channels. Each session is a stateful AgentSession
  * (message history + AbortController) held in a Map for the app lifetime.
  *
  * Channels (fire-and-forget, renderer → main):
@@ -20,8 +20,8 @@
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 
-import type { PiAgentSession, AgentLLMConfig, AgentToolContext } from "../lib/pi-agent-types";
-import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
+import type { AgentSession, AgentLLMConfig, AgentToolContext } from "../lib/pi-agent-types";
+import { buildAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { discoverSkills } from "../lib/skills";
 import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
@@ -43,7 +43,7 @@ import type { SessionEvent } from "@deepseek-ai/dsh-session";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
-const sessions = new Map<string, PiAgentSession>();
+const sessions = new Map<string, AgentSession>();
 
 /**
  * Session IDs with a runCordisCodingLoop currently in flight. The renderer
@@ -185,7 +185,7 @@ interface CordisTurnPayload {
 
 // ── Request shape ──────────────────────────────────────────────────────────────
 
-interface PiAgentPromptRequest {
+interface AgentPromptRequest {
   sessionId: string;
   prompt: string;
   projectId?: string;
@@ -210,7 +210,7 @@ interface PiAgentPromptRequest {
   };
 }
 
-interface PiAgentApprovePlanRequest {
+interface AgentApprovePlanRequest {
   sessionId: string;
   planNoteId: string;
   projectId?: string;
@@ -243,7 +243,7 @@ interface PiAgentApprovePlanRequest {
  * dsh now; this thin wrapper only wires the send/emit adapters.
  */
 async function runSession(
-  session: PiAgentSession,
+  session: AgentSession,
   systemPrompt: string,
   llmConfig: AgentLLMConfig,
   mode: "plan" | "execute",
@@ -263,7 +263,7 @@ async function runSession(
 // approvals, doom-loop, skills, sandbox, attachments, compaction, and retries;
 // nothing here re-implements them.
 async function runCordisCodingSession(
-  session: PiAgentSession,
+  session: AgentSession,
   systemPrompt: string,
   llmConfig: AgentLLMConfig,
   mode: "plan" | "execute",
@@ -287,7 +287,7 @@ async function runCordisCodingSession(
     if (channel === "session:thought" && typeof evtPayload.delta === "string") { thoughts.push(evtPayload.delta); return; }
     if (channel === "session:done" || channel === "session:error") { tokens.flush(); thoughts.flush(); }
     if (channel === "session:plan-note" && typeof evtPayload.noteId === "string") {
-      try { q.updatePiSession(ctx.db, sessionId, { planNoteId: evtPayload.noteId, updatedAt: ts() }); } catch { /* non-critical */ }
+      try { q.updateCodingSession(ctx.db, sessionId, { planNoteId: evtPayload.noteId, updatedAt: ts() }); } catch { /* non-critical */ }
     }
     send(channel, { sessionId, ...evtPayload });
   };
@@ -416,7 +416,7 @@ async function runCordisCodingSession(
 }
 
 // ── Registration ───────────────────────────────────────────────────────────────
-export function registerPiAgentHandler(
+export function registerAgentHandler(
   ctx: DbContext,
 ): void {
   // Read db/workspacePath from ctx at call-time so workspace reinitialise is transparent
@@ -458,7 +458,7 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:prompt ───────────────────────────────────────────────────────
-  registerIpcOn("session:prompt", async (event, req: PiAgentPromptRequest) => {
+  registerIpcOn("session:prompt", async (event, req: AgentPromptRequest) => {
     const { sessionId, prompt, projectId, workspaceId, cwd, taskTitle, mode = "execute" } = req;
 
     const send = (channel: string, payload: unknown) => {
@@ -565,7 +565,7 @@ export function registerPiAgentHandler(
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
       : "Project";
 
-    const sessionRow = q.getPiSessionById(ctx.db, sessionId);
+    const sessionRow = q.getCodingSessionById(ctx.db, sessionId);
     const planNoteId = sessionRow?.planNoteId;
     // Plan carried into execute-mode's system prompt: prefer the plan text
     // captured when the model called dsh-plan-mode's `exit_plan_mode`
@@ -585,7 +585,7 @@ export function registerPiAgentHandler(
     session.role = role;
 
     const skills = discoverSkills(cwd);
-    const systemPrompt = buildPiAgentSystemPrompt({
+    const systemPrompt = buildAgentSystemPrompt({
       projectName, cwd, taskTitle, workspaceId, projectId, mode, planContent,
       role,
     });
@@ -615,7 +615,7 @@ export function registerPiAgentHandler(
   // ── pi-agent:approve-plan ─────────────────────────────────────────────────
   // Renderer fires this when the user clicks "Approve Plan". Fetches the PRD
   // note, injects the approval message, then continues in execute mode.
-  registerIpcOn("session:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
+  registerIpcOn("session:approve-plan", async (_event, req: AgentApprovePlanRequest) => {
     const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
 
     const send = (channel: string, payload: unknown) => {
@@ -705,12 +705,12 @@ export function registerPiAgentHandler(
 
     // Restore the persisted persona for this session (e.g. "automation-dev" for
     // a Develop session) so plan approval can't silently broaden its toolset.
-    const sessionRow = q.getPiSessionById(ctx.db, sessionId);
+    const sessionRow = q.getCodingSessionById(ctx.db, sessionId);
     const role = q.normalizeSessionRole(sessionRow?.role);
     session.role = role;
 
     const skills = discoverSkills(cwd);
-    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, role });
+    const systemPrompt = buildAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, role });
 
     const toolCtx: AgentToolContext = {
       cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
@@ -742,7 +742,7 @@ export function registerPiAgentHandler(
       send("session:compact-result", { sessionId, messageCount: 0, summary: "Can't compact while the agent is working — try again when it finishes." });
       return;
     }
-    const sessionRow = q.getPiSessionById(ctx.db, sessionId) as { cwd?: string } | undefined;
+    const sessionRow = q.getCodingSessionById(ctx.db, sessionId) as { cwd?: string } | undefined;
     const cwd = sessionRow?.cwd ?? "/";
     const llmConfig: AgentLLMConfig = {
       baseUrl: normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
@@ -757,7 +757,7 @@ export function registerPiAgentHandler(
       const { getContext } = await import("../cordis/run-cordis-loop");
       const { openCordisAgent } = await import("../cordis/run-cordis-coding");
       const ctxC = await getContext();
-      await (await import("../cordis/run-cordis-loop")).ensurePiAiAdapter(ctxC, {
+      await (await import("../cordis/run-cordis-loop")).ensureAgentAiAdapter(ctxC, {
         baseUrl: llmConfig.baseUrl,
         model: llmConfig.model,
         apiKey: llmConfig.apiKey,
@@ -821,7 +821,7 @@ export function registerPiAgentHandler(
             throw new Error(`plan mode command did not commit ${mode}`);
           }
           try {
-            q.updatePiSession(ctx.db, sessionId, { mode: committedMode, updatedAt: ts() });
+            q.updateCodingSession(ctx.db, sessionId, { mode: committedMode, updatedAt: ts() });
           } catch (e) {
             console.warn("[pi-agent] failed to update session mode index:", e);
           }
@@ -992,7 +992,7 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:destroy ──────────────────────────────────────────────────────
-  // Called when a pi session tab is closed — frees memory
+  // Called when a coding session tab is closed — frees memory
   registerIpcOn("session:destroy", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
@@ -1014,7 +1014,7 @@ export function registerPiAgentHandler(
   registerIpcOn("session:restore-context", (_event, { sessionId }: { sessionId: string }) => {
     if (sessions.has(sessionId)) return; // already in memory
     try {
-      const sessionRow = q.getPiSessionById(ctx.db, sessionId);
+      const sessionRow = q.getCodingSessionById(ctx.db, sessionId);
       sessions.set(sessionId, {
         abortCtrl: new AbortController(),
         role: q.normalizeSessionRole(sessionRow?.role),

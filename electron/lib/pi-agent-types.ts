@@ -52,7 +52,7 @@ export interface AgentToolContext {
 
 export type AgentSessionRole = "default" | "automation-dev";
 
-export interface PiAgentSession {
+export interface AgentSession {
   abortCtrl: AbortController;
   role?: AgentSessionRole;
 }

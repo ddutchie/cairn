@@ -63,10 +63,10 @@ import {
   insertMcpNotification,
   pruneMcpNotifications,
   clearMcpNotifications,
-  createPiSession,
+  createCodingSession,
   saveSessionTodos,
   getSessionTodos,
-  deletePiSession,
+  deleteCodingSession,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -1286,7 +1286,7 @@ describe("session todos (todowrite)", () => {
     db = makeDb();
     seedWorkspace(db);
     seedProject(db);
-    createPiSession(db, {
+    createCodingSession(db, {
       id: "pi1", projectId: "proj1", taskTitle: "Sweep", cwd: "/tmp", mode: "execute", spawnedAt: "2026-08-10T00:00:00.000Z",
     });
   });
@@ -1322,7 +1322,7 @@ describe("session todos (todowrite)", () => {
 
   it("deleting a session cascades to its todos", () => {
     saveSessionTodos(db, "pi1", [{ content: "A", status: "pending", priority: "medium" }]);
-    deletePiSession(db, "pi1");
+    deleteCodingSession(db, "pi1");
     expect(getSessionTodos(db, "pi1")).toEqual([]);
   });
 });

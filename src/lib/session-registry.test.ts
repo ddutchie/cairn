@@ -18,7 +18,7 @@ describe("buildSessionRegistry", () => {
       ],
       terminalSessions: [
         { sessionId: "pty-1", projectId: "project-1", sessionType: "pty", taskTitle: "Terminal", spawnedAt: "2025-12-01T00:00:00.000Z", status: "running" } as any,
-        { sessionId: "pi-1", projectId: "project-1", sessionType: "pi", taskTitle: "Not a PTY", spawnedAt: "2026-01-05T00:00:00.000Z", status: "running" } as any,
+        { sessionId: "coding-1", projectId: "project-1", sessionType: "coding", taskTitle: "Not a PTY", spawnedAt: "2026-01-05T00:00:00.000Z", status: "running" } as any,
       ],
       projectId: "project-1",
     });

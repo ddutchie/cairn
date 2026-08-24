@@ -26,7 +26,7 @@ export function TerminalTab({ session, isActive, onActivate, onClose }: Terminal
             : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
         )}
       >
-        {session.sessionType === "pi" ? (
+        {session.sessionType === "coding" ? (
           <MessageSquare
             size={8}
             className={cn(

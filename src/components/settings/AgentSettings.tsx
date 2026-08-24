@@ -263,7 +263,7 @@ function SkillsPreviewSection() {
     setError(null);
     try {
       // The REAL assembled prompt + skills/tools come from the Cordis engine
-      // (dsh SystemPrompt + SkillRegistry), not the legacy pi-agent builder.
+      // (dsh SystemPrompt + SkillRegistry), not the legacy agent builder.
       const promptRes = await window.electron?.runtime?.systemPromptPreview({ cwd: workspacePath });
       if (promptRes) {
         if (promptRes.error) setError(promptRes.error);
@@ -487,7 +487,7 @@ export function AgentSettings() {
         </p>
       </div>
 
-      {/* ── Cairn Agent (Pi Agent) Endpoint ── */}
+      {/* ── Cairn Coding Agent Endpoint ── */}
       <SettingsGroup
         title="Cairn Coding Agent (Pi)"
         description="Configure endpoint parameters for the native autonomous coding agent. Coding agents require high-capacity cloud/local models supporting function calling."

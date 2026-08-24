@@ -122,7 +122,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     window.electron?.agent.kill(sessionId).catch(console.error);
   }, [removeTerminalSession]);
 
-  const persistentSession = terminalSessions.find((t) => t.sessionId === activeCodingSessionId && t.sessionType === "pi");
+  const persistentSession = terminalSessions.find((t) => t.sessionId === activeCodingSessionId && t.sessionType === "coding");
   const ptySessions = terminalSessions.filter((t) => t.sessionType === "pty");
 
   useEffect(() => {

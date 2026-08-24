@@ -586,7 +586,7 @@ export async function readContextRing(sessionId: string): Promise<{ available: b
  * "cairn" is registered once; if the endpoint/model changed, dispose the old
  * route first (the pi-ai plugin owns a configurable-provider directory + route).
  */
-export async function ensurePiAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number }): Promise<void> {
+export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number }): Promise<void> {
   const same =
     piAiDisposer &&
     lastPiAiConfig &&
@@ -734,7 +734,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
   const transport = await resolveTransport(llmConfig.baseUrl, llmConfig.apiKey);
   const apiFor = (mode: ApiMode): "openai-responses" | "openai-completions" =>
     mode === "responses" ? "openai-responses" : "openai-completions";
-  await ensurePiAiAdapter(ctx, {
+  await ensureAgentAiAdapter(ctx, {
     baseUrl: llmConfig.baseUrl,
     model: llmConfig.model,
     apiKey: llmConfig.apiKey,
@@ -1095,7 +1095,7 @@ export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCord
       !liveText
     ) {
       markCompletionsOnly(llmConfig.baseUrl);
-      await ensurePiAiAdapter(ctx, {
+      await ensureAgentAiAdapter(ctx, {
         baseUrl: llmConfig.baseUrl,
         model: llmConfig.model,
         apiKey: llmConfig.apiKey,

@@ -187,7 +187,7 @@ export default function Home() {
           setOnboardingState(ws.length === 0 ? "create" : false);
         }
 
-        // Restore last pi session for the active project
+        // Restore the last coding session for the active project
         const state = useCairnStore.getState();
         const projId = state.activeProjectId;
         if (projId && window.electron) {
@@ -202,22 +202,22 @@ export default function Home() {
               // ({ messages, usage?, contextRing?, todos? }) — not a bare array
               // (and IPC results may be result-wrapped) — so unwrap defensively
               // exactly like useAgentSessionActions.handleResumeSession.
-              type PiRow = {
+              type SessionRow = {
                 id: string; role: "user" | "assistant" | "error"; content: string;
                 reasoning: string | null;
                 toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
               };
               const sessRes = await (window.electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(latest.id);
-              let rows: PiRow[] | undefined;
+              let rows: SessionRow[] | undefined;
               let lastUsage: import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"];
               if (Array.isArray(sessRes)) {
-                rows = sessRes as PiRow[];
+                rows = sessRes as SessionRow[];
               } else if (sessRes && typeof sessRes === "object") {
                 const raw = "data" in sessRes && (sessRes as { data?: unknown }).data ? (sessRes as { data: unknown }).data : sessRes;
                 if (Array.isArray(raw)) {
-                  rows = raw as PiRow[];
+                  rows = raw as SessionRow[];
                 } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
-                  rows = (raw as { messages: PiRow[] }).messages;
+                  rows = (raw as { messages: SessionRow[] }).messages;
                   lastUsage = (raw as { usage?: import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"] }).usage;
                   const rawTodos = (raw as { todos?: Array<{ id: string; title: string; status: string }> }).todos;
                   if (rawTodos && rawTodos.length > 0) {
@@ -225,7 +225,7 @@ export default function Home() {
                   }
                 }
               }
-              const piMessages = (rows ?? []).map((r) => ({
+              const messages = (rows ?? []).map((r) => ({
                 id: r.id,
                 role: r.role,
                 content: r.content,
@@ -246,8 +246,8 @@ export default function Home() {
                 status:      latest.status,
                 exitCode:    null,
                 spawnedAt:   latest.spawnedAt,
-                sessionType: "pi",
-                piMessages,
+                 sessionType: "coding",
+                 messages,
                 mode:        latest.mode,
                 planNoteId:  latest.planNoteId ?? undefined,
                 planContent: latest.planContent ?? undefined,
@@ -258,7 +258,7 @@ export default function Home() {
               window.electron.session.restoreContext(latest.id);
             }
           } catch (e) {
-            console.error("[startup] failed to restore pi session", e);
+            console.error("[startup] failed to restore coding session", e);
           }
         }
       });

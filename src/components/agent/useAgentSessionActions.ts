@@ -58,7 +58,7 @@ export function useAgentSessionActions() {
       agentId: "cairn-agent", agentName: "Cairn Agent",
       projectId: activeProjectId, cwd: project.codeDirectory,
        status: "running", exitCode: null, spawnedAt: now,
-       sessionType: "pi", piMessages: [], mode: "execute", initialPrompt,
+       sessionType: "coding", messages: [], mode: "execute", initialPrompt,
     });
     upsertCodingSessionSummary(summary);
     setActiveCodingSession(sessionId);
@@ -73,7 +73,7 @@ export function useAgentSessionActions() {
   ) {
     const alreadyLoaded = terminalSessions.find((t) => t.sessionId === summary.id);
     if (!alreadyLoaded) {
-      let piMessages: AgentMessage[] = [];
+      let messages: AgentMessage[] = [];
       let lastUsage: TerminalSession["lastUsage"] = undefined;
       try {
         type RowType = {
@@ -101,7 +101,7 @@ export function useAgentSessionActions() {
         }
 
         if (rows) {
-          piMessages = rows.map((r) => ({
+          messages = rows.map((r) => ({
             id: r.id, role: r.role, content: r.content,
             reasoning: (r.reasoning ?? undefined) as AgentMessage["reasoning"],
             toolCalls: (r.toolCalls ?? undefined) as AgentMessage["toolCalls"],
@@ -116,8 +116,8 @@ export function useAgentSessionActions() {
         sessionId: summary.id, taskId: summary.taskId ?? summary.id,
         taskTitle: summary.taskTitle, agentId: "cairn-agent", agentName: "Cairn Agent",
         projectId: summary.projectId, cwd: summary.cwd, status: summary.status,
-        exitCode: null, spawnedAt: summary.spawnedAt, sessionType: "pi",
-        piMessages, mode: summary.mode, planNoteId: summary.planNoteId ?? undefined,
+        exitCode: null, spawnedAt: summary.spawnedAt, sessionType: "coding",
+        messages, mode: summary.mode, planNoteId: summary.planNoteId ?? undefined,
         planContent: summary.planContent ?? undefined,
         lastUsage,
       });

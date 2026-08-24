@@ -6,9 +6,9 @@
 
 export type UsageSource =
   | "chat"
-  | "pi-agent"
+  | "coding-agent"
   | "chat-subagent"
-  | "pi-subagent"
+  | "coding-subagent"
   | "automation"
   | "prd"
   | "commit-message"
@@ -20,9 +20,9 @@ export type UsageSource =
 
 export const USAGE_SOURCE_LABELS: Record<UsageSource, string> = {
   chat: "Chat",
-  "pi-agent": "Agent",
+  "coding-agent": "Agent",
   "chat-subagent": "Chat subagent",
-  "pi-subagent": "Agent subagent",
+  "coding-subagent": "Agent subagent",
   automation: "Automation",
   prd: "PRD",
   "commit-message": "Commit message",

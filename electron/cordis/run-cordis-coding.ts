@@ -21,7 +21,7 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { Database } from "better-sqlite3";
 
-import { getContext, ensurePiAiAdapter } from "./run-cordis-loop";
+import { getContext, ensureAgentAiAdapter } from "./run-cordis-loop";
 import { openCordisSessionAgent } from "./session-agent";
 import { mountCodingStack } from "./cordis-coding-tools";
 import {
@@ -127,7 +127,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   const transport = await resolveTransport(llmConfig.baseUrl, llmConfig.apiKey);
   const apiFor = (m: ApiMode): "openai-responses" | "openai-completions" =>
     m === "responses" ? "openai-responses" : "openai-completions";
-  await ensurePiAiAdapter(ctx, {
+  await ensureAgentAiAdapter(ctx, {
     baseUrl: llmConfig.baseUrl,
     model: llmConfig.model,
     apiKey: llmConfig.apiKey,

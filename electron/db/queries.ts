@@ -1561,9 +1561,9 @@ export function clearToolAttachment(
     .run(a.projectId, a.toolType, a.toolId);
 }
 
-// ── Pi Agent Sessions ────────────────────────────────────────────────────────────────────
+// ── Coding Agent Sessions ───────────────────────────────────────────────────────────────
 
-export interface PiSessionRow {
+export interface CodingSessionRow {
   id: string;
   projectId: string;
   taskTitle: string;
@@ -1585,7 +1585,7 @@ export interface PiSessionRow {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toPiSession(row: any): PiSessionRow {
+function toCodingSession(row: any): CodingSessionRow {
   return {
     id:          row.id as string,
     projectId:   row.project_id as string,
@@ -1614,30 +1614,30 @@ export function normalizeSessionRole(raw: unknown): "default" | "automation-dev"
   return raw === undefined || raw === null ? "default" : "automation-dev";
 }
 
-export function createPiSession(
+export function createCodingSession(
   db: Database.Database,
   session: { id: string; projectId: string; taskTitle: string; taskId?: string | null; cwd: string; mode: "plan" | "execute"; spawnedAt: string; role?: "default" | "automation-dev" },
-): PiSessionRow {
+): CodingSessionRow {
   const now = ts();
   const role = normalizeSessionRole(session.role);
   db.prepare(`
     INSERT INTO pi_agent_sessions (id, project_id, task_title, task_id, cwd, mode, role, status, spawned_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)
   `).run(session.id, session.projectId, session.taskTitle, session.taskId ?? null, session.cwd, session.mode, role, session.spawnedAt, now);
-  return getPiSessionById(db, session.id)!;
+  return getCodingSessionById(db, session.id)!;
 }
 
-export function getPiSessionById(db: Database.Database, id: string): PiSessionRow | null {
+export function getCodingSessionById(db: Database.Database, id: string): CodingSessionRow | null {
   const row = db.prepare("SELECT * FROM pi_agent_sessions WHERE id = ?").get(id);
-  return row ? toPiSession(row) : null;
+  return row ? toCodingSession(row) : null;
 }
 
-export function getPiSessions(db: Database.Database, projectId: string): PiSessionRow[] {
+export function getCodingSessions(db: Database.Database, projectId: string): CodingSessionRow[] {
   return (db.prepare("SELECT * FROM pi_agent_sessions WHERE project_id = ? ORDER BY updated_at DESC LIMIT 50").all(projectId) as unknown[])
-    .map(toPiSession);
+    .map(toCodingSession);
 }
 
-export function updatePiSession(
+export function updateCodingSession(
   db: Database.Database,
   sessionId: string,
   patch: { mode?: "plan" | "execute"; planNoteId?: string | null; planContent?: string | null; status?: "running" | "exited"; updatedAt?: string },
@@ -1660,33 +1660,33 @@ export function updatePiSession(
   }
 }
 
-export function deletePiSession(db: Database.Database, sessionId: string) {
+export function deleteCodingSession(db: Database.Database, sessionId: string) {
   db.prepare("DELETE FROM pi_agent_sessions WHERE id = ?").run(sessionId);
 }
 
-// ── Pi Agent Messages ───────────────────────────────────────────────────────────────────
+// ── Coding Agent Messages ───────────────────────────────────────────────────────────────
 
 
 
-// ── Pi Agent Session Todos ─────────────────────────────────────────────────────
+// ── Coding Agent Session Todos ─────────────────────────────────────────────────
 
-export interface PiSessionTodo {
+export interface SessionTodo {
   content: string;
   status: "pending" | "in_progress" | "completed" | "cancelled";
   priority: "high" | "medium" | "low";
 }
 
-interface PiTodoRow {
+interface SessionTodoRow {
   content: string;
   status: string;
   priority: string;
 }
 
-function toPiTodo(row: PiTodoRow): PiSessionTodo {
+function toSessionTodo(row: SessionTodoRow): SessionTodo {
   return {
     content: row.content,
-    status: row.status as PiSessionTodo["status"],
-    priority: row.priority as PiSessionTodo["priority"],
+    status: row.status as SessionTodo["status"],
+    priority: row.priority as SessionTodo["priority"],
   };
 }
 
@@ -1694,7 +1694,7 @@ function toPiTodo(row: PiTodoRow): PiSessionTodo {
  * Replace-wholesale save for a session's todo list (the model sends the entire
  * list each `todowrite` call). Delete + insert by position in one transaction.
  */
-export function saveSessionTodos(db: Database.Database, sessionId: string, todos: PiSessionTodo[]) {
+export function saveSessionTodos(db: Database.Database, sessionId: string, todos: SessionTodo[]) {
   const save = db.transaction(() => {
     db.prepare("DELETE FROM pi_session_todos WHERE session_id = ?").run(sessionId);
     todos.forEach((todo, position) => {
@@ -1705,9 +1705,9 @@ export function saveSessionTodos(db: Database.Database, sessionId: string, todos
   save();
 }
 
-export function getSessionTodos(db: Database.Database, sessionId: string): PiSessionTodo[] {
-  return (db.prepare("SELECT content, status, priority FROM pi_session_todos WHERE session_id = ? ORDER BY position ASC").all(sessionId) as PiTodoRow[])
-    .map(toPiTodo);
+export function getSessionTodos(db: Database.Database, sessionId: string): SessionTodo[] {
+  return (db.prepare("SELECT content, status, priority FROM pi_session_todos WHERE session_id = ? ORDER BY position ASC").all(sessionId) as SessionTodoRow[])
+    .map(toSessionTodo);
 }
 
 // ── Codebase semantic indexing ────────────────

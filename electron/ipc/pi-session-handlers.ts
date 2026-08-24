@@ -15,8 +15,8 @@ import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { loadSessionMessages, type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
 
-/** Map shared ReplayMessage[] → the pi-agent message shape the renderer expects. */
-function toPiMessages(messages: ReplayMessage[]) {
+/** Map shared ReplayMessage[] to the coding-agent message shape the renderer expects. */
+function toAgentMessages(messages: ReplayMessage[]) {
   return messages.map((m) => ({
     id: m.id,
     role: m.role as "user" | "assistant",
@@ -45,16 +45,16 @@ function isMissingSessionError(err: unknown): boolean {
   return /not found|does not exist|no such session/i.test(msg);
 }
 
-export function registerPiSessionHandlers(ctx: DbContext): void {
-  registerIpcHandle("db:session:list", (_e, { projectId }) => handle(() => q.getPiSessions(ctx.db, projectId)));
-  registerIpcHandle("db:session:create", (_e, args: Parameters<typeof q.createPiSession>[1]) => handle(() => q.createPiSession(ctx.db, args)));
-  registerIpcHandle("db:session:delete", (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
+export function registerSessionHandlers(ctx: DbContext): void {
+  registerIpcHandle("db:session:list", (_e, { projectId }) => handle(() => q.getCodingSessions(ctx.db, projectId)));
+  registerIpcHandle("db:session:create", (_e, args: Parameters<typeof q.createCodingSession>[1]) => handle(() => q.createCodingSession(ctx.db, args)));
+  registerIpcHandle("db:session:delete", (_e, { id }) => handle(() => q.deleteCodingSession(ctx.db, id)));
   registerIpcHandle("db:session:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 
   // Session-as-truth load: rebuild the coding session's transcript from the dsh
   // JSONL session log (same source the agent resumes from) via the shared
-  // session-replay helpers, matching the chat path. The pi-agent's dsh session id
-  // IS the raw pi sessionId (run-cordis-coding.ts:263 SessionId(sessionId)), so no
+  // session-replay helpers, matching the chat path. The coding agent's dsh session id
+  // IS the raw sessionId (run-cordis-coding.ts:263 SessionId(sessionId)), so no
   // prefix.
   //
   // Error policy: we ONLY swallow "session not found" (a genuine new/blank
@@ -65,23 +65,23 @@ export function registerPiSessionHandlers(ctx: DbContext): void {
   // indistinguishable from data loss, and hiding a version mismatch on a
   // silent upgrade would strand every pre-bump session with no diagnostic.
   registerIpcHandle("db:session:messages", (_e, { sessionId }: { sessionId: string }) => handle(async () => {
-    if (!sessionId) return { messages: [] as ReturnType<typeof toPiMessages> };
+    if (!sessionId) return { messages: [] as ReturnType<typeof toAgentMessages> };
     try {
       const { getContext, prepareReplayContext } = await import("../cordis/run-cordis-loop");
       const cordisCtx = await getContext();
       const pers = (cordisCtx as unknown as { sessionPersistence?: Parameters<typeof loadSessionMessages>[0] }).sessionPersistence;
-      if (!pers) return { messages: [] as ReturnType<typeof toPiMessages> };
+      if (!pers) return { messages: [] as ReturnType<typeof toAgentMessages> };
       // Mount the fs chain + settle the loader so plugin toolviews are
       // registered before presentationMeta recomputation (see chat-session).
       await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, sessionId);
       const liveSessions = (cordisCtx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((cordisCtx as unknown as { sessions: unknown }).sessions);
       const { messages, usage, contextRing, todos } = await loadSessionMessages(pers, liveSessions, sessionId);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
-      const piMessages = toPiMessages(enrichToolCallsWithMeta(messages));
-      return { messages: piMessages, usage, contextRing, todos };
+      const agentMessages = toAgentMessages(enrichToolCallsWithMeta(messages));
+      return { messages: agentMessages, usage, contextRing, todos };
     } catch (err) {
       if (isMissingSessionError(err)) {
-        return { messages: [] as ReturnType<typeof toPiMessages> };
+        return { messages: [] as ReturnType<typeof toAgentMessages> };
       }
       // Attach a useful diagnostic prefix so the renderer's error toast is
       // actionable (users have historically opened issues with the raw
@@ -95,4 +95,3 @@ export function registerPiSessionHandlers(ctx: DbContext): void {
     }
   }));
 }
-

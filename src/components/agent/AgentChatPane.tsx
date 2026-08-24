@@ -3,7 +3,7 @@
 /**
  * AgentChatPane — chat UI for Cairn native agent sessions.
  *
- * Rendered inside SessionPane when session.sessionType === "pi".
+ * Rendered inside SessionPane when session.sessionType === "coding".
  * Subscribes to pi-agent:* IPC events and updates Zustand store.
  * Multi-turn: each new message continues the same session's history.
  */
@@ -91,25 +91,25 @@ interface AgentChatPaneProps {
 
 export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Actions — stable Zustand references, never trigger re-renders
-  const addPiMessage             = useCairnStore((s) => s.addPiMessage);
-  const appendPiToken            = useCairnStore((s) => s.appendPiToken);
-  const appendPiThought          = useCairnStore((s) => s.appendPiThought);
-  const finalisePiMessage        = useCairnStore((s) => s.finalisePiMessage);
-  const addPiToolCall             = useCairnStore((s) => s.addPiToolCall);
-  const clearPiMessages          = useCairnStore((s) => s.clearPiMessages);
-  const ensurePiStreamingMessage = useCairnStore((s) => s.ensurePiStreamingMessage);
-  const updatePiUsage            = useCairnStore((s) => s.updatePiUsage);
-  const updatePiSubagentUsage    = useCairnStore((s) => s.updatePiSubagentUsage);
-  const updatePiToolCall         = useCairnStore((s) => s.updatePiToolCall);
-  const updatePiSubagentToolCall = useCairnStore((s) => s.updatePiSubagentToolCall);
-  const addPiSubagentToolCall    = useCairnStore((s) => s.addPiSubagentToolCall);
-  const stepPiSubagent           = useCairnStore((s) => s.stepPiSubagent);
-  const appendPiSubagentToken    = useCairnStore((s) => s.appendPiSubagentToken);
-  const appendPiSubagentThought  = useCairnStore((s) => s.appendPiSubagentThought);
-  const finalisePiSubagentMessage = useCairnStore((s) => s.finalisePiSubagentMessage);
-  const setPiMode                = useCairnStore((s) => s.setPiMode);
-  const _setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
-  const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
+  const addAgentMessage             = useCairnStore((s) => s.addAgentMessage);
+  const appendAgentToken            = useCairnStore((s) => s.appendAgentToken);
+  const appendAgentThought          = useCairnStore((s) => s.appendAgentThought);
+  const finaliseAgentMessage        = useCairnStore((s) => s.finaliseAgentMessage);
+  const addAgentToolCall             = useCairnStore((s) => s.addAgentToolCall);
+  const clearAgentMessages          = useCairnStore((s) => s.clearAgentMessages);
+  const ensureAgentStreamingMessage = useCairnStore((s) => s.ensureAgentStreamingMessage);
+  const updateAgentUsage            = useCairnStore((s) => s.updateAgentUsage);
+  const updateAgentSubagentUsage    = useCairnStore((s) => s.updateAgentSubagentUsage);
+  const updateAgentToolCall         = useCairnStore((s) => s.updateAgentToolCall);
+  const updateAgentSubagentToolCall = useCairnStore((s) => s.updateAgentSubagentToolCall);
+  const addAgentSubagentToolCall    = useCairnStore((s) => s.addAgentSubagentToolCall);
+  const stepAgentSubagent           = useCairnStore((s) => s.stepAgentSubagent);
+  const appendAgentSubagentToken    = useCairnStore((s) => s.appendAgentSubagentToken);
+  const appendAgentSubagentThought  = useCairnStore((s) => s.appendAgentSubagentThought);
+  const finaliseAgentSubagentMessage = useCairnStore((s) => s.finaliseAgentSubagentMessage);
+  const setAgentMode                = useCairnStore((s) => s.setAgentMode);
+  const _setAgentAutoApprove         = useCairnStore((s) => s.setAgentAutoApprove);
+  const setAgentToolConfirmRequired = useCairnStore((s) => s.setAgentToolConfirmRequired);
   const setSessionTodos          = useCairnStore((s) => s.setSessionTodos);
   const setView                  = useCairnStore((s) => s.setView);
 
@@ -130,7 +130,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     [customCommands, registryCommands]
   );
 
-  const messages    = session.piMessages ?? [];
+  const messages    = session.messages ?? [];
 
   // ── Virtualized transcript (react-virtuoso) ───────────────────────────────
   // Only messages near the viewport are mounted, so a session with thousands of
@@ -260,7 +260,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // Re-surface approval asks whose original push was lost to a reload —
       // the main-process loop is still blocked waiting on them.
       for (const ask of res?.pendingAsks ?? []) {
-        setPiToolConfirmRequired(session.sessionId, ask.callId, true, ask.nonce);
+        setAgentToolConfirmRequired(session.sessionId, ask.callId, true, ask.nonce);
       }
       // Re-surface pending question asks (ask_questions / plan-review). The
       // main process kept the full question payload so we can rehydrate a
@@ -279,14 +279,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // this pane was unmounted (pi-agent:done was missed). Finalise it so no
       // ghost bubble lingers, and show the idle input.
       setIsLoading(false);
-      finalisePiMessage(session.sessionId);
+      finaliseAgentMessage(session.sessionId);
       setRetryInfo(null);
       setPendingQuestions(null);
       setPendingQuestionCallId(null);
     };
     void sync();
     return () => { cancelled = true; };
-  }, [session.sessionId, finalisePiMessage, setPiToolConfirmRequired, setIsLoading, setRetryInfo, setPendingQuestions, setPendingQuestionCallId]);
+  }, [session.sessionId, finaliseAgentMessage, setAgentToolConfirmRequired, setIsLoading, setRetryInfo, setPendingQuestions, setPendingQuestionCallId]);
 
   // Fire initialPrompt once when the session is loaded (set by SpawnAgentModal).
   // Uses a ref so we always call the current sendPrompt (not a stale closure).
@@ -311,18 +311,18 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const unsubToken = electron.session.onToken((e) => {
       if (e.sessionId !== sessionId) return;
-      appendPiToken(sessionId, e.delta);
+      appendAgentToken(sessionId, e.delta);
     });
 
     const unsubThought = electron.session.onThought?.((e) => {
       if (e.sessionId !== sessionId) return;
-      appendPiThought(sessionId, e.delta);
+      appendAgentThought(sessionId, e.delta);
     });
 
     const unsubUsage = electron.session.onUsage((e) => {
       if (e.sessionId === sessionId) {
         // Parent step — update the parent ring
-        updatePiUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
+        updateAgentUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
       }
       // Subagent usage arrives on the chat:subagent-usage bus below, keyed by
       // parentSession — the old prefix-scheme (`sessionId:sub:*`) was never
@@ -331,7 +331,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const unsubToolsReady = electron.session.onToolsReady((e) => {
       if (e.sessionId === sessionId) {
-        ensurePiStreamingMessage(sessionId);
+        ensureAgentStreamingMessage(sessionId);
       }
     });
 
@@ -346,16 +346,16 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         // flushSync ensures React commits this before the stream continues.
         const callId = e.callId ?? `${e.name}:${Date.now()}`;
         activeCallIds.add(callId);
-         addPiToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
+          addAgentToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
       } else if (e.status === "start") {
         // Execution starting — update the existing pending chip with the resolved label.
         const callId = e.callId ?? `${e.name}:${Date.now()}`;
         activeCallIds.add(callId);
-         addPiToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
+          addAgentToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
       } else if (e.status === "end") {
         const callId = e.callId ?? `${e.name}:unknown`;
         activeCallIds.delete(callId);
-        updatePiToolCall(sessionId, callId, {
+        updateAgentToolCall(sessionId, callId, {
            label:    e.label,
            args:     e.args,
           running:  false,
@@ -372,12 +372,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       if (e.sessionId !== sessionId) return;
       // Finalise the previous turn's assistant message so the next turn's
       // tokens appear in a separate bubble.
-      finalisePiMessage(sessionId);
+      finaliseAgentMessage(sessionId);
     });
 
     const unsubDone = electron.session.onDone((e) => {
       if (e.sessionId !== sessionId) return;
-      finalisePiMessage(sessionId);
+      finaliseAgentMessage(sessionId);
       setIsLoading(false);
       setRetryInfo(null);
       setIsCompacting(false);
@@ -387,12 +387,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const unsubError = electron.session.onError((e) => {
       if (e.sessionId !== sessionId) return;
-      finalisePiMessage(sessionId);
+      finaliseAgentMessage(sessionId);
       setRetryInfo(null);
       setIsCompacting(false);
       setPendingQuestions(null);
       setPendingQuestionCallId(null);
-      addPiMessage(sessionId, {
+      addAgentMessage(sessionId, {
         id:        id(),
         role:      "error",
         content:   e.error,
@@ -415,11 +415,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const unsubSubToken = electron.chat.onSubagentToken?.((e) => {
       if (!matchesParent(e.parentSession)) return;
-      appendPiSubagentToken(sessionId, e.childId, e.delta);
+      appendAgentSubagentToken(sessionId, e.childId, e.delta);
     });
     const unsubSubThought = electron.chat.onSubagentThought?.((e) => {
       if (!matchesParent(e.parentSession)) return;
-      appendPiSubagentThought(sessionId, e.childId, e.delta);
+      appendAgentSubagentThought(sessionId, e.childId, e.delta);
     });
 
     // Keyed by callId (not tool name) so parallel calls to the same tool resolve correctly.
@@ -429,13 +429,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       if (!matchesParent(e.parentSession)) return;
       const callId = e.callId ?? `${e.tool}:${Date.now()}`;
       activeSubCallIds.add(callId);
-      addPiSubagentToolCall(sessionId, e.childId, { callId, name: e.tool, label: e.label, args: e.args, running: true, ok: true });
+      addAgentSubagentToolCall(sessionId, e.childId, { callId, name: e.tool, label: e.label, args: e.args, running: true, ok: true });
     });
     const unsubSubToolCallDone = electron.chat.onSubagentToolCallDone?.((e) => {
       if (!matchesParent(e.parentSession)) return;
       const callId = e.callId ?? `${e.tool}:unknown`;
       activeSubCallIds.delete(callId);
-      updatePiSubagentToolCall(sessionId, e.childId, callId, {
+      updateAgentSubagentToolCall(sessionId, e.childId, callId, {
         label:    e.tool,
         running:  false,
         ok:       e.ok ?? true,
@@ -445,14 +445,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
     const unsubSubUsage = electron.chat.onSubagentUsage?.((e) => {
       if (!matchesParent(e.parentSession)) return;
-      updatePiSubagentUsage(sessionId, e.childId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
+      updateAgentSubagentUsage(sessionId, e.childId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
     });
     const unsubSub = electron.chat.onSubagent?.((e) => {
       if (!matchesParent(e.parentSession)) return;
       if (e.status === "done") {
         // Finalise the child block when its session ends.
-        stepPiSubagent(sessionId, e.childId);
-        finalisePiSubagentMessage(sessionId, e.childId);
+        stepAgentSubagent(sessionId, e.childId);
+        finaliseAgentSubagentMessage(sessionId, e.childId);
       }
     });
 
@@ -466,12 +466,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       //   - Legacy PRD-note flow: e.noteId is a real note id, e.planContent
       //     is undefined; the plan will be re-fetched via onNoteUpdated.
       if (e.planContent) setPlanNoteContent(e.planContent);
-      setPiMode(sessionId, "plan", e.noteId);
+      setAgentMode(sessionId, "plan", e.noteId);
     });
 
     const unsubModeChange = electron.session.onModeChange((e) => {
       if (e.sessionId !== sessionId) return;
-      setPiMode(sessionId, e.mode, e.planNoteId);
+      setAgentMode(sessionId, e.mode, e.planNoteId);
     });
 
     const unsubAskQuestions = electron.session.onAskQuestions((e) => {
@@ -482,14 +482,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const unsubToolConfirmRequired = electron.session.onToolConfirmRequired((e) => {
       if (e.sessionId !== sessionId) return;
-      setPiToolConfirmRequired(sessionId, e.callId, true, e.nonce);
+      setAgentToolConfirmRequired(sessionId, e.callId, true, e.nonce);
     });
 
     // The ask timed out unanswered and the loop settled it fail-closed —
     // retire the card so no dead approve/deny buttons linger.
     const unsubToolConfirmExpired = electron.session.onToolConfirmExpired?.((e) => {
       if (e.sessionId !== sessionId) return;
-      setPiToolConfirmRequired(sessionId, e.callId, false);
+      setAgentToolConfirmRequired(sessionId, e.callId, false);
     });
 
     // Live plan note content updates — keep task list in sync as agent patches the PRD
@@ -530,7 +530,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       if (e.sessionId !== sessionId) return;
       setIsCompacting(e.status === "start");
       if (e.status === "end" && e.auto) {
-        addPiMessage(sessionId, {
+        addAgentMessage(sessionId, {
           id: id(),
           role: "system" as const,
           content: "----- Session Compacted -----",
@@ -576,7 +576,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
               timestamp: r.timestamp,
             }));
             useCairnStore.setState((s) => ({
-              terminalSessions: s.terminalSessions.map((t) => (t.sessionId === sessionId ? { ...t, piMessages: fresh, ...(usage ? { lastUsage: usage } : {}) } : t)),
+              terminalSessions: s.terminalSessions.map((t) => (t.sessionId === sessionId ? { ...t, messages: fresh, ...(usage ? { lastUsage: usage } : {}) } : t)),
             }));
           }
         } catch (err) {
@@ -587,7 +587,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         const msg = e.messageCount > 0
           ? `Context compacted — session history summarised into ${e.messageCount} messages.`
           : "Nothing to compact — session history is too short.";
-        addPiMessage(sessionId, { id: id(), role: "system" as const, content: msg, timestamp: new Date().toISOString() });
+        addAgentMessage(sessionId, { id: id(), role: "system" as const, content: msg, timestamp: new Date().toISOString() });
       })();
     });
 
@@ -695,7 +695,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     setPendingQuestionCallId(null);
 
     // Add user message to store (attachments rendered as thumbnails in transcript)
-    addPiMessage(session.sessionId, {
+    addAgentMessage(session.sessionId, {
       id:        id(),
       role:      "user",
       content:   trimmed,
@@ -704,7 +704,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     // Create placeholder streaming assistant message
-    addPiMessage(session.sessionId, {
+    addAgentMessage(session.sessionId, {
       id:          id(),
       role:        "assistant",
       content:     "",
@@ -761,7 +761,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
        },
     };
     window.electron?.session.prompt(promptPayload);
-  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, enqueue, registryCommands]);
+  }, [isLoading, session, agentConfig, activeWorkspaceId, addAgentMessage, setInput, enqueue, registryCommands]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
@@ -808,7 +808,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   function handleStop() {
     window.electron?.session.abort(session.sessionId);
-    finalisePiMessage(session.sessionId);
+    finaliseAgentMessage(session.sessionId);
     setIsLoading(false);
     setPendingQuestions(null);
     setPendingQuestionCallId(null);
@@ -820,7 +820,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // drain effect (which fires when handleStop flips isLoading to false) would
     // otherwise immediately send the queued prompts into a cleared session.
     clearQueue();
-    clearPiMessages(session.sessionId);
+    clearAgentMessages(session.sessionId);
     setSessionTodos(session.sessionId, []);
     window.electron?.session.clear(session.sessionId);
   }

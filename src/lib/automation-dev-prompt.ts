@@ -1,7 +1,7 @@
 import type { Automation } from "@/store/slices/automations";
 
 /**
- * Build the initial prompt for the automation "Develop" session — a pi-agent
+ * Build the initial prompt for the automation "Develop" session — a coding agent
  * session scoped to the automation's folder (<project>/.automations/<id>/)
  * that authors the automation's scripts AND its final recipe.
  *

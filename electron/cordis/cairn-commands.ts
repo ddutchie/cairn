@@ -18,7 +18,7 @@ export async function compactChatSession(
   model: { baseUrl?: string; model?: string; apiKey?: string } = {},
 ): Promise<{ ok: boolean; compacted: boolean; error?: string }> {
   try {
-    const { ensurePiAiAdapter, resumeChatAgent } = await import("./run-cordis-loop");
+    const { ensureAgentAiAdapter, resumeChatAgent } = await import("./run-cordis-loop");
     const { resolveTransport } = await import("../lib/llm-transport");
     const ctx = await getContext();
     const baseUrl = model.baseUrl ?? "";
@@ -26,7 +26,7 @@ export async function compactChatSession(
     const modelName = model.model ?? "";
     // Ensure the pi-ai route is mounted for the summariser model call.
     const transport = await resolveTransport(baseUrl, apiKey);
-    await ensurePiAiAdapter(ctx, { baseUrl, model: modelName, apiKey, api: transport.mode === "responses" ? "openai-responses" : "openai-completions" });
+    await ensureAgentAiAdapter(ctx, { baseUrl, model: modelName, apiKey, api: transport.mode === "responses" ? "openai-responses" : "openai-completions" });
 
     // NOTE: the third arg here is the resumed session's workspacePath (used
     // for CreateAgentOptions.meta.cwd on a fresh session, and IGNORED for a

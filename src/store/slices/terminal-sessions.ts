@@ -14,14 +14,14 @@ import { id } from "../../lib/utils";
 
 // ── Per-session token buffer (perf) ──────────────────────────────────────────
 //
-// Coalesces rapid SSE token deltas so appendPiToken doesn't fire a Zustand
+// Coalesces rapid SSE token deltas so appendAgentToken doesn't fire a Zustand
 // set() (and therefore Virtuoso list re-diff) on every network chunk. Main
 // already batches to ~20 events/sec via createDeltaBatcher; this second
 // stage collapses same-tick deltas into one set() at the end of the current
 // microtask, so a long transcript pays at most one full-list re-diff per
 // tick even during a burst. The `run` callback is closed over `set` in
-// appendPiToken itself; the buffer just owns the tick timing.
-const piTokenBuffer = (() => {
+// appendAgentToken itself; the buffer just owns the tick timing.
+const agentTokenBuffer = (() => {
   const pending = new Map<string, { delta: string; run: (batched: string) => void }>();
   let scheduled = false;
   const flush = () => {
@@ -80,51 +80,51 @@ export interface TerminalSessionsSlice {
   sessionLoad: SessionLoadState;
   setSessionLoad: (state: SessionLoadState) => void;
   markSessionExited: (sessionId: string, exitCode: number) => void;
-  /** Add a message to a pi session's message list */
-  addPiMessage: (sessionId: string, msg: AgentMessage) => void;
+  /** Add a message to a coding session's message list */
+  addAgentMessage: (sessionId: string, msg: AgentMessage) => void;
   /** Append a token delta to the last streaming assistant message */
-  appendPiToken: (sessionId: string, delta: string) => void;
+  appendAgentToken: (sessionId: string, delta: string) => void;
   /** Append a reasoning/thinking delta to the last streaming assistant message */
-  appendPiThought: (sessionId: string, delta: string) => void;
+  appendAgentThought: (sessionId: string, delta: string) => void;
   /** Finalise the streaming assistant message (isStreaming → false) */
-  finalisePiMessage: (sessionId: string) => void;
+  finaliseAgentMessage: (sessionId: string) => void;
   /** Ensure a streaming assistant message exists — creates one if the last message is not streaming */
-  ensurePiStreamingMessage: (sessionId: string) => void;
+  ensureAgentStreamingMessage: (sessionId: string) => void;
   /** Append a tool call record to the last assistant message */
-  addPiToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  addAgentToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update an existing tool call chip in-place (start → done) */
-  updatePiToolCall: (sessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  updateAgentToolCall: (sessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Set confirmation requirement state for a tool chip */
-  setPiToolConfirmRequired: (sessionId: string, callId: string, confirmRequired: boolean, approvalNonce?: string) => void;
-  /** Clear message history for a pi session */
-  clearPiMessages: (sessionId: string) => void;
+  setAgentToolConfirmRequired: (sessionId: string, callId: string, confirmRequired: boolean, approvalNonce?: string) => void;
+  /** Clear message history for a coding session */
+  clearAgentMessages: (sessionId: string) => void;
   /** Update token usage for a session after a step completes */
-  updatePiUsage: (sessionId: string, promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
+  updateAgentUsage: (sessionId: string, promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
   /** Append a token to a subagent's last streaming message */
-  appendPiSubagentToken: (sessionId: string, childSessionId: string, delta: string) => void;
+  appendAgentSubagentToken: (sessionId: string, childSessionId: string, delta: string) => void;
   /** Append a reasoning/thought delta to a subagent's last streaming message */
-  appendPiSubagentThought: (sessionId: string, childSessionId: string, delta: string) => void;
+  appendAgentSubagentThought: (sessionId: string, childSessionId: string, delta: string) => void;
   /** Finalise the last streaming message in a subagent */
-  finalisePiSubagentMessage: (sessionId: string, childSessionId: string) => void;
+  finaliseAgentSubagentMessage: (sessionId: string, childSessionId: string) => void;
   /** Add a tool call to a subagent's last streaming message */
-  addPiSubagentToolCall: (sessionId: string, childSessionId: string, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  addAgentSubagentToolCall: (sessionId: string, childSessionId: string, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update an existing tool call chip on a subagent message in-place */
-  updatePiSubagentToolCall: (sessionId: string, childSessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  updateAgentSubagentToolCall: (sessionId: string, childSessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update token usage on an inline subagent block */
-  updatePiSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
+  updateAgentSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
   /** Start a new step in a subagent (finalise current message) */
-  stepPiSubagent: (sessionId: string, childSessionId: string) => void;
-  /** Set the mode for a pi session and optionally record the plan note ID */
-  setPiMode: (sessionId: string, mode: "plan" | "execute", planNoteId?: string) => void;
+  stepAgentSubagent: (sessionId: string, childSessionId: string) => void;
+  /** Set the mode for a coding session and optionally record the plan note ID */
+  setAgentMode: (sessionId: string, mode: "plan" | "execute", planNoteId?: string) => void;
   /** Record the explicit auto-approval choice for the session lifetime. */
-  setPiAutoApprove: (sessionId: string, autoApprove: boolean) => void;
+  setAgentAutoApprove: (sessionId: string, autoApprove: boolean) => void;
   /** ID of the session currently shown in the persistent Cairn Agent pinned tab */
   activeCodingSessionId: string | null;
   /** Project-scoped history of persisted coding sessions (from SQLite) */
   codingSessionHistory: CodingSessionSummary[];
   /** Per-session todo lists (todowrite tool) keyed by session id. */
   sessionTodos: Record<string, SessionTodo[]>;
-  /** Set the persistent pi session (switches what the pinned tab shows) */
+  /** Set the persistent coding session (switches what the pinned tab shows) */
   setActiveCodingSession: (sessionId: string | null) => void;
   /** Replace a session's todo list (from pi-agent:todos events / load). */
   setSessionTodos: (sessionId: string, todos: SessionTodo[]) => void;
@@ -204,17 +204,17 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  addPiMessage(sessionId, msg) {
+  addAgentMessage(sessionId, msg) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) =>
         t.sessionId === sessionId
-          ? { ...t, piMessages: [...(t.piMessages ?? []), msg] }
+          ? { ...t, messages: [...(t.messages ?? []), msg] }
           : t
       ),
     }));
   },
 
-  appendPiToken(sessionId, delta) {
+  appendAgentToken(sessionId, delta) {
     // Coalesce rapid token deltas so we don't fire a Zustand set() (and
     // therefore a Virtuoso list re-diff) once per SSE chunk. The main-
     // process already batches deltas at ~20 events/sec (createDeltaBatcher
@@ -223,16 +223,16 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     // session across microtasks and flush at the end of the current tick
     // — user-perceived latency stays under one frame, but multiple deltas
     // in the same tick collapse to a single set().
-    piTokenBuffer.push(sessionId, delta, (batched) => {
+    agentTokenBuffer.push(sessionId, delta, (batched) => {
       set((s) => ({
         terminalSessions: s.terminalSessions.map((t) => {
           if (t.sessionId !== sessionId) return t;
-          const msgs = t.piMessages ?? [];
+          const msgs = t.messages ?? [];
           const last = msgs[msgs.length - 1];
           if (last?.isStreaming) {
             return {
               ...t,
-              piMessages: [
+              messages: [
                 ...msgs.slice(0, -1),
                 { ...last, content: last.content + batched },
               ],
@@ -240,10 +240,10 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           }
           // No streaming message yet — create one. Use id() (nanoid) not
           // stream-${Date.now()} to avoid same-ms collisions between the
-          // token appender and appendPiThought / ensurePiStreamingMessage.
+          // token appender and appendAgentThought / ensureAgentStreamingMessage.
           return {
             ...t,
-            piMessages: [
+            messages: [
               ...msgs,
               {
                 id: `stream-${id()}`,
@@ -259,16 +259,16 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     });
   },
 
-  appendPiThought(sessionId, delta) {
+  appendAgentThought(sessionId, delta) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
-        const msgs = t.piMessages ?? [];
+        const msgs = t.messages ?? [];
         const last = msgs[msgs.length - 1];
         if (last?.isStreaming) {
           return {
             ...t,
-            piMessages: [
+            messages: [
               ...msgs.slice(0, -1),
               { ...last, reasoning: (last.reasoning ?? "") + delta },
             ],
@@ -276,7 +276,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         }
         return {
           ...t,
-          piMessages: [
+          messages: [
             ...msgs,
             {
               id: `stream-${id()}`,
@@ -292,18 +292,18 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  finalisePiMessage(sessionId) {
+  finaliseAgentMessage(sessionId) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
-        const msgs = t.piMessages ?? [];
+        const msgs = t.messages ?? [];
         const last = msgs[msgs.length - 1];
         if (!last?.isStreaming) return t;
         // Drop empty tool-free messages entirely rather than leaving blank bubbles.
         // This happens when a loop step does only tool calls with no surrounding text.
         // Preserve messages that have reasoning text (reasoning-only turns).
         if (!last.content && !last.reasoning && !(last.toolCalls?.length) && !(last.subagents?.length)) {
-          return { ...t, piMessages: msgs.slice(0, -1) };
+          return { ...t, messages: msgs.slice(0, -1) };
         }
         // Force any still-running tool chips to done so they never stay as spinners
         // after the step boundary (onStep / onDone fires before onTool end in some cases).
@@ -312,7 +312,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         );
         return {
           ...t,
-          piMessages: [
+          messages: [
             ...msgs.slice(0, -1),
             { ...last, isStreaming: false, toolCalls: finalisedToolCalls },
           ],
@@ -321,16 +321,16 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  ensurePiStreamingMessage(sessionId) {
+  ensureAgentStreamingMessage(sessionId) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
-        const msgs = t.piMessages ?? [];
+        const msgs = t.messages ?? [];
         const last = msgs[msgs.length - 1];
         if (last?.isStreaming) return t; // already have one
         return {
           ...t,
-          piMessages: [
+          messages: [
             ...msgs,
             {
               id: `stream-${id()}`,
@@ -345,11 +345,11 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  addPiToolCall(sessionId, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
+  addAgentToolCall(sessionId, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
-        const msgs = t.piMessages ?? [];
+        const msgs = t.messages ?? [];
         const last = msgs[msgs.length - 1];
         if (last?.isStreaming) {
           // If a chip with this callId already exists (created by onToolPending),
@@ -358,12 +358,12 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           if (existing !== -1) {
             const updated = [...last.toolCalls!];
             updated[existing] = { ...updated[existing], ...toolCall };
-            return { ...t, piMessages: [...msgs.slice(0, -1), { ...last, toolCalls: updated }] };
+            return { ...t, messages: [...msgs.slice(0, -1), { ...last, toolCalls: updated }] };
           }
           // Happy path: new chip
           return {
             ...t,
-            piMessages: [
+            messages: [
               ...msgs.slice(0, -1),
               { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
             ],
@@ -378,18 +378,18 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           timestamp: new Date().toISOString(),
           toolCalls: [toolCall],
         };
-        return { ...t, piMessages: [...msgs, newMsg] };
+        return { ...t, messages: [...msgs, newMsg] };
       }),
     }));
   },
 
-  updatePiToolCall(sessionId, callId, patch) {
+  updateAgentToolCall(sessionId, callId, patch) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
+          messages: (t.messages ?? []).map((msg) => {
             if (!msg.toolCalls) return msg;
             const idx = msg.toolCalls.findIndex((tc) => tc.callId === callId);
             if (idx === -1) return msg;
@@ -402,7 +402,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  setPiToolConfirmRequired(sessionId, callId, confirmRequired, approvalNonce) {
+  setAgentToolConfirmRequired(sessionId, callId, confirmRequired, approvalNonce) {
     // Approval-card patch: attach both the confirm flag and (when supplied)
     // the main-side per-ask nonce so pi-agent:respond-tool can verify the
     // click's provenance. On clear (confirmRequired=false), drop the nonce
@@ -415,7 +415,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
+          messages: (t.messages ?? []).map((msg) => {
             // Top-level chips…
             if (msg.toolCalls) {
               const idx = msg.toolCalls.findIndex((tc) => tc.callId === callId);
@@ -449,10 +449,10 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  clearPiMessages(sessionId) {
+  clearAgentMessages(sessionId) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) =>
-        t.sessionId === sessionId ? { ...t, piMessages: [], lastUsage: undefined } : t
+        t.sessionId === sessionId ? { ...t, messages: [], lastUsage: undefined } : t
       ),
     }));
   },
@@ -463,7 +463,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  updatePiUsage(sessionId, promptTokens, completionTokens, reasoningTokens, breakdown, cacheReadTokens, cacheCreationTokens) {
+  updateAgentUsage(sessionId, promptTokens, completionTokens, reasoningTokens, breakdown, cacheReadTokens, cacheCreationTokens) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) =>
         t.sessionId === sessionId
@@ -475,13 +475,13 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
 
   // ── Subagent helpers ──────────────────────────────────────────────────────
 
-  appendPiSubagentToken(sessionId, childSessionId, delta) {
+  appendAgentSubagentToken(sessionId, childSessionId, delta) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
+          messages: (t.messages ?? []).map((msg) => {
             const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
             if (subIdx === -1) return msg;
             const sub = msg.subagents![subIdx];
@@ -508,13 +508,13 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  appendPiSubagentThought(sessionId, childSessionId, delta) {
+  appendAgentSubagentThought(sessionId, childSessionId, delta) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
+          messages: (t.messages ?? []).map((msg) => {
             const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
             if (subIdx === -1) return msg;
             const sub = msg.subagents![subIdx];
@@ -542,13 +542,13 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  finalisePiSubagentMessage(sessionId, childSessionId) {
+  finaliseAgentSubagentMessage(sessionId, childSessionId) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
+          messages: (t.messages ?? []).map((msg) => {
             const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
             if (subIdx === -1) return msg;
             const sub = msg.subagents![subIdx];
@@ -567,13 +567,13 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  addPiSubagentToolCall(sessionId, childSessionId, toolCall) {
+  addAgentSubagentToolCall(sessionId, childSessionId, toolCall) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
+          messages: (t.messages ?? []).map((msg) => {
             const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
             if (subIdx === -1) return msg;
             const sub = msg.subagents![subIdx];
@@ -581,11 +581,11 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             const last = subMsgs[subMsgs.length - 1];
             const newSubagents = [...msg.subagents!];
             if (last?.isStreaming) {
-              // Same dedupe as the parent's addPiToolCall: onToolPending (streaming),
+              // Same dedupe as the parent's addAgentToolCall: onToolPending (streaming),
               // onToolStart (execution) and bash onUpdate label updates all fire with
               // the SAME callId. Update the existing chip in place — appending
               // duplicates leaves extra chips permanently "running", because
-              // updatePiSubagentToolCall only resolves the first match.
+              // updateAgentSubagentToolCall only resolves the first match.
               const existing = (last.toolCalls ?? []).findIndex((tc) => tc.callId === toolCall.callId);
               if (existing !== -1) {
                 const updated = [...(last.toolCalls ?? [])];
@@ -622,13 +622,13 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  updatePiSubagentToolCall(sessionId, childSessionId, callId, patch) {
+  updateAgentSubagentToolCall(sessionId, childSessionId, callId, patch) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
+          messages: (t.messages ?? []).map((msg) => {
             const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
             if (subIdx === -1) return msg;
             const sub = msg.subagents![subIdx];
@@ -640,7 +640,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
                 const idx = m.toolCalls.findIndex((tc) => tc.callId === callId);
                 if (idx === -1) return m;
                 const updated = [...m.toolCalls];
-                // Hard-reset confirmRequired like the top-level updatePiToolCall:
+                // Hard-reset confirmRequired like the top-level updateAgentToolCall:
                 // a tool-end patch retires any open approval card on this chip.
                 updated[idx] = { ...updated[idx], ...patch, confirmRequired: false };
                 return { ...m, toolCalls: updated };
@@ -653,13 +653,13 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  updatePiSubagentUsage(sessionId, childSessionId, promptTokens, completionTokens, reasoningTokens, breakdown, cacheReadTokens, cacheCreationTokens) {
+  updateAgentSubagentUsage(sessionId, childSessionId, promptTokens, completionTokens, reasoningTokens, breakdown, cacheReadTokens, cacheCreationTokens) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
+          messages: (t.messages ?? []).map((msg) => {
             const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
             if (subIdx === -1) return msg;
             const newSubagents = [...msg.subagents!];
@@ -671,13 +671,13 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  stepPiSubagent(sessionId, childSessionId) {
+  stepAgentSubagent(sessionId, childSessionId) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
-          piMessages: (t.piMessages ?? []).map((msg) => {
+          messages: (t.messages ?? []).map((msg) => {
             const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
             if (subIdx === -1) return msg;
             const sub = msg.subagents![subIdx];
@@ -696,7 +696,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  setPiMode(sessionId, mode, planNoteId) {
+  setAgentMode(sessionId, mode, planNoteId) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) =>
         t.sessionId === sessionId
@@ -706,7 +706,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  setPiAutoApprove(sessionId, autoApprove) {
+  setAgentAutoApprove(sessionId, autoApprove) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) =>
         t.sessionId === sessionId ? { ...t, autoApprove } : t

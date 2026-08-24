@@ -8,7 +8,7 @@
  * labelled "Ad-hoc session".
  *
  * Session types:
- *   "pi"  — Cairn native agent (structured chat, no PTY)
+ *   "coding" — Cairn coding agent (structured chat, no PTY)
  *   "pty" — External PTY agent (xterm.js terminal)
  */
 
@@ -51,7 +51,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   const project      = projects.find((p) => p.id === activeProjectId) ?? null;
   const codeDirectory = project?.codeDirectory ?? null;
 
-  const [sessionType, setSessionType]   = useState<"pi" | "pty">("pi");
+  const [sessionType, setSessionType]   = useState<"coding" | "pty">("coding");
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [prompt, setPrompt]             = useState("");
   const [spawning, setSpawning]         = useState(false);
@@ -78,8 +78,8 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   }, [open, agents, card]);
 
   const canSpawnPty = agents.length > 0 && !!codeDirectory && !!selectedAgentId && !!window.electron;
-  const canSpawnPi  = !!codeDirectory && !!window.electron;
-  const canSpawn    = sessionType === "pi" ? canSpawnPi : canSpawnPty;
+  const canSpawnCoding = !!codeDirectory && !!window.electron;
+  const canSpawn        = sessionType === "coding" ? canSpawnCoding : canSpawnPty;
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
 
@@ -93,7 +93,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     const taskTitle  = card?.title ?? "Ad-hoc session";
 
     try {
-      if (sessionType === "pi") {
+      if (sessionType === "coding") {
         const now = new Date().toISOString();
         // Persist the session row to SQLite immediately
         try {
@@ -121,8 +121,8 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           status:        "running",
           exitCode:      null,
           spawnedAt:     now,
-          sessionType:   "pi",
-          piMessages:    [],
+          sessionType:   "coding",
+          messages:      [],
           mode:          "execute",
           initialPrompt: prompt.trim() || undefined,
         });
@@ -174,7 +174,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
       <DialogContent size="md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {sessionType === "pi"
+            {sessionType === "coding"
               ? <MessageSquare size={15} />
               : <Terminal size={15} />}
             {card ? "Spawn Agent" : "New Session"}
@@ -190,13 +190,13 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             </p>
             <SegmentedControl
               options={[
-                { value: "pi", label: "Cairn Agent", icon: <MessageSquare size={12} /> },
+                { value: "coding", label: "Cairn Agent", icon: <MessageSquare size={12} /> },
                 { value: "pty", label: "External Agent", icon: <Terminal size={12} /> },
               ]}
               value={sessionType}
               onChange={setSessionType}
             />
-            {sessionType === "pi" && (
+            {sessionType === "coding" && (
               <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
                 Uses {agentConfig.model || "gpt-5.6-luna"} · reads/writes code + Cairn board
               </p>
@@ -264,7 +264,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           {/* Prompt textarea */}
           <div>
             <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-              {sessionType === "pi" ? "Initial prompt (optional)" : "Prompt"}
+              {sessionType === "coding" ? "Initial prompt (optional)" : "Prompt"}
             </label>
             <textarea
               value={prompt}
@@ -273,7 +273,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               rows={5}
               className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-2 font-mono resize-y focus:outline-none"
               placeholder={
-                sessionType === "pi"
+                sessionType === "coding"
                   ? "Describe what you want the agent to do…"
                   : "Describe the task for the agent…"
               }
@@ -297,7 +297,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               onClick={handleSpawn}
               disabled={!canSpawn || spawning}
             >
-              {sessionType === "pi" ? <MessageSquare size={13} /> : <Terminal size={13} />}
+              {sessionType === "coding" ? <MessageSquare size={13} /> : <Terminal size={13} />}
               {spawning ? "Starting…" : card ? "Spawn" : "Start"}
             </Button>
           </div>

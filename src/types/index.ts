@@ -941,7 +941,7 @@ export function isIpcError<T>(result: IpcResult<T>): result is { error: string }
   );
 }
 
-// ── Pi Agent message + session types ─────────────────────────────────────────
+// ── Agent message + session types ────────────────────────────────────────────
 // Moved here from store/slices/terminal-sessions.ts (P5-1 of the cleanup plan)
 // so all domain types live in one place. The slice re-exports them for backwards
 // compatibility.
@@ -1008,8 +1008,8 @@ export interface TerminalSession {
   status: "running" | "exited";
   exitCode: number | null;
   spawnedAt: string;
-  sessionType: "pty" | "pi";
-  piMessages?: AgentMessage[];
+  sessionType: "pty" | "coding";
+  messages?: AgentMessage[];
   initialPrompt?: string;
   lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
   mode?: "plan" | "execute";

@@ -84,8 +84,8 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
           const events = (agent.session?.events ?? []) as Parameters<typeof foldPlanMode>[0];
           const mode = foldPlanMode(events) ? "plan" : "execute";
           try {
-            q.updatePiSession(ctx.db, req.sessionId, { mode, updatedAt: ts() });
-          } catch { /* chat sessions do not have a Cairn pi-session row */ }
+            q.updateCodingSession(ctx.db, req.sessionId, { mode, updatedAt: ts() });
+          } catch { /* chat sessions do not have a Cairn coding-session row */ }
           broadcastEvent("session:mode-change", { sessionId: req.sessionId, mode });
         }
         return { kind: r?.kind, text: r?.text };

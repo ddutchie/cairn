@@ -24,7 +24,7 @@ import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
 import "./ctx-augment";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
-import { saveSessionTodos, getSessionTodos, updatePiSession } from "../db/queries";
+import { saveSessionTodos, getSessionTodos, updateCodingSession } from "../db/queries";
 import { resultContentError } from "../lib/tool-result";
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
@@ -698,7 +698,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
         const db = getDb(ctx);
         if (db) {
           try {
-            updatePiSession(db, sessionId, { planContent: args.plan });
+            updateCodingSession(db, sessionId, { planContent: args.plan });
             emit("session:plan-note", { noteId: undefined, planContent: args.plan });
           } catch (err) {
             console.warn("[cordis] failed to persist plan_content:", err);
