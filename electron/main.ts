@@ -260,6 +260,34 @@ app.whenReady().then(async () => {
   fs.mkdirSync(sessionRoot, { recursive: true });
   setSessionRoot(sessionRoot);
 
+  // Session-log retention (§ H16 from the pre-merge review): dsh's jsonl
+  // session logs accumulate indefinitely — a heavy user (~20 sessions/day)
+  // grows GBs per year with no ceiling. Sweep at boot + every 24h thereafter.
+  // Default budget 90 days; overridable via CAIRN_SESSION_MAX_AGE_DAYS env
+  // var (mostly for tests / power users). The sweep is best-effort:
+  // fs failures are logged and don't block boot.
+  try {
+    const { pruneSessionLogs } = await import("./lib/artifact-hygiene");
+    const runSessionSweep = () => {
+      try {
+        const res = pruneSessionLogs(sessionRoot);
+        if (res.removed > 0) {
+          const mb = (res.bytesFreed / (1024 * 1024)).toFixed(1);
+          console.log(`[session-hygiene] removed ${res.removed}/${res.scanned} old sessions (${mb} MB freed)`);
+        }
+      } catch (err) {
+        console.warn("[session-hygiene] sweep failed:", (err as Error)?.message ?? err);
+      }
+    };
+    // Defer boot sweep so it doesn't compete with the splash animation.
+    setTimeout(runSessionSweep, 30_000);
+    // Every 24h thereafter.
+    setInterval(runSessionSweep, 24 * 60 * 60 * 1000).unref();
+  } catch {
+    // artifact-hygiene import is optional at this early stage; the sweep
+    // just doesn't run and the app boots as before.
+  }
+
   // ── Runtime plugin dir (§10 Tier 2/3) ──────────────────────────────────
   // User/agent-authored plugins live here; with CAIRN_PLUGINS_DEV=1 the Cordis
   // context loads <userData>/plugins/plugins.yml and hot-reloads on change.

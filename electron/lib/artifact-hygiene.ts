@@ -83,3 +83,114 @@ export function pruneChatArtifacts(root: string, sub: string, keep: number = KEE
   }
   return removed;
 }
+
+// ── dsh session-log retention ────────────────────────────────────────────────
+// The Cordis runtime persists every chat + coding turn to a JSONL session log
+// under `<userData>/sessions/<encoded-cwd>/<sessionId>/session.jsonl.zstd`.
+// Nothing else prunes those, so a heavy user (~20 sessions/day) accumulates
+// GBs per year with no ceiling. Age-based sweep runs at boot and periodically
+// thereafter — safe because sessions are read-back-only (chat/agent panes
+// fold them on demand); deleting an old session removes it from the sidebar
+// on next refresh, no dangling references.
+//
+// Default budget: 90 days. Overridable via CAIRN_SESSION_MAX_AGE_DAYS env var
+// (mostly for the tests that live under artifact-hygiene.test.ts).
+
+/** Default age (days) after which a session log is deleted. */
+export const DEFAULT_SESSION_MAX_AGE_DAYS = 90;
+
+/** Absolute floor — a session younger than this is NEVER pruned, even if the
+ *  env override tries to set the budget to 0 or negative. Prevents an
+ *  accidentally-set CAIRN_SESSION_MAX_AGE_DAYS=0 from wiping active runs. */
+const MIN_SESSION_MAX_AGE_DAYS = 1;
+
+export interface SessionSweepResult {
+  scanned: number;
+  removed: number;
+  bytesFreed: number;
+  cutoffMs: number;
+}
+
+function resolveMaxAgeDays(explicit?: number): number {
+  if (typeof explicit === "number" && Number.isFinite(explicit)) {
+    return Math.max(MIN_SESSION_MAX_AGE_DAYS, explicit);
+  }
+  const env = Number(process.env.CAIRN_SESSION_MAX_AGE_DAYS);
+  if (Number.isFinite(env) && env > 0) {
+    return Math.max(MIN_SESSION_MAX_AGE_DAYS, env);
+  }
+  return DEFAULT_SESSION_MAX_AGE_DAYS;
+}
+
+function dirSizeBytes(dir: string): number {
+  let total = 0;
+  try {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, ent.name);
+      try {
+        if (ent.isDirectory()) total += dirSizeBytes(p);
+        else if (ent.isFile()) total += fs.statSync(p).size;
+      } catch { /* ignore per-file */ }
+    }
+  } catch { /* dir unreadable */ }
+  return total;
+}
+
+/**
+ * Sweep the dsh session root for session dirs whose mtime is older than
+ * `maxAgeDays`. Session layout: `<sessionRoot>/<encoded-cwd>/<sessionId>/`
+ * — we recurse ONE level (the encoded-cwd projects) and inspect each
+ * session dir's mtime. Empty encoded-cwd dirs are cleaned up too.
+ *
+ * Never touches non-session shapes (files at the sessionRoot itself,
+ * unexpected directory structures) — the sweep is intentionally
+ * conservative.
+ */
+export function pruneSessionLogs(sessionRoot: string, maxAgeDays?: number): SessionSweepResult {
+  const days = resolveMaxAgeDays(maxAgeDays);
+  const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  const result: SessionSweepResult = { scanned: 0, removed: 0, bytesFreed: 0, cutoffMs };
+  let projectDirs: fs.Dirent[];
+  try {
+    projectDirs = fs.readdirSync(sessionRoot, { withFileTypes: true });
+  } catch {
+    return result;
+  }
+  for (const proj of projectDirs) {
+    if (!proj.isDirectory()) continue;
+    const projPath = path.join(sessionRoot, proj.name);
+    let sessions: fs.Dirent[];
+    try {
+      sessions = fs.readdirSync(projPath, { withFileTypes: true });
+    } catch { continue; }
+    for (const sess of sessions) {
+      if (!sess.isDirectory()) continue;
+      const sessPath = path.join(projPath, sess.name);
+      result.scanned++;
+      let mtime = 0;
+      try { mtime = fs.statSync(sessPath).mtimeMs; } catch { continue; }
+      if (mtime > cutoffMs) continue;
+      // Also check the session.jsonl.zstd file's mtime if present — a resumed
+      // session whose dir mtime is old but whose log was updated recently
+      // should survive.
+      try {
+        const logPath = path.join(sessPath, "session.jsonl.zstd");
+        if (fs.existsSync(logPath) && fs.statSync(logPath).mtimeMs > cutoffMs) continue;
+        const legacy = path.join(sessPath, "session.jsonl");
+        if (fs.existsSync(legacy) && fs.statSync(legacy).mtimeMs > cutoffMs) continue;
+      } catch { /* fall through to remove */ }
+      const size = dirSizeBytes(sessPath);
+      try {
+        fs.rmSync(sessPath, { recursive: true, force: true });
+        result.removed++;
+        result.bytesFreed += size;
+      } catch { /* ignore */ }
+    }
+    // Best-effort: drop the encoded-cwd container if it's now empty.
+    try {
+      const remaining = fs.readdirSync(projPath);
+      if (remaining.length === 0) fs.rmdirSync(projPath);
+    } catch { /* ignore */ }
+  }
+  return result;
+}
