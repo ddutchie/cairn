@@ -413,7 +413,7 @@ export function registerPiAgentHandler(
       // undefined = omit → vendor default).
       temperature: reqConfig?.temperature,
       maxTokens:   reqConfig?.maxTokens,
-      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
+      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : false,
       isReasoningModel: reqConfig?.isReasoningModel,
       provider: reqConfig?.provider ?? (isLocalEndpoint(reqConfig?.baseUrl ?? "") ? "localllm" : undefined),
       contextWindow: reqConfig?.contextWindow,
@@ -545,7 +545,7 @@ export function registerPiAgentHandler(
       // undefined = omit → vendor default).
       temperature: reqConfig?.temperature,
       maxTokens:   reqConfig?.maxTokens,
-      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
+      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : false,
       isReasoningModel: reqConfig?.isReasoningModel,
       provider: reqConfig?.provider ?? (isLocalEndpoint(reqConfig?.baseUrl ?? "") ? "localllm" : undefined),
       contextWindow: reqConfig?.contextWindow,
