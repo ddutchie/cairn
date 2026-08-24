@@ -34,8 +34,8 @@ function makeDeps(sessionId: string, opts: { neverRespond?: boolean; timeoutMs?:
   return { transport, sent, respond: (d: Decision) => (respondWith as unknown as (d: Decision) => void)(d) };
 }
 
-const events = (sent: Array<{ channel: string }>, channel: string): number =>
-  sent.filter((s) => s.channel === channel).length;
+const events = (sent: Array<{ payload: Record<string, unknown> }>, kind: string): number =>
+  sent.filter((s) => s.payload.kind === kind).length;
 
 beforeEach(() => clearSessionGrants("px"));
 
@@ -55,9 +55,9 @@ describe("interactive confirm transport", () => {
     const { transport, sent } = makeDeps("px", { decide: () => ({ approved: true, grant: "session" }) });
     const outcome = await transport.confirm({ title: "Publish draft?", toolName: "publish_note", args: { id: "n1" } });
     expect(outcome).toBe<PluginConfirmOutcome>("allowed-once");
-    expect(events(sent, "session:tool")).toBe(2); // pending + end
-    expect(sent[0].payload).toMatchObject({ name: "publish_note", status: "pending" });
-    expect(sent[sent.length - 1].payload).toMatchObject({ status: "end", ok: true });
+    expect(events(sent, "tool")).toBe(2); // pending + end
+    expect(sent[0].payload).toMatchObject({ data: { name: "publish_note", status: "pending" } });
+    expect(sent[sent.length - 1].payload).toMatchObject({ data: { status: "end", ok: true } });
     expect(getSessionGrants("px").tools.has("publish_note")).toBe(true);
   });
 
@@ -65,7 +65,7 @@ describe("interactive confirm transport", () => {
     const { transport, sent } = makeDeps("px", { decide: () => ({ approved: false }) });
     const outcome = await transport.confirm({ toolName: "publish_note" });
     expect(outcome).toBe("rejected");
-    expect(sent[sent.length - 1].payload).toMatchObject({ status: "end", ok: false });
+    expect(sent[sent.length - 1].payload).toMatchObject({ data: { status: "end", ok: false } });
     expect(getSessionGrants("px").tools.size).toBe(0);
   });
 
@@ -74,10 +74,10 @@ describe("interactive confirm transport", () => {
     const outcome = await transport.confirm({ toolName: "deploy" });
     await new Promise((r) => setTimeout(r, 15));
     expect(outcome).toBe("cancelled");
-    expect(events(sent, "session:tool-confirm-expired")).toBe(1);
+    expect(sent.filter((s) => s.payload.kind === "approval" && (s.payload.data as { status?: string }).status === "expired")).toHaveLength(1);
     // The timeout won — no standing grant may leak through.
     expect(getSessionGrants("px").tools.has("deploy")).toBe(false);
-    expect(sent[sent.length - 1].payload).toMatchObject({ status: "end", ok: false });
+    expect(sent[sent.length - 1].payload).toMatchObject({ data: { status: "end", ok: false } });
   });
 
   it("pre-aborted signal settles cancelled immediately without asking", async () => {
