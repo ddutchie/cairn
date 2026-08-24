@@ -17,7 +17,7 @@ import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
 import type { ChatHistoryEntry, ChatSubagent } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
-import { ChatInputArea } from "../ChatInputArea";
+import { ConversationComposer } from "@/components/conversation/ConversationComposer";
 import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
 import { ChatQuickSettings } from "./ChatQuickSettings";
@@ -901,7 +901,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
         </div>
       )}
-      <div className={cn("border-t border-[var(--border)] p-3 flex-shrink-0", activeView === "chat" && "border-t-0 bg-transparent p-6 max-w-3xl mx-auto w-full")}>
+      <div>
         {/* Plugin-UI: a band under the composer (chat.transcript.footer) — the
             home for plugin cost/context widgets. Fed with Cairn's OWN live usage
             (the thread's lastUsage), NOT dsh's useProjection. Self-hides + adds a
@@ -919,7 +919,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           }
         />
 
-        <ChatInputArea
+        <ConversationComposer
+          centered={activeView === "chat"}
           ref={inputRef}
           value={input}
           onChange={setInput}

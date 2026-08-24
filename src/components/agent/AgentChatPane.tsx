@@ -11,7 +11,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
 import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
-import { ChatInputArea } from "@/components/chat/ChatInputArea";
+import { ConversationComposer } from "@/components/conversation/ConversationComposer";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
 import type { PendingQuestion } from "@/hooks/useChatStream";
 import { useCairnStore } from "@/store";
@@ -906,7 +906,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       />
 
       {/* Input — with upward-expanding plan task list docked above it */}
-      <div className={cn("border-t border-[var(--border)] flex-shrink-0", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
+      <div className={cn("flex-shrink-0", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
         {/* Keep blocking questions outside Virtuoso's Footer. The footer
             component is recreated while the transcript streams, which can
             remount QuestionForm and discard answers typed into the form. */}
@@ -934,8 +934,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && (
           <AgentTodoDock todos={sessionTodos ?? []} live={false} />
         )}
-      <div className={cn("p-3", sessionPresentation === "center" && "border-t-0 bg-transparent p-6")}>
-        <ChatInputArea
+      <div>
+        <ConversationComposer
+          centered={sessionPresentation === "center"}
           ref={textareaRef}
           value={input}
           onChange={setInput}
