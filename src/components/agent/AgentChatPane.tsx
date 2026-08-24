@@ -35,8 +35,8 @@ import { toConversationMessage } from "@/components/conversation/conversation-me
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
-import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 import type { SessionProjection } from "../../../shared/agent/session-projection";
+import { useSessionConversation } from "@/hooks/useSessionConversation";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -158,9 +158,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   const [input, setInput]                         = useState("");
   const [isLoading, setIsLoading]                 = useState(false);
-  const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
-  /** callId of the blocked ask_questions call — echoed back on answer. */
-  const [pendingQuestionCallId, setPendingQuestionCallId] = useState<string | null>(null);
   // Live PRD note content — updated whenever the agent writes to the plan note
   const [planNoteContent, setPlanNoteContent]     = useState<string | null>(null);
   // Retry state — shown in status bar when the loop is backing off after a transient error
@@ -168,6 +165,29 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Compaction state — shown in status bar while an LLM summary call is in flight
   const [isCompacting, setIsCompacting]           = useState(false);
   const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
+
+  // The shared controller owns canonical session:event folding and transport
+  // filtering. Coding persistence remains an adapter because it is transcript-
+  // oriented, unlike Chat's single assistant-message commit.
+  const sessionConversation = useSessionConversation({
+    sessionId: session.sessionId,
+    adapter: {
+      onTurnStart: () => { setIsLoading(true); finaliseAgentMessage(session.sessionId); },
+      onText: (delta) => appendAgentToken(session.sessionId, delta),
+      onReasoning: (delta) => appendAgentThought(session.sessionId, delta),
+      onUsage: (usage) => updateAgentUsage(session.sessionId, usage.promptTokens, usage.completionTokens, usage.reasoningTokens, usage.breakdown as TokenBreakdown | undefined, usage.cacheReadTokens, usage.cacheCreationTokens),
+      onToolCall: (call) => addAgentToolCall(session.sessionId, { callId: call.callId ?? `${call.name}:${Date.now()}`, name: call.name, label: call.name, args: call.args, running: true, ok: true }),
+      onToolResult: (result) => {
+        if (!result.callId) return;
+        updateAgentToolCall(session.sessionId, result.callId, { label: result.name, args: result.args, running: false, ok: result.ok, output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output, cairnRef: extractCairnRef(result.name, result.output) });
+      },
+      onTurnEnd: (reason) => {
+        finaliseAgentMessage(session.sessionId); setIsLoading(false); setRetryInfo(null); setIsCompacting(false); sessionConversation.setQuestions(null);
+        if (reason && reason !== "completed" && reason !== "aborted") addAgentMessage(session.sessionId, { id: id(), role: "error", content: `Agent turn ended abnormally (${reason})`, timestamp: new Date().toISOString() });
+      },
+    },
+  });
+  const { pendingQuestions, pendingQuestionCallId } = sessionConversation;
 
   // Attachment support follows the agent's selected model (same as chat). The
   // models.dev catalog loads in the background, so subscribe to it — without
@@ -266,8 +286,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // forever with no visible answer path.
       const pq = res?.pendingQuestions?.[0];
       if (pq && pq.questions.length > 0) {
-        setPendingQuestions(pq.questions as never);
-        setPendingQuestionCallId(pq.callId);
+        sessionConversation.setQuestions(pq.questions as PendingQuestion[], pq.callId);
       }
       if (running) {
         setIsLoading(true);
@@ -279,12 +298,15 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setIsLoading(false);
       finaliseAgentMessage(session.sessionId);
       setRetryInfo(null);
-      setPendingQuestions(null);
-      setPendingQuestionCallId(null);
+      sessionConversation.setQuestions(null);
     };
     void sync();
     return () => { cancelled = true; };
-  }, [session.sessionId, finaliseAgentMessage, setAgentToolConfirmRequired, setIsLoading, setRetryInfo, setPendingQuestions, setPendingQuestionCallId]);
+  // `sessionConversation.setQuestions` is ref-backed by the shared controller;
+  // the hook result object is intentionally not a dependency because it is a
+  // fresh view-model object on each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.sessionId, finaliseAgentMessage, setAgentToolConfirmRequired]);
 
   // Fire initialPrompt once when the session is loaded (set by SpawnAgentModal).
   // Uses a ref so we always call the current sendPrompt (not a stale closure).
@@ -307,42 +329,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const { sessionId } = session;
 
-    const fold = createSessionEventFold({
-      onTurnStart: () => {
-        setIsLoading(true);
-        finaliseAgentMessage(sessionId);
-      },
-      onText: (delta) => appendAgentToken(sessionId, delta),
-      onReasoning: (delta) => appendAgentThought(sessionId, delta),
-      onUsage: (u) => updateAgentUsage(sessionId, u.promptTokens, u.completionTokens, u.reasoningTokens, u.breakdown as TokenBreakdown | undefined, u.cacheReadTokens, u.cacheCreationTokens),
-      onToolCall: (call) => addAgentToolCall(sessionId, { callId: call.callId ?? `${call.name}:${Date.now()}`, name: call.name, label: call.name, args: call.args, running: true, ok: true }),
-      onToolResult: (result) => {
-        if (!result.callId) return;
-        updateAgentToolCall(sessionId, result.callId, {
-          label: result.name,
-          args: result.args,
-          running: false,
-          ok: result.ok,
-          output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output,
-          cairnRef: extractCairnRef(result.name, result.output),
-        });
-      },
-      onTurnEnd: (reason) => {
-        finaliseAgentMessage(sessionId);
-        setIsLoading(false);
-        setRetryInfo(null);
-        setIsCompacting(false);
-        setPendingQuestions(null);
-        setPendingQuestionCallId(null);
-        if (reason && reason !== "completed" && reason !== "aborted") {
-          addAgentMessage(sessionId, { id: id(), role: "error", content: `Agent turn ended abnormally (${reason})`, timestamp: new Date().toISOString() });
-        }
-      },
-    });
-    const unsubEvent = electron.session.onEvent((e) => {
-      if (e.sessionId === sessionId) fold(e.event);
-    });
-
     const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
       if (projection.sessionId !== sessionId) return;
       const e = projection.data as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -358,7 +344,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       }
       if (projection.kind === "plan-note") { if (e.planContent) setPlanNoteContent(e.planContent); setAgentMode(sessionId, "plan", e.noteId); }
       else if (projection.kind === "mode-change") setAgentMode(sessionId, e.mode, e.planNoteId);
-      else if (projection.kind === "question") { setPendingQuestions(e.questions as PendingQuestion[]); setPendingQuestionCallId(e.callId); }
+      else if (projection.kind === "question") sessionConversation.setQuestions(e.questions as PendingQuestion[], e.callId);
       else if (projection.kind === "approval") setAgentToolConfirmRequired(sessionId, e.callId, e.status === "required", e.nonce);
       else if (projection.kind === "note-updated") {
         const planId = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.planNoteId;
@@ -454,8 +440,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const unsubAskQuestions = electron.session.onAskQuestions((e) => {
       if (e.sessionId !== sessionId) return;
-      setPendingQuestions(e.questions);
-      setPendingQuestionCallId(e.callId);
+      sessionConversation.setQuestions(e.questions, e.callId);
     });
 
     const unsubToolConfirmRequired = electron.session.onToolConfirmRequired((e) => {
@@ -571,7 +556,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     }); */
 
     return () => {
-      unsubEvent();
       unsubProjection();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -646,9 +630,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     }
 
     setInput("");
-    setIsLoading(true);
-    setPendingQuestions(null);
-    setPendingQuestionCallId(null);
+    sessionConversation.startPrompt(() => undefined);
+    sessionConversation.setQuestions(null);
 
     // Add user message to store (attachments rendered as thumbnails in transcript)
     addAgentMessage(session.sessionId, {
@@ -718,7 +701,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
        },
     };
     window.electron?.session.prompt(promptPayload);
-  }, [isLoading, session, agentConfig, activeWorkspaceId, addAgentMessage, setInput, enqueue, registryCommands]);
+  }, [isLoading, session, agentConfig, activeWorkspaceId, addAgentMessage, setInput, enqueue, registryCommands, sessionConversation]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
@@ -743,9 +726,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       return;
     }
     window.electron?.session.respondQuestions(session.sessionId, pendingQuestionCallId, answersText);
-    setPendingQuestions(null);
-    setPendingQuestionCallId(null);
-  }, [pendingQuestionCallId, session, sendPrompt]);
+    sessionConversation.setQuestions(null);
+  }, [pendingQuestionCallId, session, sendPrompt, sessionConversation]);
 
   const handleSearchFiles = useCallback(async (query: string): Promise<SuggestionItem[]> => {
     if (!window.electron || !session.cwd) return [];
@@ -764,11 +746,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   }, [session.cwd]);
 
   function handleStop() {
-    window.electron?.session.abort(session.sessionId);
+    sessionConversation.stop();
     finaliseAgentMessage(session.sessionId);
     setIsLoading(false);
-    setPendingQuestions(null);
-    setPendingQuestionCallId(null);
+    sessionConversation.setQuestions(null);
   }
 
   function handleClear() {
