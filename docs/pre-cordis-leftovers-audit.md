@@ -42,16 +42,16 @@ only in **stale comments**: `run-cordis-loop.ts:5,542`, `heartbeat-runner.ts:8,2
    `AgentChatPane.tsx:416`.
 2. **`db:chat:addMessage`** handler + `q.addChatMessage` (queries.ts:1048) +
    preload `chat.addMessage` (:391). No writers of transcripts remain.
-3. **`db:piSession:saveMessages`** + `q.savePiMessages`/`upsertPiMessage`
+3. **Session persistence message writes** and their former query helpers
    (queries.ts:1702–1735) + preload `piAgent.saveMessages`.
-4. **`db:piSession:messages`** + preload `piAgent.getMessages` (:1158) — keep
-   `q.getPiMessages` itself for the sessionMessages SQLite fallback.
-5. **`NOTE_WRITE_TOOLS`** const (pi-agent.ts:69) — unreferenced.
+4. **`db:session:messages`** + preload session message loading — keep
+    the session message fallback itself.
+5. **`NOTE_WRITE_TOOLS`** const (session-runtime-handlers.ts:69) — unreferenced.
 6. **Unused `callLLM` import** (user-style-handlers.ts:13).
-7. **Unreachable non-Cordis branch of `runSession`** (pi-agent.ts:145–154).
-8. **Orphaned `pi-agent-types.ts` exports** (`ToolCallSpec`, `ApprovalDecision`,
+7. **Unreachable non-Cordis branch of `runSession`** (session-runtime-handlers.ts:145–154).
+8. **Orphaned `session-runtime-types.ts` exports** (`ToolCallSpec`, `ApprovalDecision`,
    dead `AgentMessage` union members) + never-populated `PiAgentSession` fields.
-9. **`skillsXml` param + both skill sections** in `pi-agent-prompt.ts`
+9. **`skillsXml` param + both skill sections** in `coding-session-prompt.ts`
    (:16–20, :77–79, :159–161) — superseded by dsh-tool-skill.
 
 ### KEEP (load-bearing — do not touch)
@@ -60,7 +60,7 @@ only in **stale comments**: `run-cordis-loop.ts:5,542`, `heartbeat-runner.ts:8,2
 - `chat.ts` in full; `chat-executor.ts`; `user-style-handlers.ts` in full
   (Cordis-only via one-shot/runCordisLoop).
 - Startup purges (`DELETE FROM chat_messages/pi_agent_messages`) and the SQLite
-  **fallbacks** inside `db:chat:messages` / `db:piSession:sessionMessages`
+  **fallbacks** inside `db:chat:messages` / `db:session:messages`
   (renderer still calls both channels).
 
 ### ⏳ Deferred (needs product decision)
@@ -95,7 +95,7 @@ doom-loop as the pilot; reuse the confirm transport for approval-policy later.
 items §2.1–§2.9 above, the 🔴 exports in §1 (`streamCompletion`, 7×
 llm-stream, `truncateOutput`, un-export `postChatCompletions`), the dead
 `callLLM` import, and every stale `runToolLoop`/deleted-file comment.
-Also removed: the orphaned store actions `addPiSubagent`/`completePiSubagent`
+Also removed: the orphaned store actions `addAgentSubagent`/`completeAgentSubagent`
 (terminal-sessions.ts) left dead by §2.1.
 
 Corrections made during execution (audit vs reality):
@@ -125,7 +125,7 @@ Corrections made during execution (audit vs reality):
   model attribution (`message.source`, replay envelopes). Surfacing that as a
   dsh projections plugin ("context ring") is captured in the Cairn project
   notes; our plumbing stays until that lands.
-- Remaining orphaned store surface: `finalisePiSubagentMessage` is still used.
+- Remaining orphaned store surface: `finaliseAgentSubagentMessage` is still used.
 Mechanical items **✅ DONE (2026-08-21)**: `confirmAction` + `PendingAction`
 removed from the chat store/types; `chat-executor.ts` relocated to
 `electron/cordis/chat-executor.ts`; `parse-tool-args.ts` shim deleted in favour

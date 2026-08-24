@@ -28,7 +28,8 @@ const abortControllers = new Map<number, AbortController>();
  * concurrent chat:stream requests on the SAME thread from writing to the
  * same session.jsonl.zstd in parallel — dsh's in-process persistence
  * serialises WRITES (so the file doesn't tear), but the two turns' events
- * still interleave into an incoherent transcript. Mirrors pi-agent.ts's
+ * still interleave into an incoherent transcript. Mirrors the coding session
+ * runtime's
  * `runningLoops` guard on the coding side (review finding M13).
  */
 const runningThreads = new Set<string>();

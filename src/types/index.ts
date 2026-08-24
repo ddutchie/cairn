@@ -986,7 +986,8 @@ export interface AgentMessage {
     cairnRef?: { type: "note" | "task"; id: string; title: string };
     confirmRequired?: boolean;
     /**
-     * Per-ask nonce minted main-side and echoed back on pi-agent:respond-tool.
+     * Per-ask nonce minted main-side and echoed back on the session runtime's
+     * respond-tool event.
      * Prevents a compromised renderer from approving asks it never saw the
      * push for. Present when confirmRequired is true; cleared on settle.
      */

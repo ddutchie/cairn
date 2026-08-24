@@ -1,7 +1,7 @@
 /**
- * pi-agent-types — shared types for the coding agent.
+ * session-runtime-types — shared types for the coding session runtime.
  *
- * `electron/ipc/pi-agent.ts` and the Cordis coding runner
+ * `electron/ipc/session-runtime-handlers.ts` and the Cordis coding runner
  * (`run-cordis-coding.ts`) share these stable shapes.
  */
 

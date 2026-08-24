@@ -575,7 +575,7 @@ interface DshTodoWrite {
 
 /**
  * Map the parent coding session's `session/event` stream to `pi-agent:*` events.
- * Mirrors the built-in runSession() wiring in electron/ipc/pi-agent.ts, but
+ * Mirrors the built-in runSession() wiring in electron/ipc/session-runtime-handlers.ts, but
  * driven entirely from dsh events (the dsh agent loop runs the model↔tools loop
  * internally — we only translate what it emits).
  *

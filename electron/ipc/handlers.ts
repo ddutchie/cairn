@@ -31,7 +31,7 @@ export { type DbContext } from "./result-helpers";
 import { registerDbHandlers } from "./db-handlers";
 import { registerChatDbHandlers } from "./chat-db-handlers";
 import { registerChatSessionHandlers } from "./chat-session";
-import { registerSessionHandlers } from "./pi-session-handlers";
+import { registerSessionHandlers } from "./session-handlers";
 import { registerFlowHandlers } from "./flow-handlers";
 import { registerAiHandlers } from "./ai-handlers";
 import { registerLlamaHandlers } from "./llama-handlers";

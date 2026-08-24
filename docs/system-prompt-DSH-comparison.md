@@ -184,7 +184,7 @@ injecting its own section/tool:
 - Chat gets the same dsh-driven catalog + tool automatically (both loops share
   the global registry), so skills behave consistently across surfaces.
 - `renderSkillsXml` / `discoverSkills` remain used by the **built-in pi-agent**
-  path (`electron/ipc/pi-agent.ts`), which is a separate engine and unchanged.
+  path (`electron/ipc/session-runtime-handlers.ts`), which is a separate engine and unchanged.
 
 ### Comparison table
 

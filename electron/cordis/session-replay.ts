@@ -3,8 +3,8 @@
  *
  * Shared logic for rebuilding UI message history from a dsh JSONL session log
  * via the canonical surface (`foldSurface` + `deriveEventMessage`). Used by BOTH
- * the chat load path (electron/ipc/chat-session.ts) and the pi-agent/coding load
- * path (electron/ipc/pi-session-handlers.ts), so the two surfaces stay in lockstep
+ * the chat load path (electron/ipc/chat-session.ts) and the coding-session load
+ * path (electron/ipc/session-handlers.ts), so the two surfaces stay in lockstep
  * (session-as-truth, not the duplicated SQLite tables).
  *
  * The dsh surface (scratch/dsh-repo/packages/core/session/src/surface.ts:14) is
@@ -73,7 +73,7 @@ export function extractCairnRef(
 }
 
 
-/** A UI-agnostic replayed message (both chat + pi-agent map from this). */
+/** A UI-agnostic replayed message (both chat + coding session map from this). */
 export interface ReplayMessage {
   id: string;
   role: "user" | "assistant";
@@ -324,7 +324,7 @@ export function descriptorLabelFromEvents(events: readonly SessionEvent[]): stri
  * Given a persistence backend + a parent session id, load the parent's derived
  * messages and any subagent children (origin==='subagent', parentSession===id),
  * returning the collapsed messages with the most-recent subagent attached to the
- * dispatching assistant. Shared by chat + pi-agent load paths.
+ * dispatching assistant. Shared by chat + coding session load paths.
  */
 export interface LoadSessionMessagesResult {
   messages: ReplayMessage[];
@@ -439,4 +439,3 @@ export async function loadSessionMessages(
 
   return { messages, subagents, usage, contextRing, todos };
 }
-

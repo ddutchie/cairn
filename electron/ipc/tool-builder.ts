@@ -1,5 +1,5 @@
 /**
- * AI Tool Builder — streaming builder session (mirrors the pi-agent pattern).
+ * AI Tool Builder — streaming builder session (mirrors the coding session runtime pattern).
  *
  * The renderer sends `tool-builder:prompt` (a fire-and-forget IPC message); the
  * main process runs a small tool-calling loop with the builder's internal tools
@@ -71,7 +71,7 @@ function resolveConfig(): AIConfig {
     model: cached?.model ?? "gpt-5.6-luna",
     // The cached apiKey is a `secret://llm:<providerId>/apiKey` reference since the
     // v2.5.9 keychain migration — resolve it to the real key here (same as chat.ts /
-    // pi-agent.ts). Sending the raw ref as a bearer token 401s the provider.
+  // session runtime). Sending the raw ref as a bearer token 401s the provider.
     apiKey: secrets.resolveLlmApiKey(cached?.apiKey),
     // Same Auto semantics as the chat/agent loops: Auto sends a generous 32K
     // cap (AUTO_OUTPUT_TOKEN_CAP) instead of omitting the field — omitting lets

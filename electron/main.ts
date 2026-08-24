@@ -26,7 +26,7 @@ import { registerToolsHandlers } from "./ipc/tools";
 import { registerToolBuilderHandlers } from "./ipc/tool-builder";
 import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
 import { registerGitHandlers } from "./ipc/git";
-import { registerAgentHandler } from "./ipc/pi-agent";
+import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
 import { setSessionRoot } from "./cordis/run-cordis-loop";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
@@ -329,7 +329,7 @@ app.whenReady().then(async () => {
   registerToolBuilderHandlers(ctx);
   registerCommunityRegistryHandlers();
   registerGitHandlers(ctx);
-  registerAgentHandler(ctx);
+  registerSessionRuntimeHandlers(ctx);
   registerChatPopoutHandlers();
 
   // ── Splash + boot sequence ────────────────────────────────────────────

@@ -67,7 +67,7 @@ describe("plan-review — plan_content persistence", () => {
   it("execute-mode prompt prefers planContent over the legacy planNoteId path", () => {
     // Simulated: planContent is populated by exit_plan_mode, planNoteId is
     // stale (points at a deleted note). The execute-mode builder is in
-    // electron/ipc/pi-agent.ts but its selection lives inline; here we
+    // electron/ipc/session-runtime-handlers.ts but its selection lives inline; here we
     // exercise the DB precedence to lock the invariant that a session with
     // both must prefer planContent.
     seed();

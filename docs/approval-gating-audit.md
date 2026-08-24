@@ -21,16 +21,16 @@ run-cordis-coding.ts:169              emit pi-agent:tool-confirm-required {sessi
 dsh-user-approval               ApprovalService.request(): appends approval/asked (jsonl),
   service "dsh:approval"        dispatches waterfall, appends approval/decided.
   mounted run-cordis-loop.ts:295,355   Outcomes: allowed-once|rejected|cancelled|unavailable
-renderer                        AgentChatPane onToolConfirmRequired → setPiToolConfirmRequired
+renderer                        AgentChatPane onToolConfirmRequired → setAgentToolConfirmRequired
                                    → ToolChip renders <ApprovalCard>
 response                        Deny/Allow-once/Always-allow-{command,tool}
                                    → pi-agent:respond-tool {sessionId,callId,approved,grant}
 main                            cordisPendingApprovals.get(callId) resolver fires
-  pi-agent.ts:627 (sessionId VOIDED — global map keyed by callId only)
+  session-runtime-handlers.ts:627 (sessionId VOIDED — global map keyed by callId only)
 back                            resolver → "allowed-once"/"rejected" → dsh dispatches or denies
 ```
 
-Pending maps live module-level in `pi-agent.ts:52–54`:
+Pending maps live module-level in `session-runtime-handlers.ts:52–54`:
 `cordisPendingApprovals` (callId), `cordisPendingDoomLoop`
 (`${sessionId}:${signature}`), `cordisPendingQuestions` (requestId).
 Headless analogue: `pendingAutomationApprovals` (heartbeat-runner.ts:99).
@@ -190,7 +190,7 @@ Plus: clear/destroy sweep pending maps + grants.
    throws); a pre-aborted ask surfaces nothing at all. Zero new IPC channels:
    plugin asks reuse the existing card pipeline, so the renderer needed no
    changes. Per-turn binding lives beside the approvals adapter in
-   pi-agent.ts; cleared on turn end / clear / destroy.
+   session-runtime-handlers.ts; cleared on turn end / clear / destroy.
    REMAINING for full consolidation: DONE (2026-08-21):
    - cairnDoomLoopPlugin extracted to `electron/cordis/plugins/doom-loop.ts`
      as the FIRST bundled-plugin consumer — it touches only ctx.cairn.confirm

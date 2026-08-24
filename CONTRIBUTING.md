@@ -113,7 +113,7 @@ cairn/
 │   │   ├── llama-handlers.ts# llama:* channels (on-device LLM server)
 │   │   ├── graph-handlers.ts# db:graph:* channels
 │   │   ├── chat-db-handlers.ts# db:chat:* CRUD channels
-│   │   ├── pi-session-handlers.ts# db:piSession:* channels
+│   │   ├── session-handlers.ts   # db:session:* channels
 │   │   ├── pdf-export.ts   # app:exportNotePdf (uses lib/pdf-template.ts)
 │   │   ├── url-metadata.ts # db:flow:url:fetch (uses lib/url-metadata.ts)
 │   │   ├── mobile-handlers.ts# mobile:* channels
@@ -204,11 +204,11 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 
 **Cairn coding agent** — a stateful multi-turn dsh/Cordis agent running entirely in the main process. No external binary required. Session type `"coding"` in the terminal sessions store; rendered by `AgentChatPane` instead of xterm. Key files:
 
-- `electron/ipc/pi-agent.ts` — IPC handler; abort/persona lifecycle and `pi-agent:*` compatibility channels
+- `electron/ipc/session-runtime-handlers.ts` — IPC handler; abort/persona lifecycle and `pi-agent:*` compatibility channels
 - `electron/cordis/run-cordis-coding.ts` — mounts the dsh coding stack, creates/resumes agents, and bridges coding turns
 - `electron/cordis/cairn-plugins.ts` — Cairn adapters for persistence, usage, questions, approvals, and renderer events
 - `electron/cordis/cordis-coding-tools.ts` — dsh filesystem, search, shell, todo, sandbox, and instruction plugins
-- `electron/lib/pi-agent-prompt.ts` — stable Cairn coding-agent context; plan guidance comes from dsh
+- `electron/lib/coding-session-prompt.ts` — stable Cairn coding-session context; plan guidance comes from dsh
 
 The agent has access to a curated subset of Cairn's data tools (notes CRUD, task management, idea flow) through the dsh tool registry. `ensure_note` is the preferred write tool — idempotent by title, no duplicates. `AgentView` is always mounted (CSS-hidden when inactive) so agent refs and IPC subscriptions survive view switches.
 
@@ -376,18 +376,18 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `electron/workspace-config.ts` | Read/write `workspace-config.json`; resolve `cairn.db` path |
 | `electron/notes-files.ts` | Note file I/O: `writeNoteFile` (atomic `.tmp` → rename), `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile`, `syncNotesFromDisk` (startup timestamp compare), `cleanStaleTmpFiles` |
 | `electron/file-watcher.ts` | chokidar watcher on workspace root; syncs external `.md` edits to SQLite |
-| `electron/ipc/handlers.ts` | Orchestrator — calls per-domain registrars (`db-handlers`, `flow-handlers`, `ai-handlers`, `llama-handlers`, `graph-handlers`, `chat-db-handlers`, `pi-session-handlers`, `pdf-export`, `url-metadata`, `mobile-handlers`, `migration-handlers`, `settings-handlers`); all wrapped in `handle()` returning `IpcResult<T>` |
+| `electron/ipc/handlers.ts` | Orchestrator — calls per-domain registrars (`db-handlers`, `flow-handlers`, `ai-handlers`, `llama-handlers`, `graph-handlers`, `chat-db-handlers`, `session-handlers`, `pdf-export`, `url-metadata`, `mobile-handlers`, `migration-handlers`, `settings-handlers`); all wrapped in `handle()` returning `IpcResult<T>` |
 | `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
 | `electron/ipc/chat.ts` | AI chat IPC handler and Cordis chat-loop adapter |
 | `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
-| `electron/ipc/pi-agent.ts` | Coding-agent IPC adapter — abort/persona lifecycle and `pi-agent:*` compatibility channels |
+| `electron/ipc/session-runtime-handlers.ts` | Coding-session IPC adapter — abort/persona lifecycle and `pi-agent:*` compatibility channels |
 | `electron/cordis/run-cordis-loop.ts` | Shared Cordis context, plugin composition, chat agent lifecycle, and session replay helpers |
 | `electron/cordis/run-cordis-coding.ts` | Coding-agent lifecycle, dsh stack mounting, and live-turn bridge |
 | `electron/cordis/cairn-plugins.ts` | Cairn persistence, usage, questions, approval, and renderer-event adapters |
 | `electron/cordis/cordis-coding-tools.ts` | dsh sandbox, filesystem, search, shell, todo, and instruction plugins |
 | `electron/lib/compaction.ts` | Legacy compaction helper retained only for compatibility paths |
 | `electron/lib/truncation.ts` | `truncateOutput(text, opts)` — unified byte+line cap for all coding tool outputs; exports `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_LINES`, `TruncationResult` |
-| `electron/lib/pi-agent-prompt.ts` | Stable Cairn coding-agent context; plan guidance comes from dsh |
+| `electron/lib/coding-session-prompt.ts` | Stable Cairn coding-session context; plan guidance comes from dsh |
 | `electron/cordis/plugins/` | Cairn-owned Cordis plugins, including workspace context and context-ring projections |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint`, `normaliseBaseUrl` |
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
@@ -624,7 +624,7 @@ Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is 
 
 **System prompt**
 
-`buildExecuteModePrompt()` in `pi-agent-prompt.ts` provides the stable Cairn coding-agent context, including the project name, `cwd`, active task title, date, and (when available) the approved plan for execution. Plan-mode behavior belongs to dsh's configured `plan:policy` section, not to a second Cairn system-prompt variant.
+`buildExecuteModePrompt()` in `coding-session-prompt.ts` provides the stable Cairn coding-session context, including the project name, `cwd`, active task title, date, and (when available) the approved plan for execution. Plan-mode behavior belongs to dsh's configured `plan:policy` section, not to a second Cairn system-prompt variant.
 
 ### Adding a new analytics canvas
 

@@ -279,7 +279,7 @@ This is the repeatable loop.
 |---|---|
 | Runtime bootstrap + ENTRY_LIST + shared ctx | `electron/cordis/run-cordis-loop.ts` |
 | Coding loop + fs/sandbox stack | `electron/cordis/run-cordis-coding.ts`, `cordis-coding-tools.ts` |
-| Replay / session-as-truth | `electron/ipc/chat-session.ts`, `pi-session-handlers.ts`, `cordis/session-replay.ts` |
+| Replay / session-as-truth | `electron/ipc/chat-session.ts`, `session-handlers.ts`, `cordis/session-replay.ts` |
 | Tools bridge | `electron/cordis/cairn-tools.ts` |
 | Plugin runtime (backend) | `electron/cordis/plugin-loader.ts`, `plugin-installer.ts` |
 | Plugin IPC + service | `electron/ipc/ui-plugin-handlers.ts`, `electron/preload.ts` |

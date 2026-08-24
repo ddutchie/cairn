@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentSystemPrompt } from "./pi-agent-prompt";
+import { buildAgentSystemPrompt } from "./coding-session-prompt";
 
 describe("buildAgentSystemPrompt", () => {
   it("keeps Cairn's base prompt stable across dsh plan-mode transitions", () => {

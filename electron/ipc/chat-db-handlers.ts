@@ -23,7 +23,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:chat:upsertThread", (_e, args: Parameters<typeof q.upsertChatThread>[1]) => handle(() => q.upsertChatThread(ctx.db, args)));
 
   // db:chat:clearThreadMessages — direct SQL DELETE + Cordis jsonl clear.
-  // Mirrors pi-agent:clear's brute-force session wipe (pi-agent.ts:684) but for
+  // Mirrors the coding session runtime's brute-force session wipe but for
   // a chat thread: delete every dsh session whose id is chat-<threadId>-* (the
   // per-turn sessionIds runCordisLoop mints) plus any subagent children
   // (origin==='subagent' && parentSession===stableId, stored as random UUIDs

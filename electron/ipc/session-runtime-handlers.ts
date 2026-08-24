@@ -1,5 +1,5 @@
 /**
- * Cairn Native Agent — IPC handler
+ * Cairn coding session runtime — IPC handlers
  *
  * Registers pi-agent:* channels. Each session is a stateful AgentSession
  * (message history + AbortController) held in a Map for the app lifetime.
@@ -20,8 +20,8 @@
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 
-import type { AgentSession, AgentLLMConfig, AgentToolContext } from "../lib/pi-agent-types";
-import { buildAgentSystemPrompt } from "../lib/pi-agent-prompt";
+import type { AgentSession, AgentLLMConfig, AgentToolContext } from "../lib/session-runtime-types";
+import { buildAgentSystemPrompt } from "../lib/coding-session-prompt";
 import { discoverSkills } from "../lib/skills";
 import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
@@ -416,7 +416,7 @@ async function runCordisCodingSession(
 }
 
 // ── Registration ───────────────────────────────────────────────────────────────
-export function registerAgentHandler(
+export function registerSessionRuntimeHandlers(
   ctx: DbContext,
 ): void {
   // Read db/workspacePath from ctx at call-time so workspace reinitialise is transparent

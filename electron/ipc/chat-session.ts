@@ -4,7 +4,7 @@
  * Loads chat history directly from dsh's JSONL session log via the shared
  * session-replay helpers (electron/cordis/session-replay.ts), which use the
  * canonical surface (foldSurface + deriveEventMessage) and attach subagent
- * children. The pi-agent/coding load path uses the SAME helpers so both surfaces
+ * children. The coding-session load path uses the SAME helpers so both surfaces
  * stay in lockstep (session-as-truth, not the duplicated SQLite tables).
  */
 

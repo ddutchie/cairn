@@ -126,7 +126,7 @@ export interface TerminalSessionsSlice {
   sessionTodos: Record<string, SessionTodo[]>;
   /** Set the persistent coding session (switches what the pinned tab shows) */
   setActiveCodingSession: (sessionId: string | null) => void;
-  /** Replace a session's todo list (from pi-agent:todos events / load). */
+  /** Replace a session's todo list (from coding-session todos events / load). */
   setSessionTodos: (sessionId: string, todos: SessionTodo[]) => void;
   /** Fetch session history from SQLite for the given project */
   fetchCodingSessionHistory: (projectId: string) => Promise<void>;
@@ -218,7 +218,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     // Coalesce rapid token deltas so we don't fire a Zustand set() (and
     // therefore a Virtuoso list re-diff) once per SSE chunk. The main-
     // process already batches deltas at ~20 events/sec (createDeltaBatcher
-    // in electron/ipc/pi-agent.ts), but on a long transcript even 20
+    // in electron/ipc/session-runtime-handlers.ts), but on a long transcript even 20
     // renders/sec of the whole message array is expensive. Buffer per
     // session across microtasks and flush at the end of the current tick
     // — user-perceived latency stays under one frame, but multiple deltas
