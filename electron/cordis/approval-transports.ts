@@ -68,7 +68,7 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
   const { sessionId, send, registerPending, timeoutMs } = deps;
 
   const emitEnd = (callId: string, name: string, args: Record<string, unknown>, ok: boolean, output: string): void => {
-    send("pi-agent:tool", { name, label: name, args, callId, status: "end", ok, output });
+    send("session:tool", { name, label: name, args, callId, status: "end", ok, output });
   };
 
   return {
@@ -84,8 +84,8 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
       // Synthetic pending chip → ApprovalCard. Same channels/payload shapes as
       // cairnCodingPlugin's tool/call bridging so the renderer needs zero new
       // surfaces for a plugin ask.
-      send("pi-agent:tool", { name, label: title, args, callId, status: "pending" });
-      send("pi-agent:tool-confirm-required", { sessionId, name, label: title, callId });
+      send("session:tool", { name, label: title, args, callId, status: "pending" });
+      send("session:tool-confirm-required", { sessionId, name, label: title, callId });
 
       return new Promise<PluginConfirmOutcome>((resolve) => {
         let settled = false;
@@ -117,7 +117,7 @@ export function createInteractiveConfirmTransport(deps: InteractiveConfirmTransp
         onAborts.push(() => req.signal?.removeEventListener?.("abort", onAbort));
         timer = setTimeout(() => {
           if (settled) return;
-          send("pi-agent:tool-confirm-expired", { sessionId, name, label: title, callId });
+          send("session:tool-confirm-expired", { sessionId, name, label: title, callId });
           finish(false, "No response within the time limit — not executed.");
           settle("cancelled");
         }, timeoutMs ?? APPROVAL_TIMEOUT_MS);

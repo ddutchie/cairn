@@ -99,12 +99,12 @@ const _loopAutoApprove = () => lastLoopOpts().autoApprove;
 const _loopSignal = () => lastLoopOpts().signal;
 /** Drive a `pi-agent:tool` start event through the runner's send sink. */
 const fireToolStart = (tool: string, label: string, args: Record<string, unknown>) =>
-  loopSend()?.("pi-agent:tool", { name: tool, label, args, status: "start" });
+  loopSend()?.("session:tool", { name: tool, label, args, status: "start" });
 /** Drive a `pi-agent:tool` end event through the runner's send sink. */
 const fireToolEnd = (tool: string, ok: boolean, output: string) =>
-  loopSend()?.("pi-agent:tool", { name: tool, ok, output, status: "end" });
+  loopSend()?.("session:tool", { name: tool, ok, output, status: "end" });
 /** Drive a `pi-agent:token` delta through the runner's send sink. */
-const fireToken = (delta: string) => loopSend()?.("pi-agent:token", { delta });
+const fireToken = (delta: string) => loopSend()?.("session:token", { delta });
 
 afterEach(() => {
   vi.clearAllMocks();

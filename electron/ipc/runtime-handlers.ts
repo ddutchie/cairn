@@ -86,7 +86,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
           try {
             q.updatePiSession(ctx.db, req.sessionId, { mode, updatedAt: ts() });
           } catch { /* chat sessions do not have a Cairn pi-session row */ }
-          broadcastEvent("pi-agent:mode-change", { sessionId: req.sessionId, mode });
+          broadcastEvent("session:mode-change", { sessionId: req.sessionId, mode });
         }
         return { kind: r?.kind, text: r?.text };
       } finally {

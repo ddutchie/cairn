@@ -278,15 +278,15 @@ async function runCordisCodingSession(
   const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
 
   // Coalesce streamed deltas into ~20 IPC events/sec (same as the builtin path).
-  const tokens = createDeltaBatcher((delta) => send("pi-agent:token", { sessionId, delta }));
-  const thoughts = createDeltaBatcher((delta) => send("pi-agent:thought", { sessionId, delta }));
+  const tokens = createDeltaBatcher((delta) => send("session:token", { sessionId, delta }));
+  const thoughts = createDeltaBatcher((delta) => send("session:thought", { sessionId, delta }));
 
   // Route the loop's raw pi-agent:* events through the delta batchers, then out.
   const loopSend = (channel: string, evtPayload: Record<string, unknown>) => {
-    if (channel === "pi-agent:token" && typeof evtPayload.delta === "string") { tokens.push(evtPayload.delta); return; }
-    if (channel === "pi-agent:thought" && typeof evtPayload.delta === "string") { thoughts.push(evtPayload.delta); return; }
-    if (channel === "pi-agent:done" || channel === "pi-agent:error") { tokens.flush(); thoughts.flush(); }
-    if (channel === "pi-agent:plan-note" && typeof evtPayload.noteId === "string") {
+    if (channel === "session:token" && typeof evtPayload.delta === "string") { tokens.push(evtPayload.delta); return; }
+    if (channel === "session:thought" && typeof evtPayload.delta === "string") { thoughts.push(evtPayload.delta); return; }
+    if (channel === "session:done" || channel === "session:error") { tokens.flush(); thoughts.flush(); }
+    if (channel === "session:plan-note" && typeof evtPayload.noteId === "string") {
       try { q.updatePiSession(ctx.db, sessionId, { planNoteId: evtPayload.noteId, updatedAt: ts() }); } catch { /* non-critical */ }
     }
     send(channel, { sessionId, ...evtPayload });
@@ -335,7 +335,7 @@ async function runCordisCodingSession(
         if (payload && typeof payload === "object" && typeof (payload as { callId?: unknown }).callId === "string") {
           const p = payload as { sessionId?: string; name?: string; label?: string; callId?: string };
           if (p.sessionId) {
-            if (channel === "pi-agent:tool-confirm-required") {
+            if (channel === "session:tool-confirm-required") {
               // Mint a per-ask nonce so pi-agent:respond-tool must present
               // it — a renderer-side script can't approve an ask it never
               // received the original push for. The nonce is attached to
@@ -350,7 +350,7 @@ async function runCordisCodingSession(
                 callId: p.callId ?? "",
                 nonce,
               } as never);
-            } else if (channel === "pi-agent:tool-confirm-expired") {
+            } else if (channel === "session:tool-confirm-expired") {
               pendingAsks.resolve(p.sessionId, p.callId ?? "");
               dropAskNonce(p.sessionId, p.callId ?? "");
             }
@@ -368,7 +368,7 @@ async function runCordisCodingSession(
           // options) back via pi-agent:is-running — the original push dies
           // with the old page, and losing it would strand the review with
           // no UI to answer it.
-          if (channel === "pi-agent:ask-questions") {
+          if (channel === "session:ask-questions") {
             const requestId = typeof p.callId === "string" ? p.callId : undefined;
             const qs = Array.isArray(p.questions) ? p.questions : undefined;
             if (requestId && qs) {
@@ -402,7 +402,7 @@ async function runCordisCodingSession(
     tokens.flush();
     thoughts.flush();
     if (!session.abortCtrl.signal.aborted) {
-      send("pi-agent:error", { sessionId, error: (err as Error)?.message ?? String(err) });
+      send("session:error", { sessionId, error: (err as Error)?.message ?? String(err) });
     }
   } finally {
     runningLoops.delete(sessionId);
@@ -427,7 +427,7 @@ export function registerPiAgentHandler(
   // state from the main process — the loop's lifecycle lives here, not in the
   // renderer's local state. Also returns the session's outstanding approval
   // asks so a reload that swallowed the original push can re-render the cards.
-  registerIpcHandle("pi-agent:is-running", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcHandle("session:is-running", (_event, { sessionId }: { sessionId: string }) => {
     return {
       running: runningLoops.has(sessionId),
       pendingAsks: pendingAsks.listForSession(sessionId),
@@ -444,13 +444,13 @@ export function registerPiAgentHandler(
   // ── pi-agent:context-ring ─────────────────────────────────────────────────
   // Reasoning-provenance snapshot ("whose thinking is in context") for the
   // agent panel's ring badge. Unavailable → renderer hides the pill.
-  registerIpcHandle("pi-agent:context-ring", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
+  registerIpcHandle("session:context-ring", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
     const { readContextRing } = await import("../cordis/run-cordis-loop");
     return readContextRing(sessionId);
   }));
 
   // ── pi-agent:abort ────────────────────────────────────────────────────────
-  registerIpcOn("pi-agent:abort", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
       session.abortCtrl.abort();
@@ -458,7 +458,7 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:prompt ───────────────────────────────────────────────────────
-  registerIpcOn("pi-agent:prompt", async (event, req: PiAgentPromptRequest) => {
+  registerIpcOn("session:prompt", async (event, req: PiAgentPromptRequest) => {
     const { sessionId, prompt, projectId, workspaceId, cwd, taskTitle, mode = "execute" } = req;
 
     const send = (channel: string, payload: unknown) => {
@@ -470,7 +470,7 @@ export function registerPiAgentHandler(
     // the is-running state inconsistent. The renderer queues prompts while busy,
     // so this is a defensive guard, not the normal path.
     if (runningLoops.has(sessionId)) {
-      send("pi-agent:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before sending another prompt." });
+      send("session:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before sending another prompt." });
       return;
     }
 
@@ -481,7 +481,7 @@ export function registerPiAgentHandler(
       for (const a of req.attachments) {
         const problem = validateAttachmentDataUrl(a?.dataUrl);
         if (problem) {
-          send("pi-agent:error", {
+          send("session:error", {
             sessionId,
             error: `Invalid attachment${a?.name ? ` "${a.name}"` : ""}: ${problem}`,
           });
@@ -491,7 +491,7 @@ export function registerPiAgentHandler(
     }
 
     if (req.config?.provider === "localllm") {
-      send("pi-agent:error", {
+      send("session:error", {
         sessionId,
         error: "Local Engine (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
       });
@@ -615,7 +615,7 @@ export function registerPiAgentHandler(
   // ── pi-agent:approve-plan ─────────────────────────────────────────────────
   // Renderer fires this when the user clicks "Approve Plan". Fetches the PRD
   // note, injects the approval message, then continues in execute mode.
-  registerIpcOn("pi-agent:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
+  registerIpcOn("session:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
     const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
 
     const send = (channel: string, payload: unknown) => {
@@ -625,12 +625,12 @@ export function registerPiAgentHandler(
     // Same concurrency guard as pi-agent:prompt — a plan approval is also a
     // loop run and must never stack on an in-flight loop for this session.
     if (runningLoops.has(sessionId)) {
-      send("pi-agent:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before approving the plan." });
+      send("session:error", { sessionId, error: "This agent session is already running — wait for the current turn to finish before approving the plan." });
       return;
     }
 
     if (req.config?.provider === "localllm") {
-      send("pi-agent:error", {
+      send("session:error", {
         sessionId,
         error: "Local Engine (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
       });
@@ -698,7 +698,7 @@ export function registerPiAgentHandler(
 
     const planContent = (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? "";
 
-    send("pi-agent:mode-change", { sessionId, mode: "execute", planNoteId });
+    send("session:mode-change", { sessionId, mode: "execute", planNoteId });
     const projectName = projectId
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
       : "Project";
@@ -733,13 +733,13 @@ export function registerPiAgentHandler(
   // thresholdRatio 0.8) runs between steps automatically; this is the explicit
   // user-triggered variant. It opens the session's agent from its persisted jsonl
   // (idle), runs ctx.compaction.compactNow(agent), then disposes it.
-  registerIpcOn("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number } }) => {
+  registerIpcOn("session:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number } }) => {
     const { sessionId } = req;
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
     };
     if (runningLoops.has(sessionId)) {
-      send("pi-agent:compact-result", { sessionId, messageCount: 0, summary: "Can't compact while the agent is working — try again when it finishes." });
+      send("session:compact-result", { sessionId, messageCount: 0, summary: "Can't compact while the agent is working — try again when it finishes." });
       return;
     }
     const sessionRow = q.getPiSessionById(ctx.db, sessionId) as { cwd?: string } | undefined;
@@ -752,7 +752,7 @@ export function registerPiAgentHandler(
       temperature: 0.1,
       contextWindow: req.config?.contextWindow,
     };
-    send("pi-agent:compact", { sessionId, status: "start" });
+    send("session:compact", { sessionId, status: "start" });
     try {
       const { getContext } = await import("../cordis/run-cordis-loop");
       const { openCordisAgent } = await import("../cordis/run-cordis-coding");
@@ -770,7 +770,7 @@ export function registerPiAgentHandler(
         if (!compaction?.compactNow) throw new Error("compaction service not mounted");
         const result = await compaction.compactNow(handle.agent, new AbortController().signal);
         if (result) {
-          send("pi-agent:compact-result", {
+          send("session:compact-result", {
             sessionId,
             messageCount: (result as { replacedCount?: number; replacedSeqs?: unknown[] })?.replacedCount
               ?? (result as { replacedSeqs?: unknown[] })?.replacedSeqs?.length
@@ -778,15 +778,15 @@ export function registerPiAgentHandler(
             summary: (result as { summary?: string })?.summary ?? "",
           });
         } else {
-          send("pi-agent:compact-result", { sessionId, messageCount: 0, summary: "Nothing to compact." });
+          send("session:compact-result", { sessionId, messageCount: 0, summary: "Nothing to compact." });
         }
       } finally {
         await handle.dispose?.();
       }
     } catch (e) {
-      send("pi-agent:compact-result", { sessionId, messageCount: 0, summary: `Compaction unavailable: ${(e as Error).message}` });
+      send("session:compact-result", { sessionId, messageCount: 0, summary: `Compaction unavailable: ${(e as Error).message}` });
     } finally {
-      send("pi-agent:compact", { sessionId, status: "end" });
+      send("session:compact", { sessionId, status: "end" });
     }
   });
 
@@ -795,7 +795,7 @@ export function registerPiAgentHandler(
   // ctx.commands on a short-lived resumed agent. The session log is the source
   // of truth; SQLite is updated only after a successful command and a committed
   // plan/mode event have been observed.
-  registerIpcOn("pi-agent:set-mode", (_event, { sessionId, mode }: { sessionId: string; mode: "plan" | "execute" }) => {
+  registerIpcOn("session:set-mode", (_event, { sessionId, mode }: { sessionId: string; mode: "plan" | "execute" }) => {
     void (async () => {
       try {
         const agentConfig = getCachedConfig().agentConfig;
@@ -825,7 +825,7 @@ export function registerPiAgentHandler(
           } catch (e) {
             console.warn("[pi-agent] failed to update session mode index:", e);
           }
-          broadcastEvent("pi-agent:mode-change", { sessionId, mode: committedMode });
+          broadcastEvent("session:mode-change", { sessionId, mode: committedMode });
         } finally {
           try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
         }
@@ -846,7 +846,7 @@ export function registerPiAgentHandler(
   // dsh will execute is what we stashed via recordPendingApprovalArgs. If the
   // two disagree (or the renderer's command is absent), the grant is a no-op:
   // fail-closed on the record path.
-  registerIpcOn("pi-agent:respond-tool", (_event, { sessionId, callId, approved, grant, nonce }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string; nonce?: string }) => {
+  registerIpcOn("session:respond-tool", (_event, { sessionId, callId, approved, grant, nonce }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string; nonce?: string }) => {
     // Require the per-ask nonce — a compromised renderer (XSS from a
     // rendered note, an installed UI plugin) that only saw the callId
     // broadcast on pi-agent:tool-confirm-required must NOT be able to
@@ -880,7 +880,7 @@ export function registerPiAgentHandler(
   // Answers to a blocked ask_questions call. The formatted answer text is fed
   // back to the model as the tool result so it reasons over the answers in the
   // same turn. Cordis keys by requestId (which the renderer echoes as callId).
-  registerIpcOn("pi-agent:respond-questions", (_event, { sessionId, callId, answers }: { sessionId: string; callId: string; answers: string }) => {
+  registerIpcOn("session:respond-questions", (_event, { sessionId, callId, answers }: { sessionId: string; callId: string; answers: string }) => {
     const key = pendingKey(sessionId, callId);
     const cordisPending = cordisPendingQuestions.get(key);
     if (cordisPending) {
@@ -897,21 +897,21 @@ export function registerPiAgentHandler(
   // Clears a session's message history (new conversation within same session).
   // Also resets the compaction transformer so the new conversation starts
   // with a fresh cachedSummary.
-  registerIpcOn("pi-agent:clear", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("session:clear", (_event, { sessionId }: { sessionId: string }) => {
     // Reject renderer-supplied ids that could path-traverse before they reach
     // fs.rmSync() below. Any legitimate session id (pi-<nanoid>, subagent uuid)
     // passes; `..`, `/`, `\`, empty, over-length, control chars all fail here.
     try {
       assertSafeId(sessionId, "sessionId");
     } catch (err) {
-      broadcastEvent("pi-agent:error", { sessionId, error: (err as Error).message });
+      broadcastEvent("session:error", { sessionId, error: (err as Error).message });
       return;
     }
     // Clearing the persisted log while a loop is running would desync its
     // in-flight context. The renderer stops the run before clearing, so this is
     // defensive.
     if (runningLoops.has(sessionId)) {
-      broadcastEvent("pi-agent:error", { sessionId, error: "Can't clear while the agent is working — stop the run first." });
+      broadcastEvent("session:error", { sessionId, error: "Can't clear while the agent is working — stop the run first." });
       return;
     }
     // The Cordis JSONL session is the transcript source of truth. The in-memory
@@ -993,7 +993,7 @@ export function registerPiAgentHandler(
 
   // ── pi-agent:destroy ──────────────────────────────────────────────────────
   // Called when a pi session tab is closed — frees memory
-  registerIpcOn("pi-agent:destroy", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("session:destroy", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
       session.abortCtrl.abort();
@@ -1011,7 +1011,7 @@ export function registerPiAgentHandler(
   // run-cordis-coding.ts) — there is no pi_agent_llm_history on this path.
   // This handler just restores the persisted session persona so a re-prompt
   // keeps the session's tool restrictions (validated, failing closed).
-  registerIpcOn("pi-agent:restore-context", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("session:restore-context", (_event, { sessionId }: { sessionId: string }) => {
     if (sessions.has(sessionId)) return; // already in memory
     try {
       const sessionRow = q.getPiSessionById(ctx.db, sessionId);

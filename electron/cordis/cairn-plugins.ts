@@ -615,8 +615,8 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
   const finish = (kind: "done" | "error", error?: string) => {
     if (ended) return;
     ended = true;
-    if (kind === "done") emit("pi-agent:done", {});
-    else emit("pi-agent:error", { error: error ?? "Agent error" });
+    if (kind === "done") emit("session:done", {});
+    else emit("session:error", { error: error ?? "Agent error" });
   };
   if (signal?.aborted) finish("done");
 
@@ -631,7 +631,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     // the renderer's toggle reflects the authoritative session state.
     if (event.type === "plan/mode") {
       const active = (event.data as { active?: boolean } | undefined)?.active === true;
-      emit("pi-agent:mode-change", { sessionId, mode: active ? "plan" : "execute" });
+      emit("session:mode-change", { sessionId, mode: active ? "plan" : "execute" });
       return;
     }
 
@@ -642,7 +642,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     // step boundaries.
     if (event.type === "turn/start") {
       if (!firstTurnStarted) firstTurnStarted = true;
-      else emit("pi-agent:step", {});
+      else emit("session:step", {});
       return;
     }
 
@@ -652,16 +652,16 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       if (!c) return;
       if (c.type === "text-delta" && c.text) {
         streamedText.add(sessionId);
-        emit("pi-agent:token", { delta: c.text });
+        emit("session:token", { delta: c.text });
         return;
       }
       if (c.type === "reasoning-delta" && c.text) {
         streamedReasoning.add(sessionId);
-        emit("pi-agent:thought", { delta: c.text });
+        emit("session:thought", { delta: c.text });
         return;
       }
       if (c.type === "usage" && c.usage) {
-        emit("pi-agent:usage", {
+        emit("session:usage", {
           promptTokens: c.usage.inputTokens ?? 0,
           completionTokens: c.usage.outputTokens ?? 0,
           reasoningTokens: c.usage.reasoningTokens ?? 0,
@@ -675,7 +675,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     if (event.type === "tool/call") {
       if (!toolsReadyFired) {
         toolsReadyFired = true;
-        emit("pi-agent:tools-ready", {});
+        emit("session:tools-ready", {});
       }
       const d = event.data as { name: string; arguments?: string; callId?: string };
       if (d.callId) callName.set(d.callId, d.name);
@@ -699,7 +699,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
         if (db) {
           try {
             updatePiSession(db, sessionId, { planContent: args.plan });
-            emit("pi-agent:plan-note", { noteId: undefined, planContent: args.plan });
+            emit("session:plan-note", { noteId: undefined, planContent: args.plan });
           } catch (err) {
             console.warn("[cordis] failed to persist plan_content:", err);
           }
@@ -708,7 +708,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 
       // "pending" chip (same as builtin onToolPending) — frontend treats it as a
       // running chip immediately, matching the streaming pending-state UX.
-      emit("pi-agent:tool", { name: d.name, label, args, callId, status: "pending" });
+      emit("session:tool", { name: d.name, label, args, callId, status: "pending" });
       return;
     }
 
@@ -723,7 +723,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       const label = callId ? (callLabel.get(callId) ?? name) : name;
       // ok = !isError and not a Cairn `{error:…}` return (same detection as builtin).
       const ok = !isError && resultContentError(output) === undefined;
-      emit("pi-agent:tool", {
+      emit("session:tool", {
         name, label, callId, status: "end", ok,
         output: isError ? undefined : output,
         args: undefined,
@@ -737,7 +737,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
           const parsed = JSON.parse(output) as { id?: string };
           if (parsed?.id) {
             const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
-            if (row) emit("pi-agent:note-updated", { noteId: parsed.id, content: row.content ?? "" });
+            if (row) emit("session:note-updated", { noteId: parsed.id, content: row.content ?? "" });
           }
         } catch { /* non-JSON output — ignore */ }
       }
@@ -746,7 +746,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       if (mode === "plan" && ok && name === "ensure_note") {
         try {
           const parsed = JSON.parse(output) as { id?: string };
-          if (parsed?.id) emit("pi-agent:plan-note", { noteId: parsed.id });
+          if (parsed?.id) emit("session:plan-note", { noteId: parsed.id });
         } catch { /* non-JSON output — ignore */ }
       }
 
@@ -763,7 +763,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
               }))
             : [];
           saveSessionTodos(db, sessionId, list);
-          emit("pi-agent:todos", { todos: getSessionTodos(db, sessionId) });
+          emit("session:todos", { todos: getSessionTodos(db, sessionId) });
         } catch { /* non-critical */ }
       }
       return;
@@ -773,11 +773,11 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     if (event.type === "assistant/message") {
       if (!streamedText.has(sessionId)) {
         const text = eventText(event);
-        if (text) emit("pi-agent:token", { delta: text });
+        if (text) emit("session:token", { delta: text });
       }
       if (!streamedReasoning.has(sessionId)) {
         const { reasoning } = eventReasoning(event);
-        if (reasoning) emit("pi-agent:thought", { delta: reasoning });
+        if (reasoning) emit("session:thought", { delta: reasoning });
       }
       return;
     }
@@ -785,7 +785,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     // ── Retry: dsh-llm-retry records a durable llm/retry before each wait ─────
     if (event.type === "llm/retry") {
       const d = event.data as { retry?: number; maxRetries?: number; delayMs?: number; failure?: { message?: string; code?: string } };
-      emit("pi-agent:retry", {
+      emit("session:retry", {
         attempt: (d.retry ?? 0) + 1,
         maxRetries: d.maxRetries ?? 0,
         delayMs: d.delayMs ?? 0,
@@ -796,7 +796,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 
     // ── Compaction: BasicCompactionEngine auto-compacts at 80% context ────────
     if (event.type === "compaction/start") {
-      emit("pi-agent:compact", { status: "start" });
+      emit("session:compact", { status: "start" });
       return;
     }
     if (event.type === "compaction/summary") {
@@ -811,9 +811,9 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
     if (event.type === "compaction/end") {
       // A failed close records an `error` on the end marker — don't claim success.
       const failed = (event.data as { error?: unknown }).error !== undefined;
-      emit("pi-agent:compact", { status: "end", auto: true });
+      emit("session:compact", { status: "end", auto: true });
       if (!failed) {
-        emit("pi-agent:compact-result", { messageCount: lastCompactCount, summary: lastCompactSummary });
+        emit("session:compact-result", { messageCount: lastCompactCount, summary: lastCompactSummary });
       }
       lastCompactSummary = "";
       lastCompactCount = 0;
@@ -940,7 +940,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const toolName = req?.toolName ?? "tool";
       const callId = req?.callId ?? `approve-${newId()}`;
       if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
-      send("pi-agent:tool-confirm-required", { sessionId, name: toolName, label: toolName, callId });
+      send("session:tool-confirm-required", { sessionId, name: toolName, label: toolName, callId });
       return new Promise<string>((resolve) => {
         // Single-settle guard: exactly one of respond / abort / timeout wins,
         // and the abort listeners never linger after a normal settle.
@@ -1007,7 +1007,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
         }
         timer = setTimeout(() => {
           if (settled) return;
-          send("pi-agent:tool-confirm-expired", { sessionId, name: toolName, label: toolName, callId });
+          send("session:tool-confirm-expired", { sessionId, name: toolName, label: toolName, callId });
           settle("cancelled");
         }, timeoutMs ?? APPROVAL_TIMEOUT_MS);
       });
@@ -1017,4 +1017,3 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
 
   return () => { for (const d of disposers) { try { d(); } catch { /* noop */ } } };
 }
-

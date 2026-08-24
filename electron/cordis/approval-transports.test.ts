@@ -55,7 +55,7 @@ describe("interactive confirm transport", () => {
     const { transport, sent } = makeDeps("px", { decide: () => ({ approved: true, grant: "session" }) });
     const outcome = await transport.confirm({ title: "Publish draft?", toolName: "publish_note", args: { id: "n1" } });
     expect(outcome).toBe<PluginConfirmOutcome>("allowed-once");
-    expect(events(sent, "pi-agent:tool")).toBe(2); // pending + end
+    expect(events(sent, "session:tool")).toBe(2); // pending + end
     expect(sent[0].payload).toMatchObject({ name: "publish_note", status: "pending" });
     expect(sent[sent.length - 1].payload).toMatchObject({ status: "end", ok: true });
     expect(getSessionGrants("px").tools.has("publish_note")).toBe(true);
@@ -74,7 +74,7 @@ describe("interactive confirm transport", () => {
     const outcome = await transport.confirm({ toolName: "deploy" });
     await new Promise((r) => setTimeout(r, 15));
     expect(outcome).toBe("cancelled");
-    expect(events(sent, "pi-agent:tool-confirm-expired")).toBe(1);
+    expect(events(sent, "session:tool-confirm-expired")).toBe(1);
     // The timeout won — no standing grant may leak through.
     expect(getSessionGrants("px").tools.has("deploy")).toBe(false);
     expect(sent[sent.length - 1].payload).toMatchObject({ status: "end", ok: false });

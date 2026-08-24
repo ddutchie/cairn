@@ -508,22 +508,22 @@ export async function runAutomation(
   const loopSend = (channel: string, payload: Record<string, unknown>) => {
     const name = payload.name as string | undefined;
     const status = payload.status as string | undefined;
-    if (channel === "pi-agent:tool-confirm-required" && typeof payload.callId === "string") {
+    if (channel === "session:tool-confirm-required" && typeof payload.callId === "string") {
       confirmToolByCallId.set(payload.callId as string, name ?? "tool");
       emitRun("toolConfirmRequired", { tool: name, callId: payload.callId, label: payload.label });
       return;
     }
-    if (channel === "pi-agent:token" && typeof payload.delta === "string") {
+    if (channel === "session:token" && typeof payload.delta === "string") {
       finalContent += payload.delta;
       emitRun("token", { delta: payload.delta });
       return;
     }
-    if (channel === "pi-agent:thought" && typeof payload.delta === "string") {
+    if (channel === "session:thought" && typeof payload.delta === "string") {
       log.thoughts += payload.delta;
       emitRun("thought", { delta: payload.delta });
       return;
     }
-    if (channel === "pi-agent:tool") {
+    if (channel === "session:tool") {
       const callId = payload.callId as string | undefined;
       // Prettify the tool label the same way chat/agent views do — raw MCP
       // names like mcp__<id>__search-designs become "Search designs" (or
@@ -541,7 +541,7 @@ export async function runAutomation(
       }
       return;
     }
-    if (channel === "pi-agent:usage") {
+    if (channel === "session:usage") {
       recordLlmUsage({
         source: "automation",
         sessionId: run.id,

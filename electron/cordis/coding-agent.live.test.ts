@@ -24,7 +24,7 @@ function makeDb(): Database.Database {
 }
 
 function collectTokens(sent: SentEvent[], sessionId: string): string {
-  return sent.filter((s) => s.channel === "pi-agent:token" && s.payload.sessionId === sessionId)
+  return sent.filter((s) => s.channel === "session:token" && s.payload.sessionId === sessionId)
     .map((s) => s.payload.delta as string).join("");
 }
 
@@ -71,14 +71,14 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
 
     const channels = sent.map((s) => s.channel);
     // Streaming tokens fired.
-    expect(channels.some((c) => c === "pi-agent:token")).toBe(true);
+    expect(channels.some((c) => c === "session:token")).toBe(true);
     // A write tool call was made and completed.
-    const toolEnds = sent.filter((s) => s.channel === "pi-agent:tool" && s.payload.status === "end");
+    const toolEnds = sent.filter((s) => s.channel === "session:tool" && s.payload.status === "end");
     expect(toolEnds.length).toBeGreaterThanOrEqual(1);
     // done fired exactly once.
-    expect(channels.filter((c) => c === "pi-agent:done").length).toBe(1);
+    expect(channels.filter((c) => c === "session:done").length).toBe(1);
     // No error.
-    expect(channels.some((c) => c === "pi-agent:error")).toBe(false);
+    expect(channels.some((c) => c === "session:error")).toBe(false);
     // Every event is scoped to the session id.
     for (const s of sent) expect(s.payload.sessionId).toBe(sessionId);
 
@@ -170,7 +170,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
     const send = (channel: string, payload: Record<string, unknown>) => {
       sent.push({ channel, payload });
       // Simulate the renderer approving the confirm dialog.
-      if (channel === "pi-agent:tool-confirm-required") {
+      if (channel === "session:tool-confirm-required") {
         const callId = String(payload.callId);
         setTimeout(() => pending.get(callId)?.({ approved: true }), 50);
       }
@@ -191,13 +191,13 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
     expect(r.ok).toBe(true);
 
     // A confirm was requested for the write tool.
-    const confirms = sent.filter((s) => s.channel === "pi-agent:tool-confirm-required");
+    const confirms = sent.filter((s) => s.channel === "session:tool-confirm-required");
     console.log("2E CONFIRMS:", JSON.stringify(confirms.map((c) => c.payload.name)));
     expect(confirms.length).toBeGreaterThanOrEqual(1);
     // The approved write actually ran → assert on the write tool's own success
     // signal (deterministic) and, when it names our target, that the file exists.
     const fs = await import("fs");
-    const writeEnd = sent.find((s) => s.channel === "pi-agent:tool" && s.payload.status === "end" && s.payload.name === "write");
+    const writeEnd = sent.find((s) => s.channel === "session:tool" && s.payload.status === "end" && s.payload.name === "write");
     expect(writeEnd?.payload.ok).toBe(true);
     if (fs.existsSync(target)) fs.rmSync(target, { force: true });
 
@@ -236,7 +236,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
     expect(r.ok).toBe(true);
 
     // The skill tool was called and completed.
-    const skillCalls = sent.filter((s) => s.channel === "pi-agent:tool" && s.payload.name === "skill");
+    const skillCalls = sent.filter((s) => s.channel === "session:tool" && s.payload.name === "skill");
     console.log("2I SKILL CALLS:", JSON.stringify(skillCalls.map((c) => c.payload.status)));
     expect(skillCalls.length).toBeGreaterThanOrEqual(1);
     // The model followed the loaded skill body.
@@ -315,7 +315,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
     // The write inside cwd was permitted (no sandbox denial). Assert on the
     // deterministic write tool-end ok signal AND, when the model used our exact
     // filename, that the file exists — robust to the model choosing another name.
-    const writeEnd = sent.find((s) => s.channel === "pi-agent:tool" && s.payload.status === "end" && s.payload.name === "write");
+    const writeEnd = sent.find((s) => s.channel === "session:tool" && s.payload.status === "end" && s.payload.name === "write");
     console.log("2J INSIDE writeEnd ok:", writeEnd?.payload.ok);
     expect(writeEnd?.payload.ok).toBe(true);
 

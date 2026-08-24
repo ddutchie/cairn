@@ -123,7 +123,7 @@ describe("cairnApprovalPlugin ask-classification", () => {
     expect((read as { kind: string }).kind).toBe("allow");
     const write = await invokeTool("write", { path: "a.ts", content: "x" });
     expect((write as { kind: string }).kind).toBe("ask");
-    expect(sent.some((s) => s.channel === "pi-agent:tool-confirm-required")).toBe(true);
+    expect(sent.some((s) => s.channel === "session:tool-confirm-required")).toBe(true);
   });
 
   it("keeps a grant:'session' alive across plugin re-mounts (turn boundary)", async () => {
@@ -131,14 +131,14 @@ describe("cairnApprovalPlugin ask-classification", () => {
     const turn1 = makeHarness("s2", { decide: () => ({ approved: true, grant: "session" }) });
     const asked = await turn1.invokeTool("bash", { command: "ls" });
     expect((asked as { kind: string }).kind).toBe("ask");
-    expect(turn1.sent.some((s) => s.channel === "pi-agent:tool-confirm-required")).toBe(true);
+    expect(turn1.sent.some((s) => s.channel === "session:tool-confirm-required")).toBe(true);
     turn1.dispose(); // simulate end of turn — the mount is disposed
 
     // Turn 2: fresh mount on a fresh ctx — the grant must still hold.
     const turn2 = makeHarness("s2");
     const result = await turn2.invokeTool("bash", { command: "ls -la /other" });
     expect((result as { kind: string }).kind).toBe("allow");
-    expect(turn2.sent.some((s) => s.channel === "pi-agent:tool-confirm-required")).toBe(false);
+    expect(turn2.sent.some((s) => s.channel === "session:tool-confirm-required")).toBe(false);
   });
 
   it("grant:'command' allows exactly the granted bash command, nothing broader", async () => {
@@ -149,11 +149,11 @@ describe("cairnApprovalPlugin ask-classification", () => {
     const { invokeTool, sent } = makeHarness("s3");
     const sameCmd = await invokeTool("bash", { command: "rm -rf build/" }); // whitespace differs only cosmetically
     expect((sameCmd as { kind: string }).kind).toBe("allow");
-    expect(sent.some((s) => s.channel === "pi-agent:tool-confirm-required")).toBe(false);
+    expect(sent.some((s) => s.channel === "session:tool-confirm-required")).toBe(false);
 
     const otherCmd = await invokeTool("bash", { command: "rm -rf dist/" });
     expect((otherCmd as { kind: string }).kind).toBe("ask");
-    expect(sent.some((s) => s.channel === "pi-agent:tool-confirm-required")).toBe(true);
+    expect(sent.some((s) => s.channel === "session:tool-confirm-required")).toBe(true);
   });
 });
 
@@ -216,7 +216,7 @@ describe("fail-closed timeouts (audit G6)", () => {
     });
     const result = await invokeTool("bash", { command: "cargo build" });
     await new Promise((r) => setTimeout(r, 15));
-    expect(sent.some((s) => s.channel === "pi-agent:tool-confirm-expired")).toBe(true);
+    expect(sent.some((s) => s.channel === "session:tool-confirm-expired")).toBe(true);
     // The timeout won the race — no standing grant may be recorded.
     expect(getSessionGrants("s1").tools.size).toBe(0);
     expect((result as { kind: string }).kind).toBe("ask");
@@ -244,7 +244,7 @@ describe("fail-closed timeouts (audit G6)", () => {
     });
     const result = await invokeTool("bash", { command: "ls" });
     expect((result as { kind: string }).kind).toBe("ask"); // asked…
-    expect(sent.some((s) => s.channel === "pi-agent:tool-confirm-expired")).toBe(false); // …answered, not expired
+    expect(sent.some((s) => s.channel === "session:tool-confirm-expired")).toBe(false); // …answered, not expired
     expect(getSessionGrants("s3").tools.has("bash")).toBe(true);
   });
 

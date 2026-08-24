@@ -213,7 +213,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
         send: questions.send,
         registerPending: questions.registerPending,
         // Coding renderer listens on pi-agent:ask-questions {sessionId,callId,questions}.
-        emitQuestions: (requestId: string, qs: unknown[]) => questions.send("pi-agent:ask-questions", { sessionId, callId: requestId, questions: qs }),
+        emitQuestions: (requestId: string, qs: unknown[]) => questions.send("session:ask-questions", { sessionId, callId: requestId, questions: qs }),
         signal,
       });
     }
@@ -306,8 +306,8 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     let resolveTerminal: (r: RunCordisCodingResult) => void = () => {};
     const terminal = new Promise<RunCordisCodingResult>((resolve) => { resolveTerminal = resolve; });
     const combinedSend = (channel: string, payload: Record<string, unknown>) => {
-      if (channel === "pi-agent:done") { resolveTerminal({ ok: true }); }
-      else if (channel === "pi-agent:error") { resolveTerminal({ ok: false, error: (payload.error as string) ?? "Agent error" }); }
+      if (channel === "session:done") { resolveTerminal({ ok: true }); }
+      else if (channel === "session:error") { resolveTerminal({ ok: false, error: (payload.error as string) ?? "Agent error" }); }
       send(channel, payload);
     };
 

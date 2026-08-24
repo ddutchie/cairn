@@ -42,7 +42,7 @@ function makeSandbox(): string {
 }
 
 const confirms = (sent: SentEvent[]) =>
-  sent.filter((s) => s.channel === "pi-agent:tool-confirm-required").map((s) => s.payload as { name?: string });
+  sent.filter((s) => s.channel === "session:tool-confirm-required").map((s) => s.payload as { name?: string });
 
 async function runTurn(opts: {
   db: Database.Database; cwd: string; sessionId: string;
@@ -81,7 +81,7 @@ async function runTurn(opts: {
 }
 
 const finalText = (sent: SentEvent[]) =>
-  sent.filter((s) => s.channel === "pi-agent:token")
+  sent.filter((s) => s.channel === "session:token")
     .map((s) => (s.payload as { delta?: string }).delta ?? "").join("");
 
 describe.skipIf(process.env.CORDIS_LIVE !== "1")("approval pipeline (LIVE, gated on CORDIS_LIVE=1) (SKIPPED by default)", () => {
@@ -91,7 +91,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("approval pipeline (LIVE, gated
     const sessionId = `pi-appr-${Date.now()}`;
     const sent: SentEvent[] = [];
     const send = (channel: string, payload: Record<string, unknown>) => {
-      if (channel === "pi-agent:token") return; // keep the log readable
+      if (channel === "session:token") return; // keep the log readable
       sent.push({ channel, payload });
     };
     clearSessionGrants(sessionId);
@@ -125,7 +125,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("approval pipeline (LIVE, gated
     console.log("[live] scenario2 RESULT:", JSON.stringify(r2), "| sentChannels:", sent.length);
     expect(r2.ok).toBe(true);
     const c2 = confirms(sent);
-    const toolEvents = sent.filter((s) => s.channel === "pi-agent:tool").map((s) => `${(s.payload as { name?: string }).name}:${(s.payload as { status?: string }).status}`);
+      const toolEvents = sent.filter((s) => s.channel === "session:tool").map((s) => `${(s.payload as { name?: string }).name}:${(s.payload as { status?: string }).status}`);
     console.log("[live] scenario2 confirm count:", c2.length, c2.map((c) => c.name));
     console.log("[live] scenario2 toolEvents:", toolEvents.join(","), "| text:", finalText(sent).slice(-80));
     console.log("[live] scenario2 files:", fs.existsSync(path.join(cwd, "a.txt")), fs.existsSync(path.join(cwd, "b.txt")));
@@ -199,7 +199,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("approval pipeline (LIVE, gated
     expect(r.ok).toBe(true);
     console.log("[live] scenario3 channels:", [...new Set(sent.map((s) => s.channel))].join(","));
     // The plugin ask rode the native card pipeline:
-    const chip = sent.find((s) => s.channel === "pi-agent:tool"
+      const chip = sent.find((s) => s.channel === "session:tool"
       && (s.payload as { name?: string }).name === "publish_summary"
       && (s.payload as { status?: string }).status === "pending");
     expect(chip).toBeTruthy();
