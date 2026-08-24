@@ -32,8 +32,9 @@ import CommandRuntime from "@deepseek-ai/dsh-commands";
 import planModePlugin from "@deepseek-ai/dsh-plan-mode";
 import { apply as toolSkillApply, inject as toolSkillInject, name as toolSkillName } from "@deepseek-ai/dsh-tool-skill";
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
-import { CairnAttachmentStore } from "./cairn-attachment-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
+import { LocalAttachmentStore } from "@deepseek-ai/dsh-attachment-local";
+import { app as electronApp } from "electron";
 import { createCairnSkillProvider } from "./cairn-skill-provider";
 import path from "path";
 
@@ -345,8 +346,12 @@ export async function getContext(): Promise<Context> {
     // are OWNED by the per-context fs chain (mountFsChain / mountCodingStack),
     // which the chat loop mounts lazily when plugins need ctx.fs and coding
     // turns adopt or own. See cordis-coding-tools.ts plugFsChain.
-    // Class-plugin (dsh Service subclass)
-    B["cairn:attachment-store"] = CairnAttachmentStore;
+    // Class-plugin (dsh Service subclass) — upstream's persistent
+    // content-addressed local attachment store. Replaces Cairn's previous
+    // in-memory CairnAttachmentStore (deleted with this change), which
+    // hand-rolled PNG/JPEG/WebP/GIF header parsing while upstream does it
+    // properly via sharp with normalization + compression limiting.
+    B["cairn:attachment-store"] = LocalAttachmentStore;
     // Named-export "triple" plugins (apply/inject/name — not default objects)
     B["cairn:llm-retry"] = { apply: llmRetryApply, inject: llmRetryInject, name: llmRetryName };
     B["cairn:subagent-spawn"] = { apply: spawnProviderApply, inject: spawnProviderInject, name: spawnProviderName };
@@ -376,9 +381,13 @@ export async function getContext(): Promise<Context> {
       // not Cairn's SQLite. Enables resumable sessions via ctx.agents.resume.
       { id: "session-persistence", name: "cordis:dsh:session-persistence", config: { root: sessionRoot } },
       { id: "agent-loop", name: "cordis:dsh:agent-loop", config: { agents: [] } },
-      // Durable attachment store (2l): concrete backend for the abstract dsh
-      // AttachmentStore so image attachments round-trip through the pi-ai adapter.
-      { id: "attachment-store", name: "cordis:cairn:attachment-store" },
+      // Durable attachment store (2l): upstream's LocalAttachmentStore
+      // (dsh-attachment-local) — persistent, content-addressed under
+      // <userData>/attachments — replaces Cairn's previous in-memory
+      // hand-rolled store. dshHome resolves to <userData>/dsh so app data
+      // stays under the Electron userData root; the store nests
+      // .dsh/attachments/... under that.
+      { id: "attachment-store", name: "cordis:cairn:attachment-store", config: { dshHome: path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "dsh") } },
       // Context management (2h): tokenMeter (pressure) + BasicCompactionEngine
       // (auto-compact at 80% + on overflow; manual /compact via compactNow) +
       // llm-retry (provider retryPolicy on the request-recovery seam).

@@ -1,128 +1,122 @@
 /**
- * Unit tests for CairnAttachmentStore + buildCordisUserContent (2l): image
- * dimension decoding, saveImage/readImage round-trip, and content-block
- * construction (image -> ImageBlock, PDF -> graceful text note, no store ->
- * text-only). No live model / no Cordis context beyond a fake `get`.
+ * Unit tests for buildCordisUserContent — Cairn's message-shaping helper
+ * that maps ChatRequest.images (image data URLs + PDFs) to dsh's user-
+ * message ContentBlock[]. The previous CairnAttachmentStore class was
+ * retired in favour of @deepseek-ai/dsh-attachment-local (see the docblock
+ * on cairn-attachment-store.ts).
+ *
+ * These tests fake the mounted attachment store rather than booting the
+ * real dsh one — we're guarding Cairn's shaping logic (data-URL parsing,
+ * text-first ordering, PDF degradation, no-store fallback), not the
+ * upstream store's image round-trip.
  */
-import { describe, it, expect } from "vitest";
-import { Context } from "@deepseek-ai/cordis";
-import { CairnAttachmentStore, buildCordisUserContent } from "./cairn-attachment-store";
+import { describe, it, expect, vi } from "vitest";
+import { buildCordisUserContent } from "./cairn-attachment-store";
 
-// 1x1 PNG and 1x1 GIF (valid headers, decodable dimensions).
-const PNG_1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-const GIF_1x1 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+const PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+const PDF_DATA_URL = "data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOfCg==";
 
-function makeStore(): CairnAttachmentStore {
-  // A real Cordis context — the Service base needs ctx.provide during construct.
-  return new CairnAttachmentStore(new Context());
-}
-
-/** A ctx whose get("attachments") returns the given store. */
+/** A fake ctx whose get("attachments") returns the given store shape. */
 function ctxWith(store: unknown) {
   return { get: (n: string) => (n === "attachments" ? store : undefined) } as never;
 }
 
-describe("CairnAttachmentStore", () => {
-  it("decodes PNG dimensions and round-trips bytes", async () => {
-    const store = makeStore();
-    const data = new Uint8Array(Buffer.from(PNG_1x1, "base64"));
-    const ref = await store.saveImage({ data, mediaType: "image/png", name: "a.png" });
-    expect(ref.width).toBe(1);
-    expect(ref.height).toBe(1);
-    expect(ref.mediaType).toBe("image/png");
-    expect(ref.bytes).toBe(data.byteLength);
-    const stored = await store.readImage(ref);
-    expect(Buffer.from(stored.data).equals(Buffer.from(data))).toBe(true);
-  });
-
-  it("readImageRequest returns the model-request version (dsh 0.1.1 attachment API)", async () => {
-    const store = makeStore();
-    const data = new Uint8Array(Buffer.from(PNG_1x1, "base64"));
-    const ref = await store.saveImage({ data, mediaType: "image/png" });
-    const req = await store.readImageRequest(ref, { maxPixels: 40_000_000, maxBytes: 3_500_000 });
-    // Bytes + metadata carried through (no re-encode — the stored bytes ARE the
-    // request version), and the pi-ai adapter's required fields are populated.
-    expect(Buffer.from(req.data).equals(Buffer.from(data))).toBe(true);
-    expect(req.mediaType).toBe("image/png");
-    expect([req.width, req.height]).toEqual([1, 1]);
-    expect(req.bytes).toBe(data.byteLength);
-    expect(req.depth).toBe("uchar");
-    expect(req.space).toBe("srgb");
-    expect(req.hasAlpha).toBe(true); // PNG can carry alpha
-    expect(String(req.variantId)).toMatch(/^[0-9a-f]{64}$/);
-    // variantId is deterministic over (attachmentId, policy).
-    const again = await store.readImageRequest(ref, { maxPixels: 40_000_000, maxBytes: 3_500_000 });
-    expect(String(again.variantId)).toBe(String(req.variantId));
-  });
-
-  it("decodes GIF dimensions", async () => {
-    const store = makeStore();
-    const data = new Uint8Array(Buffer.from(GIF_1x1, "base64"));
-    const ref = await store.saveImage({ data, mediaType: "image/gif" });
-    expect([ref.width, ref.height]).toEqual([1, 1]);
-  });
-
-  it("dedupes identical bytes to the same attachmentId", async () => {
-    const store = makeStore();
-    const data = new Uint8Array(Buffer.from(PNG_1x1, "base64"));
-    const a = await store.saveImage({ data, mediaType: "image/png" });
-    const b = await store.saveImage({ data, mediaType: "image/png" });
-    expect(String(a.attachmentId)).toBe(String(b.attachmentId));
-  });
-
-  it("rejects a media type that does not match the bytes", async () => {
-    const store = makeStore();
-    const data = new Uint8Array(Buffer.from(PNG_1x1, "base64"));
-    await expect(store.saveImage({ data, mediaType: "image/jpeg" })).rejects.toMatchObject({ code: "IMAGE_TYPE_MISMATCH" });
-  });
-
-  it("throws ATTACHMENT_NOT_FOUND for an unknown ref", async () => {
-    const store = makeStore();
-    await expect(
-      store.readImage({ attachmentId: "deadbeef" as never, mediaType: "image/png", bytes: 1, width: 1, height: 1 }),
-    ).rejects.toMatchObject({ code: "ATTACHMENT_NOT_FOUND" });
-  });
-});
+function makeFakeStore() {
+  const saveImage = vi.fn(async (input: { data: Uint8Array; mediaType: string; name?: string }) => ({
+    id: "att-1",
+    variantId: "orig",
+    mediaType: input.mediaType,
+    width: 1,
+    height: 1,
+    bytes: input.data.byteLength,
+    name: input.name,
+  }));
+  return {
+    saveImage,
+    imageLimits: { mediaTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"] },
+  };
+}
 
 describe("buildCordisUserContent", () => {
   it("returns text-only when there are no attachments", async () => {
-    const blocks = await buildCordisUserContent(ctxWith(makeStore()), "hello", undefined);
+    const blocks = await buildCordisUserContent(ctxWith(undefined), "hello", undefined);
     expect(blocks).toEqual([{ type: "text", text: "hello" }]);
   });
 
-  it("admits an image attachment into an ImageBlock", async () => {
-    const store = makeStore();
-    const blocks = await buildCordisUserContent(ctxWith(store), "look", [
-      { kind: "image", dataUrl: `data:image/png;base64,${PNG_1x1}`, name: "shot.png" },
+  it("returns text-only when the mounted store is missing (images silently dropped)", async () => {
+    const blocks = await buildCordisUserContent(ctxWith(undefined), "hello", [
+      { kind: "image", dataUrl: PNG_DATA_URL, name: "a.png" },
     ]);
-    expect(blocks[0]).toEqual({ type: "text", text: "look" });
+    expect(blocks).toEqual([{ type: "text", text: "hello" }]);
+  });
+
+  it("admits an image through the store and emits an ImageBlock after the text", async () => {
+    const store = makeFakeStore();
+    const blocks = await buildCordisUserContent(ctxWith(store), "look at this", [
+      { kind: "image", dataUrl: PNG_DATA_URL, name: "a.png" },
+    ]);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toEqual({ type: "text", text: "look at this" });
     expect(blocks[1].type).toBe("image");
-    const img = blocks[1] as { type: "image"; attachment: { width: number; mediaType: string } };
-    expect(img.attachment.width).toBe(1);
-    expect(img.attachment.mediaType).toBe("image/png");
+    expect(store.saveImage).toHaveBeenCalledOnce();
+    const arg = store.saveImage.mock.calls[0][0];
+    expect(arg.mediaType).toBe("image/png");
+    expect(arg.name).toBe("a.png");
   });
 
-  it("degrades a PDF to a text note (no document block in dsh)", async () => {
-    const blocks = await buildCordisUserContent(ctxWith(makeStore()), "read this", [
-      { kind: "pdf", dataUrl: "data:application/pdf;base64,cGRmYnl0ZXM=", name: "doc.pdf" },
+  it("degrades PDF attachments to a text notice (no document block in dsh yet)", async () => {
+    const store = makeFakeStore();
+    const blocks = await buildCordisUserContent(ctxWith(store), "read this", [
+      { kind: "pdf", dataUrl: PDF_DATA_URL, name: "report.pdf" },
     ]);
-    expect(blocks.length).toBe(2);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toEqual({ type: "text", text: "read this" });
     expect(blocks[1].type).toBe("text");
-    expect((blocks[1] as { text: string }).text).toContain("doc.pdf");
-    expect((blocks[1] as { text: string }).text.toLowerCase()).toContain("not yet supported");
+    expect((blocks[1] as { text: string }).text).toContain("PDF");
+    expect((blocks[1] as { text: string }).text).toContain("report.pdf");
+    expect(store.saveImage).not.toHaveBeenCalled();
   });
 
-  it("falls back to text-only when no attachment store is mounted", async () => {
-    const blocks = await buildCordisUserContent(ctxWith(undefined), "hi", [
-      { kind: "image", dataUrl: `data:image/png;base64,${PNG_1x1}` },
+  it("skips images with an unsupported media type (fail-soft, keep the turn alive)", async () => {
+    const store = makeFakeStore();
+    const blocks = await buildCordisUserContent(ctxWith(store), "hi", [
+      { kind: "image", dataUrl: "data:image/tiff;base64,AAAA", name: "x.tiff" },
+    ]);
+    expect(blocks).toEqual([{ type: "text", text: "hi" }]);
+    expect(store.saveImage).not.toHaveBeenCalled();
+  });
+
+  it("swallows a store rejection instead of failing the turn", async () => {
+    const store = {
+      ...makeFakeStore(),
+      saveImage: vi.fn(async () => {
+        throw new Error("too large");
+      }),
+    };
+    const blocks = await buildCordisUserContent(ctxWith(store), "hi", [
+      { kind: "image", dataUrl: PNG_DATA_URL, name: "a.png" },
     ]);
     expect(blocks).toEqual([{ type: "text", text: "hi" }]);
   });
 
-  it("omits (does not throw on) an unparseable attachment", async () => {
-    const blocks = await buildCordisUserContent(ctxWith(makeStore()), "hi", [
-      { kind: "image", dataUrl: "not-a-data-url" },
+  it("infers image vs pdf from the media type when kind is not set", async () => {
+    const store = makeFakeStore();
+    const blocks = await buildCordisUserContent(ctxWith(store), "look", [
+      { dataUrl: PNG_DATA_URL, name: "a.png" },
+      { dataUrl: PDF_DATA_URL, name: "r.pdf" },
+    ]);
+    // text + image + text-pdf-notice
+    expect(blocks).toHaveLength(3);
+    expect(blocks[1].type).toBe("image");
+    expect(blocks[2].type).toBe("text");
+  });
+
+  it("skips a data URL that doesn't parse (bad payload → text-only)", async () => {
+    const store = makeFakeStore();
+    const blocks = await buildCordisUserContent(ctxWith(store), "hi", [
+      { kind: "image", dataUrl: "notadataurl", name: "x" },
     ]);
     expect(blocks).toEqual([{ type: "text", text: "hi" }]);
+    expect(store.saveImage).not.toHaveBeenCalled();
   });
 });
