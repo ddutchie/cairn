@@ -177,10 +177,17 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   const handleClosePanel = useCallback(() => {
     if (!isRightPanel) {
+      // Center mode is visible independently of chatOpen. Return to drawer
+      // presentation first, then close the drawer only when it is open; this
+      // prevents "Close panel" from leaving the centered session on screen or
+      // opening a drawer that was never open.
+      setSessionPresentation("drawer");
       setView(lastContentView);
+      if (chatOpen) toggleChat();
+      return;
     }
     toggleChat();
-  }, [isRightPanel, setView, lastContentView, toggleChat]);
+  }, [chatOpen, isRightPanel, lastContentView, setSessionPresentation, setView, toggleChat]);
 
   // Listen for pop-in final state from the main process
   useEffect(() => {
