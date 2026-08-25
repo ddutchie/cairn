@@ -2,11 +2,22 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { SessionPopoutView } from "@/components/chat/SessionPopoutView";
+import { TitleBar } from "@/components/layout/title-bar";
+import { NotificationCenter } from "@/components/automations/notification-center";
 import { bindChatPopoutSession } from "../../../shared/agent/chat-popout";
 
 export default function ChatPopoutPage() {
   const [ready, setReady] = useState(false);
+  const { notificationOpen, setNotificationOpen, startNotificationPolling, stopNotificationPolling, startRunCountPolling, stopRunCountPolling } = useCairnStore(useShallow((s) => ({
+    notificationOpen: s.notificationOpen,
+    setNotificationOpen: s.setNotificationOpen,
+    startNotificationPolling: s.startNotificationPolling,
+    stopNotificationPolling: s.stopNotificationPolling,
+    startRunCountPolling: s.startRunCountPolling,
+    stopRunCountPolling: s.stopRunCountPolling,
+  })));
 
   const [session, setSession] = useState<ReturnType<typeof bindChatPopoutSession>>(null);
 
@@ -47,9 +58,22 @@ export default function ChatPopoutPage() {
     return () => { unsub?.(); };
   }, [handlePopIn]);
 
+  // The popout has its own renderer/store instance, so it must start the same
+  // feeds that drive the shared title-bar badges in the main window.
+  useEffect(() => {
+    startRunCountPolling();
+    if (window.electron?.notification) startNotificationPolling();
+    return () => {
+      stopRunCountPolling();
+      stopNotificationPolling();
+    };
+  }, [startNotificationPolling, stopNotificationPolling, startRunCountPolling, stopRunCountPolling]);
+
   return (
     <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
+      <TitleBar />
       {ready && session && <SessionPopoutView {...session} onPopIn={handlePopIn} />}
+      {notificationOpen && <NotificationCenter onClose={() => setNotificationOpen(false)} />}
     </main>
   );
 }

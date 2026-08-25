@@ -3,7 +3,7 @@
 import React from "react";
 import { Check, Copy, FileText, FolderOpen, Kanban, RotateCcw, Search } from "lucide-react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { cn, formatRelative } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { ThinkingPanel } from "@/components/chat/chat-panel/ThinkingPanel";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
@@ -102,7 +102,6 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
           </div>
         )}
         <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "")}>
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(message.createdAt)}</span>
           <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5 transition-opacity">
             <button onClick={() => copy(message.content)} title="Copy" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
               {copied ? <Check size={10} className="text-[var(--success)]" /> : <Copy size={10} />}

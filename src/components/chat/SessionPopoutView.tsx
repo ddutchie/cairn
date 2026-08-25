@@ -71,6 +71,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
   }
 
   return <ConversationPane
+    className="chat-themed"
     sessionId={sessionId}
     profile={profile}
     messages={displayMessages}
@@ -81,6 +82,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
     isLoading={isLoading}
     historyLoader={loadHistory}
     onHistoryLoaded={handleHistoryLoaded}
+    centered={profile === "chat"}
     title={<span className="text-[0.714rem] font-semibold text-[var(--text-primary)]">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>}
     contextLimit={aiConfig.contextLimit ?? 128000}
     actions={<button onClick={onPopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Return session to main window"><ArrowLeftFromLine size={11} /></button>}

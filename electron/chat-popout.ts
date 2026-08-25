@@ -35,9 +35,15 @@ let mainWindowWebContentsId: number | null = null;
 
 function loadPopupUrl(win: BrowserWindow): void {
   if (isDev) {
-    win.loadURL("http://localhost:3000/chat");
+    // The popout has its own renderer and can otherwise retain an older
+    // document after the Next dev server has rebuilt /chat. Clear this
+    // renderer's cache and use a unique URL for every new window.
+    const url = `http://localhost:3000/chat?popout=${Date.now()}`;
+    void win.webContents.session.clearCache().finally(() => {
+      if (!win.isDestroyed()) void win.loadURL(url);
+    });
   } else {
-    win.loadURL("app://./chat/index.html");
+    void win.loadURL("app://./chat/index.html");
   }
 }
 
@@ -47,12 +53,25 @@ export function createChatPopoutWindow(): BrowserWindow {
     return popoutWindow;
   }
 
+  const isWin = process.platform === "win32";
   const win = new BrowserWindow({
     width: 420,
     height: 640,
     minWidth: 320,
     minHeight: 400,
     title: "Cairn Chat",
+    // Match the main window: the native title text is hidden and the shared
+    // React TitleBar owns the visible chrome. On macOS this leaves the traffic
+    // lights inset over the first 40px of content; on Windows the native
+    // controls are overlaid into the same custom bar.
+    titleBarStyle: isWin ? "hidden" : "hiddenInset",
+    ...(isWin && {
+      titleBarOverlay: {
+        color: "#141414",
+        symbolColor: "#888888",
+        height: 39,
+      },
+    }),
     alwaysOnTop: true,
     backgroundColor: "#0d0d0d",
     webPreferences: {
@@ -64,6 +83,11 @@ export function createChatPopoutWindow(): BrowserWindow {
   });
 
   loadPopupUrl(win);
+  // Match the main window's development workflow: the popout has its own
+  // WebContents, so DevTools must be opened explicitly for this window.
+  if (isDev && process.env.CAIRN_NO_DEVTOOLS !== "1") {
+    win.webContents.openDevTools({ mode: "detach" });
+  }
 
   const popoutWebContentsId = win.webContents.id;
 

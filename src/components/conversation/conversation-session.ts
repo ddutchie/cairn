@@ -18,7 +18,9 @@ export function unwrapSessionMessages(value: unknown): SessionMessage[] {
 }
 
 export function normalizeSessionMessages(value: unknown): ConversationMessage[] {
-  return unwrapSessionMessages(value).map(toConversationMessage);
+  // Do not pass toConversationMessage directly: Array#map supplies the item
+  // index as its second argument, which this mapper reserves for extraContent.
+  return unwrapSessionMessages(value).map((message) => toConversationMessage(message));
 }
 
 /** Apply an approval projection without coupling callers to a profile store. */

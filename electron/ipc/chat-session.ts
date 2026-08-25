@@ -25,7 +25,9 @@ function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessag
     reasoningModel: m.reasoningModel,
     toolCalls: m.toolCalls && m.toolCalls.length ? m.toolCalls.map((tc) => ({ ...tc, status: "done" as const })) : undefined,
     subagents: (m as ReplayMessage & { subagents?: ReplaySubagent[] }).subagents,
-    createdAt: new Date().toISOString(),
+    // ReplayMessage does not currently preserve event timestamps. Do not stamp
+    // every historical message with "now"; the renderer will omit the label.
+    createdAt: "",
   } as ChatMessage));
 }
 

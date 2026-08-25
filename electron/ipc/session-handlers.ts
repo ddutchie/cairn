@@ -26,7 +26,9 @@ function toAgentMessages(messages: ReplayMessage[]) {
       ? m.toolCalls.map((tc) => ({ callId: tc.callId, name: tc.tool, label: tc.label, args: tc.args, output: tc.output, ok: tc.ok !== false, running: false }))
       : null),
     subagents: ((m as ReplayMessage & { subagents?: ReplaySubagent[] }).subagents ?? null),
-    timestamp: new Date().toISOString(),
+    // ReplayMessage does not currently preserve event timestamps. Do not stamp
+    // every historical message with "now"; the renderer will omit the label.
+    timestamp: "",
   }));
 }
 
