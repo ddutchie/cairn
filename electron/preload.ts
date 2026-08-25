@@ -928,6 +928,8 @@ const api = {
        *  plan under review isn't lost. */
       pendingQuestions?: Array<{ callId: string; questions: Array<{ id: string; [k: string]: unknown }> }>;
     }>("session:is-running", { sessionId }),
+    /** Bulk snapshot of session ids whose loop is in flight right now. */
+    runningIds: () => invoke<{ ids: string[] }>("session:running-ids", {}),
     /** Abort the current in-flight turn for this session. */
     abort: (sessionId: string) => ipcRenderer.send("session:abort", { sessionId }),
     /** Clear message history for a session (start fresh). */

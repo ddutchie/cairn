@@ -26,6 +26,7 @@ import { SessionMount } from "./SessionMount";
 import { TerminalTab } from "./TerminalTab";
 import { AgentEmptyState } from "./AgentEmptyState";
 import { useAgentSessionActions } from "./useAgentSessionActions";
+import { SessionBrowser } from "./SessionBrowser";
 import { chatSessionId } from "../../../shared/agent/session-identity";
 
 interface SessionPaneProps {
@@ -224,7 +225,11 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Tab bar */}
       <div className="flex items-center h-11 border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)]">
-        <div className="flex-1 flex items-center overflow-x-auto min-w-0 h-full">
+        {/* Session switcher — swap between this project's chat/coding/terminal
+            sessions without leaving the chat area. Fills the bar; terminal tabs
+            (when present) sit to its right. */}
+        <SessionBrowser activeSessionId={activeSessionId} variant="dropdown" />
+        <div className="flex items-center overflow-x-auto min-w-0 h-full flex-shrink">
           {ptySessions.map((session) => (
             <TerminalTab
               key={session.sessionId}

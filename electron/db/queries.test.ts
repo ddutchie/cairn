@@ -67,6 +67,9 @@ import {
   saveSessionTodos,
   getSessionTodos,
   deleteCodingSession,
+  reconcileInterruptedCodingSessions,
+  getCodingSessionById,
+  updateCodingSession,
   upsertSessionProfile,
   getSessionProfile,
 } from "./queries";
@@ -1294,6 +1297,34 @@ describe("clearMcpNotifications", () => {
     expect(clearMcpNotifications(db)).toBe(2);
     expect(listMcpNotifications(db)).toHaveLength(0);
     expect(countUnreadMcpNotifications(db)).toBe(0);
+  });
+});
+
+describe("reconcileInterruptedCodingSessions", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+    seedProject(db);
+  });
+
+  it("flips orphaned 'running' sessions to 'exited' and leaves closed ones alone", () => {
+    createCodingSession(db, { id: "live", projectId: "proj1", taskTitle: "Live", cwd: "/tmp", mode: "execute", spawnedAt: "2026-08-10T00:00:00.000Z" });
+    createCodingSession(db, { id: "closed", projectId: "proj1", taskTitle: "Closed", cwd: "/tmp", mode: "execute", spawnedAt: "2026-08-10T00:00:00.000Z" });
+    updateCodingSession(db, "closed", { status: "exited" });
+
+    const reconciled = reconcileInterruptedCodingSessions(db);
+
+    expect(reconciled).toBe(1);
+    expect(getCodingSessionById(db, "live")!.status).toBe("exited");
+    expect(getCodingSessionById(db, "closed")!.status).toBe("exited");
+  });
+
+  it("returns 0 when nothing is running", () => {
+    createCodingSession(db, { id: "s1", projectId: "proj1", taskTitle: "S1", cwd: "/tmp", mode: "execute", spawnedAt: "2026-08-10T00:00:00.000Z" });
+    updateCodingSession(db, "s1", { status: "exited" });
+    expect(reconcileInterruptedCodingSessions(db)).toBe(0);
   });
 });
 

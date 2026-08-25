@@ -1700,6 +1700,19 @@ export function deleteCodingSession(db: Database.Database, sessionId: string) {
   db.prepare("DELETE FROM agent_session_metadata WHERE id = ?").run(sessionId);
 }
 
+/**
+ * Mark every coding session still stuck in 'running' as 'exited'. A session's
+ * status is set to 'running' on creation and only flipped to 'exited' on a
+ * clean close, so a crash / quit / dev reload mid-session leaves the row
+ * 'running' forever — which the session browser would otherwise paint as a
+ * live "active" session indefinitely. Called once on startup, mirroring the
+ * automation runs' recoverInterruptedRuns. Returns the number reconciled.
+ */
+export function reconcileInterruptedCodingSessions(db: Database.Database): number {
+  const info = db.prepare("UPDATE agent_session_metadata SET status = 'exited', updated_at = ? WHERE status = 'running'").run(ts());
+  return info.changes;
+}
+
 // ── Coding Agent Messages ───────────────────────────────────────────────────────────────
 
 

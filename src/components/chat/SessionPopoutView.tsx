@@ -1,19 +1,211 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { ArrowLeftFromLine } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeftFromLine, ChevronDown, ChevronRight, Code2, MessageSquare, PanelLeftClose, PanelLeftOpen, Terminal } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { cn, formatDateCompact } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
 import type { ConversationMessage } from "@/components/conversation/conversation-message";
-import { type ChatPopoutPayload } from "../../../shared/agent/chat-popout";
+import { type ChatPopoutPayload, type SessionPopoutProfile } from "../../../shared/agent/chat-popout";
 import { normalizeSessionMessages, applyApprovalProjection } from "@/components/conversation/conversation-session";
 import { useSessionConversation } from "@/hooks/useSessionConversation";
+import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
+import type { SessionKind } from "@/types";
 
 type Props = ChatPopoutPayload & { onPopIn: () => void };
 
-/** One session-bound conversation surface for both Chat and Coding profiles. */
+/** The session the popout is currently bound to. Starts from the handoff and
+ *  changes as the user picks another project/session in the left panel. */
+interface PopoutSelection {
+  sessionId: string;
+  profile: SessionPopoutProfile;
+  activeProjectId: string | null;
+  workspaceId: string | null;
+  cwd: string | null;
+}
+
+function SessionTypeIcon({ kind, size }: { kind: SessionKind; size: number }) {
+  if (kind === "chat") return <MessageSquare size={size} />;
+  if (kind === "coding") return <Code2 size={size} />;
+  return <Terminal size={size} />;
+}
+
+function kindLabel(kind: SessionKind): string {
+  if (kind === "chat") return "Chat";
+  if (kind === "coding") return "Coding";
+  return "Terminal";
+}
+
+/** Map a registry session to the profile/runtime shape the popout pane binds to. */
+function toSelection(session: SessionSummary, workspaceId: string | null): PopoutSelection {
+  return {
+    sessionId: session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId,
+    profile: session.kind === "coding" ? "coding" : "chat",
+    activeProjectId: session.projectId || null,
+    workspaceId,
+    cwd: null,
+  };
+}
+
 export function SessionPopoutView({ sessionId, activeProjectId, profile, workspaceId, cwd, onPopIn }: Props) {
+  const { projects, workspaces, chatThreads, chatMessages, codingSessionHistory, terminalSessions, fetchCodingSessionHistoryForProjects, loadChatFromDb } = useCairnStore(useShallow((s) => ({
+    projects: s.projects,
+    workspaces: s.workspaces,
+    chatThreads: s.chatThreads,
+    chatMessages: s.chatMessages,
+    codingSessionHistory: s.codingSessionHistory,
+    terminalSessions: s.terminalSessions,
+    fetchCodingSessionHistoryForProjects: s.fetchCodingSessionHistoryForProjects,
+    loadChatFromDb: s.loadChatFromDb,
+  })));
+
+  const [selection, setSelection] = useState<PopoutSelection>({ sessionId, profile, activeProjectId, workspaceId, cwd });
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(activeProjectId ? [activeProjectId] : []));
+
+  // The popout hydrates via the refresh path, which skips chat-thread loading
+  // (that only runs on a cold hydrate). Load this workspace's chat threads so
+  // the browser lists chat sessions, not just coding ones.
+  useEffect(() => {
+    if (selection.workspaceId) void loadChatFromDb(selection.workspaceId);
+  }, [selection.workspaceId, loadChatFromDb]);
+
+  // Pull coding-session history for every project in the workspace so the tree
+  // can list coding sessions, not just chat threads (hydration only loads chats).
+  useEffect(() => {
+    const ids = projects
+      .filter((project) => !selection.workspaceId || project.workspaceId === selection.workspaceId)
+      .map((project) => project.id);
+    if (ids.length) void fetchCodingSessionHistoryForProjects(ids);
+  }, [projects, selection.workspaceId, fetchCodingSessionHistoryForProjects]);
+
+  const workspaceProjects = useMemo(
+    () => projects.filter((project) => !selection.workspaceId || project.workspaceId === selection.workspaceId),
+    [projects, selection.workspaceId],
+  );
+
+  const sessionsByProject = useMemo(() => {
+    const map = new Map<string, SessionSummary[]>();
+    for (const project of workspaceProjects) {
+      map.set(project.id, buildSessionRegistry({
+        chatThreads,
+        chatMessages,
+        codingSessions: codingSessionHistory,
+        terminalSessions,
+        projectId: project.id,
+      }));
+    }
+    return map;
+  }, [workspaceProjects, chatThreads, chatMessages, codingSessionHistory, terminalSessions]);
+
+  const workspaceName = workspaces.find((w) => w.id === selection.workspaceId)?.name;
+
+  const pickSession = useCallback((session: SessionSummary) => {
+    // Coding sessions need their cwd for the runtime prompt; the registry summary
+    // does not carry it, so resolve it from the coding history here.
+    const cwd = session.kind === "coding"
+      ? codingSessionHistory.find((candidate) => candidate.id === session.sourceId)?.cwd ?? null
+      : null;
+    setSelection({ ...toSelection(session, selection.workspaceId), cwd });
+    setBrowserOpen(false);
+  }, [selection.workspaceId, codingSessionHistory]);
+
+  const toggleProject = useCallback((projectId: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) next.delete(projectId); else next.add(projectId);
+      return next;
+    });
+  }, []);
+
+  return (
+    <div className="flex flex-1 min-h-0">
+      {browserOpen && (
+        <aside className="flex flex-col w-60 flex-shrink-0 border-r border-[var(--border)] bg-[var(--surface)] min-h-0">
+          <div className="flex items-center justify-between h-9 px-3 border-b border-[var(--border)] flex-shrink-0">
+            <span className="text-[0.714rem] font-semibold text-[var(--text-secondary)] truncate">{workspaceName ?? "Sessions"}</span>
+            <Tooltip content="Hide session browser" side="bottom">
+              <button onClick={() => setBrowserOpen(false)} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Hide session browser">
+                <PanelLeftClose size={13} />
+              </button>
+            </Tooltip>
+          </div>
+          <div className="flex-1 overflow-y-auto py-1.5 min-h-0">
+            {workspaceProjects.length === 0 ? (
+              <p className="px-3 py-4 text-center text-[0.714rem] text-[var(--text-tertiary)]">No projects</p>
+            ) : workspaceProjects.map((project) => {
+              const sessions = sessionsByProject.get(project.id) ?? [];
+              const isOpen = expanded.has(project.id);
+              return (
+                <div key={project.id} className="px-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleProject(project.id)}
+                    className="flex items-center gap-1.5 w-full rounded-md px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+                  >
+                    {isOpen ? <ChevronDown size={12} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="text-[var(--text-tertiary)]" />}
+                    <span className="truncate font-medium">{project.name}</span>
+                    <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">{sessions.length}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="ml-2 border-l border-[var(--border-subtle)] pl-1.5 space-y-0.5">
+                      {sessions.length === 0 ? (
+                        <p className="px-2 py-1.5 text-[0.714rem] text-[var(--text-tertiary)]">No sessions</p>
+                      ) : sessions.map((session) => {
+                        const selfId = session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId;
+                        const selected = selfId === selection.sessionId;
+                        return (
+                          <button
+                            key={session.id}
+                            type="button"
+                            onClick={() => pickSession(session)}
+                            className={cn(
+                              "flex items-center gap-2 w-full rounded-md border-l-2 px-2 py-1.5 text-left transition-colors",
+                              selected ? "border-l-[var(--accent)] bg-[var(--accent-dim)]" : "border-l-transparent hover:bg-[var(--surface-2)]",
+                            )}
+                          >
+                            <span className={cn("flex-shrink-0", selected ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+                              <SessionTypeIcon kind={session.kind} size={13} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs text-[var(--text-primary)]">{session.title}</span>
+                              <span className="block text-[0.714rem] text-[var(--text-tertiary)]">{kindLabel(session.kind)} · {formatDateCompact(session.updatedAt)}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </aside>
+      )}
+      <SessionPopoutConversation
+        key={selection.sessionId}
+        selection={selection}
+        browserOpen={browserOpen}
+        onToggleBrowser={() => setBrowserOpen((v) => !v)}
+        onPopIn={onPopIn}
+      />
+    </div>
+  );
+}
+
+interface ConversationProps {
+  selection: PopoutSelection;
+  browserOpen: boolean;
+  onToggleBrowser: () => void;
+  onPopIn: () => void;
+}
+
+/** The session-bound conversation. Keyed by session id so switching sessions in
+ *  the browser cleanly remounts the pane, transcript, and live-event hook. */
+function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, onPopIn }: ConversationProps) {
+  const { sessionId, profile, activeProjectId, workspaceId, cwd } = selection;
   const threadId = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
   const { aiConfig, agentConfig, projects } = useCairnStore(useShallow((s) => ({ aiConfig: s.aiConfig, agentConfig: s.agentConfig, projects: s.projects })));
   const project = projects.find((item) => item.id === activeProjectId);
@@ -55,7 +247,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
       }
     }).catch(() => undefined);
     return () => { cancelled = true; };
-    // The handed-off session is immutable for this window.
+    // The bound session is fixed for this mount (switching remounts via key).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
@@ -83,9 +275,22 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
     historyLoader={loadHistory}
     onHistoryLoaded={handleHistoryLoaded}
     centered={profile === "chat"}
-    title={<span className="text-[0.714rem] font-semibold text-[var(--text-primary)]">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>}
+    title={(
+      <div className="flex items-center gap-1.5 min-w-0">
+        <Tooltip content={browserOpen ? "Hide session browser" : "Show session browser"} side="bottom">
+          <button onClick={onToggleBrowser} className="p-1 -ml-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label={browserOpen ? "Hide session browser" : "Show session browser"}>
+            {browserOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}
+          </button>
+        </Tooltip>
+        <span className="text-[0.714rem] font-semibold text-[var(--text-primary)] truncate">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>
+      </div>
+    )}
     contextLimit={aiConfig.contextLimit ?? 128000}
-    actions={<button onClick={onPopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Return session to main window"><ArrowLeftFromLine size={11} /></button>}
+    actions={(
+      <Tooltip content="Return session to main window" side="bottom">
+        <button onClick={onPopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Return session to main window"><ArrowLeftFromLine size={11} /></button>
+      </Tooltip>
+    )}
     projection={{ pendingQuestions, questionCallId: pendingQuestionCallId }}
     onAnswerQuestions={sessionConversation.answerQuestions}
     placeholder={profile === "coding" ? "Ask about your code…" : "Ask about your project…"}

@@ -31,7 +31,7 @@ import { setSessionRoot } from "./cordis/run-cordis-loop";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
-import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies } from "./db/queries";
+import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions } from "./db/queries";
 import { recoverInterruptedRuns } from "./db/automation-queries";
 import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
@@ -514,6 +514,18 @@ app.whenReady().then(async () => {
     if (recovered > 0) console.log(`[heartbeat] recovered ${recovered} interrupted automation run(s)`);
   } catch (err) {
     console.warn("[heartbeat] failed to recover interrupted runs:", err);
+  }
+
+  // Coding sessions default to 'running' on creation and only flip to 'exited'
+  // on a clean close, so a crash / quit / dev reload mid-session leaves a stale
+  // 'running' row the session browser would paint as "active" forever. Flip any
+  // orphaned rows to 'exited' — the loop set in the main process is the only
+  // source of truth for genuinely-live sessions.
+  try {
+    const reconciled = reconcileInterruptedCodingSessions(ctx.db);
+    if (reconciled > 0) console.log(`[session] reconciled ${reconciled} interrupted coding session(s)`);
+  } catch (err) {
+    console.warn("[session] failed to reconcile interrupted coding sessions:", err);
   }
   const heartbeatScheduler = new HeartbeatScheduler({
     dbGetter: () => ctx.db,

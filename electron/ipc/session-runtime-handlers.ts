@@ -412,6 +412,15 @@ export function registerSessionRuntimeHandlers(
     };
   });
 
+  // ── session:running-ids ───────────────────────────────────────────────────
+  // Bulk snapshot of every session whose loop is genuinely in flight right now.
+  // Session-browser rows use this to show a live "active" state instead of the
+  // persisted `running` metadata flag, which goes stale when a session is never
+  // cleanly closed. Cheap: just materialises the in-memory Set.
+  registerIpcHandle("session:running-ids", () => {
+    return { ids: Array.from(runningLoops) };
+  });
+
   // ── pi-agent:context-ring ─────────────────────────────────────────────────
   // Reasoning-provenance snapshot ("whose thinking is in context") for the
   // agent panel's ring badge. Unavailable → renderer hides the pill.
