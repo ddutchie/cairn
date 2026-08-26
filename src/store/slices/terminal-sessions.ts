@@ -725,6 +725,8 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
       set({ codingSessionHistory: history });
     } catch (err) {
       console.error("[coding-sessions] fetchCodingSessionHistory error", err);
+      const message = err instanceof Error ? err.message : String(err);
+      window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: `Failed to load coding sessions: ${message}` } }));
     }
   },
 
@@ -740,6 +742,8 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
       set({ codingSessionHistory: merged });
     } catch (err) {
       console.error("[coding-sessions] project history fetch error", err);
+      const message = err instanceof Error ? err.message : String(err);
+      window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: `Failed to load coding sessions: ${message}` } }));
     }
   },
 

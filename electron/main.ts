@@ -204,6 +204,10 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // H7: sandbox:false widens the renderer blast radius (no OS-level sandbox).
+      // TODO: roadmap to sandbox:true — requires auditing preload exposure and
+      // moving sqlite/native work to a utilityProcess. Tracked separately; don't
+      // flip this flag without that hardening.
       sandbox: false,
     },
   });

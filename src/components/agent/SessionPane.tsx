@@ -11,7 +11,7 @@
  * preserve IPC subscriptions, scroll position, and React state.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { X, Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2 } from "lucide-react";
 import { useCairnStore } from "@/store";
@@ -91,8 +91,15 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
         setNewMenuOpen(false);
       }
     }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setNewMenuOpen(false);
+    }
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, [newMenuOpen]);
 
   function handleNewChatThread() {
@@ -108,13 +115,25 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     await handleNewSession();
   }
 
+  // Memoized project ids key — avoids refetch loop when `projects` array
+  // identity changes on every hydrate (store replaces array reference).
+  const projectIdsKey = useMemo(() => {
+    if (!activeWorkspaceId) return "";
+    return projects
+      .filter((p) => p.workspaceId === activeWorkspaceId)
+      .map((p) => p.id)
+      .sort()
+      .join(",");
+  }, [projects, activeWorkspaceId]);
+  const prevProjectIdsKeyRef = useRef<string>("");
   useEffect(() => {
     if (!activeWorkspaceId) return;
-    const projectIds = projects
-      .filter((project) => project.workspaceId === activeWorkspaceId)
-      .map((project) => project.id);
-    void fetchCodingSessionHistoryForProjects(projectIds);
-  }, [activeWorkspaceId, fetchCodingSessionHistoryForProjects, projects]);
+    if (projectIdsKey === prevProjectIdsKeyRef.current) return;
+    prevProjectIdsKeyRef.current = projectIdsKey;
+    const ids = projectIdsKey ? projectIdsKey.split(",") : [];
+    if (ids.length === 0) return;
+    void fetchCodingSessionHistoryForProjects(ids);
+  }, [activeWorkspaceId, fetchCodingSessionHistoryForProjects, projectIdsKey]);
 
   const handleClose = useCallback((sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -162,7 +181,9 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   const handlePopOut = useCallback(async () => {
     const state = useCairnStore.getState();
     const isChat = state.activeSessionId === "chat";
-    const coding = state.terminalSessions.find((session) => (session.sessionId === state.activeSessionId || state.activeSessionId === "agent" && session.sessionId === state.activeCodingSessionId) && session.sessionType === "coding");
+    // Single lookup: resolve the coding session id once (handles the "agent" alias)
+    const codingSessionId = state.activeSessionId === "agent" ? state.activeCodingSessionId : state.activeSessionId;
+    const coding = codingSessionId ? state.terminalSessions.find((s) => s.sessionId === codingSessionId && s.sessionType === "coding") : undefined;
     const sessionId = isChat ? (state.activeChatThreadId ? chatSessionId(state.activeChatThreadId) : null) : coding?.sessionId;
     if (!sessionId) return;
     const project = state.projects.find((item) => item.id === (coding?.projectId ?? state.activeProjectId));
@@ -172,9 +193,18 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
       profile: isChat ? "chat" : coding?.role === "automation-dev" ? "automation-dev" : "coding",
       workspaceId: project?.workspaceId ?? state.activeWorkspaceId,
       cwd: coding?.cwd ?? null,
-    });
+    }) as { ok: boolean; reason?: string } | undefined;
     if (result?.ok) {
       setChatPoppedOut(true);
+    } else if (result && !result.ok) {
+      const reason = result.reason ?? "unknown";
+      const message =
+        reason === "profile-mismatch"
+          ? "Pop-out failed — profile mismatch"
+          : reason === "invalid-payload"
+            ? "Pop-out failed — invalid session"
+            : `Pop-out failed — ${reason}`;
+      window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message } }));
     }
   }, [setChatPoppedOut]);
 
@@ -229,7 +259,11 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
             sessions without leaving the chat area. Fills the bar; terminal tabs
             (when present) sit to its right. */}
         <SessionBrowser activeSessionId={activeSessionId} variant="dropdown" />
-        <div className="flex items-center overflow-x-auto min-w-0 h-full flex-shrink">
+        <div
+          className="flex items-center gap-0 flex-1 min-w-0 h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-[var(--border)] scrollbar-track-transparent hover:scrollbar-thumb-[var(--text-tertiary)] [scrollbar-width:thin] [scrollbar-gutter:stable]"
+          style={{ scrollbarWidth: "thin" }}
+          aria-label="Terminal tabs"
+        >
           {ptySessions.map((session) => (
             <TerminalTab
               key={session.sessionId}

@@ -390,13 +390,13 @@ const api = {
     compactThread: (req: unknown) => invoke("chat:compactThread", req),
     // ── Pop-out window ──────────────────────────
     /** Called by main window: sends current chat state, triggers window creation. */
-      popOut: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }) => invoke<{ ok: boolean }>("chat:popOut", payload),
+      popOut: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }) => invoke<{ ok: boolean; reason?: string }>("chat:popOut", payload),
     /** Called by pop-out page: signals readiness, returns the shared session id. */
-      popoutReady: () => invoke<{ sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }>("chat:popoutReady"),
+      popoutReady: () => invoke<{ sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null; reason?: string }>("chat:popoutReady"),
     /** Called by pop-out page: closes the window; session state is not copied. */
-    popIn: (payload: { sessionId: string }) => invoke<{ ok: boolean }>("chat:popIn", payload),
+    popIn: (payload: { sessionId: string }) => invoke<{ ok: boolean; reason?: string }>("chat:popIn", payload),
     /** Called by main window: asks the pop-out to return (relayed via main process). */
-    requestPopIn: () => invoke<{ ok: boolean }>("chat:requestPopIn"),
+    requestPopIn: () => invoke<{ ok: boolean; reason?: string }>("chat:requestPopIn"),
     /** Listener on the main window: received when pop-in completes with final state. */
     onChatPoppedIn: (cb: (payload: { sessionId: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -415,6 +415,13 @@ const api = {
       const handler = () => cb();
       ipcRenderer.on("chat:requestPopIn", handler);
       return () => ipcRenderer.off("chat:requestPopIn", handler);
+    },
+    /** Listener on the pop-out page: received when main window pushes an updated session (C2 race fix). */
+    onChatSessionUpdated: (cb: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, payload: any) => cb(payload);
+      ipcRenderer.on("chat:sessionUpdated", handler);
+      return () => ipcRenderer.off("chat:sessionUpdated", handler);
     },
   },
 
@@ -917,7 +924,6 @@ const api = {
       ipcRenderer.on("session:event", handler);
       return () => ipcRenderer.off("session:event", handler);
     },
-    /** Whether the Cordis coding agent is currently in flight for this session. */
     /** Reasoning-provenance snapshot for the agent panel's Context Ring badge */
     contextRing: (sessionId: string) => invoke<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }>("session:context-ring", { sessionId }),
     isRunning: (sessionId: string) => invoke<{

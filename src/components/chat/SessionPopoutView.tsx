@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftFromLine, ChevronDown, ChevronRight, Code2, MessageSquare, PanelLeftClose, PanelLeftOpen, Terminal } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -11,6 +11,7 @@ import type { ConversationMessage } from "@/components/conversation/conversation
 import { type ChatPopoutPayload, type SessionPopoutProfile } from "../../../shared/agent/chat-popout";
 import { normalizeSessionMessages, applyApprovalProjection } from "@/components/conversation/conversation-session";
 import { useSessionConversation } from "@/hooks/useSessionConversation";
+import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
 import type { SessionKind } from "@/types";
 
@@ -42,6 +43,9 @@ function kindLabel(kind: SessionKind): string {
 function toSelection(session: SessionSummary, workspaceId: string | null): PopoutSelection {
   return {
     sessionId: session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId,
+    // Terminal sessions have no dedicated runtime profile — they are external PTYs.
+    // Map them to "chat" so the popout still has a valid session surface (the
+    // terminal itself lives in the main window; the popout shows the chat pane).
     profile: session.kind === "coding" ? "coding" : "chat",
     activeProjectId: session.projectId || null,
     workspaceId,
@@ -65,6 +69,11 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
   const [browserOpen, setBrowserOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(activeProjectId ? [activeProjectId] : []));
 
+  // Keep selection in sync when the handoff updates via chat:sessionUpdated (C2 live push).
+  useEffect(() => {
+    setSelection({ sessionId, profile, activeProjectId, workspaceId, cwd });
+  }, [sessionId, profile, activeProjectId, workspaceId, cwd]);
+
   // The popout hydrates via the refresh path, which skips chat-thread loading
   // (that only runs on a cold hydrate). Load this workspace's chat threads so
   // the browser lists chat sessions, not just coding ones.
@@ -74,12 +83,21 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
 
   // Pull coding-session history for every project in the workspace so the tree
   // can list coding sessions, not just chat threads (hydration only loads chats).
-  useEffect(() => {
+  // M1: memoize ids key to avoid refetch loop when `projects` identity changes on hydrate.
+  const projectIdsKey = useMemo(() => {
     const ids = projects
       .filter((project) => !selection.workspaceId || project.workspaceId === selection.workspaceId)
-      .map((project) => project.id);
+      .map((project) => project.id)
+      .sort();
+    return ids.join(",");
+  }, [projects, selection.workspaceId]);
+  const prevIdsKeyRef = useRef<string>("");
+  useEffect(() => {
+    if (projectIdsKey === prevIdsKeyRef.current) return;
+    prevIdsKeyRef.current = projectIdsKey;
+    const ids = projectIdsKey ? projectIdsKey.split(",") : [];
     if (ids.length) void fetchCodingSessionHistoryForProjects(ids);
-  }, [projects, selection.workspaceId, fetchCodingSessionHistoryForProjects]);
+  }, [projectIdsKey, fetchCodingSessionHistoryForProjects]);
 
   const workspaceProjects = useMemo(
     () => projects.filter((project) => !selection.workspaceId || project.workspaceId === selection.workspaceId),
@@ -101,6 +119,12 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
   }, [workspaceProjects, chatThreads, chatMessages, codingSessionHistory, terminalSessions]);
 
   const workspaceName = workspaces.find((w) => w.id === selection.workspaceId)?.name;
+
+  // H6: shared coalesced running-ids (same singleton as SessionBrowser)
+  const runningIds = useSessionRunningIds(browserOpen);
+  const isRunning = useCallback((session: SessionSummary): boolean =>
+    runningIds.has(session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId),
+  [runningIds]);
 
   const pickSession = useCallback((session: SessionSummary) => {
     // Coding sessions need their cwd for the runtime prompt; the registry summary
@@ -150,19 +174,22 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                     <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">{sessions.length}</span>
                   </button>
                   {isOpen && (
-                    <div className="ml-2 border-l border-[var(--border-subtle)] pl-1.5 space-y-0.5">
+                    <div role="listbox" aria-label={`${project.name} sessions`} className="ml-2 border-l border-[var(--border)] pl-1.5 space-y-0.5">
                       {sessions.length === 0 ? (
                         <p className="px-2 py-1.5 text-[0.714rem] text-[var(--text-tertiary)]">No sessions</p>
                       ) : sessions.map((session) => {
                         const selfId = session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId;
                         const selected = selfId === selection.sessionId;
+                        const running = isRunning(session);
                         return (
                           <button
                             key={session.id}
                             type="button"
+                            role="option"
+                            aria-selected={selected}
                             onClick={() => pickSession(session)}
                             className={cn(
-                              "flex items-center gap-2 w-full rounded-md border-l-2 px-2 py-1.5 text-left transition-colors",
+                              "flex items-center gap-2 w-full rounded-md border-l-2 px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
                               selected ? "border-l-[var(--accent)] bg-[var(--accent-dim)]" : "border-l-transparent hover:bg-[var(--surface-2)]",
                             )}
                           >
@@ -171,7 +198,15 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                             </span>
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-xs text-[var(--text-primary)]">{session.title}</span>
-                              <span className="block text-[0.714rem] text-[var(--text-tertiary)]">{kindLabel(session.kind)} · {formatDateCompact(session.updatedAt)}</span>
+                              <span className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)]">
+                                <span>{kindLabel(session.kind)} · {formatDateCompact(session.updatedAt)}</span>
+                                {running && (
+                                  <span className="flex items-center gap-1 text-[var(--accent)]">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" aria-hidden />
+                                    running
+                                  </span>
+                                )}
+                              </span>
                             </span>
                           </button>
                         );

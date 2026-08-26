@@ -540,13 +540,14 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
 
 
 // ── cairn-coding ──────────────────────────────────────────────────────────────
-// Bridge the MAIN coding session's dsh events onto Cairn's `pi-agent:*` IPC
-// vocabulary so the renderer's AgentChatPane works unchanged over the Cordis
-// engine (Phase 1.5 step 2b). Sibling to cairnSubagentPlugin (which handles
-// child `origin:'subagent'` sessions); this one owns the parent session's
-// token/thought/tool/usage/step/done/error stream plus the note-updated / todos
-// / plan-note side effects. It is scoped to a single parent sessionId and
-// ignores subagent children (those are bridged by cairnSubagentPlugin).
+// Bridge the MAIN coding session's dsh events onto Cairn's `session:*` IPC
+// vocabulary (historically `pi-agent:*`, now `session:*`) so the renderer's
+// AgentChatPane works unchanged over the Cordis engine (Phase 1.5 step 2b).
+// Sibling to cairnSubagentPlugin (which handles child `origin:'subagent'`
+// sessions); this one owns the parent session's token/thought/tool/usage/
+// step/done/error stream plus the note-updated / todos / plan-note side
+// effects. It is scoped to a single parent sessionId and ignores subagent
+// children (those are bridged by cairnSubagentPlugin).
 
 export interface CairnCodingConfig {
   /** The parent coding session id — scopes every emitted event (the caller's id). */

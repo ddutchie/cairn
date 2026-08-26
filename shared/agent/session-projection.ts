@@ -2,7 +2,7 @@
 
 export type SessionProjectionKind =
   | "approval" | "question" | "subagent-trace" | "todos" | "plan-note"
-  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result";
+  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result" | "error";
 
 export type SessionProjectionData = {
   approval: Record<string, unknown>;
@@ -15,6 +15,7 @@ export type SessionProjectionData = {
   retry: { attempt: number; maxRetries: number; delayMs: number; error: string };
   compact: { status: "start" | "end"; auto?: boolean };
   "compact-result": { messageCount: number; summary: string };
+  error: { message: string; code?: string };
 };
 
 export type SessionProjection<K extends SessionProjectionKind = SessionProjectionKind> = {

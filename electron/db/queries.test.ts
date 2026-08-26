@@ -96,11 +96,24 @@ describe("session_profiles migration and queries", () => {
     expect(db.pragma("user_version", { simple: true })).toBe(53);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_profiles'").get()).toBeTruthy();
 
-    expect(upsertSessionProfile(db, {
+    const first = upsertSessionProfile(db, {
       sessionId: "chat-thread-1", profile: "chat", workspaceId: "ws1", projectId: "proj1", cwd: "/workspace",
       updatedAt: "2026-08-24T10:00:00.000Z",
-    })).toEqual({ sessionId: "chat-thread-1", profile: "chat", workspaceId: "ws1", projectId: "proj1", cwd: "/workspace", updatedAt: "2026-08-24T10:00:00.000Z" });
-    expect(upsertSessionProfile(db, { sessionId: "chat-thread-1", profile: "coding", projectId: "proj2", cwd: "/project" }).profile).toBe("coding");
+    });
+    expect(first).toEqual({ sessionId: "chat-thread-1", profile: "chat", workspaceId: "ws1", projectId: "proj1", cwd: "/workspace", updatedAt: "2026-08-24T10:00:00.000Z" });
+    expect(db.prepare("SELECT COUNT(*) as n FROM session_profiles").get() as { n: number }).toEqual({ n: 1 });
+    const second = upsertSessionProfile(db, { sessionId: "chat-thread-1", profile: "coding", projectId: "proj2", cwd: "/project" });
+    expect(second.profile).toBe("coding");
+    expect(second.projectId).toBe("proj2");
+    // updatedAt is auto-generated when not supplied and must advance on upsert
+    expect(second.updatedAt).not.toEqual(first.updatedAt);
+    expect(typeof second.updatedAt).toBe("string");
+    // idempotence: still a single row after the upsert
+    expect((db.prepare("SELECT COUNT(*) as n FROM session_profiles").get() as { n: number }).n).toBe(1);
+    // re-upserting the same profile keeps the row count stable and refreshes updatedAt
+    const third = upsertSessionProfile(db, { sessionId: "chat-thread-1", profile: "coding", projectId: "proj2", cwd: "/project", updatedAt: "2026-08-24T11:00:00.000Z" });
+    expect(third.updatedAt).toBe("2026-08-24T11:00:00.000Z");
+    expect((db.prepare("SELECT COUNT(*) as n FROM session_profiles").get() as { n: number }).n).toBe(1);
     expect(getSessionProfile(db, "missing")).toBeNull();
     db.close();
   });

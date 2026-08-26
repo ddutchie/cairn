@@ -33,6 +33,15 @@ const abortControllers = new Map<string, AbortController>();
  */
 const runningThreads = new Set<string>();
 
+export function getRunningChatIds(): string[] {
+  return Array.from(runningThreads).map((id) => `chat-${id}`);
+}
+
+export function isChatThreadRunning(sessionId: string): boolean {
+  const raw = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
+  return runningThreads.has(raw);
+}
+
 export function abortChatSession(sessionId: string): void {
   abortControllers.get(sessionId)?.abort();
   abortControllers.delete(sessionId);
@@ -130,6 +139,8 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     // persistence serialises writes, but the two turns would still interleave
     // into a semantically incoherent transcript.
     if (req.threadId && runningThreads.has(req.threadId)) {
+       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — please wait for the current turn to finish.", code: "busy" }));
+       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
        return;
     }
     if (req.threadId) runningThreads.add(req.threadId);
@@ -150,6 +161,11 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
         const outChannel = ch;
         const outPayload = tagged;
        if (!event.sender.isDestroyed()) event.sender.send(outChannel, outPayload);
+       // Intentionally scoped to chat participants (main + pop-out) — not
+       // broadcastEvent (all windows + mobile). Coding sessions use
+       // broadcastEvent because they are not participant-gated (see
+       // session-runtime-handlers.ts). This split is deliberate; don't unify
+       // without auditing the pop-out participant set.
        broadcastToChat(outChannel, outPayload, event.sender.id);
     };
 

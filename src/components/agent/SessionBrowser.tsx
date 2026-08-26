@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Code2, ChevronDown, ChevronRight, MessageSquare, Search, Terminal, Trash2, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -8,6 +8,7 @@ import { cn, formatDateCompact } from "@/lib/utils";
 import type { SessionKind } from "@/types";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
 import { useSessionNavigation } from "./useSessionNavigation";
+import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 
 interface SessionBrowserProps {
   activeSessionId: string | null;
@@ -45,13 +46,25 @@ interface SessionRowProps {
 /** One session entry — shared by the sidebar tree and the dropdown menu so both
  *  surfaces stay on the same type scale, spacing, and selection treatment. */
 function SessionRow({ session, selected, running, onSelect, onRemove }: SessionRowProps) {
+  function handleKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSelect();
+    }
+  }
   return (
-    <div role="option" aria-selected={selected} className={cn(
-      "group relative flex items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors",
-      selected
-        ? "border-l-[var(--accent)] bg-[var(--accent-dim)]"
-        : "border-l-transparent hover:bg-[var(--surface-2)]",
-    )}>
+    <div
+      role="option"
+      aria-selected={selected}
+      tabIndex={selected ? 0 : -1}
+      onKeyDown={handleKeyDown}
+      className={cn(
+        "group relative flex items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
+        selected
+          ? "border-l-[var(--accent)] bg-[var(--accent-dim)]"
+          : "border-l-transparent hover:bg-[var(--surface-2)]",
+      )}
+    >
       <button type="button" onClick={onSelect} className="flex items-center gap-2 flex-1 min-w-0 text-left">
         <span className={cn("flex-shrink-0", selected ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
           <SessionTypeIcon kind={session.kind} size={13} />
@@ -75,9 +88,10 @@ function SessionRow({ session, selected, running, onSelect, onRemove }: SessionR
       {onRemove && session.kind !== "terminal" && (
         <button
           type="button"
+          tabIndex={-1}
           aria-label={`Delete ${kindLabel(session.kind).toLowerCase()} session`}
           onClick={onRemove}
-          className="flex-shrink-0 grid place-items-center w-6 h-6 rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-3)] transition-all"
+          className="flex-shrink-0 grid place-items-center w-6 h-6 rounded opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] focus-visible:text-[var(--danger)] transition-all"
         >
           <Trash2 size={11} />
         </button>
@@ -116,28 +130,16 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   })));
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  // Session ids whose agent loop is genuinely in flight right now. Sourced from
-  // the main process (runningLoops), NOT the persisted `status` flag, which
-  // goes stale when a session never closes cleanly. Empty until the first poll.
-  const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listboxRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const { openSession } = useSessionNavigation();
 
-  // Poll the live running set while this browser is visible. The preview variant
-  // is always mounted; the dropdown/project variants only need it while open.
+  // Coalesced polling — one interval for all mounted browsers (sidebar has N
+  // expanded projects). Backs off when the document is hidden.
   const liveActive = variant === "preview" || open;
-  useEffect(() => {
-    if (!liveActive || !window.electron?.session?.runningIds) return;
-    let cancelled = false;
-    const poll = () => {
-      window.electron?.session.runningIds().then((result) => {
-        if (!cancelled) setRunningIds(new Set(result.ids));
-      }).catch(() => undefined);
-    };
-    poll();
-    const timer = setInterval(poll, 2000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [liveActive]);
+  const runningIds = useSessionRunningIds(liveActive);
 
   const sessions = useMemo<SessionSummary[]>(() => {
     const scopedProjectId = projectId ?? activeProjectId;
@@ -177,11 +179,51 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        setQuery("");
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, [open]);
+
+  // Arrow-key navigation inside the listbox (roving tabindex).
+  function handleListboxKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const container = listboxRef.current;
+    if (!container) return;
+    const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
+    if (options.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    const currentIndex = active ? options.indexOf(active) : -1;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const next = currentIndex < options.length - 1 ? currentIndex + 1 : 0;
+      options[next]?.focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const prev = currentIndex > 0 ? currentIndex - 1 : options.length - 1;
+      options[prev]?.focus();
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      options[0]?.focus();
+    } else if (e.key === "End") {
+      e.preventDefault();
+      options[options.length - 1]?.focus();
+    }
+  }
 
   async function selectSession(session: SessionSummary) {
     // The project variant is an inline sidebar section, not a transient menu.
@@ -207,7 +249,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   if (variant === "preview") {
     const previewSessions = visibleSessions.slice(0, limit);
     return (
-      <div className="flex flex-col gap-0.5">
+      <div role="listbox" aria-label="Recent sessions" className="flex flex-col gap-0.5" tabIndex={-1} onKeyDown={handleListboxKeyDown} ref={listboxRef}>
         {previewSessions.length === 0 ? (
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">No sessions yet</p>
         ) : previewSessions.map((session) => (
@@ -237,6 +279,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   return (
     <div ref={rootRef} className={cn("relative", projectNav ? "flex-shrink-0 h-auto" : "flex-1 min-w-0 h-full")}>
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -282,20 +325,31 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
       {open && (
         <div className={cn(
           projectNav
-            ? "mt-0.5 ml-2 border-l border-[var(--border-subtle)] pl-1.5"
+            ? "mt-0.5 ml-2 border-l border-[var(--border)] pl-1.5"
             : "absolute left-0 top-full z-50 mt-0.5 w-80 min-w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden",
         )}>
           <div className={projectNav ? "px-1 pb-1" : "px-3 py-2 border-b border-[var(--border)]"}>
             <div className={cn("flex items-center gap-1.5", projectNav && "rounded-md bg-[var(--surface-2)] px-2 py-1.5")}>
               <Search size={12} className="text-[var(--text-tertiary)]" />
               <input
+                ref={searchInputRef}
                 autoFocus
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    if (query) setQuery("");
+                    else {
+                      setOpen(false);
+                      triggerRef.current?.focus();
+                    }
+                  }
+                }}
                 placeholder="Search sessions"
                 className="flex-1 min-w-0 bg-transparent text-[0.714rem] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
               />
-              {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear session search"><X size={11} /></button>}
+              {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear session search" className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"><X size={11} /></button>}
             </div>
           </div>
           {/* The dropdown menu keeps its section label; the inline sidebar tree
@@ -305,7 +359,14 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
               All sessions
             </div>
           )}
-          <div className={cn("max-h-80 overflow-y-auto", projectNav && "pb-1 space-y-0.5")}>
+          <div
+            ref={listboxRef}
+            role="listbox"
+            aria-label="Sessions"
+            tabIndex={-1}
+            onKeyDown={handleListboxKeyDown}
+            className={cn("max-h-80 overflow-y-auto", projectNav && "pb-1 space-y-0.5")}
+          >
             {visibleSessions.length === 0 ? (
               <p className="px-2 py-3 text-center text-[0.714rem] text-[var(--text-tertiary)]">No matching sessions</p>
             ) : visibleSessions.map((session) => (

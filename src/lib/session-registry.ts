@@ -32,8 +32,17 @@ export function buildSessionRegistry({
   terminalSessions,
   projectId,
 }: SessionRegistryInput): SessionSummary[] {
+  // Strict === drops cross-project chats when the filter and the thread use
+  // different falsy representations (null vs undefined vs ""). Treat all falsy
+  // projectIds as the same "no-project" bucket — a global thread stays visible
+  // when the view is unscoped, and a scoped view doesn't accidentally hide its
+  // own globals due to a type mismatch.
+  const sameProject = (a: string | null | undefined, b: string | null | undefined): boolean => {
+    if (!a && !b) return true;
+    return a === b;
+  };
   const chats: SessionSummary[] = chatThreads
-    .filter((thread) => thread.projectId === projectId)
+    .filter((thread) => sameProject(thread.projectId, projectId ?? null))
     .map((thread) => ({
       id: sourceIdFor("chat", thread.id),
       sourceId: thread.id,
@@ -44,7 +53,7 @@ export function buildSessionRegistry({
       messageCount: chatMessages.filter((message) => message.threadId === thread.id).length,
     }));
   const coding: SessionSummary[] = codingSessions
-    .filter((session) => session.projectId === projectId)
+    .filter((session) => sameProject(session.projectId, projectId ?? null))
     .map((session) => ({
       id: sourceIdFor("coding", session.id),
       sourceId: session.id,
@@ -56,7 +65,7 @@ export function buildSessionRegistry({
       mode: session.mode,
     }));
   const terminals: SessionSummary[] = terminalSessions
-    .filter((session) => session.sessionType === "pty" && session.projectId === projectId)
+    .filter((session) => session.sessionType === "pty" && sameProject(session.projectId, projectId ?? null))
     .map((session) => ({
       id: sourceIdFor("terminal", session.sessionId),
       sourceId: session.sessionId,

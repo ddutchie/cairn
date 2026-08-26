@@ -5,8 +5,8 @@
  * (message history + AbortController) held in a Map for the app lifetime.
  *
  * Channels (fire-and-forget, renderer → main):
- *   pi-agent:prompt  { sessionId, prompt, projectId, cwd, taskTitle?, config }
- *   pi-agent:abort   { sessionId }
+ *   session:prompt  { sessionId, prompt, projectId, cwd, taskTitle?, config }
+ *   session:abort   { sessionId }
  *
  * Events (main → renderer): session:event (raw DSH events) and
  * session:projection (typed presentation updates).
@@ -36,9 +36,9 @@ import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
-import { type SessionProjection } from "../../shared/agent/session-projection";
+import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
-import { runChatPrompt, abortChatSession } from "./chat";
+import { runChatPrompt, abortChatSession, getRunningChatIds, isChatThreadRunning } from "./chat";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -393,33 +393,37 @@ export function registerSessionRuntimeHandlers(
   // Read db/workspacePath from ctx at call-time so workspace reinitialise is transparent
   const getWin = ctx.getWin;
 
-  // ── pi-agent:is-running ──────────────────────────────────────────────────
+  // ── session:is-running ──────────────────────────────────────────────────
   // Invoke-style query so a (re)mounting AgentChatPane can restore its busy
   // state from the main process — the loop's lifecycle lives here, not in the
   // renderer's local state. Also returns the session's outstanding approval
   // asks so a reload that swallowed the original push can re-render the cards.
-  registerIpcHandle("session:is-running", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcHandle("session:is-running", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
+    const running = runningLoops.has(sessionId) || isChatThreadRunning(sessionId);
     return {
-      running: runningLoops.has(sessionId),
+      running,
       pendingAsks: pendingAsks.listForSession(sessionId),
       // Outstanding question asks (ask_questions / plan-review). The renderer
       // uses this to re-open a PlanReviewCard after a reload that swallowed
-      // the original pi-agent:ask-questions push.
+      // the original session:ask-questions push.
       pendingQuestions: listPendingQuestions(sessionId).map((q) => ({
         callId: q.callId,
         questions: q.questions,
       })),
     };
-  });
+  }));
 
   // ── session:running-ids ───────────────────────────────────────────────────
   // Bulk snapshot of every session whose loop is genuinely in flight right now.
   // Session-browser rows use this to show a live "active" state instead of the
   // persisted `running` metadata flag, which goes stale when a session is never
   // cleanly closed. Cheap: just materialises the in-memory Set.
-  registerIpcHandle("session:running-ids", () => {
-    return { ids: Array.from(runningLoops) };
-  });
+  // Wrapped in handle() so a transient DB or runtime failure doesn't leave the
+  // renderer's coalesced poller frozen on a stale "running" set (loop stays
+  // green forever).
+  registerIpcHandle("session:running-ids", () => handle(async () => {
+    return { ids: [...Array.from(runningLoops), ...getRunningChatIds()] };
+  }));
 
   // ── pi-agent:context-ring ─────────────────────────────────────────────────
   // Reasoning-provenance snapshot ("whose thinking is in context") for the
@@ -483,6 +487,8 @@ export function registerSessionRuntimeHandlers(
     // the is-running state inconsistent. The renderer queues prompts while busy,
     // so this is a defensive guard, not the normal path.
     if (runningLoops.has(sessionId)) {
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "busy" }));
+      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
     }
 
@@ -493,6 +499,8 @@ export function registerSessionRuntimeHandlers(
       for (const a of req.attachments) {
         const problem = validateAttachmentDataUrl(a?.dataUrl);
         if (problem) {
+          broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: problem, code: "invalid-attachment" }));
+          broadcastEvent("session:busy", { sessionId, reason: "invalid-attachment", message: problem });
           return;
         }
       }
@@ -630,6 +638,8 @@ export function registerSessionRuntimeHandlers(
     // Same concurrency guard as pi-agent:prompt — a plan approval is also a
     // loop run and must never stack on an in-flight loop for this session.
     if (runningLoops.has(sessionId)) {
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "busy" }));
+      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
     }
 

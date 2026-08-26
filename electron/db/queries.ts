@@ -77,14 +77,19 @@ export function upsertSessionProfile(db: Database.Database, profile: {
   updatedAt?: string;
 }): SessionProfileRow {
   const updatedAt = profile.updatedAt ?? ts();
-  db.prepare(`
-    INSERT INTO session_profiles (session_id, profile, workspace_id, project_id, cwd, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(session_id) DO UPDATE SET
-      profile = excluded.profile, workspace_id = excluded.workspace_id,
-      project_id = excluded.project_id, cwd = excluded.cwd, updated_at = excluded.updated_at
-  `).run(profile.sessionId, profile.profile, profile.workspaceId ?? null, profile.projectId ?? null, profile.cwd ?? null, updatedAt);
-  return getSessionProfile(db, profile.sessionId)!;
+  return db.transaction(() => {
+    const row = db.prepare(`
+      INSERT INTO session_profiles (session_id, profile, workspace_id, project_id, cwd, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        profile = excluded.profile, workspace_id = excluded.workspace_id,
+        project_id = excluded.project_id, cwd = excluded.cwd, updated_at = excluded.updated_at
+      RETURNING session_id, profile, workspace_id, project_id, cwd, updated_at
+    `).get(profile.sessionId, profile.profile, profile.workspaceId ?? null, profile.projectId ?? null, profile.cwd ?? null, updatedAt) as {
+      session_id: string; profile: SessionProfileId; workspace_id: string | null; project_id: string | null; cwd: string | null; updated_at: string;
+    };
+    return { sessionId: row.session_id, profile: row.profile, workspaceId: row.workspace_id, projectId: row.project_id, cwd: row.cwd, updatedAt: row.updated_at };
+  })();
 }
 
 export function getSessionProfile(db: Database.Database, sessionId: string): SessionProfileRow | null {
