@@ -24,7 +24,6 @@ import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SuggestedPrompts } from "./SuggestedPrompts";
 import { ToolCallIndicator } from "./ToolCallIndicator";
 import { useCommunityConnectorMap, type ChatConnectorMeta } from "./connector-context";
-import { QuestionForm } from "./QuestionForm";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
@@ -143,16 +142,10 @@ function ChatFooter() {
           connectors={s.connectorMap}
         />
       )}
-      {s.pendingQuestions && handleSend && (
-        <QuestionForm
-          questions={s.pendingQuestions}
-          onSubmit={(text) => handleSend(text)}
-          onSubmitStructured={s.answerQuestions}
-          // Never gate the form on isLoading: a blocking (Cordis) ask_questions
-          // pauses the turn mid-flight, so isLoading stays true WHILE the user is
-          // meant to type. The form's own `submitted` guard prevents re-submits.
-        />
-      )}
+      {/* The pending-question form is rendered by ConversationPane (just above
+          the composer, its canonical location). Do NOT also render it here in
+          the transcript footer — doing so showed the ask_questions form twice
+          (one inert copy in the scroll flow + the active one above the composer). */}
     </div>
   );
 }

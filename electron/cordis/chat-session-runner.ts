@@ -17,6 +17,19 @@ import { foldSessionUsage } from "./plugins/context-ring";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
+// Opt-in turn-latency instrumentation. Set CAIRN_TIMING=1 to log per-phase
+// timings for chat turns: getContext, prepareCordisRuntime (transport + adapter),
+// plugin/tool setup, agent open (cache hit vs resume/replay), pre-followup idle
+// wait, request/header count (>1 = a provider retry), time-to-first-token, and a
+// warning when a Responses attempt yields nothing and the turn re-runs on
+// completions. Zero-cost when the env var is unset. Useful for isolating whether
+// a slow turn is Cairn assembly, agent settle, or upstream provider latency.
+const TIMING = process.env.CAIRN_TIMING === "1" || process.env.CAIRN_TIMING === "true";
+function markNow(): number { return TIMING ? Date.now() : 0; }
+function markLog(label: string, since: number): void {
+  if (TIMING) console.log(`[timing] ${label}: ${Date.now() - since}ms`);
+}
+
 function collect(events: readonly SessionEvent[], firstSeq: number): Collected {
   let text = "";
   let reasoning = "";
@@ -90,7 +103,9 @@ function emitBreakdownUsage(events: readonly SessionEvent[], onSessionEvent?: (e
 
 /** Chat-specific profile over the shared Cordis session lifecycle. */
 export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<RunCordisLoopResult> {
+  const turnStart = markNow();
   const ctx = await getContext();
+  markLog("getContext", turnStart);
   const { db, req, workspacePath, signal } = opts;
   let llmConfig = opts.llmConfig;
 
@@ -121,6 +136,13 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   let liveText = "";
   let liveReasoning = "";
   let currentAttemptSessionId: unknown = null;
+  let firstTokenLogged = false;
+  const logFirstToken = () => { if (TIMING && !firstTokenLogged) { firstTokenLogged = true; markLog("time-to-first-token (from turn entry)", turnStart); } };
+  // Per-turn request counter — each provider (re)attempt emits its own
+  // request/header. >1 header before the first token means the pi-ai adapter's
+  // retryPolicy is silently retrying (a stall we can tune), not pure provider
+  // latency. Logged with the elapsed time so a slow turn shows the retry cadence.
+  let requestHeaderCount = 0;
 
   const runAttempt = async (): Promise<Collected & { failedKind?: string }> => runCordisSession({
     ctx,
@@ -154,10 +176,18 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       const streamDisposer = ctx.on("session/event", (session, event) => {
         if ((session as { header?: { origin?: string } }).header?.origin === "subagent") return;
         if ((session as { id?: unknown }).id !== currentAttemptSessionId) return;
+        if (TIMING && (event.type === "request/header" || event.type === "request/context")) {
+          if (event.type === "request/header") {
+            requestHeaderCount += 1;
+            console.log(`[timing] request/header #${requestHeaderCount} at ${Date.now() - turnStart}ms${requestHeaderCount > 1 ? "  ⚠️ RETRY — previous attempt did not stream a token" : ""}`);
+          } else {
+            markLog(`event ${event.type} (request assembled → about to hit provider)`, turnStart);
+          }
+        }
         if (event.type === "assistant/chunk") {
           const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
-          if (c?.type === "text-delta" && c.text) { liveText += c.text; opts.onToken?.(c.text); }
-          else if (c?.type === "reasoning-delta" && c.text) { liveReasoning += c.text; opts.onThought?.(c.text); }
+          if (c?.type === "text-delta" && c.text) { logFirstToken(); liveText += c.text; opts.onToken?.(c.text); }
+          else if (c?.type === "reasoning-delta" && c.text) { logFirstToken(); liveReasoning += c.text; opts.onThought?.(c.text); }
           return;
         }
         if (event.type === "assistant/message" && !liveReasoning) {
@@ -193,12 +223,15 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       const disposers = registerCairnTools(ctx, { getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db, req, workspacePath, llmConfig: preparedConfig, getWin: opts.getWin, emit: undefined, emitDone }, { exclude: CHAT_FORBIDDEN_TOOLS });
       disposers.forEach((dispose) => resources.add(dispose));
       (await registerExternalCairnTools(ctx, { db, workspaceId: req.workspaceId ?? "", projectId: req.projectId ?? "" })).forEach((dispose) => resources.add(dispose));
+      markLog("setup (plugins + tool registration)", turnStart);
     },
     open: async ({ llmConfig: preparedConfig }) => {
+      const openStart = markNow();
       const cached = chatAgents.get(req.threadId);
       if (cached) {
         try {
           await (cached.whenIdle ?? (cached.agent as { whenIdle?: () => Promise<void> })?.whenIdle)?.();
+          markLog("open (cache HIT — whenIdle)", openStart);
           return { agent: cached.agent, dispose: async () => {} };
         } catch {
           try {
@@ -213,6 +246,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       try {
         const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal });
         chatAgents.set(req.threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown> });
+        markLog("open (cache MISS — resume/replay JSONL)", openStart);
         return opened;
       } catch (error) {
         if (!(error instanceof Error) || !error.message.includes("while it is live")) throw error;
@@ -223,9 +257,12 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       }
     },
     run: async ({ agent }) => {
+      const runStart = markNow();
       const typed = agent as unknown as CordisTurnAgent & { session: { events: readonly SessionEvent[] } };
       currentAttemptSessionId = SessionId(`chat-${req.threadId}`);
-      const { firstSeq } = await runCordisTurn({ agent: typed, content: await buildCordisUserContent(ctx, req.message, req.images), signal });
+      const content = await buildCordisUserContent(ctx, req.message, req.images);
+      markLog("run: content built, dispatching followup", runStart);
+      const { firstSeq } = await runCordisTurn({ agent: typed, content, signal });
       const result = collect(typed.session.events, firstSeq);
       const end = typed.session.events.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
       const kind = (end?.data as { reason?: { kind?: string } } | undefined)?.reason?.kind;
@@ -237,6 +274,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // foldSessionUsage. Emit one synthetic, breakdown-carrying usage event so the
       // live ring matches the reload ring (single source of truth, no divergence).
       emitBreakdownUsage(typed.session.events, opts.onSessionEvent);
+      if (TIMING && kind && kind !== "completed") console.log(`[timing] turn/end kind="${kind}" at ${Date.now() - turnStart}ms (attempt did not complete cleanly)`);
       return { ...result, failedKind: kind && kind !== "completed" ? kind : undefined };
     },
   });
@@ -254,6 +292,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     }
   }
   if (attempt.failedKind && !attempt.text && !attempt.reasoning && readCachedMode(llmConfig.baseUrl) === "responses" && !liveText) {
+    if (TIMING) console.log(`[timing] ⚠️ responses attempt produced nothing → downgrading to completions and RE-RUNNING the whole turn (doubles latency)`);
     markCompletionsOnly(llmConfig.baseUrl);
     await ensureAgentAiAdapter(ctx, { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, api: "openai-completions", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens });
     liveText = "";

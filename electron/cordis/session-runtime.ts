@@ -86,13 +86,17 @@ export async function mountCordisSessionPlugins({
 
 /** Prepare the shared model route used by every Cairn session kind. */
 export async function prepareCordisRuntime(ctx: Context, input: LLMConfig): Promise<{ llmConfig: LLMConfig; transport: ApiMode }> {
+  const timing = process.env.CAIRN_TIMING === "1" || process.env.CAIRN_TIMING === "true";
   let llmConfig = input;
   if (llmConfig.provider === "localllm") {
     const { ensureLlamaServerRunning } = await import("../lib/llama-server");
     const port = await ensureLlamaServerRunning();
     llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
   }
+  const t0 = timing ? Date.now() : 0;
   const transport = await resolveTransport(llmConfig.baseUrl, llmConfig.apiKey);
+  if (timing) console.log(`[timing] prepareCordisRuntime: resolveTransport ${Date.now() - t0}ms`);
+  const t1 = timing ? Date.now() : 0;
   await ensureAgentAiAdapter(ctx, {
     baseUrl: llmConfig.baseUrl,
     model: llmConfig.model,
@@ -101,6 +105,7 @@ export async function prepareCordisRuntime(ctx: Context, input: LLMConfig): Prom
     contextWindow: llmConfig.contextWindow,
     maxTokens: llmConfig.maxTokens,
   });
+  if (timing) console.log(`[timing] prepareCordisRuntime: ensureAgentAiAdapter ${Date.now() - t1}ms`);
   return { llmConfig, transport: transport.mode };
 }
 
