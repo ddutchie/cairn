@@ -47,9 +47,21 @@ export function validateAttachmentDataUrl(dataUrl: unknown): string | null {
   if (mime !== "application/pdf" && !mime.startsWith("image/")) {
     return `unsupported attachment MIME type: ${mime}`;
   }
-  const bytes = Math.floor((dataUrl.slice(comma + 1).length / 4) * 3);
-  if (bytes > MAX_ATTACHMENT_BYTES) {
-    return `attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`;
+  try {
+    const b64 = dataUrl.slice(comma + 1);
+    let len: number;
+    if (typeof Buffer !== "undefined" && typeof Buffer.from === "function") {
+      len = Buffer.from(b64, "base64").byteLength;
+    } else if (typeof atob === "function") {
+      len = atob(b64).length;
+    } else {
+      len = Math.floor((b64.length / 4) * 3);
+    }
+    if (len > MAX_ATTACHMENT_BYTES) {
+      return `attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`;
+    }
+  } catch {
+    return "attachment has invalid base64 encoding";
   }
   return null;
 }

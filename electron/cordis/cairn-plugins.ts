@@ -559,7 +559,7 @@ export interface CairnCodingConfig {
   matchSessionId: string;
   /** Current agent mode — drives plan-note detection. */
   mode: "plan" | "execute";
-  /** Emit a `pi-agent:*` IPC event to the renderer (sessionId NOT yet tagged). */
+  /** Emit a `session:*` IPC event to the renderer (sessionId NOT yet tagged). */
   send: (channel: string, payload: Record<string, unknown>) => void;
   /** Resolve/abort when the parent turn completes — used by the loop await. */
   signal?: AbortSignal;
@@ -751,13 +751,13 @@ const APPROVAL_SAFE = APPROVAL_SAFE_TOOLS;
 export interface CairnApprovalConfig {
   /** When true, every tool runs without a confirm prompt (no asks). */
   autoApprove: boolean;
-  /** The caller's pi sessionId — scopes the confirm IPC. */
+  /** The caller's sessionId — scopes the confirm IPC. */
   sessionId: string;
-  /** Emit a `pi-agent:*` IPC event (sessionId NOT yet tagged). */
+  /** Emit a `session:*` IPC event (sessionId NOT yet tagged). */
   send: (channel: string, payload: Record<string, unknown>) => void;
   /**
    * Register a resolver for one pending approval, keyed by callId; returns a
-   * disposer. The pi-agent:respond-tool IPC handler invokes the resolver with
+   * disposer. The session:respond-tool IPC handler invokes the resolver with
    * the user's decision.
    */
   registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void) => () => void;
@@ -813,7 +813,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const name = exec?.name;
       const argsObj = (exec?.arguments && typeof exec.arguments === "object") ? exec.arguments as Record<string, unknown> : {};
       if (typeof name === "string" && !APPROVAL_SAFE.has(name) && !isGranted(name, argsObj)) {
-        // Stash the TRUSTED args so pi-agent:respond-tool can record a
+        // Stash the TRUSTED args so session:respond-tool can record a
         // grant:'command' against what dsh will actually execute — not
         // whatever string a compromised renderer echoes back. dsh's
         // ApprovalRequest deliberately carries no arguments (upstream
@@ -882,7 +882,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
         };
         disposeRef.current = registerPending(callId, (decision) => {
           if (decision.approved && decision.grant === "session") grants.tools.add(toolName);
-          // grant:"command" is recorded by the pi-agent:respond-tool handler,
+          // grant:"command" is recorded by the session:respond-tool handler,
           // which owns the canonicalized command text (dsh's ApprovalRequest
           // deliberately carries no args).
           settle(decision.approved ? "allowed-once" : "rejected");

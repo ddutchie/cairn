@@ -40,7 +40,7 @@ interface SessionRowProps {
   selected: boolean;
   running: boolean;
   onSelect: () => void;
-  onRemove?: (event: ReactMouseEvent) => void;
+  onRemove?: (event: React.SyntheticEvent) => void;
 }
 
 /** One session entry — shared by the sidebar tree and the dropdown menu so both
@@ -50,6 +50,9 @@ function SessionRow({ session, selected, running, onSelect, onRemove }: SessionR
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       onSelect();
+    } else if (e.key === "Delete" && selected && onRemove) {
+      e.preventDefault();
+      onRemove(e);
     }
   }
   return (
@@ -57,15 +60,16 @@ function SessionRow({ session, selected, running, onSelect, onRemove }: SessionR
       role="option"
       aria-selected={selected}
       tabIndex={selected ? 0 : -1}
+      onClick={onSelect}
       onKeyDown={handleKeyDown}
       className={cn(
-        "group relative flex items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
+        "group relative flex items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
         selected
           ? "border-l-[var(--accent)] bg-[var(--accent-dim)]"
           : "border-l-transparent hover:bg-[var(--surface-2)]",
       )}
     >
-      <button type="button" onClick={onSelect} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+      <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
         <span className={cn("flex-shrink-0", selected ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
           <SessionTypeIcon kind={session.kind} size={13} />
         </span>
@@ -84,13 +88,16 @@ function SessionRow({ session, selected, running, onSelect, onRemove }: SessionR
             )}
           </span>
         </span>
-      </button>
+      </div>
       {onRemove && session.kind !== "terminal" && (
         <button
           type="button"
-          tabIndex={-1}
+          tabIndex={selected ? 0 : -1}
           aria-label={`Delete ${kindLabel(session.kind).toLowerCase()} session`}
-          onClick={onRemove}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(e);
+          }}
           className="flex-shrink-0 grid place-items-center w-6 h-6 rounded opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] focus-visible:text-[var(--danger)] transition-all"
         >
           <Trash2 size={11} />
@@ -186,6 +193,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     };
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (query.trim() !== "") return;
         event.preventDefault();
         setOpen(false);
         setQuery("");
@@ -198,7 +206,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", handleKey);
     };
-  }, [open]);
+  }, [open, query]);
 
   // Arrow-key navigation inside the listbox (roving tabindex).
   function handleListboxKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
@@ -265,7 +273,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     );
   }
 
-  function removeSession(event: ReactMouseEvent, session: SessionSummary) {
+  function removeSession(event: React.SyntheticEvent, session: SessionSummary) {
     event.stopPropagation();
     if (session.kind === "chat") {
       void deleteThread(session.sourceId);
@@ -339,11 +347,19 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
                     e.preventDefault();
-                    if (query) setQuery("");
-                    else {
+                    if (query.trim() !== "") {
+                      e.stopPropagation();
+                      setQuery("");
+                    } else {
                       setOpen(false);
                       triggerRef.current?.focus();
                     }
+                  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    const options = listboxRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
+                    if (!options || options.length === 0) return;
+                    if (e.key === "ArrowDown") options[0]?.focus();
+                    else options[options.length - 1]?.focus();
                   }
                 }}
                 placeholder="Search sessions"

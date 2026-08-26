@@ -2,7 +2,7 @@
  * Cairn — module-scoped cache for LIVE dsh chat agents, keyed by threadId.
  *
  * A chat agent is persistent across turns (unlike the coding agent, which
- * runs one loop per pi-agent:prompt). Keeping the agent alive lets the next
+ * runs one loop per session:prompt). Keeping the agent alive lets the next
  * turn's followup message use `agent.steer()` instead of a fresh resume —
  * cheaper, and it preserves the streaming subscription.
  *

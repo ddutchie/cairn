@@ -932,7 +932,7 @@ const api = {
       /** Outstanding question asks (ask_questions / plan-review). The
        *  renderer surfaces these into pendingQuestions after a reload so a
        *  plan under review isn't lost. */
-      pendingQuestions?: Array<{ callId: string; questions: Array<{ id: string; [k: string]: unknown }> }>;
+      pendingQuestions?: Array<{ callId: string; questions: Array<{ id: string; [k: string]: unknown }>; nonce?: string }>;
     }>("session:is-running", { sessionId }),
     /** Bulk snapshot of session ids whose loop is in flight right now. */
     runningIds: () => invoke<{ ids: string[] }>("session:running-ids", {}),
@@ -966,7 +966,7 @@ const api = {
     approvePlan: (req: unknown) => ipcRenderer.send("session:approve-plan", req),
     /** Fired when the agent calls ask_questions — renderer should render an inline form */
     /** Answer a blocked ask_questions call — the text is fed back to the model as the tool result */
-    respondQuestions: (sessionId: string, callId: string, answers: string) => ipcRenderer.send("session:respond-questions", { sessionId, callId, answers }),
+    respondQuestions: (sessionId: string, callId: string, answers: string, nonce?: string) => ipcRenderer.send("session:respond-questions", { sessionId, callId, answers, nonce }),
     /** List all persisted coding sessions for a project (project-scoped history) */
     listSessions:   (projectId: string) => invoke("db:session:list", { projectId }),
     /** Persist a new coding session row to SQLite */

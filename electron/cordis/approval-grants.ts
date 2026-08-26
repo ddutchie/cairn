@@ -7,13 +7,13 @@
  * per-session state instead:
  *
  *   - tools        — tool names granted via "Always allow this tool"
- *                    (pi-agent:respond-tool grant:"session")
+ *                    (session:respond-tool grant:"session")
  *   - bashCommands — canonicalized bash commands granted via "Always allow this
  *                    command" (grant:"command"). Exact-string matching only:
  *                    no prefixes, no wildcards (same stance as automation
  *                    standing rules, which refuse wildcard exec grants).
  *
- * Grants are cleared with their session (pi-agent:clear / :destroy).
+ * Grants are cleared with their session (session:clear / :destroy).
  */
 
 export interface SessionGrants {
@@ -35,7 +35,7 @@ export function getSessionGrants(sessionId: string): SessionGrants {
   return g;
 }
 
-/** Drop all grants for a session (called on pi-agent:clear / :destroy). */
+/** Drop all grants for a session (called on session:clear / :destroy). */
 export function clearSessionGrants(sessionId: string): void {
   sessionGrants.delete(sessionId);
 }
@@ -53,7 +53,7 @@ export function canonicalBashCommand(command: unknown): string | null {
 
 // ── Trusted per-callId argument store ────────────────────────────────────────
 //
-// The pi-agent:respond-tool IPC handler needs to know the EXECUTED command
+// The session:respond-tool IPC handler needs to know the EXECUTED command
 // text (not the renderer's echo of what it thinks was asked) so a
 // grant:'command' click grants exactly what dsh will run — not whatever
 // string a compromised renderer or UI plugin can inject via the IPC. dsh's
@@ -110,7 +110,7 @@ export interface PendingAskMeta {
   callId: string;
   /**
    * Per-ask random nonce minted when the ask was emitted. The renderer must
-   * echo it back on pi-agent:respond-tool — a compromised page / UI plugin
+   * echo it back on session:respond-tool — a compromised page / UI plugin
    * that only saw the callId can't approve because it never received the
    * nonce. Absent on legacy sites; the verify path fail-closes when the
    * expected nonce is missing.
@@ -128,7 +128,7 @@ export interface PendingAskRegistry {
 
 /**
  * Tracks outstanding tool-approval asks so a reloading renderer can pull them
- * (`pi-agent:is-running`) instead of relying on the original push — which the
+ * (`session:is-running`) instead of relying on the original push — which the
  * reload swallowed while the main-process promise stayed blocked.
  */
 export function createPendingAskRegistry(): PendingAskRegistry {

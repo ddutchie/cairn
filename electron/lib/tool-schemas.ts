@@ -558,7 +558,7 @@ export type ToolName = keyof typeof TOOL_SCHEMAS;
 export const CHAT_ONLY_TOOLS: ToolName[] = ["get_active_context", "generate_prd", "spawn_tasks_from_note", "ask_questions", "suggest_connections"];
 
 /**
- * Tools excluded only from in-app agents (chat + pi-agent) but kept in MCP.
+ * Tools excluded only from in-app agents (chat + session) but kept in MCP.
  * External MCP clients (Claude Desktop, etc.) benefit from the broader surface.
  *
  *   get_cairn_context  → useful for fresh MCP sessions; agents use get_project_context_pack

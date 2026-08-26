@@ -11,7 +11,7 @@
  *  - Reuses the NATIVE approval UI end-to-end: a synthetic pending chip makes
  *    the ask visible in the transcript, `session:tool-confirm-required` turns
  *    it into an ApprovalCard (risk label/grants from shared/agent/tool-risk),
- *    and resolution rides the same `pi-agent:respond-tool` pairing as native
+ *    and resolution rides the same `session:respond-tool` pairing as native
  *    asks — including standing-grant recording.
  *  - Fail-closed everywhere: no transport registered ⇒ "cancelled"; timeout
  *    ⇒ "cancelled" (+ expiry event so the card retires); abort ⇒ "cancelled".
@@ -58,7 +58,7 @@ export function getConfirmTransport(sessionId: string): ConfirmTransport | undef
 
 export interface InteractiveConfirmTransportDeps {
   sessionId: string;
-  /** Emit `pi-agent:*` events (already tagged with sessionId upstream). */
+  /** Emit `session:*` events (already tagged with sessionId upstream). */
   send: (channel: string, payload: Record<string, unknown>) => void;
   /** Same pairing the native approval bridge uses (composite-keyed upstream). */
   registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void) => () => void;

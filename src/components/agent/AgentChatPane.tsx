@@ -4,7 +4,7 @@
  * AgentChatPane — chat UI for Cairn native agent sessions.
  *
  * Rendered inside SessionPane when session.sessionType === "coding".
- * Subscribes to pi-agent:* IPC events and updates Zustand store.
+ * Subscribes to session:* IPC events and updates Zustand store.
  * Multi-turn: each new message continues the same session's history.
  */
 
@@ -187,7 +187,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       },
     },
   });
-  const { pendingQuestions, pendingQuestionCallId } = sessionConversation;
+  const { pendingQuestions, pendingQuestionCallId, pendingQuestionNonce } = sessionConversation as typeof sessionConversation & { pendingQuestionNonce?: string };
 
   // Attachment support follows the agent's selected model (same as chat). The
   // models.dev catalog loads in the background, so subscribe to it — without
@@ -253,10 +253,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Restore the busy state when this pane (re)mounts. isLoading is local state,
   // so a session that kept working while its UI was unmounted (e.g. the
   // automation Develop modal closed mid-run) would otherwise come back showing
-  // an idle input. The main process tracks the live loop (`pi-agent:is-running`)
+  // an idle input. The main process tracks the live loop (`session:is-running`)
   // — poll it once on mount. When it reports not-running, any assistant message
   // the previous mount left in a streaming state (it unmounted before
-  // pi-agent:done) is stale — finalise it so no ghost bubble lingers.
+  // session:done) is stale — finalise it so no ghost bubble lingers.
   //
   // Declared BEFORE the initial-prompt effect on purpose: on a genuinely fresh
   // mount the session hasn't fired a prompt yet, which means THIS mount is about
@@ -286,14 +286,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // forever with no visible answer path.
       const pq = res?.pendingQuestions?.[0];
       if (pq && pq.questions.length > 0) {
-        sessionConversation.setQuestions(pq.questions as PendingQuestion[], pq.callId);
+        sessionConversation.setQuestions(pq.questions as PendingQuestion[], pq.callId, (pq as { nonce?: string }).nonce);
       }
       if (running) {
         setIsLoading(true);
         return;
       }
       // Not running: anything still streaming is stale — the loop ended while
-      // this pane was unmounted (pi-agent:done was missed). Finalise it so no
+      // this pane was unmounted (session:done was missed). Finalise it so no
       // ghost bubble lingers, and show the idle input.
       setIsLoading(false);
       finaliseAgentMessage(session.sessionId);
@@ -368,8 +368,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     /* ── Subagent events (handled by the single projection subscription above) ──
     // Coding-agent subagents (dsh child sessions with header.origin=='subagent'
     // and header.parentSession==sessionId) come through the shared
-    // chat:subagent* bus that cairnSubagentPlugin emits (not the pi-agent:*
-    // bus — the pre-fix code subscribed to `pi-agent:*` with a `${sessionId}:sub:`
+    // chat:subagent* bus that cairnSubagentPlugin emits (not the session:*
+    // bus — the pre-fix code subscribed to `session:*` with a `${sessionId}:sub:`
     // prefix that nothing ever emitted, making every delegation trace
     // invisible during a live run). Each event includes parentSession so we
     // can filter to just this pane's children.
@@ -725,9 +725,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       void sendPrompt(answersText);
       return;
     }
-    window.electron?.session.respondQuestions(session.sessionId, pendingQuestionCallId, answersText);
+    window.electron?.session.respondQuestions(session.sessionId, pendingQuestionCallId, answersText, pendingQuestionNonce);
     sessionConversation.setQuestions(null);
-  }, [pendingQuestionCallId, session, sendPrompt, sessionConversation]);
+  }, [pendingQuestionCallId, pendingQuestionNonce, session, sendPrompt, sessionConversation]);
 
   const handleSearchFiles = useCallback(async (query: string): Promise<SuggestionItem[]> => {
     if (!window.electron || !session.cwd) return [];
@@ -740,7 +740,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         subtitle: "File",
       }));
     } catch (err) {
-      console.error("[pi-agent:autocomplete] searchFiles failed:", err);
+      console.error("[session:autocomplete] searchFiles failed:", err);
       return [];
     }
   }, [session.cwd]);

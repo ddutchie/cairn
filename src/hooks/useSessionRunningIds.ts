@@ -44,8 +44,9 @@ function handleVisibility() {
       stopTimer();
       pausedByVisibility = true;
     }
-  } else if (pausedByVisibility && subscribers > 0) {
+  } else if (subscribers > 0 && timer === null) {
     pausedByVisibility = false;
+    poll();
     startTimer();
   }
 }

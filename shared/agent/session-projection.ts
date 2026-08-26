@@ -6,7 +6,7 @@ export type SessionProjectionKind =
 
 export type SessionProjectionData = {
   approval: Record<string, unknown>;
-  question: { callId: string; questions: unknown[] };
+  question: { callId: string; questions: unknown[]; nonce?: string };
   "subagent-trace": Record<string, unknown>;
   todos: { todos: unknown[] };
   "plan-note": { noteId?: string; planContent?: string };

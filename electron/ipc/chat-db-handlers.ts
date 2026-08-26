@@ -75,6 +75,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
             .filter((d: { isDirectory: () => boolean }) => d.isDirectory())
             .map((d: { name: string }) => d.name);
           for (const proj of projectDirs) {
+            if (!isSafeId(proj)) continue;
             const projPath = path.join(root, proj);
             let entries: string[] = [];
             try {
@@ -83,6 +84,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
                 .map((d: { name: string }) => d.name);
             } catch { continue; }
             for (const sess of entries) {
+              if (!isSafeId(sess) && !subagentIds.includes(sess)) continue;
               const isChild = subagentIds.includes(sess);
               if (!isChild && sess !== threadId && sess !== stableId && !sess.startsWith(prefix) && !sess.startsWith(threadId)) continue;
               const base = path.join(projPath, sess);
@@ -204,10 +206,12 @@ export function registerChatDbHandlers(ctx: DbContext): void {
           try {
             const projectDirs = fs.readdirSync(root, { withFileTypes: true } as unknown as { withFileTypes: true }).filter((d: { isDirectory: () => boolean }) => d.isDirectory()).map((d: { name: string }) => d.name);
             for (const proj of projectDirs) {
+              if (!isSafeId(proj)) continue;
               const projPath = path.join(root, proj);
               let entries: string[] = [];
               try { entries = fs.readdirSync(projPath, { withFileTypes: true } as unknown as { withFileTypes: true }).filter((d: { isDirectory: () => boolean }) => d.isDirectory()).map((d: { name: string }) => d.name); } catch { continue; }
               for (const sess of entries) {
+                if (!isSafeId(sess)) continue;
                 if (sess !== threadId && !sess.startsWith(prefix) && !sess.startsWith(threadId)) continue;
                 const base = path.join(projPath, sess);
                 for (const p of [path.join(base, "session.jsonl.zstd"), path.join(base, "session.jsonl"), base + ".jsonl", path.join(base, "session.jsonl"), base]) {

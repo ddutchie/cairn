@@ -91,6 +91,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   const [subagents, setSubagents] = useState<ChatSubagent[]>([]);
   const [questionsBySession, setQuestionsBySession] = useState<Record<string, SessionConversationQuestion[]>>({});
   const [questionCallsBySession, setQuestionCallsBySession] = useState<Record<string, string | undefined>>({});
+  const [questionNoncesBySession, setQuestionNoncesBySession] = useState<Record<string, string | undefined>>({});
   const textRef = useRef("");
   const thoughtRef = useRef("");
   const toolsRef = useRef<SessionConversationToolCall[]>([]);
@@ -106,6 +107,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     if (!id) return;
     setQuestionsBySession((current) => { const next = { ...current }; delete next[id]; return next; });
     setQuestionCallsBySession((current) => { const next = { ...current }; delete next[id]; return next; });
+    setQuestionNoncesBySession((current) => { const next = { ...current }; delete next[id]; return next; });
   };
 
   const resetTransient = (keepQuestions = false) => {
@@ -157,6 +159,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
       if (projection.kind === "question" && Array.isArray(data.questions)) {
         setQuestionsBySession((current) => ({ ...current, [currentId]: data.questions as SessionConversationQuestion[] }));
         setQuestionCallsBySession((current) => ({ ...current, [currentId]: typeof data.callId === "string" ? data.callId : undefined }));
+        setQuestionNoncesBySession((current) => ({ ...current, [currentId]: typeof data.nonce === "string" ? data.nonce : undefined }));
       } else if (projection.kind === "subagent-trace" && data.parentSession === projection.sessionId) {
         const childId = String(data.childId ?? "");
         if (!childId) return;
@@ -190,8 +193,9 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   const answerQuestions = (answers: string) => {
     const id = sessionIdRef.current;
     const callId = id ? questionCallsBySession[id] : undefined;
+    const nonce = id ? questionNoncesBySession[id] : undefined;
     if (!id || !callId) return false;
-    window.electron?.session.respondQuestions(id, callId, answers); clearQuestionsFor(id); return true;
+    window.electron?.session.respondQuestions(id, callId, answers, nonce); clearQuestionsFor(id); return true;
   };
   const syncRunning = (running: boolean) => setIsLoading(running);
   const setToolApproval = (callId: string, required: boolean, nonce?: string) => {
@@ -210,17 +214,19 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     subagents,
     pendingQuestions: sessionId ? questionsBySession[sessionId] ?? null : null,
     pendingQuestionCallId: sessionId ? questionCallsBySession[sessionId] : undefined,
+    pendingQuestionNonce: sessionId ? questionNoncesBySession[sessionId] : undefined,
     startPrompt,
     syncRunning,
     setToolApproval,
     stop,
     clearQuestions,
-    setQuestions: (questions: SessionConversationQuestion[] | null, callId?: string) => {
+    setQuestions: (questions: SessionConversationQuestion[] | null, callId?: string, nonce?: string) => {
       const id = sessionIdRef.current;
       if (!id) return;
       if (questions) {
         setQuestionsBySession((current) => ({ ...current, [id]: questions }));
         setQuestionCallsBySession((current) => ({ ...current, [id]: callId }));
+        setQuestionNoncesBySession((current) => ({ ...current, [id]: nonce }));
       } else clearQuestionsFor(id);
     },
     answerQuestions,

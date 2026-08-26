@@ -42,7 +42,7 @@ export interface RunCordisCodingOptions {
   db: Database;
   req: ChatRequest;
   workspacePath: string;
-  /** The coding session id — scopes every pi-agent:* event + DB todos. */
+  /** The coding session id — scopes every session:* event + DB todos. */
   sessionId: string;
   cwd: string;
   systemPrompt: string;
@@ -77,7 +77,7 @@ export interface RunCordisCodingOptions {
   };
   /**
    * Tool-approval adapter (HITL). registerPending stores a resolver keyed by
-   * callId that the pi-agent:respond-tool IPC handler invokes with the decision.
+   * callId that the session:respond-tool IPC handler invokes with the decision.
    * Required for autoApprove:false; omitted → autoApprove is forced on.
    */
   approvals?: {
@@ -301,7 +301,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
 
 /**
  * Create (or resume) a dsh agent for a coding session WITHOUT running a turn.
- * Shared by runCordisCodingLoop and pi-agent:compact-now so manual compaction
+ * Shared by runCordisCodingLoop and session:compact-now so manual compaction
  * can act on an idle session. Resumes the persisted jsonl if it exists.
  * The returned handle is idle until followup(); caller disposes it.
  */

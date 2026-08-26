@@ -236,7 +236,7 @@ export function getEmbeddingsSettingsCached(): CachedEmbeddingsConfig {
 
 /**
  * Persist an LLM connection to the cache from an IPC request config. Shared by
- * the chat / prd / flow / pi-agent handlers so the "cache only a keychain ref,
+ * the chat / prd / flow / session handlers so the "cache only a keychain ref,
  * never a raw key" rule lives in one place. `saveCachedConfig` scrubs the apiKey
  * (a non-ref value is stored as an explicit clear), so callers can pass the
  * request config straight through without their own guard.

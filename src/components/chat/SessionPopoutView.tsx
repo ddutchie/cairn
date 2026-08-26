@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { ArrowLeftFromLine, ChevronDown, ChevronRight, Code2, MessageSquare, PanelLeftClose, PanelLeftOpen, Terminal } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -68,6 +68,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
   const [selection, setSelection] = useState<PopoutSelection>({ sessionId, profile, activeProjectId, workspaceId, cwd });
   const [browserOpen, setBrowserOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(activeProjectId ? [activeProjectId] : []));
+  const browserTriggerRef = useRef<HTMLButtonElement>(null);
 
   // Keep selection in sync when the handoff updates via chat:sessionUpdated (C2 live push).
   useEffect(() => {
@@ -126,6 +127,29 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
     runningIds.has(session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId),
   [runningIds]);
 
+  function handleListboxKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const container = e.currentTarget;
+    const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
+    if (options.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    const currentIndex = active ? options.indexOf(active) : -1;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const next = currentIndex < options.length - 1 ? currentIndex + 1 : 0;
+      options[next]?.focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const prev = currentIndex > 0 ? currentIndex - 1 : options.length - 1;
+      options[prev]?.focus();
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      options[0]?.focus();
+    } else if (e.key === "End") {
+      e.preventDefault();
+      options[options.length - 1]?.focus();
+    }
+  }
+
   const pickSession = useCallback((session: SessionSummary) => {
     // Coding sessions need their cwd for the runtime prompt; the registry summary
     // does not carry it, so resolve it from the coding history here.
@@ -143,6 +167,19 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    if (!browserOpen) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setBrowserOpen(false);
+        browserTriggerRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [browserOpen]);
 
   return (
     <div className="flex flex-1 min-h-0">
@@ -167,6 +204,8 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                   <button
                     type="button"
                     onClick={() => toggleProject(project.id)}
+                    aria-expanded={isOpen}
+                    aria-controls={`project-${project.id}-sessions`}
                     className="flex items-center gap-1.5 w-full rounded-md px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
                   >
                     {isOpen ? <ChevronDown size={12} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="text-[var(--text-tertiary)]" />}
@@ -174,7 +213,14 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                     <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">{sessions.length}</span>
                   </button>
                   {isOpen && (
-                    <div role="listbox" aria-label={`${project.name} sessions`} className="ml-2 border-l border-[var(--border)] pl-1.5 space-y-0.5">
+                    <div
+                      id={`project-${project.id}-sessions`}
+                      role="listbox"
+                      aria-label={`${project.name} sessions`}
+                      tabIndex={-1}
+                      onKeyDown={handleListboxKeyDown}
+                      className="ml-2 border-l border-[var(--border)] pl-1.5 space-y-0.5"
+                    >
                       {sessions.length === 0 ? (
                         <p className="px-2 py-1.5 text-[0.714rem] text-[var(--text-tertiary)]">No sessions</p>
                       ) : sessions.map((session) => {
@@ -187,6 +233,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                             type="button"
                             role="option"
                             aria-selected={selected}
+                            tabIndex={selected ? 0 : -1}
                             onClick={() => pickSession(session)}
                             className={cn(
                               "flex items-center gap-2 w-full rounded-md border-l-2 px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
@@ -225,6 +272,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
         browserOpen={browserOpen}
         onToggleBrowser={() => setBrowserOpen((v) => !v)}
         onPopIn={onPopIn}
+        browserTriggerRef={browserTriggerRef}
       />
     </div>
   );
@@ -235,11 +283,12 @@ interface ConversationProps {
   browserOpen: boolean;
   onToggleBrowser: () => void;
   onPopIn: () => void;
+  browserTriggerRef: React.RefObject<HTMLButtonElement | null>;
 }
 
 /** The session-bound conversation. Keyed by session id so switching sessions in
  *  the browser cleanly remounts the pane, transcript, and live-event hook. */
-function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, onPopIn }: ConversationProps) {
+function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, onPopIn, browserTriggerRef }: ConversationProps) {
   const { sessionId, profile, activeProjectId, workspaceId, cwd } = selection;
   const threadId = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
   const { aiConfig, agentConfig, projects } = useCairnStore(useShallow((s) => ({ aiConfig: s.aiConfig, agentConfig: s.agentConfig, projects: s.projects })));
@@ -310,16 +359,16 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
     historyLoader={loadHistory}
     onHistoryLoaded={handleHistoryLoaded}
     centered={profile === "chat"}
-    title={(
-      <div className="flex items-center gap-1.5 min-w-0">
-        <Tooltip content={browserOpen ? "Hide session browser" : "Show session browser"} side="bottom">
-          <button onClick={onToggleBrowser} className="p-1 -ml-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label={browserOpen ? "Hide session browser" : "Show session browser"}>
-            {browserOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}
-          </button>
-        </Tooltip>
-        <span className="text-[0.714rem] font-semibold text-[var(--text-primary)] truncate">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>
-      </div>
-    )}
+      title={(
+       <div className="flex items-center gap-1.5 min-w-0">
+         <Tooltip content={browserOpen ? "Hide session browser" : "Show session browser"} side="bottom">
+           <button ref={browserTriggerRef} onClick={onToggleBrowser} className="p-1 -ml-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label={browserOpen ? "Hide session browser" : "Show session browser"}>
+             {browserOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}
+           </button>
+         </Tooltip>
+         <span className="text-[0.714rem] font-semibold text-[var(--text-primary)] truncate">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>
+       </div>
+     )}
     contextLimit={aiConfig.contextLimit ?? 128000}
     actions={(
       <Tooltip content="Return session to main window" side="bottom">

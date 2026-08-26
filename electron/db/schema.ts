@@ -825,7 +825,7 @@ const MIGRATIONS: Migration[] = [
   // `automations` holds the schedule + replayed instructions + per-automation
   // standing rules; `automation_runs` records each fire (the independent,
   // resumable thread a run executes in). Device-local (not synced) — automations
-  // are a workspace-authoring convenience, mirroring slash_commands / pi-agent
+  // are a workspace-authoring convenience, mirroring slash_commands / session
   // sessions. Schedule kinds: 'cron' (5-field), 'every' ("N unit"), 'once' (ISO
   // datetime). next_run_at is an ISO string indexed for cheap due() lookups.
   (db) => {
@@ -882,7 +882,7 @@ const MIGRATIONS: Migration[] = [
       CREATE TABLE IF NOT EXISTS approval_items (
         id         TEXT PRIMARY KEY,
         run_id     TEXT,                          -- automation_run id (nullable for interactive sessions)
-        session_id TEXT,                          -- pi-agent session id (nullable)
+        session_id TEXT,                          -- session session id (nullable)
         tool       TEXT NOT NULL,
         args       TEXT NOT NULL DEFAULT '{}',    -- JSON tool arguments (redacted where sensitive)
         args_hash  TEXT NOT NULL DEFAULT '',      -- idempotency key: sha1(tool + args)

@@ -404,7 +404,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
 
   setAgentToolConfirmRequired(sessionId, callId, confirmRequired, approvalNonce) {
     // Approval-card patch: attach both the confirm flag and (when supplied)
-    // the main-side per-ask nonce so pi-agent:respond-tool can verify the
+    // the main-side per-ask nonce so session:respond-tool can verify the
     // click's provenance. On clear (confirmRequired=false), drop the nonce
     // too — it's a one-shot secret.
     const patch = confirmRequired

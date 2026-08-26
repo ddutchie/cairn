@@ -17,6 +17,7 @@ import { resolveLlmApiKey } from "../lib/secure-store";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { registerPendingQuestion, recordPendingQuestion } from "../cordis/pending-question-broker";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
+import { mintAskNonce } from "./ask-nonce";
 
 // One controller and concurrency slot per canonical session, regardless of
 // which renderer issued the prompt.
@@ -45,6 +46,8 @@ export function isChatThreadRunning(sessionId: string): boolean {
 export function abortChatSession(sessionId: string): void {
   abortControllers.get(sessionId)?.abort();
   abortControllers.delete(sessionId);
+  const raw = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
+  runningThreads.delete(raw);
 }
 
 function resolveAIConfig(config?: {
@@ -131,18 +134,19 @@ export function registerChatHandler(_ctx: DbContext): void {
 export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent, req: ChatRequest): Promise<void> {
     const getWin = ctx.getWin;
     const sessionId = `chat-${req.threadId}`;
-    // A new turn supersedes a previous turn from the same session.
-    abortChatSession(sessionId);
     // Concurrent-stream guard on the same thread: if another window (pop-out,
     // second Cairn instance) is already streaming this thread, refuse the
     // second stream instead of racing on the same session.jsonl.zstd. dsh's
     // persistence serialises writes, but the two turns would still interleave
-    // into a semantically incoherent transcript.
+    // into a semantically incoherent transcript. Check BEFORE aborting so a
+    // concurrent turn is not killed and the new turn does not also start.
     if (req.threadId && runningThreads.has(req.threadId)) {
        broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — please wait for the current turn to finish.", code: "busy" }));
        broadcastEvent("session:busy", { sessionId, reason: "already-running" });
        return;
     }
+    // A new turn supersedes a previous turn from the same session.
+    abortChatSession(sessionId);
     if (req.threadId) runningThreads.add(req.threadId);
     const abortCtrl = new AbortController();
      abortControllers.set(sessionId, abortCtrl);
@@ -228,11 +232,12 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
           getWin,
              sendSubagent: (channel, payload) => send(channel.replace(/^chat:/, "session:"), payload),
            questions: {
-             send: (channel, payload) => send(channel, payload),
-              emitQuestions: (requestId, questions) => {
-                recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
-                 send("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions }));
-              },
+              send: (channel, payload) => send(channel, payload),
+               emitQuestions: (requestId, questions) => {
+                 const nonce = mintAskNonce(sessionId, requestId);
+                 recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
+                  send("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions, nonce } as never));
+               },
              registerPending: (requestId, resolve) => {
                return registerPendingQuestion(sessionId, requestId, resolve);
               },

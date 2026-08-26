@@ -28,11 +28,11 @@ import { resolveLlmApiKey } from "../lib/secure-store";
 import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry, readPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
-import { assertSafeId, resolveWithinRoot } from "./path-safety";
+import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
-import { webcrypto as nodeWebCrypto } from "node:crypto";
 import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
+import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./ask-nonce";
 import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
@@ -46,7 +46,7 @@ const sessions = new Map<string, AgentSession>();
 
 /**
  * Session IDs with a runCordisCodingLoop currently in flight. The renderer
- * polls this via `pi-agent:is-running` when a pane (re)mounts so a session
+ * polls this via `session:is-running` when a pane (re)mounts so a session
  * that kept working while its UI was closed (e.g. the automation Develop
  * modal) comes
  * back already showing the busy state, instead of briefly looking idle.
@@ -55,7 +55,7 @@ const runningLoops = new Set<string>();
 
 // ── Cordis engine wiring ────────────────────────────────────────────────────
 // Per-turn pending resolvers for the dsh loop's HITL seams, keyed by callId (or
-// requestId for questions). The pi-agent:respond-* IPC handlers resolve these,
+// requestId for questions). The session:respond-* IPC handlers resolve these,
 // exactly like the builtin loop's pendingApprovals/pendingDoomLoop maps. Kept
 // module-level so the (single) respond handlers can reach any session's turn.
 const cordisPendingApprovals = new Map<string, (d: { approved: boolean; grant?: "session" | "command" }) => void>();
@@ -69,7 +69,7 @@ const pendingKey = (sessionId: string, callId: string): string => `${sessionId}:
 
 /**
  * Outstanding tool-approval asks, so a reloading renderer can pull them back
- * via pi-agent:is-running instead of losing the card (and leaving the main
+ * via session:is-running instead of losing the card (and leaving the main
  * promise blocked with no visible way to answer it).
  */
 const pendingAsks = createPendingAskRegistry();
@@ -77,13 +77,13 @@ const pendingAsks = createPendingAskRegistry();
 /**
  * Outstanding QUESTION asks (ask_questions / exit_plan_mode's plan-review),
  * so a reloading renderer can pull the question payload back via
- * pi-agent:is-running. The tool-approval registry above (pendingAsks) only
+ * session:is-running. The tool-approval registry above (pendingAsks) only
  * records name/callId — questions need the full payload preserved so the
  * PlanReviewCard can re-render its plan-under-review after reload.
  */
 
 /**
- * Per-ask random nonce so pi-agent:respond-tool must present proof it
+ * Per-ask random nonce so session:respond-tool must present proof it
  * received the original tool-confirm-required push. Without this, any
  * renderer-side script (a compromised web content, a UI plugin) could
  * call window.electron.piAgent.respondTool(sid, cid, true) for a
@@ -91,34 +91,10 @@ const pendingAsks = createPendingAskRegistry();
  * defeating the entire approval gate. Nonces are minted in main-side
  * when the ask is emitted, sent to the renderer in the confirm-required
  * event, and required on the respond-tool payload.
+ *
+ * Store lives in ./ask-nonce.ts so chat.ts can mint/verify the same map
+ * without a circular import (session-runtime-handlers ↔ chat).
  */
-const pendingAskNonces = new Map<string, string>();
-function nonceKey(sessionId: string, callId: string) {
-  return `${sessionId}::${callId}`;
-}
-function mintAskNonce(sessionId: string, callId: string): string {
-  // 128-bit cryptographic nonce — 32 hex chars, well past guessing range.
-  const bytes = new Uint8Array(16);
-  // globalThis.crypto is present in Node 24 + Electron main; node:crypto
-  // webcrypto is the fallback for older runtimes or unusual bundling paths.
-  (globalThis.crypto ?? nodeWebCrypto).getRandomValues(bytes);
-  const nonce = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  pendingAskNonces.set(nonceKey(sessionId, callId), nonce);
-  return nonce;
-}
-function verifyAskNonce(sessionId: string, callId: string, presented: unknown): boolean {
-  const expected = pendingAskNonces.get(nonceKey(sessionId, callId));
-  return typeof presented === "string" && expected !== undefined && presented === expected;
-}
-function dropAskNonce(sessionId: string, callId: string) {
-  pendingAskNonces.delete(nonceKey(sessionId, callId));
-}
-function clearAskNoncesForSession(sessionId: string) {
-  const prefix = `${sessionId}::`;
-  for (const k of Array.from(pendingAskNonces.keys())) {
-    if (k.startsWith(prefix)) pendingAskNonces.delete(k);
-  }
-}
 
 /** Drop every pending resolver + approval grant belonging to one session. */
 function sweepSessionPendings(sessionId: string): void {
@@ -217,7 +193,7 @@ interface AgentApprovePlanRequest {
 /**
  * Cordis wrapper — builds all IPC-forwarding callbacks and calls
  * runCordisCodingSession (which drives the dsh agent loop). Extracted to
- * eliminate duplication between the pi-agent:prompt and pi-agent:approve-plan
+ * eliminate duplication between the session:prompt and session:approve-plan
  * handlers — both resolve their differences (system prompt, initial message)
  * before calling this. The compaction transformer + tool loop are owned by
  * dsh now; this thin wrapper only wires the send/emit adapters.
@@ -238,7 +214,7 @@ async function runSession(
 
 // ── Cordis coding-session runner ────────────────────────────────────────────
 // Drives runCordisCodingLoop for one turn and bridges its adapters to the same
-// pi-agent:* IPC + runningLoops lifecycle the builtin path uses. The dsh loop
+// session:* IPC + runningLoops lifecycle the builtin path uses. The dsh loop
 // owns the model↔tool iteration, session persistence (jsonl), plan mode,
 // approvals, doom-loop, skills, sandbox, attachments, compaction, and retries;
 // nothing here re-implements them.
@@ -313,7 +289,7 @@ async function runCordisCodingSession(
           const p = payload as { sessionId?: string; name?: string; label?: string; callId?: string };
           if (p.sessionId) {
             if (channel === "session:tool-confirm-required") {
-              // Mint a per-ask nonce so pi-agent:respond-tool must present
+              // Mint a per-ask nonce so session:respond-tool must present
               // it — a renderer-side script can't approve an ask it never
               // received the original push for. The nonce is attached to
               // the outgoing event (see the payload mutation below) and
@@ -342,13 +318,15 @@ async function runCordisCodingSession(
         send: (channel, p) => {
           // Record the outstanding question payload so a reloading renderer
           // can pull the full question (including plan-review detail +
-          // options) back via pi-agent:is-running — the original push dies
+          // options) back via session:is-running — the original push dies
           // with the old page, and losing it would strand the review with
           // no UI to answer it.
           if (channel === "session:ask-questions") {
             const requestId = typeof p.callId === "string" ? p.callId : undefined;
             const qs = Array.isArray(p.questions) ? p.questions : undefined;
             if (requestId && qs) {
+              const nonce = mintAskNonce(sessionId, requestId);
+              (p as { nonce?: string }).nonce = nonce;
               recordPendingQuestion({
                 sessionId,
                 callId: requestId,
@@ -409,6 +387,7 @@ export function registerSessionRuntimeHandlers(
       pendingQuestions: listPendingQuestions(sessionId).map((q) => ({
         callId: q.callId,
         questions: q.questions,
+        nonce: getAskNonce(sessionId, q.callId),
       })),
     };
   }));
@@ -425,7 +404,7 @@ export function registerSessionRuntimeHandlers(
     return { ids: [...Array.from(runningLoops), ...getRunningChatIds()] };
   }));
 
-  // ── pi-agent:context-ring ─────────────────────────────────────────────────
+  // ── session:context-ring ─────────────────────────────────────────────────
   // Reasoning-provenance snapshot ("whose thinking is in context") for the
   // agent panel's ring badge. Unavailable → renderer hides the pill.
   registerIpcHandle("session:context-ring", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
@@ -433,7 +412,7 @@ export function registerSessionRuntimeHandlers(
     return readContextRing(sessionId);
   }));
 
-  // ── pi-agent:abort ────────────────────────────────────────────────────────
+  // ── session:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
     const profile = q.getSessionProfile(ctx.db, sessionId)?.profile;
     if (profile === "chat") {
@@ -446,11 +425,13 @@ export function registerSessionRuntimeHandlers(
     }
   });
 
-  // ── pi-agent:prompt ───────────────────────────────────────────────────────
+  // ── session:prompt ───────────────────────────────────────────────────────
   registerIpcOn("session:prompt", async (event, req: AgentPromptRequest) => {
     const storedProfile = q.getSessionProfile(ctx.db, req.sessionId)?.profile;
     const selected = selectSessionProfile(storedProfile, req.profile);
     if (!selected.profile) {
+      broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "error", { message: "Unknown session profile — cannot route prompt.", code: "unknown-profile" }));
+      broadcastEvent("session:busy", { sessionId: req.sessionId, reason: "unknown-profile", message: "Unknown session profile — cannot route prompt." });
       return;
     }
     const profile = selected.profile;
@@ -507,6 +488,8 @@ export function registerSessionRuntimeHandlers(
     }
 
     if (req.config?.provider === "localllm") {
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Local LLM provider is disabled.", code: "localllm-disabled" }));
+      broadcastEvent("session:busy", { sessionId, reason: "localllm-disabled", message: "Local LLM provider is disabled." });
       return;
     }
 
@@ -625,7 +608,7 @@ export function registerSessionRuntimeHandlers(
     });
   });
 
-  // ── pi-agent:approve-plan ─────────────────────────────────────────────────
+  // ── session:approve-plan ─────────────────────────────────────────────────
   // Renderer fires this when the user clicks "Approve Plan". Fetches the PRD
   // note, injects the approval message, then continues in execute mode.
   registerIpcOn("session:approve-plan", async (_event, req: AgentApprovePlanRequest) => {
@@ -635,7 +618,7 @@ export function registerSessionRuntimeHandlers(
       broadcastEvent(channel, payload);
     };
 
-    // Same concurrency guard as pi-agent:prompt — a plan approval is also a
+    // Same concurrency guard as session:prompt — a plan approval is also a
     // loop run and must never stack on an in-flight loop for this session.
     if (runningLoops.has(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "busy" }));
@@ -644,6 +627,8 @@ export function registerSessionRuntimeHandlers(
     }
 
     if (req.config?.provider === "localllm") {
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Local LLM provider is disabled.", code: "localllm-disabled" }));
+      broadcastEvent("session:busy", { sessionId, reason: "localllm-disabled", message: "Local LLM provider is disabled." });
       return;
     }
 
@@ -693,7 +678,7 @@ export function registerSessionRuntimeHandlers(
       maxTokens:   reqConfig?.maxTokens,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : false,
       isReasoningModel: reqConfig?.isReasoningModel,
-      // Same no-coercion rule as pi-agent:prompt (see above).
+      // Same no-coercion rule as session:prompt (see above).
       provider: reqConfig?.provider,
       contextWindow: reqConfig?.contextWindow,
     };
@@ -738,7 +723,7 @@ export function registerSessionRuntimeHandlers(
     });
   });
 
-  // ── pi-agent:compact-now ─────────────────────────────────────────────────
+  // ── session:compact-now ─────────────────────────────────────────────────
   // Triggered by the /compact slash command. Auto-compaction (BasicCompactionEngine,
   // thresholdRatio 0.8) runs between steps automatically; this is the explicit
   // user-triggered variant. It opens the session's agent from its persisted jsonl
@@ -800,7 +785,7 @@ export function registerSessionRuntimeHandlers(
     }
   });
 
-  // ── pi-agent:set-mode ─────────────────────────────────────────────────────
+  // ── session:set-mode ─────────────────────────────────────────────────────
   // Plan mode is dsh-owned. The toggle executes dsh's /plan command through
   // ctx.commands on a short-lived resumed agent. The session log is the source
   // of truth; SQLite is updated only after a successful command and a committed
@@ -833,7 +818,7 @@ export function registerSessionRuntimeHandlers(
           try {
             q.updateCodingSession(ctx.db, sessionId, { mode: committedMode, updatedAt: ts() });
           } catch (e) {
-            console.warn("[pi-agent] failed to update session mode index:", e);
+            console.warn("[session] failed to update session mode index:", e);
           }
           broadcastEvent("session:mode-change", { sessionId, mode: committedMode });
         } finally {
@@ -842,12 +827,12 @@ export function registerSessionRuntimeHandlers(
       } catch (e) {
         // Do not update or broadcast a requested mode when dsh rejected it.
         // The durable session log remains authoritative and the UI can retry.
-        console.warn("[pi-agent] /plan execution failed:", e instanceof Error ? e.message : e);
+        console.warn("[session] /plan execution failed:", e instanceof Error ? e.message : e);
       }
     })();
   });
 
-  // ── pi-agent:respond-tool ──────────────────────────────────────────────────
+  // ── session:respond-tool ──────────────────────────────────────────────────
   // Resolve the Cordis loop's approval adapter (keyed `${sessionId}::${callId}`).
   // grant:"command" records the exact canonicalized bash command in the
   // session's durable grants — using the TRUSTED args recorded at
@@ -864,7 +849,7 @@ export function registerSessionRuntimeHandlers(
     // in the confirm-required event; only a legitimate consumer of that
     // event has it. Fail-closed on absence / mismatch.
     if (!verifyAskNonce(sessionId, callId, nonce)) {
-      console.warn(`[pi-agent] respond-tool rejected: bad or missing nonce for ${sessionId}/${callId}`);
+      console.warn(`[session] respond-tool rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
     }
     const key = pendingKey(sessionId, callId);
@@ -886,18 +871,23 @@ export function registerSessionRuntimeHandlers(
     }
   });
 
-  // ── pi-agent:respond-questions ─────────────────────────────────────────────
+  // ── session:respond-questions ─────────────────────────────────────────────
   // Answers to a blocked ask_questions call. The formatted answer text is fed
   // back to the model as the tool result so it reasons over the answers in the
   // same turn. Cordis keys by requestId (which the renderer echoes as callId).
-  registerIpcOn("session:respond-questions", (_event, { sessionId, callId, answers }: { sessionId: string; callId: string; answers: string }) => {
+  registerIpcOn("session:respond-questions", (_event, { sessionId, callId, answers, nonce }: { sessionId: string; callId: string; answers: string; nonce?: string }) => {
+    if (!verifyAskNonce(sessionId, callId, nonce)) {
+      console.warn(`[pi-agent] respond-questions rejected: bad or missing nonce for ${sessionId}/${callId}`);
+      return;
+    }
     resolvePendingQuestionAnswer(sessionId, callId, answers);
+    dropAskNonce(sessionId, callId);
     // Drop the recovery registry entry: whether the user answered normally
     // or dismissed via { __dismissed__: true }, the ask has settled and a
     // subsequent is-running poll must NOT re-surface it.
   });
 
-  // ── pi-agent:clear ────────────────────────────────────────────────────────
+  // ── session:clear ────────────────────────────────────────────────────────
   // Clears a session's message history (new conversation within same session).
   // Also resets the compaction transformer so the new conversation starts
   // with a fresh cachedSummary.
@@ -912,7 +902,13 @@ export function registerSessionRuntimeHandlers(
     }
     // Clearing the persisted log while a loop is running would desync its
     // in-flight context. The renderer stops the run before clearing, so this is
-    // defensive.
+    // defensive. Clear is rejected if running.
+    if (runningLoops.has(sessionId)) {
+      return;
+    }
+    // TOCTOU re-check: re-validate runningLoops after assertSafeId and immediately
+    // before the destructive sweep/file deletion. A concurrent prompt could have
+    // started between the first guard and now; clear is rejected if still running.
     if (runningLoops.has(sessionId)) {
       return;
     }
@@ -940,6 +936,7 @@ export function registerSessionRuntimeHandlers(
         try {
           const projectDirs = fs.readdirSync(root, { withFileTypes: true }).filter((d: { isDirectory: () => boolean }) => d.isDirectory()).map((d: { name: string }) => d.name);
           for (const proj of projectDirs) {
+            if (!isSafeId(proj) || !isSafeId(sessionId)) continue;
             const base = resolveWithinRoot(root, proj, sessionId);
             if (!base) continue;
             for (const p of [path.join(base, "session.jsonl.zstd"), path.join(base, "session.jsonl"), base + ".jsonl", path.join(base, "session.jsonl"), base]) {
@@ -993,7 +990,7 @@ export function registerSessionRuntimeHandlers(
     } catch { /* best-effort */ }
   });
 
-  // ── pi-agent:destroy ──────────────────────────────────────────────────────
+  // ── session:destroy ──────────────────────────────────────────────────────
   // Called when a coding session tab is closed — frees memory
   registerIpcOn("session:destroy", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
@@ -1007,7 +1004,7 @@ export function registerSessionRuntimeHandlers(
     sweepSessionPendings(sessionId);
   });
 
-  // ── pi-agent:restore-context ───────────────────────────────────────────────────────
+  // ── session:restore-context ───────────────────────────────────────────────────────
   // On the Cordis engine, session context resumes automatically via the dsh
   // jsonl log (ctx.sessionPersistence.inspect → ctx.agents.resume in
   // run-cordis-coding.ts) — there is no pi_agent_llm_history on this path.
@@ -1022,7 +1019,7 @@ export function registerSessionRuntimeHandlers(
         role: q.normalizeSessionRole(sessionRow?.role),
       });
     } catch (e) {
-      console.warn("[pi-agent] restore-context failed for", sessionId, e);
+      console.warn("[session] restore-context failed for", sessionId, e);
     }
   });
 }

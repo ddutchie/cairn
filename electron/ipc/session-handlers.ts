@@ -2,7 +2,7 @@
  * Cairn — IPC handlers for session persistence (`db:session:*`).
  *
  * The agent loop itself lives in `electron/ipc/session-runtime-handlers.ts` (streaming events
- * via `pi-agent:*`). These channels are the READ surface used by the
+ * via `session:*`). These channels are the READ surface used by the
  * renderer's SessionPane to load coding-agent session history from the dsh
  * JSONL session log (session-as-truth) plus a small SQLite metadata layer
  * for the session index + todos.

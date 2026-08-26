@@ -260,9 +260,14 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
             (when present) sit to its right. */}
         <SessionBrowser activeSessionId={activeSessionId} variant="dropdown" />
         <div
-          className="flex items-center gap-0 flex-1 min-w-0 h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-[var(--border)] scrollbar-track-transparent hover:scrollbar-thumb-[var(--text-tertiary)] [scrollbar-width:thin] [scrollbar-gutter:stable]"
-          style={{ scrollbarWidth: "thin" }}
+          role="tablist"
+          aria-orientation="horizontal"
           aria-label="Terminal tabs"
+          className={cn(
+            "flex items-center gap-0 min-w-0 h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-[var(--border)] scrollbar-track-transparent hover:scrollbar-thumb-[var(--text-tertiary)] [scrollbar-width:thin] [scrollbar-gutter:stable]",
+            ptySessions.length > 0 ? "flex-1" : "flex-shrink-0",
+          )}
+          style={{ scrollbarWidth: "thin" }}
         >
           {ptySessions.map((session) => (
             <TerminalTab

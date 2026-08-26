@@ -11,10 +11,13 @@
  *   popIn   → pop-out sends its session id → main process closes pop-out
  */
 
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow } from "electron";
+import fs from "fs";
 import path from "path";
 import { bindChatPopoutSession, chatParticipantIdsExcept, resolveChatPopoutSession, type ChatPopoutPayload } from "../shared/agent/chat-popout";
 import type { DbContext } from "./ipc/result-helpers";
+import { handle } from "./ipc/result-helpers";
+import { registerIpcHandle } from "./ipc/registry";
 import { getSessionProfile } from "./db/queries";
 
 const isDev = !app.isPackaged;
@@ -34,6 +37,33 @@ let popoutWindow: BrowserWindow | null = null;
 
 /** Track the main window's webContents ID so we can find it later. */
 let mainWindowWebContentsId: number | null = null;
+
+// Duplicated from electron/main.ts:164-173 to avoid a circular import.
+// Returns the --surface colour for the stored theme so the pop-out's
+// titleBarOverlay matches main window's TitleBar (see main.ts:getStoredThemeSurface).
+function getStoredThemeSurface(): string {
+  try {
+    const userDataPath = app.getPath("userData");
+    const themeFile = path.join(userDataPath, "theme.json");
+    if (fs.existsSync(themeFile)) {
+      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
+      if (t === "light") return "#ffffff"; // --surface in .light (globals.css:35)
+    }
+  } catch { /* ignore */ }
+  return "#141414"; // --surface in .dark (globals.css:11)
+}
+
+function getStoredThemeBackground(): string {
+  try {
+    const userDataPath = app.getPath("userData");
+    const themeFile = path.join(userDataPath, "theme.json");
+    if (fs.existsSync(themeFile)) {
+      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
+      if (t === "light") return "#f5f4f1";
+    }
+  } catch { /* ignore */ }
+  return "#0d0d0d";
+}
 
 function loadPopupUrl(win: BrowserWindow): void {
   if (isDev) {
@@ -56,6 +86,8 @@ export function createChatPopoutWindow(): BrowserWindow {
   }
 
   const isWin = process.platform === "win32";
+  const surface = getStoredThemeSurface();
+  const bg = getStoredThemeBackground();
   const win = new BrowserWindow({
     width: 420,
     height: 640,
@@ -69,13 +101,13 @@ export function createChatPopoutWindow(): BrowserWindow {
     titleBarStyle: isWin ? "hidden" : "hiddenInset",
     ...(isWin && {
       titleBarOverlay: {
-        color: "#141414",
+        color: surface,
         symbolColor: "#888888",
         height: 39,
       },
     }),
     alwaysOnTop: true,
-    backgroundColor: "#0d0d0d",
+    backgroundColor: bg,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -163,96 +195,109 @@ export function broadcastToChat(channel: string, payload: unknown, excludeId?: n
 
 export function registerChatPopoutHandlers(ctx: DbContext): void {
   // Main window requests a pop-out: stores state, creates pop-out window
-  ipcMain.handle("chat:popOut", (event, rawPayload: unknown) => {
-    const payload = bindChatPopoutSession(rawPayload);
-    if (!payload) return { data: { ok: false, reason: "invalid-payload" } };
-    const stored = getSessionProfile(ctx.db, payload.sessionId);
-    const canonical = resolveChatPopoutSession(payload, stored);
-    if (!canonical) return { data: { ok: false, reason: "profile-mismatch" } };
-    mainWindowWebContentsId = event.sender.id;
-    chatParticipants.add(event.sender.id);
+  registerIpcHandle("chat:popOut", (event, rawPayload: unknown) =>
+    handle(async () => {
+      const payload = bindChatPopoutSession(rawPayload);
+      if (!payload) return { ok: false, reason: "invalid-payload" } as const;
+      const stored = getSessionProfile(ctx.db, payload.sessionId);
+      const canonical = resolveChatPopoutSession(payload, stored);
+      if (!canonical) return { ok: false, reason: "profile-mismatch" } as const;
+      mainWindowWebContentsId = event.sender.id;
+      chatParticipants.add(event.sender.id);
 
     // Generation counter prevents the old singleton race where a second popOut
     // overwrote pendingChatSession before popoutReady consumed it.
-    pendingGenerationCounter += 1;
+    // Wrap as uint32 so a long-lived session never grows past MAX_SAFE_INTEGER.
+    pendingGenerationCounter = (pendingGenerationCounter + 1) >>> 0;
+    // Avoid 0 which is falsy for some checks; wrap-around from 2^32-1 goes to 1.
+    if (pendingGenerationCounter === 0) pendingGenerationCounter = 1;
     const generation = pendingGenerationCounter;
-    // Replace safely: drop any still-pending orphan for the not-yet-loaded window.
-    if (pendingGenerationForWindow !== null && pendingByGeneration.has(pendingGenerationForWindow)) {
-      pendingByGeneration.delete(pendingGenerationForWindow);
-    }
-    pendingByGeneration.set(generation, canonical);
-    pendingGenerationForWindow = generation;
+      // Replace safely: drop any still-pending orphan for the not-yet-loaded window.
+      if (pendingGenerationForWindow !== null && pendingByGeneration.has(pendingGenerationForWindow)) {
+        pendingByGeneration.delete(pendingGenerationForWindow);
+      }
+      pendingByGeneration.set(generation, canonical);
+      pendingGenerationForWindow = generation;
 
-    // If a pop-out window already exists, focus it and push the updated session
-    // directly instead of losing the payload in a singleton overwrite.
-    if (popoutWindow && !popoutWindow.isDestroyed()) {
-      popoutWindow.focus();
-      // If the pop-out renderer is already loaded, deliver immediately; otherwise
-      // the pending map will be consumed by the next popoutReady.
-      try {
-        if (!popoutWindow.webContents.isLoading()) {
-          popoutWindow.webContents.send("chat:sessionUpdated", canonical);
-        }
-      } catch { /* ignore send failure during window teardown */ }
-      return { data: { ok: true } };
-    }
+        // If a pop-out window already exists, focus it and push the updated session
+      // directly instead of losing the payload in a singleton overwrite.
+      if (popoutWindow && !popoutWindow.isDestroyed()) {
+        popoutWindow.focus();
+        // If the pop-out renderer is already loaded, deliver immediately; otherwise
+        // the pending map will be consumed by the next popoutReady.
+        try {
+          if (!popoutWindow.webContents.isLoading()) {
+            popoutWindow.webContents.send("chat:sessionUpdated", canonical);
+            pendingByGeneration.delete(generation);
+            pendingGenerationForWindow = null;
+          }
+        } catch { /* ignore send failure during window teardown */ }
+        return { ok: true } as const;
+      }
 
-    createChatPopoutWindow();
-    return { data: { ok: true } };
-  });
+      createChatPopoutWindow();
+      return { ok: true } as const;
+    }),
+  );
 
   // Pop-out page signals it is ready — register as participant, return stored state
-  ipcMain.handle("chat:popoutReady", (event) => {
-    if (event.sender.id !== popoutWindow?.webContents.id) {
-      return { data: { sessionId: "", activeProjectId: null, profile: "chat" as const, workspaceId: null, cwd: null, reason: "not-popout" as const } };
-    }
-    chatParticipants.add(event.sender.id);
-    const gen = pendingGenerationForWindow;
-    const session = gen !== null ? (pendingByGeneration.get(gen) ?? null) : null;
-    if (gen !== null) {
-      pendingByGeneration.delete(gen);
-      // Keep pendingGenerationForWindow for the live window so a reload can
-      // re-deliver if needed? No — clear after consumption; next popOut will assign new.
-      // But retain the generation on the window until closed so direct-send path knows
-      // which entry is live. We clear the map entry but keep the pointer only if we
-      // want reload resilience; simplest is to clear pointer and re-assign on next popOut.
-      // For now clear it so duplicate Ready calls don't deliver stale.
-      pendingGenerationForWindow = null;
-    }
-    const stored = session ? getSessionProfile(ctx.db, session.sessionId) : null;
-    const canonical = session && resolveChatPopoutSession(session, stored);
-    if (session && !canonical) {
-      // Profile mismatch surfaced here — tell the renderer why the session is empty.
-      return { data: { sessionId: "", activeProjectId: null, profile: "chat" as const, workspaceId: null, cwd: null, reason: "profile-mismatch" as const } };
-    }
-    return { data: canonical ?? { sessionId: "", activeProjectId: null, profile: "chat" as const, workspaceId: null, cwd: null } };
-  });
+  registerIpcHandle("chat:popoutReady", (event) =>
+    handle(async () => {
+      if (event.sender.id !== popoutWindow?.webContents.id) {
+        return { sessionId: "", activeProjectId: null, profile: "chat" as const, workspaceId: null, cwd: null, reason: "not-popout" as const };
+      }
+      chatParticipants.add(event.sender.id);
+      const gen = pendingGenerationForWindow;
+      const session = gen !== null ? (pendingByGeneration.get(gen) ?? null) : null;
+      if (gen !== null) {
+        pendingByGeneration.delete(gen);
+        // Keep pendingGenerationForWindow for the live window so a reload can
+        // re-deliver if needed? No — clear after consumption; next popOut will assign new.
+        // But retain the generation on the window until closed so direct-send path knows
+        // which entry is live. We clear the map entry but keep the pointer only if we
+        // want reload resilience; simplest is to clear pointer and re-assign on next popOut.
+        // For now clear it so duplicate Ready calls don't deliver stale.
+        pendingGenerationForWindow = null;
+      }
+      const stored = session ? getSessionProfile(ctx.db, session.sessionId) : null;
+      const canonical = session && resolveChatPopoutSession(session, stored);
+      if (session && !canonical) {
+        // Profile mismatch surfaced here — tell the renderer why the session is empty.
+        return { sessionId: "", activeProjectId: null, profile: "chat" as const, workspaceId: null, cwd: null, reason: "profile-mismatch" as const };
+      }
+      return canonical ?? { sessionId: "", activeProjectId: null, profile: "chat" as const, workspaceId: null, cwd: null };
+    }),
+  );
 
   // Main window requests the pop-out to come back (clicked placeholder button)
-  ipcMain.handle("chat:requestPopIn", (event) => {
-    if (event.sender.id !== mainWindowWebContentsId) {
-      return { data: { ok: false, reason: "not-main-window" } };
-    }
-    if (popoutWindow && !popoutWindow.isDestroyed()) {
-      popoutWindow.webContents.send("chat:requestPopIn");
-    }
-    return { data: { ok: true } };
-  });
+  registerIpcHandle("chat:requestPopIn", (event) =>
+    handle(async () => {
+      if (event.sender.id !== mainWindowWebContentsId) {
+        return { ok: false, reason: "not-main-window" } as const;
+      }
+      if (popoutWindow && !popoutWindow.isDestroyed()) {
+        popoutWindow.webContents.send("chat:requestPopIn");
+      }
+      return { ok: true } as const;
+    }),
+  );
 
   // Pop-out window requests pop-in. Conversation state is already shared by
   // the session log and the session:event broadcast; no final-state merge.
-  ipcMain.handle("chat:popIn", (event, payload: { sessionId: string }) => {
-    if (event.sender.id !== popoutWindow?.webContents.id) {
-      return { data: { ok: false, reason: "not-popout" } };
-    }
-    const senderId = event.sender.id;
-    // Find the main window by its tracked webContents ID (not BrowserWindow.id)
-    const mainWin = findMainWindow();
-    if (mainWin) {
-      mainWin.webContents.send("chat:poppedIn", { sessionId: payload.sessionId });
-    }
-    closeChatPopoutWindow();
-    chatParticipants.delete(senderId);
-    return { data: { ok: true } };
-  });
+  registerIpcHandle("chat:popIn", (event, payload: { sessionId: string }) =>
+    handle(async () => {
+      if (event.sender.id !== popoutWindow?.webContents.id) {
+        return { ok: false, reason: "not-popout" } as const;
+      }
+      const senderId = event.sender.id;
+      // Find the main window by its tracked webContents ID (not BrowserWindow.id)
+      const mainWin = findMainWindow();
+      if (mainWin) {
+        mainWin.webContents.send("chat:poppedIn", { sessionId: payload.sessionId });
+      }
+      closeChatPopoutWindow();
+      chatParticipants.delete(senderId);
+      return { ok: true } as const;
+    }),
+  );
 }
