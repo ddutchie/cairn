@@ -24,6 +24,7 @@ import {
   type ContextRingState,
   type SessionTodoItem,
 } from "./plugins/context-ring";
+import { foldSessionStats, type SessionStats, type TurnStats } from "./session-stats";
 
 
 /** A generic derived message block (post foldSurface + deriveEventMessage). */
@@ -82,6 +83,9 @@ export interface ReplayMessage {
   reasoningItems?: Array<Record<string, unknown>>;
   reasoningModel?: string;
   toolCalls?: ReplayToolCall[];
+  /** Per-turn throughput/latency (TTFT, tok/s, output tokens) — assistant only,
+   *  when derivable from the session log. Attached in loadSessionMessages. */
+  stats?: TurnStats;
 }
 
 /** A replayed subagent trace (child session). */
@@ -332,6 +336,8 @@ export interface LoadSessionMessagesResult {
   usage?: SessionUsageMetrics;
   contextRing?: ContextRingState;
   todos?: SessionTodoItem[];
+  /** Whole-session throughput/latency aggregate (for the composer stats line). */
+  stats?: SessionStats;
 }
 
 export async function loadSessionMessages(
@@ -349,6 +355,22 @@ export async function loadSessionMessages(
   const usage = foldSessionUsage(events);
   const contextRing = foldContextRing(events);
   const todos = foldSessionTodos(events);
+  const stats = foldSessionStats(events);
+
+  // Attach per-turn throughput/latency to assistant bubbles. collapse produces
+  // exactly one assistant bubble per turn, in order, and turns are 1-based and
+  // monotonic — so the Nth assistant bubble (1-based) maps to turn N. Turns with
+  // no derivable metric are absent from byTurn, leaving that bubble's stats
+  // undefined (the UI degrades to no stats line rather than showing zero/NaN).
+  if (stats) {
+    let turn = 0;
+    for (const m of messages) {
+      if (m.role !== "assistant") continue;
+      turn += 1;
+      const t = stats.byTurn[turn];
+      if (t) m.stats = t;
+    }
+  }
 
 
   // Collect subagent children (durable list + live in-memory not yet flushed)
@@ -437,5 +459,5 @@ export async function loadSessionMessages(
   }
   const subagents = attachedSubs;
 
-  return { messages, subagents, usage, contextRing, todos };
+  return { messages, subagents, usage, contextRing, todos, stats };
 }

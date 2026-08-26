@@ -25,6 +25,7 @@ function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessag
     reasoningModel: m.reasoningModel,
     toolCalls: m.toolCalls && m.toolCalls.length ? m.toolCalls.map((tc) => ({ ...tc, status: "done" as const })) : undefined,
     subagents: (m as ReplayMessage & { subagents?: ReplaySubagent[] }).subagents,
+    stats: m.stats,
     // ReplayMessage does not currently preserve event timestamps. Do not stamp
     // every historical message with "now"; the renderer will omit the label.
     createdAt: "",
@@ -46,7 +47,7 @@ export function registerChatSessionHandlers(_ctx: DbContext): void {
       const stableId = String(SessionId(`chat-${threadId}`));
       await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, stableId);
       const liveSessions = (ctx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((ctx as unknown as { sessions: unknown }).sessions);
-      const { messages, usage, contextRing, todos } = await loadSessionMessages(pers, liveSessions, stableId);
+      const { messages, usage, contextRing, todos, stats } = await loadSessionMessages(pers, liveSessions, stableId);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
       const chatMessages = toChatMessages(threadId, enrichToolCallsWithMeta(messages));
 
@@ -55,6 +56,7 @@ export function registerChatSessionHandlers(_ctx: DbContext): void {
         usage,
         contextRing,
         todos,
+        stats,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -714,7 +714,21 @@ export interface ChatMessage {
   images?: Array<{ url: string; name: string; kind?: "image" | "pdf" }>;
   /** Subagent runs during this turn (subagent mode) — expandable inline traces. */
   subagents?: ChatSubagent[];
+  /** Per-turn throughput/latency stats (TTFT, tok/s, output tokens) folded from
+   *  the session log; shown in a compact stats line under the assistant bubble.
+   *  Absent when timing/usage is unavailable (UI shows no stats line). */
+  stats?: MessageStats;
   createdAt: string;
+}
+
+/** Per-message throughput/latency reading (mirrors the session-stats TurnStats). */
+export interface MessageStats {
+  /** First-token latency in ms. */
+  ttftMs?: number;
+  /** Decode throughput (provider output tokens / decode seconds). */
+  tokensPerSecond?: number;
+  /** Provider-reported output tokens for the turn. */
+  outputTokens?: number;
 }
 
 // ── Idea Flow ────────────────────────────────
@@ -997,6 +1011,8 @@ export interface AgentMessage {
   }[];
   subagents?: AgentSubagentMessage[];
   isStreaming?: boolean;
+  /** Per-turn throughput/latency stats (TTFT, tok/s, output tokens) from the session log. */
+  stats?: MessageStats;
   timestamp: string;
 }
 

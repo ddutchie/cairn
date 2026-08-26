@@ -26,6 +26,7 @@ function toAgentMessages(messages: ReplayMessage[]) {
       ? m.toolCalls.map((tc) => ({ callId: tc.callId, name: tc.tool, label: tc.label, args: tc.args, output: tc.output, ok: tc.ok !== false, running: false }))
       : null),
     subagents: ((m as ReplayMessage & { subagents?: ReplaySubagent[] }).subagents ?? null),
+    stats: m.stats ?? null,
     // ReplayMessage does not currently preserve event timestamps. Do not stamp
     // every historical message with "now"; the renderer will omit the label.
     timestamp: "",
@@ -77,10 +78,10 @@ export function registerSessionHandlers(ctx: DbContext): void {
       // registered before presentationMeta recomputation (see chat-session).
       await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, sessionId);
       const liveSessions = (cordisCtx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((cordisCtx as unknown as { sessions: unknown }).sessions);
-      const { messages, usage, contextRing, todos } = await loadSessionMessages(pers, liveSessions, sessionId);
+      const { messages, usage, contextRing, todos, stats } = await loadSessionMessages(pers, liveSessions, sessionId);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
       const agentMessages = toAgentMessages(enrichToolCallsWithMeta(messages));
-      return { messages: agentMessages, usage, contextRing, todos };
+      return { messages: agentMessages, usage, contextRing, todos, stats };
     } catch (err) {
       if (isMissingSessionError(err)) {
         return { messages: [] as ReturnType<typeof toAgentMessages> };

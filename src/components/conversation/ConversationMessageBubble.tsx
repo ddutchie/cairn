@@ -12,6 +12,7 @@ import { toConversationSubagent } from "./conversation-message";
 import type { ConversationMessage } from "./conversation-message";
 import { ConversationToolCall } from "./ConversationToolCall";
 import { ConversationSubagentBlock } from "./ConversationSubagentBlock";
+import { messageStatsSegments } from "../../../shared/chat/message-stats";
 import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 
 interface ConversationMessageBubbleProps {
@@ -95,6 +96,21 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
           <MarkdownContent content={message.content} isUser={isUser} />
           {!isUser && message.isStreaming && <StreamingCursor size="md" />}
         </div>
+        {/* Per-turn throughput/latency — settled assistant messages only, and
+            only when derivable from the session log (no zero/NaN lines). */}
+        {!isUser && !message.isStreaming && (() => {
+          const segments = messageStatsSegments(message.stats);
+          return segments.length ? (
+            <div className="flex items-center gap-1.5 text-[0.607rem] text-[var(--text-tertiary)] font-mono tabular-nums px-1">
+              {segments.map((seg, i) => (
+                <React.Fragment key={seg}>
+                  {i > 0 && <span className="opacity-50">·</span>}
+                  <span>{seg}</span>
+                </React.Fragment>
+              ))}
+            </div>
+          ) : null;
+        })()}
         {message.extraContent}
         {message.contextRefs && message.contextRefs.length > 0 && (
           <div className="flex flex-wrap gap-1">

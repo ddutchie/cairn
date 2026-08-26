@@ -29,6 +29,8 @@ export interface ConversationMessage {
   contextRefs?: LinkedContextReference[];
   extraContent?: ReactNode;
   isStreaming?: boolean;
+  /** Per-turn throughput/latency stats shown under a settled assistant bubble. */
+  stats?: import("@/types").MessageStats;
   createdAt: string;
 }
 
@@ -109,6 +111,7 @@ export function toConversationMessage(
     contextRefs: isChat ? message.contextRefs : undefined,
     extraContent,
     isStreaming: isChat ? undefined : message.isStreaming,
+    stats: message.stats,
     createdAt: isChat ? message.createdAt : message.timestamp,
   };
 }
