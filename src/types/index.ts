@@ -875,7 +875,9 @@ export type SettingsSection =
   | "data"
   | "about"
   | "shortcuts"
-  | "tags";
+  | "tags"
+  | "extensions"
+  | "system";
 
 export interface AppUIState {
   activeWorkspaceId: ID | null;
