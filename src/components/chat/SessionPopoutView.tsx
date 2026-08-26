@@ -33,6 +33,10 @@ function SessionTypeIcon({ kind, size }: { kind: SessionKind; size: number }) {
   return <Terminal size={size} />;
 }
 
+function sanitizeAriaId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 function kindLabel(kind: SessionKind): string {
   if (kind === "chat") return "Chat";
   if (kind === "coding") return "Coding";
@@ -128,6 +132,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
   [runningIds]);
 
   function handleListboxKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
     const container = e.currentTarget;
     const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
     if (options.length === 0) return;
@@ -205,7 +210,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                     type="button"
                     onClick={() => toggleProject(project.id)}
                     aria-expanded={isOpen}
-                    aria-controls={`project-${project.id}-sessions`}
+                    aria-controls={`project-${sanitizeAriaId(project.id)}-sessions`}
                     className="flex items-center gap-1.5 w-full rounded-md px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
                   >
                     {isOpen ? <ChevronDown size={12} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="text-[var(--text-tertiary)]" />}
@@ -214,7 +219,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                   </button>
                   {isOpen && (
                     <div
-                      id={`project-${project.id}-sessions`}
+                      id={`project-${sanitizeAriaId(project.id)}-sessions`}
                       role="listbox"
                       aria-label={`${project.name} sessions`}
                       tabIndex={-1}
@@ -223,20 +228,27 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                     >
                       {sessions.length === 0 ? (
                         <p className="px-2 py-1.5 text-[0.714rem] text-[var(--text-tertiary)]">No sessions</p>
-                      ) : sessions.map((session) => {
+                      ) : sessions.map((session, index) => {
                         const selfId = session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId;
                         const selected = selfId === selection.sessionId;
                         const running = isRunning(session);
+                        const hasSelected = sessions.some((s) => (s.kind === "chat" ? `chat-${s.sourceId}` : s.sourceId) === selection.sessionId);
                         return (
-                          <button
+                          <div
                             key={session.id}
-                            type="button"
                             role="option"
                             aria-selected={selected}
-                            tabIndex={selected ? 0 : -1}
+                            tabIndex={selected ? 0 : !hasSelected && index === 0 ? 0 : -1}
                             onClick={() => pickSession(session)}
+                            onKeyDown={(e) => {
+                              if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                pickSession(session);
+                              }
+                            }}
                             className={cn(
-                              "flex items-center gap-2 w-full rounded-md border-l-2 px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
+                              "flex items-center gap-2 w-full rounded-md border-l-2 px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
                               selected ? "border-l-[var(--accent)] bg-[var(--accent-dim)]" : "border-l-transparent hover:bg-[var(--surface-2)]",
                             )}
                           >
@@ -255,7 +267,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                                 )}
                               </span>
                             </span>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>

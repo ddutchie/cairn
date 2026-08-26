@@ -29,6 +29,10 @@ import { useAgentSessionActions } from "./useAgentSessionActions";
 import { SessionBrowser } from "./SessionBrowser";
 import { chatSessionId } from "../../../shared/agent/session-identity";
 
+function sanitizeAriaId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 interface SessionPaneProps {
   isRightPanel?: boolean;
   chatPrefill?: { text: string; autoSend?: boolean } | null;
@@ -409,13 +413,26 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           ) : null
         )}
 
-        {ptySessions.map((session) => (
-          <SessionMount
-            key={session.sessionId}
-            session={session}
-            isActive={session.sessionId === activeSessionId}
-          />
-        ))}
+        {ptySessions.map((session) => {
+          const tabId = `tab-${sanitizeAriaId(session.sessionId)}`;
+          const panelId = `panel-${sanitizeAriaId(session.sessionId)}`;
+          const isActive = session.sessionId === activeSessionId;
+          return (
+            <div
+              key={session.sessionId}
+              role="tabpanel"
+              id={panelId}
+              aria-labelledby={tabId}
+              hidden={!isActive}
+              className={cn("flex-1 min-h-0 flex flex-col overflow-hidden", !isActive && "hidden")}
+            >
+              <SessionMount
+                session={session}
+                isActive={isActive}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
     <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />

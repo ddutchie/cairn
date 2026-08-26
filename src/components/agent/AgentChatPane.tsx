@@ -344,7 +344,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       }
       if (projection.kind === "plan-note") { if (e.planContent) setPlanNoteContent(e.planContent); setAgentMode(sessionId, "plan", e.noteId); }
       else if (projection.kind === "mode-change") setAgentMode(sessionId, e.mode, e.planNoteId);
-      else if (projection.kind === "question") sessionConversation.setQuestions(e.questions as PendingQuestion[], e.callId);
       else if (projection.kind === "approval") setAgentToolConfirmRequired(sessionId, e.callId, e.status === "required", e.nonce);
       else if (projection.kind === "note-updated") {
         const planId = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.planNoteId;

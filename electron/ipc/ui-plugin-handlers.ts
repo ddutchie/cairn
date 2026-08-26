@@ -8,6 +8,14 @@
  * Security note: the renderer evaluates this source (new Function). That is a
  * code-exec surface — acceptable ONLY behind the dev flag; untrusted-plugin
  * sandboxing is Tier 3 (see docs/plans §10.8 / plugin architecture note).
+ *
+ * IPC envelope note: this module uses ipcMain.handle directly and returns
+ * { data } / { error } manually instead of the shared handle() helper from
+ * ./result-helpers. That's intentional for now — every channel already
+ * normalises to the same shape, and handle() would double-wrap. Dev-gated
+ * (CAIRN_PLUGINS_DEV=1) so the inconsistency is low-risk.
+ * TODO: migrate to handle() / registerIpcHandle when the plugin surface
+ * stabilises, so error logging is uniform with the rest of electron/ipc/.
  */
 import * as fs from "fs";
 import * as path from "path";

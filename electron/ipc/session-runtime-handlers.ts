@@ -26,7 +26,7 @@ import { ts } from "../db/utils";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
-import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry, readPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
+import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry, readPendingApprovalArgs, forgetPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
@@ -52,6 +52,7 @@ const sessions = new Map<string, AgentSession>();
  * back already showing the busy state, instead of briefly looking idle.
  */
 const runningLoops = new Set<string>();
+const clearingSessions = new Set<string>();
 
 // ── Cordis engine wiring ────────────────────────────────────────────────────
 // Per-turn pending resolvers for the dsh loop's HITL seams, keyed by callId (or
@@ -86,11 +87,12 @@ const pendingAsks = createPendingAskRegistry();
  * Per-ask random nonce so session:respond-tool must present proof it
  * received the original tool-confirm-required push. Without this, any
  * renderer-side script (a compromised web content, a UI plugin) could
- * call window.electron.piAgent.respondTool(sid, cid, true) for a
+ * call window.electron.session.respondTool(sid, cid, true) for a
  * callId it saw broadcast — approving every pending ask silently and
  * defeating the entire approval gate. Nonces are minted in main-side
  * when the ask is emitted, sent to the renderer in the confirm-required
- * event, and required on the respond-tool payload.
+ * event, and required on the respond-tool payload. Legacy
+ * window.electron.piAgent alias is also covered.
  *
  * Store lives in ./ask-nonce.ts so chat.ts can mint/verify the same map
  * without a circular import (session-runtime-handlers ↔ chat).
@@ -238,8 +240,26 @@ async function runCordisCodingSession(
   const loopSend = (channel: string, evtPayload: Record<string, unknown>) => {
     if (channel !== "session:projection") return;
     const projection = evtPayload as unknown as SessionProjection;
-    if (projection.kind === "plan-note" && typeof projection.data.noteId === "string") {
-      try { q.updateCodingSession(ctx.db, sessionId, { planNoteId: projection.data.noteId, updatedAt: ts() }); } catch { /* non-critical */ }
+    if (projection.kind === "approval") {
+      const data = projection.data as unknown as { status?: string; callId?: string; name?: string; label?: string; nonce?: string };
+      if (data.status === "required" && typeof data.callId === "string" && !data.nonce) {
+        const nonce = mintAskNonce(sessionId, data.callId);
+        data.nonce = nonce;
+        pendingAsks.record({
+          sessionId,
+          name: data.name ?? "tool",
+          label: data.label ?? data.name ?? "tool",
+          callId: data.callId,
+          nonce,
+        } as never);
+      } else if (data.status === "expired" && typeof data.callId === "string") {
+        pendingAsks.resolve(sessionId, data.callId);
+        dropAskNonce(sessionId, data.callId);
+        forgetPendingApprovalArgs(sessionId, data.callId);
+      }
+    }
+    if (projection.kind === "plan-note" && typeof (projection.data as unknown as { noteId?: unknown }).noteId === "string") {
+      try { q.updateCodingSession(ctx.db, sessionId, { planNoteId: (projection.data as unknown as { noteId: string }).noteId, updatedAt: ts() }); } catch { /* non-critical */ }
     }
     send(channel, projection);
   };
@@ -285,7 +305,28 @@ async function runCordisCodingSession(
       send: (channel, payload) => {
         // Record outstanding approval asks so a reloaded renderer can pull
         // them back via is-running (the original push died with the old page).
-        if (payload && typeof payload === "object" && typeof (payload as { callId?: unknown }).callId === "string") {
+        // Handle both legacy top-level callId shape (session:tool-confirm-*) and
+        // the current Cairn approval plugin shape (session:projection kind:"approval").
+        if (channel === "session:projection" && payload && typeof payload === "object" && (payload as { kind?: unknown }).kind === "approval") {
+          const proj = payload as { sessionId?: string; data?: { status?: string; callId?: string; name?: string; label?: string; nonce?: string } };
+          const data = proj.data;
+          const sessId = proj.sessionId ?? sessionId;
+          if (data && data.status === "required" && typeof data.callId === "string" && !data.nonce) {
+            const nonce = mintAskNonce(sessId, data.callId);
+            data.nonce = nonce;
+            pendingAsks.record({
+              sessionId: sessId,
+              name: data.name ?? "tool",
+              label: data.label ?? data.name ?? "tool",
+              callId: data.callId,
+              nonce,
+            } as never);
+          } else if (data && data.status === "expired" && typeof data.callId === "string") {
+            pendingAsks.resolve(sessId, data.callId);
+            dropAskNonce(sessId, data.callId);
+            forgetPendingApprovalArgs(sessId, data.callId);
+          }
+        } else if (payload && typeof payload === "object" && typeof (payload as { callId?: unknown }).callId === "string") {
           const p = payload as { sessionId?: string; name?: string; label?: string; callId?: string };
           if (p.sessionId) {
             if (channel === "session:tool-confirm-required") {
@@ -306,6 +347,7 @@ async function runCordisCodingSession(
             } else if (channel === "session:tool-confirm-expired") {
               pendingAsks.resolve(p.sessionId, p.callId ?? "");
               dropAskNonce(p.sessionId, p.callId ?? "");
+              forgetPendingApprovalArgs(p.sessionId, p.callId ?? "");
             }
 
           }
@@ -321,6 +363,16 @@ async function runCordisCodingSession(
           // options) back via session:is-running — the original push dies
           // with the old page, and losing it would strand the review with
           // no UI to answer it.
+          //
+          // Security note: this send is the coding path's broadcastEvent
+          // (all windows + mobile). The HITL nonce minted here authenticates
+          // session:respond-questions — it must reach the desktop renderer
+          // but should NOT be exposed to mobile clients. Mobile has no UI
+          // for coding HITL and verifyAskNonce would still gate it, but
+          // leaking the nonce widens the surface. Future: scope coding
+          // questions via broadcastToChat (participant-gated) or strip the
+          // nonce before the mobile broadcast. For now the nonce travels
+          // via broadcastEvent; mobile ignores ask-questions payloads.
           if (channel === "session:ask-questions") {
             const requestId = typeof p.callId === "string" ? p.callId : undefined;
             const qs = Array.isArray(p.questions) ? p.questions : undefined;
@@ -360,6 +412,7 @@ async function runCordisCodingSession(
     // The turn is over — every ask in it was settled (answered, aborted, or
     // timed out). Drop any registry residue so the next turn starts clean.
     pendingAsks.clearSession(sessionId);
+    clearAskNoncesForSession(sessionId);
     setConfirmTransport(sessionId, undefined);
   }
 }
@@ -376,6 +429,13 @@ export function registerSessionRuntimeHandlers(
   // state from the main process — the loop's lifecycle lives here, not in the
   // renderer's local state. Also returns the session's outstanding approval
   // asks so a reload that swallowed the original push can re-render the cards.
+  //
+  // Nonces are intentionally returned here for reload recovery — the renderer
+  // lost the original push (and its nonce) on reload. Returning the nonce
+  // does NOT bypass the gate: verifyAskNonce still requires the caller to
+  // present the correct per-ask nonce for that callId, and a poll without a
+  // prior push is useless without a valid callId. Nonces are cleared on
+  // settle/sweep so this surface is only live while the ask is outstanding.
   registerIpcHandle("session:is-running", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
     const running = runningLoops.has(sessionId) || isChatThreadRunning(sessionId);
     return {
@@ -877,7 +937,7 @@ export function registerSessionRuntimeHandlers(
   // same turn. Cordis keys by requestId (which the renderer echoes as callId).
   registerIpcOn("session:respond-questions", (_event, { sessionId, callId, answers, nonce }: { sessionId: string; callId: string; answers: string; nonce?: string }) => {
     if (!verifyAskNonce(sessionId, callId, nonce)) {
-      console.warn(`[pi-agent] respond-questions rejected: bad or missing nonce for ${sessionId}/${callId}`);
+      console.warn(`[session] respond-questions rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
     }
     resolvePendingQuestionAnswer(sessionId, callId, answers);
@@ -898,101 +958,134 @@ export function registerSessionRuntimeHandlers(
     try {
       assertSafeId(sessionId, "sessionId");
     } catch (_err) {
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Invalid session id.", code: "invalid-id" }));
+      broadcastEvent("session:busy", { sessionId, reason: "invalid-id" });
       return;
     }
     // Clearing the persisted log while a loop is running would desync its
     // in-flight context. The renderer stops the run before clearing, so this is
-    // defensive. Clear is rejected if running.
-    if (runningLoops.has(sessionId)) {
+    // defensive. Clear is rejected if running or already clearing (atomic gate).
+    if (runningLoops.has(sessionId) || clearingSessions.has(sessionId)) {
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "busy" }));
+      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
     }
-    // TOCTOU re-check: re-validate runningLoops after assertSafeId and immediately
-    // before the destructive sweep/file deletion. A concurrent prompt could have
-    // started between the first guard and now; clear is rejected if still running.
-    if (runningLoops.has(sessionId)) {
-      return;
-    }
-    // The Cordis JSONL session is the transcript source of truth. The in-memory
-    // session entry only retains the abort controller and persona.
-    // Grants + any stray pendings die with the conversation.
-    sweepSessionPendings(sessionId);
-    // Explicit session clearing wipes persisted todos too (the todowrite
-    // replacement contract otherwise leaves them until the next write).
-    q.saveSessionTodos(ctx.db, sessionId, []);
-    // Clear the dsh jsonl transcript so a resumed session doesn't see old
-    // messages. The transcript lives in <userData>/sessions/<sessionId>.jsonl
-    // via dsh-session-persistence-jsonl. Best-effort: delete the file/dir if it exists.
+    clearingSessions.add(sessionId);
     try {
-      const primaryRoot = getSessionRoot();
-      const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
-      const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
-      let deleted = false;
-      for (const root of roots) {
-        // dsh nests as <root>/<encoded-cwd>/<sessionId>/session.jsonl.zstd — brute-force
-        // every project dir and check the session id inside it, plus the flat fallbacks.
-        // The sessionId was assertSafeId-validated above; every path composed here
-        // is additionally containment-checked via resolveWithinRoot as
-        // defence-in-depth against future refactors of `roots`.
-        try {
-          const projectDirs = fs.readdirSync(root, { withFileTypes: true }).filter((d: { isDirectory: () => boolean }) => d.isDirectory()).map((d: { name: string }) => d.name);
-          for (const proj of projectDirs) {
-            if (!isSafeId(proj) || !isSafeId(sessionId)) continue;
-            const base = resolveWithinRoot(root, proj, sessionId);
-            if (!base) continue;
-            for (const p of [path.join(base, "session.jsonl.zstd"), path.join(base, "session.jsonl"), base + ".jsonl", path.join(base, "session.jsonl"), base]) {
-              try {
-                if (fs.existsSync(p)) {
-                  const stat = fs.statSync(p);
-                  if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
-                  else fs.unlinkSync(p);
-                  deleted = true;
+      // TOCTOU re-check: re-validate runningLoops after assertSafeId and immediately
+      // before the destructive sweep/file deletion. A concurrent prompt could have
+      // started between the first guard and now; clear is rejected if still running.
+      if (runningLoops.has(sessionId)) {
+        broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "busy" }));
+        broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+        return;
+      }
+      // The Cordis JSONL session is the transcript source of truth. The in-memory
+      // session entry only retains the abort controller and persona.
+      // Grants + any stray pendings die with the conversation.
+      sweepSessionPendings(sessionId);
+      // Explicit session clearing wipes persisted todos too (the todowrite
+      // replacement contract otherwise leaves them until the next write).
+      q.saveSessionTodos(ctx.db, sessionId, []);
+      // Clear the dsh jsonl transcript so a resumed session doesn't see old
+      // messages. The transcript lives in <userData>/sessions/<sessionId>.jsonl
+      // via dsh-session-persistence-jsonl. Best-effort: delete the file/dir if it exists.
+      try {
+        const primaryRoot = getSessionRoot();
+        const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
+        const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
+        let deleted = false;
+        for (const root of roots) {
+          // dsh nests as <root>/<encoded-cwd>/<sessionId>/session.jsonl.zstd — brute-force
+          // every project dir and check the session id inside it, plus the flat fallbacks.
+          // The sessionId was assertSafeId-validated above; every path composed here
+          // is additionally containment-checked via resolveWithinRoot as
+          // defence-in-depth against future refactors of `roots`.
+          try {
+            const projectDirs = fs.readdirSync(root, { withFileTypes: true }).filter((d: { isDirectory: () => boolean }) => d.isDirectory()).map((d: { name: string }) => d.name);
+            for (const proj of projectDirs) {
+              if (!isSafeId(proj) || !isSafeId(sessionId)) continue;
+              const base = resolveWithinRoot(root, proj, sessionId);
+              if (!base) continue;
+              for (const p of [path.join(base, "session.jsonl.zstd"), path.join(base, "session.jsonl"), base + ".jsonl", path.join(base, "session.jsonl"), base]) {
+                if (runningLoops.has(sessionId)) {
+                  broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "busy" }));
+                  broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+                  return;
                 }
-              } catch { /* ignore */ }
+                try {
+                  if (fs.existsSync(p)) {
+                    const stat = fs.statSync(p);
+                    if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
+                    else fs.unlinkSync(p);
+                    deleted = true;
+                  }
+                } catch { /* ignore */ }
+              }
             }
+          } catch { /* root not readable */ }
+          // Flat fallbacks (old layout or if projectDir is _no-cwd)
+          const flatBase = resolveWithinRoot(root, sessionId);
+          if (!flatBase) continue;
+          for (const p of [flatBase + ".jsonl", path.join(flatBase, "session.jsonl"), path.join(flatBase, "session.jsonl.zstd"), flatBase]) {
+            if (runningLoops.has(sessionId)) {
+              broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "busy" }));
+              broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+              return;
+            }
+            try {
+              if (fs.existsSync(p)) {
+                const stat = fs.statSync(p);
+                if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
+                else fs.unlinkSync(p);
+                deleted = true;
+              }
+            } catch { /* ignore */ }
           }
-        } catch { /* root not readable */ }
-        // Flat fallbacks (old layout or if projectDir is _no-cwd)
-        const flatBase = resolveWithinRoot(root, sessionId);
-        if (!flatBase) continue;
-        for (const p of [flatBase + ".jsonl", path.join(flatBase, "session.jsonl"), path.join(flatBase, "session.jsonl.zstd"), flatBase]) {
-          try {
-            if (fs.existsSync(p)) {
-              const stat = fs.statSync(p);
-              if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
-              else fs.unlinkSync(p);
-              deleted = true;
-            }
-          } catch { /* ignore */ }
         }
-      }
-      if (!deleted) {
-        // No dsh file found — not an error, the session may have been in-memory only or already cleared.
-      }
-      // Also drop any in-memory dsh agent that still holds the old session.
-      getContext().then((c: unknown) => {
-        const maybeAgents = (c as { agents?: { get?: (id: unknown) => unknown; delete?: (id: unknown) => void; remove?: (id: unknown) => void; dispose?: (id: unknown) => void } })?.agents;
-        const sid = { toString: () => sessionId } as unknown as string;
-        // Try every plausible delete/remove/dispose shape — dsh-agent's API has shifted across rc's.
-        const removed = false;
-        for (const k of ["delete", "remove", "dispose", "destroy"] as const) {
-          try {
-            const fn = (maybeAgents as Record<string, unknown>)?.[k] as ((id: unknown) => unknown) | undefined;
-            if (typeof fn === "function") { fn.call(maybeAgents, sid); break; }
-          } catch { /* ignore */ }
+        if (!deleted) {
+          // No dsh file found — not an error, the session may have been in-memory only or already cleared.
         }
-        if (!removed) {
-          try {
-            const ag = maybeAgents?.get?.(sid) as { dispose?: () => void } | undefined;
-            ag?.dispose?.();
-          } catch { /* ignore */ }
-        }
-      }).catch(() => {});
-    } catch { /* best-effort */ }
+        // Also drop any in-memory dsh agent that still holds the old session.
+        getContext().then((c: unknown) => {
+          const maybeAgents = (c as { agents?: { get?: (id: unknown) => unknown; delete?: (id: unknown) => void; remove?: (id: unknown) => void; dispose?: (id: unknown) => void } })?.agents;
+          const sid = { toString: () => sessionId } as unknown as string;
+          // Try every plausible delete/remove/dispose shape — dsh-agent's API has shifted across rc's.
+          const removed = false;
+          for (const k of ["delete", "remove", "dispose", "destroy"] as const) {
+            try {
+              const fn = (maybeAgents as Record<string, unknown>)?.[k] as ((id: unknown) => unknown) | undefined;
+              if (typeof fn === "function") { fn.call(maybeAgents, sid); break; }
+            } catch { /* ignore */ }
+          }
+          if (!removed) {
+            try {
+              const ag = maybeAgents?.get?.(sid) as { dispose?: () => void } | undefined;
+              ag?.dispose?.();
+            } catch { /* ignore */ }
+          }
+        }).catch(() => {});
+      } catch { /* best-effort */ }
+    } finally {
+      clearingSessions.delete(sessionId);
+    }
   });
 
   // ── session:destroy ──────────────────────────────────────────────────────
   // Called when a coding session tab is closed — frees memory
   registerIpcOn("session:destroy", (_event, { sessionId }: { sessionId: string }) => {
+    try {
+      assertSafeId(sessionId, "sessionId");
+    } catch (_err) {
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Invalid session id.", code: "invalid-id" }));
+      broadcastEvent("session:busy", { sessionId, reason: "invalid-id" });
+      return;
+    }
+    if (clearingSessions.has(sessionId)) {
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot destroy while clearing.", code: "busy" }));
+      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+      return;
+    }
     const session = sessions.get(sessionId);
     if (session) {
       session.abortCtrl.abort();

@@ -49,14 +49,10 @@ export function validateAttachmentDataUrl(dataUrl: unknown): string | null {
   }
   try {
     const b64 = dataUrl.slice(comma + 1);
-    let len: number;
-    if (typeof Buffer !== "undefined" && typeof Buffer.from === "function") {
-      len = Buffer.from(b64, "base64").byteLength;
-    } else if (typeof atob === "function") {
-      len = atob(b64).length;
-    } else {
-      len = Math.floor((b64.length / 4) * 3);
-    }
+    // Avoid allocating a 25 MB Buffer/atob just to measure — compute from
+    // the base64 length. For valid base64 `len = floor(n*3/4) - padding`.
+    const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+    const len = Math.floor(b64.length * 3 / 4) - padding;
     if (len > MAX_ATTACHMENT_BYTES) {
       return `attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`;
     }

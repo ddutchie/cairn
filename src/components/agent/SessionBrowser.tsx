@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Code2, ChevronDown, ChevronRight, MessageSquare, Search, Terminal, Trash2, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -41,58 +41,73 @@ interface SessionRowProps {
   running: boolean;
   onSelect: () => void;
   onRemove?: (event: React.SyntheticEvent) => void;
+  tabIndex?: number;
+}
+
+function sanitizeAriaId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
 /** One session entry — shared by the sidebar tree and the dropdown menu so both
- *  surfaces stay on the same type scale, spacing, and selection treatment. */
-function SessionRow({ session, selected, running, onSelect, onRemove }: SessionRowProps) {
+ *  surfaces stay on the same type scale, spacing, and selection treatment.
+ *  Outer wrapper is roving-focus neutral (role=presentation); the inner div
+ *  carries role=option so the delete button is NOT nested inside an option. */
+function SessionRow({ session, selected, running, onSelect, onRemove, tabIndex }: SessionRowProps) {
   function handleKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       onSelect();
-    } else if (e.key === "Delete" && selected && onRemove) {
+    } else if ((e.key === "Delete" || e.key === "Backspace") && onRemove) {
       e.preventDefault();
+      e.stopPropagation();
       onRemove(e);
     }
   }
+  const optionTabIndex = tabIndex !== undefined ? tabIndex : (selected ? 0 : -1);
   return (
     <div
-      role="option"
-      aria-selected={selected}
-      tabIndex={selected ? 0 : -1}
-      onClick={onSelect}
-      onKeyDown={handleKeyDown}
-      className={cn(
-        "group relative flex items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
-        selected
-          ? "border-l-[var(--accent)] bg-[var(--accent-dim)]"
-          : "border-l-transparent hover:bg-[var(--surface-2)]",
-      )}
+      role="presentation"
+      className="group relative flex items-center gap-1"
     >
-      <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
-        <span className={cn("flex-shrink-0", selected ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
-          <SessionTypeIcon kind={session.kind} size={13} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs text-[var(--text-primary)]">{session.title}</span>
-          <span className="flex items-center gap-1.5 mt-0.5 text-[0.714rem] text-[var(--text-tertiary)]">
-            <span>{kindLabel(session.kind)}</span>
-            <span aria-hidden>·</span>
-            <span>{formatDateCompact(session.updatedAt)}</span>
-            {session.mode === "plan" && <span className="text-[var(--warning)]">plan</span>}
-            {running && (
-              <span className="flex items-center gap-1 text-[var(--accent)]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" aria-hidden />
-                running
-              </span>
-            )}
+      <div
+        role="option"
+        aria-selected={selected}
+        tabIndex={optionTabIndex}
+        onClick={onSelect}
+        onKeyDown={handleKeyDown}
+        className={cn(
+          "flex flex-1 min-w-0 items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
+          selected
+            ? "border-l-[var(--accent)] bg-[var(--accent-dim)]"
+            : "border-l-transparent hover:bg-[var(--surface-2)]",
+        )}
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
+          <span className={cn("flex-shrink-0", selected ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+            <SessionTypeIcon kind={session.kind} size={13} />
           </span>
-        </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs text-[var(--text-primary)]">{session.title}</span>
+            <span className="flex items-center gap-1.5 mt-0.5 text-[0.714rem] text-[var(--text-tertiary)]">
+              <span>{kindLabel(session.kind)}</span>
+              <span aria-hidden>·</span>
+              <span>{formatDateCompact(session.updatedAt)}</span>
+              {session.mode === "plan" && <span className="text-[var(--warning)]">plan</span>}
+              {running && (
+                <span className="flex items-center gap-1 text-[var(--accent)]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" aria-hidden />
+                  running
+                </span>
+              )}
+            </span>
+          </span>
+        </div>
       </div>
       {onRemove && session.kind !== "terminal" && (
         <button
           type="button"
-          tabIndex={selected ? 0 : -1}
+          tabIndex={-1}
           aria-label={`Delete ${kindLabel(session.kind).toLowerCase()} session`}
           onClick={(e) => {
             e.stopPropagation();
@@ -142,6 +157,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   const listboxRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { openSession } = useSessionNavigation();
+  const listboxId = useId();
 
   // Coalesced polling — one interval for all mounted browsers (sidebar has N
   // expanded projects). Backs off when the document is hidden.
@@ -256,19 +272,24 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
 
   if (variant === "preview") {
     const previewSessions = visibleSessions.slice(0, limit);
+    const hasActive = !!active;
     return (
       <div role="listbox" aria-label="Recent sessions" className="flex flex-col gap-0.5" tabIndex={-1} onKeyDown={handleListboxKeyDown} ref={listboxRef}>
         {previewSessions.length === 0 ? (
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">No sessions yet</p>
-        ) : previewSessions.map((session) => (
-          <SessionRow
-            key={session.id}
-            session={session}
-            selected={active?.id === session.id}
-            running={isRunning(session)}
-            onSelect={() => void selectSession(session)}
-          />
-        ))}
+        ) : previewSessions.map((session, index) => {
+          const selected = active?.id === session.id;
+          return (
+            <SessionRow
+              key={session.id}
+              session={session}
+              selected={selected}
+              running={isRunning(session)}
+              tabIndex={selected ? 0 : !hasActive && index === 0 ? 0 : -1}
+              onSelect={() => void selectSession(session)}
+            />
+          );
+        })}
       </div>
     );
   }
@@ -284,6 +305,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
 
   const projectNav = variant === "project";
   const currentKind = projectNav ? "chat" : active?.kind;
+  const sanitizedListboxId = sanitizeAriaId(listboxId);
   return (
     <div ref={rootRef} className={cn("relative", projectNav ? "flex-shrink-0 h-auto" : "flex-1 min-w-0 h-full")}>
       <button
@@ -291,6 +313,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? sanitizedListboxId : undefined}
         onClick={() => setOpen((value) => !value)}
         className={cn(
           projectNav
@@ -347,14 +370,15 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
                     e.preventDefault();
+                    e.stopPropagation();
                     if (query.trim() !== "") {
-                      e.stopPropagation();
                       setQuery("");
                     } else {
                       setOpen(false);
                       triggerRef.current?.focus();
                     }
                   } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
                     e.preventDefault();
                     const options = listboxRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
                     if (!options || options.length === 0) return;
@@ -377,6 +401,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
           )}
           <div
             ref={listboxRef}
+            id={sanitizedListboxId}
             role="listbox"
             aria-label="Sessions"
             tabIndex={-1}
@@ -385,16 +410,21 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
           >
             {visibleSessions.length === 0 ? (
               <p className="px-2 py-3 text-center text-[0.714rem] text-[var(--text-tertiary)]">No matching sessions</p>
-            ) : visibleSessions.map((session) => (
-              <SessionRow
-                key={session.id}
-                session={session}
-                selected={active?.id === session.id}
-                running={isRunning(session)}
-                onSelect={() => void selectSession(session)}
-                onRemove={(event) => removeSession(event, session)}
-              />
-            ))}
+            ) : visibleSessions.map((session, index) => {
+              const selected = active?.id === session.id;
+              const hasActive = !!active;
+              return (
+                <SessionRow
+                  key={session.id}
+                  session={session}
+                  selected={selected}
+                  running={isRunning(session)}
+                  tabIndex={selected ? 0 : !hasActive && index === 0 ? 0 : -1}
+                  onSelect={() => void selectSession(session)}
+                  onRemove={(event) => removeSession(event, session)}
+                />
+              );
+            })}
           </div>
         </div>
       )}

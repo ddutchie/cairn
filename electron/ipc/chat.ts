@@ -8,6 +8,7 @@
  */
 
 import { registerIpcHandle, broadcastEvent } from "./registry";
+import { handle } from "./result-helpers";
 import { broadcastToChat } from "../chat-popout";
 import type { DbContext } from "./result-helpers";
 import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
@@ -103,30 +104,24 @@ export { callLLM } from "../lib/llm";
  * chat bound to the throwaway boot DB until the app was restarted.
  */
 export function registerChatHandler(_ctx: DbContext): void {
-  registerIpcHandle("chat:compactThread", async (_event, req: {
+  registerIpcHandle("chat:compactThread", (_event, req: {
     messages: Array<{ role: string; content: string }>;
     threadId?: string;
     config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string };
-  }) => {
-    try {
+  }) => handle(async () => {
       const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
       const threadId = req.threadId;
-      if (!threadId) return { error: "compact: threadId required" };
+      if (!threadId) throw new Error("compact: threadId required");
 
       // Session-as-truth compaction via the SHARED flow (also registered as the
       // dsh `compact` command — one implementation, two entry points).
       const { compactChatSession } = await import("../cordis/cairn-commands");
       const { getContext } = await import("../cordis/run-cordis-loop");
       const res = await compactChatSession(getContext, threadId, { baseUrl, model, apiKey });
-      if (!res.ok) return { error: res.error ?? "compact failed" };
+      if (!res.ok) throw new Error(res.error ?? "compact failed");
       console.log("[chat:compactThread] compactNow result", { threadId, compacted: res.compacted });
-      return { data: { compacted: res.compacted } };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[chat:compactThread] failed", msg, err);
-      return { error: msg };
-    }
-  });
+      return { compacted: res.compacted };
+  }));
 
 }
 
@@ -176,6 +171,8 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {
        abortControllers.delete(sessionId);
       if (req.threadId) runningThreads.delete(req.threadId);
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Missing API key — configure provider in Settings.", code: "missing-api-key" }));
+      broadcastEvent("session:busy", { sessionId, reason: "missing-api-key" });
       return;
     }
 

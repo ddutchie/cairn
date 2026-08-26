@@ -5,6 +5,10 @@ import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TerminalSession } from "@/types";
 
+function sanitizeAriaId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 interface TerminalTabProps {
   session: TerminalSession;
   isActive: boolean;
@@ -13,12 +17,16 @@ interface TerminalTabProps {
 }
 
 export function TerminalTab({ session, isActive, onActivate, onClose }: TerminalTabProps) {
+  const tabId = `tab-${sanitizeAriaId(session.sessionId)}`;
+  const panelId = `panel-${sanitizeAriaId(session.sessionId)}`;
   return (
     <div className="flex items-center h-full flex-shrink-0 group">
       <button
+        id={tabId}
         onClick={onActivate}
         role="tab"
         aria-selected={isActive}
+        aria-controls={panelId}
         className={cn(
           "flex items-center gap-1.5 px-3 h-full text-xs font-semibold whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0",
           isActive
