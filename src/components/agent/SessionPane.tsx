@@ -391,7 +391,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           aria-labelledby="tab-chat"
           hidden={activeSessionId !== "chat"}
           aria-hidden={activeSessionId !== "chat"}
-          {...(activeSessionId !== "chat" ? { inert: "" } as unknown as React.HTMLAttributes<HTMLDivElement> : {})}
+          {...(activeSessionId !== "chat" ? ({ inert: true } as unknown as React.HTMLAttributes<HTMLDivElement>) : {})}
           className={activeSessionId === "chat" ? "flex flex-1 flex-col min-h-0 overflow-hidden" : "hidden"}
         >
           {chatPoppedOut ? (
@@ -419,7 +419,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
               aria-labelledby="tab-agent"
               hidden={!pinnedIsActive}
               aria-hidden={!pinnedIsActive}
-              {...(!pinnedIsActive ? { inert: "" } as unknown as React.HTMLAttributes<HTMLDivElement> : {})}
+              {...(!pinnedIsActive ? ({ inert: true } as unknown as React.HTMLAttributes<HTMLDivElement>) : {})}
               className={pinnedIsActive ? "flex flex-col flex-1 min-h-0 overflow-hidden" : "hidden"}
             >
               {chatPoppedOut && (persistentSession.sessionId === activeSessionId || activeSessionId === "agent") ? (
