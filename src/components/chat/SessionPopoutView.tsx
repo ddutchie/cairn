@@ -194,7 +194,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
       : session.kind === "coding"
         ? deleteCodingSessionFromHistory(session.sourceId)
         : Promise.resolve();
-    void (doDelete as Promise<unknown>).then(() => {
+    void Promise.resolve(doDelete as unknown as Promise<unknown>).then(() => {
       requestAnimationFrame(() => {
         const container = popoutListboxRef.current;
         if (!container) { triggerEl?.focus(); return; }

@@ -366,9 +366,9 @@ export function ProjectOverview() {
           className="max-w-[1240px] mx-auto w-full px-4 pt-4 md:px-7 md:pt-7 pb-8"
           style={{ paddingBottom: bottomBarHeight ? bottomBarHeight + 32 : undefined }}
         >
-          {/* ── masthead ───────────────────────────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_360px] gap-5 items-start mb-4">
-            <div className="flex gap-4 items-start min-w-0">
+          {/* ── masthead — card wraps below on narrow, both full-width when stacked ── */}
+          <div className="flex flex-col lg:flex-row flex-wrap gap-5 items-start mb-4">
+            <div className="flex gap-4 items-start min-w-0 flex-1 min-w-[280px] w-full lg:w-auto">
               <div
                 className="w-[52px] h-[52px] rounded-xl flex items-center justify-center flex-shrink-0 border border-[var(--border)]"
                 style={{
@@ -452,7 +452,7 @@ export function ProjectOverview() {
 
             {/* instrument */}
             <div
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden"
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full lg:w-[360px] flex-shrink-0"
               style={{ boxShadow: "0 12px 32px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)" }}
             >
               <div

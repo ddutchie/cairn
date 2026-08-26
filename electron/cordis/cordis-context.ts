@@ -123,7 +123,19 @@ export async function dropChatAgentForThread(threadId: string): Promise<void> {
       }
     }
   }
-  try { const ctx = await getContext(); const session = ctx.sessions?.get?.(SessionId(`chat-${threadId}`)) as { [Symbol.dispose]?: () => void; dispose?: () => void } | undefined; session?.[Symbol.dispose]?.(); session?.dispose?.(); } catch { /* best-effort */ }
+  try {
+    const ctx = await getContext();
+    const sid = SessionId(`chat-${threadId}`);
+    const session = ctx.sessions?.get?.(sid) as { [Symbol.dispose]?: () => void; dispose?: () => void } | undefined;
+    session?.[Symbol.dispose]?.();
+    (session as { dispose?: () => void })?.dispose?.();
+    // Wait for coordinator retirement to quiescence — prepare checks ctx.sessions.get(sid)
+    const start = Date.now();
+    while (Date.now() - start < 3000) {
+      if (!ctx.sessions.get(sid)) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  } catch { /* best-effort */ }
 }
 
 const toolDefsByName = new Map<string, Record<string, unknown>>();

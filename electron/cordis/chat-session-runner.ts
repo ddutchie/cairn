@@ -13,6 +13,7 @@ import { buildSystemPrompt, withPersonality } from "../lib/tools";
 import { markCompletionsOnly, readCachedMode } from "../lib/llm-transport";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta } from "./cordis-context";
+import { foldSessionUsage } from "./plugins/context-ring";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
@@ -47,6 +48,44 @@ function collect(events: readonly SessionEvent[], firstSeq: number): Collected {
 
 function parseArgs(raw: string | undefined): Record<string, unknown> {
   try { return JSON.parse(raw ?? "{}") as Record<string, unknown>; } catch { return {}; }
+}
+
+/**
+ * Emit a single synthetic `assistant/chunk` usage event carrying the full
+ * server-computed token breakdown (foldSessionUsage over the entire event log),
+ * so the renderer's live event fold persists a breakdown-bearing `lastUsage`.
+ *
+ * Without this, the only usage events in the stream come straight from the
+ * provider with just {inputTokens, outputTokens} — no breakdown — so the
+ * Context Ring falls back to `Tool outputs 0`. This mirrors precisely what the
+ * reload path (loadSessionMessages → foldSessionUsage) already returns, keeping
+ * the live and reloaded rings identical.
+ */
+function emitBreakdownUsage(events: readonly SessionEvent[], onSessionEvent?: (event: SessionEvent) => void): void {
+  if (!onSessionEvent) return;
+  try {
+    const usage = foldSessionUsage(events);
+    if (!usage?.breakdown) return;
+    const synthetic = {
+      type: "assistant/chunk",
+      seq: -1,
+      data: {
+        chunk: {
+          type: "usage",
+          usage: {
+            inputTokens: usage.promptTokens,
+            outputTokens: usage.completionTokens,
+            reasoningTokens: usage.reasoningTokens,
+            cacheReadTokens: usage.cacheReadTokens,
+            cacheCreationTokens: usage.cacheCreationTokens,
+            costUsd: usage.costUsd,
+            breakdown: usage.breakdown,
+          },
+        },
+      },
+    } as unknown as SessionEvent;
+    onSessionEvent(synthetic);
+  } catch { /* the ring is decoration — never break the turn over a breakdown */ }
 }
 
 /** Chat-specific profile over the shared Cordis session lifecycle. */
@@ -158,8 +197,18 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     open: async ({ llmConfig: preparedConfig }) => {
       const cached = chatAgents.get(req.threadId);
       if (cached) {
-        try { await (cached.whenIdle ?? (cached.agent as { whenIdle?: () => Promise<void> })?.whenIdle)?.(); return { agent: cached.agent, dispose: async () => {} }; }
-        catch { chatAgents.delete(req.threadId); }
+        try {
+          await (cached.whenIdle ?? (cached.agent as { whenIdle?: () => Promise<void> })?.whenIdle)?.();
+          return { agent: cached.agent, dispose: async () => {} };
+        } catch {
+          try {
+            const ctx2 = await getContext();
+            if (!ctx2.sessions.get(SessionId(`chat-${req.threadId}`) as never)) chatAgents.delete(req.threadId);
+            else return { agent: cached.agent, dispose: async () => {} };
+          } catch {
+            chatAgents.delete(req.threadId);
+          }
+        }
       }
       try {
         const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal });
@@ -180,17 +229,46 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       const result = collect(typed.session.events, firstSeq);
       const end = typed.session.events.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
       const kind = (end?.data as { reason?: { kind?: string } } | undefined)?.reason?.kind;
+      // The provider only streams {inputTokens, outputTokens} on its usage events,
+      // so the renderer's live fold persists a breakdown-less lastUsage and the
+      // Context Ring falls back to "Tool outputs 0". The real breakdown is only
+      // computable by char-counting the WHOLE event log (request/header system +
+      // tools, tool/result outputs, etc.) — exactly what the reload path does via
+      // foldSessionUsage. Emit one synthetic, breakdown-carrying usage event so the
+      // live ring matches the reload ring (single source of truth, no divergence).
+      emitBreakdownUsage(typed.session.events, opts.onSessionEvent);
       return { ...result, failedKind: kind && kind !== "completed" ? kind : undefined };
     },
   });
 
-  let attempt = await runAttempt();
+  let attempt: Awaited<ReturnType<typeof runAttempt>>;
+  try {
+    attempt = await runAttempt();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("while it is live")) {
+      console.warn("[chat] retrying live session after drop", (err as Error).message);
+      await dropChatAgentForThread(req.threadId);
+      attempt = await runAttempt();
+    } else {
+      throw err;
+    }
+  }
   if (attempt.failedKind && !attempt.text && !attempt.reasoning && readCachedMode(llmConfig.baseUrl) === "responses" && !liveText) {
     markCompletionsOnly(llmConfig.baseUrl);
     await ensureAgentAiAdapter(ctx, { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, api: "openai-completions", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens });
     liveText = "";
     liveReasoning = "";
-    attempt = await runAttempt();
+    try {
+      attempt = await runAttempt();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("while it is live")) {
+        console.warn("[chat] retrying live session after drop (2nd attempt)", (err as Error).message);
+        await dropChatAgentForThread(req.threadId);
+        attempt = await runAttempt();
+      } else {
+        throw err;
+      }
+    }
   }
   const content = liveText || attempt.text;
   const reasoning = liveReasoning || attempt.reasoning;

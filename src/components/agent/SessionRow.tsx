@@ -46,18 +46,22 @@ export function SessionRow({ session, selected, running, onSelect, onRemove, tab
   const optionTabIndex = tabIndex !== undefined ? tabIndex : (selected ? 0 : -1);
   return (
     <div role="presentation" className="group relative flex items-center gap-1">
-      <div
-        role="option"
-        aria-selected={selected}
-        aria-keyshortcuts={onRemove ? "Delete" : undefined}
-        tabIndex={optionTabIndex}
-        onClick={onSelect}
-        onKeyDown={handleKeyDown}
-        className={cn(
-          "flex flex-1 min-w-0 items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
-          selected ? "border-l-[var(--accent)] bg-[var(--accent-dim)]" : "border-l-transparent hover:bg-[var(--surface-2)]",
-        )}
-      >
+        <div
+          role="option"
+          aria-selected={selected}
+          aria-keyshortcuts={onRemove ? "Delete" : undefined}
+          tabIndex={optionTabIndex}
+          onClick={onSelect}
+          onKeyDown={handleKeyDown}
+          className={cn(
+            "relative overflow-hidden flex flex-1 min-w-0 items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
+            selected
+              ? "border-l-[var(--accent)] bg-[var(--accent-dim)]"
+              : running
+                ? "border-l-[var(--accent)]/60 bg-[var(--accent-dim)]/30"
+                : "border-l-transparent hover:bg-[var(--surface-2)]",
+          )}
+        >
         <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
           <span className={cn("flex-shrink-0", selected ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
             <SessionTypeIcon kind={session.kind} size={13} />
@@ -69,17 +73,18 @@ export function SessionRow({ session, selected, running, onSelect, onRemove, tab
               <span aria-hidden>·</span>
               <span>{formatDateCompact(session.updatedAt)}</span>
               {session.mode === "plan" && <span className="text-[var(--warning)]">plan</span>}
-              {running && (
-                <span role="status" aria-live="polite" aria-atomic="true" className="flex items-center gap-1 text-[var(--accent)]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] motion-safe:animate-pulse" aria-hidden />
-                  running
-                </span>
-              )}
             </span>
           </span>
+          </div>
+          {running && (
+            <>
+              <span className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--border)]/60" aria-hidden />
+              <span className="pointer-events-none absolute bottom-0 left-0 h-[2px] w-[42%] bg-[var(--accent)] animate-cairn-indeterminate" aria-hidden />
+              <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">running</span>
+            </>
+          )}
         </div>
-      </div>
-      {onRemove && session.kind !== "terminal" && (
+       {onRemove && session.kind !== "terminal" && (
         <button
           type="button"
           tabIndex={-1}

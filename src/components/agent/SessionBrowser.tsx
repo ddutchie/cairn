@@ -211,7 +211,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
       : session.kind === "coding"
         ? deleteCodingSessionFromHistory(session.sourceId)
         : Promise.resolve();
-    void (doDelete as Promise<unknown>).then(() => {
+    void Promise.resolve(doDelete as unknown as Promise<unknown>).then(() => {
       requestAnimationFrame(() => {
         const container = listboxRef.current;
         if (!container) {

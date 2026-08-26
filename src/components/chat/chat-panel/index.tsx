@@ -511,14 +511,20 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const handleSend = useCallback(async (text?: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = []) => {
     const content = text ?? input.trim();
     if ((!content || !content.trim()) && attachments.length === 0) return;
-    if (!threadId) return;
+    let targetThreadId: string | null = threadId;
+    if (!targetThreadId && activeWorkspaceId) {
+      const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
+      targetThreadId = t.id;
+      setActiveChatThreadId(t.id);
+    }
+    if (!targetThreadId) return;
 
     // A turn is already running — queue this message instead of interrupting it.
     // The queue drains (FIFO) when the current reply finishes. Attachments are
     // queued alongside the text so staged images/PDFs are never silently dropped.
     if (isLoadingRef.current) {
       if (!content.trim() && attachments.length === 0) return;
-      enqueue({ id: id(), content, threadId, attachments });
+      enqueue({ id: id(), content, threadId: targetThreadId!, attachments });
       setInput("");
       return;
     }
@@ -527,7 +533,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     if (!attachments.length) {
       if (trimmed === "/compact" || trimmed === "/ compact") {
         setInput("");
-        useCairnStore.getState().compactChatThread(threadId);
+        useCairnStore.getState().compactChatThread(targetThreadId!);
         return;
       }
 
@@ -549,7 +555,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       if (commandMatch) {
         setInput("");
         const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
-        void window.electron?.runtime?.executeCommand({ sessionId: `chat-${threadId}`, line: trimmed }).then((result) => {
+        void window.electron?.runtime?.executeCommand({ sessionId: `chat-${targetThreadId}`, line: trimmed }).then((result) => {
           if (commandName === "plan" && commandArgs && commandArgs !== "off" && result?.kind === "success") {
             void handleSendRef.current(commandArgs);
           }
@@ -563,7 +569,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     const attachmentsToSend = attachments.length > 0 ? attachments : undefined;
     const attachmentUrls = attachments.map((a) => ({ url: a.dataUrl, name: a.name, kind: a.kind }));
 
-    addMessage(threadId, "user", content, undefined, undefined, undefined, undefined, attachmentUrls);
+    addMessage(targetThreadId!, "user", content, undefined, undefined, undefined, undefined, attachmentUrls);
 
     // Resolve context references and append to prompt payload
     const store = useCairnStore.getState();
@@ -656,7 +662,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     // track (the "bonkers" duplicate Hello! after a scrub).
     const historyForLog = formatChatHistory(messages);
     sendStream({
-      message: resolvedMessage, threadId,
+      message: resolvedMessage, threadId: targetThreadId!,
       projectId: activeProjectId,
       workspaceId: activeWorkspaceId,
       history: historyForLog,

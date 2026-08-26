@@ -191,7 +191,7 @@ export function useNoteMarkdownComponents({
       return (
         <input
           type="checkbox"
-          checked={checked}
+          checked={checked ?? false}
           className="cursor-pointer accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px]"
           onChange={(e) => toggleCheckbox(e.currentTarget)}
         />

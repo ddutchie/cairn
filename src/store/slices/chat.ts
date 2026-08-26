@@ -315,10 +315,37 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   deleteThread(threadId) {
+    const wasActive = get().activeChatThreadId === threadId;
+    const deletedThread = get().chatThreads.find((t) => t.id === threadId);
+    // Abort any live loop for this thread before deleting — otherwise
+    // PersistenceCoordinator stays "live" and the next prompt on a new
+    // thread can race with the still-preparing old session (chat-Z... while live)
+    try {
+      window.electron?.session.abort(`chat-${threadId}`);
+    } catch {}
     set((s) => ({
       chatThreads: s.chatThreads.filter((t) => t.id !== threadId),
       chatMessages: s.chatMessages.filter((m) => m.threadId !== threadId),
+      ...(wasActive ? { activeChatThreadId: null } : {}),
     }));
+    if (wasActive) {
+      storage.delete(ACTIVE_CHAT_THREAD_KEY);
+      // If other threads remain for the same scope, activate the most recent one
+      if (deletedThread) {
+        const remaining = get().chatThreads;
+        const candidates = remaining
+          .filter(
+            (t) =>
+              t.workspaceId === deletedThread.workspaceId &&
+              (deletedThread.projectId ? t.projectId === deletedThread.projectId : !t.projectId),
+          )
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        if (candidates.length > 0) {
+          set({ activeChatThreadId: candidates[0].id });
+          storage.set(ACTIVE_CHAT_THREAD_KEY, candidates[0].id);
+        }
+      }
+    }
     get().persist();
     ipc((e) => e.chat.deleteThread(threadId));
   },
