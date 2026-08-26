@@ -262,6 +262,12 @@ export async function migrateLlmKeysToKeychain(
 }
 
 
+/** Reasoning effort for reasoning-capable models. Uses the pi-ai / dsh thinking
+ *  vocabulary (a subset that every reasoning model supports, so the harness's
+ *  resolveReasoningLevel never throws UNSUPPORTED_REASONING_EFFORT). "off" omits
+ *  the reasoning option; absent = the model's own default. */
+export type ReasoningEffort = "off" | "low" | "medium" | "high";
+
 export interface AIConfig {
   /** The AI provider ('openai' or 'localllm') */
   provider?: "openai" | "localllm";
@@ -326,6 +332,14 @@ export interface AIConfig {
    *  `null` = explicitly "None" — must survive hydration, so it is persisted as
    *  null (JSON + the backend cache) rather than dropped as undefined. */
   personalityId?: string | null;
+  /**
+   * Reasoning effort for reasoning-capable models (models.dev `reasoning: true`).
+   * Controls how much the model "thinks" before answering — chat defaults to a
+   * lower budget so everyday replies aren't dominated by long thinking traces
+   * (deepseek-v4-flash defaults to high effort otherwise). Absent = the model's
+   * own default. Only sent for reasoning-capable models.
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface AgentConfig {
@@ -371,6 +385,13 @@ export interface AgentConfig {
    * existing consumer keeps working unchanged.
    */
   activeProviderId?: string;
+  /**
+   * Reasoning effort for reasoning-capable models (models.dev `reasoning: true`).
+   * Absent = the model's own default (the coding agent generally wants the full
+   * thinking budget, so leaving this unset is fine). Only sent for
+   * reasoning-capable models.
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────

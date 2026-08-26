@@ -80,6 +80,16 @@ export interface LLMConfig {
   apiKey: string;
   contextWindow?: number;
   maxTokens?: number;
+  /** Reasoning effort for reasoning-capable models. Uses the pi-ai / dsh
+   *  thinking vocabulary consumed by installModelSelection → resolveReasoningLevel
+   *  ("off" omits reasoning; low/medium/high are universally supported). Absent =
+   *  the model's own default. */
+  reasoningEffort?: "off" | "low" | "medium" | "high";
+  /** Whether the model reasons (models.dev `reasoning: true`). Drives the pi-ai
+   *  model declaration's `reasoningEfforts` so the harness offers effort levels
+   *  instead of treating the hand-declared model as non-reasoning (which makes
+   *  any explicit effort throw UNSUPPORTED_REASONING_EFFORT). */
+  isReasoningModel?: boolean;
 }
 
 export type OpenAIMessage = {

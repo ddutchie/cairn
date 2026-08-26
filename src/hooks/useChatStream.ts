@@ -20,7 +20,7 @@ export interface ChatStreamRequest {
   history: ChatHistoryEntry[];
   config: {
     provider?: string; baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number;
-    maxTokens?: number; isReasoningModel?: boolean; contextLimit?: number; contextWindow?: number;
+    maxTokens?: number; isReasoningModel?: boolean; reasoningEffort?: "off" | "low" | "medium" | "high"; contextLimit?: number; contextWindow?: number;
   };
   systemPrompt?: string;
   personality?: { name: string; prompt: string };

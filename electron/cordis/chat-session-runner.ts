@@ -228,9 +228,21 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     open: async ({ llmConfig: preparedConfig }) => {
       const openStart = markNow();
       const cached = chatAgents.get(req.threadId);
-      if (cached) {
+      // A model change is bound into the agent at creation (agentOptions/adapter),
+      // so it requires a fresh agent. Reasoning effort, by contrast, is pure
+      // request-header state dsh re-reads from the mutable selection ref each step
+      // — update it in place so an effort change takes effect on the next turn
+      // WITHOUT a resume/replay. (See installModelSelection in dsh-agent.)
+      const cachedModel = cached?.selectionRef?.current?.model;
+      const modelChanged = cachedModel !== undefined && cachedModel !== preparedConfig.model;
+      if (cached && modelChanged) {
+        await dropChatAgentForThread(req.threadId);
+      } else if (cached) {
         try {
           await (cached.whenIdle ?? (cached.agent as { whenIdle?: () => Promise<void> })?.whenIdle)?.();
+          if (cached.selectionRef?.current) {
+            cached.selectionRef.current.reasoningEffort = preparedConfig.reasoningEffort;
+          }
           markLog("open (cache HIT — whenIdle)", openStart);
           return { agent: cached.agent, dispose: async () => {} };
         } catch {
@@ -245,14 +257,14 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       }
       try {
         const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal });
-        chatAgents.set(req.threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown> });
+        chatAgents.set(req.threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown>, selectionRef: opened.selectionRef });
         markLog("open (cache MISS — resume/replay JSONL)", openStart);
         return opened;
       } catch (error) {
         if (!(error instanceof Error) || !error.message.includes("while it is live")) throw error;
         await dropChatAgentForThread(req.threadId);
         const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal });
-        chatAgents.set(req.threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown> });
+        chatAgents.set(req.threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown>, selectionRef: opened.selectionRef });
         return opened;
       }
     },
@@ -294,7 +306,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   if (attempt.failedKind && !attempt.text && !attempt.reasoning && readCachedMode(llmConfig.baseUrl) === "responses" && !liveText) {
     if (TIMING) console.log(`[timing] ⚠️ responses attempt produced nothing → downgrading to completions and RE-RUNNING the whole turn (doubles latency)`);
     markCompletionsOnly(llmConfig.baseUrl);
-    await ensureAgentAiAdapter(ctx, { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, api: "openai-completions", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens });
+    await ensureAgentAiAdapter(ctx, { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, api: "openai-completions", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens, reasoning: llmConfig.isReasoningModel === true });
     liveText = "";
     liveReasoning = "";
     try {

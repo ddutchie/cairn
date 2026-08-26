@@ -223,6 +223,8 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
             provider: (provider === "openai" || provider === "localllm" ? provider : "openai"),
             contextWindow: req.config?.contextLimit ?? req.config?.contextWindow,
             maxTokens: req.config?.maxTokens,
+            reasoningEffort: req.config?.reasoningEffort,
+            isReasoningModel: req.config?.isReasoningModel,
           },
           signal: abortCtrl.signal,
            onUsage: addUsage,

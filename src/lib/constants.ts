@@ -104,6 +104,11 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   maxOutputAuto: true,
   aiEnabled:    true,
   subagentsEnabled: false,
+  // Default chat to a low thinking budget so reasoning-capable models (e.g.
+  // deepseek-v4-flash, which thinks at high effort by default) don't dominate
+  // everyday replies with long traces. Users can raise it per the composer pill;
+  // ignored by non-reasoning models. The coding agent leaves this unset (full budget).
+  reasoningEffort: "low",
 };
 
 /** Default Coding Agent config values. */

@@ -212,7 +212,7 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
           threadId: "user-style",
           workspaceId: req.workspaceId,
           projectId: req.projectId,
-          config: { maxSteps: 6, temperature: 0.3, reasoningEffort: "none" as const },
+          config: { maxSteps: 6, temperature: 0.3, reasoningEffort: "off" as const },
         };
         const _messages = [
           { role: "system" as const, content: systemPrompt },

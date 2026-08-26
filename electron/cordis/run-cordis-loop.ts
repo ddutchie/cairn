@@ -67,7 +67,7 @@ export async function resumeChatAgent(threadId: string, workspacePath: string, m
   const ctx = await getContext();
   try {
     const opened = await openCordisSessionAgent(ctx, { sessionId: String(SessionId(`chat-${threadId}`)), cwd: workspacePath, llmConfig: { provider: "openai", baseUrl: "", model, apiKey: "" }, createIfMissing: false });
-    getChatAgentCache().set(threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown> });
+    getChatAgentCache().set(threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown>, selectionRef: opened.selectionRef });
     return opened.agent;
   } catch { return undefined; }
 }

@@ -7,7 +7,7 @@ import type { ChatRequest } from "../lib/tools";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnQuestionsPlugin } from "./cairn-plugins";
 
 let piAiDisposer: (() => Promise<void>) | null = null;
-let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number } | null = null;
+let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number; reasoning?: boolean } | null = null;
 
 export interface CordisDisposerStack {
   mount: (ctx: Context, plugin: unknown, config?: unknown) => Promise<void>;
@@ -104,19 +104,21 @@ export async function prepareCordisRuntime(ctx: Context, input: LLMConfig): Prom
     api: transport.mode === "responses" ? "openai-responses" : "openai-completions",
     contextWindow: llmConfig.contextWindow,
     maxTokens: llmConfig.maxTokens,
+    reasoning: llmConfig.isReasoningModel === true,
   });
   if (timing) console.log(`[timing] prepareCordisRuntime: ensureAgentAiAdapter ${Date.now() - t1}ms`);
   return { llmConfig, transport: transport.mode };
 }
 
 /** Mount or update the Cairn provider route for the current model endpoint. */
-export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number }): Promise<void> {
+export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number; reasoning?: boolean }): Promise<void> {
   const same = piAiDisposer && lastPiAiConfig
     && lastPiAiConfig.baseUrl === config.baseUrl
     && lastPiAiConfig.model === config.model
     && lastPiAiConfig.api === config.api
     && lastPiAiConfig.contextWindow === config.contextWindow
-    && lastPiAiConfig.maxTokens === config.maxTokens;
+    && lastPiAiConfig.maxTokens === config.maxTokens
+    && lastPiAiConfig.reasoning === config.reasoning;
   if (same) return;
   if (piAiDisposer) {
     try { await piAiDisposer(); } catch { /* noop */ }
@@ -130,7 +132,20 @@ export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: stri
       api: config.api,
       baseURL: config.baseUrl,
       displayName: "Cairn",
-      models: [{ id: config.model, contextWindow: config.contextWindow ?? 128000, maxTokens: config.maxTokens ?? 32768 }],
+      models: [{
+        id: config.model,
+        contextWindow: config.contextWindow ?? 128000,
+        maxTokens: config.maxTokens ?? 32768,
+        // Declare the offered reasoning levels for reasoning-capable models so
+        // the harness (resolveReasoningLevel → getSupportedThinkingLevels) accepts
+        // an explicit effort. Without this, a hand-declared model is treated as
+        // non-reasoning (supports only "off") and any effort throws
+        // UNSUPPORTED_REASONING_EFFORT. The dict maps each offered level to its
+        // wire spelling; "off": null = "supported, send nothing".
+        ...(config.reasoning
+          ? { reasoningEfforts: { off: null, low: "low", medium: "medium", high: "high" } as const }
+          : {}),
+      }],
       apiKeyEnv: "CAIRN_LLM_API_KEY",
       defaultInput: ["text", "image"],
       retryPolicy: { mode: "normal", maxRetries: 5, backoff: { initialDelayMs: 500, maxDelayMs: 10000, jitterRatio: 0.1 } },

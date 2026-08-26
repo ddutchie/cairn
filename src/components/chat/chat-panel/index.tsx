@@ -677,6 +677,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         ),
         // Reasoning models get the `developer` system role (OpenAI convention).
         isReasoningModel: getModelInfo(aiConfig.model)?.reasoning === true,
+        // Only send reasoning effort to reasoning-capable models — otherwise the
+        // provider rejects/ignores the field. Chat defaults are set in the store.
+        reasoningEffort: getModelInfo(aiConfig.model)?.reasoning === true ? aiConfig.reasoningEffort : undefined,
         contextLimit: aiConfig.contextLimit,
         contextWindow: aiConfig.contextLimit,
       },

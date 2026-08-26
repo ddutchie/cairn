@@ -20,6 +20,13 @@ export interface ChatAgentEntry {
   handle?: Record<PropertyKey, unknown>;
   /** The underlying agent object (dsh's Agent). */
   agent?: Record<PropertyKey, unknown>;
+  /**
+   * Mutable model-selection ref installed via installModelSelection. dsh reads
+   * `selectionRef.current` during each step's prompt assembly, so mutating it
+   * between turns changes the retained agent's provider/model/reasoningEffort
+   * without a resume. Set when the agent is opened.
+   */
+  selectionRef?: { current: { provider: string; model: string; reasoningEffort?: "off" | "low" | "medium" | "high" } | undefined; assembled: unknown };
   /** Live session — carries the event log used for the Context Ring + replay. */
   session?: Pick<Session, "id" | "seq"> & { events: readonly SessionEvent[] };
   /** Send a follow-up user message onto the live turn (dsh's agent.steer). */
