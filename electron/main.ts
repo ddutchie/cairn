@@ -38,6 +38,7 @@ import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./l
 import { createTray } from "./lib/tray";
 import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
+import { readThemeSurface } from "./lib/theme-surface";
 import { HeartbeatScheduler } from "./lib/heartbeat-scheduler";
 import { runAutomation } from "./lib/heartbeat-runner";
 import { stopServerSync } from "./lib/llama-server";
@@ -143,40 +144,9 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-// Returns the window background colour for the stored theme.
-// Used as BrowserWindow.backgroundColor (fills the window before React renders).
-function getStoredThemeBackground(): string {
-  try {
-    const userDataPath = app.getPath("userData");
-    const themeFile = path.join(userDataPath, "theme.json");
-    if (fs.existsSync(themeFile)) {
-      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
-      if (t === "light") return "#f5f4f1";
-    }
-  } catch { /* ignore */ }
-  return "#0d0d0d";
-}
-
-// Returns the --surface colour for the stored theme.
-// Used as the titleBarOverlay colour on Windows so the native min/max/close
-// buttons blend with the rendered TitleBar component (bg-[var(--surface)]).
-// Must match the --surface values in globals.css exactly.
-function getStoredThemeSurface(): string {
-  try {
-    const userDataPath = app.getPath("userData");
-    const themeFile = path.join(userDataPath, "theme.json");
-    if (fs.existsSync(themeFile)) {
-      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
-      if (t === "light") return "#ffffff";  // --surface in .light (globals.css:35)
-    }
-  } catch { /* ignore */ }
-  return "#141414";  // --surface in .dark (globals.css:11)
-}
-
 function createWindow(): BrowserWindow {
   const isWin = process.platform === "win32";
-  const bg = getStoredThemeBackground();
-  const surface = getStoredThemeSurface();
+  const { surface, bg } = readThemeSurface();
 
   // On macOS: hiddenInset keeps the traffic lights in the title bar area.
   // On Windows: hidden removes the native title text; titleBarOverlay places
@@ -225,8 +195,30 @@ function createWindow(): BrowserWindow {
   }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:" || parsed.protocol === "mailto:") {
+        shell.openExternal(url);
+      }
+    } catch { /* malformed URL — deny */ }
     return { action: "deny" };
+  });
+
+  // Deny any in-page navigation to external origins. Only allow the bundled
+  // app:// scheme, the asset:// scheme, and the localhost dev server.
+  win.webContents.on("will-navigate", (event, url) => {
+    try {
+      const parsed = new URL(url);
+      const allowed =
+        parsed.protocol === "app:" ||
+        parsed.protocol === "asset:" ||
+        (parsed.protocol === "http:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
+        (parsed.protocol === "ws:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
+        (parsed.protocol === "https:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"));
+      if (!allowed) event.preventDefault();
+    } catch {
+      event.preventDefault();
+    }
   });
 
   return win;

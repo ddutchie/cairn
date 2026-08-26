@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { Code2, ChevronDown, ChevronRight, MessageSquare, Search, Terminal, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn, formatDateCompact } from "@/lib/utils";
-import type { SessionKind } from "@/types";
+import { cn } from "@/lib/utils";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
 import { useSessionNavigation } from "./useSessionNavigation";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
+import { kindLabel, SessionRow, SessionTypeIcon } from "./SessionRow";
 
 interface SessionBrowserProps {
   activeSessionId: string | null;
@@ -17,109 +17,14 @@ interface SessionBrowserProps {
   limit?: number;
 }
 
-function kindLabel(kind: SessionKind): string {
-  if (kind === "chat") return "Chat";
-  if (kind === "coding") return "Coding";
-  return "Terminal";
-}
-
-function SessionTypeIcon({ kind, size }: { kind: SessionKind; size: number }) {
-  if (kind === "chat") return <MessageSquare size={size} />;
-  if (kind === "coding") return <Code2 size={size} />;
-  return <Terminal size={size} />;
-}
-
 function matchesQuery(session: SessionSummary, query: string): boolean {
   if (!query) return true;
   const value = `${session.title} ${kindLabel(session.kind)}`.toLowerCase();
   return value.includes(query.toLowerCase());
 }
 
-interface SessionRowProps {
-  session: SessionSummary;
-  selected: boolean;
-  running: boolean;
-  onSelect: () => void;
-  onRemove?: (event: React.SyntheticEvent) => void;
-  tabIndex?: number;
-}
-
 function sanitizeAriaId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
-/** One session entry — shared by the sidebar tree and the dropdown menu so both
- *  surfaces stay on the same type scale, spacing, and selection treatment.
- *  Outer wrapper is roving-focus neutral (role=presentation); the inner div
- *  carries role=option so the delete button is NOT nested inside an option. */
-function SessionRow({ session, selected, running, onSelect, onRemove, tabIndex }: SessionRowProps) {
-  function handleKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
-    if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onSelect();
-    } else if ((e.key === "Delete" || e.key === "Backspace") && onRemove) {
-      e.preventDefault();
-      e.stopPropagation();
-      onRemove(e);
-    }
-  }
-  const optionTabIndex = tabIndex !== undefined ? tabIndex : (selected ? 0 : -1);
-  return (
-    <div
-      role="presentation"
-      className="group relative flex items-center gap-1"
-    >
-      <div
-        role="option"
-        aria-selected={selected}
-        tabIndex={optionTabIndex}
-        onClick={onSelect}
-        onKeyDown={handleKeyDown}
-        className={cn(
-          "flex flex-1 min-w-0 items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
-          selected
-            ? "border-l-[var(--accent)] bg-[var(--accent-dim)]"
-            : "border-l-transparent hover:bg-[var(--surface-2)]",
-        )}
-      >
-        <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
-          <span className={cn("flex-shrink-0", selected ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
-            <SessionTypeIcon kind={session.kind} size={13} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs text-[var(--text-primary)]">{session.title}</span>
-            <span className="flex items-center gap-1.5 mt-0.5 text-[0.714rem] text-[var(--text-tertiary)]">
-              <span>{kindLabel(session.kind)}</span>
-              <span aria-hidden>·</span>
-              <span>{formatDateCompact(session.updatedAt)}</span>
-              {session.mode === "plan" && <span className="text-[var(--warning)]">plan</span>}
-              {running && (
-                <span className="flex items-center gap-1 text-[var(--accent)]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" aria-hidden />
-                  running
-                </span>
-              )}
-            </span>
-          </span>
-        </div>
-      </div>
-      {onRemove && session.kind !== "terminal" && (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={`Delete ${kindLabel(session.kind).toLowerCase()} session`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove(e);
-          }}
-          className="flex-shrink-0 grid place-items-center w-6 h-6 rounded opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] focus-visible:text-[var(--danger)] transition-all"
-        >
-          <Trash2 size={11} />
-        </button>
-      )}
-    </div>
-  );
 }
 
 export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown", limit = 5 }: SessionBrowserProps) {
@@ -207,9 +112,11 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
         setQuery("");
       }
     };
+    // Document Escape always closes and returns focus — the input's own
+    // stopPropagation handler is the only clear-first branch, so focus on
+    // [role=option] or elsewhere reliably closes the popover.
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        if (query.trim() !== "") return;
         event.preventDefault();
         setOpen(false);
         setQuery("");
@@ -222,16 +129,17 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", handleKey);
     };
-  }, [open, query]);
+  }, [open]);
 
   // Arrow-key navigation inside the listbox (roving tabindex).
   function handleListboxKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
     const container = listboxRef.current;
     if (!container) return;
     const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
     if (options.length === 0) return;
-    const active = document.activeElement as HTMLElement | null;
-    const currentIndex = active ? options.indexOf(active) : -1;
+    const activeEl = document.activeElement as HTMLElement | null;
+    const currentIndex = activeEl ? options.indexOf(activeEl) : -1;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       const next = currentIndex < options.length - 1 ? currentIndex + 1 : 0;
@@ -274,7 +182,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     const previewSessions = visibleSessions.slice(0, limit);
     const hasActive = !!active;
     return (
-      <div role="listbox" aria-label="Recent sessions" className="flex flex-col gap-0.5" tabIndex={-1} onKeyDown={handleListboxKeyDown} ref={listboxRef}>
+      <div role="listbox" aria-label="Recent sessions" aria-orientation="vertical" className="flex flex-col gap-0.5" tabIndex={-1} onKeyDown={handleListboxKeyDown} ref={listboxRef}>
         {previewSessions.length === 0 ? (
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">No sessions yet</p>
         ) : previewSessions.map((session, index) => {
@@ -296,18 +204,53 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
 
   function removeSession(event: React.SyntheticEvent, session: SessionSummary) {
     event.stopPropagation();
-    if (session.kind === "chat") {
-      void deleteThread(session.sourceId);
-    } else if (session.kind === "coding") {
-      void deleteCodingSessionFromHistory(session.sourceId);
-    }
+    const deletedIndex = visibleSessions.findIndex((s) => s.id === session.id);
+    const triggerEl = triggerRef.current;
+    const doDelete = session.kind === "chat"
+      ? deleteThread(session.sourceId)
+      : session.kind === "coding"
+        ? deleteCodingSessionFromHistory(session.sourceId)
+        : Promise.resolve();
+    void (doDelete as Promise<unknown>).then(() => {
+      requestAnimationFrame(() => {
+        const container = listboxRef.current;
+        if (!container) {
+          triggerEl?.focus();
+          return;
+        }
+        const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
+        if (options.length === 0) {
+          // Focus stays logical: back to search or trigger
+          if (searchInputRef.current && open) searchInputRef.current.focus();
+          else triggerEl?.focus();
+          return;
+        }
+        let nextIndex = deletedIndex;
+        if (nextIndex >= options.length) nextIndex = options.length - 1;
+        if (nextIndex < 0) nextIndex = 0;
+        const toFocus = options[nextIndex];
+        if (toFocus) toFocus.focus();
+        else triggerEl?.focus();
+      });
+    }).catch(() => undefined);
   }
 
   const projectNav = variant === "project";
   const currentKind = projectNav ? "chat" : active?.kind;
   const sanitizedListboxId = sanitizeAriaId(listboxId);
   return (
-    <div ref={rootRef} className={cn("relative", projectNav ? "flex-shrink-0 h-auto" : "flex-1 min-w-0 h-full")}>
+    <div
+      ref={rootRef}
+      className={cn("relative", projectNav ? "flex-shrink-0 h-auto" : "flex-1 min-w-0 h-full")}
+      onBlur={(e) => {
+        if (!open) return;
+        const related = e.relatedTarget as Node | null;
+        if (!related || !e.currentTarget.contains(related)) {
+          setOpen(false);
+          setQuery("");
+        }
+      }}
+    >
       <button
         ref={triggerRef}
         type="button"
@@ -352,6 +295,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
           />
         )}
       </button>
+      <span aria-live="polite" aria-atomic="true" className="sr-only">{runningIds.size > 0 ? `${runningIds.size} running` : ""}</span>
 
       {open && (
         <div className={cn(
@@ -404,6 +348,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
             id={sanitizedListboxId}
             role="listbox"
             aria-label="Sessions"
+            aria-orientation="vertical"
             tabIndex={-1}
             onKeyDown={handleListboxKeyDown}
             className={cn("max-h-80 overflow-y-auto", projectNav && "pb-1 space-y-0.5")}

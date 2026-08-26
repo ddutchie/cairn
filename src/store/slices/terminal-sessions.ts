@@ -5,6 +5,11 @@
  * Sessions are never persisted to SQLite — they live for the app lifetime.
  * TerminalManager (renderer singleton) holds the actual xterm.js instances,
  * keyed by sessionId.
+ *
+ * TODO (H5): split this 800+ LOC god slice — extract transcript (messages,
+ * todos, token buffers) and PTY lifecycle (spawn/exit, editor tabs) into
+ * separate slices. Keep the public TerminalSessionsSlice shape stable while
+ * moving internals.
  */
 
 import { StateCreator } from "zustand";

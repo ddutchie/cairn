@@ -136,7 +136,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     // into a semantically incoherent transcript. Check BEFORE aborting so a
     // concurrent turn is not killed and the new turn does not also start.
     if (req.threadId && runningThreads.has(req.threadId)) {
-       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — please wait for the current turn to finish.", code: "busy" }));
+       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — please wait for the current turn to finish.", code: "already-running" }));
        broadcastEvent("session:busy", { sessionId, reason: "already-running" });
        return;
     }

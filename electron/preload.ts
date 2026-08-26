@@ -13,6 +13,9 @@ import type { SessionProjection } from "../shared/agent/session-projection";
 // Local structural types for the external-tools namespace. The renderer's
 // canonical types live in src/types; electron's rootDir excludes src, so we
 // mirror the shapes here (kept in sync by the IPC return types).
+// Keep SessionPopoutProfile / SessionProfileId in sync with
+// shared/agent/session-profile.ts and shared/agent/chat-popout.ts — any drift
+// breaks pop-out wiring (chat-popout.ts resolveChatPopoutSession).
 interface McpServerConfig {
   id: string; workspaceId: string; name: string; description?: string;
   transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;

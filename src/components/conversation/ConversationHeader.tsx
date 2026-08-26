@@ -25,7 +25,7 @@ interface ConversationHeaderProps {
 export function ConversationHeader({ title, usage, contextLimit, actions }: ConversationHeaderProps) {
   return (
     <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
-      <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1">{title}</span>
+      <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] truncate flex-1">{title}</span>
       {usage && <ContextRing {...usage} contextLimit={contextLimit} />}
       {actions}
     </div>

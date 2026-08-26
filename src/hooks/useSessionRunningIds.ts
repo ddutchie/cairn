@@ -6,11 +6,15 @@ import { useEffect, useState } from "react";
 // Sidebar mounts one SessionBrowser per expanded project (sidebar.tsx:605),
 // each would otherwise setInterval(2000) → N× IPC. This singleton fans out
 // a single interval to all subscribers and pauses when the page is hidden.
+//
+// Module-singleton state is intentional here (not a Zustand slice) — the
+// poller is a coalesced IPC timer, not UI state, and useSyncExternalStore
+// would add indirection without benefit. Keep the globals but clamp
+// subscribers so a double-unmount can't go negative.
 let sharedIds: Set<string> = new Set();
 let subscribers = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 let visibilityAttached = false;
-let pausedByVisibility = false;
 
 const listeners = new Set<(ids: Set<string>) => void>();
 
@@ -40,12 +44,8 @@ function stopTimer() {
 
 function handleVisibility() {
   if (document.hidden) {
-    if (timer !== null) {
-      stopTimer();
-      pausedByVisibility = true;
-    }
+    if (timer !== null) stopTimer();
   } else if (subscribers > 0 && timer === null) {
-    pausedByVisibility = false;
     poll();
     startTimer();
   }
@@ -77,12 +77,9 @@ export function useSessionRunningIds(active: boolean): Set<string> {
     if (!document.hidden) startTimer();
 
     return () => {
-      subscribers -= 1;
+      subscribers = Math.max(0, subscribers - 1);
       listeners.delete(setIds);
-      if (subscribers === 0) {
-        stopTimer();
-        pausedByVisibility = false;
-      }
+      if (subscribers === 0) stopTimer();
     };
   }, [active]);
 

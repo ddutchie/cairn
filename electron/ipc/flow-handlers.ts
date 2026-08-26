@@ -8,10 +8,11 @@
  * the summary node (both edge directions), skips other `ai_summary` nodes,
  * and feeds the collected text into `callLLM`.
  *
- * **TODO**: the BFS here is partly duplicated by `q.getResolvedFlow`
+ * NOTE (tracked): the BFS here is partly duplicated by `q.getResolvedFlow`
  * (`db/queries.ts:651-735`). A deeper refactor could extract a shared
  * `walkReachableNodes(db, nodeId)` helper into `db/queries.ts`. Out of scope
- * for P2 (which is a no-behaviour-change refactor).
+ * for P2 (no-behaviour-change refactor) — file as follow-up if flow
+ * traversal diverges.
  */
 
 import { registerIpcHandle } from "./registry";

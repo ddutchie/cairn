@@ -11,9 +11,9 @@
  *   popIn   → pop-out sends its session id → main process closes pop-out
  */
 
-import { app, BrowserWindow } from "electron";
-import fs from "fs";
+import { app, BrowserWindow, shell } from "electron";
 import path from "path";
+import { readThemeSurface } from "./lib/theme-surface";
 import { bindChatPopoutSession, chatParticipantIdsExcept, resolveChatPopoutSession, type ChatPopoutPayload } from "../shared/agent/chat-popout";
 import type { DbContext } from "./ipc/result-helpers";
 import { handle } from "./ipc/result-helpers";
@@ -38,33 +38,6 @@ let popoutWindow: BrowserWindow | null = null;
 /** Track the main window's webContents ID so we can find it later. */
 let mainWindowWebContentsId: number | null = null;
 
-// Duplicated from electron/main.ts:164-173 to avoid a circular import.
-// Returns the --surface colour for the stored theme so the pop-out's
-// titleBarOverlay matches main window's TitleBar (see main.ts:getStoredThemeSurface).
-function getStoredThemeSurface(): string {
-  try {
-    const userDataPath = app.getPath("userData");
-    const themeFile = path.join(userDataPath, "theme.json");
-    if (fs.existsSync(themeFile)) {
-      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
-      if (t === "light") return "#ffffff"; // --surface in .light (globals.css:35)
-    }
-  } catch { /* ignore */ }
-  return "#141414"; // --surface in .dark (globals.css:11)
-}
-
-function getStoredThemeBackground(): string {
-  try {
-    const userDataPath = app.getPath("userData");
-    const themeFile = path.join(userDataPath, "theme.json");
-    if (fs.existsSync(themeFile)) {
-      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
-      if (t === "light") return "#f5f4f1";
-    }
-  } catch { /* ignore */ }
-  return "#0d0d0d";
-}
-
 function loadPopupUrl(win: BrowserWindow): void {
   if (isDev) {
     // The popout has its own renderer and can otherwise retain an older
@@ -86,8 +59,7 @@ export function createChatPopoutWindow(): BrowserWindow {
   }
 
   const isWin = process.platform === "win32";
-  const surface = getStoredThemeSurface();
-  const bg = getStoredThemeBackground();
+  const { surface, bg } = readThemeSurface();
   const win = new BrowserWindow({
     width: 420,
     height: 640,
@@ -117,6 +89,32 @@ export function createChatPopoutWindow(): BrowserWindow {
       // isolation + utilityProcess hardening is complete.
       sandbox: false,
     },
+  });
+
+  // C2: deny new windows from pop-out and only allow safe external schemes.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:" || parsed.protocol === "mailto:") {
+        shell.openExternal(url);
+      }
+    } catch { /* malformed URL — deny */ }
+    return { action: "deny" };
+  });
+
+  win.webContents.on("will-navigate", (event, url) => {
+    try {
+      const parsed = new URL(url);
+      const allowed =
+        parsed.protocol === "app:" ||
+        parsed.protocol === "asset:" ||
+        (parsed.protocol === "http:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
+        (parsed.protocol === "ws:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
+        (parsed.protocol === "https:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"));
+      if (!allowed) event.preventDefault();
+    } catch {
+      event.preventDefault();
+    }
   });
 
   loadPopupUrl(win);

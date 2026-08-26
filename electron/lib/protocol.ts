@@ -13,6 +13,7 @@ import { session, net, app } from "electron";
 import path from "path";
 import fs from "fs";
 import { pathToFileURL } from "url";
+import { resolveWithinRoot } from "../ipc/path-safety";
 
 const isDev = !app.isPackaged;
 
@@ -56,9 +57,18 @@ export function registerAssetProtocol(): void {
     ];
 
     let filePath: string | null = null;
+    const isWithinWorkspace = (p: string): boolean => {
+      // Canonical containment check (sep-aware). Use resolveWithinRoot helper where possible.
+      const rel = path.relative(path.resolve(_workspacePath!), path.resolve(p));
+      // resolveWithinRoot returns null on escape via .. or absolute segments
+      const viaHelper = resolveWithinRoot(_workspacePath!, rel);
+      if (viaHelper !== null) return true;
+      const root = path.resolve(_workspacePath!);
+      const resolved = path.resolve(p);
+      return resolved === root || resolved.startsWith(root + path.sep);
+    };
     for (const candidate of candidates) {
-      // Path-traversal protection: must stay within workspace
-      if (!candidate.startsWith(_workspacePath)) continue;
+      if (!isWithinWorkspace(candidate)) continue;
       if (fs.existsSync(candidate)) {
         filePath = candidate;
         break;
@@ -68,11 +78,11 @@ export function registerAssetProtocol(): void {
     // Fallback: search workspace recursively (for Obsidian vault-root images)
     if (!filePath) {
       const cached = fileCache.get(filename);
-      if (cached && fs.existsSync(cached)) {
+      if (cached && fs.existsSync(cached) && isWithinWorkspace(cached)) {
         filePath = cached;
       } else {
         const found = findFileRecursive(_workspacePath, filename);
-        if (found && found.startsWith(_workspacePath)) {
+        if (found && isWithinWorkspace(found)) {
           filePath = found;
           fileCache.set(filename, found);
         }
@@ -120,7 +130,18 @@ export function setupProtocol(outDir: string): void {
       let filePath = url.pathname.replace(/^\/\.\//, "").replace(/^\//, "");
       if (!filePath) filePath = "index.html";
       const fullPath = path.join(outDir, filePath);
-      return net.fetch(pathToFileURL(fullPath).href);
+      // H1: path-traversal guard for app:// — must stay within outDir (sep-aware).
+      const resolved = path.resolve(fullPath);
+      const root = path.resolve(outDir);
+      if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+        return new Response("Not found", { status: 404 });
+      }
+      // Defense-in-depth: also via resolveWithinRoot helper
+      const rel = path.relative(root, resolved);
+      if (resolveWithinRoot(root, rel) === null && resolved !== root) {
+        return new Response("Not found", { status: 404 });
+      }
+      return net.fetch(pathToFileURL(resolved).href);
     });
   }
 

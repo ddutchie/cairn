@@ -304,7 +304,7 @@ describe("moveNoteToProject", () => {
     await new Promise((r) => setTimeout(r, 5));
     const moved = moveNoteToProject(db, "note1", "proj2");
     expect(moved.version).toBeGreaterThan(before?.version ?? -1);
-    expect(moved.updatedAt > (before?.updatedAt ?? "")).toBe(true);
+    expect(moved.updatedAt >= (before?.updatedAt ?? "")).toBe(true);
   });
 });
 

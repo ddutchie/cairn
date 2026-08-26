@@ -370,6 +370,8 @@ const MIGRATIONS: Migration[] = [
   // v15: Coding Agent persistent tab & session history — stores per-project agent
   // sessions, their display messages, and the raw LLM context window so sessions
   // can be resumed across app restarts.
+  // HISTORICAL: pi_agent_* names are frozen migration DDL — renamed to
+  // agent_session_metadata / session_todos in v52. Do not rename here.
   (db) => {
     db.exec(`
       CREATE TABLE IF NOT EXISTS pi_agent_sessions (
@@ -517,6 +519,7 @@ const MIGRATIONS: Migration[] = [
   // collapsible "Thinking" panel survives app restarts. Mirrors v14's
   // approach for tool_calls. Also covers pi_agent_messages so terminal
   // agent sessions retain their thinking across restarts too.
+  // HISTORICAL: pi_agent_messages name frozen here for idempotent ALTER TABLE.
   (db) => {
     const chatCols = db.prepare("PRAGMA table_info(chat_messages)").all() as { name: string }[];
     if (!chatCols.some((c) => c.name === "reasoning")) {
@@ -1015,6 +1018,7 @@ const MIGRATIONS: Migration[] = [
   // pi_agent_messages: scoped to a pi_agent_sessions row with ON DELETE CASCADE,
   // replace-wholesale (the model sends the full list each call — delete all +
   // insert by position in a single transaction).
+  // HISTORICAL: pi_session_todos / pi_agent_sessions names frozen; renamed in v52.
   (db) => {
     db.exec(`
       CREATE TABLE IF NOT EXISTS pi_session_todos (
@@ -1227,7 +1231,8 @@ const MIGRATIONS: Migration[] = [
     }
   },
 
-  // v48: pi_agent_sessions.role — session persona. "default" is the coding
+  // v48: agent_session_metadata.role — session persona. "default" is the coding
+  // HISTORICAL: pi_agent_sessions was the pre-v52 name (still referenced via sessionMetadataTable fallback).
   // agent; "automation-dev" restricts the toolset to FILE tools only
   // (read/write/edit/bash/grep/find/ls) so a Develop session can author an
   // automation's scripts without ever touching notes/tasks/board.
@@ -1249,7 +1254,8 @@ const MIGRATIONS: Migration[] = [
     }
   },
 
-  // v50: pi_agent_sessions.plan_content — the last plan the agent committed
+  // v50: agent_session_metadata.plan_content — the last plan the agent committed
+  // HISTORICAL: pi_agent_sessions was the pre-v52 name.
   // via dsh-plan-mode's `exit_plan_mode` tool for this session. Cached here
   // so the execute-mode system prompt can carry the approved plan forward
   // without folding the entire session log every turn. Approvals may also

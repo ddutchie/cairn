@@ -127,6 +127,29 @@ export function setMobileBroadcastCallback(cb: ((channel: string, payload: unkno
 }
 
 /**
+ * Strip HITL nonces before forwarding to mobile — desktop needs the nonce
+ * to answer approvals/questions, but mobile must never receive it (widens
+ * the approval bypass surface via the mobile sync channel).
+ */
+function stripNonceForMobile(payload: unknown): unknown {
+  if (payload === null || typeof payload !== "object") return payload;
+  const obj = payload as Record<string, unknown>;
+  const hasNonce = "nonce" in obj;
+  const data = obj["data"] as unknown;
+  const hasDataNonce = data !== null && typeof data === "object" && "nonce" in (data as Record<string, unknown>);
+  if (!hasNonce && !hasDataNonce) return payload;
+  // Shallow clone outer
+  const clone: Record<string, unknown> = { ...obj };
+  if (hasNonce) delete clone["nonce"];
+  if (hasDataNonce) {
+    const dataObj = data as Record<string, unknown>;
+    clone["data"] = { ...dataObj };
+    delete (clone["data"] as Record<string, unknown>)["nonce"];
+  }
+  return clone;
+}
+
+/**
  * Broadcast an event to all Electron windows and all active mobile clients.
  */
 export function broadcastEvent(channel: string, payload: unknown): void {
@@ -137,8 +160,51 @@ export function broadcastEvent(channel: string, payload: unknown): void {
       win.webContents.send(channel, payload);
     }
   }
-  // Send to all mobile clients
+  // Send to all mobile clients — strip approval/question nonces so they never
+  // leak over the mobile sync transport (registry mobileBroadcastCallback).
   if (mobileBroadcastCallback) {
-    mobileBroadcastCallback(channel, payload);
+    const mobilePayload = stripNonceForMobile(payload);
+    mobileBroadcastCallback(channel, mobilePayload);
   }
+}
+
+// ── Centralised session broadcast ─────────────────────────────────────────
+//
+// `broadcastEvent` (all windows + mobile) vs `broadcastToChat` (chat
+// participants only: main + pop-out) was previously split across
+// `registry.ts` and `chat-popout.ts` with only a comment distinguishing
+// them. Centralise the intent here so call-sites express scope explicitly.
+// `chat` scope is participant-gated and deliberately excludes mobile (so HITL
+// nonces never leave desktop). Coding sessions use `all` because they are not
+// participant-gated.
+
+export type BroadcastScope = "all" | "chat";
+
+/** Single entry-point for session:* broadcasts with an explicit scope. */
+export function broadcastSession(
+  channel: string,
+  payload: unknown,
+  scope: BroadcastScope = "all",
+  excludeId?: number,
+): void {
+  if (scope === "chat") {
+    // Lazy import avoids circular dep registry ↔ chat-popout (the participant
+    // set lives in chat-popout.ts). Fall back to broadcastEvent if the popout
+    // module isn't loaded yet (e.g. tests).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { broadcastToChat } = require("../chat-popout") as {
+        broadcastToChat: (c: string, p: unknown, e?: number) => void;
+      };
+      broadcastToChat(channel, payload, excludeId);
+      // The sender's own window already received via event.sender.send in
+      // chat.ts; broadcastToChat fans out to the *other* participant(s).
+      // For non-chat-triggered broadcasts (e.g. busy errors), also fan out
+      // via broadcastEvent's mobile path is intentionally skipped — chat-only.
+      return;
+    } catch {
+      // Fall through to broadcastEvent (no participant set available).
+    }
+  }
+  broadcastEvent(channel, payload);
 }

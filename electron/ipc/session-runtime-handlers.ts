@@ -364,15 +364,14 @@ async function runCordisCodingSession(
           // with the old page, and losing it would strand the review with
           // no UI to answer it.
           //
-          // Security note: this send is the coding path's broadcastEvent
+          // Security note (H4): this send is the coding path's broadcastEvent
           // (all windows + mobile). The HITL nonce minted here authenticates
           // session:respond-questions — it must reach the desktop renderer
-          // but should NOT be exposed to mobile clients. Mobile has no UI
-          // for coding HITL and verifyAskNonce would still gate it, but
-          // leaking the nonce widens the surface. Future: scope coding
-          // questions via broadcastToChat (participant-gated) or strip the
-          // nonce before the mobile broadcast. For now the nonce travels
-          // via broadcastEvent; mobile ignores ask-questions payloads.
+          // but MUST NOT be exposed to mobile clients. broadcastEvent's
+          // registry layer now strips `nonce` (and `data.nonce`) before
+          // forwarding to mobileBroadcastCallback, so desktop receives the
+          // nonce via BrowserWindow.send while mobile gets a sanitized
+          // payload. is-running remains the recovery path for reloads.
           if (channel === "session:ask-questions") {
             const requestId = typeof p.callId === "string" ? p.callId : undefined;
             const qs = Array.isArray(p.questions) ? p.questions : undefined;
@@ -487,6 +486,13 @@ export function registerSessionRuntimeHandlers(
 
   // ── session:prompt ───────────────────────────────────────────────────────
   registerIpcOn("session:prompt", async (event, req: AgentPromptRequest) => {
+    try {
+      assertSafeId(req.sessionId, "sessionId");
+    } catch {
+      broadcastEvent("session:projection", makeSessionProjection(String(req.sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
+      broadcastEvent("session:busy", { sessionId: String(req.sessionId ?? "unknown"), reason: "invalid-id" });
+      return;
+    }
     const storedProfile = q.getSessionProfile(ctx.db, req.sessionId)?.profile;
     const selected = selectSessionProfile(storedProfile, req.profile);
     if (!selected.profile) {
@@ -528,7 +534,7 @@ export function registerSessionRuntimeHandlers(
     // the is-running state inconsistent. The renderer queues prompts while busy,
     // so this is a defensive guard, not the normal path.
     if (runningLoops.has(sessionId)) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "busy" }));
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
     }
@@ -672,6 +678,13 @@ export function registerSessionRuntimeHandlers(
   // Renderer fires this when the user clicks "Approve Plan". Fetches the PRD
   // note, injects the approval message, then continues in execute mode.
   registerIpcOn("session:approve-plan", async (_event, req: AgentApprovePlanRequest) => {
+    try {
+      assertSafeId(req.sessionId, "sessionId");
+    } catch {
+      broadcastEvent("session:projection", makeSessionProjection(String(req.sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
+      broadcastEvent("session:busy", { sessionId: String(req.sessionId ?? "unknown"), reason: "invalid-id" });
+      return;
+    }
     const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
 
     const send = (channel: string, payload: unknown) => {
@@ -681,7 +694,7 @@ export function registerSessionRuntimeHandlers(
     // Same concurrency guard as session:prompt — a plan approval is also a
     // loop run and must never stack on an in-flight loop for this session.
     if (runningLoops.has(sessionId)) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "busy" }));
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
     }
@@ -789,6 +802,13 @@ export function registerSessionRuntimeHandlers(
   // user-triggered variant. It opens the session's agent from its persisted jsonl
   // (idle), runs ctx.compaction.compactNow(agent), then disposes it.
   registerIpcOn("session:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number } }) => {
+    try {
+      assertSafeId(req.sessionId, "sessionId");
+    } catch {
+      broadcastEvent("session:projection", makeSessionProjection(String(req.sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
+      broadcastEvent("session:busy", { sessionId: String(req.sessionId ?? "unknown"), reason: "invalid-id" });
+      return;
+    }
     const { sessionId } = req;
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
@@ -851,6 +871,13 @@ export function registerSessionRuntimeHandlers(
   // of truth; SQLite is updated only after a successful command and a committed
   // plan/mode event have been observed.
   registerIpcOn("session:set-mode", (_event, { sessionId, mode }: { sessionId: string; mode: "plan" | "execute" }) => {
+    try {
+      assertSafeId(sessionId, "sessionId");
+    } catch {
+      broadcastEvent("session:projection", makeSessionProjection(String(sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
+      broadcastEvent("session:busy", { sessionId: String(sessionId ?? "unknown"), reason: "invalid-id" });
+      return;
+    }
     void (async () => {
       try {
         const agentConfig = getCachedConfig().agentConfig;
@@ -902,6 +929,13 @@ export function registerSessionRuntimeHandlers(
   // two disagree (or the renderer's command is absent), the grant is a no-op:
   // fail-closed on the record path.
   registerIpcOn("session:respond-tool", (_event, { sessionId, callId, approved, grant, nonce }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string; nonce?: string }) => {
+    try {
+      assertSafeId(sessionId, "sessionId");
+      assertSafeId(callId, "callId");
+    } catch {
+      console.warn(`[session] respond-tool rejected: invalid id for ${String(sessionId)}/${String(callId)}`);
+      return;
+    }
     // Require the per-ask nonce — a compromised renderer (XSS from a
     // rendered note, an installed UI plugin) that only saw the callId
     // broadcast on session:tool-confirm-required must NOT be able to
@@ -936,6 +970,13 @@ export function registerSessionRuntimeHandlers(
   // back to the model as the tool result so it reasons over the answers in the
   // same turn. Cordis keys by requestId (which the renderer echoes as callId).
   registerIpcOn("session:respond-questions", (_event, { sessionId, callId, answers, nonce }: { sessionId: string; callId: string; answers: string; nonce?: string }) => {
+    try {
+      assertSafeId(sessionId, "sessionId");
+      assertSafeId(callId, "callId");
+    } catch {
+      console.warn(`[session] respond-questions rejected: invalid id for ${String(sessionId)}/${String(callId)}`);
+      return;
+    }
     if (!verifyAskNonce(sessionId, callId, nonce)) {
       console.warn(`[session] respond-questions rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
@@ -966,7 +1007,7 @@ export function registerSessionRuntimeHandlers(
     // in-flight context. The renderer stops the run before clearing, so this is
     // defensive. Clear is rejected if running or already clearing (atomic gate).
     if (runningLoops.has(sessionId) || clearingSessions.has(sessionId)) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "busy" }));
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
     }
@@ -976,7 +1017,7 @@ export function registerSessionRuntimeHandlers(
       // before the destructive sweep/file deletion. A concurrent prompt could have
       // started between the first guard and now; clear is rejected if still running.
       if (runningLoops.has(sessionId)) {
-        broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "busy" }));
+        broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
         broadcastEvent("session:busy", { sessionId, reason: "already-running" });
         return;
       }
@@ -1009,7 +1050,7 @@ export function registerSessionRuntimeHandlers(
               if (!base) continue;
               for (const p of [path.join(base, "session.jsonl.zstd"), path.join(base, "session.jsonl"), base + ".jsonl", path.join(base, "session.jsonl"), base]) {
                 if (runningLoops.has(sessionId)) {
-                  broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "busy" }));
+                  broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
                   broadcastEvent("session:busy", { sessionId, reason: "already-running" });
                   return;
                 }
@@ -1029,7 +1070,7 @@ export function registerSessionRuntimeHandlers(
           if (!flatBase) continue;
           for (const p of [flatBase + ".jsonl", path.join(flatBase, "session.jsonl"), path.join(flatBase, "session.jsonl.zstd"), flatBase]) {
             if (runningLoops.has(sessionId)) {
-              broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "busy" }));
+              broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
               broadcastEvent("session:busy", { sessionId, reason: "already-running" });
               return;
             }
@@ -1082,7 +1123,7 @@ export function registerSessionRuntimeHandlers(
       return;
     }
     if (clearingSessions.has(sessionId)) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot destroy while clearing.", code: "busy" }));
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot destroy while clearing.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
     }
@@ -1104,6 +1145,13 @@ export function registerSessionRuntimeHandlers(
   // This handler just restores the persisted session persona so a re-prompt
   // keeps the session's tool restrictions (validated, failing closed).
   registerIpcOn("session:restore-context", (_event, { sessionId }: { sessionId: string }) => {
+    try {
+      assertSafeId(sessionId, "sessionId");
+    } catch {
+      broadcastEvent("session:projection", makeSessionProjection(String(sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
+      broadcastEvent("session:busy", { sessionId: String(sessionId ?? "unknown"), reason: "invalid-id" });
+      return;
+    }
     if (sessions.has(sessionId)) return; // already in memory
     try {
       const sessionRow = q.getCodingSessionById(ctx.db, sessionId);

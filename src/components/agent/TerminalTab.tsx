@@ -20,7 +20,7 @@ export function TerminalTab({ session, isActive, onActivate, onClose }: Terminal
   const tabId = `tab-${sanitizeAriaId(session.sessionId)}`;
   const panelId = `panel-${sanitizeAriaId(session.sessionId)}`;
   return (
-    <div className="flex items-center h-full flex-shrink-0 group">
+    <div role="presentation" className="flex items-center h-full flex-shrink-0 group">
       <button
         id={tabId}
         onClick={onActivate}
@@ -57,6 +57,9 @@ export function TerminalTab({ session, isActive, onActivate, onClose }: Terminal
         <span className="max-w-[120px] truncate">{session.taskTitle}</span>
         <span className="text-[var(--text-tertiary)]">{session.agentName}</span>
 
+        {session.status === "running" && (
+          <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">running</span>
+        )}
         {session.status === "exited" && (
           <span className="text-[0.65rem] text-[var(--text-tertiary)]">
             [{session.exitCode}]

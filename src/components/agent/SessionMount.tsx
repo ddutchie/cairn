@@ -78,6 +78,11 @@ export function SessionMount({ session, isActive }: SessionMountProps) {
 
       containerRef.current.innerHTML = "";
       terminal.open(containerRef.current);
+      // WCAG: allow Escape to escape the xterm keyboard trap (Tab is sent to PTY by default)
+      terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+        if (event.key === "Escape") return false;
+        return true;
+      });
 
       TerminalManager.set(session.sessionId, { terminal, fitAddon, rawOutput: "" });
 
@@ -146,6 +151,9 @@ export function SessionMount({ session, isActive }: SessionMountProps) {
     <div
       className={cn("flex-1 min-h-0 overflow-hidden relative", !isActive && "hidden")}
       ref={containerRef}
+      role="application"
+      aria-label={`Terminal: ${session.taskTitle}`}
+      aria-roledescription="terminal"
       style={{ background: "var(--background)", height: "100%", width: "100%" }}
     />
   );

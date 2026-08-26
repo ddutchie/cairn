@@ -96,7 +96,11 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
       }
     }
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setNewMenuOpen(false);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setNewMenuOpen(false);
+        document.getElementById("unified-new-btn")?.focus();
+      }
     }
     document.addEventListener("mousedown", handleClick);
     document.addEventListener("keydown", handleKey);
@@ -268,10 +272,12 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           aria-orientation="horizontal"
           aria-label="Terminal tabs"
           className={cn(
-            "flex items-center gap-0 min-w-0 h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-[var(--border)] scrollbar-track-transparent hover:scrollbar-thumb-[var(--text-tertiary)] [scrollbar-width:thin] [scrollbar-gutter:stable]",
+            "flex items-center gap-0 min-w-0 h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-[var(--text-tertiary)] hover:scrollbar-thumb-[var(--text-secondary)] scrollbar-track-transparent [scrollbar-width:thin] [scrollbar-gutter:stable] [scrollbar-color:var(--text-tertiary)_transparent]",
             ptySessions.length > 0 ? "flex-1" : "flex-shrink-0",
+            // Fade edges when overflowed — scroll affordance at ≥4 tabs
+            ptySessions.length >= 4 && "[mask-image:linear-gradient(to_right,transparent,black_8px,black_calc(100%-8px),transparent)]",
           )}
-          style={{ scrollbarWidth: "thin" }}
+          style={{ scrollbarWidth: "thin", scrollbarColor: "var(--text-tertiary) transparent" }}
         >
           {ptySessions.map((session) => (
             <TerminalTab
@@ -289,6 +295,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           <Tooltip content="New…" side="bottom">
             <button
               id="unified-new-btn"
+              aria-haspopup="menu"
+              aria-expanded={newMenuOpen}
               onClick={() => setNewMenuOpen((v) => !v)}
               className={cn(
                 "px-3 h-11 flex items-center justify-center transition-colors border-l border-[var(--border)]",
@@ -297,7 +305,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
               )}
             >
-              <Plus size={12} />
+              <Plus size={14} strokeWidth={1.75} />
             </button>
           </Tooltip>
 
@@ -377,7 +385,15 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
       {/* Session content — CSS-hidden instead of unmounted */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--background)]">
-        <div className={activeSessionId === "chat" ? "flex flex-1 flex-col min-h-0 overflow-hidden" : "hidden"}>
+        <div
+          role="tabpanel"
+          id="panel-chat"
+          aria-labelledby="tab-chat"
+          hidden={activeSessionId !== "chat"}
+          aria-hidden={activeSessionId !== "chat"}
+          {...(activeSessionId !== "chat" ? { inert: "" } as unknown as React.HTMLAttributes<HTMLDivElement> : {})}
+          className={activeSessionId === "chat" ? "flex flex-1 flex-col min-h-0 overflow-hidden" : "hidden"}
+        >
           {chatPoppedOut ? (
             <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center px-6">
               <ExternalLink size={20} className="text-[var(--text-tertiary)]" />
@@ -397,7 +413,15 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
         {hasCodeDirectory && (
           persistentSession ? (
-            <div className={pinnedIsActive ? "flex flex-col flex-1 min-h-0 overflow-hidden" : "hidden"}>
+            <div
+              role="tabpanel"
+              id="panel-agent"
+              aria-labelledby="tab-agent"
+              hidden={!pinnedIsActive}
+              aria-hidden={!pinnedIsActive}
+              {...(!pinnedIsActive ? { inert: "" } as unknown as React.HTMLAttributes<HTMLDivElement> : {})}
+              className={pinnedIsActive ? "flex flex-col flex-1 min-h-0 overflow-hidden" : "hidden"}
+            >
               {chatPoppedOut && (persistentSession.sessionId === activeSessionId || activeSessionId === "agent") ? (
                 <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center px-6">
                   <ExternalLink size={20} className="text-[var(--text-tertiary)]" />
@@ -407,7 +431,12 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
               ) : <AgentChatPane session={persistentSession} isActive={pinnedIsActive} />}
             </div>
           ) : pinnedIsActive ? (
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div
+              role="tabpanel"
+              id="panel-agent"
+              aria-labelledby="tab-agent"
+              className="flex-1 min-h-0 overflow-hidden"
+            >
               <AgentEmptyState />
             </div>
           ) : null

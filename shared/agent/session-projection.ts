@@ -4,6 +4,25 @@ export type SessionProjectionKind =
   | "approval" | "question" | "subagent-trace" | "todos" | "plan-note"
   | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result" | "error";
 
+/**
+ * Shared busy/error envelope for session:* channels.
+ * Both `session:projection` error.code and `session:busy` reason use this
+ * union so the renderer can match on one type without mapping. `busy` is
+ * the legacy alias for `already-running` (kept for backwards compat — new
+ * code prefers `already-running`).
+ */
+export type SessionBusyReason =
+  | "already-running"
+  | "busy"
+  | "unknown-profile"
+  | "localllm-disabled"
+  | "missing-api-key"
+  | "invalid-attachment"
+  | "invalid-id";
+
+/** Convenience: session:busy payload (reused for typing busy handlers). */
+export type SessionBusyPayload = { sessionId: string; reason: SessionBusyReason; message?: string };
+
 export type SessionProjectionData = {
   approval: Record<string, unknown>;
   question: { callId: string; questions: unknown[]; nonce?: string };
@@ -15,7 +34,7 @@ export type SessionProjectionData = {
   retry: { attempt: number; maxRetries: number; delayMs: number; error: string };
   compact: { status: "start" | "end"; auto?: boolean };
   "compact-result": { messageCount: number; summary: string };
-  error: { message: string; code?: string };
+  error: { message: string; code?: SessionBusyReason | string };
 };
 
 export type SessionProjection<K extends SessionProjectionKind = SessionProjectionKind> = {

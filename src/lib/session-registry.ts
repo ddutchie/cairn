@@ -24,6 +24,15 @@ function sourceIdFor(kind: SessionKind, id: string): string {
   return kind === "chat" ? `chat:${id}` : kind === "coding" ? `coding:${id}` : `terminal:${id}`;
 }
 
+// Hoisted — not recreated per call — and strict-null safe.
+// Empty string is a real id (not null), so only null/undefined coalesce to the
+// same "no-project" bucket. Callers normalize projectId once before filtering.
+const sameProject = (a: string | null | undefined, b: string | null | undefined): boolean => {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return a === b;
+};
+
 /** Build the unified session list used by navigation surfaces. */
 export function buildSessionRegistry({
   chatThreads,
@@ -32,17 +41,9 @@ export function buildSessionRegistry({
   terminalSessions,
   projectId,
 }: SessionRegistryInput): SessionSummary[] {
-  // Strict === drops cross-project chats when the filter and the thread use
-  // different falsy representations (null vs undefined vs ""). Treat all falsy
-  // projectIds as the same "no-project" bucket — a global thread stays visible
-  // when the view is unscoped, and a scoped view doesn't accidentally hide its
-  // own globals due to a type mismatch.
-  const sameProject = (a: string | null | undefined, b: string | null | undefined): boolean => {
-    if (!a && !b) return true;
-    return a === b;
-  };
+  const normalizedProjectId = projectId ?? null;
   const chats: SessionSummary[] = chatThreads
-    .filter((thread) => sameProject(thread.projectId, projectId ?? null))
+    .filter((thread) => sameProject(thread.projectId, normalizedProjectId))
     .map((thread) => ({
       id: sourceIdFor("chat", thread.id),
       sourceId: thread.id,
@@ -53,7 +54,7 @@ export function buildSessionRegistry({
       messageCount: chatMessages.filter((message) => message.threadId === thread.id).length,
     }));
   const coding: SessionSummary[] = codingSessions
-    .filter((session) => sameProject(session.projectId, projectId ?? null))
+    .filter((session) => sameProject(session.projectId, normalizedProjectId))
     .map((session) => ({
       id: sourceIdFor("coding", session.id),
       sourceId: session.id,
@@ -65,7 +66,7 @@ export function buildSessionRegistry({
       mode: session.mode,
     }));
   const terminals: SessionSummary[] = terminalSessions
-    .filter((session) => session.sessionType === "pty" && sameProject(session.projectId, projectId ?? null))
+    .filter((session) => session.sessionType === "pty" && sameProject(session.projectId, normalizedProjectId))
     .map((session) => ({
       id: sourceIdFor("terminal", session.sessionId),
       sourceId: session.sessionId,

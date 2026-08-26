@@ -54,10 +54,16 @@ export function ErrorToasts({
 }) {
   if (toasts.length === 0) return null;
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+    <div
+      className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"
+      aria-live="assertive"
+      aria-relevant="additions"
+      aria-atomic="false"
+    >
       {toasts.map((toast) => (
         <div
           key={toast.id}
+          role="alert"
           className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[var(--background)] shadow-lg max-w-xs pointer-events-auto"
         >
           <AlertCircle size={13} className="text-[var(--danger)] shrink-0 mt-0.5" />

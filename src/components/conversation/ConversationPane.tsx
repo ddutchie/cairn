@@ -72,13 +72,14 @@ export function ConversationPane({
   return (
     <div className={cn("flex flex-1 min-h-0 flex-col overflow-hidden", className)} data-session-profile={profile}>
       <ConversationHeader title={title ?? profile} usage={usage} contextLimit={contextLimit ?? 128000} actions={actions} />
+      <span aria-live="polite" aria-atomic="true" className="sr-only">{isLoading ? "Working" : ""}</span>
       <ConversationTranscript
         transcriptRef={transcriptRef}
         className="flex-1 min-h-0"
         data={messages}
         initialTopMostItemIndex={Math.max(0, messages.length - 1)}
         emptyPlaceholder={() => <>{emptyState ?? <ConversationEmptyState />}</>}
-        footer={transcriptFooter ?? (() => <div className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{isLoading ? "Cairn is working…" : ""}</div>)}
+        footer={transcriptFooter ?? (() => <div aria-live="polite" aria-atomic="true" className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{isLoading ? "Cairn is working…" : ""}<span className="sr-only">{isLoading ? "Working" : ""}</span></div>)}
         itemContent={(_index, message) => (
           <div className={cn("px-3 py-1.5", centered && "max-w-3xl mx-auto w-full")}>
             <ConversationMessageBubble message={message} sessionId={sessionId} onRetry={onRetry} connectors={connectors} />

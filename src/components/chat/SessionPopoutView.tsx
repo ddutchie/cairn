@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { ArrowLeftFromLine, ChevronDown, ChevronRight, Code2, MessageSquare, PanelLeftClose, PanelLeftOpen, Terminal } from "lucide-react";
+import { ArrowLeftFromLine, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn, formatDateCompact } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
 import type { ConversationMessage } from "@/components/conversation/conversation-message";
@@ -13,7 +12,7 @@ import { normalizeSessionMessages, applyApprovalProjection } from "@/components/
 import { useSessionConversation } from "@/hooks/useSessionConversation";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
-import type { SessionKind } from "@/types";
+import { SessionRow } from "@/components/agent/SessionRow";
 
 type Props = ChatPopoutPayload & { onPopIn: () => void };
 
@@ -27,20 +26,8 @@ interface PopoutSelection {
   cwd: string | null;
 }
 
-function SessionTypeIcon({ kind, size }: { kind: SessionKind; size: number }) {
-  if (kind === "chat") return <MessageSquare size={size} />;
-  if (kind === "coding") return <Code2 size={size} />;
-  return <Terminal size={size} />;
-}
-
 function sanitizeAriaId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
-function kindLabel(kind: SessionKind): string {
-  if (kind === "chat") return "Chat";
-  if (kind === "coding") return "Coding";
-  return "Terminal";
 }
 
 /** Map a registry session to the profile/runtime shape the popout pane binds to. */
@@ -58,7 +45,7 @@ function toSelection(session: SessionSummary, workspaceId: string | null): Popou
 }
 
 export function SessionPopoutView({ sessionId, activeProjectId, profile, workspaceId, cwd, onPopIn }: Props) {
-  const { projects, workspaces, chatThreads, chatMessages, codingSessionHistory, terminalSessions, fetchCodingSessionHistoryForProjects, loadChatFromDb } = useCairnStore(useShallow((s) => ({
+  const { projects, workspaces, chatThreads, chatMessages, codingSessionHistory, terminalSessions, fetchCodingSessionHistoryForProjects, loadChatFromDb, deleteThread, deleteCodingSessionFromHistory } = useCairnStore(useShallow((s) => ({
     projects: s.projects,
     workspaces: s.workspaces,
     chatThreads: s.chatThreads,
@@ -67,12 +54,15 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
     terminalSessions: s.terminalSessions,
     fetchCodingSessionHistoryForProjects: s.fetchCodingSessionHistoryForProjects,
     loadChatFromDb: s.loadChatFromDb,
+    deleteThread: s.deleteThread,
+    deleteCodingSessionFromHistory: s.deleteCodingSessionFromHistory,
   })));
 
   const [selection, setSelection] = useState<PopoutSelection>({ sessionId, profile, activeProjectId, workspaceId, cwd });
   const [browserOpen, setBrowserOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(activeProjectId ? [activeProjectId] : []));
   const browserTriggerRef = useRef<HTMLButtonElement>(null);
+  const popoutListboxRef = useRef<HTMLDivElement>(null);
 
   // Keep selection in sync when the handoff updates via chat:sessionUpdated (C2 live push).
   useEffect(() => {
@@ -131,9 +121,11 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
     runningIds.has(session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId),
   [runningIds]);
 
+  // Single listbox for cross-project Arrow navigation (Medium 7)
   function handleListboxKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
-    const container = e.currentTarget;
+    const container = popoutListboxRef.current;
+    if (!container) return;
     const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
     if (options.length === 0) return;
     const active = document.activeElement as HTMLElement | null;
@@ -165,6 +157,58 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
     setBrowserOpen(false);
   }, [selection.workspaceId, codingSessionHistory]);
 
+  const removeSession = useCallback((event: React.SyntheticEvent, session: SessionSummary) => {
+    event.stopPropagation();
+    // Compute deleted index across visible ordered options for focus recovery (C2)
+    let deletedIndex = -1;
+    {
+      let idx = 0;
+      for (const project of workspaceProjects) {
+        if (!expanded.has(project.id)) continue;
+        const list = sessionsByProject.get(project.id) ?? [];
+        for (const s of list) {
+          if (s.id === session.id) { deletedIndex = idx; break; }
+          idx++;
+        }
+        if (deletedIndex !== -1) break;
+        // count only visible; collapsed groups not in DOM
+        // idx already advanced; but need to keep counting correctly across groups
+        // Actually we incremented per visible session; above loop already counted.
+      }
+      // Fallback: if not found in expanded set, compute flat index across all projects (still helps focus nearby)
+      if (deletedIndex === -1) {
+        let flat = 0;
+        for (const project of workspaceProjects) {
+          const list = sessionsByProject.get(project.id) ?? [];
+          for (const s of list) {
+            if (s.id === session.id) { deletedIndex = flat; break; }
+            flat++;
+          }
+          if (deletedIndex !== -1) break;
+        }
+      }
+    }
+    const triggerEl = browserTriggerRef.current;
+    const doDelete = session.kind === "chat"
+      ? deleteThread(session.sourceId)
+      : session.kind === "coding"
+        ? deleteCodingSessionFromHistory(session.sourceId)
+        : Promise.resolve();
+    void (doDelete as Promise<unknown>).then(() => {
+      requestAnimationFrame(() => {
+        const container = popoutListboxRef.current;
+        if (!container) { triggerEl?.focus(); return; }
+        const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
+        if (options.length === 0) { triggerEl?.focus(); return; }
+        let nextIndex = deletedIndex;
+        if (nextIndex < 0 || nextIndex >= options.length) nextIndex = Math.max(0, options.length - 1);
+        const toFocus = options[nextIndex];
+        if (toFocus) toFocus.focus();
+        else triggerEl?.focus();
+      });
+    }).catch(() => undefined);
+  }, [deleteThread, deleteCodingSessionFromHistory, workspaceProjects, sessionsByProject, expanded]);
+
   const toggleProject = useCallback((projectId: string) => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -175,8 +219,20 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
 
   useEffect(() => {
     if (!browserOpen) return;
+    // H3: move focus into listbox when drawer opens
+    requestAnimationFrame(() => {
+      const first = popoutListboxRef.current?.querySelector<HTMLElement>('[role="option"]');
+      if (first) first.focus();
+      else popoutListboxRef.current?.focus();
+    });
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        // H6: scope Escape to when focus is inside the browser pane or its trigger
+        const active = document.activeElement as Element | null;
+        const insideListbox = !!(active && popoutListboxRef.current?.contains(active));
+        const onTrigger = !!(active && browserTriggerRef.current?.contains(active));
+        const insideAside = !!(active && popoutListboxRef.current?.parentElement?.contains(active));
+        if (!insideListbox && !onTrigger && !insideAside) return;
         e.preventDefault();
         setBrowserOpen(false);
         browserTriggerRef.current?.focus();
@@ -186,95 +242,92 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
     return () => document.removeEventListener("keydown", handleKey);
   }, [browserOpen]);
 
+  // Global selection for roving tabindex across all projects
+  const globalHasSelected = useMemo(() => {
+    for (const project of workspaceProjects) {
+      const list = sessionsByProject.get(project.id);
+      if (!list) continue;
+      for (const s of list) {
+        const sid = s.kind === "chat" ? `chat-${s.sourceId}` : s.sourceId;
+        if (sid === selection.sessionId) return true;
+      }
+    }
+    return false;
+  }, [workspaceProjects, sessionsByProject, selection.sessionId]);
+
   return (
     <div className="flex flex-1 min-h-0">
       {browserOpen && (
         <aside className="flex flex-col w-60 flex-shrink-0 border-r border-[var(--border)] bg-[var(--surface)] min-h-0">
           <div className="flex items-center justify-between h-9 px-3 border-b border-[var(--border)] flex-shrink-0">
-            <span className="text-[0.714rem] font-semibold text-[var(--text-secondary)] truncate">{workspaceName ?? "Sessions"}</span>
+            <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] truncate">{workspaceName ?? "Sessions"}</span>
             <Tooltip content="Hide session browser" side="bottom">
               <button onClick={() => setBrowserOpen(false)} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Hide session browser">
                 <PanelLeftClose size={13} />
               </button>
             </Tooltip>
           </div>
-          <div className="flex-1 overflow-y-auto py-1.5 min-h-0">
+          <div
+            ref={popoutListboxRef}
+            role="listbox"
+            aria-label="Sessions"
+            aria-orientation="vertical"
+            tabIndex={-1}
+            onKeyDown={handleListboxKeyDown}
+            className="flex-1 overflow-y-auto py-1.5 min-h-0"
+          >
             {workspaceProjects.length === 0 ? (
               <p className="px-3 py-4 text-center text-[0.714rem] text-[var(--text-tertiary)]">No projects</p>
-            ) : workspaceProjects.map((project) => {
-              const sessions = sessionsByProject.get(project.id) ?? [];
-              const isOpen = expanded.has(project.id);
-              return (
-                <div key={project.id} className="px-1">
-                  <button
-                    type="button"
-                    onClick={() => toggleProject(project.id)}
-                    aria-expanded={isOpen}
-                    aria-controls={`project-${sanitizeAriaId(project.id)}-sessions`}
-                    className="flex items-center gap-1.5 w-full rounded-md px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
-                  >
-                    {isOpen ? <ChevronDown size={12} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="text-[var(--text-tertiary)]" />}
-                    <span className="truncate font-medium">{project.name}</span>
-                    <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">{sessions.length}</span>
-                  </button>
-                  {isOpen && (
-                    <div
-                      id={`project-${sanitizeAriaId(project.id)}-sessions`}
-                      role="listbox"
-                      aria-label={`${project.name} sessions`}
-                      tabIndex={-1}
-                      onKeyDown={handleListboxKeyDown}
-                      className="ml-2 border-l border-[var(--border)] pl-1.5 space-y-0.5"
+            ) : (() => {
+              let seenFirstOption = false;
+              return workspaceProjects.map((project) => {
+                const sessions = sessionsByProject.get(project.id) ?? [];
+                const isOpen = expanded.has(project.id);
+                return (
+                  <div key={project.id} role="group" aria-label={`${project.name} sessions`} className="px-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleProject(project.id)}
+                      aria-expanded={isOpen}
+                      aria-controls={`project-${sanitizeAriaId(project.id)}-sessions`}
+                      className="flex items-center gap-1.5 w-full rounded-md px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
                     >
-                      {sessions.length === 0 ? (
-                        <p className="px-2 py-1.5 text-[0.714rem] text-[var(--text-tertiary)]">No sessions</p>
-                      ) : sessions.map((session, index) => {
-                        const selfId = session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId;
-                        const selected = selfId === selection.sessionId;
-                        const running = isRunning(session);
-                        const hasSelected = sessions.some((s) => (s.kind === "chat" ? `chat-${s.sourceId}` : s.sourceId) === selection.sessionId);
-                        return (
-                          <div
-                            key={session.id}
-                            role="option"
-                            aria-selected={selected}
-                            tabIndex={selected ? 0 : !hasSelected && index === 0 ? 0 : -1}
-                            onClick={() => pickSession(session)}
-                            onKeyDown={(e) => {
-                              if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                pickSession(session);
-                              }
-                            }}
-                            className={cn(
-                              "flex items-center gap-2 w-full rounded-md border-l-2 px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
-                              selected ? "border-l-[var(--accent)] bg-[var(--accent-dim)]" : "border-l-transparent hover:bg-[var(--surface-2)]",
-                            )}
-                          >
-                            <span className={cn("flex-shrink-0", selected ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
-                              <SessionTypeIcon kind={session.kind} size={13} />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-xs text-[var(--text-primary)]">{session.title}</span>
-                              <span className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)]">
-                                <span>{kindLabel(session.kind)} · {formatDateCompact(session.updatedAt)}</span>
-                                {running && (
-                                  <span className="flex items-center gap-1 text-[var(--accent)]">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" aria-hidden />
-                                    running
-                                  </span>
-                                )}
-                              </span>
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                      {isOpen ? <ChevronDown size={12} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="text-[var(--text-tertiary)]" />}
+                      <span className="truncate font-medium">{project.name}</span>
+                      <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">{sessions.length}</span>
+                    </button>
+                    {isOpen && (
+                      <div
+                        id={`project-${sanitizeAriaId(project.id)}-sessions`}
+                        className="ml-2 border-l border-[var(--border)] pl-1.5 space-y-0.5"
+                      >
+                        {sessions.length === 0 ? (
+                          <p className="px-2 py-1.5 text-[0.714rem] text-[var(--text-tertiary)]">No sessions</p>
+                        ) : sessions.map((session) => {
+                          const selfId = session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId;
+                          const selected = selfId === selection.sessionId;
+                          const running = isRunning(session);
+                          const isFirstVisible = !globalHasSelected && !seenFirstOption;
+                          if (!seenFirstOption) seenFirstOption = true;
+                          const tabIndex = selected ? 0 : isFirstVisible ? 0 : -1;
+                          return (
+                            <SessionRow
+                              key={session.id}
+                              session={session}
+                              selected={selected}
+                              running={running}
+                              tabIndex={tabIndex}
+                              onSelect={() => pickSession(session)}
+                              onRemove={(e) => removeSession(e, session)}
+                            />
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </aside>
       )}
@@ -378,7 +431,7 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
              {browserOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}
            </button>
          </Tooltip>
-         <span className="text-[0.714rem] font-semibold text-[var(--text-primary)] truncate">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>
+         <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] truncate">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>
        </div>
      )}
     contextLimit={aiConfig.contextLimit ?? 128000}
