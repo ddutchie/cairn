@@ -22,7 +22,6 @@ export function DockSidebar() {
     activeSessionId,
     activeView,
     workspaces,
-    projects: allProjects,
     getWorkspaceProjects,
     setActiveProject,
     setView,
@@ -45,7 +44,6 @@ export function DockSidebar() {
       activeSessionId: s.activeSessionId,
       activeView: s.activeView,
       workspaces: s.workspaces,
-      projects: s.projects,
       getWorkspaceProjects: s.getWorkspaceProjects,
       setActiveProject: s.setActiveProject,
       setView: s.setView,
@@ -63,7 +61,7 @@ export function DockSidebar() {
   );
 
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
-  const projects = useMemo(() => (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : []), [activeWorkspaceId, allProjects, getWorkspaceProjects]);
+  const projects = useMemo(() => (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : []), [activeWorkspaceId, getWorkspaceProjects]);
   const openCounts = useMemo(() => countOpenCardsByProject(cards), [cards]);
 
   const [creatingProject, setCreatingProject] = useState(false);

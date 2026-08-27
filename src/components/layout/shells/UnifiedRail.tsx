@@ -69,8 +69,6 @@ export function UnifiedRail() {
     notificationOpen,
     setNotificationOpen,
     runningAutomationCount,
-    columns,
-    createCard,
   } = useCairnStore(
     useShallow((s) => ({
       workspaces: s.workspaces,
@@ -89,15 +87,15 @@ export function UnifiedRail() {
       notificationOpen: s.notificationOpen,
       setNotificationOpen: s.setNotificationOpen,
       runningAutomationCount: s.runningAutomationCount,
-      columns: s.columns,
-      createCard: s.createCard,
     }))
   );
 
   useEffect(() => {
-    const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
-    if (window.electron && isElectron) setPlatform(window.electron.platform ?? "linux");
-    else setPlatform("linux");
+    queueMicrotask(() => {
+      const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+      if (window.electron && isElectron) setPlatform(window.electron.platform ?? "linux");
+      else setPlatform("linux");
+    });
   }, []);
 
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);

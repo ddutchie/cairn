@@ -66,7 +66,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
 
   // Keep selection in sync when the handoff updates via chat:sessionUpdated (C2 live push).
   useEffect(() => {
-    setSelection({ sessionId, profile, activeProjectId, workspaceId, cwd });
+    queueMicrotask(() => setSelection({ sessionId, profile, activeProjectId, workspaceId, cwd }));
   }, [sessionId, profile, activeProjectId, workspaceId, cwd]);
 
   // The popout hydrates via the refresh path, which skips chat-thread loading
@@ -188,7 +188,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
         }
       }
     }
-    const triggerEl = browserTriggerRef.current;
+    const targetEl = event.currentTarget as HTMLElement;
     const doDelete = session.kind === "chat"
       ? deleteThread(session.sourceId)
       : session.kind === "coding"
@@ -196,7 +196,11 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
         : Promise.resolve();
     void Promise.resolve(doDelete as unknown as Promise<unknown>).then(() => {
       requestAnimationFrame(() => {
-        const container = popoutListboxRef.current;
+        // Resolve focus targets via DOM, not refs, so the handler doesn't close over ref values during render.
+        const triggerEl = document.querySelector<HTMLButtonElement>('[data-popout-trigger]');
+        const container =
+          targetEl.closest<HTMLElement>('[data-popout-listbox]') ??
+          document.querySelector<HTMLElement>('[data-popout-listbox]');
         if (!container) { triggerEl?.focus(); return; }
         const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
         if (options.length === 0) { triggerEl?.focus(); return; }
@@ -269,6 +273,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
           </div>
           <div
             ref={popoutListboxRef}
+            data-popout-listbox
             role="listbox"
             aria-label="Sessions"
             aria-orientation="vertical"
@@ -427,7 +432,7 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
       title={(
        <div className="flex items-center gap-1.5 min-w-0">
          <Tooltip content={browserOpen ? "Hide session browser" : "Show session browser"} side="bottom">
-           <button ref={browserTriggerRef} onClick={onToggleBrowser} className="p-1 -ml-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label={browserOpen ? "Hide session browser" : "Show session browser"}>
+            <button ref={browserTriggerRef} data-popout-trigger onClick={onToggleBrowser} className="p-1 -ml-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label={browserOpen ? "Hide session browser" : "Show session browser"}>
              {browserOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}
            </button>
          </Tooltip>

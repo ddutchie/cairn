@@ -3,12 +3,9 @@
 import React, { useState } from "react";
 import {
   Settings,
-  Database,
   Bot,
-  Keyboard,
   Info,
   Tag,
-  Terminal,
   Smartphone,
   Network,
   Wrench,
@@ -77,17 +74,19 @@ export function SettingsView() {
   );
   React.useEffect(() => {
     if (settingsSection) {
-      // Sync subtab when deep-link arrives
-      if (settingsSection === "agents") setAiSubtab("agents");
-      if (settingsSection === "ai") setAiSubtab("chat");
-      if (settingsSection === "tools" || settingsSection === "commands" || settingsSection === "plugins") {
-        setExtensionsSubtab(initialExtensionsSubtab(settingsSection));
-      }
-      if (settingsSection === "shortcuts" || settingsSection === "data" || settingsSection === "about") {
-        setSystemSubtab(initialSystemSubtab(settingsSection));
-      }
-      setSection(mapLegacySection(settingsSection));
-      setSettingsSection(null);
+      queueMicrotask(() => {
+        // Sync subtab when deep-link arrives
+        if (settingsSection === "agents") setAiSubtab("agents");
+        if (settingsSection === "ai") setAiSubtab("chat");
+        if (settingsSection === "tools" || settingsSection === "commands" || settingsSection === "plugins") {
+          setExtensionsSubtab(initialExtensionsSubtab(settingsSection));
+        }
+        if (settingsSection === "shortcuts" || settingsSection === "data" || settingsSection === "about") {
+          setSystemSubtab(initialSystemSubtab(settingsSection));
+        }
+        setSection(mapLegacySection(settingsSection));
+        setSettingsSection(null);
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

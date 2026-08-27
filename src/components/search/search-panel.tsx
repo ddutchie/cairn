@@ -116,13 +116,15 @@ export function SearchPanel() {
 
   useEffect(() => {
     if (searchOpen) {
-      inputRef.current?.focus();
-      setQuery("");
-      setResults([]);
-      setSemanticScores(new Map());
-      setFocused(0);
-      setFilterType("all");
-      setFilterProject(null);
+      queueMicrotask(() => {
+        inputRef.current?.focus();
+        setQuery("");
+        setResults([]);
+        setSemanticScores(new Map());
+        setFocused(0);
+        setFilterType("all");
+        setFilterProject(null);
+      });
     }
   }, [searchOpen]);
 
@@ -154,8 +156,10 @@ export function SearchPanel() {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (semanticTimer.current) clearTimeout(semanticTimer.current);
     if (query.trim().length < 1) {
-      setResults([]);
-      setSemanticScores(new Map());
+      queueMicrotask(() => {
+        setResults([]);
+        setSemanticScores(new Map());
+      });
       return;
     }
     const trimmed = query.trim();
@@ -195,7 +199,7 @@ export function SearchPanel() {
         }
       }, 250);
     } else {
-      setSemanticScores(new Map());
+      queueMicrotask(() => setSemanticScores(new Map()));
     }
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);

@@ -124,7 +124,6 @@ const StreamingFooterContext = React.createContext<StreamingFooterValue>({
  *  (consumes the context above, so it re-renders on each token reactively). */
 function ChatFooter() {
   const s = React.useContext(StreamingFooterContext);
-  const handleSend = s.handleSend;
   return (
     <div className={cn("px-3 py-3 space-y-3", s.activeView === "chat" && "max-w-3xl mx-auto w-full")}>
       {s.isLoading && s.subagents.length > 0 && (
@@ -697,7 +696,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       // per-thread flag. Ignored server-side / here for the localllm provider.
       useSubagents: aiConfig.provider !== "localllm" && (aiConfig.subagentsEnabled ?? false),
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, enqueue, registryCommands]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, enqueue, registryCommands, setActiveChatThreadId]);
 
   useEffect(() => {
     handleSendRef.current = handleSend;

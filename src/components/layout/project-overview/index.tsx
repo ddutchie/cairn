@@ -32,7 +32,7 @@ import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon } from "@/lib/workspace-icons";
 import { cn, formatDate, STATUS_COLORS, getDueDateStatus, parseIsoLocal, formatRelative } from "@/lib/utils";
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
-import { CairnEvents, revealNote, revealCard, revealColumn } from "@/lib/events";
+import { CairnEvents, revealNote, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { sortTagsByUsage, capTags } from "@/lib/tag-utils";
@@ -48,7 +48,6 @@ import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
 import { useCommunityConnectorMap } from "@/components/chat/chat-panel/connector-context";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
-  NoteRow,
   RecentActivityFeed,
   RecentAutomationRunsFeed,
 } from "./sections";
@@ -57,14 +56,13 @@ import { ProjectHealthRadar, useRadarAxes } from "./radar";
 
 type FocusFilter = "all" | "today" | "overdue" | "pinned";
 
-function useTilt() {
-  const ref = useRef<HTMLDivElement>(null);
+function useTilt(targetRef: React.RefObject<HTMLDivElement | null>) {
   const [active, setActive] = useState(false);
   const [transform, setTransform] = useState<React.CSSProperties>({});
   const raf = useRef<number | null>(null);
   const onMove = useCallback((e: React.MouseEvent) => {
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const el = ref.current;
+    const el = targetRef.current;
     if (!el) return;
     if (!active) setActive(true);
     if (raf.current) cancelAnimationFrame(raf.current);
@@ -74,13 +72,13 @@ function useTilt() {
       const ry = ((e.clientX - r.left - r.width / 2) / (r.width / 2)) * 2.8;
       setTransform({ transform: `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg) scale(1.012)`, transition: "transform 0.08s linear" });
     });
-  }, [active]);
+  }, [active, targetRef]);
   const onLeave = useCallback(() => {
     if (raf.current) cancelAnimationFrame(raf.current);
     setActive(false);
     setTransform({ transform: "perspective(900px) rotateX(0) rotateY(0) scale(1)", transition: "transform 0.55s cubic-bezier(.23,1,.32,1)" });
   }, []);
-  return { ref, transform, onMove, onLeave, active };
+  return { transform, onMove, onLeave, active };
 }
 
 function HeaderToolIcons({ projectId, workspaceId }: { projectId: string; workspaceId: string }) {
@@ -166,7 +164,6 @@ export function ProjectOverview() {
     setView,
     setSessionPresentation,
     chatOpen,
-    setSettingsSection,
     recentProjectRuns,
     fetchRecentProjectRuns,
     overviewCollapsedSections,
@@ -182,7 +179,6 @@ export function ProjectOverview() {
       setView: s.setView,
       setSessionPresentation: s.setSessionPresentation,
       chatOpen: s.chatOpen,
-      setSettingsSection: s.setSettingsSection,
       recentProjectRuns: s.recentProjectRuns,
       fetchRecentProjectRuns: s.fetchRecentProjectRuns,
       overviewCollapsedSections: s.overviewCollapsedSections,
@@ -241,20 +237,20 @@ export function ProjectOverview() {
   }
 
   // Derived with safe defaults for hook order - hooks must be called before early return
-  const notes = metrics?.notes ?? [];
-  const columns = metrics?.columns ?? [];
-  const allCards = metrics?.allCards ?? [];
-  const doneCards = metrics?.doneCards ?? [];
-  const openCards = metrics?.openCards ?? [];
+  const notes = useMemo(() => metrics?.notes ?? [], [metrics]);
+  const columns = useMemo(() => metrics?.columns ?? [], [metrics]);
+  const allCards = useMemo(() => metrics?.allCards ?? [], [metrics]);
+  const doneCards = useMemo(() => metrics?.doneCards ?? [], [metrics]);
+  const openCards = useMemo(() => metrics?.openCards ?? [], [metrics]);
   const completionRate = metrics?.completionRate ?? 0;
-  const today = metrics?.today ?? new Date();
-  const dueCards = metrics?.dueCards ?? [];
+  const today = useMemo(() => metrics?.today ?? new Date(), [metrics]);
+  const dueCards = useMemo(() => metrics?.dueCards ?? [], [metrics]);
   const overdueCount = metrics?.overdueCount ?? 0;
-  const priorityCounts = metrics?.priorityCounts ?? { urgent: 0, high: 0, medium: 0, low: 0 };
-  const pinnedNotes = metrics?.pinnedNotes ?? [];
-  const recentNotes = metrics?.recentNotes ?? [];
-  const projectTags = metrics?.projectTags ?? [];
-  const activityByDay = metrics?.activityByDay ?? [];
+  const priorityCounts = useMemo(() => metrics?.priorityCounts ?? { urgent: 0, high: 0, medium: 0, low: 0 }, [metrics]);
+  const pinnedNotes = useMemo(() => metrics?.pinnedNotes ?? [], [metrics]);
+  const recentNotes = useMemo(() => metrics?.recentNotes ?? [], [metrics]);
+  const projectTags = useMemo(() => metrics?.projectTags ?? [], [metrics]);
+  const activityByDay = useMemo(() => metrics?.activityByDay ?? [], [metrics]);
 
   const headerTags = capTags(sortTagsByUsage(projectTags, notes, allCards), 4);
 
@@ -278,43 +274,46 @@ export function ProjectOverview() {
   }
 
   // attention queue: overdue (by due asc) → today → upcoming (soonest future)
-  const overdueCards = dueCards.filter((c) => getDueDateStatus(c.dueDate) === "overdue");
-  const todayCards = dueCards.filter((c) => getDueDateStatus(c.dueDate) === "today");
-  const upcomingCards = dueCards.filter((c) => {
+  const overdueCards = useMemo(() => dueCards.filter((c) => getDueDateStatus(c.dueDate) === "overdue"), [dueCards]);
+  const todayCards = useMemo(() => dueCards.filter((c) => getDueDateStatus(c.dueDate) === "today"), [dueCards]);
+  const upcomingCards = useMemo(() => dueCards.filter((c) => {
     const s = getDueDateStatus(c.dueDate);
     return s !== "overdue" && s !== "today";
-  });
-  const attentionQueue: Array<{ card: TaskCard; label: string; tone: "overdue" | "today" | "upcoming" }> = [];
-  if (overdueCards[0]) {
-    const d = parseIsoLocal(overdueCards[0].dueDate!);
-    d.setHours(0, 0, 0, 0);
-    const days = Math.round((d.getTime() - today.getTime()) / 86_400_000);
-    attentionQueue.push({
-      card: overdueCards[0],
-      label: `Overdue · ${Math.abs(days)}d`,
-      tone: "overdue",
-    });
-  }
-  if (todayCards[0] && attentionQueue.length < 3) {
-    attentionQueue.push({ card: todayCards[0], label: "Due today", tone: "today" });
-  }
-  if (upcomingCards[0] && attentionQueue.length < 3) {
-    const d = parseIsoLocal(upcomingCards[0].dueDate!);
-    d.setHours(0, 0, 0, 0);
-    const days = Math.round((d.getTime() - today.getTime()) / 86_400_000);
-    attentionQueue.push({
-      card: upcomingCards[0],
-      label: `Up next · in ${days}d`,
-      tone: "upcoming",
-    });
-  }
-  // fill to 3 with next overdue/today if still short
-  if (attentionQueue.length < 3 && overdueCards[1]) {
-    const d = parseIsoLocal(overdueCards[1].dueDate!);
-    d.setHours(0, 0, 0, 0);
-    const days = Math.round((d.getTime() - today.getTime()) / 86_400_000);
-    attentionQueue.push({ card: overdueCards[1], label: `Overdue · ${Math.abs(days)}d`, tone: "overdue" });
-  }
+  }), [dueCards]);
+  const attentionQueue = useMemo<Array<{ card: TaskCard; label: string; tone: "overdue" | "today" | "upcoming" }>>(() => {
+    const q: Array<{ card: TaskCard; label: string; tone: "overdue" | "today" | "upcoming" }> = [];
+    if (overdueCards[0]) {
+      const d = parseIsoLocal(overdueCards[0].dueDate!);
+      d.setHours(0, 0, 0, 0);
+      const days = Math.round((d.getTime() - today.getTime()) / 86_400_000);
+      q.push({
+        card: overdueCards[0],
+        label: `Overdue · ${Math.abs(days)}d`,
+        tone: "overdue",
+      });
+    }
+    if (todayCards[0] && q.length < 3) {
+      q.push({ card: todayCards[0], label: "Due today", tone: "today" });
+    }
+    if (upcomingCards[0] && q.length < 3) {
+      const d = parseIsoLocal(upcomingCards[0].dueDate!);
+      d.setHours(0, 0, 0, 0);
+      const days = Math.round((d.getTime() - today.getTime()) / 86_400_000);
+      q.push({
+        card: upcomingCards[0],
+        label: `Up next · in ${days}d`,
+        tone: "upcoming",
+      });
+    }
+    // fill to 3 with next overdue/today if still short
+    if (q.length < 3 && overdueCards[1]) {
+      const d = parseIsoLocal(overdueCards[1].dueDate!);
+      d.setHours(0, 0, 0, 0);
+      const days = Math.round((d.getTime() - today.getTime()) / 86_400_000);
+      q.push({ card: overdueCards[1], label: `Overdue · ${Math.abs(days)}d`, tone: "overdue" });
+    }
+    return q;
+  }, [overdueCards, todayCards, upcomingCards, today]);
 
   const instrumentPct = completionRate;
   const instrumentDone = doneCards.length;
@@ -376,11 +375,16 @@ export function ProjectOverview() {
     activityByDay,
   });
 
-  const tiltInstrument = useTilt();
-  const tiltFlow = useTilt();
-  const tiltPriority = useTilt();
-  const tiltRadar = useTilt();
-  const tiltNotes = useTilt();
+  const instrumentRef = useRef<HTMLDivElement>(null);
+  const flowRef = useRef<HTMLDivElement>(null);
+  const priorityRef = useRef<HTMLDivElement>(null);
+  const radarRef = useRef<HTMLDivElement>(null);
+  const notesRef = useRef<HTMLDivElement>(null);
+  const tiltInstrument = useTilt(instrumentRef);
+  const tiltFlow = useTilt(flowRef);
+  const tiltPriority = useTilt(priorityRef);
+  const tiltRadar = useTilt(radarRef);
+  const tiltNotes = useTilt(notesRef);
 
   const overviewContentId = "overview-content";
   const focusLabel: Record<FocusFilter, string> = {
@@ -522,7 +526,7 @@ export function ProjectOverview() {
 
             {/* instrument — lift + tilt on hover */}
             <div
-              ref={tiltInstrument.ref}
+              ref={instrumentRef}
               onMouseMove={tiltInstrument.onMove}
               onMouseLeave={tiltInstrument.onLeave}
               className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full lg:w-[360px] flex-shrink-0 will-change-transform"
@@ -824,7 +828,7 @@ export function ProjectOverview() {
           {/* ── bento: task flow + priority ───────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_0.95fr] gap-3.5 mb-3.5">
             <div
-              ref={tiltFlow.ref}
+              ref={flowRef}
               onMouseMove={tiltFlow.onMove}
               onMouseLeave={tiltFlow.onLeave}
               className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px] will-change-transform"
@@ -902,7 +906,7 @@ export function ProjectOverview() {
             </div>
 
             <div
-              ref={tiltPriority.ref}
+              ref={priorityRef}
               onMouseMove={tiltPriority.onMove}
               onMouseLeave={tiltPriority.onLeave}
               className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px] will-change-transform"
@@ -967,7 +971,7 @@ export function ProjectOverview() {
 
           {/* ── project health radar — 6-axis instrument, same data as KPIs but shape reads balance at a glance ── */}
           <div
-            ref={tiltRadar.ref}
+            ref={radarRef}
             onMouseMove={tiltRadar.onMove}
             onMouseLeave={tiltRadar.onLeave}
             className="mb-3.5 will-change-transform"
@@ -979,7 +983,7 @@ export function ProjectOverview() {
           {/* ── notes summary — single CTA, replaces two All notes links ── */}
           <div className="mb-3.5">
             <div
-              ref={tiltNotes.ref}
+              ref={notesRef}
               onMouseMove={tiltNotes.onMove}
               onMouseLeave={tiltNotes.onLeave}
               className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px] will-change-transform"

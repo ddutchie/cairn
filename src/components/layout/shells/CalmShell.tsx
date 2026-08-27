@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, Zap, Settings, Search, CalendarDays, Bell } from "lucide-react";
+import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, Zap, Settings, Search, Bell } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -79,9 +79,11 @@ export function CalmTop() {
     }))
   );
   React.useEffect(() => {
-    const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
-    if (window.electron && isElectron) setPlatform(window.electron.platform ?? "linux");
-    else setPlatform(null);
+    queueMicrotask(() => {
+      const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+      if (window.electron && isElectron) setPlatform(window.electron.platform ?? "linux");
+      else setPlatform(null);
+    });
   }, []);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const project = projects.find((p) => p.id === activeProjectId);

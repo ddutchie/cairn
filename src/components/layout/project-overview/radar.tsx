@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { cn } from "@/lib/utils";
 
 type RadarAxis = { key: string; label: string; short: string; value: number; color: string };
 
