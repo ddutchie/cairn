@@ -74,18 +74,22 @@ const HIDE_NEXT_JS = `
       try { s.setFontScale(1); } catch {}
       try { s.setShellVariant("A"); } catch {}
       try { s.setTutorialActive(false); } catch {}
-      for (const id of ["v2.7.0-responses-api","v2.7.4-automation-mini-app","v2.7.5-note-fonts","v2.7.5-chat-themes","v2.7.7-cordis-coding-engine"]) try { s.markFeatureAsSeen(id); } catch {}
+      for (const id of ["v2.7.0-responses-api","v2.7.4-automation-mini-app","v2.7.5-note-fonts","v2.7.5-chat-themes","v2.7.7-cordis-coding-engine","v3.0.0-unified-runtime","v2.7.x","v3.0.0"]) try { s.markFeatureAsSeen(id); } catch {}
+      try {
+        const reg = window.__CAIRN_FEATURES_REGISTRY;
+        if (Array.isArray(reg)) for (const f of reg) try { s.markFeatureAsSeen(f.id); } catch {}
+      } catch {}
     }
     try { localStorage.setItem("cairn:v1:fontScale", "1"); } catch {}
     try { localStorage.setItem("cairn:v1:shellVariant", JSON.stringify("A")); } catch {}
     try { document.documentElement.style.setProperty("--font-scale", "1"); } catch {}
-    try { localStorage.setItem("cairn:v1:seenFeatures", JSON.stringify(["v2.7.0-responses-api","v2.7.4-automation-mini-app","v2.7.5-note-fonts","v2.7.5-chat-themes","v2.7.7-cordis-coding-engine"])); } catch {}
+    try { localStorage.setItem("cairn:v1:seenFeatures", JSON.stringify(["v2.7.0-responses-api","v2.7.4-automation-mini-app","v2.7.5-note-fonts","v2.7.5-chat-themes","v2.7.7-cordis-coding-engine","v3.0.0-unified-runtime","v2.7.x","v3.0.0"])); } catch {}
   } catch {}
   const id = "cairn-screenshot-hide-next";
   if (!document.getElementById(id)) {
     const st = document.createElement("style");
     st.id = id;
-    st.textContent = \`.fixed.inset-0.z-\\\\[9999\\\\] { display:none !important; } [role="dialog"] { display:none !important; } .fixed.inset-0.bg-black\\\\/50, .fixed.inset-0.backdrop-blur-sm { display:none !important; } [role="tablist"][aria-label="Shell preview"] { display:none !important; } nextjs-portal, #__nextjs_original-stack-frame, [data-nextjs-dialog], [data-nextjs-dialog-overlay], #__next-build-watcher { display:none !important; } .fixed.bottom-4.right-4 { display:none !important; }\`;
+    st.textContent = \`.fixed.inset-0.z-\\\\[9999\\\\] { display:none !important; } [role="dialog"] { display:none !important; } .fixed.inset-0[class*="bg-black"] { display:none !important; } .fixed.inset-0[class*="backdrop-blur"] { display:none !important; } .fixed.inset-0.bg-black\\\\/50, .fixed.inset-0.backdrop-blur-sm { display:none !important; } [role="tablist"][aria-label="Shell preview"] { display:none !important; } nextjs-portal, #__nextjs_original-stack-frame, [data-nextjs-dialog], [data-nextjs-dialog-overlay], #__next-build-watcher { display:none !important; } .fixed.bottom-4.right-4 { display:none !important; }\`;
     document.head.appendChild(st);
   }
   const RE = /^(Next|Next Feature|Finish|Skip All|Done)$/;
@@ -99,6 +103,10 @@ const HIDE_NEXT_JS = `
   }
   document.querySelectorAll('.fixed.bottom-4.right-4').forEach(el => el.style.display = 'none');
   document.querySelectorAll('nextjs-portal, [id*="nextjs"]').forEach(el => el.style.display = 'none');
+  for (const b of document.querySelectorAll('button')) {
+    const t = (b.textContent || "");
+    if (t.includes('automation') && t.includes('running')) b.style.display = 'none';
+  }
   for (const el of document.querySelectorAll("div, header")) {
     const txt = (el.textContent || "");
     if (txt.includes("Shell preview") && txt.includes("Unified Rail")) el.style.display = "none";

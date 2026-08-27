@@ -96,24 +96,32 @@ const HIDE_NEXT_SCRIPT = `
       try { s.setFontScale(1); } catch {}
       try { s.setShellVariant("A"); } catch {}
       try { s.setTutorialActive(false); } catch {}
-      const ids = ["v2.7.0-responses-api","v2.7.4-automation-mini-app","v2.7.5-note-fonts","v2.7.5-chat-themes","v2.7.7-cordis-coding-engine"];
+      const ids = ["v2.7.0-responses-api","v2.7.4-automation-mini-app","v2.7.5-note-fonts","v2.7.5-chat-themes","v2.7.7-cordis-coding-engine","v3.0.0-unified-runtime","v2.7.x","v3.0.0"];
       for (const id of ids) try { s.markFeatureAsSeen(id); } catch {}
+      // Also mark any feature currently in registry as seen by snooping the generated JSON if available
+      try {
+        const reg = window.__CAIRN_FEATURES_REGISTRY;
+        if (Array.isArray(reg)) for (const f of reg) try { s.markFeatureAsSeen(f.id); } catch {}
+      } catch {}
     }
     try { localStorage.setItem("cairn:v1:fontScale", "1"); } catch {}
     try { localStorage.setItem("cairn:v1:shellVariant", JSON.stringify("A")); } catch {}
     try { document.documentElement.style.setProperty("--font-scale", "1"); } catch {}
-    try { localStorage.setItem("cairn:v1:seenFeatures", JSON.stringify(["v2.7.0-responses-api","v2.7.4-automation-mini-app","v2.7.5-note-fonts","v2.7.5-chat-themes","v2.7.7-cordis-coding-engine"])); } catch {}
+    try { localStorage.setItem("cairn:v1:seenFeatures", JSON.stringify(["v2.7.0-responses-api","v2.7.4-automation-mini-app","v2.7.5-note-fonts","v2.7.5-chat-themes","v2.7.7-cordis-coding-engine","v3.0.0-unified-runtime","v2.7.x","v3.0.0"])); } catch {}
   } catch {}
 
   // 1) Inject a persistent stylesheet that hides the tutorial overlay + Next chrome + dev ShellSwitcher + Next.js dev indicator + bottom-right debug badge
+  // Use generic selectors for the What's New backdrop (covers any opacity variant)
   const id = "cairn-screenshot-hide-next";
   if (!document.getElementById(id)) {
     const style = document.createElement("style");
     style.id = id;
     style.textContent = \`
-      /* Tutorial overlay + What's New modal — never in screenshots */
+      /* Tutorial overlay + What's New modal — never in screenshots (generic backdrop) */
       .fixed.inset-0.z-\\\\[9999\\\\] { display: none !important; }
       [role="dialog"] { display: none !important; }
+      .fixed.inset-0[class*="bg-black"] { display: none !important; }
+      .fixed.inset-0[class*="backdrop-blur"] { display: none !important; }
       .fixed.inset-0.bg-black\\/50, .fixed.inset-0.backdrop-blur-sm { display: none !important; }
       /* Dev-only ShellSwitcher (Topbar + ShellPreviewBanner) */
       [role="tablist"][aria-label="Shell preview"] { display: none !important; }
@@ -144,9 +152,13 @@ const HIDE_NEXT_SCRIPT = `
       el.style.display = "none";
     }
   }
-  // 4) Hide bottom-right dev/debug icon (fixed corner badge) — Next.js or plugin overlay
+  // 4) Hide bottom-right dev/debug icon and automation running banner (fixed corner badges)
   document.querySelectorAll('.fixed.bottom-4.right-4').forEach(el => el.style.display = 'none');
   document.querySelectorAll('nextjs-portal, [id*="nextjs"]').forEach(el => el.style.display = 'none');
+  for (const b of document.querySelectorAll('button')) {
+    const t = (b.textContent || "");
+    if (t.includes('automation') && t.includes('running')) b.style.display = 'none';
+  }
 })();
 `;
 
