@@ -64,12 +64,13 @@ function useTilt(targetRef: React.RefObject<HTMLDivElement | null>) {
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const el = targetRef.current;
     if (!el) return;
+    const { clientX, clientY } = e;
     setActive(true);
     if (raf.current) cancelAnimationFrame(raf.current);
     raf.current = requestAnimationFrame(() => {
       const r = el.getBoundingClientRect();
-      const rx = ((e.clientY - r.top - r.height / 2) / (r.height / 2)) * -2.2;
-      const ry = ((e.clientX - r.left - r.width / 2) / (r.width / 2)) * 2.8;
+      const rx = ((clientY - r.top - r.height / 2) / (r.height / 2)) * -2.2;
+      const ry = ((clientX - r.left - r.width / 2) / (r.width / 2)) * 2.8;
       setTransform({ transform: `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg) scale(1.012)`, transition: "transform 0.08s linear" });
     });
   }, [targetRef]);

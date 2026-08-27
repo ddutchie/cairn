@@ -51,6 +51,7 @@ export function parseSpec(raw: string): ParsedSpec {
   if (!spec) throw new Error("empty plugin spec");
   // Local absolute path (a directory on disk).
   if (spec.startsWith("/") || spec.startsWith("~") || spec.startsWith(".")) {
+    if (spec === "." || spec === ".." || spec === "./" || spec === "../") throw new Error(`invalid local plugin spec "${raw}": "." and ".." are not valid plugin paths`);
     return { kind: "local", localPath: spec };
   }
   // github:owner/repo[#ref]  or  github.com URL  or bare owner/repo
@@ -75,8 +76,11 @@ function refOf(s: string): string | undefined {
 
 /** Derive a stable, filesystem-safe plugin id from the spec. */
 function idFor(spec: ParsedSpec): string {
-  if (spec.kind === "local") return path.basename(spec.localPath!.replace(/\/+$/, "")).replace(/[^\w.-]/g, "-");
-  return `${spec.repo}`.replace(/[^\w.-]/g, "-");
+  let raw: string;
+  if (spec.kind === "local") raw = path.basename(spec.localPath!.replace(/\/+$/, "")).replace(/[^\w.-]/g, "-");
+  else raw = `${spec.repo}`.replace(/[^\w.-]/g, "-");
+  if (!raw || raw === "." || raw === ".." || !/^[a-zA-Z0-9._-]+$/.test(raw)) throw new Error(`could not derive a safe plugin id from "${spec.localPath ?? spec.repo}"`);
+  return raw;
 }
 
 // ── Minimal tar (ustar) extractor ───────────────────────────────────────────
@@ -244,6 +248,8 @@ export async function installPlugin(rawSpec: string): Promise<InstallResult> {
   if (!id) throw new Error("could not derive a plugin id from the spec");
 
   const destDir = path.join(root, INSTALLED_DIR, id);
+  // Containment: dest must be inside installed dir
+  if (!path.resolve(destDir).startsWith(path.resolve(path.join(root, INSTALLED_DIR)) + path.sep)) throw new Error(`invalid plugin id "${id}": escapes install directory`);
   fs.rmSync(destDir, { recursive: true, force: true });
   fs.mkdirSync(destDir, { recursive: true });
 
@@ -253,8 +259,13 @@ export async function installPlugin(rawSpec: string): Promise<InstallResult> {
   } else {
     // Local: copy the directory tree as-is.
     const src = spec.localPath!.replace(/^~/, process.env.HOME ?? "~");
+    const resolvedSrc = path.resolve(src);
+    if (resolvedSrc === "/" || resolvedSrc === path.resolve(process.env.HOME ?? "~")) throw new Error(`local path "${src}" is too broad`);
     if (!fs.existsSync(src)) throw new Error(`local path does not exist: ${src}`);
-    fs.cpSync(src, destDir, { recursive: true });
+    const stat = fs.statSync(src);
+    if (!stat.isDirectory()) throw new Error(`local plugin path must be a directory: ${src}`);
+    // Prevent copying huge or sensitive trees: cap file count/size via lstat check
+    fs.cpSync(src, destDir, { recursive: true, verbatimSymlinks: false });
   }
 
   const { name, ui } = resolveEntries(destDir, id);

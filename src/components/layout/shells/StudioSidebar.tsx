@@ -9,7 +9,7 @@ import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
 import { countOpenCardsByProject } from "../sidebar-utils";
 
 export function StudioSidebar() {
-  const { activeWorkspaceId, activeProjectId, activeView, workspaces, projects: allProjects, setActiveProject, setView, cards, hiddenViews, toggleSidebar } =
+  const { activeWorkspaceId, activeProjectId, activeView, workspaces, projects: allProjects, setActiveProject, setView, cards, notes, hiddenViews, toggleSidebar } =
     useCairnStore(
       useShallow((s) => ({
         activeWorkspaceId: s.activeWorkspaceId,
@@ -20,6 +20,7 @@ export function StudioSidebar() {
         setActiveProject: s.setActiveProject,
         setView: s.setView,
         cards: s.cards,
+        notes: s.notes,
         hiddenViews: s.hiddenViews,
         toggleSidebar: s.toggleSidebar,
       }))
@@ -49,7 +50,7 @@ export function StudioSidebar() {
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-center"><div className="text-xs font-bold leading-none">{projects.length}</div><div className="text-[0.571rem] tracking-wide uppercase text-[var(--text-tertiary)]">Projects</div></div>
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-center"><div className="text-xs font-bold leading-none">{cards.filter((c) => !c.archivedAt).length}</div><div className="text-[0.571rem] tracking-wide uppercase text-[var(--text-tertiary)]">Tasks</div></div>
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-center"><div className="text-xs font-bold leading-none text-[var(--warning)]">{cards.filter((c) => c.dueDate).length}</div><div className="text-[0.571rem] tracking-wide uppercase text-[var(--text-tertiary)]">Due</div></div>
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-center"><div className="text-xs font-bold leading-none">{useCairnStore.getState().notes.length}</div><div className="text-[0.571rem] tracking-wide uppercase text-[var(--text-tertiary)]">Notes</div></div>
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-center"><div className="text-xs font-bold leading-none">{notes.length}</div><div className="text-[0.571rem] tracking-wide uppercase text-[var(--text-tertiary)]">Notes</div></div>
         </div>
       </div>
 

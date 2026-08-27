@@ -20,6 +20,8 @@ const isDev = !app.isPackaged;
 // Active workspace path — updated by setAssetWorkspacePath() without
 // re-registering the handler (protocol.handle may only be called once per scheme).
 let _workspacePath: string | null = null;
+// Workspace-wide filename lookup cache (cleared on workspace switch)
+const fileCache = new Map<string, string>();
 
 /**
  * Update the workspace path used by the asset:// handler.
@@ -27,6 +29,7 @@ let _workspacePath: string | null = null;
  */
 export function setAssetWorkspacePath(workspacePath: string): void {
   _workspacePath = workspacePath;
+  fileCache.clear();
 }
 
 /**
@@ -35,8 +38,6 @@ export function setAssetWorkspacePath(workspacePath: string): void {
  * take effect immediately without re-registering.
  */
 export function registerAssetProtocol(): void {
-  // Cache for workspace-wide filename lookups (cleared on workspace change)
-  const fileCache = new Map<string, string>();
 
   session.defaultSession.protocol.handle("asset", (request) => {
     const url = new URL(request.url);
@@ -90,6 +91,17 @@ export function registerAssetProtocol(): void {
     }
 
     if (!filePath) return new Response("Not found", { status: 404 });
+    // Symlink check: realpath must stay within workspace (prevents assets/pwn.png -> /etc/passwd)
+    try {
+      const real = fs.realpathSync(filePath);
+      if (!isWithinWorkspace(real)) return new Response("Not found", { status: 404 });
+      filePath = real;
+    } catch {}
+    // Cache eviction: prevent unbounded growth / poisoning via attacker-controlled names
+    if (fileCache.size > 500) {
+      const firstKey = fileCache.keys().next().value;
+      if (firstKey) fileCache.delete(firstKey);
+    }
     const ext = path.extname(filePath).toLowerCase().slice(1);
     const mimeTypes: Record<string, string> = {
       png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
