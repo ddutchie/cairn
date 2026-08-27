@@ -37,7 +37,11 @@
     "test:bundle": "npm run compile && vitest run electron/bundle-guard.test.ts electron/native-deps-guard.test.ts electron/mcp-server.test.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:electron": "npm run compile && playwright test -c playwright.electron.config.ts"
+    "test:e2e:electron": "npm run compile && playwright test -c playwright.electron.config.ts",
+    "screenshots": "playwright test -c playwright.screenshots.config.ts",
+    "screenshots:update": "playwright test -c playwright.screenshots.config.ts",
+    "screenshots:electron": "npm run compile && node --experimental-strip-types scripts/capture-screenshots.ts",
+    "screenshots:all": "npm run screenshots && npm run screenshots:electron"
   },
   "main": "dist-electron/main.js",
   "overrides": {
