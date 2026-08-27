@@ -111,6 +111,10 @@ export function SearchPanel() {
   const [semanticMode, setSemanticMode] = useState<boolean>(loadSemanticPref);
   const [embeddingsReady, setEmbeddingsReady] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const notesRef = useRef(notes);
+  const projectsRef = useRef(projects);
+  useEffect(() => { notesRef.current = notes; }, [notes]);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
 
   const workspaceProjects = projects.filter((p) => p.workspaceId === activeWorkspaceId && !p.archivedAt);
 
@@ -176,14 +180,14 @@ export function SearchPanel() {
         try {
           const hits: SemanticHit[] = await e.search(activeWorkspaceId, requestQuery, { k: 20 });
           if (query.trim() !== requestQuery) return;
-          const storeNotes = notes;
+          const storeNotes = notesRef.current;
           const scoreMap = new Map<string, number>();
           const enriched: SearchResult[] = [];
           for (const h of hits) {
             const note = storeNotes.find((n) => n.id === h.noteId && !n.archivedAt);
             if (!note) continue;
             scoreMap.set(h.noteId, h.score);
-            const project = projects.find((p) => p.id === note.projectId);
+            const project = projectsRef.current.find((p) => p.id === note.projectId);
             enriched.push({
               type: "note",
               id: note.id,
@@ -205,7 +209,7 @@ export function SearchPanel() {
       if (searchTimer.current) clearTimeout(searchTimer.current);
       if (semanticTimer.current) clearTimeout(semanticTimer.current);
     };
-  }, [query, searchAll, semanticMode, embeddingsReady, activeWorkspaceId, notes, projects]);
+  }, [query, searchAll, semanticMode, embeddingsReady, activeWorkspaceId]);
 
   function handleSelect(result: SearchResult) {
     setActiveProject(result.projectId);
@@ -261,6 +265,7 @@ export function SearchPanel() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={semanticMode && embeddingsReady ? "Search notes and tasks — semantic…" : "Search notes and tasks…"}
+            aria-label="Search notes and tasks"
             className="flex-1 bg-transparent text-[0.938rem] font-medium tracking-tight text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] placeholder:font-normal focus:outline-none"
           />
           {query && (
@@ -292,10 +297,10 @@ export function SearchPanel() {
         </div>
 
         <div className="flex flex-col gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]/30">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Filter by type">
             <span className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Type</span>
             {(["all", "notes", "tasks"] as FilterType[]).map((t) => (
-              <button key={t} onClick={() => { setFilterType(t); setFocused(0); }}
+              <button key={t} aria-pressed={filterType === t} onClick={() => { setFilterType(t); setFocused(0); }}
                 className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-all",
                   filterType === t
                     ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] shadow-sm"
@@ -309,16 +314,16 @@ export function SearchPanel() {
             </span>
           </div>
           {workspaceProjects.length > 1 && (
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by project">
               <span className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Project</span>
               {filterProject && (
-                <button onClick={() => setFilterProject(null)} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
+                <button aria-pressed={!!filterProject} onClick={() => setFilterProject(null)} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
                   <X size={10} />
                   {workspaceProjects.find((p) => p.id === filterProject)?.name ?? "Project"}
                 </button>
               )}
               {!filterProject && workspaceProjects.map((p) => (
-                <button key={p.id} onClick={() => { setFilterProject(p.id); setFocused(0); }} className="px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] bg-[var(--surface)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--muted)] transition-colors truncate max-w-[120px]">
+                <button key={p.id} aria-pressed={filterProject === p.id} onClick={() => { setFilterProject(p.id); setFocused(0); }} className="px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] bg-[var(--surface)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--muted)] transition-colors truncate max-w-[120px]">
                   {p.name}
                 </button>
               ))}

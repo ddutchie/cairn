@@ -94,7 +94,7 @@ export function SettingsView() {
   return (
     <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden">
       {/* Settings nav — 8 entries (was 14). General holds Tags; AI holds Agents; Extensions holds Tools/Commands/Plugins; System holds Shortcuts/Data/About. */}
-      <nav className="w-full md:w-44 border-b md:border-b-0 md:border-r border-[var(--border)] bg-[var(--surface)] py-2 md:py-4 flex-shrink-0 flex md:flex-col overflow-y-hidden overflow-x-auto md:overflow-x-visible scrollbar-none">
+      <nav role="tablist" aria-orientation="vertical" aria-label="Settings sections" className="w-full md:w-44 border-b md:border-b-0 md:border-r border-[var(--border)] bg-[var(--surface)] py-2 md:py-4 flex-shrink-0 flex md:flex-col overflow-y-hidden overflow-x-auto md:overflow-x-visible scrollbar-none">
         {[
           { id: "general" as const, label: "General", icon: Settings },
           { id: "ai" as const, label: "AI", icon: Bot },
@@ -107,6 +107,10 @@ export function SettingsView() {
         ].map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            role="tab"
+            aria-selected={section === id}
+            aria-controls="settings-panel"
+            id={`tab-${id}`}
             onClick={() => setSection(id)}
             className={cn(
               "flex items-center gap-2.5 px-4 py-2 text-xs transition-colors text-left border-b-2 md:border-b-0 md:border-l-2 border-l-0 shrink-0 whitespace-nowrap",
@@ -131,7 +135,7 @@ export function SettingsView() {
             <div className="text-xs text-[var(--text-tertiary)]">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
           </div>
         </div>
-        <div key={section} className="@container max-w-2xl mx-auto px-4 md:px-8 py-4 md:py-8 space-y-6 md:space-y-8 animate-fade-in">
+        <div key={section} id="settings-panel" role="tabpanel" aria-labelledby={`tab-${section}`} className="@container max-w-2xl mx-auto px-4 md:px-8 py-4 md:py-8 space-y-6 md:space-y-8 animate-fade-in">
           {section === "general" && (
             <div className="space-y-8">
               <GeneralSettings />
@@ -143,9 +147,9 @@ export function SettingsView() {
           )}
           {section === "ai" && (
             <div className="space-y-6">
-              <div className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
-                <button onClick={() => setAiSubtab("chat")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "chat" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Chat</button>
-                <button onClick={() => setAiSubtab("agents")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "agents" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Coding Agents</button>
+              <div role="tablist" aria-label="AI subsections" className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
+                <button role="tab" aria-selected={aiSubtab === "chat"} onClick={() => setAiSubtab("chat")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "chat" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Chat</button>
+                <button role="tab" aria-selected={aiSubtab === "agents"} onClick={() => setAiSubtab("agents")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "agents" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Coding Agents</button>
               </div>
               {aiSubtab === "chat" ? <AISettings /> : <AgentSettings />}
             </div>
@@ -153,10 +157,10 @@ export function SettingsView() {
           {section === "embeddings" && <EmbeddingsSettings />}
           {section === "extensions" && (
             <div className="space-y-6">
-              <div className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
-                <button onClick={() => setExtensionsSubtab("tools")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5", extensionsSubtab === "tools" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Wrench size={12} /> Tools</button>
-                <button onClick={() => setExtensionsSubtab("commands")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5", extensionsSubtab === "commands" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><SlashSquare size={12} /> Commands</button>
-                <button onClick={() => setExtensionsSubtab("plugins")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5", extensionsSubtab === "plugins" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Puzzle size={12} /> Plugins</button>
+              <div role="tablist" aria-label="Extensions subsections" className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
+                <button role="tab" aria-selected={extensionsSubtab === "tools"} onClick={() => setExtensionsSubtab("tools")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5", extensionsSubtab === "tools" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Wrench size={12} /> Tools</button>
+                <button role="tab" aria-selected={extensionsSubtab === "commands"} onClick={() => setExtensionsSubtab("commands")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5", extensionsSubtab === "commands" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><SlashSquare size={12} /> Commands</button>
+                <button role="tab" aria-selected={extensionsSubtab === "plugins"} onClick={() => setExtensionsSubtab("plugins")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5", extensionsSubtab === "plugins" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Puzzle size={12} /> Plugins</button>
               </div>
               {extensionsSubtab === "tools" && <ToolsSettings />}
               {extensionsSubtab === "commands" && <CommandsSettings />}
@@ -168,10 +172,10 @@ export function SettingsView() {
           {section === "sync" && <SyncSettings />}
           {section === "system" && (
             <div className="space-y-6">
-              <div className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
-                <button onClick={() => setSystemSubtab("shortcuts")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", systemSubtab === "shortcuts" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Shortcuts</button>
-                <button onClick={() => setSystemSubtab("data")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", systemSubtab === "data" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Data</button>
-                <button onClick={() => setSystemSubtab("about")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", systemSubtab === "about" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>About</button>
+              <div role="tablist" aria-label="System subsections" className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
+                <button role="tab" aria-selected={systemSubtab === "shortcuts"} onClick={() => setSystemSubtab("shortcuts")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", systemSubtab === "shortcuts" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Shortcuts</button>
+                <button role="tab" aria-selected={systemSubtab === "data"} onClick={() => setSystemSubtab("data")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", systemSubtab === "data" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Data</button>
+                <button role="tab" aria-selected={systemSubtab === "about"} onClick={() => setSystemSubtab("about")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", systemSubtab === "about" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>About</button>
               </div>
               {systemSubtab === "shortcuts" && <ShortcutsSettings />}
               {systemSubtab === "data" && (

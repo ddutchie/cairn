@@ -30,6 +30,8 @@ export function CalmRail() {
           <button
             key={n.id}
             onClick={() => setView(n.id as never)}
+            aria-label={n.label}
+            aria-current={on ? "page" : undefined}
             className={cn("w-8 h-8 rounded-lg grid place-items-center border", on ? "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)] shadow-sm" : "text-[var(--text-tertiary)] border-transparent hover:text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:border-[var(--border)]")}
             title={n.label}
           >
@@ -37,25 +39,25 @@ export function CalmRail() {
           </button>
         );
       })}
-      <button onClick={toggleSearch} className="w-8 h-8 rounded-lg grid place-items-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] border border-transparent hover:border-[var(--border)]" title="Search (⌘K)">
+      <button aria-label="Search (⌘K)" onClick={toggleSearch} className="w-8 h-8 rounded-lg grid place-items-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] border border-transparent hover:border-[var(--border)]" title="Search (⌘K)">
         <Search size={14} />
       </button>
       <div className="w-4 h-px bg-[var(--border)] my-1" />
       {!hiddenViews.has("graph") && (
-        <button onClick={() => setView("graph")} className={cn("w-8 h-8 rounded-lg grid place-items-center border", activeView === "graph" ? "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)]" : "text-[var(--text-tertiary)] border-transparent hover:bg-[var(--surface)]")} title="Graph">
+        <button aria-label="Knowledge Graph" onClick={() => setView("graph")} className={cn("w-8 h-8 rounded-lg grid place-items-center border", activeView === "graph" ? "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)]" : "text-[var(--text-tertiary)] border-transparent hover:bg-[var(--surface)]")} title="Graph">
           <GitBranch size={14} />
         </button>
       )}
       {!hiddenViews.has("insights") && (
-        <button onClick={() => setView("insights")} className={cn("w-8 h-8 rounded-lg grid place-items-center border", activeView === "insights" ? "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)]" : "text-[var(--text-tertiary)] border-transparent hover:bg-[var(--surface)]")} title="Insights">
+        <button aria-label="Insights" onClick={() => setView("insights")} className={cn("w-8 h-8 rounded-lg grid place-items-center border", activeView === "insights" ? "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)]" : "text-[var(--text-tertiary)] border-transparent hover:bg-[var(--surface)]")} title="Insights">
           <BarChart2 size={14} />
         </button>
       )}
-      <button onClick={() => setView("automations")} className={cn("w-8 h-8 rounded-lg grid place-items-center border", activeView === "automations" ? "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)]" : "text-[var(--text-tertiary)] border-transparent hover:bg-[var(--surface)]")} title="Automations">
+      <button aria-label="Automations" onClick={() => setView("automations")} className={cn("w-8 h-8 rounded-lg grid place-items-center border", activeView === "automations" ? "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)]" : "text-[var(--text-tertiary)] border-transparent hover:bg-[var(--surface)]")} title="Automations">
         <Zap size={14} />
       </button>
       <div className="flex-1" />
-      <button onClick={() => setView("settings")} className={cn("w-8 h-8 rounded-lg grid place-items-center border", activeView === "settings" ? "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)]" : "text-[var(--text-tertiary)] border-transparent hover:bg-[var(--surface)]")} title="Settings">
+      <button aria-label="Settings" onClick={() => setView("settings")} className={cn("w-8 h-8 rounded-lg grid place-items-center border", activeView === "settings" ? "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)]" : "text-[var(--text-tertiary)] border-transparent hover:bg-[var(--surface)]")} title="Settings">
         <Settings size={14} />
       </button>
       <div className="w-7 h-7 rounded-full bg-[linear-gradient(145deg,var(--accent),#6e8f4f)] grid place-items-center text-[var(--accent-fg)] text-xs font-bold border border-[color-mix(in_srgb,var(--accent)_40%,transparent)]">G</div>

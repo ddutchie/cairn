@@ -95,7 +95,7 @@ export function DockSidebar() {
         {/* collapsed dock */}
         <div className={cn("flex flex-col items-center gap-1 w-full flex-1 min-h-0 transition-opacity duration-300", collapsed ? "opacity-100" : "opacity-0 pointer-events-none absolute inset-x-0 top-3")}>
           <Tooltip content="Expand sidebar" side="right">
-            <button onClick={toggleSidebar} className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
+            <button aria-label="Expand sidebar" onClick={toggleSidebar} className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
               <Layers size={16} />
             </button>
           </Tooltip>
@@ -107,23 +107,23 @@ export function DockSidebar() {
             </Tooltip>
           )}
           <div className="w-5 h-px bg-[var(--border)] my-1" />
-          <Tooltip content="Search" side="right"><button onClick={toggleSearch} className={cn("p-2 rounded-md", searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Search size={15} /></button></Tooltip>
+          <Tooltip content="Search" side="right"><button aria-label="Search" onClick={toggleSearch} className={cn("p-2 rounded-md", searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Search size={15} /></button></Tooltip>
           {!hiddenViews.has("chat") && (
-            <Tooltip content="Chat" side="right"><button onClick={toggleChat} className={cn("p-2 rounded-md", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><MessageSquare size={15} /></button></Tooltip>
+            <Tooltip content="Chat" side="right"><button aria-label="Chat" onClick={toggleChat} className={cn("p-2 rounded-md", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><MessageSquare size={15} /></button></Tooltip>
           )}
           <div className="w-5 h-px bg-[var(--border)] my-1" />
-          <Tooltip content="Overview" side="right"><button onClick={() => setView("overview")} className={cn("p-2 rounded-md", activeView === "overview" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Hash size={15} /></button></Tooltip>
-          <Tooltip content="Notes" side="right"><button onClick={() => setView("notes")} className={cn("p-2 rounded-md", activeView === "notes" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><FileText size={15} /></button></Tooltip>
-          <Tooltip content="Board" side="right"><button onClick={() => setView("board")} className={cn("p-2 rounded-md", activeView === "board" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Kanban size={15} /></button></Tooltip>
-          {!hiddenViews.has("flow") && <Tooltip content="Flow" side="right"><button onClick={() => setView("flow")} className={cn("p-2 rounded-md", activeView === "flow" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Workflow size={15} /></button></Tooltip>}
-          {!hiddenViews.has("agent") && <Tooltip content="Agent" side="right"><button onClick={() => setView("agent")} className={cn("p-2 rounded-md", activeView === "agent" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Terminal size={15} /></button></Tooltip>}
+          <Tooltip content="Overview" side="right"><button aria-label="Overview" onClick={() => setView("overview")} className={cn("p-2 rounded-md", activeView === "overview" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Hash size={15} /></button></Tooltip>
+          <Tooltip content="Notes" side="right"><button aria-label="Notes" onClick={() => setView("notes")} className={cn("p-2 rounded-md", activeView === "notes" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><FileText size={15} /></button></Tooltip>
+          <Tooltip content="Board" side="right"><button aria-label="Board" onClick={() => setView("board")} className={cn("p-2 rounded-md", activeView === "board" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Kanban size={15} /></button></Tooltip>
+          {!hiddenViews.has("flow") && <Tooltip content="Flow" side="right"><button aria-label="Flow" onClick={() => setView("flow")} className={cn("p-2 rounded-md", activeView === "flow" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Workflow size={15} /></button></Tooltip>}
+          {!hiddenViews.has("agent") && <Tooltip content="Agent" side="right"><button aria-label="Agent" onClick={() => setView("agent")} className={cn("p-2 rounded-md", activeView === "agent" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Terminal size={15} /></button></Tooltip>}
           <div className="flex-1" aria-hidden="true" />
           <div className="mt-auto w-full flex flex-col items-center gap-1 pt-2 border-t border-[var(--border)]">
-            <Tooltip content="Automations" side="right"><button onClick={() => setView("automations")} className={cn("p-2 rounded-md", activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Zap size={15} /></button></Tooltip>
-            <Tooltip content="Calendar" side="right"><button onClick={() => setView("calendar-all")} className={cn("p-2 rounded-md", activeView === "calendar-all" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><CalendarDays size={15} /></button></Tooltip>
-            {!hiddenViews.has("graph") && <Tooltip content="Knowledge Graph" side="right"><button onClick={() => setView("graph")} className={cn("p-2 rounded-md", activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><GitBranch size={15} /></button></Tooltip>}
-            {!hiddenViews.has("insights") && <Tooltip content="Insights" side="right"><button onClick={() => setView("insights")} className={cn("p-2 rounded-md", activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><BarChart2 size={15} /></button></Tooltip>}
-            {!hiddenViews.has("usage") && <Tooltip content="Usage" side="right"><button onClick={() => setView("usage")} className={cn("p-2 rounded-md", activeView === "usage" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Activity size={15} /></button></Tooltip>}
+            <Tooltip content="Automations" side="right"><button aria-label="Automations" onClick={() => setView("automations")} className={cn("p-2 rounded-md", activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Zap size={15} /></button></Tooltip>
+            <Tooltip content="Calendar" side="right"><button aria-label="Calendar" onClick={() => setView("calendar-all")} className={cn("p-2 rounded-md", activeView === "calendar-all" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><CalendarDays size={15} /></button></Tooltip>
+            {!hiddenViews.has("graph") && <Tooltip content="Knowledge Graph" side="right"><button aria-label="Knowledge Graph" onClick={() => setView("graph")} className={cn("p-2 rounded-md", activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><GitBranch size={15} /></button></Tooltip>}
+            {!hiddenViews.has("insights") && <Tooltip content="Insights" side="right"><button aria-label="Insights" onClick={() => setView("insights")} className={cn("p-2 rounded-md", activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><BarChart2 size={15} /></button></Tooltip>}
+            {!hiddenViews.has("usage") && <Tooltip content="Usage" side="right"><button aria-label="Usage" onClick={() => setView("usage")} className={cn("p-2 rounded-md", activeView === "usage" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Activity size={15} /></button></Tooltip>}
             <Tooltip content="Notifications" side="right">
               <button onClick={() => setNotificationOpen(!notificationOpen)} className={cn("p-2 rounded-md relative", notificationUnreadCount > 0 ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>
                 <Bell size={15} />
@@ -131,7 +131,7 @@ export function DockSidebar() {
               </button>
             </Tooltip>
             <div className="w-5 h-px bg-[var(--border)] my-1" />
-            <Tooltip content="Settings" side="right"><button onClick={() => setView("settings")} className={cn("p-2 rounded-md", activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Settings size={15} /></button></Tooltip>
+            <Tooltip content="Settings" side="right"><button aria-label="Settings" onClick={() => setView("settings")} className={cn("p-2 rounded-md", activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Settings size={15} /></button></Tooltip>
           </div>
         </div>
 

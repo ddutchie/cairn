@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useFontScale } from "@/components/graph/analyticsHooks";
 
 type RadarAxis = { key: string; label: string; short: string; value: number; color: string };
 
@@ -11,6 +12,7 @@ export function ProjectHealthRadar({
   axes: RadarAxis[];
   size?: number;
 }) {
+  const fontScale = useFontScale();
   const n = axes.length;
   const cx = size / 2;
   const cy = size / 2;
@@ -75,9 +77,9 @@ export function ProjectHealthRadar({
             const anchor = Math.cos(a) > 0.35 ? "start" : Math.cos(a) < -0.35 ? "end" : "middle";
             const dy = Math.sin(a) > 0.5 ? 4 : Math.sin(a) < -0.5 ? -6 : 3;
             return (
-              <text key={ax.key} x={x} y={y + dy} textAnchor={anchor as never} fontSize={10} fontWeight={600} fill="var(--text-tertiary)" style={{ letterSpacing: "0.04em" }}>
+              <text key={ax.key} x={x} y={y + dy} textAnchor={anchor as never} fontSize={10 * fontScale} fontWeight={600} fill="var(--text-tertiary)" style={{ letterSpacing: "0.04em" }}>
                 {ax.short}
-                <tspan dx={3} fontSize={8} fill="var(--text-tertiary)" opacity={0.9}>
+                <tspan dx={3} fontSize={8 * fontScale} fill="var(--text-tertiary)" opacity={0.9}>
                   {Math.round(ax.value * 100)}
                 </tspan>
               </text>

@@ -24,7 +24,7 @@ import * as path from "path";
 import * as zlib from "zlib";
 import * as yaml from "js-yaml";
 import { createRequire } from "module";
-import { getPluginsRoot } from "./plugin-loader";
+import { getPluginsRoot, pluginsDevEnabled } from "./plugin-loader";
 
 const INSTALLED_DIR = "installed";
 const MANIFEST = "plugins.yml";
@@ -66,12 +66,24 @@ export function parseSpec(raw: string): ParsedSpec {
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
     throw new Error(`unrecognised plugin spec: "${raw}" (use github:owner/repo or a local path)`);
   }
-  return { kind: "github", owner: parts[0], repo: parts[1].replace(/\.git$/, ""), ref: refOf(spec) };
+  const owner = parts[0];
+  const repo = parts[1].replace(/\.git$/, "");
+  if (!/^[A-Za-z0-9._-]{1,100}$/.test(owner) || !/^[A-Za-z0-9._-]{1,100}$/.test(repo)) {
+    throw new Error(`invalid owner/repo "${owner}/${repo}": only A-Za-z0-9._- up to 100 chars`);
+  }
+  return { kind: "github", owner, repo, ref: refOf(spec) };
 }
 
 function refOf(s: string): string | undefined {
   const i = s.indexOf("#");
-  return i >= 0 ? s.slice(i + 1) : undefined;
+  if (i < 0) return undefined;
+  const ref = s.slice(i + 1).trim();
+  if (!ref) return undefined;
+  if (ref.length > 128) throw new Error(`ref too long (max 128): "${ref}"`);
+  if (!/^[A-Za-z0-9._/@-]+$/.test(ref) || ref.includes("..") || ref.startsWith("/") || ref.includes("?") || ref.includes("#")) {
+    throw new Error(`invalid ref "${ref}": only A-Za-z0-9._/@- and no ".."`);
+  }
+  return ref;
 }
 
 /** Derive a stable, filesystem-safe plugin id from the spec. */
@@ -89,6 +101,8 @@ function idFor(spec: ParsedSpec): string {
 // we strip). Only the fields we need are parsed.
 function untar(buf: Buffer, destDir: string, stripComponents = 1): void {
   let offset = 0;
+  let entries = 0;
+  let totalUncompressed = 0;
   const readStr = (start: number, len: number) => {
     const slice = buf.subarray(start, start + len);
     const nul = slice.indexOf(0);
@@ -101,6 +115,10 @@ function untar(buf: Buffer, destDir: string, stripComponents = 1): void {
     const name = readStr(offset, 100);
     const sizeStr = readStr(offset + 124, 12);
     const size = parseInt(sizeStr, 8) || 0;
+    if (size > 10 * 1024 * 1024) throw new Error(`tar entry too large: ${name} (${size} bytes)`);
+    if (++entries > 5000) throw new Error(`tar too many entries (>5000)`);
+    totalUncompressed += size;
+    if (totalUncompressed > 100 * 1024 * 1024) throw new Error(`tar too large (>100MB uncompressed)`);
     const typeFlag = String.fromCharCode(buf[offset + 156]);
     const prefix = readStr(offset + 345, 155);
     let full = prefix ? `${prefix}/${name}` : name;
@@ -132,12 +150,17 @@ async function fetchTarball(spec: ParsedSpec): Promise<Buffer> {
   const refs = spec.ref ? [spec.ref] : ["main", "master"];
   let lastErr: unknown;
   for (const ref of refs) {
-    const url = `https://codeload.github.com/${spec.owner}/${spec.repo}/tar.gz/refs/heads/${ref}`;
+    const url = `https://codeload.github.com/${spec.owner}/${spec.repo}/tar.gz/refs/heads/${encodeURIComponent(ref)}`;
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
       if (!res.ok) { lastErr = new Error(`GitHub returned ${res.status} for ${spec.owner}/${spec.repo}@${ref}`); continue; }
+      const lenHeader = res.headers.get("content-length");
+      if (lenHeader && Number(lenHeader) > 50 * 1024 * 1024) throw new Error(`tarball too large (Content-Length ${lenHeader})`);
       const gz = Buffer.from(await res.arrayBuffer());
-      return zlib.gunzipSync(gz);
+      if (gz.length > 50 * 1024 * 1024) throw new Error(`tarball too large (${gz.length} bytes)`);
+      const out = zlib.gunzipSync(gz);
+      if (out.length > 100 * 1024 * 1024) throw new Error(`uncompressed tarball too large (${out.length} bytes)`);
+      return out;
     } catch (err) {
       lastErr = err;
     }
@@ -241,6 +264,7 @@ function writeRows(root: string, rows: Array<Record<string, unknown>>): void {
 
 /** Install a plugin from a spec. Returns the resolved manifest entry. */
 export async function installPlugin(rawSpec: string): Promise<InstallResult> {
+  if (!pluginsDevEnabled()) throw new Error("Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1");
   const root = getPluginsRoot();
   if (!root) throw new Error("no plugins directory configured");
   const spec = parseSpec(rawSpec);
@@ -301,6 +325,7 @@ export async function installPlugin(rawSpec: string): Promise<InstallResult> {
  * hand (no recorded source to update from).
  */
 export async function updatePlugin(id: string): Promise<InstallResult> {
+  if (!pluginsDevEnabled()) throw new Error("Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1");
   const root = getPluginsRoot();
   if (!root) throw new Error("no plugins directory configured");
   const existing = readRows(root).find((r) => r.id === id);
