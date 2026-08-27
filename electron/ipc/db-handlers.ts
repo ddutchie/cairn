@@ -12,6 +12,7 @@ import { shell } from "electron";
 import fs from "fs";
 import path from "path";
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { resolveWithinRoot } from "./path-safety";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, hardDeleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders, findNoteFilePath } from "../notes-files";
@@ -490,7 +491,8 @@ export function registerDbHandlers(ctx: DbContext): void {
         if (fs.existsSync(obsidianAppJson)) {
           const obsConfig = JSON.parse(fs.readFileSync(obsidianAppJson, "utf-8"));
           if (typeof obsConfig.attachmentFolderPath === "string" && obsConfig.attachmentFolderPath) {
-            attachDir = path.join(ctx.workspacePath, obsConfig.attachmentFolderPath);
+            const resolved = resolveWithinRoot(ctx.workspacePath, obsConfig.attachmentFolderPath);
+            attachDir = resolved ?? path.join(ctx.workspacePath, "attachments");
           } else {
             // Obsidian default: vault root
             attachDir = path.join(ctx.workspacePath, "attachments");
@@ -504,8 +506,11 @@ export function registerDbHandlers(ctx: DbContext): void {
 
       fs.mkdirSync(attachDir, { recursive: true });
       const buf = Buffer.from(data);
+      if (buf.length > 10 * 1024 * 1024) throw new Error("file too large (max 10MB)");
+      const ALLOWED_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".pdf"]);
       const ext = path.extname(filename).toLowerCase() || ".png";
-      const baseName = path.basename(filename, ext);
+      if (!ALLOWED_EXTS.has(ext)) throw new Error(`unsupported file type "${ext}"`);
+      const baseName = path.basename(filename, ext).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 100) || "image";
 
       // Dedup: if filename already exists with different content, append suffix
       let destName = `${baseName}${ext}`;

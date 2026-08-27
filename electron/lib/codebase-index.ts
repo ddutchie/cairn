@@ -3,6 +3,7 @@ import * as path from "path";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
+import { resolveWithinRoot } from "../ipc/path-safety";
 
 /**
  * Bump when the symbol/relation EXTRACTION logic changes (new kinds, regex
@@ -147,10 +148,11 @@ export async function walkDir(dir: string, fileList: string[] = []): Promise<str
     const filePath = path.join(dir, file);
     let stat: fs.Stats;
     try {
-      stat = await fs.promises.stat(filePath);
+      stat = await fs.promises.lstat(filePath);
     } catch {
       continue;
     }
+    if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
       await walkDir(filePath, fileList);
     } else if (stat.isFile()) {
@@ -535,10 +537,12 @@ export async function indexCodebase(db: Database.Database, rootPath: string, opt
   for (const filePath of files) {
     let stat: fs.Stats;
     try {
-      stat = await fs.promises.stat(filePath);
+      stat = await fs.promises.lstat(filePath);
     } catch {
       continue;
     }
+    if (stat.isSymbolicLink()) continue;
+    if (resolveWithinRoot(absoluteRoot, path.relative(absoluteRoot, filePath)) === null) continue;
     
     const hash = `${stat.size}-${stat.mtimeMs}-p${PARSER_VERSION}`;
     const dbFile = dbFilesMap.get(filePath);
@@ -702,13 +706,15 @@ export async function reindexFile(
 
   let stat: fs.Stats;
   try {
-    stat = await fs.promises.stat(absFile);
+    stat = await fs.promises.lstat(absFile);
   } catch {
     // File gone — drop it from the index.
     const existing = q.getCodebaseFileByPath(db, absFile);
     if (existing) q.deleteCodebaseFile(db, existing.id);
     return false;
   }
+  if (stat.isSymbolicLink()) return false;
+  if (resolveWithinRoot(absoluteRoot, path.relative(absoluteRoot, absFile)) === null) return false;
 
   let content: string;
   try {
