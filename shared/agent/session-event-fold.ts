@@ -25,10 +25,18 @@ export interface FoldedUsage {
   costUsd?: number;
 }
 
+/** Per-turn throughput/latency captured live (mirrors session-stats TurnStats). */
+export interface FoldedStats {
+  ttftMs?: number;
+  tokensPerSecond?: number;
+  outputTokens?: number;
+}
+
 export interface SessionEventFoldHandlers {
   onText?: (text: string) => void;
   onReasoning?: (text: string) => void;
   onUsage?: (usage: FoldedUsage) => void;
+  onStats?: (stats: FoldedStats) => void;
   onToolCall?: (call: FoldedToolCall) => void;
   onToolResult?: (result: FoldedToolResult) => void;
   onAssistantMessage?: (message: {
@@ -109,6 +117,13 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
       } else if (chunk.type === "usage") {
         const normalized = usage(chunk.usage);
         if (normalized) handlers.onUsage?.(normalized);
+      } else if (chunk.type === "stats") {
+        const s = record(chunk.stats);
+        if (Object.keys(s).length) handlers.onStats?.({
+          ttftMs: typeof s.ttftMs === "number" ? s.ttftMs : undefined,
+          tokensPerSecond: typeof s.tokensPerSecond === "number" ? s.tokensPerSecond : undefined,
+          outputTokens: typeof s.outputTokens === "number" ? s.outputTokens : undefined,
+        });
       }
       return;
     }

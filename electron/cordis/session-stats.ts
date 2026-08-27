@@ -109,7 +109,14 @@ export function foldSessionStats(events: readonly Ev[]): SessionStats | undefine
         const turn = num(d.turn); const step = num(d.step);
         if (turn !== openStep.turn || step !== openStep.step) break;
         if (openStep.firstTokenTime !== null) break;
-        if (!isTokenDelta(d.chunk as never)) break;
+        // "First token" = the first content-bearing chunk. The responses/streaming
+        // wire sends incremental token deltas (isTokenDelta); the chat-completions
+        // wire streams whole blocks and emits a `block-start` when the first block
+        // begins — the closest analog to first-token there. Anchor TTFT on either
+        // so BOTH protocols report a first-token latency (else completions text
+        // turns, which carry no text-delta, would show no stats at all).
+        const chunkType = (d.chunk as { type?: unknown } | undefined)?.type;
+        if (chunkType !== "block-start" && !isTokenDelta(d.chunk as never)) break;
         openStep.firstTokenTime = time;
         break;
       }

@@ -677,9 +677,12 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         ),
         // Reasoning models get the `developer` system role (OpenAI convention).
         isReasoningModel: getModelInfo(aiConfig.model)?.reasoning === true,
-        // Only send reasoning effort to reasoning-capable models — otherwise the
-        // provider rejects/ignores the field. Chat defaults are set in the store.
-        reasoningEffort: getModelInfo(aiConfig.model)?.reasoning === true ? aiConfig.reasoningEffort : undefined,
+        // Only send reasoning effort to reasoning-capable models, and only when
+        // the user pinned a concrete level — "auto" (default) sends NO override
+        // so the model/provider default applies. Non-reasoning models never get it.
+        reasoningEffort: (getModelInfo(aiConfig.model)?.reasoning === true && aiConfig.reasoningEffort && aiConfig.reasoningEffort !== "auto")
+          ? aiConfig.reasoningEffort
+          : undefined,
         // Explicit wire protocol pinned on the active provider (default completions).
         apiMode: (aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode) ?? "completions",
         contextLimit: aiConfig.contextLimit,

@@ -275,11 +275,11 @@ export async function migrateLlmKeysToKeychain(
 }
 
 
-/** Reasoning effort for reasoning-capable models. Uses the pi-ai / dsh thinking
- *  vocabulary (a subset that every reasoning model supports, so the harness's
- *  resolveReasoningLevel never throws UNSUPPORTED_REASONING_EFFORT). "off" omits
- *  the reasoning option; absent = the model's own default. */
-export type ReasoningEffort = "off" | "low" | "medium" | "high";
+/** Reasoning effort for reasoning-capable models. "auto" = send NO override (use
+ *  the model/provider default) — distinct from "off" (explicitly disable thinking).
+ *  low/medium/high are universally supported. A real string (not undefined) so it
+ *  round-trips through JSON persistence. */
+export type ReasoningEffort = "auto" | "off" | "low" | "medium" | "high";
 
 export interface AIConfig {
   /** The AI provider ('openai' or 'localllm') */

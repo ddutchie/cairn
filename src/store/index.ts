@@ -378,7 +378,15 @@ export const useCairnStore = create<CairnStore>()(
         // every hydrate (the "maxSteps reverts to 30" bug).
         const localAiConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
         const savedConfig = backendAiConfig
-          ? { ...localAiConfig, ...backendAiConfig }
+          ? { ...localAiConfig, ...backendAiConfig,
+              // User-choice fields are written to localStorage synchronously but
+              // to the backend cache via a fire-and-forget IPC — a quick reload
+              // can lose the backend flush, leaving a STALE backend value that
+              // (backend-wins) would clobber the user's fresh pick (e.g. reasoning
+              // effort High reverting to Off). For these, local is the device-
+              // authoritative choice, so prefer it when present.
+              ...(localAiConfig?.reasoningEffort !== undefined ? { reasoningEffort: localAiConfig.reasoningEffort } : {}),
+            }
           : localAiConfig;
         if (savedConfig) {
           if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {

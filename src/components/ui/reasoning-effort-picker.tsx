@@ -31,11 +31,11 @@ export interface ReasoningEffortPickerProps {
   className?: string;
 }
 
-/** Ordered options. `undefined` = Auto (send nothing; the model's own default).
- *  Values use the pi-ai/dsh thinking vocabulary; low/medium/high are supported
- *  by every reasoning model, and "off" omits the reasoning option entirely. */
-const OPTIONS: Array<{ value: ReasoningEffort | undefined; label: string; hint: string }> = [
-  { value: undefined, label: "Auto", hint: "The model's own default effort" },
+/** Ordered options. "auto" sends NO reasoning override (model/provider default);
+ *  "off" explicitly disables thinking. low/medium/high are supported by every
+ *  reasoning model. All are real strings so the choice round-trips through JSON. */
+const OPTIONS: Array<{ value: ReasoningEffort; label: string; hint: string }> = [
+  { value: "auto", label: "Auto", hint: "Model default — no reasoning override sent" },
   { value: "off", label: "Off", hint: "No thinking — fastest, smallest replies" },
   { value: "low", label: "Low", hint: "Brief reasoning — good for everyday chat" },
   { value: "medium", label: "Medium", hint: "Balanced reasoning" },
@@ -68,10 +68,11 @@ export function ReasoningEffortPicker({
   // Only reasoning-capable models accept an effort — hide the pill otherwise.
   if (getModelInfo(model)?.reasoning !== true) return null;
 
-  const active = OPTIONS.find((o) => o.value === effort) ?? OPTIONS[0];
+  // Legacy configs may hold undefined (pre-"auto"); treat that as Auto.
+  const active = OPTIONS.find((o) => o.value === (effort ?? "auto")) ?? OPTIONS[0];
   const triggerPad = size === "xs" ? "px-1.5 py-0.5 text-[0.643rem]" : "px-2 py-1 text-[0.714rem]";
 
-  const select = (value: ReasoningEffort | undefined) => {
+  const select = (value: ReasoningEffort) => {
     if (target === "ai") setAIConfig({ reasoningEffort: value });
     else setAgentConfig({ reasoningEffort: value });
     setOpen(false);
@@ -122,7 +123,7 @@ export function ReasoningEffortPicker({
 
           <div className="flex flex-col gap-0.5">
             {OPTIONS.map((o) => {
-              const isActive = o.value === effort;
+              const isActive = o.value === (effort ?? "auto");
               return (
                 <button
                   key={o.label}
@@ -138,7 +139,7 @@ export function ReasoningEffortPicker({
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
                       <span className="font-medium">{o.label}</span>
-                      {o.value === undefined && (
+                      {o.value === "auto" && (
                         <span className="text-[0.6rem] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">default</span>
                       )}
                     </span>

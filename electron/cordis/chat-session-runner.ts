@@ -12,6 +12,7 @@ import { buildSystemPrompt, withPersonality } from "../lib/tools";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta } from "./cordis-context";
 import { foldSessionUsage } from "./plugins/context-ring";
+import { foldSessionStats } from "./session-stats";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
@@ -97,6 +98,32 @@ function emitBreakdownUsage(events: readonly SessionEvent[], onSessionEvent?: (e
     } as unknown as SessionEvent;
     onSessionEvent(synthetic);
   } catch { /* the ring is decoration — never break the turn over a breakdown */ }
+}
+
+/**
+ * Emit a synthetic `assistant/chunk` stats event so the LIVE turn's per-message
+ * throughput/latency (TTFT · tok/s · output tokens) shows immediately — the same
+ * capture-at-stream-time approach as the Context Ring breakdown, instead of
+ * waiting for a reload. foldSessionStats over the turn's events yields per-turn
+ * metrics; we take the highest (latest) turn's reading and hand it to the
+ * renderer, which attaches it to the assistant bubble at turn end.
+ */
+function emitTurnStats(events: readonly SessionEvent[], onSessionEvent?: (event: SessionEvent) => void): void {
+  if (!onSessionEvent) return;
+  try {
+    const s = foldSessionStats(events);
+    if (!s) return;
+    const turns = Object.keys(s.byTurn).map(Number);
+    if (turns.length === 0) return;
+    const latest = s.byTurn[Math.max(...turns)];
+    if (!latest) return;
+    const synthetic = {
+      type: "assistant/chunk",
+      seq: -1,
+      data: { chunk: { type: "stats", stats: latest } },
+    } as unknown as SessionEvent;
+    onSessionEvent(synthetic);
+  } catch { /* stats are decoration — never break the turn */ }
 }
 
 /** Chat-specific profile over the shared Cordis session lifecycle. */
@@ -284,6 +311,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // foldSessionUsage. Emit one synthetic, breakdown-carrying usage event so the
       // live ring matches the reload ring (single source of truth, no divergence).
       emitBreakdownUsage(typed.session.events, opts.onSessionEvent);
+      emitTurnStats(typed.session.events, opts.onSessionEvent);
       if (TIMING && kind && kind !== "completed") console.log(`[timing] turn/end kind="${kind}" at ${Date.now() - turnStart}ms (attempt did not complete cleanly)`);
       return { ...result, failedKind: kind && kind !== "completed" ? kind : undefined };
     },

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Check, Copy, FileText, FolderOpen, Kanban, RotateCcw, Search } from "lucide-react";
+import { Check, Copy, FileText, FolderOpen, Info, Kanban, RotateCcw, Search } from "lucide-react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
@@ -41,6 +41,7 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
   const isSystem = message.role === "system";
   const isError = message.role === "error";
   const { copied, copy } = useCopyToClipboard();
+  const [statsOpen, setStatsOpen] = React.useState(false);
 
   if (isSystem) {
     return (
@@ -96,20 +97,40 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
           <MarkdownContent content={message.content} isUser={isUser} />
           {!isUser && message.isStreaming && <StreamingCursor size="md" />}
         </div>
-        {/* Per-turn throughput/latency — settled assistant messages only, and
-            only when derivable from the session log (no zero/NaN lines). */}
+        {/* Per-turn throughput/latency — behind a small info button on settled
+            assistant messages, shown only when derivable (no zero/NaN lines). */}
         {!isUser && !message.isStreaming && (() => {
           const segments = messageStatsSegments(message.stats);
-          return segments.length ? (
-            <div className="flex items-center gap-1.5 text-[0.607rem] text-[var(--text-tertiary)] font-mono tabular-nums px-1">
-              {segments.map((seg, i) => (
-                <React.Fragment key={seg}>
-                  {i > 0 && <span className="opacity-50">·</span>}
-                  <span>{seg}</span>
-                </React.Fragment>
-              ))}
+          if (!segments.length) return null;
+          return (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setStatsOpen((v) => !v)}
+                aria-label="Message speed & token stats"
+                aria-expanded={statsOpen}
+                title={statsOpen ? "Hide stats" : "Message stats"}
+                className={cn(
+                  "flex items-center justify-center w-4 h-4 rounded-full border transition-colors flex-shrink-0",
+                  statsOpen
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
+                )}
+              >
+                <Info size={9} />
+              </button>
+              {statsOpen && (
+                <div className="flex items-center gap-1.5 text-[0.607rem] text-[var(--text-tertiary)] font-mono tabular-nums">
+                  {segments.map((seg, i) => (
+                    <React.Fragment key={seg}>
+                      {i > 0 && <span className="opacity-50">·</span>}
+                      <span>{seg}</span>
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : null;
+          );
         })()}
         {message.extraContent}
         {message.contextRefs && message.contextRefs.length > 0 && (

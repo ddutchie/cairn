@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatSubagent, TokenBreakdown } from "@/types";
 import { redactSensitiveText, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
-import { createSessionEventFold, type FoldedToolCall, type FoldedToolResult, type FoldedUsage } from "../../shared/agent/session-event-fold";
+import { createSessionEventFold, type FoldedToolCall, type FoldedToolResult, type FoldedUsage, type FoldedStats } from "../../shared/agent/session-event-fold";
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import type { SessionProjection } from "../../shared/agent/session-projection";
 
@@ -39,6 +39,8 @@ export interface SessionConversationSnapshot {
   thought: string;
   subagents: ChatSubagent[];
   assistant?: { text: string; reasoning: string; contextRefs?: unknown[]; usage?: FoldedUsage };
+  /** Per-turn throughput/latency captured live at turn end (TTFT · tok/s · out tokens). */
+  stats?: FoldedStats;
 }
 
 export interface SessionConversationAdapter {
@@ -97,6 +99,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   const toolsRef = useRef<SessionConversationToolCall[]>([]);
   const subagentsRef = useRef<ChatSubagent[]>([]);
   const assistantRef = useRef<SessionConversationSnapshot["assistant"]>(undefined);
+  const statsRef = useRef<FoldedStats | undefined>(undefined);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -112,7 +115,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
 
   const resetTransient = (keepQuestions = false) => {
     setIsLoading(false); setStreamingContent(""); setStreamingThought(""); setToolCalls([]); setSubagents([]);
-    textRef.current = ""; thoughtRef.current = ""; toolsRef.current = []; subagentsRef.current = []; assistantRef.current = undefined;
+    textRef.current = ""; thoughtRef.current = ""; toolsRef.current = []; subagentsRef.current = []; assistantRef.current = undefined; statsRef.current = undefined;
     if (!keepQuestions) clearQuestionsFor(sessionIdRef.current);
   };
 
@@ -128,6 +131,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
       onText: (delta) => { textRef.current += delta; setStreamingContent((current) => current + delta); adapterRef.current.onText?.(delta); },
       onReasoning: (delta) => { thoughtRef.current += delta; setStreamingThought((current) => current + delta); adapterRef.current.onReasoning?.(delta); },
       onUsage: (usage) => adapterRef.current.onUsage?.(usage),
+      onStats: (stats) => { statsRef.current = stats; },
       onToolCall: (call) => {
         adapterRef.current.onToolCall?.(call);
         if (call.name === "ask_questions" && Array.isArray(call.args?.questions) && sessionIdRef.current) {
@@ -146,7 +150,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
       },
       onAssistantMessage: (message) => { assistantRef.current = message; adapterRef.current.onAssistantMessage?.(message); },
       onTurnEnd: (reason) => {
-        const snapshot = { toolCalls: toolsRef.current.map((item) => item.status === "running" ? { ...item, status: "done" as const } : item), text: textRef.current, thought: thoughtRef.current, subagents: subagentsRef.current, assistant: assistantRef.current };
+        const snapshot = { toolCalls: toolsRef.current.map((item) => item.status === "running" ? { ...item, status: "done" as const } : item), text: textRef.current, thought: thoughtRef.current, subagents: subagentsRef.current, assistant: assistantRef.current, stats: statsRef.current };
         adapterRef.current.onTurnEnd?.(reason, snapshot);
         resetTransient();
       },

@@ -19,11 +19,12 @@ describe("foldSessionStats", () => {
     expect(foldSessionStats([])).toBeUndefined();
   });
 
-  it("normal single-step turn: TTFT, decode, tok/s", () => {
+  it("normal single-step turn (streaming/responses: text-delta first token): TTFT, decode, tok/s", () => {
     // step 1000ms; first token 1200ms; message 2200ms; 100 output tokens.
+    // Streaming/Responses wire uses incremental text-delta (no block-start), so
+    // the first text-delta anchors TTFT.
     const s = foldSessionStats([
       stepStart(1, 1, 1000),
-      blockStart(1, 1, 1100),        // not a token → ignored for TTFT
       textDelta(1, 1, 1200),         // first token
       textDelta(1, 1, 1500),
       message(1, 1, 2200, 100),
@@ -41,6 +42,24 @@ describe("foldSessionStats", () => {
     expect(s.tokensPerSecond).toBeCloseTo(100, 5);
     expect(s.byTurn[1].ttftMs).toBe(200);
     expect(s.byTurn[1].tokensPerSecond).toBeCloseTo(100, 5);
+    expect(s.byTurn[1].outputTokens).toBe(100);
+  });
+
+  it("completions turn (whole-block stream: block-start anchors TTFT)", () => {
+    // chat-completions streams whole blocks, not token deltas — the first
+    // block-start is the closest first-token signal so completions turns still
+    // report TTFT/decode (else they'd show no stats at all).
+    const s = foldSessionStats([
+      stepStart(1, 1, 1000),
+      blockStart(1, 1, 1100),        // first content signal → TTFT anchor
+      message(1, 1, 2200, 100),
+      stepEnd(1, 1, 2200),
+      turnEnd(1, 2200),
+    ])!;
+    expect(s.totals.ttftMs).toBe(100);          // 1100 - 1000
+    expect(s.totals.decodeMs).toBe(1100);       // 2200 - 1100
+    expect(s.totals.decodeTokens).toBe(100);
+    expect(s.byTurn[1].ttftMs).toBe(100);
     expect(s.byTurn[1].outputTokens).toBe(100);
   });
 

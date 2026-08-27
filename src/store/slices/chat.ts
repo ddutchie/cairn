@@ -34,6 +34,7 @@ export interface ChatSlice {
     reasoningItems?: Array<Record<string, unknown>>,
     reasoningField?: string,
     reasoningModel?: string,
+    stats?: ChatMessage["stats"],
   ) => ChatMessage;
   deleteThread: (threadId: ID) => void;
   renameThread: (threadId: ID, title: string) => void;
@@ -278,7 +279,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     return thread;
   },
 
-  addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning, images, subagents, reasoningSummary, reasoningItems, reasoningField, reasoningModel) {
+  addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning, images, subagents, reasoningSummary, reasoningItems, reasoningField, reasoningModel, stats) {
     const msg: ChatMessage = {
       id: id(),
       threadId,
@@ -294,6 +295,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       actions: actions && actions.length > 0 ? actions : undefined,
       images: images && images.length > 0 ? images : undefined,
       subagents: subagents && subagents.length > 0 ? subagents : undefined,
+      stats: stats && (stats.ttftMs !== undefined || stats.tokensPerSecond !== undefined || stats.outputTokens !== undefined) ? stats : undefined,
       createdAt: now(),
     };
     set((s) => ({
