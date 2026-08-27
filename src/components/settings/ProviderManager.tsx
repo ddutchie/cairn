@@ -9,6 +9,7 @@ import type { SavedProvider, ApiMode } from "@/store/slices/ui";
 import { dedupeProviders } from "@/store/slices/ui";
 import { SettingsRow } from "./shared";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown";
+import { Select } from "@/components/ui/select";
 import { ModelPicker } from "@/components/ui/model-picker";
 import { useEndpointConfig, CreditsBadge } from "./endpoint-components";
 import { ConnectorLogo } from "./tools/ConnectorLogo";
@@ -392,19 +393,22 @@ function ProviderForm({
           />
           <span className="text-[0.643rem] text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
         </label>
-        <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
           <span className="text-[0.714rem] text-[var(--text-tertiary)]">API protocol</span>
-          <select
+          <Select<ApiMode>
             value={apiMode}
-            onChange={(e) => setApiMode(e.target.value as ApiMode)}
-            className={inputCls}
-          >
-            <option value="completions">Chat Completions (/v1/chat/completions)</option>
-            <option value="responses">Responses (/v1/responses)</option>
-            <option value="anthropic-messages">Anthropic Messages (/v1/messages)</option>
-          </select>
+            onChange={setApiMode}
+            size="md"
+            ariaLabel="API protocol"
+            className="w-full"
+            options={[
+              { value: "completions", label: "Chat Completions (/v1/chat/completions)" },
+              { value: "responses", label: "Responses (/v1/responses)" },
+              { value: "anthropic-messages", label: "Anthropic Messages (/v1/messages)" },
+            ]}
+          />
           <span className="text-[0.643rem] text-[var(--text-tertiary)]">Wire protocol this endpoint speaks. Pinned, not auto-detected.</span>
-        </label>
+        </div>
       </div>
       {keyInfo && (
         <div className="flex items-center gap-1.5">
