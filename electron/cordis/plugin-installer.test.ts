@@ -55,13 +55,23 @@ const DSH_PKG = JSON.stringify({
   dsh: { bundle: { patch: "./cordis.patch.yml" }, client: { platform: "web" } },
 });
 
+function mockFetch(gz: Buffer) {
+  return vi.fn(async () => ({
+    ok: true,
+    headers: { get: () => null } as unknown as Headers,
+    arrayBuffer: async () => gz.buffer.slice(gz.byteOffset, gz.byteOffset + gz.byteLength),
+  })) as unknown as typeof fetch;
+}
+
 let tmp: string;
 beforeEach(() => {
+  vi.stubEnv("CAIRN_PLUGINS_DEV", "1");
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-plugins-"));
   setPluginsRoot(tmp);
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   fs.rmSync(tmp, { recursive: true, force: true });
   setPluginsRoot("");
 });
@@ -92,7 +102,7 @@ describe("installPlugin (github, mocked fetch)", () => {
       "lib/client.js": "export function apply(ctx){}",
       "cordis.patch.yml": "plugins: {}",
     });
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, arrayBuffer: async () => gz.buffer.slice(gz.byteOffset, gz.byteOffset + gz.byteLength) })) as unknown as typeof fetch);
+    vi.stubGlobal("fetch", mockFetch(gz));
 
     const res = await installPlugin("github:Nagi-ovo/dsh-visualize");
     expect(res).toMatchObject({
@@ -111,13 +121,13 @@ describe("installPlugin (github, mocked fetch)", () => {
 
   it("rejects a package with no dsh section", async () => {
     const gz = buildTarGz({ "package.json": JSON.stringify({ name: "x", main: "index.js" }), "index.js": "" });
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, arrayBuffer: async () => gz.buffer.slice(gz.byteOffset, gz.byteOffset + gz.byteLength) })) as unknown as typeof fetch);
+    vi.stubGlobal("fetch", mockFetch(gz));
     await expect(installPlugin("github:o/x")).rejects.toThrow(/not a dsh plugin/);
   });
 
   it("upserts (re-install replaces the same id's row, not duplicates)", async () => {
     const gz = buildTarGz({ "package.json": DSH_PKG, "lib/index.js": "", "lib/client.js": "" });
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, arrayBuffer: async () => gz.buffer.slice(gz.byteOffset, gz.byteOffset + gz.byteLength) })) as unknown as typeof fetch);
+    vi.stubGlobal("fetch", mockFetch(gz));
     await installPlugin("github:Nagi-ovo/dsh-visualize");
     await installPlugin("github:Nagi-ovo/dsh-visualize");
     const rows = yaml.load(fs.readFileSync(path.join(getPluginsRoot(), "plugins.yml"), "utf8")) as Array<Record<string, unknown>>;
@@ -140,7 +150,7 @@ describe("installPlugin (github, mocked fetch)", () => {
 describe("uninstallPlugin", () => {
   it("removes the manifest row and the installed files", async () => {
     const gz = buildTarGz({ "package.json": DSH_PKG, "lib/index.js": "", "lib/client.js": "" });
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, arrayBuffer: async () => gz.buffer.slice(gz.byteOffset, gz.byteOffset + gz.byteLength) })) as unknown as typeof fetch);
+    vi.stubGlobal("fetch", mockFetch(gz));
     await installPlugin("github:Nagi-ovo/dsh-visualize");
     uninstallPlugin("dsh-visualize");
     const rows = yaml.load(fs.readFileSync(path.join(getPluginsRoot(), "plugins.yml"), "utf8")) as Array<Record<string, unknown>>;
