@@ -38,8 +38,9 @@ function collectUiPlugins(): UiPluginPayload[] {
     if (!e.ui) continue;
     try {
       const file = path.resolve(root, e.ui);
-      // Contain to the plugins dir.
-      if (!file.startsWith(path.resolve(root))) {
+      // Contain to the plugins dir — sep-aware (prevents sibling escape /plugins-evil).
+      const resolvedRoot = path.resolve(root);
+      if (file !== resolvedRoot && !file.startsWith(resolvedRoot + path.sep)) {
         console.error(`[cairn-plugins] ui path escapes plugins dir, skipping: ${e.ui}`);
         continue;
       }
