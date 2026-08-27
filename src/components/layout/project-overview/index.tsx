@@ -213,33 +213,21 @@ export function ProjectOverview() {
     window.dispatchEvent(CairnEvents.openChat(text, true));
   }
 
-  if (!project || !metrics) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center text-[var(--text-tertiary)]">
-          <Kanban size={32} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">Select a project to get started</p>
-        </div>
-      </div>
-    );
-  }
-
-  const {
-    notes,
-    columns,
-    allCards,
-    doneCards,
-    openCards,
-    completionRate,
-    today,
-    dueCards,
-    overdueCount,
-    priorityCounts,
-    pinnedNotes,
-    recentNotes,
-    projectTags,
-    activityByDay,
-  } = metrics;
+  // Derived with safe defaults for hook order - hooks must be called before early return
+  const notes = metrics?.notes ?? [];
+  const columns = metrics?.columns ?? [];
+  const allCards = metrics?.allCards ?? [];
+  const doneCards = metrics?.doneCards ?? [];
+  const openCards = metrics?.openCards ?? [];
+  const completionRate = metrics?.completionRate ?? 0;
+  const today = metrics?.today ?? new Date();
+  const dueCards = metrics?.dueCards ?? [];
+  const overdueCount = metrics?.overdueCount ?? 0;
+  const priorityCounts = metrics?.priorityCounts ?? { urgent: 0, high: 0, medium: 0, low: 0 };
+  const pinnedNotes = metrics?.pinnedNotes ?? [];
+  const recentNotes = metrics?.recentNotes ?? [];
+  const projectTags = metrics?.projectTags ?? [];
+  const activityByDay = metrics?.activityByDay ?? [];
 
   const headerTags = capTags(sortTagsByUsage(projectTags, notes, allCards), 4);
 
@@ -314,19 +302,22 @@ export function ProjectOverview() {
   };
 
   const filteredQueue = useMemo(() => {
+    if (!metrics) return [];
     if (focus === "all") return attentionQueue;
     if (focus === "overdue") return attentionQueue.filter((q) => q.tone === "overdue");
     if (focus === "today") return attentionQueue.filter((q) => q.tone === "today");
     return []; // pinned shows pinned notes instead, queue empty
-  }, [attentionQueue, focus]);
+  }, [attentionQueue, focus, metrics]);
 
   const filteredCards = useMemo(() => {
+    if (!metrics) return [];
     if (focus === "overdue") return overdueCards;
     if (focus === "today") return todayCards;
     return openCards;
-  }, [focus, openCards, overdueCards, todayCards]);
+  }, [focus, openCards, overdueCards, todayCards, metrics]);
 
   const filteredPriorityCounts = useMemo(() => {
+    if (!metrics) return { urgent: 0, high: 0, medium: 0, low: 0 };
     const cards = filteredCards;
     return {
       urgent: cards.filter((c) => c.priority === "urgent").length,
@@ -334,7 +325,7 @@ export function ProjectOverview() {
       medium: cards.filter((c) => c.priority === "medium").length,
       low: cards.filter((c) => c.priority === "low").length,
     };
-  }, [filteredCards]);
+  }, [filteredCards, metrics]);
 
   const inProgressCol = columns.find((c) => c.type === "in_progress");
   const inProgressCount = inProgressCol ? allCards.filter((c) => c.columnId === inProgressCol.id).length : 0;
@@ -350,14 +341,28 @@ export function ProjectOverview() {
     overdue: "Overdue",
     pinned: "Pinned",
   };
-  const isCollapsed = (key: string) => Boolean(overviewCollapsedSections[`${project.id}:${key}`]);
-  const toggleSection = (key: string) => toggleOverviewSection(project.id, key);
+  const isCollapsed = (key: string) => Boolean(overviewCollapsedSections[`${project?.id ?? ""}:${key}`]);
+  const toggleSection = (key: string) => {
+    if (!project) return;
+    toggleOverviewSection(project.id, key);
+  };
 
   // columns sorted already via hook; ensure done last for display
   const flowColumns = [...columns].sort((a, b) => {
     const order = ["backlog", "todo", "in_progress", "review", "done"];
     return order.indexOf(a.type) - order.indexOf(b.type);
   });
+
+  if (!project || !metrics) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center text-[var(--text-tertiary)]">
+          <Kanban size={32} className="mx-auto mb-3 opacity-40" />
+          <p className="text-sm">Select a project to get started</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative w-full min-w-0 overflow-x-hidden">
