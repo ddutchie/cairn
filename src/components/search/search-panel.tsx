@@ -30,48 +30,43 @@ function ResultRow({ result, focused, onSelect, semanticScore }: ResultRowProps)
     <button
       onClick={() => onSelect(result)}
       className={cn(
-        "flex items-start gap-3 w-full px-4 py-3 text-left transition-colors",
+        "group relative flex items-center gap-3 w-full px-3 py-2.5 text-left transition-all",
+        "border-l-[2px]",
         focused
-          ? "bg-[var(--surface-2)]"
-          : "hover:bg-[var(--surface-2)]"
+          ? "bg-[var(--surface-2)] border-[var(--accent)]"
+          : "border-transparent hover:bg-[var(--surface-2)] hover:border-[var(--border)]/50"
       )}
     >
-      <div className="flex-shrink-0 mt-0.5">
-        {result.type === "note" ? (
-          <FileText size={14} className="text-[var(--info)]" />
-        ) : (
-          <Kanban size={14} className="text-[var(--accent)]" />
+      <span
+        className={cn(
+          "w-7 h-7 rounded-lg grid place-items-center border flex-shrink-0 transition-colors",
+          result.type === "note"
+            ? "bg-[color-mix(in_srgb,var(--info)_12%,transparent)] border-[color-mix(in_srgb,var(--info)_18%,transparent)] text-[var(--info)]"
+            : "bg-[var(--accent-dim)] border-[color-mix(in_srgb,var(--accent)_18%,transparent)] text-[var(--accent)]",
+          focused && "ring-1 ring-[var(--accent)]/20"
         )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-[var(--text-primary)] truncate">
-            {result.title}
-          </span>
+      >
+        {result.type === "note" ? <FileText size={12} /> : <Kanban size={12} />}
+      </span>
+      <span className="flex-1 min-w-0 text-left">
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[0.813rem] font-medium text-[var(--text-primary)] truncate tracking-tight">{result.title}</span>
           {semanticScore !== undefined && (
-            <span
-              className="flex items-center gap-1 text-[0.6rem] font-mono text-[var(--accent)] flex-shrink-0"
-              title={`Semantic similarity: ${semanticScore.toFixed(2)}`}
-            >
-              <Sparkles size={9} />
-              {Math.round(semanticScore * 100)}%
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] border border-[color-mix(in_srgb,var(--accent)_18%,transparent)] text-[0.643rem] font-mono font-semibold text-[var(--accent)]" title={`Semantic: ${semanticScore.toFixed(2)}`}>
+              <Sparkles size={9} />{Math.round(semanticScore * 100)}%
             </span>
           )}
-          <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0">
-            in {result.projectName}
-          </span>
-        </div>
-        {result.snippet && (
-          <p className="text-xs text-[var(--text-tertiary)] mt-0.5 truncate">
-            {result.snippet}
-          </p>
-        )}
-      </div>
+        </span>
+        <span className="flex items-center gap-1.5 mt-0.5 min-w-0">
+          <span className="text-[0.714rem] px-1.5 py-0.5 rounded-full bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] truncate max-w-[14ch]">{result.projectName}</span>
+          {result.snippet && <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1 min-w-0">{result.snippet}</span>}
+        </span>
+      </span>
       <ArrowRight
         size={12}
         className={cn(
-          "flex-shrink-0 mt-1 transition-opacity",
-          focused ? "opacity-100 text-[var(--accent)]" : "opacity-0"
+          "flex-shrink-0 transition-all",
+          focused ? "opacity-100 text-[var(--accent)] translate-x-0" : "opacity-0 -translate-x-1 group-hover:opacity-60 group-hover:translate-x-0 text-[var(--text-tertiary)]"
         )}
       />
     </button>
@@ -122,7 +117,6 @@ export function SearchPanel() {
   useEffect(() => {
     if (searchOpen) {
       inputRef.current?.focus();
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQuery("");
       setResults([]);
       setSemanticScores(new Map());
@@ -132,7 +126,6 @@ export function SearchPanel() {
     }
   }, [searchOpen]);
 
-  // Probe embeddings availability once per panel open (cheap IPC)
   useEffect(() => {
     if (!searchOpen) return;
     const rt = window.electron?.runtime;
@@ -141,7 +134,6 @@ export function SearchPanel() {
     rt.embeddings.status()
       .then((st) => {
         if (cancelled) return;
-        // Enable the toggle if runtime is running with an embedding model loaded
         setEmbeddingsReady(Boolean(st.running && st.defaultModelId));
       })
       .catch(() => setEmbeddingsReady(false));
@@ -162,7 +154,6 @@ export function SearchPanel() {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (semanticTimer.current) clearTimeout(semanticTimer.current);
     if (query.trim().length < 1) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([]);
       setSemanticScores(new Map());
       return;
@@ -173,13 +164,10 @@ export function SearchPanel() {
       setFocused(0);
     }, 150);
 
-    // Semantic path — only when mode is on, embeddings ready, and we have a workspace
     if (semanticMode && embeddingsReady && activeWorkspaceId) {
       semanticTimer.current = setTimeout(async () => {
         const e = window.electron?.embeddings;
         if (!e?.search) return;
-        // Capture the query at request time so we can discard stale responses
-        // if the user types more before the async search resolves.
         const requestQuery = trimmed;
         try {
           const hits: SemanticHit[] = await e.search(activeWorkspaceId, requestQuery, { k: 20 });
@@ -201,11 +189,9 @@ export function SearchPanel() {
               projectName: project?.name ?? "",
             });
           }
-          // Merge: semantic hits that aren't already in keyword results get appended
           setSemanticScores(scoreMap);
           setResults((prevKeyword) => mergeSemanticResults(prevKeyword, enriched));
         } catch {
-          // embeddings worker may be down — silently fall back to keyword-only
         }
       }, 250);
     } else {
@@ -236,14 +222,11 @@ export function SearchPanel() {
       e.preventDefault();
       setFocused((f) => clampFocus(f - 1, total));
     } else if (e.key === "Enter") {
-      // Focus order matches UI order: notes first, then tasks.
       const result = resolveFocusedResult(focused, noteResults, taskResults);
       if (result) handleSelect(result);
     }
   }
 
-  // Close on Escape regardless of focus (clicking a result/backdrop/filter chip
-  // moves focus off the input, so an input-bound Escape wouldn't fire).
   useEscapeKey(toggleSearch, searchOpen);
 
   if (!searchOpen) return null;
@@ -254,88 +237,79 @@ export function SearchPanel() {
   const taskResults = filtered.filter((r) => r.type === "card");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={toggleSearch}
-      />
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4">
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-[10px]" onClick={toggleSearch} aria-hidden="true" />
 
-      {/* Panel */}
-      <div className="relative w-full max-w-2xl bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden animate-slide-in-up">
-        {/* Search input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)]">
-          <Search size={16} className="text-[var(--text-tertiary)] flex-shrink-0" />
+      <div className="relative w-full max-w-[640px] bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-[0_24px_64px_rgba(0,0,0,.55),inset_0_1px_0_rgba(255,255,255,.04)] overflow-hidden animate-slide-in-up">
+        <div className="flex items-center gap-3 px-4 h-[52px] border-b border-[var(--border)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_60%,transparent),transparent)]">
+          <span className="w-8 h-8 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] flex-shrink-0">
+            <Search size={14} />
+          </span>
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={semanticMode && embeddingsReady ? "Search notes and tasks (semantic)…" : "Search notes and tasks…"}
-            className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
+            placeholder={semanticMode && embeddingsReady ? "Search notes and tasks — semantic…" : "Search notes and tasks…"}
+            className="flex-1 bg-transparent text-[0.938rem] font-medium tracking-tight text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] placeholder:font-normal focus:outline-none"
           />
           {query && (
-            <button
-              onClick={() => setQuery("")}
-              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <X size={14} />
+            <button onClick={() => setQuery("")} className="w-7 h-7 rounded-full bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] transition-colors flex-shrink-0" aria-label="Clear">
+              <X size={12} />
             </button>
           )}
-          <Tooltip content={embeddingsReady ? (semanticMode ? "Semantic search on" : "Enable semantic search") : "Enable embeddings in Settings to use semantic search"}>
+          <Tooltip content={embeddingsReady ? (semanticMode ? "Semantic search on — vectors" : "Enable semantic search") : "Enable embeddings in Settings to use semantic search"}>
             <span className={cn(!embeddingsReady && "cursor-not-allowed")}>
               <button
                 type="button"
                 onClick={toggleSemantic}
                 disabled={!embeddingsReady}
                 className={cn(
-                  "flex items-center justify-center w-7 h-7 rounded-md border transition-colors",
+                  "flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[0.714rem] font-medium transition-colors",
                   semanticMode && embeddingsReady
-                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)] shadow-sm"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:border-[var(--muted)]",
                   !embeddingsReady && "opacity-40 cursor-not-allowed"
                 )}
               >
-                <Sparkles size={13} />
+                <Sparkles size={11} /> <span className="hidden sm:inline">Semantic</span>
               </button>
             </span>
           </Tooltip>
-          <kbd className="text-[0.714rem] text-[var(--text-tertiary)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">
+          <span className="hidden sm:inline-flex items-center gap-1 text-[0.643rem] font-mono text-[var(--text-tertiary)] border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-1 rounded-md">
             ESC
-          </kbd>
+          </span>
         </div>
 
-        {/* Filter bar — two distinct axes on separate rows: content TYPE (pills)
-            and project SCOPE (squarer, surface-filled chips), each under its own
-            label so they don't read as one uniform group. */}
-        <div className="flex flex-col gap-2 px-4 py-2 border-b border-[var(--border)]">
+        <div className="flex flex-col gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]/30">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[0.643rem] uppercase tracking-wide text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Type</span>
+            <span className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Type</span>
             {(["all", "notes", "tasks"] as FilterType[]).map((t) => (
               <button key={t} onClick={() => { setFilterType(t); setFocused(0); }}
-                className={cn("px-2.5 py-0.5 rounded-full text-[0.786rem] font-medium border transition-colors",
+                className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-all",
                   filterType === t
-                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                    ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] shadow-sm"
+                    : "bg-[var(--surface)] text-[var(--text-tertiary)] border-[var(--border)] hover:text-[var(--text-secondary)] hover:border-[var(--muted)]"
                 )}>
                 {t === "all" ? "All" : t === "notes" ? "Notes" : "Tasks"}
               </button>
             ))}
+            <span className="ml-auto hidden sm:inline-flex text-[0.643rem] font-mono text-[var(--text-tertiary)]">
+              {filtered.length} {filtered.length === 1 ? "result" : "results"}
+            </span>
           </div>
           {workspaceProjects.length > 1 && (
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[0.643rem] uppercase tracking-wide text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Project</span>
+              <span className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Project</span>
               {filterProject && (
-                <button onClick={() => setFilterProject(null)}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.786rem] border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
-                  <X size={9} />
+                <button onClick={() => setFilterProject(null)} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
+                  <X size={10} />
                   {workspaceProjects.find((p) => p.id === filterProject)?.name ?? "Project"}
                 </button>
               )}
               {!filterProject && workspaceProjects.map((p) => (
-                <button key={p.id} onClick={() => { setFilterProject(p.id); setFocused(0); }}
-                  className="px-2 py-0.5 rounded-md text-[0.786rem] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--text-tertiary)] transition-colors truncate max-w-[100px]">
+                <button key={p.id} onClick={() => { setFilterProject(p.id); setFocused(0); }} className="px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] bg-[var(--surface)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--muted)] transition-colors truncate max-w-[120px]">
                   {p.name}
                 </button>
               ))}
@@ -343,72 +317,68 @@ export function SearchPanel() {
           )}
         </div>
 
-        {/* Results */}
-        <div className="max-h-80 overflow-y-auto">
+        <div className="max-h-[420px] overflow-y-auto">
           {query && filtered.length === 0 && (
-            <div className="px-4 py-8 text-center flex flex-col items-center gap-2">
-              <SearchX size={20} className="text-[var(--text-tertiary)] opacity-40" />
-              <p className="text-sm text-[var(--text-tertiary)]">No results for &ldquo;{query}&rdquo;</p>
+            <div className="px-6 py-10 text-center flex flex-col items-center gap-3">
+              <span className="w-10 h-10 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)]">
+                <SearchX size={16} />
+              </span>
+              <p className="text-sm font-medium text-[var(--text-secondary)]">No results for “{query}”</p>
+              <p className="text-xs text-[var(--text-tertiary)]">Try a different term or switch project filter</p>
             </div>
           )}
 
           {filtered.length > 0 && (
-            <div className="py-1">
+            <div className="py-2">
               {noteResults.length > 0 && (
                 <>
-                  <div className="px-4 py-1.5 text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Notes</div>
-                  {noteResults.map((result, i) => (
-                    <ResultRow
-                      key={result.id}
-                      result={result}
-                      focused={i === focused}
-                      onSelect={handleSelect}
-                      globalIndex={i}
-                      focusedIndex={focused}
-                      semanticScore={semanticScores.get(result.id)}
-                    />
-                  ))}
+                  <div className="px-4 py-2 flex items-center gap-2 text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--info)]" /> Notes <span className="font-mono font-normal text-[var(--text-tertiary)]">· {noteResults.length}</span>
+                  </div>
+                  <div className="px-2 space-y-0.5 pb-2">
+                    {noteResults.map((result, i) => (
+                      <ResultRow key={result.id} result={result} focused={i === focused} onSelect={handleSelect} globalIndex={i} focusedIndex={focused} semanticScore={semanticScores.get(result.id)} />
+                    ))}
+                  </div>
                 </>
               )}
               {taskResults.length > 0 && (
                 <>
-                  <div className="px-4 py-1.5 text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Tasks</div>
-                  {taskResults.map((result, i) => (
-                    <ResultRow
-                      key={result.id}
-                      result={result}
-                      focused={noteResults.length + i === focused}
-                      onSelect={handleSelect}
-                      globalIndex={noteResults.length + i}
-                      focusedIndex={focused}
-                    />
-                  ))}
+                  <div className="px-4 py-2 flex items-center gap-2 text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] border-t border-[var(--border)] mt-2 pt-3">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" /> Tasks <span className="font-mono font-normal">· {taskResults.length}</span>
+                  </div>
+                  <div className="px-2 space-y-0.5">
+                    {taskResults.map((result, i) => (
+                      <ResultRow key={result.id} result={result} focused={noteResults.length + i === focused} onSelect={handleSelect} globalIndex={noteResults.length + i} focusedIndex={focused} />
+                    ))}
+                  </div>
                 </>
               )}
             </div>
           )}
 
           {!query && (
-            <div className="px-4 py-6 text-center">
-              <p className="text-sm text-[var(--text-tertiary)]">
-                Type to search notes and tasks across all projects
-              </p>
-              <div className="flex items-center justify-center gap-4 mt-4 text-xs text-[var(--text-tertiary)]">
-                <span className="flex items-center gap-1">
-                  <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono text-[0.714rem]">↑↓</kbd>
-                  navigate
-                </span>
-                <span className="flex items-center gap-1">
-                  <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono text-[0.714rem]">↵</kbd>
-                  open
-                </span>
-                <span className="flex items-center gap-1">
-                  <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono text-[0.714rem]">ESC</kbd>
-                  close
-                </span>
+            <div className="px-6 py-8 text-center">
+              <div className="w-10 h-10 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center mx-auto text-[var(--text-tertiary)]">
+                <Search size={16} />
+              </div>
+              <p className="text-sm font-medium text-[var(--text-secondary)] mt-3">Search across projects</p>
+              <p className="text-xs text-[var(--text-tertiary)] mt-1 max-w-[32ch] mx-auto leading-relaxed">Notes, tasks, and semantic matches — filtered by type and project. Start typing.</p>
+              <div className="flex items-center justify-center gap-3 mt-5 text-[0.714rem] text-[var(--text-tertiary)] font-mono">
+                <span className="inline-flex items-center gap-1.5"><kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5">↑↓</kbd> navigate</span>
+                <span className="inline-flex items-center gap-1.5"><kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5">↵</kbd> open</span>
+                <span className="inline-flex items-center gap-1.5"><kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5">ESC</kbd> close</span>
               </div>
             </div>
           )}
+        </div>
+
+        <div className="flex items-center gap-3 px-4 h-8 border-t border-[var(--border)] bg-[var(--surface-2)]/50 text-[0.643rem] font-mono text-[var(--text-tertiary)]">
+          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" /> {results.length} hits</span>
+          <span className="ml-auto hidden sm:inline-flex items-center gap-2">
+            <span><kbd className="border border-[var(--border)] bg-[var(--surface)] px-1 rounded">↑↓</kbd> nav</span>
+            <span><kbd className="border border-[var(--border)] bg-[var(--surface)] px-1 rounded">↵</kbd> open</span>
+          </span>
         </div>
       </div>
     </div>

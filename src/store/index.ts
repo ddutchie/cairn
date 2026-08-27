@@ -26,8 +26,8 @@ import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY, applyChatTheme, CHAT_THEME_KEY } from "./slices/ui";
-import type { FontScale, FontFamilyId } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY, applyChatTheme, CHAT_THEME_KEY, SHELL_VARIANT_KEY } from "./slices/ui";
+import type { FontScale, FontFamilyId, ShellVariant } from "./slices/ui";
 import { DEFAULT_ACCENT_ID } from "../../shared/ui/accents";
 import { DEFAULT_FONT_ID } from "../../shared/ui/fonts";
 import { DEFAULT_CHAT_THEME_ID } from "../../shared/ui/chat-themes";
@@ -283,6 +283,16 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   const savedOverviewSections = storage.get<Record<string, boolean>>(OVERVIEW_COLLAPSED_KEY);
   if (savedOverviewSections && typeof savedOverviewSections === "object") {
     set({ overviewCollapsedSections: savedOverviewSections });
+  }
+
+  const isDev = typeof process !== "undefined" && (process.env as unknown as { NODE_ENV?: string })?.NODE_ENV === "development";
+  const savedShell = storage.get<ShellVariant>(SHELL_VARIANT_KEY);
+  if (!isDev) {
+    // Production: Rail (A) is the only shipped shell; B/C/current are dev previews
+    set({ shellVariant: "A" });
+    if (savedShell && savedShell !== "A") storage.set(SHELL_VARIANT_KEY, "A");
+  } else if (savedShell && ["current","A","B","C"].includes(savedShell)) {
+    set({ shellVariant: savedShell });
   }
 }
 

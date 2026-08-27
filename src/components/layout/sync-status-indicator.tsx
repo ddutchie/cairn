@@ -76,6 +76,8 @@ export function SyncStatusIndicator() {
 
   const { Icon, color, label } = glyph(status.state, status.conflicts, status.pending);
   const spinning = status.state === "syncing";
+  const isSynced = status.connected && status.conflicts === 0 && status.pending === 0 && status.state !== "syncing" && status.state !== "offline" && status.state !== "disabled";
+  const buttonColor = isSynced ? "var(--text-tertiary)" : color;
 
   const onSyncNow = async () => {
     setBusy(true);
@@ -93,11 +95,11 @@ export function SyncStatusIndicator() {
           type="button"
           aria-label={label}
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-1 h-6 px-1.5 rounded-md hover:bg-[var(--surface-2)] transition-colors"
+          className="relative w-7 h-7 grid place-items-center rounded-md border border-transparent text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
         >
-          <Icon size={13} style={{ color }} className={cn(spinning && "animate-spin")} />
+          <Icon size={13} style={{ color: buttonColor }} className={cn(spinning && "animate-spin")} />
           {status.conflicts > 0 && (
-            <span className="text-[0.65rem] font-semibold leading-none" style={{ color: "var(--warning)" }}>
+            <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--warning)] text-[var(--background)] text-[0.6rem] font-bold grid place-items-center leading-none border border-[var(--surface)]">
               {status.conflicts}
             </span>
           )}

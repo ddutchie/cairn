@@ -13,11 +13,17 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2 } from "lucide-react";
+import { X, Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2, MoreHorizontal } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { modKey } from "@/components/layout/sidebar-utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown";
 import { SpawnAgentModal } from "./SpawnAgentModal";
 import { TerminalManager } from "./TerminalManager";
 import { AgentChatPane } from "./AgentChatPane";
@@ -82,6 +88,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [mod] = useState(() => modKey());
   const newMenuRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerOverflows, setHeaderOverflows] = useState(false);
 
   const createNewThread = useCairnStore((s) => s.createNewThread);
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
@@ -152,6 +160,18 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   const persistentSession = terminalSessions.find((t) => t.sessionId === activeCodingSessionId && t.sessionType === "coding");
   const ptySessions = terminalSessions.filter((t) => t.sessionType === "pty");
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      // Collapse to hamburger when panel is narrow (<360) — scrollWidth check flickers when we hide content, so use width threshold
+      setHeaderOverflows(el.clientWidth < 360);
+    });
+    ro.observe(el);
+    setHeaderOverflows(el.clientWidth < 360);
+    return () => ro.disconnect();
+  }, [ptySessions.length, activeSessionId]);
 
   useEffect(() => {
     if (activeSessionId === null) {
@@ -261,20 +281,19 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   return (
     <>
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      {/* Tab bar */}
-      <div className="flex items-center h-11 border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)]">
-        {/* Session switcher — swap between this project's chat/coding/terminal
-            sessions without leaving the chat area. Fills the bar; terminal tabs
-            (when present) sit to its right. */}
-        <SessionBrowser activeSessionId={activeSessionId} variant="dropdown" />
+      {/* Tab bar — instrument header, matches rail grammar */}
+      <div ref={headerRef} className="flex items-center h-11 px-1.5 gap-1.5 border-b border-[var(--border)] overflow-hidden relative z-20 flex-shrink-0 bg-[var(--surface)] shadow-[inset_0_1px_0_rgba(255,255,255,.04)] min-w-0 flex-nowrap">
+        {/* Session switcher — flexes and truncates so + never gets pushed off */}
+        <div className="flex-1 min-w-0 max-w-[220px] truncate">
+          <SessionBrowser activeSessionId={activeSessionId} variant="dropdown" />
+        </div>
         <div
           role="tablist"
           aria-orientation="horizontal"
           aria-label="Terminal tabs"
           className={cn(
-            "flex items-center gap-0 min-w-0 h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-[var(--text-tertiary)] hover:scrollbar-thumb-[var(--text-secondary)] scrollbar-track-transparent [scrollbar-width:thin] [scrollbar-gutter:stable] [scrollbar-color:var(--text-tertiary)_transparent]",
+            "flex items-center gap-1 min-w-0 h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-[var(--text-tertiary)] hover:scrollbar-thumb-[var(--text-secondary)] scrollbar-track-transparent [scrollbar-width:thin] [scrollbar-gutter:stable] [scrollbar-color:var(--text-tertiary)_transparent] py-1",
             ptySessions.length > 0 ? "flex-1" : "flex-shrink-0",
-            // Fade edges when overflowed — scroll affordance at ≥4 tabs
             ptySessions.length >= 4 && "[mask-image:linear-gradient(to_right,transparent,black_8px,black_calc(100%-8px),transparent)]",
           )}
           style={{ scrollbarWidth: "thin", scrollbarColor: "var(--text-tertiary) transparent" }}
@@ -290,8 +309,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           ))}
         </div>
 
-        {/* Unified new-item button */}
-        <div ref={newMenuRef} className="relative flex-shrink-0">
+        {/* Unified new-item button — right-aligned pill */}
+        <div ref={newMenuRef} className="relative flex-shrink-0 ml-auto">
           <Tooltip content="New…" side="bottom">
             <button
               id="unified-new-btn"
@@ -299,13 +318,13 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
               aria-expanded={newMenuOpen}
               onClick={() => setNewMenuOpen((v) => !v)}
               className={cn(
-                "px-3 h-11 flex items-center justify-center transition-colors border-l border-[var(--border)]",
+                "w-7 h-7 rounded-full grid place-items-center border transition-colors",
                 newMenuOpen
-                  ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                  ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)] shadow-sm"
+                  : "bg-[var(--surface-2)] text-[var(--text-tertiary)] border-[var(--border)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] hover:bg-[var(--surface-3)]"
               )}
             >
-              <Plus size={14} strokeWidth={1.75} />
+              <Plus size={12} strokeWidth={1.75} />
             </button>
           </Tooltip>
 
@@ -339,13 +358,13 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           )}
         </div>
 
-        {/* Header Actions */}
-        <div className="flex items-center h-full">
+        {/* Header Actions — pop out + expand, collapse to hamburger when clipped */}
+        <div className={cn("flex items-center gap-1 shrink-0", headerOverflows && "hidden")}>
           {(activeSessionId === "chat" || activeSessionId === "agent" || persistentSession?.sessionId === activeSessionId) && !chatPoppedOut && (
             <Tooltip content="Pop out session window" side="bottom">
               <button
                 onClick={handlePopOut}
-                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+                className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
               >
                 <ExternalLink size={11} />
               </button>
@@ -356,7 +375,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
             <Tooltip content="Expand to central view" side="bottom">
               <button
                 onClick={() => { setSessionPresentation("center"); setView("chat"); }}
-                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+                className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
               >
                 <Maximize2 size={11} />
               </button>
@@ -365,22 +384,48 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
             <Tooltip content={`Collapse to sidebar (${mod}/)`} side="bottom">
               <button
                 onClick={() => { setSessionPresentation("drawer"); setView(lastContentView); }}
-                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+                className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
               >
                 <Minimize2 size={11} />
               </button>
             </Tooltip>
           )}
-
-          <Tooltip content={`Close panel (${mod}/)`} side="bottom">
-            <button
-              onClick={handleClosePanel}
-              className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
-            >
-              <X size={12} />
-            </button>
-          </Tooltip>
         </div>
+
+        {headerOverflows && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="w-7 h-7 rounded-md grid place-items-center border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] shrink-0" aria-label="More actions">
+                <MoreHorizontal size={12} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {(activeSessionId === "chat" || activeSessionId === "agent" || persistentSession?.sessionId === activeSessionId) && !chatPoppedOut && (
+                <DropdownMenuItem onClick={handlePopOut} className="flex items-center gap-2 text-xs">
+                  <ExternalLink size={12} /> Pop out session
+                </DropdownMenuItem>
+              )}
+              {isRightPanel ? (
+                <DropdownMenuItem onClick={() => { setSessionPresentation("center"); setView("chat"); }} className="flex items-center gap-2 text-xs">
+                  <Maximize2 size={12} /> Expand to center
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={() => { setSessionPresentation("drawer"); setView(lastContentView); }} className="flex items-center gap-2 text-xs">
+                  <Minimize2 size={12} /> Collapse to sidebar
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        <Tooltip content={`Close panel (${mod}/)`} side="bottom">
+          <button
+            onClick={handleClosePanel}
+            className="w-7 h-7 rounded-md grid place-items-center border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] hover:border-[var(--muted)] transition-colors shrink-0"
+          >
+            <X size={12} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Session content — CSS-hidden instead of unmounted */}

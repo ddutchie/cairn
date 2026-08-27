@@ -9,7 +9,7 @@ FORM: Grounded #4 control-room console fused with creator-hardware bench — see
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 */
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   FileText,
   Kanban,
@@ -53,8 +53,35 @@ import {
   RecentAutomationRunsFeed,
 } from "./sections";
 import type { TaskCard, ToolType } from "@/types";
+import { ProjectHealthRadar, useRadarAxes } from "./radar";
 
 type FocusFilter = "all" | "today" | "overdue" | "pinned";
+
+function useTilt() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(false);
+  const [transform, setTransform] = useState<React.CSSProperties>({});
+  const raf = useRef<number | null>(null);
+  const onMove = useCallback((e: React.MouseEvent) => {
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const el = ref.current;
+    if (!el) return;
+    if (!active) setActive(true);
+    if (raf.current) cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => {
+      const r = el.getBoundingClientRect();
+      const rx = ((e.clientY - r.top - r.height / 2) / (r.height / 2)) * -2.2;
+      const ry = ((e.clientX - r.left - r.width / 2) / (r.width / 2)) * 2.8;
+      setTransform({ transform: `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg) scale(1.012)`, transition: "transform 0.08s linear" });
+    });
+  }, [active]);
+  const onLeave = useCallback(() => {
+    if (raf.current) cancelAnimationFrame(raf.current);
+    setActive(false);
+    setTransform({ transform: "perspective(900px) rotateX(0) rotateY(0) scale(1)", transition: "transform 0.55s cubic-bezier(.23,1,.32,1)" });
+  }, []);
+  return { ref, transform, onMove, onLeave, active };
+}
 
 function HeaderToolIcons({ projectId, workspaceId }: { projectId: string; workspaceId: string }) {
   const { mcpServers, customServices, toolAttachments, fetchTools, fetchToolAttachments, setToolAttachment, clearToolAttachment } =
@@ -334,6 +361,27 @@ export function ProjectOverview() {
 
   const progressLabel = needsAttention > 0 ? "Progress · needs attention" : "Progress · on track";
 
+  const radarAxes = useRadarAxes({
+    completionRate,
+    openCards,
+    overdueCount,
+    todayCount,
+    notes,
+    pinnedNotes,
+    recentNotes,
+    bottleneck,
+    priorityCounts,
+    columns,
+    allCards,
+    activityByDay,
+  });
+
+  const tiltInstrument = useTilt();
+  const tiltFlow = useTilt();
+  const tiltPriority = useTilt();
+  const tiltRadar = useTilt();
+  const tiltNotes = useTilt();
+
   const overviewContentId = "overview-content";
   const focusLabel: Record<FocusFilter, string> = {
     all: "All",
@@ -346,6 +394,23 @@ export function ProjectOverview() {
     if (!project) return;
     toggleOverviewSection(project.id, key);
   };
+
+  // Focus bar lift — dropshadow when sticky
+  const focusBarRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [isFocusPinned, setIsFocusPinned] = useState(false);
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const bar = focusBarRef.current;
+    if (!sentinel || !bar) return;
+    const scrollRoot = bar.closest(".overflow-y-auto") as HTMLElement | null;
+    const io = new IntersectionObserver(
+      ([entry]) => setIsFocusPinned(!entry.isIntersecting),
+      { root: scrollRoot, threshold: 0, rootMargin: "-8px 0px 0px 0px" }
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, []);
 
   // columns sorted already via hook; ensure done last for display
   const flowColumns = [...columns].sort((a, b) => {
@@ -378,7 +443,7 @@ export function ProjectOverview() {
                 className="w-[52px] h-[52px] rounded-xl flex items-center justify-center flex-shrink-0 border border-[var(--border)]"
                 style={{
                   background: "linear-gradient(180deg, var(--surface-2), var(--surface-3))",
-                  boxShadow: "0 10px 28px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06)",
+                  boxShadow: "0 4px 12px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.06)",
                   color: "var(--text-secondary)",
                 }}
                 aria-hidden="true"
@@ -455,10 +520,13 @@ export function ProjectOverview() {
               </div>
             </div>
 
-            {/* instrument */}
+            {/* instrument — lift + tilt on hover */}
             <div
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full lg:w-[360px] flex-shrink-0"
-              style={{ boxShadow: "0 12px 32px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)" }}
+              ref={tiltInstrument.ref}
+              onMouseMove={tiltInstrument.onMove}
+              onMouseLeave={tiltInstrument.onLeave}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full lg:w-[360px] flex-shrink-0 will-change-transform"
+              style={{ boxShadow: tiltInstrument.active ? "0 14px 36px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.06)" : "0 6px 20px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.04)", ...tiltInstrument.transform }}
             >
               <div
                 aria-hidden="true"
@@ -490,7 +558,7 @@ export function ProjectOverview() {
                   className="w-[74px] h-[74px] rounded-full grid place-items-center flex-shrink-0 border border-[var(--border)] relative"
                   style={{
                     background: "radial-gradient(120px 80px at 30% 30%, var(--surface-3), var(--surface-2))",
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 8px 18px rgba(0,0,0,.45)",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 4px 10px rgba(0,0,0,.22)",
                   }}
                   aria-hidden="true"
                 >
@@ -561,9 +629,15 @@ export function ProjectOverview() {
             </div>
           </div>
 
+          {/* sentinel for pin detection */}
+          <div ref={sentinelRef} aria-hidden="true" className="h-px" />
           {/* ── focus bar (sticky) — actually filters content below ── */}
           <div
-            className="sticky top-2 z-[5] flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] mb-4 flex-wrap"
+            ref={focusBarRef}
+            className={cn(
+              "sticky top-2 z-[5] flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] mb-4 flex-wrap transition-shadow",
+              isFocusPinned && "shadow-[0_8px_24px_rgba(0,0,0,.32),inset_0_1px_0_rgba(255,255,255,.04)]"
+            )}
             style={{ backdropFilter: "blur(8px)" }}
             role="toolbar"
             aria-label="Focus filters"
@@ -749,7 +823,13 @@ export function ProjectOverview() {
 
           {/* ── bento: task flow + priority ───────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_0.95fr] gap-3.5 mb-3.5">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]" style={{ boxShadow: "0 8px 24px rgba(0,0,0,.28)" }}>
+            <div
+              ref={tiltFlow.ref}
+              onMouseMove={tiltFlow.onMove}
+              onMouseLeave={tiltFlow.onLeave}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px] will-change-transform"
+              style={{ boxShadow: tiltFlow.active ? "0 14px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04)" : "0 8px 24px rgba(0,0,0,.14)", ...tiltFlow.transform }}
+            >
               <div className="flex items-center gap-3 mb-3">
                 <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
                   <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-[0.625rem] leading-none">
@@ -821,7 +901,13 @@ export function ProjectOverview() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]" style={{ boxShadow: "0 8px 24px rgba(0,0,0,.28)" }}>
+            <div
+              ref={tiltPriority.ref}
+              onMouseMove={tiltPriority.onMove}
+              onMouseLeave={tiltPriority.onLeave}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px] will-change-transform"
+              style={{ boxShadow: tiltPriority.active ? "0 14px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04)" : "0 8px 24px rgba(0,0,0,.14)", ...tiltPriority.transform }}
+            >
               <div className="flex items-center gap-3 mb-3">
                 <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
                   <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
@@ -879,9 +965,26 @@ export function ProjectOverview() {
             </div>
           </div>
 
+          {/* ── project health radar — 6-axis instrument, same data as KPIs but shape reads balance at a glance ── */}
+          <div
+            ref={tiltRadar.ref}
+            onMouseMove={tiltRadar.onMove}
+            onMouseLeave={tiltRadar.onLeave}
+            className="mb-3.5 will-change-transform"
+            style={{ ...tiltRadar.transform, filter: tiltRadar.active ? "drop-shadow(0 12px 24px rgba(0,0,0,.16))" : undefined }}
+          >
+            <ProjectHealthRadar axes={radarAxes} size={280} />
+          </div>
+
           {/* ── notes summary — single CTA, replaces two All notes links ── */}
           <div className="mb-3.5">
-            <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px rgba(0,0,0,.2)" }}>
+            <div
+              ref={tiltNotes.ref}
+              onMouseMove={tiltNotes.onMove}
+              onMouseLeave={tiltNotes.onLeave}
+              className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px] will-change-transform"
+              style={{ boxShadow: tiltNotes.active ? "0 12px 28px rgba(0,0,0,.18)" : "0 4px 14px rgba(0,0,0,.12)", ...tiltNotes.transform }}
+            >
               <div className="flex items-center justify-between gap-3 mb-4">
                 <h2 className="text-[0.813rem] font-semibold flex items-center gap-2">
                   <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
