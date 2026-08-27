@@ -261,19 +261,22 @@ export function ProjectOverview() {
   const needsAttention = overdueCount + todayCount;
 
   // bottleneck: column with most open cards (excluding done)
-  const doneColId = columns.find((c) => c.type === "done")?.id;
-  const openColumns = columns.filter((c) => c.id !== doneColId);
-  let bottleneck: { name: string; count: number } | null = null;
-  if (openColumns.length > 0) {
-    let max = -1;
-    for (const col of openColumns) {
-      const count = allCards.filter((c) => c.columnId === col.id).length;
-      if (count > max) {
-        max = count;
-        bottleneck = { name: col.name, count };
+  const bottleneck = useMemo<{ name: string; count: number } | null>(() => {
+    const doneColId = columns.find((c) => c.type === "done")?.id;
+    const openColumns = columns.filter((c) => c.id !== doneColId);
+    let best: { name: string; count: number } | null = null;
+    if (openColumns.length > 0) {
+      let max = -1;
+      for (const col of openColumns) {
+        const count = allCards.filter((c) => c.columnId === col.id).length;
+        if (count > max) {
+          max = count;
+          best = { name: col.name, count };
+        }
       }
     }
-  }
+    return best;
+  }, [columns, allCards]);
 
   // attention queue: overdue (by due asc) → today → upcoming (soonest future)
   const overdueCards = useMemo(() => dueCards.filter((c) => getDueDateStatus(c.dueDate) === "overdue"), [dueCards]);
@@ -322,12 +325,12 @@ export function ProjectOverview() {
   const instrumentTotal = allCards.length;
 
   // filter-aware counts for bar label
-  const focusCounts: Record<FocusFilter, number> = {
+  const focusCounts = useMemo<Record<FocusFilter, number>>(() => ({
     all: openCards.length,
     today: todayCount,
     overdue: overdueCount,
     pinned: pinnedNotes.length,
-  };
+  }), [openCards.length, todayCount, overdueCount, pinnedNotes.length]);
 
   const filteredQueue = useMemo(() => {
     if (!metrics) return [];
@@ -531,8 +534,8 @@ export function ProjectOverview() {
               ref={instrumentRef}
               onMouseMove={tiltInstrument.onMove}
               onMouseLeave={tiltInstrument.onLeave}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full lg:w-[360px] flex-shrink-0 will-change-transform"
-              style={{ boxShadow: tiltInstrument.active ? "0 14px 36px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.06)" : "0 6px 20px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.04)", ...tiltInstrument.transform }}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full lg:w-[360px] flex-shrink-0"
+              style={{ willChange: tiltInstrument.active ? "transform" : undefined, boxShadow: tiltInstrument.active ? "0 14px 36px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.06)" : "0 6px 20px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.04)", ...tiltInstrument.transform }}
             >
               <div
                 aria-hidden="true"
@@ -645,7 +648,7 @@ export function ProjectOverview() {
               isFocusPinned && "shadow-[0_8px_24px_rgba(0,0,0,.32),inset_0_1px_0_rgba(255,255,255,.04)]"
             )}
             style={{ backdropFilter: "blur(8px)" }}
-            role="toolbar"
+            role="group"
             aria-label="Focus filters"
             aria-controls={overviewContentId}
           >
@@ -833,8 +836,8 @@ export function ProjectOverview() {
               ref={flowRef}
               onMouseMove={tiltFlow.onMove}
               onMouseLeave={tiltFlow.onLeave}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px] will-change-transform"
-              style={{ boxShadow: tiltFlow.active ? "0 14px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04)" : "0 8px 24px rgba(0,0,0,.14)", ...tiltFlow.transform }}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]"
+              style={{ willChange: tiltFlow.active ? "transform" : undefined, boxShadow: tiltFlow.active ? "0 14px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04)" : "0 8px 24px rgba(0,0,0,.14)", ...tiltFlow.transform }}
             >
               <div className="flex items-center gap-3 mb-3">
                 <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
@@ -911,8 +914,8 @@ export function ProjectOverview() {
               ref={priorityRef}
               onMouseMove={tiltPriority.onMove}
               onMouseLeave={tiltPriority.onLeave}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px] will-change-transform"
-              style={{ boxShadow: tiltPriority.active ? "0 14px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04)" : "0 8px 24px rgba(0,0,0,.14)", ...tiltPriority.transform }}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]"
+              style={{ willChange: tiltPriority.active ? "transform" : undefined, boxShadow: tiltPriority.active ? "0 14px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04)" : "0 8px 24px rgba(0,0,0,.14)", ...tiltPriority.transform }}
             >
               <div className="flex items-center gap-3 mb-3">
                 <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
@@ -976,8 +979,8 @@ export function ProjectOverview() {
             ref={radarRef}
             onMouseMove={tiltRadar.onMove}
             onMouseLeave={tiltRadar.onLeave}
-            className="mb-3.5 will-change-transform"
-            style={{ ...tiltRadar.transform, filter: tiltRadar.active ? "drop-shadow(0 12px 24px rgba(0,0,0,.16))" : undefined }}
+            className="mb-3.5"
+            style={{ willChange: tiltRadar.active ? "transform" : undefined, ...tiltRadar.transform, filter: tiltRadar.active ? "drop-shadow(0 12px 24px rgba(0,0,0,.16))" : undefined }}
           >
             <ProjectHealthRadar axes={radarAxes} size={280} />
           </div>
@@ -988,8 +991,8 @@ export function ProjectOverview() {
               ref={notesRef}
               onMouseMove={tiltNotes.onMove}
               onMouseLeave={tiltNotes.onLeave}
-              className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px] will-change-transform"
-              style={{ boxShadow: tiltNotes.active ? "0 12px 28px rgba(0,0,0,.18)" : "0 4px 14px rgba(0,0,0,.12)", ...tiltNotes.transform }}
+              className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]"
+              style={{ willChange: tiltNotes.active ? "transform" : undefined, boxShadow: tiltNotes.active ? "0 12px 28px rgba(0,0,0,.18)" : "0 4px 14px rgba(0,0,0,.12)", ...tiltNotes.transform }}
             >
               <div className="flex items-center justify-between gap-3 mb-4">
                 <h2 className="text-[0.813rem] font-semibold flex items-center gap-2">

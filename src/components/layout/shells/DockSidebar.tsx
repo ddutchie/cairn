@@ -87,13 +87,13 @@ export function DockSidebar() {
       )}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-hidden md:static md:translate-x-0 transition-all duration-300 ease-in-out",
+          "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-hidden md:static md:translate-x-0 transition-[width,transform,opacity] duration-300 ease-in-out",
           collapsed ? "w-12 py-3 gap-1" : "w-[244px]"
         )}
         style={{ top: 44 }}
       >
         {/* collapsed dock */}
-        <div className={cn("flex flex-col items-center gap-1 w-full flex-1 min-h-0 transition-opacity duration-300", collapsed ? "opacity-100" : "opacity-0 pointer-events-none absolute inset-x-0 top-3")}>
+        <div aria-hidden={!collapsed} inert={!collapsed ? true : undefined} className={cn("flex flex-col items-center gap-1 w-full flex-1 min-h-0 transition-opacity duration-300", collapsed ? "opacity-100" : "opacity-0 pointer-events-none absolute inset-x-0 top-3")}>
           <Tooltip content="Expand sidebar" side="right">
             <button aria-label="Expand sidebar" onClick={toggleSidebar} className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
               <Layers size={16} />
@@ -136,7 +136,7 @@ export function DockSidebar() {
         </div>
 
         {/* expanded */}
-        <div className={cn("flex flex-col flex-1 min-h-0 w-full transition-opacity duration-300", collapsed ? "opacity-0 pointer-events-none absolute inset-x-0 top-0 h-0 overflow-hidden" : "opacity-100")}>
+        <div aria-hidden={collapsed} inert={collapsed ? true : undefined} className={cn("flex flex-col flex-1 min-h-0 w-full transition-opacity duration-300", collapsed ? "opacity-0 pointer-events-none absolute inset-x-0 top-0 h-0 overflow-hidden" : "opacity-100")}>
           {/* workspace header */}
           <div className="flex items-center gap-2 px-3 h-11 border-b border-[var(--border-subtle)] flex-shrink-0">
             <WorkspaceIcon name={workspace?.icon} size={16} className="text-[var(--text-tertiary)]" />
@@ -244,7 +244,7 @@ export function DockSidebar() {
             </button>
             {!hiddenViews.has("graph") && <button onClick={() => setView("graph")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "graph" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={13} /><span>Knowledge Graph</span></button>}
             {!hiddenViews.has("insights") && <button onClick={() => setView("insights")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "insights" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={13} /><span>Insights</span></button>}
-            {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 rounded-md text-xs transition-colors", activeView === "usage" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}
+            {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors", activeView === "usage" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}
             <button onClick={() => setNotificationOpen(!notificationOpen)} data-notification-toggle aria-expanded={notificationOpen} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Bell size={13} /><span>Notifications</span>
               {notificationUnreadCount > 0 && <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">{notificationUnreadCount}</span>}
