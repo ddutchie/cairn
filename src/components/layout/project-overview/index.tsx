@@ -421,6 +421,7 @@ export function ProjectOverview() {
     return () => io.disconnect();
   }, []);
 
+  const doneColId = useMemo(() => columns.find((c) => c.type === "done")?.id, [columns]);
   // columns sorted already via hook; ensure done last for display
   const flowColumns = [...columns].sort((a, b) => {
     const order = ["backlog", "todo", "in_progress", "review", "done"];
