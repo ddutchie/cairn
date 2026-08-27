@@ -1,13 +1,13 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
 import type { LLMConfig } from "../lib/llm";
-import { resolveTransport, type ApiMode } from "../lib/llm-transport";
+import { type ApiMode } from "../lib/llm-transport";
 import type { Database } from "better-sqlite3";
 import type { ChatRequest } from "../lib/tools";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnQuestionsPlugin } from "./cairn-plugins";
 
 let piAiDisposer: (() => Promise<void>) | null = null;
-let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number; reasoning?: boolean } | null = null;
+let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" | "anthropic-messages"; contextWindow?: number; maxTokens?: number; reasoning?: boolean } | null = null;
 
 export interface CordisDisposerStack {
   mount: (ctx: Context, plugin: unknown, config?: unknown) => Promise<void>;
@@ -93,25 +93,33 @@ export async function prepareCordisRuntime(ctx: Context, input: LLMConfig): Prom
     const port = await ensureLlamaServerRunning();
     llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
   }
-  const t0 = timing ? Date.now() : 0;
-  const transport = await resolveTransport(llmConfig.baseUrl, llmConfig.apiKey);
-  if (timing) console.log(`[timing] prepareCordisRuntime: resolveTransport ${Date.now() - t0}ms`);
+  // Explicit wire protocol — Cairn never auto-probes for the Cordis path. The
+  // provider pins apiMode (default "completions"); mapping it directly keeps the
+  // api STABLE across restarts so the resumed session log's replay state (tagged
+  // with the api it was written under) is never replayed into a different api.
+  const piApi = llmConfig.apiMode === "responses" ? "openai-responses"
+    : llmConfig.apiMode === "anthropic-messages" ? "anthropic-messages"
+    : "openai-completions";
   const t1 = timing ? Date.now() : 0;
   await ensureAgentAiAdapter(ctx, {
     baseUrl: llmConfig.baseUrl,
     model: llmConfig.model,
     apiKey: llmConfig.apiKey,
-    api: transport.mode === "responses" ? "openai-responses" : "openai-completions",
+    api: piApi,
     contextWindow: llmConfig.contextWindow,
     maxTokens: llmConfig.maxTokens,
     reasoning: llmConfig.isReasoningModel === true,
   });
   if (timing) console.log(`[timing] prepareCordisRuntime: ensureAgentAiAdapter ${Date.now() - t1}ms`);
-  return { llmConfig, transport: transport.mode };
+  // `transport` is the OpenAI-wire mode used by the chat runner's legacy
+  // responses→completions fallback; anthropic-messages has no OpenAI fallback so
+  // it reports "completions" there (the fallback simply won't trigger for it).
+  const transport: ApiMode = llmConfig.apiMode === "responses" ? "responses" : "completions";
+  return { llmConfig, transport };
 }
 
 /** Mount or update the Cairn provider route for the current model endpoint. */
-export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses"; contextWindow?: number; maxTokens?: number; reasoning?: boolean }): Promise<void> {
+export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" | "anthropic-messages"; contextWindow?: number; maxTokens?: number; reasoning?: boolean }): Promise<void> {
   const same = piAiDisposer && lastPiAiConfig
     && lastPiAiConfig.baseUrl === config.baseUrl
     && lastPiAiConfig.model === config.model

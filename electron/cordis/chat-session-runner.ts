@@ -8,9 +8,7 @@ import { extractCairnRef } from "./session-replay";
 import { openCordisSessionAgent } from "./session-agent";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import { runCordisSession } from "./session-runner";
-import { ensureAgentAiAdapter } from "./session-runtime";
 import { buildSystemPrompt, withPersonality } from "../lib/tools";
-import { markCompletionsOnly, readCachedMode } from "../lib/llm-transport";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta } from "./cordis-context";
 import { foldSessionUsage } from "./plugins/context-ring";
@@ -303,24 +301,13 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       throw err;
     }
   }
-  if (attempt.failedKind && !attempt.text && !attempt.reasoning && readCachedMode(llmConfig.baseUrl) === "responses" && !liveText) {
-    if (TIMING) console.log(`[timing] ⚠️ responses attempt produced nothing → downgrading to completions and RE-RUNNING the whole turn (doubles latency)`);
-    markCompletionsOnly(llmConfig.baseUrl);
-    await ensureAgentAiAdapter(ctx, { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, api: "openai-completions", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens, reasoning: llmConfig.isReasoningModel === true });
-    liveText = "";
-    liveReasoning = "";
-    try {
-      attempt = await runAttempt();
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("while it is live")) {
-        console.warn("[chat] retrying live session after drop (2nd attempt)", (err as Error).message);
-        await dropChatAgentForThread(req.threadId);
-        attempt = await runAttempt();
-      } else {
-        throw err;
-      }
-    }
-  }
+  // NOTE: the old responses→completions auto-downgrade was removed. It existed
+  // to recover from a wrong transport probe, but Cairn now pins the wire
+  // protocol explicitly per provider (apiMode, default completions) and never
+  // probes — so silently switching protocols mid-session would only REINTRODUCE
+  // the cross-API replay corruption this change eliminates. A pinned-protocol
+  // failure surfaces (and dsh's own retryPolicy already handles transient
+  // transport errors within the same protocol).
   const content = liveText || attempt.text;
   const reasoning = liveReasoning || attempt.reasoning;
   if (opts.onUsage && (attempt.pt > 0 || attempt.ct > 0)) opts.onUsage(attempt.pt, attempt.ct, attempt.rt);

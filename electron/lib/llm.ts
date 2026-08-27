@@ -90,6 +90,11 @@ export interface LLMConfig {
    *  instead of treating the hand-declared model as non-reasoning (which makes
    *  any explicit effort throw UNSUPPORTED_REASONING_EFFORT). */
   isReasoningModel?: boolean;
+  /** Explicit wire protocol for this endpoint (Cairn never auto-probes for the
+   *  Cordis path). Maps to the pi-ai `api`: completions→openai-completions,
+   *  responses→openai-responses, anthropic-messages→anthropic-messages. Absent =
+   *  completions. */
+  apiMode?: "responses" | "completions" | "anthropic-messages";
 }
 
 export type OpenAIMessage = {

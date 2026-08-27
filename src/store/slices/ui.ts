@@ -51,7 +51,20 @@ export interface SavedProvider {
   source?: "manual" | "community";
   /** Community catalog id when `source === "community"` — dedups re-installs. */
   communityId?: string;
+  /**
+   * Wire protocol for this endpoint. EXPLICIT, never auto-probed: Cairn defaults
+   * to "completions" (the universally-supported chat-completions surface) and
+   * only uses "responses" or "anthropic-messages" when the user opts in.
+   * Auto-probing was removed because a transient failure could flip the transport
+   * across restarts, corrupting cross-API replay of the resumed session log.
+   * Absent = "completions".
+   */
+  apiMode?: ApiMode;
 }
+
+/** OpenAI-compatible / Anthropic wire protocol for a provider endpoint.
+ *  Explicit — Cairn never auto-probes. */
+export type ApiMode = "responses" | "completions" | "anthropic-messages";
 
 /**
  * An installed chat personality — a set of behavioral rules appended to the

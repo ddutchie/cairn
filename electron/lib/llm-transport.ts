@@ -181,7 +181,19 @@ export async function resolveTransport(
   baseUrl: string,
   apiKey = "",
   probe: (baseUrl: string, apiKey: string) => Promise<boolean> = probeResponses,
+  explicitMode?: ApiMode,
 ): Promise<LlmTransport> {
+  // Explicit mode wins — Cairn pins the wire protocol per provider (default
+  // "completions") and never auto-probes for chat/agent turns. This keeps the
+  // transport STABLE across restarts, so the resumed session log's replay state
+  // (tagged with the api it was written under) can never be replayed into a
+  // different api and corrupt the request. Probing is retained only as a
+  // fallback for callers that don't pin a mode.
+  if (explicitMode) {
+    recordMode(baseUrl, explicitMode);
+    return explicitMode === "responses" ? RESPONSES_TRANSPORT : COMPLETIONS_TRANSPORT;
+  }
+
   const key = cacheKey(baseUrl);
   const cached = capability.get(key);
   if (cached) return cached === "responses" ? RESPONSES_TRANSPORT : COMPLETIONS_TRANSPORT;

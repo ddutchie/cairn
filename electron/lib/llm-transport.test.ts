@@ -79,6 +79,16 @@ describe("probeResponses", () => {
 });
 
 describe("resolveTransport", () => {
+  it("honors an explicit mode without probing (the pinned-apiMode fast path)", async () => {
+    const probe = vi.fn().mockResolvedValue(true);
+    const comp = await resolveTransport("http://localhost:3042/v1", "", probe, "completions");
+    expect(comp).toBe(COMPLETIONS_TRANSPORT);
+    const resp = await resolveTransport("http://localhost:3042/v1", "", probe, "responses");
+    expect(resp).toBe(RESPONSES_TRANSPORT);
+    // Pinned mode must never probe — that's the whole point (no flip-flop).
+    expect(probe).not.toHaveBeenCalled();
+  });
+
   it("returns responses for OpenAI-native endpoints without probing", async () => {
     const t = await resolveTransport("https://api.openai.com");
     expect(t).toBe(RESPONSES_TRANSPORT);

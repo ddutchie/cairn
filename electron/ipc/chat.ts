@@ -225,6 +225,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
             maxTokens: req.config?.maxTokens,
             reasoningEffort: req.config?.reasoningEffort,
             isReasoningModel: req.config?.isReasoningModel,
+            apiMode: req.config?.apiMode,
           },
           signal: abortCtrl.signal,
            onUsage: addUsage,

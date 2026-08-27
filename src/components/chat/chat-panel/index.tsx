@@ -680,6 +680,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         // Only send reasoning effort to reasoning-capable models — otherwise the
         // provider rejects/ignores the field. Chat defaults are set in the store.
         reasoningEffort: getModelInfo(aiConfig.model)?.reasoning === true ? aiConfig.reasoningEffort : undefined,
+        // Explicit wire protocol pinned on the active provider (default completions).
+        apiMode: (aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode) ?? "completions",
         contextLimit: aiConfig.contextLimit,
         contextWindow: aiConfig.contextLimit,
       },
