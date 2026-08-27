@@ -72,11 +72,15 @@ export function useSessionRunningIds(active: boolean): Set<string> {
     subscribers += 1;
     listeners.add(setIds);
     // Push current shared value immediately so late subscribers don't wait 2s.
-    queueMicrotask(() => setIds(new Set(sharedIds)));
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled && listeners.has(setIds)) setIds(new Set(sharedIds));
+    });
     ensureVisibilityListener();
     if (!document.hidden) startTimer();
 
     return () => {
+      cancelled = true;
       subscribers = Math.max(0, subscribers - 1);
       listeners.delete(setIds);
       if (subscribers === 0) stopTimer();

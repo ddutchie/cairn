@@ -9,14 +9,14 @@ import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
 import { countOpenCardsByProject } from "../sidebar-utils";
 
 export function StudioSidebar() {
-  const { activeWorkspaceId, activeProjectId, activeView, workspaces, getWorkspaceProjects, setActiveProject, setView, cards, hiddenViews, toggleSidebar } =
+  const { activeWorkspaceId, activeProjectId, activeView, workspaces, projects: allProjects, setActiveProject, setView, cards, hiddenViews, toggleSidebar } =
     useCairnStore(
       useShallow((s) => ({
         activeWorkspaceId: s.activeWorkspaceId,
         activeProjectId: s.activeProjectId,
         activeView: s.activeView,
         workspaces: s.workspaces,
-        getWorkspaceProjects: s.getWorkspaceProjects,
+        projects: s.projects,
         setActiveProject: s.setActiveProject,
         setView: s.setView,
         cards: s.cards,
@@ -26,7 +26,7 @@ export function StudioSidebar() {
     );
 
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
-  const projects = useMemo(() => (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : []), [activeWorkspaceId, getWorkspaceProjects]);
+  const projects = useMemo(() => (activeWorkspaceId ? allProjects.filter((p) => p.workspaceId === activeWorkspaceId) : []), [activeWorkspaceId, allProjects]);
   const openCounts = useMemo(() => countOpenCardsByProject(cards), [cards]);
   const activeProject = projects.find((p) => p.id === activeProjectId);
 

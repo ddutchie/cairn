@@ -46,7 +46,8 @@ export function ProjectHealthRadar({
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-shrink-0 overflow-visible mr-2" role="img" aria-label="Project health radar">
+        <div className="w-full max-w-[280px] aspect-square flex-shrink-0 mr-2">
+          <svg width="100%" height="100%" viewBox={`0 0 ${size} ${size}`} className="overflow-visible block" role="img" aria-label="Project health radar">
           {/* rings */}
           {rings.map((pts, i) => (
             <polygon key={i} points={pts} fill="none" stroke="var(--border)" strokeWidth={i === levels - 1 ? 1.25 : 1} opacity={i === levels - 1 ? 0.9 : 0.5} />
@@ -85,6 +86,7 @@ export function ProjectHealthRadar({
           {/* center */}
           <circle cx={cx} cy={cy} r={2} fill="var(--text-tertiary)" opacity={0.6} />
         </svg>
+        </div>
 
         <div className="flex-1 min-w-0 w-full">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">

@@ -64,7 +64,7 @@ function useTilt(targetRef: React.RefObject<HTMLDivElement | null>) {
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const el = targetRef.current;
     if (!el) return;
-    if (!active) setActive(true);
+    setActive(true);
     if (raf.current) cancelAnimationFrame(raf.current);
     raf.current = requestAnimationFrame(() => {
       const r = el.getBoundingClientRect();
@@ -72,12 +72,13 @@ function useTilt(targetRef: React.RefObject<HTMLDivElement | null>) {
       const ry = ((e.clientX - r.left - r.width / 2) / (r.width / 2)) * 2.8;
       setTransform({ transform: `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg) scale(1.012)`, transition: "transform 0.08s linear" });
     });
-  }, [active, targetRef]);
+  }, [targetRef]);
   const onLeave = useCallback(() => {
     if (raf.current) cancelAnimationFrame(raf.current);
     setActive(false);
     setTransform({ transform: "perspective(900px) rotateX(0) rotateY(0) scale(1)", transition: "transform 0.55s cubic-bezier(.23,1,.32,1)" });
   }, []);
+  useEffect(() => () => { if (raf.current) cancelAnimationFrame(raf.current); }, []);
   return { transform, onMove, onLeave, active };
 }
 

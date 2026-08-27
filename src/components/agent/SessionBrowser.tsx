@@ -110,6 +110,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpen(false);
         setQuery("");
+        triggerRef.current?.focus({ preventScroll: true });
       }
     };
     // Document Escape always closes and returns focus — the input's own

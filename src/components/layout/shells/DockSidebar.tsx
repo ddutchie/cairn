@@ -22,7 +22,7 @@ export function DockSidebar() {
     activeSessionId,
     activeView,
     workspaces,
-    getWorkspaceProjects,
+    projects: allProjects,
     setActiveProject,
     setView,
     toggleSearch,
@@ -44,7 +44,7 @@ export function DockSidebar() {
       activeSessionId: s.activeSessionId,
       activeView: s.activeView,
       workspaces: s.workspaces,
-      getWorkspaceProjects: s.getWorkspaceProjects,
+      projects: s.projects,
       setActiveProject: s.setActiveProject,
       setView: s.setView,
       toggleSearch: s.toggleSearch,
@@ -61,7 +61,7 @@ export function DockSidebar() {
   );
 
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
-  const projects = useMemo(() => (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : []), [activeWorkspaceId, getWorkspaceProjects]);
+  const projects = useMemo(() => (activeWorkspaceId ? allProjects.filter((p) => p.workspaceId === activeWorkspaceId) : []), [activeWorkspaceId, allProjects]);
   const openCounts = useMemo(() => countOpenCardsByProject(cards), [cards]);
 
   const [creatingProject, setCreatingProject] = useState(false);
@@ -101,7 +101,7 @@ export function DockSidebar() {
           </Tooltip>
           {activeProjectId && (
             <Tooltip content="Health" side="right">
-              <button className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
+              <button aria-label="Project health" className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
                 <SidebarMiniRadar projectId={activeProjectId} size={20} bare />
               </button>
             </Tooltip>
