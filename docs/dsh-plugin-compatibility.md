@@ -53,7 +53,7 @@ the installed `@deepseek-ai/*` versions).
 | `permissionPresets` | `dsh-permission-presets` | dep present and mounted via `ctx.plugin` but inject-gated on `shell` → stalls without `shell` |
 | `sessionProjection*` | `dsh-session-projection` | `sessionProjections` mounted globally; `sessionProjectionCache` (needs `storageDomain`) would improve cold-list perf |
 | `codeRuntime` | `dsh-code-runtime` | code exec transport — not needed in `native` tools mode |
-| `spillStore` | `dsh-spill` + `dsh-spill-local` + `dsh-spill-policy` | **not installed** — oversized tool output stays inline (no `spillStore.saveText`); adding the trio makes `fs/tool-fs-search` spill instead of blowing context |
+| `spillStore` | `dsh-spill` + `dsh-spill-local` + `dsh-spill-policy` | **now mounted** — `LocalSpillStore` (`root: <userData>/spill`) + `spill-policy maxInlineBytes:32768` bounds oversized `tool-fs-search` output to preview+locator |
 | `authorization` | `dsh-authorization` | permission checks |
 
 ## Shell-only / web-host (🚫 not provided — plugins using these degrade gracefully)

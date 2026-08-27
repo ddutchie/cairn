@@ -154,6 +154,60 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
         adapterRef.current.onTurnEnd?.(reason, snapshot);
         resetTransient();
       },
+      onCommand: (phase, data) => {
+        const name = String(data.name ?? data.command ?? "command");
+        const line = String(data.line ?? data.text ?? name);
+        if (phase === "run") {
+          const next = appendSessionToolCall(toolsRef.current, { name: `/${name}`, args: { line }, callId: String(data.id ?? data.commandId ?? `cmd-${Date.now()}`) });
+          toolsRef.current = next; setToolCalls(next);
+        } else {
+          const callId = String((data as Record<string, unknown>).id ?? (data as Record<string, unknown>).commandId ?? "");
+          const dataRec = data as Record<string, unknown>;
+          const resultRec = dataRec.result as Record<string, unknown> | undefined;
+          const output = typeof dataRec.text === "string" ? (dataRec.text as string) : typeof resultRec?.text === "string" ? (resultRec.text as string) : undefined;
+          const ok = dataRec.kind === "success" || resultRec?.kind === "success";
+          const result = { callId: callId || undefined, name: `/${name}`, output, error: ok ? undefined : output, ok: ok !== false } as import("../../shared/agent/session-event-fold").FoldedToolResult;
+          if (callId) {
+            const next = resolveSessionToolResult(toolsRef.current, result);
+            toolsRef.current = next; setToolCalls(next);
+          }
+        }
+      },
+      onPlanMode: (active) => {
+        const label = active ? "Entering plan mode" : "Leaving plan mode";
+        const next = appendSessionToolCall(toolsRef.current, { name: `plan:${active ? "on" : "off"}`, args: { status: label }, callId: `plan-${Date.now()}` });
+        toolsRef.current = next; setToolCalls(next);
+        // auto-resolve after short delay to show as done
+        setTimeout(() => {
+          const done = resolveSessionToolResult(toolsRef.current, { callId: `plan-${Date.now()}`, name: `plan:${active ? "on" : "off"}`, ok: true, output: label } as never);
+          // best-effort: find last plan: entry and mark done
+          const last = toolsRef.current[toolsRef.current.length - 1];
+          if (last?.tool.startsWith("plan:")) {
+            const updated = toolsRef.current.map((t, i) => i === toolsRef.current.length - 1 ? { ...t, status: "done" as const, output: label, ok: true } : t);
+            toolsRef.current = updated; setToolCalls(updated);
+          }
+        }, 50);
+      },
+      onRetry: (data) => {
+        const attempt = String(data.attempt ?? data.retry ?? "?");
+        const next = appendSessionToolCall(toolsRef.current, { name: "retry", args: { attempt, error: String(data.error ?? data.message ?? "") }, callId: `retry-${Date.now()}` });
+        toolsRef.current = next; setToolCalls(next);
+        setTimeout(() => {
+          const resolved = resolveSessionToolResult(toolsRef.current, { callId: next[next.length - 1]?.callId, name: "retry", ok: true, output: `Retry ${attempt} scheduled` } as never);
+          toolsRef.current = resolved; setToolCalls(resolved);
+        }, 10);
+      },
+      onCompaction: (status) => {
+        const label = status === "start" ? "Compacting context…" : status === "summary" ? "Summarizing…" : "Compaction done";
+        const next = appendSessionToolCall(toolsRef.current, { name: `compact:${status}`, args: { status: label }, callId: `compact-${Date.now()}` });
+        toolsRef.current = next; setToolCalls(next);
+        if (status === "end") {
+          setTimeout(() => {
+            const resolved = toolsRef.current.map((t) => t.tool.startsWith("compact:") && t.status === "running" ? { ...t, status: "done" as const, ok: true } : t);
+            toolsRef.current = resolved; setToolCalls(resolved);
+          }, 300);
+        }
+      },
     });
     const unsubscribeEvent = electron.session.onEvent((envelope: SessionEventEnvelope) => { if (matches(envelope.sessionId)) fold(envelope.event); });
     const unsubscribeProjection = electron.session.onProjection((projection: SessionProjection) => {

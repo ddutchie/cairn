@@ -22,6 +22,8 @@ import planModePlugin from "@deepseek-ai/dsh-plan-mode";
 import { apply as toolSkillApply, inject as toolSkillInject, name as toolSkillName } from "@deepseek-ai/dsh-tool-skill";
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
 import { LocalAttachmentStore } from "@deepseek-ai/dsh-attachment-local";
+import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
+import * as SpillPolicy from "@deepseek-ai/dsh-spill-policy";
 import { app as electronApp } from "electron";
 import path from "path";
 import { createCairnSkillProvider } from "./cairn-skill-provider";
@@ -75,6 +77,8 @@ export async function getContext(): Promise<Context> {
     B["dsh:commands"] = CommandRuntime;
     B["dsh:plan-mode"] = planModePlugin;
     B["cairn:attachment-store"] = LocalAttachmentStore;
+    B["dsh:spill"] = LocalSpillStore;
+    B["dsh:spill-policy"] = SpillPolicy;
     B["cairn:llm-retry"] = { apply: llmRetryApply, inject: llmRetryInject, name: llmRetryName };
     B["cairn:subagent-spawn"] = { apply: spawnProviderApply, inject: spawnProviderInject, name: spawnProviderName };
     B["cairn:tool-subagent"] = { apply: toolSubagentApply, inject: toolSubagentInject, name: toolSubagentName };
@@ -89,6 +93,8 @@ export async function getContext(): Promise<Context> {
       { id: "session-persistence", name: "cordis:dsh:session-persistence", config: { root: sessionRoot } },
       { id: "agent-loop", name: "cordis:dsh:agent-loop", config: { agents: [] } },
       { id: "attachment-store", name: "cordis:cairn:attachment-store", config: { dshHome: path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "dsh") } },
+      { id: "spill", name: "cordis:dsh:spill", config: { root: path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "spill") } },
+      { id: "spill-policy", name: "cordis:dsh:spill-policy", config: { maxInlineBytes: 32768 } },
       { id: "token-meter", name: "cordis:dsh:token-meter" },
       { id: "compaction", name: "cordis:dsh:compaction", config: { auto: true, thresholdRatio: 0.8 } },
       { id: "llm-retry", name: "cordis:cairn:llm-retry", config: {} },
