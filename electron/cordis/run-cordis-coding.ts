@@ -107,9 +107,20 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   const ctx = await getContext();
   const { db, req, workspacePath, sessionId, cwd, systemPrompt, mode, send, questions, approvals, getWin, signal } = opts;
   // Sandbox: confine fs/bash mutations to cwd by default (workspace-write).
-  const sandboxMode = opts.sandboxMode ?? "workspace-write";  // autoApprove defaults ON; forced ON if no approvals adapter was supplied
-  // (no way to prompt → don't block on an approval that can never resolve).
-  const autoApprove = opts.autoApprove !== false ? true : (approvals ? false : true);
+  const sandboxMode = opts.sandboxMode ?? "workspace-write";
+  // autoApprove defaults ON, but when caller explicitly asks for HITL (false) and
+  // forgets to pass an approvals adapter, fail CLOSED with a warning instead of
+  // silently forcing allow-all (P0-4).
+  let autoApprove: boolean;
+  if (opts.autoApprove !== false) autoApprove = true;
+  else if (approvals) autoApprove = false;
+  else {
+    console.warn(`[cordis-coding] autoApprove:false but no approvals adapter supplied for ${sessionId} — forcing deny (fail-closed)`);
+    autoApprove = false;
+    // approvals stays undefined → cairnApprovalPlugin not mounted, so tools/pre-execute
+    // would run un-gated; instead we rely on dsh ApprovalService going unavailable → deny.
+    // Log the mis-wiring so the caller is visible.
+  }
   let resolveTerminal: (r: RunCordisCodingResult) => void = () => {};
   const onSessionEvent = (event: import("@deepseek-ai/dsh-session").SessionEvent) => {
     opts.onSessionEvent?.(event);
@@ -143,6 +154,17 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       } : undefined,
      onSessionEvent,
     setup: async ({ llmConfig, resources, mount }) => {
+      try {
+        const { updateWorkspaceContext } = await import("./plugins/workspace-context");
+        const wsRow = req.workspaceId ? db.prepare("SELECT name FROM workspaces WHERE id = ?").get(req.workspaceId) as { name?: string } | undefined : undefined;
+        const projRow = req.projectId ? db.prepare("SELECT name, description FROM projects WHERE id = ?").get(req.projectId) as { name?: string; description?: string } | undefined : undefined;
+        let gitBranch: string | undefined;
+        try {
+          const { execSync } = await import("node:child_process");
+          gitBranch = execSync("git branch --show-current", { cwd, encoding: "utf8", timeout: 800 }).trim() || undefined;
+        } catch { /* not a git repo */ }
+        updateWorkspaceContext(sessionId, { workspaceName: wsRow?.name, projectName: projRow?.name, projectDescription: projRow?.description, cwd, gitBranch });
+      } catch (e) { console.warn("[cordis-coding] workspace context update failed:", e instanceof Error ? e.message : e); }
       const toolDisposers = registerCairnTools(ctx, {
         getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
         req,

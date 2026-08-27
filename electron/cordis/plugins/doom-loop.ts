@@ -63,9 +63,22 @@ export function cairnDoomLoopPlugin(ctx: Context, config: CairnDoomLoopConfig): 
   if (!confirm) return;
 
   const recent: string[] = [];
-  let approved = false; // once allowed, stop re-pausing this session
+  // Thresholds matching dsh's repeat-tool-reminder: 3,5,8 — each is a nudge, not a permanent block.
+  const thresholds = threshold === DOOM_LOOP_THRESHOLD ? [3, 5, 8] : [threshold];
+  let lastPromptedAt = 0;
 
   type PreHandler = (...args: unknown[]) => Promise<unknown> | unknown;
+  // Reset on new user input so a loop in one turn doesn't poison the next.
+  const unsubReset = (ctx as unknown as { on: (ev: string, fn: (...a: unknown[]) => unknown) => () => void }).on(
+    "agent/pre-step" as string,
+    (...a: unknown[]) => {
+      const data = a[0] as { source?: { kind?: string } } | undefined;
+      if (data?.source?.kind === "user") {
+        recent.length = 0;
+        lastPromptedAt = 0;
+      }
+    },
+  );
   const unsub = (ctx as unknown as { on: (ev: string, fn: PreHandler) => () => void }).on(
     "tools/pre-execute",
     async (...args: unknown[]) => {
@@ -77,39 +90,43 @@ export function cairnDoomLoopPlugin(ctx: Context, config: CairnDoomLoopConfig): 
       const argsObj = (exec?.arguments && typeof exec.arguments === "object") ? exec.arguments as Record<string, unknown> : {};
       const sig = toolCallSignature(name, argsObj);
 
-      if (!approved) {
-        const window = recent.slice(-(threshold - 1));
-        if (window.length === threshold - 1 && window.every((s) => s === sig)) {
-          // Pause through the host seam — renders the standard approval card.
-          const outcome = await confirm(
-            sessionId,
-            {
-              title: `"${name}" is repeating`,
-              detail: `Called ${threshold}× in a row with identical arguments — this looks like a loop.`,
-              toolName: name,
-              args: argsObj,
-            },
-            { signal },
-          );
-          // Track the attempted signature regardless of the decision.
-          recent.push(sig);
-          if (recent.length > threshold) recent.shift();
-          if (outcome !== "allowed-once") {
-            return {
-              kind: "deny",
-              reason: outcome === "rejected"
-                ? "Stopped: repeated identical tool call (possible loop). Halted by the user."
-                : "Stopped: no response to the repeat-detection pause within the time limit. Halted as a precaution — re-prompt to continue.",
-            };
-          }
-          approved = true;
-          return next ? next() : undefined;
+      // Determine if this call completes a threshold streak.
+      // We consider the streak length including this call, so for threshold 3 we need 3 consecutive identical sigs.
+      const streakLen = (() => {
+        let n = 1;
+        for (let i = recent.length - 1; i >= 0 && recent[i] === sig; i--) n++;
+        return n;
+      })();
+      const shouldPrompt = thresholds.includes(streakLen) && streakLen !== lastPromptedAt;
+
+      if (shouldPrompt) {
+        const outcome = await confirm(
+          sessionId,
+          {
+            title: `"${name}" is repeating`,
+            detail: `Called ${streakLen}× in a row with identical arguments — this looks like a loop.`,
+            toolName: name,
+            args: argsObj,
+          },
+          { signal },
+        );
+        recent.push(sig);
+        if (recent.length > 20) recent.shift();
+        if (outcome !== "allowed-once") {
+          return {
+            kind: "deny",
+            reason: outcome === "rejected"
+              ? "Stopped: repeated identical tool call (possible loop). Halted by the user."
+              : "Stopped: no response to the repeat-detection pause within the time limit. Halted as a precaution — re-prompt to continue.",
+          };
         }
+        lastPromptedAt = streakLen;
+        return next ? next() : undefined;
       }
       recent.push(sig);
-      if (recent.length > threshold) recent.shift();
+      if (recent.length > 20) recent.shift();
       return next ? next() : undefined;
     },
   );
-  return unsub;
+  return () => { try { unsubReset(); } catch { /* noop */ } try { unsub(); } catch { /* noop */ } };
 }

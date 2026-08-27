@@ -80,6 +80,7 @@ export interface ReplayMessage {
   role: "user" | "assistant";
   content: string;
   reasoning?: string;
+  reasoningSummary?: string;
   reasoningItems?: Array<Record<string, unknown>>;
   reasoningModel?: string;
   toolCalls?: ReplayToolCall[];
@@ -197,6 +198,7 @@ export function collapseDerivedToMessages(
       // Multiple reasoning blocks in one turn are joined with a separator so
       // one block's end never glues onto the next block's start.
       const reasoning = (m.content ?? []).filter((b) => b.type === "reasoning" && b.text).map((b) => b.text ?? "").join("\n\n");
+      const reasoningSummary = (m.content ?? []).filter((b) => (b as { type?: string }).type === "summary" || typeof (b as { summary?: unknown }).summary === "string" || (b as { type?: string }).type === "reasoning-summary").map((b) => String((b as { summary?: unknown }).summary ?? (b as { text?: unknown }).text ?? "")).join("\n\n");
       const reasoningItems = (m.content ?? []).filter((b) => b.type === "reasoning" && b.text) as unknown as Array<Record<string, unknown>>;
       const toolCallsRaw = (m.content ?? []).filter((b) => b.type === "tool-call");
       const toolCalls: ReplayToolCall[] = toolCallsRaw.map((c) => ({ tool: c.name ?? "tool", label: c.name ?? "tool", callId: c.id, args: c.arguments }));
@@ -208,7 +210,7 @@ export function collapseDerivedToMessages(
         continue;
       }
 
-      if (!text.trim() && !reasoning.trim() && toolCalls.length === 0) continue;
+      if (!text.trim() && !reasoning.trim() && !reasoningSummary.trim() && toolCalls.length === 0) continue;
 
       const mergedCalls = [...carryoverToolCalls, ...toolCalls];
       const mergedReasoning = [...carryoverReasoning, ...(reasoning.trim() ? [reasoning] : [])].join("\n\n");
@@ -222,6 +224,7 @@ export function collapseDerivedToMessages(
         role: "assistant",
         content: text || "",
         reasoning: mergedReasoning || undefined,
+        reasoningSummary: reasoningSummary || undefined,
         reasoningItems: mergedReasoningItems.length ? mergedReasoningItems : undefined,
         reasoningModel: (m.source as { model?: string })?.model,
         toolCalls: mergedCalls.length ? mergedCalls : undefined,

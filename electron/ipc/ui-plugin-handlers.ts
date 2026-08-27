@@ -82,6 +82,10 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
 
   ipcMain.handle("plugins:list", () => {
     try {
+      if (!pluginsDevEnabled()) {
+        // In prod, still return the list (settings UI reads it) but mark devEnabled
+        // so the renderer can hide enable/install controls. No data filtered.
+      }
       const rows = readAllRows();
       const list = rows
         .filter((r) => typeof r.id === "string")
@@ -103,6 +107,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
 
   ipcMain.handle("plugins:setEnabled", (_e, req: { id: string; enabled: boolean }) => {
     try {
+      if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to toggle plugins" };
       const root = getPluginsRoot();
       if (!root) return { error: "no plugins directory configured" };
       const rows = readAllRows();
@@ -123,6 +128,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
 
   ipcMain.handle("plugins:openFolder", async () => {
     try {
+      if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1" };
       const root = getPluginsRoot();
       if (!root) return { error: "no plugins directory configured" };
       fs.mkdirSync(root, { recursive: true });
@@ -153,6 +159,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
 
   ipcMain.handle("plugins:uninstall", (_e, req: { id: string }) => {
     try {
+      if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to uninstall" };
       if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
       uninstallPlugin(req.id);
       return { data: { ok: true } };

@@ -60,7 +60,7 @@ export function registerChatSessionHandlers(_ctx: DbContext): void {
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("not found") || msg.includes("no such") || msg.includes("ENOENT")) return { messages: [] as ChatMessage[] };
+      if (msg.includes("not found") || msg.includes("no such") || msg.includes("ENOENT") || msg.includes("but this backend is configured for compression") || msg.includes("encodingMismatch")) return { messages: [] as ChatMessage[] };
       throw err;
     }
   }));

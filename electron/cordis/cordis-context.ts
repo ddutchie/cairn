@@ -33,7 +33,16 @@ let contextReady: Promise<Context> | null = null;
 let sessionRoot = process.env.CAIRN_SESSION_ROOT || path.join(process.cwd(), ".cairn-sessions");
 
 export function getSessionRoot(): string { return sessionRoot; }
-export function setSessionRoot(root: string): void { sessionRoot = root; }
+export function setSessionRoot(root: string): void {
+  if (sharedCtx || contextReady) {
+    console.warn(`[cordis] setSessionRoot("${root}") called after context creation — new root will only take effect after restart (current root: "${sessionRoot}")`);
+  }
+  sessionRoot = root;
+}
+export function __resetContextForTest(): void {
+  sharedCtx = null;
+  contextReady = null;
+}
 
 export async function getContext(): Promise<Context> {
   if (sharedCtx) return sharedCtx;
@@ -111,15 +120,33 @@ export async function getContext(): Promise<Context> {
 export async function dropChatAgentForThread(threadId: string): Promise<void> {
   const map = peekChatAgentCache();
   if (map) {
-    const entry = map.get(threadId);
+    const entry = map.get(threadId) as { handle?: Record<PropertyKey, unknown>; agent?: Record<PropertyKey, unknown>; whenIdle?: () => Promise<void>; selectionRef?: unknown } | undefined;
     if (entry) {
       map.delete(threadId);
-      const agent = (entry.agent ?? entry) as Record<PropertyKey, unknown>;
-      try { const whenIdle = (entry.whenIdle ?? agent.whenIdle) as (() => Promise<void>) | undefined; if (typeof whenIdle === "function") await whenIdle.call(agent); } catch { /* best-effort */ }
-      for (const obj of Array.from(new Set([entry.handle, entry.agent, entry].filter(Boolean))) as Array<Record<PropertyKey, unknown>>) {
+      // Prefer handle.dispose (AgentHandle owns the retirement capability via FactoryOwnership).
+      // Fall back to agent disposal; cover Symbol.asyncDispose first (dsh's preferred).
+      const candidates: Array<Record<PropertyKey, unknown>> = [];
+      if (entry.handle) candidates.push(entry.handle, entry.handle);
+      if (entry.agent) candidates.push(entry.agent);
+      // entry itself may be the handle in older cache shapes
+      if (entry !== entry.handle && entry !== entry.agent) candidates.push(entry as unknown as Record<PropertyKey, unknown>);
+      // Wait for idle before dispose (compaction may be draining).
+      try {
+        const idle = (entry.whenIdle ?? (entry.agent as Record<PropertyKey, unknown> | undefined)?.whenIdle ?? (entry.handle as Record<PropertyKey, unknown> | undefined)?.whenIdle) as (() => Promise<void>) | undefined;
+        if (typeof idle === "function") await idle.call(entry.agent ?? entry.handle ?? entry);
+      } catch { /* best-effort */ }
+      const seen = new Set<Record<PropertyKey, unknown>>();
+      for (const obj of candidates) {
+        if (!obj || seen.has(obj)) continue;
+        seen.add(obj);
+        let disposed = false;
         for (const key of [Symbol.asyncDispose, Symbol.dispose, "dispose", "close", "abort"] as const) {
-          try { const fn = obj[key] as (() => unknown) | undefined; if (typeof fn === "function") { await fn.call(obj); break; } } catch { /* best-effort */ }
+          try {
+            const fn = (obj as Record<PropertyKey, unknown>)[key] as (() => unknown) | undefined;
+            if (typeof fn === "function") { await fn.call(obj); disposed = true; break; }
+          } catch { /* best-effort */ }
         }
+        if (disposed) break;
       }
     }
   }

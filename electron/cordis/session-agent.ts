@@ -62,7 +62,37 @@ export async function openCordisSessionAgent(
   try {
     const inspection = await ctx.sessionPersistence.inspect(stableId, signal);
     exists = inspection.events.length > 0;
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // zstd-only backend throws encodingMismatch when a legacy plaintext .jsonl exists.
+    // Treat that as "exists but wrong encoding" — migrate by removing the conflicting
+    // artifact so a fresh zstd log can be created (legacy transcript is best-effort
+    // preserved via the archive migration v49 path; losing it is preferable to a
+    // hard encodingMismatch that blocks all future turns on this session).
+    if (msg.includes("but this backend is configured for compression") || msg.includes("encodingMismatch")) {
+      console.warn(`[cordis] session "${sessionId}" encoding mismatch — cleaning conflicting artifact:`, msg);
+      try {
+        const { getSessionRoot } = await import("./cordis-context");
+        const { default: fs } = await import("node:fs");
+        const { default: path } = await import("node:path");
+        // Scan both encodings under all roots (primary + fallback) and remove the
+        // plaintext variant so the zstd backend can proceed.
+        const { SessionId: SID } = await import("@deepseek-ai/dsh-session");
+        void SID;
+        const roots = [getSessionRoot(), path.join(process.cwd(), ".cairn-sessions")].filter((r, i, a) => r && a.indexOf(r) === i);
+        for (const root of roots) {
+          try {
+            const dirs = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d: { name: string }) => d.name);
+            for (const proj of dirs) {
+              const base = path.join(root, proj, String(stableId));
+              for (const p of [path.join(base, "session.jsonl"), base + ".jsonl"]) {
+                try { if (fs.existsSync(p)) { const st = fs.statSync(p); if (st.isFile()) fs.unlinkSync(p); else fs.rmSync(p, { recursive: true, force: true }); } } catch { /* ignore */ }
+              }
+            }
+          } catch { /* ignore */ }
+        }
+      } catch { /* best-effort migration */ }
+    }
     // Missing or not-yet-materialized sessions are created below.
   }
 

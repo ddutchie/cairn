@@ -13,6 +13,7 @@ import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
 import "./ctx-augment";
 import z from "zod";
 import { TOOL_SCHEMAS } from "../lib/tool-schemas";
+import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
 import { executeTool } from "./chat-executor";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
@@ -109,6 +110,9 @@ export function buildCairnTool(
     name,
     description,
     parameters: properties as never,
+    // P1-10: mark read-only tools as concurrency-safe so native parallel scheduler
+    // can batch them; mutating tools remain exclusive barriers.
+    isConcurrencySafe: () => APPROVAL_SAFE_TOOLS.has(name),
     output: {
       schema: { type: "json" },
       render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }],
@@ -142,6 +146,14 @@ export function buildCairnTool(
             const answer = await uq.ask({ questions: raw as never });
             return { ok: true, answers: answer.answers } as never;
           } catch (err) {
+            const e = err as { message?: string; code?: string } | undefined;
+            const code = e?.code;
+            // Preserve the structured DELEGATED_CALLER code so the subagent loop
+            // can distinguish "must include unresolved question in final result"
+            // from a generic failure that it should retry.
+            if (code === "DELEGATED_CALLER") {
+              return { ok: false, error: e?.message ?? String(err), code } as never;
+            }
             return { ok: false, error: `ask_questions failed: ${(err as Error)?.message ?? String(err)}` } as never;
           }
         }

@@ -85,12 +85,15 @@ async function plugFsChain(
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e);
       if (/service ".+" has been registered/.test(msg)) {
-        console.warn(`[cordis-coding] adopting already-registered fs/sandbox service (${msg}); per-turn sandbox config not applied`);
+        const existingMode = (ctx.get("sandboxPolicy") as { mode?: string } | undefined)?.mode ?? "unknown";
+        console.warn(`[cordis-coding] adopting already-registered fs/sandbox service (${msg}); requested mode=${opts.mode} cwd=${opts.cwd} but existing mode=${existingMode} — per-turn sandbox config NOT applied (see P0-4)`);
         continue;
       }
       throw e;
     }
   }
+  // Ensure artifact remap is applied even when adopting an existing fs chain.
+  try { remapChatArtifactDirs(ctx); } catch { /* best-effort */ }
 }
 
 /** Mount ONLY the fs/sandbox ownership trio — used by the chat loop so plugin
@@ -102,7 +105,11 @@ async function plugFsChain(
  *  `<workspace>/.chat/viz/…` so agent-generated files stay in ONE hidden dir
  *  instead of littering the project root — see artifact-hygiene.ts. */
 export async function mountFsChain(ctx: Context, opts: { cwd: string; mode?: "workspace-write" | "read-only" | "danger-full-access" }): Promise<void> {
-  if (ctx.get("fs")) return;
+  if (ctx.get("fs")) {
+    // Adopted — ensure remap even when chain already exists (coding may have mounted first without remap).
+    remapChatArtifactDirs(ctx);
+    return;
+  }
   const disposers: Array<() => void> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
     const fiber = ctx.plugin(plugin as never, config as never) as unknown as Promise<{ dispose: () => void }>;

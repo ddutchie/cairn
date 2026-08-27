@@ -41,15 +41,14 @@ export function createCairnSkillProvider(): CairnSkillProvider {
   const PROVIDER = "cairn-skills";
 
   return {
-    name: PROVIDER,
+     name: PROVIDER,
     async list(options: SkillLookupOptions): Promise<readonly SkillCandidate[]> {
       options.signal?.throwIfAborted();
       return metas(options.cwd).map(
         (m): SkillCandidate => ({
           name: m.name,
           description: m.description,
-          // SKILL.md has no per-skill invocation flags today: both true.
-          invocation: { modelInvocable: true, userInvocable: true },
+          invocation: { modelInvocable: !m.disableModelInvocation, userInvocable: !m.disableUserInvocation },
           source: "bundled",
           provider: PROVIDER,
           resourceBase: { kind: "directory", path: m.dirPath },
@@ -57,22 +56,26 @@ export function createCairnSkillProvider(): CairnSkillProvider {
           // outranked by their own choice; ours sit at the bundled tier.
           rank: BUNDLED_SKILL_RANK,
           locator: m.filePath,
-        }),
+          ...(m.whenToUse ? { whenToUse: m.whenToUse } : {}),
+        } as SkillCandidate),
       );
     },
     async get(candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> {
       options.signal?.throwIfAborted();
-      const content = loadSkill(candidate.name, metas(options.cwd));
+      const ms = metas(options.cwd);
+      const meta = ms.find((x) => x.name === candidate.name);
+      const content = loadSkill(candidate.name, ms);
       if (!content) return undefined;
       return {
         name: content.name,
         description: content.description,
-        invocation: { modelInvocable: true, userInvocable: true },
+        invocation: { modelInvocable: !(meta?.disableModelInvocation), userInvocable: !(meta?.disableUserInvocation) },
         source: "bundled",
         provider: PROVIDER,
         resourceBase: { kind: "directory", path: content.dirPath },
         content: content.body,
-      };
+        ...(meta?.whenToUse ? { whenToUse: meta.whenToUse } : {}),
+      } as SkillDefinition;
     },
   };
 }

@@ -22,39 +22,38 @@ the installed `@deepseek-ai/*` versions).
 
 ## Core agent services (✅ provided)
 
-| Service | Source |
-|---|---|
-| `tools` | `ctx.tools.register/get` (Cairn bridged tools + plugin tools) |
-| `skills` | `dsh-skill` SkillRegistry (mounted, `ctx.skills`) + `dsh-tool-skill` (owns the `skill` tool + `<available_skills>` catalog) | Cairn's SKILL.md provider feeds the registry |
-| `fs` | chat-chain `SandboxedFileSystem` (lazy, dev-gated) |
-| `sessions` | `dsh-session` registry |
-| `agents` / `agentLoop` | `dsh-agent` + `dsh-agent-loop` |
-| `llm` | `dsh-llm` |
-| `systemPrompt` | `dsh-system-prompt` (persona suppressed) |
-| `approval` | `dsh-user-approval` |
-| `userQuestions` | `dsh-user-questions` |
-| `attachments` | `cairn:attachment-store` (readImageRequest) |
-| `compaction` / `tokenMeter` | dsh compaction + token-meter |
-| `sessionPersistence` | JsonlSessionPersistence |
-| `sandbox` / `sandboxPolicy` | coding + chat fs chains (ownership trio) |
-| `subagents` | `dsh-subagent` stack |
-| `invariants` | **added** — `dsh-invariants` InvariantRegistry (mounted) |
-| `loader` | `cordis-plugin-loader` |
-| `slots` | Cairn's ctx shim (`dsh-client-ctx.ts`) for UI plugins |
-| `timer` | `cordis-plugin-timer` (installed) |
+| Service | Source | Notes |
+|---|---|---|
+| `tools` | `ctx.tools.register/get` (Cairn bridged tools + plugin tools) | `isConcurrencySafe` set for READ tools (`tool-risk.ts`) |
+| `skills` | `dsh-skill` SkillRegistry (mounted, `ctx.skills`) + `dsh-tool-skill` (owns the `skill` tool + `<available_skills>` catalog) | Cairn's SKILL.md provider feeds the registry; forwards `whenToUse` + invocation flags |
+| `fs` / `sandbox` / `sandboxPolicy` | `SandboxedFileSystem` trio — **per-turn**, mounted by `mountFsChain`/`mountCodingStack` and adopted across surfaces (see `cordis-coding-tools.ts`) | Global `getContext()` alone does NOT provide them; `prepareReplayContext` also mounts when needed |
+| `sessions` | `dsh-session` registry | |
+| `agents` / `agentLoop` | `dsh-agent` + `dsh-agent-loop` | `selectionRef` mutated for model/effort without resume |
+| `llm` | `dsh-llm` | |
+| `systemPrompt` | `dsh-system-prompt` (persona suppressed) | `cairn:system@-100` captured per-turn (no global race); `cairn:workspace` context populated for both chat + coding |
+| `commands` | `dsh-commands` CommandRuntime (global) | CLI registry (`/compact`, `/plan`) — UI `commands` panel remains shell-only |
+| `approval` | `dsh-user-approval` | `tools/pre-execute` waterfall + interactive/headless transports; `grant:command` via trusted `recordPendingApprovalArgs` |
+| `userQuestions` | `dsh-user-questions` | subagent `DELEGATED_CALLER` preserved |
+| `attachments` | `cairn:attachment-store` (readImageRequest) | via `dsh-attachment-local` |
+| `compaction` / `tokenMeter` | dsh compaction + token-meter | `whenIdle` checked before `compactNow`; threshold 0.8 |
+| `sessionPersistence` | JsonlSessionPersistence | `zstd` with plaintext fallback + `fallbackRoot` scan |
+| `subagents` | `dsh-subagent` + `spawn-in-process` + `tool-subagent` | |
+| `invariants` | `dsh-invariants` InvariantRegistry (mounted) | companions opt-in |
+| `loader` | `cordis-plugin-loader` | |
+| `slots` | Cairn's ctx shim (`dsh-client-ctx.ts`) for UI plugins | only `slots` provided; other `dsh-client-*` are `KNOWN_UNPROVIDED` |
+| `timer` | built-in `ctx.timer` via Cordis (not an explicit builtin) | — |
 
 ## Installable deps (🔶 — mount on demand if a family needs them)
 
 | Service | Installable package | Notes |
 |---|---|---|
-| `commands` | `dsh-commands` | CLI command registry |
 | `scope` | `dsh-scope` | scoped context layering |
-| `shellEnv` / `subprocess` | `dsh-shell-env` / `dsh-subprocess` | already in the coding stack |
-| `planMode` | `dsh-plan-mode` | already in the coding stack |
-| `permissionPresets` | `dsh-permission-presets` | dep present, not mounted |
-| `sessionProjection*` | `dsh-session-projection` | projection cache |
-| `codeRuntime` | `dsh-code-runtime` | code exec transport |
-| `spillStore` | `dsh-spill` | oversized spill |
+| `shell` / `shellEnv` / `subprocess` | `dsh-shell` / `dsh-shell-env` / `dsh-subprocess` | `shellEnv`+`subprocess` already in coding stack; `shell` would unblock `permissionPresets` (`inject: ["shell"]`) which currently stalls silently |
+| `planMode` | `dsh-plan-mode` | already globally mounted |
+| `permissionPresets` | `dsh-permission-presets` | dep present and mounted via `ctx.plugin` but inject-gated on `shell` → stalls without `shell` |
+| `sessionProjection*` | `dsh-session-projection` | `sessionProjections` mounted globally; `sessionProjectionCache` (needs `storageDomain`) would improve cold-list perf |
+| `codeRuntime` | `dsh-code-runtime` | code exec transport — not needed in `native` tools mode |
+| `spillStore` | `dsh-spill` + `dsh-spill-local` + `dsh-spill-policy` | **not installed** — oversized tool output stays inline (no `spillStore.saveText`); adding the trio makes `fs/tool-fs-search` spill instead of blowing context |
 | `authorization` | `dsh-authorization` | permission checks |
 
 ## Shell-only / web-host (🚫 not provided — plugins using these degrade gracefully)
@@ -97,10 +96,10 @@ subdir. **Loads/renders in Cairn** (installer checks file existence; renderer ac
 build/type + inject-closure layer. Full write-up:
 **`docs/context-ring-plugin-load-investigation.md`**.
 
-**Recommended Cairn hardening:** run a `publint`-style conformance check on install
-and warn when `exports["./client"]` deviates from `lib/client.js`, so a malformed
-community package surfaces the same error a dsh shell would — closing the
-"works in Cairn, breaks in dsh" gap.
+**Cairn hardening (now implemented):** installer runs a `publint`-style warning when
+`exports["./client"]` deviates from `lib/client.js` or any `types` condition dangles
+(`plugin-installer.ts:resolveEntries`), so a malformed package surfaces the same
+error a dsh shell would — closing the "works in Cairn, breaks in dsh" gap.
 
 ## Verdict
 

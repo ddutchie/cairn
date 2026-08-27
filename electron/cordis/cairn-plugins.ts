@@ -73,10 +73,14 @@ export function cairnSystemPromptPlugin(ctx: Context, config: CairnSystemPromptC
   const sp = ctx.systemPrompt;
   if (!sp || typeof sp.section !== "function") return;
 
+  // Capture the per-turn value directly — the old `() => activeSystemText`
+  // shared a process-global mutable that raced when chat + coding turns
+  // mounted the plugin concurrently on the singleton context (P0-3).
+  const captured = systemText ?? activeSystemText;
   return sp.section({
     name: "cairn:system",
     order: -100,
-    text: () => activeSystemText,
+    text: captured,
   });
 }
 cairnSystemPromptPlugin.inject = ["systemPrompt"];

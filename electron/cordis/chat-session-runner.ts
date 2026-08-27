@@ -191,7 +191,13 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         const project = req.projectId ? db.prepare("SELECT name, description, code_directory FROM projects WHERE id = ?").get(req.projectId) as { name?: string; description?: string; code_directory?: string } | undefined : undefined;
         const workspace = req.workspaceId ? db.prepare("SELECT name FROM workspaces WHERE id = ?").get(req.workspaceId) as { name?: string } | undefined : undefined;
         const { updateWorkspaceContext } = await import("./plugins/workspace-context");
-        updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: workspace?.name, projectName: project?.name, projectDescription: project?.description, cwd: project?.code_directory });
+        let gitBranch: string | undefined;
+        try {
+          const { execSync } = await import("node:child_process");
+          gitBranch = execSync("git branch --show-current", { cwd: workspacePath, encoding: "utf8", timeout: 800 }).trim() || undefined;
+        } catch { /* not a git repo */ }
+        // Use the real workspacePath (the agent's sandbox root), not code_directory which may be stale.
+        updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: workspace?.name, projectName: project?.name, projectDescription: project?.description, cwd: workspacePath, gitBranch });
       } catch (error) { console.warn("[cordis] workspace context update failed:", error instanceof Error ? error.message : error); }
       await mount(cairnSystemPromptPlugin, { systemText: baseSystem });
 
@@ -247,7 +253,8 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       };
       const disposers = registerCairnTools(ctx, { getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db, req, workspacePath, llmConfig: preparedConfig, getWin: opts.getWin, emit: undefined, emitDone }, { exclude: CHAT_FORBIDDEN_TOOLS });
       disposers.forEach((dispose) => resources.add(dispose));
-      (await registerExternalCairnTools(ctx, { db, workspaceId: req.workspaceId ?? "", projectId: req.projectId ?? "" })).forEach((dispose) => resources.add(dispose));
+      // P0-3: external/MCP tools would run ungated on chat (no approval/Doom cards).
+      // Withhold them here until chat gains the same HITL seam as coding.
       markLog("setup (plugins + tool registration)", turnStart);
     },
     open: async ({ llmConfig: preparedConfig }) => {
@@ -263,21 +270,28 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       if (cached && modelChanged) {
         await dropChatAgentForThread(req.threadId);
       } else if (cached) {
+        // Selection ref can be mutated without a resume; session-turn's
+        // pre-followup whenIdle serializes against an in-flight turn.
+        if (cached.selectionRef?.current) {
+          cached.selectionRef.current.reasoningEffort = preparedConfig.reasoningEffort;
+        }
+        // Return the live agent directly — runCordisTurn will await whenIdle
+        // before followup, so no double-wait here (P0-3 double-wait hangs when
+        // compaction holds the idle phase).
+        const live = cached.agent;
+        const sid = SessionId(`chat-${req.threadId}`);
         try {
-          await (cached.whenIdle ?? (cached.agent as { whenIdle?: () => Promise<void> })?.whenIdle)?.();
-          if (cached.selectionRef?.current) {
-            cached.selectionRef.current.reasoningEffort = preparedConfig.reasoningEffort;
-          }
-          markLog("open (cache HIT — whenIdle)", openStart);
-          return { agent: cached.agent, dispose: async () => {} };
-        } catch {
-          try {
-            const ctx2 = await getContext();
-            if (!ctx2.sessions.get(SessionId(`chat-${req.threadId}`) as never)) chatAgents.delete(req.threadId);
-            else return { agent: cached.agent, dispose: async () => {} };
-          } catch {
+          const ctx2 = await getContext();
+          // If the session was purged under us, drop the stale cache entry.
+          if (!ctx2.sessions.get(sid as never)) {
             chatAgents.delete(req.threadId);
+          } else {
+            markLog("open (cache HIT)", openStart);
+            return { agent: live, dispose: async () => {} };
           }
+        } catch {
+          markLog("open (cache HIT)", openStart);
+          return { agent: live, dispose: async () => {} };
         }
       }
       try {

@@ -47,19 +47,23 @@ describe("cairnDoomLoopPlugin (ctx.cairn.confirm pilot)", () => {
     expect((r3 as { reason?: string }).reason).toContain("Halted by the user");
   });
 
-  it("allows and stops re-pausing once the user approves through the seam", async () => {
-    const { ctx, invoke, asks } = makeCtx(["allowed-once"]);
+  it("allows and re-prompts at the next threshold (3→5) when the user approves through the seam", async () => {
+    const { ctx, invoke, asks } = makeCtx(["allowed-once", "allowed-once"]);
     cairnDoomLoopPlugin(ctx as never, { sessionId: "s2" });
 
     const args = { command: "ls" };
     await invoke("bash", args);
     await invoke("bash", args);
-    const r3 = await invoke("bash", args); // trips → user allows
+    const r3 = await invoke("bash", args); // trips at 3 → user allows
     expect((r3 as { kind: string }).kind).toBe("allow");
-    // 4th+ identical calls do NOT re-ask (approved sticks).
-    await invoke("bash", args);
+    expect(asks).toHaveLength(1);
+    // 4th identical does NOT re-ask (only thresholds 3,5,8).
     await invoke("bash", args);
     expect(asks).toHaveLength(1);
+    // 5th identical hits next threshold → re-prompts.
+    const r5 = await invoke("bash", args);
+    expect((r5 as { kind: string }).kind).toBe("allow");
+    expect(asks).toHaveLength(2);
   });
 
   it("does not trip for different tools / args", async () => {

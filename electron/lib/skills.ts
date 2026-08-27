@@ -42,6 +42,11 @@ export interface SkillMeta {
   compatibility?: string;
   /** Arbitrary string-to-string metadata. */
   metadata?: Record<string, string>;
+  /** When to use — forwarded to summary for better routing. */
+  whenToUse?: string;
+  /** Disable flags for invocation gating (maps to modelInvocable/userInvocable). */
+  disableModelInvocation?: boolean;
+  disableUserInvocation?: boolean;
   /** Absolute path to the SKILL.md file. */
   filePath: string;
   /** Absolute path to the skill directory (for bundled resource access). */
@@ -165,6 +170,9 @@ function parseSkillFile(filePath: string, dirName: string): SkillMeta | null {
     metadata:      data.metadata && typeof data.metadata === "object"
                      ? (data.metadata as Record<string, string>)
                      : undefined,
+    whenToUse:    typeof (data as Record<string, unknown>).whenToUse === "string" ? String((data as Record<string, unknown>).whenToUse).trim() : undefined,
+    disableModelInvocation: (data as Record<string, unknown>).disableModelInvocation === true || (data as Record<string, unknown>)["disable-model-invocation"] === true,
+    disableUserInvocation: (data as Record<string, unknown>).disableUserInvocation === true || (data as Record<string, unknown>)["disable-user-invocation"] === true,
     filePath,
     dirPath: path.dirname(filePath),
   };

@@ -3,12 +3,12 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import type { Database } from "better-sqlite3";
 import { openCordisSessionAgent } from "./session-agent";
 import { peekChatAgentCache, getChatAgentCache } from "./chat-agent-cache";
-import { getContext, resolvePresentationMeta } from "./cordis-context";
+import { getContext, getSessionRoot, resolvePresentationMeta } from "./cordis-context";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 
-export { getContext, dropChatAgentForThread, resolvePresentationMeta, getSessionRoot, setSessionRoot, __setToolDefForTest } from "./cordis-context";
+export { getContext, dropChatAgentForThread, resolvePresentationMeta, getSessionRoot, setSessionRoot, __resetContextForTest, __setToolDefForTest } from "./cordis-context";
 export { ensureAgentAiAdapter } from "./session-runtime";
 
 export interface RunCordisLoopResult {
@@ -51,8 +51,12 @@ export async function prepareReplayContext(pers: { inspect: (id: string) => Prom
     if (!ctx.get("fs")) {
       let cwd: string | undefined;
       try { cwd = (await pers.inspect(sessionId))?.header?.cwd; } catch { /* fall back */ }
+      // Prefer the session's committed cwd; fall back to the current sessionRoot's
+      // parent (workspace) rather than process.cwd() which may be the app bundle dir
+      // and would over-permit the fs sandbox.
+      const fallbackCwd = cwd || getSessionRoot().replace(/\/sessions\/?$/, "") || process.cwd();
       const { mountFsChain } = await import("./cordis-coding-tools");
-      await mountFsChain(ctx, { cwd: cwd || process.cwd() });
+      await mountFsChain(ctx, { cwd: fallbackCwd });
     }
     const { settleLoader } = await import("./plugin-loader");
     await settleLoader(ctx);

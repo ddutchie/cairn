@@ -840,6 +840,12 @@ export function registerSessionRuntimeHandlers(
       });
       const handle = await openCordisAgent(ctxC, { sessionId, cwd, llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: "openai" as const }, signal: new AbortController().signal });
       try {
+        // Ensure idle before compactNow (P1-5 busy race): session:compact-now
+        // bypasses runningLoops for races outside its own map; check whenIdle.
+        const maybeIdle = (handle.agent as { whenIdle?: () => Promise<void> })?.whenIdle;
+        if (typeof maybeIdle === "function") {
+          try { await maybeIdle.call(handle.agent); } catch { /* compaction will throw busy */ }
+        }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const compaction = (ctxC as any).compaction;
         if (!compaction?.compactNow) throw new Error("compaction service not mounted");
@@ -878,6 +884,11 @@ export function registerSessionRuntimeHandlers(
       broadcastEvent("session:busy", { sessionId: String(sessionId ?? "unknown"), reason: "invalid-id" });
       return;
     }
+    if (runningLoops.has(sessionId)) {
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot toggle plan mode while running.", code: "already-running" }));
+      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+      return;
+    }
     void (async () => {
       try {
         const agentConfig = getCachedConfig().agentConfig;
@@ -908,13 +919,21 @@ export function registerSessionRuntimeHandlers(
             console.warn("[session] failed to update session mode index:", e);
           }
           broadcastEvent("session:mode-change", { sessionId, mode: committedMode });
+          broadcastEvent("session:projection", makeSessionProjection(sessionId, "mode-change", { mode: committedMode }));
         } finally {
           try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
         }
       } catch (e) {
         // Do not update or broadcast a requested mode when dsh rejected it.
         // The durable session log remains authoritative and the UI can retry.
-        console.warn("[session] /plan execution failed:", e instanceof Error ? e.message : e);
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("while it is live") || msg.includes("already-running")) {
+          broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — try again when the agent finishes.", code: "already-running" }));
+          broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+        } else {
+          broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: msg, code: "plan-toggle-failed" }));
+        }
+        console.warn("[session] /plan execution failed:", msg);
       }
     })();
   });

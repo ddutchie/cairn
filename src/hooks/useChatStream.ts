@@ -65,8 +65,21 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         }
       },
       onUsage: (usage) => { if (threadId) setThreadUsage(threadId, usage as never); },
-      onTurnEnd: (_reason, snapshot) => {
+      onTurnEnd: (reason, snapshot) => {
         if (!threadId) return;
+        // Surface turn failures (blocked / error / max-tokens) — previously swallowed
+        if (reason && reason !== "completed" && reason !== "aborted") {
+          const msg = `Turn ended: ${reason}`;
+          // Don't add empty assistant bubble if we already have text; surface as system notice
+          if (!snapshot.text.trim()) {
+            addMessage(threadId, "system", msg, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined as never);
+          } else {
+            // Append reason to assistant reasoning so user sees why it stopped
+            addMessage(threadId, "assistant", snapshot.text, snapshot.assistant?.contextRefs as never, snapshot.toolCalls as never, pendingActionsRef.current, snapshot.thought ? `${snapshot.thought}\n\n[${msg}]` : `[${msg}]`, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
+            pendingActionsRef.current = [];
+            return;
+          }
+        }
         const assistant = snapshot.assistant;
         addMessage(threadId, "assistant", snapshot.text, assistant?.contextRefs as never, snapshot.toolCalls as never, pendingActionsRef.current, snapshot.thought, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
         if (assistant?.usage) setThreadUsage(threadId, assistant.usage as never);

@@ -35,6 +35,7 @@ export interface FoldedStats {
 export interface SessionEventFoldHandlers {
   onText?: (text: string) => void;
   onReasoning?: (text: string) => void;
+  onReasoningSummary?: (summary: string) => void;
   onUsage?: (usage: FoldedUsage) => void;
   onStats?: (stats: FoldedStats) => void;
   onToolCall?: (call: FoldedToolCall) => void;
@@ -42,12 +43,17 @@ export interface SessionEventFoldHandlers {
   onAssistantMessage?: (message: {
     text: string;
     reasoning: string;
+    reasoningSummary?: string;
     reasoningItems?: Array<Record<string, unknown>>;
     usage?: FoldedUsage;
     contextRefs?: unknown[];
   }) => void;
   onTurnStart?: () => void;
   onTurnEnd?: (reason?: string) => void;
+  onCompaction?: (status: "start" | "summary" | "end", data: Record<string, unknown>) => void;
+  onRetry?: (data: Record<string, unknown>) => void;
+  onPlanMode?: (active: boolean) => void;
+  onCommand?: (phase: "run" | "done", data: Record<string, unknown>) => void;
 }
 
 type RecordValue = Record<string, unknown>;
@@ -114,6 +120,8 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
       } else if (chunk.type === "reasoning-delta" && typeof chunk.text === "string" && chunk.text) {
         streamedReasoning = true;
         handlers.onReasoning?.(chunk.text);
+      } else if ((chunk.type === "reasoning-summary-delta" || chunk.type === "summary-delta") && typeof chunk.text === "string" && chunk.text) {
+        handlers.onReasoningSummary?.(chunk.text);
       } else if (chunk.type === "usage") {
         const normalized = usage(chunk.usage);
         if (normalized) handlers.onUsage?.(normalized);
@@ -125,6 +133,24 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
           outputTokens: typeof s.outputTokens === "number" ? s.outputTokens : undefined,
         });
       }
+      return;
+    }
+
+    if (event.type === "llm/retry" || event.type === "llm/retry-started") {
+      handlers.onRetry?.(data);
+      return;
+    }
+    if (event.type === "compaction/start" || event.type === "compaction/summary" || event.type === "compaction/end") {
+      const status = event.type === "compaction/start" ? "start" : event.type === "compaction/summary" ? "summary" : "end";
+      handlers.onCompaction?.(status, data);
+      return;
+    }
+    if (event.type === "plan/mode") {
+      handlers.onPlanMode?.(Boolean(data.active));
+      return;
+    }
+    if (event.type === "command/run" || event.type === "command/done") {
+      handlers.onCommand?.(event.type === "command/run" ? "run" : "done", data);
       return;
     }
 
@@ -178,11 +204,15 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
       const reasoning = Array.isArray(parts)
         ? parts.filter((part) => record(part).type === "reasoning").map((part) => String(record(part).text ?? "")).join("")
         : "";
+      const reasoningSummary = Array.isArray(parts)
+        ? parts.filter((part) => record(part).type === "summary" || typeof record(part).summary === "string" || record(part).type === "reasoning-summary").map((part) => String(record(part).summary ?? record(part).text ?? "")).join("")
+        : "";
       const finalUsage = usage(data.usage);
       if (!streamedText && text) handlers.onText?.(text);
       if (!streamedReasoning && reasoning) handlers.onReasoning?.(reasoning);
+      if (reasoningSummary) handlers.onReasoningSummary?.(reasoningSummary);
       if (finalUsage) handlers.onUsage?.(finalUsage);
-      handlers.onAssistantMessage?.({ text, reasoning, reasoningItems: reasoningItems?.length ? reasoningItems : undefined, usage: finalUsage, contextRefs: Array.isArray(data.contextRefs) ? data.contextRefs : undefined });
+      handlers.onAssistantMessage?.({ text, reasoning, reasoningSummary: reasoningSummary || undefined, reasoningItems: reasoningItems?.length ? reasoningItems : undefined, usage: finalUsage, contextRefs: Array.isArray(data.contextRefs) ? data.contextRefs : undefined });
       return;
     }
 

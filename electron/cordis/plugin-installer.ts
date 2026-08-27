@@ -177,9 +177,9 @@ interface DshPackageJson {
 /** Read package.json and resolve the backend + client entry files. */
 function resolveEntries(pkgDir: string, id: string): { name: string | null; ui: string | null } {
   const pkgPath = path.join(pkgDir, "package.json");
-  let pkg: DshPackageJson;
+  let pkg: DshPackageJson & { exports?: Record<string, unknown>; types?: string };
   try {
-    pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as DshPackageJson;
+    pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as DshPackageJson & { exports?: Record<string, unknown>; types?: string };
   } catch {
     throw new Error("package.json not found or invalid in the plugin package");
   }
@@ -198,6 +198,26 @@ function resolveEntries(pkgDir: string, id: string): { name: string | null; ui: 
   const clientPath = typeof clientExport === "string" ? clientExport
     : (clientExport && typeof clientExport === "object" ? ((clientExport as Record<string, string>).default ?? (clientExport as Record<string, string>).import) : undefined);
   if (typeof clientPath === "string" && exists(clientPath)) ui = rel(clientPath);
+
+  // Conformance warnings (publint-style): the dsh loader expects flat lib/client.js
+  // and real types files; a subdir or dangling types loads in Cairn but breaks in dsh.
+  if (typeof clientPath === "string" && clientPath !== "./lib/client.js" && clientPath !== "lib/client.js") {
+    console.warn(`[cairn-plugins] '${id}' exports["./client"] = "${clientPath}" — canonical is "./lib/client.js" (works in Cairn but may break in dsh; see docs/dsh-plugin-compatibility.md)`);
+  }
+  // Check dangling types conditions (exports types + top-level types).
+  const checkTypes = (p?: string) => p && typeof p === "string" && !exists(p);
+  if (checkTypes(pkg.types)) console.warn(`[cairn-plugins] '${id}' types "${pkg.types}" does not resolve to a real file — dangling types (breaks tsc/publint)`);
+  if (pkg.exports) {
+    for (const [k, v] of Object.entries(pkg.exports)) {
+      const exp = v as Record<string, unknown> | string | undefined;
+      if (exp && typeof exp === "object") {
+        const t = (exp as Record<string, string>).types ?? (exp as Record<string, string>).default;
+        if (typeof t === "string" && t.endsWith(".d.ts") && !exists(t)) {
+          console.warn(`[cairn-plugins] '${id}' exports["${k}"].types = "${t}" dangling — not a real file`);
+        }
+      }
+    }
+  }
 
   if (!name && !ui) {
     throw new Error("no built entry found — the package ships neither main nor exports['./client'] (needs a build step, which install does not run)");

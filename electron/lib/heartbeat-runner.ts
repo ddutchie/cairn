@@ -88,9 +88,11 @@ export interface AutomationRunContext {
 // ── HITL approval forwarding (Cordis) ───────────────────────────────────────
 // The coding agent's approval seam blocks on resolve({approved}); for a headless
 // heartbeat we forward to the renderer via an automation:run approval event +
-// a new automation:approve IPC (resolves this map). Keyed by callId. Each entry
-// also carries the tool name/args so an "always allow" can persist a standing
-// rule, and the db/runId for recordStandingAllowance.
+// a new automation:approve IPC (resolves this map). Keyed by callId, but scoped
+// to runId via composite `${runId}::${callId}` so concurrent runs with the same
+// provider callId don't collide (P0-1). Each entry also carries the tool name/args
+// so an "always allow" can persist a standing rule, and the db/runId for
+// recordStandingAllowance.
 interface PendingAutomationApproval {
   tool: string;
   args: Record<string, unknown>;
@@ -99,17 +101,26 @@ interface PendingAutomationApproval {
   resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void;
 }
 const pendingAutomationApprovals = new Map<string, PendingAutomationApproval>();
+function automationKey(runId: string, callId: string): string { return `${runId}::${callId}`; }
 /**
  * Resolve a pending automation tool approval (called by the automation:approve IPC).
- * @param callId - the approval's callId.
+ * Accepts either a bare callId (legacy/best-effort) or composite runId::callId.
+ * @param callId - the approval's callId (or composite key).
  * @param approved - approve or deny.
  * @param grant - "session" remembers for the rest of this turn; "always" persists
  *   an "always allow" standing rule on the automation so future runs skip it.
  */
 export function resolveAutomationApproval(callId: string, approved: boolean, grant?: "session" | "always"): void {
-  const pending = pendingAutomationApprovals.get(callId);
-  if (!pending) return;
-  pendingAutomationApprovals.delete(callId);
+  let pending = pendingAutomationApprovals.get(callId);
+  let key = callId;
+  if (!pending) {
+    // Try any runId prefix match for bare callId fallback.
+    for (const [k, v] of pendingAutomationApprovals.entries()) {
+      if (k.endsWith(`::${callId}`)) { pending = v; key = k; break; }
+    }
+    if (!pending) return;
+  }
+  pendingAutomationApprovals.delete(key);
   if (grant === "always") {
     recordStandingAllowance(pending.db, pending.runId, pending.tool, pending.args);
   }
@@ -550,11 +561,14 @@ export async function runAutomation(
   // through the SAME pending-approval map + auto-allow classifier that native
   // asks use. Unbound after the run settles.
   const { createHeadlessConfirmTransport, setConfirmTransport } = await import("../cordis/approval-transports");
+  const { readPendingApprovalArgs } = await import("../cordis/approval-grants");
   setConfirmTransport(run.id, createHeadlessConfirmTransport({
     emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
     registerPending: (callId, resolve) => {
-      pendingAutomationApprovals.set(callId, { tool: "plugin_confirm", args: {}, db, runId: run.id, resolve: (d) => resolve(d.approved) });
-      return () => { pendingAutomationApprovals.delete(callId); };
+      const key = automationKey(run.id, callId);
+      const trusted = readPendingApprovalArgs(run.id, callId) ?? {};
+      pendingAutomationApprovals.set(key, { tool: "plugin_confirm", args: trusted, db, runId: run.id, resolve: (d) => resolve(d.approved) });
+      return () => { pendingAutomationApprovals.delete(key); };
     },
 
   }));
@@ -583,13 +597,15 @@ export async function runAutomation(
       registerPending: (callId, resolve) => {
         const toolName = confirmToolByCallId.get(callId) ?? "tool";
         confirmToolByCallId.delete(callId);
-        if (shouldAutoAllowAutomationTool(db, run, automation, toolName, {})) {
+        const trusted = readPendingApprovalArgs(run.id, callId) ?? {};
+        if (shouldAutoAllowAutomationTool(db, run, automation, toolName, trusted)) {
           resolve({ approved: true });
           return () => {};
         }
-        pendingAutomationApprovals.set(callId, { tool: toolName, args: {}, db, runId: run.id, resolve });
+        const key = automationKey(run.id, callId);
+        pendingAutomationApprovals.set(key, { tool: toolName, args: trusted, db, runId: run.id, resolve });
         emitRun("approval", { tool: toolName, callId });
-        return () => { pendingAutomationApprovals.delete(callId); };
+        return () => { pendingAutomationApprovals.delete(key); };
       },
     },
     onSessionEvent: fold,
