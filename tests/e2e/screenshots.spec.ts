@@ -71,7 +71,7 @@ const SHOTS: Shot[] = [
   { file: "usage.png", view: "usage" },
   // Chat is a drawer rather than a view — open it over board for the ai-chat shot
   { file: "ai-chat.png", view: "board", setup: async (p) => {
-    await p.evaluate(() => (window as any).__cairnStoreRef?.getState()?.toggleChat?.());
+    await p.evaluate(() => (window as unknown as { __cairnStoreRef?: { getState: () => { toggleChat?: () => void } } }).__cairnStoreRef?.getState()?.toggleChat?.());
     await p.waitForTimeout(500);
   }},
   // Dashboard/PRD are notes in the real app — boards already show rich cards for those shots
@@ -152,13 +152,11 @@ const HIDE_NEXT_SCRIPT = `
 
 async function prepareForScreenshots(page: Page): Promise<void> {
   await page.evaluate((script) => {
-    // eslint-disable-next-line no-new-func
     new Function(script)();
   }, HIDE_NEXT_SCRIPT);
   // Run again after a tick — React may have just mounted the tutorial
   await page.waitForTimeout(150);
   await page.evaluate((script) => {
-    // eslint-disable-next-line no-new-func
     new Function(script)();
   }, HIDE_NEXT_SCRIPT);
 }
@@ -166,7 +164,7 @@ async function prepareForScreenshots(page: Page): Promise<void> {
 async function setTheme(page: Page, theme: Theme): Promise<void> {
   await page.evaluate(
     (t) => {
-      const s: any = (window as any).__cairnStoreRef?.getState?.();
+      const s = (window as unknown as { __cairnStoreRef?: { getState: () => { setTheme?: (v: string) => void } } }).__cairnStoreRef?.getState?.();
       if (s?.setTheme) s.setTheme(t);
       else {
         document.documentElement.setAttribute("data-theme", t);
@@ -185,7 +183,7 @@ async function setTheme(page: Page, theme: Theme): Promise<void> {
 async function goToView(page: Page, view: string): Promise<void> {
   await page.evaluate(
     ({ view: v, projId }) => {
-      const s: any = (window as any).__cairnStoreRef?.getState?.();
+      const s = (window as unknown as { __cairnStoreRef?: { getState: () => { chatOpen: boolean; searchOpen: boolean; notificationOpen: boolean; toggleChat: () => void; toggleSearch: () => void; setNotificationOpen: (v: boolean) => void; setView: (v: string) => void; activeProjectId: string; setActiveProject: (id: string) => void } } }).__cairnStoreRef?.getState?.();
       if (!s) throw new Error("store not ready");
       if (s.chatOpen) s.toggleChat();
       if (s.searchOpen) s.toggleSearch();
