@@ -121,7 +121,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
 
   useEffect(() => {
     const electron = window.electron;
-    if (!electron) return;
+    if (!electron?.session?.onEvent || !electron?.session?.onProjection) return;
     const matches = (id: string | undefined) => matchesSessionConversation(sessionIdRef.current, id, acceptUnscopedEvents);
     const updateSubagent = (childId: string, update: (value: ChatSubagent) => ChatSubagent) => {
       setSubagents((current) => { const next = current.map((item) => item.childId === childId ? update(item) : item); subagentsRef.current = next; return next; });
