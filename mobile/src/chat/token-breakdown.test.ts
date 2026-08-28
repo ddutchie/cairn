@@ -1,5 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 
+import {
+  computeBreakdown,
+  scaleBreakdown,
+  breakdownTotal,
+  type TokenBreakdown,
+} from "./token-breakdown";
+import type { UIMessage } from "./providers/types";
+
 // `./tokens` pulls in js-tiktoken (a mobile-only dependency, absent from the
 // root node_modules that this vitest project resolves against on CI). These
 // tests only assert token counts are >0 / ===0, never exact values, so a
@@ -8,14 +16,6 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("./tokens", () => ({
   countTextTokens: (text: string) => (text ? Math.ceil(text.length / 4) : 0),
 }));
-
-import {
-  computeBreakdown,
-  scaleBreakdown,
-  breakdownTotal,
-  type TokenBreakdown,
-} from "./token-breakdown";
-import type { UIMessage } from "./providers/types";
 
 const tools = {
   get_cairn_context: { description: "Get the workspace context", jsonSchema: {} },

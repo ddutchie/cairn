@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { forwardRef, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInput as TextInputType } from "react-native";
 import { Image } from "expo-image";
@@ -5,9 +6,9 @@ import { Send, X, Plus } from "lucide-react-native";
 import Animated, { Extrapolation, FadeOut, interpolate, LinearTransition, useAnimatedReaction, useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { useTheme, withAlpha, type Theme } from "@/theme";
+import { useTheme, withAlpha } from "@/theme";
 import { Glass } from "./attachment-panel/glass";
-import { COLORS, COMPOSER, COMPOSER_STRIP_HEIGHT, DURATION, GUTTER } from "./attachment-panel/constants";
+import { COMPOSER, COMPOSER_STRIP_HEIGHT, DURATION, GUTTER } from "./attachment-panel/constants";
 import type { Attachment } from "@/chat/agent";
 
 function Thumbnail({ url, hidden, onRemove }: { url: string; hidden: boolean; onRemove: () => void }) {

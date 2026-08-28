@@ -56,7 +56,7 @@ export interface UIMessage {
   /** The provider field the reasoning arrived in (e.g. "reasoning_content"). */
   reasoningField?: string;
   /** Raw Responses reasoning items round-tripped to a Responses provider. */
-  reasoningItems?: Array<Record<string, unknown>>;
+  reasoningItems?: Record<string, unknown>[];
 }
 
 /**
@@ -101,7 +101,7 @@ export type StreamEvent =
   | { type: "finish"; finishReason?: string; usage?: ChatUsage }
   | { type: "reasoning-delta"; delta?: string; field?: string }
   | { type: "reasoning-summary-delta"; delta?: string }
-  | { type: "reasoning-items"; items: Array<Record<string, unknown>> }
+  | { type: "reasoning-items"; items: Record<string, unknown>[] }
   | { type: string; [k: string]: unknown };
 
 /** Context-window usage for the chat ring (prompt tokens over the model limit). */

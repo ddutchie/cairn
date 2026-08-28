@@ -1,7 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo } from "react-native";
-import { CheckCircle2, Info, AlertTriangle, XCircle, type LucideIcon } from "lucide-react-native";
-import { type Theme } from "@/theme";
 import { haptics } from "@/haptics";
 import { ConfettiHost } from "@/components/Confetti";
 import { StackToast } from "./StackToast";
@@ -76,13 +74,6 @@ export function useToast(): ToastApi {
   return ctx;
 }
 
-const VARIANT_ICON: Record<ToastVariant, LucideIcon> = {
-  success: CheckCircle2,
-  info: Info,
-  warning: AlertTriangle,
-  error: XCircle,
-};
-
 /** Which haptic fires per toast variant ("info" has no notification style → a
  *  subtle impact). */
 const VARIANT_HAPTIC: Record<ToastVariant, () => void> = {
@@ -91,15 +82,6 @@ const VARIANT_HAPTIC: Record<ToastVariant, () => void> = {
   warning: haptics.warning,
   error: haptics.error,
 };
-
-function variantColor(t: Theme, v: ToastVariant): string {
-  switch (v) {
-    case "success": return t.success;
-    case "warning": return t.warning;
-    case "error": return t.danger;
-    default: return t.info;
-  }
-}
 
 const DEFAULT_DURATION = 3000;
 

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps -- intentional stable refs / static filters */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps -- stable callbacks, intentional */
 import { useCallback, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";

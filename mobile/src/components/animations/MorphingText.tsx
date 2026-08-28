@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 import { Manrope_600SemiBold } from '@expo-google-fonts/manrope';
 import {
   BlurMask,

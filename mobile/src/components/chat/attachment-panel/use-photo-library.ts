@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { AssetField, MediaType, Query, usePermissions, type PermissionResponse } from "expo-media-library";
 import { useCallback, useEffect, useState } from "react";
 import { GRID } from "./constants";

@@ -205,7 +205,7 @@ export async function runAgent(
     // for completions, and the raw items for Responses.
     let turnReasoning = "";
     let turnReasoningField: string | undefined;
-    let turnReasoningItems: Array<Record<string, unknown>> = [];
+    let turnReasoningItems: Record<string, unknown>[] = [];
     const toolCalls: { id: string; name: string; input: unknown }[] = [];
     let finishReason: string | undefined;
     // Reset per-turn usage so a finish WITHOUT a usage event can't leak the
@@ -230,7 +230,7 @@ export async function runAgent(
           reasoningSummary += delta;
           onEvent?.({ type: "reasoning-summary-delta", delta });
         } else if (ev.type === "reasoning-items") {
-          turnReasoningItems = (ev as { items: Array<Record<string, unknown>> }).items;
+          turnReasoningItems = (ev as { items: Record<string, unknown>[] }).items;
         } else if (ev.type === "tool-input-available") {
           const e = ev as { toolCallId: string; toolName: string; input: unknown };
           toolCalls.push({ id: e.toolCallId, name: e.toolName, input: e.input });

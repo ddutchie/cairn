@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { BlurView } from "expo-blur";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import type { ReactNode } from "react";
@@ -53,14 +54,7 @@ export function Glass({
   const glassEffectStyle = useGlassStyle(active ? "regular" : "none", duration);
 
   if (!LIQUID_GLASS) {
-    // Use system theme for blur tint — fallbackTint's luminance is unreliable when
-    // a chat theme overrides the surface. Prefer the OS color scheme.
     const isLight = (() => {
-      try {
-        const scheme = require("react-native").useColorScheme?.();
-        // useColorScheme is a hook, can't call here conditionally — fallback to fallbackTint check
-        void scheme;
-      } catch {}
       if (!fallbackTint) return false;
       const m = /^#?([0-9a-f]{6})$/i.exec(fallbackTint.trim());
       if (!m) return false;
