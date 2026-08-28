@@ -10,7 +10,7 @@
 import { registerIpcHandle, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 import { broadcastToChat } from "../chat-popout";
-import { mintAskNonce, dropAskNonce, clearAskNoncesForSession } from "./ask-nonce";
+import { mintAskNonce, dropAskNonce, clearAskNoncesForSession } from "./approval-state";
 import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-state";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { forgetSessionApprovalArgs } from "../cordis/approval-grants";

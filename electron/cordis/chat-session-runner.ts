@@ -223,7 +223,17 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: workspace?.name, projectName: project?.name, projectDescription: project?.description, cwd: workspacePath, gitBranch });
       } catch (error) { console.warn("[cordis] workspace context update failed:", error instanceof Error ? error.message : error); }
       timer.mark("workspace-context (incl. git branch execSync, 800ms cap)");
-      await mount(cairnSystemPromptPlugin, { systemText: baseSystem });
+      // Clarify the approval flow for the model. The dsh ASK_SENTENCE
+      // ("Approval policy: ask...") is terse and the model was interpreting
+      // it as "I should ask the user for permission in my text / via
+      // ask_questions" instead of "just call the tool and the system will
+      // show the approval card". This is especially confusing for EXTERNAL
+      // tools like Tavily where the model thinks search is "not dangerous"
+      // and hesitates. Make it explicit that the gating is automatic.
+      const systemText = opts.approvals
+        ? `${baseSystem}\n\n## Tool approvals\nExternal tools (like web search via Tavily) and destructive operations require user approval. To use them, simply call the tool — the system will automatically show an approval card to the user and pause your turn until they respond. Do NOT ask for permission in your text and do NOT use ask_questions to request approval. Just call the tool.`
+        : baseSystem;
+      await mount(cairnSystemPromptPlugin, { systemText });
 
       const doneIds = new Set<string>();
       const toolNames = new Map<string, string>();

@@ -39,3 +39,8 @@ export function clearAskNoncesForSession(sessionId: string): void {
 export function getAskNonce(sessionId: string, callId: string): string | undefined {
   return pendingAskNonces.get(nonceKey(sessionId, callId));
 }
+
+// Debug helper — not for production use beyond this incident.
+export function _debugNonceKeys(): string[] {
+  return Array.from(pendingAskNonces.keys());
+}

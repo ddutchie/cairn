@@ -78,8 +78,13 @@ export function appendSessionToolCall(current: SessionConversationToolCall[], ca
 export function resolveSessionToolResult(current: SessionConversationToolCall[], result: FoldedToolResult) {
   if (!result.callId) return current;
   return current.map((item) => item.callId === result.callId ? {
+    // The approval card (confirmRequired) must clear once the tool actually
+    // runs — otherwise the card stays as "Allow once / Always allow" until the
+    // next turn's history reload, which is exactly the bug the user reported
+    // (tool results only appearing on turn end).
     ...item, status: "done" as const, output: redactToolOutput(result.output), ok: result.ok,
     error: result.error ? redactSensitiveText(result.error) : undefined,
+    confirmRequired: false, approvalNonce: undefined,
   } : item);
 }
 

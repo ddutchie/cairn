@@ -51,7 +51,10 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
   const scope = approvalScopeLabel(toolCall.name);
   const command = typeof toolCall.args?.command === "string" ? toolCall.args.command : undefined;
   if (!sessionId || !toolCall.callId) return <ToolCallBody toolCall={toolCall} />;
+  const [pending, setPending] = useState<null | "allow" | "deny" | "always" | "command">(null);
   const respond = (approved: boolean, grant?: "command" | "session" | "workspace") => {
+    if (pending) return;
+    setPending(grant === "workspace" ? "always" : grant === "command" ? "command" : approved ? "allow" : "deny");
     void window.electron?.session.respondTool(sessionId, toolCall.callId!, approved, grant as never, grant === "command" ? command : undefined, toolCall.approvalNonce);
   };
   // Workspace-persistent "Always allow" — the per-workspace grant answered for
@@ -71,11 +74,20 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
         <span className="text-[0.607rem] font-semibold tracking-wide text-[var(--warning)]">{risk}</span>
       </div>
       {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
-      <div className="mt-2 flex items-center justify-end gap-1.5">
-        <button data-testid="approval-deny" onClick={() => respond(false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded">Deny</button>
-        {command && <button data-testid="approval-allow-command" onClick={() => respond(true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow command</button>}
-        {showAlwaysAllow && <button data-testid="approval-allow-always" onClick={() => respond(true, "workspace")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow</button>}
-        <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
+      <div className="mt-2 flex items-center justify-end gap-1.5 min-h-[28px]">
+        {pending ? (
+          <span className="flex items-center gap-1.5 text-[0.643rem] text-[var(--text-tertiary)]">
+            <Loader2 size={10} className="animate-spin" />
+            {pending === "deny" ? "Denied" : pending === "always" ? "Allowed — remembered for this workspace" : pending === "command" ? "Allowed — remembered for this command" : "Allowed — running…"}
+          </span>
+        ) : (
+          <>
+            <button data-testid="approval-deny" onClick={() => respond(false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded">Deny</button>
+            {command && <button data-testid="approval-allow-command" onClick={() => respond(true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow command</button>}
+            {showAlwaysAllow && <button data-testid="approval-allow-always" onClick={() => respond(true, "workspace")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow</button>}
+            <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
+          </>
+        )}
       </div>
     </div>
   );
