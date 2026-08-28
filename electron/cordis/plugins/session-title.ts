@@ -59,8 +59,10 @@ export function mountSessionTitleBridge(ctx: Context): void {
         // Use shared projection helper if available; fall back to raw broadcast.
         if (title !== undefined) {
           try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const { broadcastEvent } = require("../../ipc/registry") as { broadcastEvent: (ch: string, payload: unknown) => void };
             // Lazy import to avoid circular init order
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const { makeSessionProjection } = require("../../../shared/agent/session-projection") as {
               makeSessionProjection: (sid: string, kind: string, data: unknown) => unknown;
             };
@@ -87,7 +89,9 @@ export function mountSessionTitleBridge(ctx: Context): void {
       const title = (value as string | null) ?? null;
       titleCache.set(id, title);
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { broadcastEvent } = require("../../ipc/registry") as { broadcastEvent: (ch: string, payload: unknown) => void };
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { makeSessionProjection } = require("../../../shared/agent/session-projection") as {
           makeSessionProjection: (sid: string, kind: string, data: unknown) => unknown;
         };

@@ -1060,7 +1060,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   // ── Agent config ───────────────────────────────
   setAgentConfig(patch) {
     set((s) => {
-      let next = { ...s.agentConfig, ...patch } as typeof s.agentConfig & { mode?: import("../../../shared/agent/approval-mode").Mode };
+      const next = { ...s.agentConfig, ...patch } as typeof s.agentConfig & { mode?: import("../../../shared/agent/approval-mode").Mode };
       // Keep mode ↔ autoApprove in sync so old readers (main cache, legacy UI)
       // and new readers (mode-aware gate) agree. Patch may carry either shape.
       const hasMode = "mode" in patch && (patch as { mode?: unknown }).mode !== undefined;
