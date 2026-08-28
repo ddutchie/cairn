@@ -29,6 +29,22 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
+      "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cairn uses the camera to attach photos to chat messages."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Cairn uses your photos to attach images to chat messages.",
+          "savePhotosPermission": "Cairn saves photos you capture in chat.",
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": ["photo"]
+        }
+      ],
       [
         "expo-image-picker",
         {
