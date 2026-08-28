@@ -1,20 +1,10 @@
 "use client";
 
-import { useShallow } from "zustand/react/shallow";
-import { Plus, Bot, History, ArrowRight } from "lucide-react";
-import { useCairnStore } from "@/store";
-import { cn, formatDateCompact } from "@/lib/utils";
-import { OverflowPill } from "@/components/ui/overflow-pill";
+import { Plus, Bot } from "lucide-react";
 import { useAgentSessionActions } from "./useAgentSessionActions";
 
 export function AgentEmptyState() {
-  const { piSessionHistory, persistentPiSessionId } = useCairnStore(useShallow((s) => ({
-    piSessionHistory: s.piSessionHistory,
-    persistentPiSessionId: s.persistentPiSessionId,
-  })));
-
-  const { handleNewSession, handleResumeSession, project } = useAgentSessionActions();
-  const recentSessions = piSessionHistory.slice(0, 5);
+  const { handleNewSession, project } = useAgentSessionActions();
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4 p-6 text-center">
@@ -32,7 +22,7 @@ export function AgentEmptyState() {
       </div>
 
       <button
-        onClick={handleNewSession}
+        onClick={() => { void handleNewSession(); }}
         disabled={!project?.codeDirectory}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--background)] text-[0.714rem] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
       >
@@ -40,38 +30,6 @@ export function AgentEmptyState() {
         New session
       </button>
 
-      {recentSessions.length > 0 && (
-        <div className="w-full max-w-56 flex flex-col gap-0.5 mt-1">
-          <div className="flex items-center gap-1.5 mb-1">
-            <History size={10} className="text-[var(--text-tertiary)]" />
-            <span className="text-[0.643rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Recent</span>
-          </div>
-          {recentSessions.map((summary) => (
-            <button
-              key={summary.id}
-              onClick={() => handleResumeSession(summary)}
-              className={cn(
-                "group w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors",
-                "hover:bg-[var(--surface-2)] border border-transparent hover:border-[var(--border)]",
-                summary.id === persistentPiSessionId && "bg-[var(--surface-2)] border-[var(--border)]",
-              )}
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-[0.714rem] text-[var(--text-secondary)] truncate">{summary.taskTitle}</p>
-                <p className="text-[0.607rem] text-[var(--text-tertiary)]">{formatDateCompact(summary.updatedAt)}</p>
-              </div>
-              <ArrowRight size={10} className="text-[var(--text-tertiary)] shrink-0 opacity-0 group-hover:opacity-100" />
-            </button>
-          ))}
-          {piSessionHistory.length > recentSessions.length && (
-            <OverflowPill
-              count={piSessionHistory.length - recentSessions.length}
-              names={piSessionHistory.slice(recentSessions.length).map((s) => s.taskTitle)}
-              className="self-center mt-1"
-            />
-          )}
-        </div>
-      )}
     </div>
   );
 }

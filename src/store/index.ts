@@ -19,14 +19,15 @@ import type {
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite, isAiNoteWrite } from "./ipc";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
+import { ipcAwaitResult } from "./ipc";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY, applyChatTheme, CHAT_THEME_KEY } from "./slices/ui";
-import type { FontScale, FontFamilyId } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY, applyChatTheme, CHAT_THEME_KEY, SHELL_VARIANT_KEY } from "./slices/ui";
+import type { FontScale, FontFamilyId, ShellVariant } from "./slices/ui";
 import { DEFAULT_ACCENT_ID } from "../../shared/ui/accents";
 import { DEFAULT_FONT_ID } from "../../shared/ui/fonts";
 import { DEFAULT_CHAT_THEME_ID } from "../../shared/ui/chat-themes";
@@ -283,6 +284,16 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   if (savedOverviewSections && typeof savedOverviewSections === "object") {
     set({ overviewCollapsedSections: savedOverviewSections });
   }
+
+  const isDev = typeof process !== "undefined" && (process.env as unknown as { NODE_ENV?: string })?.NODE_ENV === "development";
+  const savedShell = storage.get<ShellVariant>(SHELL_VARIANT_KEY);
+  if (!isDev) {
+    // Production: Rail (A) is the only shipped shell; B/C/current are dev previews
+    set({ shellVariant: "A" });
+    if (savedShell && savedShell !== "A") storage.set(SHELL_VARIANT_KEY, "A");
+  } else if (savedShell && ["current","A","B","C"].includes(savedShell)) {
+    set({ shellVariant: savedShell });
+  }
 }
 
 // ── Store creation ────────────────────────────────────────────────────────────
@@ -354,124 +365,117 @@ export const useCairnStore = create<CairnStore>()(
     async hydrateFromElectron(isRefresh = false) {
       const [set, get] = a;
 
-      // Fetch configurations from backend cache first if window.electron is available
-      let backendAiConfig = null;
-      let backendAgentConfig = null;
-
-      if (window.electron) {
-        try {
-          if (window.electron.getAiSettings)    backendAiConfig = await window.electron.getAiSettings();
-          if (window.electron.getAgentSettings) backendAgentConfig = await window.electron.getAgentSettings();
-        } catch (e) {
-          console.warn("Failed to fetch backend cached settings:", e);
-        }
-      }
-
       if (!isRefresh) {
-        restorePersistedTheme(set);
-      }
+        // Fetch configurations from backend cache first if window.electron is available
+        let backendAiConfig = null;
+        let backendAgentConfig = null;
 
-      // Merge, don't shadow: an older backend cache may be missing behavioural
-      // fields (maxSteps/temperature/contextLimit/aiEnabled). Layering
-      // localStorage UNDER the backend config preserves those fields instead of
-      // letting a field-poor backend object reset them to DEFAULT_AI_CONFIG on
-      // every hydrate (the "maxSteps reverts to 30" bug).
-      const localAiConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
-      // On a REFRESH hydrate (fired after write-tool turns and every db:changed
-      // event) the in-memory aiConfig is the source of truth for the live
-      // session — the user may have just changed the model, and the async
-      // saveAiSettings write may not have landed in the backend cache yet.
-      // Layering the (possibly stale) backend cache on top would silently revert
-      // that selection, which is the "have to clear chat twice for the new model
-      // to apply" bug. So on refresh we prefer the current in-memory config over
-      // the backend cache; on the initial hydrate the backend cache wins.
-      const currentAiConfig = isRefresh ? get().aiConfig : undefined;
-      const savedConfig = backendAiConfig
-        ? { ...localAiConfig, ...backendAiConfig, ...currentAiConfig }
-        : (currentAiConfig ?? localAiConfig);
-      if (savedConfig) {
-        if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
-          savedConfig.provider = "localllm";
+        if (window.electron) {
+          try {
+            if (window.electron.getAiSettings)    backendAiConfig = await window.electron.getAiSettings();
+            if (window.electron.getAgentSettings) backendAgentConfig = await window.electron.getAgentSettings();
+          } catch (e) {
+            console.warn("Failed to fetch backend cached settings:", e);
+          }
         }
-        const mergedAiConfig = { ...DEFAULT_AI_CONFIG, ...savedConfig };
-        set({ aiConfig: mergedAiConfig });
-        // Persist the FULLY-merged config so localStorage never loses fields.
-        storage.set(AI_CONFIG_KEY, mergedAiConfig);
-        // Also write the merged config back to the backend cache — even when a
-        // backendAiConfig already existed, since it may have been field-poor
-        // (missing maxSteps/temperature/…). This lets the backend cache
-        // self-heal in one hydrate instead of staying stale.
-        if (window.electron && window.electron.saveAiSettings) {
-          window.electron.saveAiSettings(mergedAiConfig as unknown as Record<string, unknown>).catch(() => {});
-        }
-      } else if (window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
-        try {
-          const status = await window.electron.ai.localLLMStatus();
-          if (status.available) {
-            set({ aiConfig: { ...DEFAULT_AI_CONFIG, provider: "localllm" } });
-          } else {
+
+        restorePersistedTheme(set);
+
+        // Merge, don't shadow: an older backend cache may be missing behavioural
+        // fields (maxSteps/temperature/contextLimit/aiEnabled). Layering
+        // localStorage UNDER the backend config preserves those fields instead of
+        // letting a field-poor backend object reset them to DEFAULT_AI_CONFIG on
+        // every hydrate (the "maxSteps reverts to 30" bug).
+        const localAiConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
+        const savedConfig = backendAiConfig
+          ? { ...localAiConfig, ...backendAiConfig,
+              // User-choice fields are written to localStorage synchronously but
+              // to the backend cache via a fire-and-forget IPC — a quick reload
+              // can lose the backend flush, leaving a STALE backend value that
+              // (backend-wins) would clobber the user's fresh pick (e.g. reasoning
+              // effort High reverting to Off). For these, local is the device-
+              // authoritative choice, so prefer it when present.
+              ...(localAiConfig?.reasoningEffort !== undefined ? { reasoningEffort: localAiConfig.reasoningEffort } : {}),
+            }
+          : localAiConfig;
+        if (savedConfig) {
+          if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
+            savedConfig.provider = "localllm";
+          }
+          const mergedAiConfig = { ...DEFAULT_AI_CONFIG, ...savedConfig };
+          set({ aiConfig: mergedAiConfig });
+          storage.set(AI_CONFIG_KEY, mergedAiConfig);
+          if (window.electron && window.electron.saveAiSettings) {
+            window.electron.saveAiSettings(mergedAiConfig as unknown as Record<string, unknown>).catch(() => {});
+          }
+        } else if (window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
+          try {
+            const status = await window.electron.ai.localLLMStatus();
+            if (status.available) {
+              set({ aiConfig: { ...DEFAULT_AI_CONFIG, provider: "localllm" } });
+            } else {
+              set({ aiConfig: DEFAULT_AI_CONFIG });
+            }
+          } catch (e) {
+            console.warn("Failed to check localLLM availability on startup:", e);
             set({ aiConfig: DEFAULT_AI_CONFIG });
           }
-        } catch (e) {
-          console.warn("Failed to check localLLM availability on startup:", e);
+        } else {
           set({ aiConfig: DEFAULT_AI_CONFIG });
         }
-      } else {
-        set({ aiConfig: DEFAULT_AI_CONFIG });
-      }
 
-      // Layer localStorage UNDER the backend config (mirroring the AI path) so
-      // UI-only fields the backend cache doesn't track (e.g. contextAuto) survive
-      // a hydrate instead of being dropped when a backend config exists.
-      const localAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
-      const savedAgentConfig = backendAgentConfig
-        ? { ...localAgentConfig, ...backendAgentConfig }
-        : localAgentConfig;
-      if (savedAgentConfig) {
-        set({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
-        storage.set(AGENT_CONFIG_KEY, savedAgentConfig);
-        if (!backendAgentConfig && window.electron && window.electron.saveAgentSettings) {
-          window.electron.saveAgentSettings(savedAgentConfig as unknown as Record<string, unknown>).catch(() => {});
-        }
-      } else if (savedConfig && savedConfig.provider !== "localllm") {
-        const configRecord = savedConfig as unknown as Record<string, string | number | undefined>;
-        const migrated: AgentConfig = {
-          baseUrl: (configRecord.baseUrl as string) || DEFAULT_AGENT_CONFIG.baseUrl,
-          model: (configRecord.model as string) || DEFAULT_AGENT_CONFIG.model,
-          apiKey: (configRecord.apiKey as string) || DEFAULT_AGENT_CONFIG.apiKey,
-          maxSteps: (configRecord.maxSteps as number) || DEFAULT_AGENT_CONFIG.maxSteps,
-          temperature: (configRecord.temperature as number) ?? DEFAULT_AGENT_CONFIG.temperature,
-          contextLimit: (configRecord.contextLimit as number) || DEFAULT_AGENT_CONFIG.contextLimit,
-          autoApprove: DEFAULT_AGENT_CONFIG.autoApprove,
-        };
-        set({ agentConfig: migrated });
-        storage.set(AGENT_CONFIG_KEY, migrated);
-      } else {
-        set({ agentConfig: DEFAULT_AGENT_CONFIG });
-      }
-
-      // One-time: relocate any raw LLM API keys (legacy top-level or per-provider)
-      // into the OS keychain, replacing them with reference tokens. Persists the
-      // scrubbed configs so plaintext keys leave localStorage + the settings cache.
-      try {
-        const cur = get();
-        const migrated = await migrateLlmKeysToKeychain(cur.aiConfig, cur.agentConfig);
-        if (migrated.changed) {
-          set({ aiConfig: migrated.ai, agentConfig: migrated.agent });
-          storage.set(AI_CONFIG_KEY, migrated.ai);
-          storage.set(AGENT_CONFIG_KEY, migrated.agent);
-          if (window.electron?.saveAiSettings) {
-            window.electron.saveAiSettings(migrated.ai as unknown as Record<string, unknown>).catch(() => {});
+        // Layer localStorage UNDER the backend config (mirroring the AI path) so
+        // UI-only fields the backend cache doesn't track (e.g. contextAuto) survive
+        // a hydrate instead of being dropped when a backend config exists.
+        const localAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
+        const savedAgentConfig = backendAgentConfig
+          ? { ...localAgentConfig, ...backendAgentConfig }
+          : localAgentConfig;
+        if (savedAgentConfig) {
+          set({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
+          storage.set(AGENT_CONFIG_KEY, savedAgentConfig);
+          if (!backendAgentConfig && window.electron && window.electron.saveAgentSettings) {
+            window.electron.saveAgentSettings(savedAgentConfig as unknown as Record<string, unknown>).catch(() => {});
           }
-          if (window.electron?.saveAgentSettings) {
-            window.electron.saveAgentSettings(migrated.agent as unknown as Record<string, unknown>).catch(() => {});
-          }
+        } else if (savedConfig && savedConfig.provider !== "localllm") {
+          const configRecord = savedConfig as unknown as Record<string, string | number | undefined>;
+          const migrated: AgentConfig = {
+            baseUrl: (configRecord.baseUrl as string) || DEFAULT_AGENT_CONFIG.baseUrl,
+            model: (configRecord.model as string) || DEFAULT_AGENT_CONFIG.model,
+            apiKey: (configRecord.apiKey as string) || DEFAULT_AGENT_CONFIG.apiKey,
+            maxSteps: (configRecord.maxSteps as number) || DEFAULT_AGENT_CONFIG.maxSteps,
+            temperature: (configRecord.temperature as number) ?? DEFAULT_AGENT_CONFIG.temperature,
+            contextLimit: (configRecord.contextLimit as number) || DEFAULT_AGENT_CONFIG.contextLimit,
+            autoApprove: DEFAULT_AGENT_CONFIG.autoApprove,
+          };
+          set({ agentConfig: migrated });
+          storage.set(AGENT_CONFIG_KEY, migrated);
+        } else {
+          set({ agentConfig: DEFAULT_AGENT_CONFIG });
         }
-      } catch (e) {
-        console.warn("LLM key keychain migration failed:", e);
-      }
 
-      restorePersistedUiPrefs(set);
+        // One-time: relocate any raw LLM API keys (legacy top-level or per-provider)
+        // into the OS keychain, replacing them with reference tokens.
+        try {
+          const cur = get();
+          const migrated = await migrateLlmKeysToKeychain(cur.aiConfig, cur.agentConfig);
+          if (migrated.changed) {
+            set({ aiConfig: migrated.ai, agentConfig: migrated.agent });
+            storage.set(AI_CONFIG_KEY, migrated.ai);
+            storage.set(AGENT_CONFIG_KEY, migrated.agent);
+            if (window.electron?.saveAiSettings) {
+              window.electron.saveAiSettings(migrated.ai as unknown as Record<string, unknown>).catch(() => {});
+            }
+            if (window.electron?.saveAgentSettings) {
+              window.electron.saveAgentSettings(migrated.agent as unknown as Record<string, unknown>).catch(() => {});
+            }
+          }
+        } catch (e) {
+          console.warn("LLM key keychain migration failed:", e);
+        }
+
+        restorePersistedUiPrefs(set);
+      }
 
       const snap = (await window.electron!.snapshot()) as PersistedState;
 
@@ -540,55 +544,108 @@ export const useCairnStore = create<CairnStore>()(
         ? (currentWsStillExists ? current.activeWorkspaceId : (snapWorkspaces[0]?.id ?? null))
         : (snapWorkspaces[0]?.id ?? null);
 
-      set({
-        workspaces: reconcileById(current.workspaces, snap.workspaces ?? []),
-        projects: reconcileById(current.projects, snap.projects ?? []),
-        notes: reconcileById(current.notes, mergedNotes),
-        noteChangeMarks: nextChangeMarks,
-        columns: reconcileById(current.columns, snap.columns ?? []),
-        cards: reconcileById(current.cards, snap.cards ?? []),
-        tags: reconcileById(current.tags, snap.tags ?? []),
-        // Chat (threads + messages) lives in localStorage and is managed by the
-        // store directly — never overwrite it from the SQLite snapshot, which
-        // doesn't include chat data. Doing so would zero out in-flight messages.
-        activeWorkspaceId: nextWorkspaceId,
-        activeProjectId: isRefresh
-          ? (() => {
-              // Same snapshot-membership guard as the workspace above: a
-              // preserved project id that no longer exists (deleted elsewhere)
-              // must not stick — fall back to the first snapshot project.
-              const cur = current.activeProjectId;
-              const stillExists =
-                cur != null && snap.projects?.some((p: { id: string }) => p.id === cur);
-              return stillExists ? cur : (snap.projects?.[0]?.id ?? null);
-            })()
-          : (() => {
-              const saved = storage.get<string>(ACTIVE_PROJECT_KEY);
-              const valid =
-                saved &&
-                snap.projects?.find(
-                  (p: { id: string }) => p.id === saved
-                );
-              return valid ? saved : (snap.projects?.[0]?.id ?? null);
-            })(),
-      });
+      const nextProjectId = isRefresh
+        ? (() => {
+            const cur = current.activeProjectId;
+            const stillExists =
+              cur != null && snap.projects?.some((p: { id: string }) => p.id === cur);
+            return stillExists ? cur : (snap.projects?.[0]?.id ?? null);
+          })()
+        : (() => {
+            const saved = storage.get<string>(ACTIVE_PROJECT_KEY);
+            const valid =
+              saved &&
+              snap.projects?.find(
+                (p: { id: string }) => p.id === saved
+              );
+            return valid ? saved : (snap.projects?.[0]?.id ?? null);
+          })();
 
-      // Chat threads/messages live in SQLite (write path in the chat slice) but
-      // aren't in the snapshot above. On the initial hydrate, read them back so
-      // conversations survive restarts + app updates — Chromium localStorage
-      // (the only other copy) can be cleared or relocated by an update. On a
-      // refresh hydrate we normally skip this to avoid clobbering in-flight chat
-      // state — EXCEPT when the active workspace actually changed (onboarding
-      // finishing, or Settings → change folder), because the threads in memory
-      // then belong to a different workspace's DB and would never be replaced.
-      // loadChatFromDb merges in-memory-wins, so this can't drop a live message.
-      const workspaceChanged = isRefresh && nextWorkspaceId !== current.activeWorkspaceId;
-      if (!isRefresh || workspaceChanged) {
-        const wsId = get().activeWorkspaceId;
+      const nextWorkspaces = reconcileById(current.workspaces, snap.workspaces ?? []);
+      const nextProjects = reconcileById(current.projects, snap.projects ?? []);
+      const nextNotes = reconcileById(current.notes, mergedNotes);
+      const nextColumns = reconcileById(current.columns, snap.columns ?? []);
+      const nextCards = reconcileById(current.cards, snap.cards ?? []);
+      const nextTags = reconcileById(current.tags, snap.tags ?? []);
+
+      const anyDataChanged =
+        !isRefresh ||
+        nextWorkspaces !== current.workspaces ||
+        nextProjects !== current.projects ||
+        nextNotes !== current.notes ||
+        nextChangeMarks !== current.noteChangeMarks ||
+        nextColumns !== current.columns ||
+        nextCards !== current.cards ||
+        nextTags !== current.tags ||
+        nextWorkspaceId !== current.activeWorkspaceId ||
+        nextProjectId !== current.activeProjectId;
+
+      if (anyDataChanged) {
+        set({
+          workspaces: nextWorkspaces,
+          projects: nextProjects,
+          notes: nextNotes,
+          noteChangeMarks: nextChangeMarks,
+          columns: nextColumns,
+          cards: nextCards,
+          tags: nextTags,
+          activeWorkspaceId: nextWorkspaceId,
+          activeProjectId: nextProjectId,
+        });
+      }
+
+      // Chat threads/messages live in their own session persistence (dsh session logs)
+      // separate from the Cairn SQLite snapshot. Chat does NOT participate in db:changed
+      // refresh hydrations. On the initial cold hydrate only, read them back so
+      // conversations survive restarts + app updates.
+      if (!isRefresh) {
+        let wsId: string | null = get().activeWorkspaceId as string | null;
+        const savedThreadId = storage.get<string>(ACTIVE_CHAT_THREAD_KEY);
+        if (savedThreadId) {
+          try {
+            const res = await ipcAwaitResult<ChatThread | null>(
+              (e) => (e.chat as unknown as { thread?: (id: string) => Promise<{ data: ChatThread | null }> }).thread?.(savedThreadId) as Promise<{ data: ChatThread | null } | { error: string }>
+            ).catch(() => null as unknown as { data: ChatThread | null });
+            // Fallback: try via threads list if single-thread fetch not available
+            let thread: ChatThread | null | undefined = (res as { data?: ChatThread | null })?.data ?? null;
+            if (!thread) {
+              const allRes = await ipcAwaitResult<ChatThread[]>(
+                (e) => e.chat.threads(wsId ?? "") as Promise<{ data: ChatThread[] } | { error: string }>
+              ).catch(() => null as unknown as { data: ChatThread[] });
+              const rawList = Array.isArray(allRes) ? (allRes as unknown as ChatThread[]) : ((allRes as { data?: ChatThread[] })?.data ?? []);
+              thread = rawList.find((t) => t.id === savedThreadId) ?? null;
+              // If not in current ws, scan all workspaces' threads
+              if (!thread) {
+                for (const w of snapWorkspaces) {
+                  const r = await ipcAwaitResult<ChatThread[]>(
+                    (e) => e.chat.threads(w.id) as Promise<{ data: ChatThread[] } | { error: string }>
+                  ).catch(() => null as unknown as { data: ChatThread[] });
+                  const raw = Array.isArray(r) ? (r as unknown as ChatThread[]) : ((r as { data?: ChatThread[] })?.data ?? []);
+                  thread = raw.find((t) => t.id === savedThreadId) ?? null;
+                  if (thread) break;
+                }
+              }
+            }
+            if (thread && thread.workspaceId) {
+              const wsExists = snapWorkspaces.some((w) => w.id === thread!.workspaceId);
+              const projExists = !thread.projectId || snap.projects?.some((p) => p.id === thread.projectId);
+              if (wsExists && projExists) {
+                wsId = thread.workspaceId;
+                // Preserve project context: if the thread is workspace-scoped (no projectId)
+                // keep the current activeProjectId instead of nulling it.
+                const curProj = get().activeProjectId;
+                const nextProj = thread.projectId ?? (curProj && snap.projects?.some((p) => p.id === curProj) ? curProj : null);
+                set({ activeWorkspaceId: thread.workspaceId, activeProjectId: nextProj });
+                if (thread.projectId) storage.set(ACTIVE_CHAT_THREAD_KEY, thread.id);
+              }
+            }
+          } catch (e) { console.warn("[hydrate] savedThread lookup failed", e); }
+        }
         if (wsId) {
-          void get().loadChatFromDb(wsId);
+          await get().loadChatFromDb(wsId);
         }
       }
+
 
       // Workspace-global slash commands live in SQLite (command:* IPC) and aren't
       // in the snapshot. Refetch on every hydrate (cheap) so commands created in

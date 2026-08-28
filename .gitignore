@@ -15,6 +15,8 @@
 
 # Playwright
 /playwright-report
+/playwright-electron-report
+/electron-recordings
 /test-results
 /blob-report
 
@@ -89,3 +91,8 @@ scripts/runtime-baselines/
 
 # scratch experiments (Needle finetune spike, venvs, checkpoints)
 /scratch
+.cairn-sessions/
+
+# Demo recording pass logs
+/ffmpeg2pass-0.log
+/ffmpeg2pass-0.log.mbtree

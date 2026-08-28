@@ -1,0 +1,255 @@
+/**
+ * §11 theme shim — maps the `--dsw-*` tokens a dsh toolview reads onto Cairn's
+ * own `--*` design tokens, SCOPED to the plugin-rendered subtree (.dsh-toolview-scope)
+ * so it never leaks into Cairn's own styling.
+ *
+ * The token set is derived from the tokens actually referenced by the vendored
+ * SkillRow + StateDot CSS (ui-skill/src/client/SkillRow.module.css,
+ * ui-primitives/src/StateDot.module.css). When adding more toolviews, extend
+ * this map with whatever `--dsw-*` names they use (dsh's ui-theme is the full
+ * source of truth for the alias set).
+ */
+
+.dsh-toolview-scope {
+  /* backgrounds / surfaces */
+  --dsw-alias-bg-base: var(--surface-2);
+  --dsw-alias-interactive-bg-hover-solid: color-mix(in srgb, var(--accent) 10%, transparent);
+  --dsw-alias-markdown-code-block: var(--surface-1);
+  --dsw-alias-markdown-code-block-banner: var(--surface-2);
+
+  /* borders */
+  --dsw-alias-border-l1: var(--border);
+  --dsw-alias-border-l2: color-mix(in srgb, var(--border) 60%, transparent);
+
+  /* labels / text */
+  --dsw-alias-label-primary: var(--text-primary);
+  --dsw-alias-label-secondary: var(--text-secondary);
+  --dsw-alias-label-tertiary: var(--text-tertiary);
+  --dsw-alias-label-caption: var(--text-tertiary);
+
+  /* state colours */
+  --dsw-alias-state-success-primary: var(--accent);
+  --dsw-alias-state-error-primary: var(--danger);
+  --dsw-alias-state-warn-primary: var(--warning, #d9a441);
+  --dsw-static-deepseek-450: var(--accent);
+
+  /* fonts */
+  --dsw-font-markdown-code-block-small: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+
+  color: var(--text-primary);
+}
+
+
+/* ── Vendored SkillRow styles (ui-skill/SkillRow.module.css), scoped + prefixed ── */
+/* Skill toolview: Bash-matched summary row plus a bounded instructions disclosure. */
+
+.dsh-toolview-scope .dsh-skill-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.dsh-toolview-scope .dsh-skill-row {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  height: 1.714rem;
+  min-width: 0;
+}
+
+.dsh-toolview-scope .dsh-skill-row[data-expandable] {
+  cursor: pointer;
+}
+
+.dsh-toolview-scope .dsh-skill-card[data-state='running'] .dsh-skill-row::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 300px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent) 55%,
+    transparent 100%
+  );
+  animation: dsh-skill-row-sweep 2.6s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes dsh-skill-row-sweep {
+  0% { left: -300px; }
+  90%, 100% { left: 100%; }
+}
+
+.dsh-toolview-scope .dsh-skill-leading {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dsh-toolview-scope .dsh-skill-chevron {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-toolview-scope .dsh-skill-iconIdle {
+  display: inline-flex;
+  opacity: 1;
+  transition: opacity 100ms ease;
+}
+
+.dsh-toolview-scope .dsh-skill-chevronHover {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.dsh-toolview-scope .dsh-skill-row:hover .dsh-skill-iconIdle {
+  opacity: 0;
+}
+
+.dsh-toolview-scope .dsh-skill-row:hover .dsh-skill-chevronHover {
+  opacity: 1;
+}
+
+.dsh-toolview-scope .dsh-skill-title {
+  flex: none;
+  font-size: 1rem;
+  line-height: 1.714rem;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-toolview-scope .dsh-skill-separator {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  border-radius: 1px;
+  margin: 0 8px;
+  background: var(--dsw-alias-label-caption);
+}
+
+.dsh-toolview-scope .dsh-skill-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1rem;
+  line-height: 1.714rem;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dsh-toolview-scope .dsh-skill-errorSummary {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-toolview-scope .dsh-skill-bodyWrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.dsh-toolview-scope .dsh-skill-instructionsCard {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  margin: 4px 0 4px 4px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-markdown-code-block);
+}
+
+.dsh-toolview-scope .dsh-skill-instructionsHeader {
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-markdown-code-block-banner);
+  font-size: 0.786rem;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--dsw-alias-label-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dsh-toolview-scope .dsh-skill-instructions {
+  min-height: 0;
+  margin: 0;
+  padding: 10px 12px 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: var(--dsw-font-markdown-code-block-small);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-toolview-scope .dsh-skill-instructions[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-toolview-scope .dsh-skill-instructions::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 6px;
+}
+
+.dsh-toolview-scope .dsh-skill-instructions::-webkit-scrollbar-track {
+  margin: 6px 0;
+}
+
+.dsh-toolview-scope .dsh-skill-inspectButton {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 2px 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.786rem;
+  line-height: 16px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.dsh-toolview-scope .dsh-skill-card:hover .dsh-skill-inspectButton,
+.dsh-toolview-scope .dsh-skill-inspectButton:focus-visible {
+  opacity: 1;
+}
+
+.dsh-toolview-scope .dsh-skill-inspectButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  color: var(--dsw-alias-label-primary);
+}
+
+.dsh-toolview-scope .dsh-skill-visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+.dsh-toolview-scope .dsh-skill-card[data-state='running'] .dsh-skill-row::after {
+    animation: none;
+    display: none;
+  }
+
+  .dsh-toolview-scope .dsh-skill-iconIdle,
+  .dsh-toolview-scope .dsh-skill-chevronHover,
+.dsh-toolview-scope .dsh-skill-inspectButton {
+    transition: none;
+  }
+}

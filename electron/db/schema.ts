@@ -180,6 +180,14 @@ END;
 
 type Migration = (db: Database.Database) => void;
 
+function tableExists(db: Database.Database, name: string): boolean {
+  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
+}
+
+function sessionMetadataTable(db: Database.Database): "pi_agent_sessions" | "agent_session_metadata" {
+  return tableExists(db, "agent_session_metadata") ? "agent_session_metadata" : "pi_agent_sessions";
+}
+
 const MIGRATIONS: Migration[] = [
   // v1: Add notes.type column (was ALTER TABLE in the old ad-hoc approach)
   (db) => {
@@ -359,9 +367,11 @@ const MIGRATIONS: Migration[] = [
     }
   },
 
-  // v15: Pi Agent persistent tab & session history — stores per-project agent
+  // v15: Coding Agent persistent tab & session history — stores per-project agent
   // sessions, their display messages, and the raw LLM context window so sessions
   // can be resumed across app restarts.
+  // HISTORICAL: pi_agent_* names are frozen migration DDL — renamed to
+  // agent_session_metadata / session_todos in v52. Do not rename here.
   (db) => {
     db.exec(`
       CREATE TABLE IF NOT EXISTS pi_agent_sessions (
@@ -386,14 +396,6 @@ const MIGRATIONS: Migration[] = [
         subagents    TEXT,
         timestamp    TEXT NOT NULL,
         "order"      INTEGER NOT NULL DEFAULT 0
-      );
-
-      CREATE TABLE IF NOT EXISTS pi_agent_llm_history (
-        session_id TEXT NOT NULL REFERENCES pi_agent_sessions(id) ON DELETE CASCADE,
-        "order"    INTEGER NOT NULL,
-        role       TEXT NOT NULL,
-        content    TEXT NOT NULL,
-        PRIMARY KEY (session_id, "order")
       );
 
       CREATE INDEX IF NOT EXISTS idx_pi_sessions_project ON pi_agent_sessions(project_id);
@@ -517,6 +519,7 @@ const MIGRATIONS: Migration[] = [
   // collapsible "Thinking" panel survives app restarts. Mirrors v14's
   // approach for tool_calls. Also covers pi_agent_messages so terminal
   // agent sessions retain their thinking across restarts too.
+  // HISTORICAL: pi_agent_messages name frozen here for idempotent ALTER TABLE.
   (db) => {
     const chatCols = db.prepare("PRAGMA table_info(chat_messages)").all() as { name: string }[];
     if (!chatCols.some((c) => c.name === "reasoning")) {
@@ -825,7 +828,7 @@ const MIGRATIONS: Migration[] = [
   // `automations` holds the schedule + replayed instructions + per-automation
   // standing rules; `automation_runs` records each fire (the independent,
   // resumable thread a run executes in). Device-local (not synced) — automations
-  // are a workspace-authoring convenience, mirroring slash_commands / pi-agent
+  // are a workspace-authoring convenience, mirroring slash_commands / session
   // sessions. Schedule kinds: 'cron' (5-field), 'every' ("N unit"), 'once' (ISO
   // datetime). next_run_at is an ISO string indexed for cheap due() lookups.
   (db) => {
@@ -882,7 +885,7 @@ const MIGRATIONS: Migration[] = [
       CREATE TABLE IF NOT EXISTS approval_items (
         id         TEXT PRIMARY KEY,
         run_id     TEXT,                          -- automation_run id (nullable for interactive sessions)
-        session_id TEXT,                          -- pi-agent session id (nullable)
+        session_id TEXT,                          -- session session id (nullable)
         tool       TEXT NOT NULL,
         args       TEXT NOT NULL DEFAULT '{}',    -- JSON tool arguments (redacted where sensitive)
         args_hash  TEXT NOT NULL DEFAULT '',      -- idempotency key: sha1(tool + args)
@@ -1015,6 +1018,7 @@ const MIGRATIONS: Migration[] = [
   // pi_agent_messages: scoped to a pi_agent_sessions row with ON DELETE CASCADE,
   // replace-wholesale (the model sends the full list each call — delete all +
   // insert by position in a single transaction).
+  // HISTORICAL: pi_session_todos / pi_agent_sessions names frozen; renamed in v52.
   (db) => {
     db.exec(`
       CREATE TABLE IF NOT EXISTS pi_session_todos (
@@ -1227,15 +1231,101 @@ const MIGRATIONS: Migration[] = [
     }
   },
 
-  // v48: pi_agent_sessions.role — session persona. "default" is the coding
+  // v48: agent_session_metadata.role — session persona. "default" is the coding
+  // HISTORICAL: pi_agent_sessions was the pre-v52 name (still referenced via sessionMetadataTable fallback).
   // agent; "automation-dev" restricts the toolset to FILE tools only
   // (read/write/edit/bash/grep/find/ls) so a Develop session can author an
   // automation's scripts without ever touching notes/tasks/board.
   (db) => {
-    const cols = db.prepare("PRAGMA table_info(pi_agent_sessions)").all() as { name: string }[];
+    const table = sessionMetadataTable(db);
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === "role")) {
-      db.exec("ALTER TABLE pi_agent_sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'default'");
+      db.exec(`ALTER TABLE ${table} ADD COLUMN role TEXT NOT NULL DEFAULT 'default'`);
     }
+  },
+
+  // v49: Drop the pre-Cordis SQLite transcript tables.
+  // The Cordis runtime owns chat and coding history in dsh JSONL sessions. Old
+  // SQLite transcript rows are intentionally discarded; this release does not
+  // provide compatibility or archive recovery for pre-Cordis sessions.
+  (db) => {
+    for (const table of ["chat_messages", "pi_agent_messages", "pi_agent_llm_history", "approval_items"]) {
+      db.exec(`DROP TABLE IF EXISTS ${table}`);
+    }
+  },
+
+  // v50: agent_session_metadata.plan_content — the last plan the agent committed
+  // HISTORICAL: pi_agent_sessions was the pre-v52 name.
+  // via dsh-plan-mode's `exit_plan_mode` tool for this session. Cached here
+  // so the execute-mode system prompt can carry the approved plan forward
+  // without folding the entire session log every turn. Approvals may also
+  // come from the legacy PRD-note flow (plan_note_id + notes.content) —
+  // execute-mode's prompt builder prefers plan_content when both are set.
+  // Nullable: sessions predating this column, and sessions that never
+  // called exit_plan_mode, keep plan_content = NULL.
+  (db) => {
+    const table = sessionMetadataTable(db);
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === "plan_content")) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN plan_content TEXT`);
+    }
+  },
+
+  // v51: Reset pre-Cordis session indexes. The dsh session log and Cairn's old
+  // session metadata are not compatible enough to resume across this cutover.
+  // Users start new Chat/Coding sessions after the migration.
+  (db) => {
+    db.exec("DELETE FROM chat_threads;");
+    db.exec(`DELETE FROM ${sessionMetadataTable(db)};`);
+  },
+
+  // v52: Rename the now-empty pre-Cordis metadata tables. Historical migration
+  // bodies remain unchanged; all current queries use the neutral names below.
+  (db) => {
+    if (tableExists(db, "pi_session_todos") && !tableExists(db, "session_todos")) db.exec("ALTER TABLE pi_session_todos RENAME TO session_todos");
+    if (tableExists(db, "pi_agent_sessions") && !tableExists(db, "agent_session_metadata")) db.exec("ALTER TABLE pi_agent_sessions RENAME TO agent_session_metadata");
+    db.exec("DROP INDEX IF EXISTS idx_pi_todos_session; DROP INDEX IF EXISTS idx_pi_sessions_project;");
+    if (tableExists(db, "session_todos")) db.exec("CREATE INDEX IF NOT EXISTS idx_session_todos_session ON session_todos(session_id)");
+    if (tableExists(db, "agent_session_metadata")) db.exec("CREATE INDEX IF NOT EXISTS idx_session_metadata_project ON agent_session_metadata(project_id)");
+  },
+
+  // v53: Neutral Cordis session profiles. This is deliberately separate from
+  // the coding-session index: chat, coding, and automation-dev all need the
+  // same durable identity for deterministic reopen/popout.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS session_profiles (
+        session_id  TEXT PRIMARY KEY,
+        profile     TEXT NOT NULL CHECK (profile IN ('chat', 'coding', 'automation-dev')),
+        workspace_id TEXT,
+        project_id  TEXT,
+        cwd         TEXT,
+        updated_at  TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_profiles_updated ON session_profiles(updated_at);
+    `);
+  },
+
+  // v54: Workspace-persistent approval grants ("Always allow").
+  // Each row is a single tool (and, for bash, an exact canonical command) the
+  // user marked "Always allow" for a workspace. Mirrors automation standing
+  // rules (target-aware, deduped by tool+target, exec refuses wildcard) but
+  // scoped to a workspace rather than to one automation. The next session in
+  // the same workspace auto-allows it — no re-ask. Intentionally NOT synced
+  // (not in SYNCABLE_TABLES): a trust decision made on one device must not
+  // silently apply on another.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS approval_grants (
+        id           TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tool         TEXT NOT NULL,
+        target       TEXT,
+        created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UNIQUE(workspace_id, tool, target)
+      );
+      CREATE INDEX IF NOT EXISTS idx_approval_grants_workspace ON approval_grants(workspace_id);
+    `);
   },
 ];
 
@@ -1278,7 +1368,8 @@ function ensureColumns(db: Database.Database): void {
   ensure("automations", "requires", "requires TEXT");
   ensure("automations", "env", "env TEXT");
   ensure("automation_runs", "run_dir", "run_dir TEXT");
-  ensure("pi_agent_sessions", "role", "role TEXT NOT NULL DEFAULT 'default'");
+  ensure("agent_session_metadata", "role", "role TEXT NOT NULL DEFAULT 'default'");
+  ensure("agent_session_metadata", "plan_content", "plan_content TEXT");
   ensure("mcp_notifications", "target_type", "target_type TEXT");
   ensure("mcp_notifications", "target_id", "target_id TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");

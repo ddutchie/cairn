@@ -25,15 +25,21 @@ export interface CachedConfig {
     contextLimit?: number;
     aiEnabled?: boolean;
     subagentsEnabled?: boolean;
+    /** @deprecated — engine is now always cordis; this field is ignored. Remove in Phase 2. */
+    engine?: "builtin" | "cordis";
     // Max output tokens: Auto (default) sends a generous 32K cap (bounded by the
     // model's declared output limit) so the model can finish naturally; a manual
     // value is a deliberate cap. Persisted so main-process consumers (e.g. the
     // tool builder) honour the same Auto semantics as the chat/agent loops.
     maxOutputAuto?: boolean;
     maxOutputTokens?: number;
+    /** Reasoning effort for reasoning-capable models ("off"|"low"|"medium"|"high"). */
+    reasoningEffort?: string;
+    /** Explicit wire protocol ("responses"|"completions"|"anthropic-messages"). */
+    apiMode?: string;
     // Saved cloud/local API connections the user can switch between, plus the
     // id of the active one. Persisted so the switcher survives restarts.
-    savedProviders?: Array<{ id: string; name: string; baseUrl: string; apiKey: string; model: string }>;
+    savedProviders?: Array<{ id: string; name: string; baseUrl: string; apiKey: string; model: string; apiMode?: string }>;
     activeProviderId?: string;
     // Installed chat personalities (community + custom) and the active one.
     // Persisted so the picker + selection survive restarts; the personality
@@ -155,6 +161,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         contextLimit: typeof configRecord.contextLimit === "number" ? configRecord.contextLimit : current.aiConfig?.contextLimit,
         aiEnabled: typeof configRecord.aiEnabled === "boolean" ? configRecord.aiEnabled : current.aiConfig?.aiEnabled,
         subagentsEnabled: typeof configRecord.subagentsEnabled === "boolean" ? configRecord.subagentsEnabled : current.aiConfig?.subagentsEnabled,
+        engine: configRecord.engine === "cordis" || configRecord.engine === "builtin" ? configRecord.engine : current.aiConfig?.engine,
         maxOutputAuto: typeof configRecord.maxOutputAuto === "boolean" ? configRecord.maxOutputAuto : current.aiConfig?.maxOutputAuto,
         // Normalize the candidate through the same helper consumers use: only a
         // value resolveMaxOutputTokens honours (>= 1, floored) is persisted; an
@@ -162,6 +169,11 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         // the existing cached value rather than storing one that would be
         // silently ignored on read. maxOutputAuto is deliberately untouched.
         maxOutputTokens: normalizeMaxOutputTokens(configRecord.maxOutputTokens, current.aiConfig?.maxOutputTokens),
+        // Reasoning effort + explicit API protocol must round-trip too, or they
+        // revert to their defaults on the next hydrate (backend cache is layered
+        // OVER localStorage). "off"|"low"|"medium"|"high" and the ApiMode strings.
+        reasoningEffort: typeof configRecord.reasoningEffort === "string" ? configRecord.reasoningEffort : current.aiConfig?.reasoningEffort,
+        apiMode: typeof configRecord.apiMode === "string" ? configRecord.apiMode : current.aiConfig?.apiMode,
         // Saved-provider switcher state (array + active id). Each provider's
         // apiKey is scrubbed to a ref (or dropped) so no raw key is cached.
         savedProviders: Array.isArray((config as { savedProviders?: unknown }).savedProviders)
@@ -233,7 +245,7 @@ export function getEmbeddingsSettingsCached(): CachedEmbeddingsConfig {
 
 /**
  * Persist an LLM connection to the cache from an IPC request config. Shared by
- * the chat / prd / flow / pi-agent handlers so the "cache only a keychain ref,
+ * the chat / prd / flow / session handlers so the "cache only a keychain ref,
  * never a raw key" rule lives in one place. `saveCachedConfig` scrubs the apiKey
  * (a non-ref value is stored as an explicit clear), so callers can pass the
  * request config straight through without their own guard.

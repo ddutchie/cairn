@@ -7,10 +7,15 @@
  */
 
 import { contextBridge, ipcRenderer } from "electron";
+import type { SessionEventEnvelope } from "../shared/agent/session-event";
+import type { SessionProjection } from "../shared/agent/session-projection";
 
 // Local structural types for the external-tools namespace. The renderer's
 // canonical types live in src/types; electron's rootDir excludes src, so we
 // mirror the shapes here (kept in sync by the IPC return types).
+// Keep SessionPopoutProfile / SessionProfileId in sync with
+// shared/agent/session-profile.ts and shared/agent/chat-popout.ts — any drift
+// breaks pop-out wiring (chat-popout.ts resolveChatPopoutSession).
 interface McpServerConfig {
   id: string; workspaceId: string; name: string; description?: string;
   transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
@@ -200,7 +205,7 @@ interface GitStatus {
 
 // ── Inline types for the Usage view (usage:overview / usage:recent) ──────────
 type UsageSource =
-  | "chat" | "pi-agent" | "chat-subagent" | "pi-subagent" | "automation"
+  | "chat" | "coding-agent" | "chat-subagent" | "coding-subagent" | "automation"
   | "prd" | "commit-message" | "pr-description" | "explain" | "flow-ai-summary"
   | "summary" | "tool-builder";
 interface UsageTotals {
@@ -336,13 +341,15 @@ const api = {
     recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) => invoke("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
     runNow: (id: string) => invoke("db:automation:runNow", { id }),
     runningCount: () => invoke("db:automation:runningCount"),
+    /** Approve/deny a pending tool approval for a running automation (Cordis). */
+    approve: (callId: string, approved: boolean, grant?: "session" | "always") => invoke("automation:approve", { callId, approved, grant }),
     folder: (id: string) => invoke<{ folder: string }>("db:automation:folder", { id }),
     syncFromManifest: (id: string) => invoke("db:automation:syncFromManifest", { id }),
     files: (id: string) => invoke<{ files: Array<{ path: string; size: number; mtimeMs: number }> }>("db:automation:files", { id }),
     runLog: (runId: string) => invoke<{ log: unknown } | { error: string }>("db:automation:runLog", { runId }),
     /** Live run activity (tokens/tools/thought) for the "watch this run" view. */
     onRunEvent: (cb: (payload: {
-      event: "started" | "token" | "thought" | "tool" | "toolDone" | "finished";
+      event: "started" | "token" | "thought" | "tool" | "toolDone" | "toolConfirmRequired" | "approval" | "finished";
       automationId: string;
       runId: string;
       delta?: string;
@@ -356,6 +363,7 @@ const api = {
       recipe?: string;
       content?: string;
       exhausted?: boolean;
+      callId?: string;
     }) => void) => {
       const handler = (_e: unknown, payload: Parameters<typeof cb>[0]) => cb(payload);
       ipcRenderer.on("automation:run", handler);
@@ -373,129 +381,27 @@ const api = {
   },
 
   // ── Approval inbox ────────────────────────────
-  approval: {
-    listPending: (limit?: number) => invoke("db:approval:listPending", { limit }),
-    resolve: (id: string, resolution: "approved_once" | "approved_session" | "approved_always" | "denied") => invoke("db:approval:resolve", { id, resolution }),
-    count: () => invoke("db:approval:count"),
-  },
 
   // ── Chat ─────────────────────────────────────
   chat: {
     threads:       (workspaceId: string) => invoke("db:chat:threads", { workspaceId }),
-    messages:      (threadId: string) => invoke("db:chat:messages", { threadId }),
+    sessionMessages: (threadId: string) => invoke("db:chat:sessionMessages", { threadId }),
     upsertThread:  (args: unknown) => invoke("db:chat:upsertThread", args),
-    addMessage:    (args: unknown) => invoke("db:chat:addMessage", args),
     deleteThread:  (threadId: string) => invoke("db:chat:deleteThread", { threadId }),
     clearThreadMessages: (threadId: string) => invoke("db:chat:clearThreadMessages", { threadId }),
+    clearAllThreads: (workspaceId: string, projectId?: string) => invoke("db:chat:clearAllThreads", { workspaceId, projectId }),
     compactThread: (req: unknown) => invoke("chat:compactThread", req),
-    // ── AI Chat streaming ──────────────────────
-    // Fire-and-forget. Listen with onToken / onDone / onToolCall.
-    stream: (req: unknown) => ipcRenderer.send("chat:stream", req),
-    abort: () => ipcRenderer.send("chat:abort"),
-    onToken: (cb: (e: { delta: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { delta: string; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:token", handler);
-      return () => ipcRenderer.off("chat:token", handler);
-    },
-    onThought: (cb: (e: { delta: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { delta: string; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:thought", handler);
-      return () => ipcRenderer.off("chat:thought", handler);
-    },
-    onDone: (cb: (e: { content: string; reasoning?: string; reasoningSummary?: string; reasoningItems?: Array<Record<string, unknown>>; reasoningField?: string; reasoningModel?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number } }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:done", handler);
-      return () => ipcRenderer.off("chat:done", handler);
-    },
-    onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:tool-call", handler);
-      return () => ipcRenderer.off("chat:tool-call", handler);
-    },
-    onToolCallDone: (cb: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; threadId?: string; ok?: boolean; error?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; threadId?: string; ok?: boolean; error?: string }) => cb(e);
-      ipcRenderer.on("chat:tool-call-done", handler);
-      return () => ipcRenderer.off("chat:tool-call-done", handler);
-    },
-    onUsage: (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; threadId?: string }) => cb(e);
-      ipcRenderer.on("chat:usage", handler);
-      return () => ipcRenderer.off("chat:usage", handler);
-    },
-    // ── Subagent mode (dispatch → research/write) live trace ────────────────
-    onSubagent: (cb: (e: { childId: string; role: string; instruction?: string; result?: string; status: "start" | "done"; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent", handler);
-      return () => ipcRenderer.off("chat:subagent", handler);
-    },
-    onSubagentToken: (cb: (e: { childId: string; delta: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-token", handler);
-      return () => ipcRenderer.off("chat:subagent-token", handler);
-    },
-    onSubagentThought: (cb: (e: { childId: string; delta: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-thought", handler);
-      return () => ipcRenderer.off("chat:subagent-thought", handler);
-    },
-    onSubagentToolCall: (cb: (e: { childId: string; tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-tool-call", handler);
-      return () => ipcRenderer.off("chat:subagent-tool-call", handler);
-    },
-    onSubagentToolCallDone: (cb: (e: { childId: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; threadId?: string; ok?: boolean; error?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-tool-call-done", handler);
-      return () => ipcRenderer.off("chat:subagent-tool-call-done", handler);
-    },
-    onSubagentUsage: (cb: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number; breakdown?: unknown; threadId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("chat:subagent-usage", handler);
-      return () => ipcRenderer.off("chat:subagent-usage", handler);
-    },
     // ── Pop-out window ──────────────────────────
     /** Called by main window: sends current chat state, triggers window creation. */
-    popOut: (payload: {
-      threadId: string | null;
-      chatThreads: unknown[];
-      chatMessages: unknown[];
-      activeProjectId: string | null;
-    }) => invoke<{ ok: boolean }>("chat:popOut", payload),
-    /** Called by pop-out page: signals readiness, returns stored chat state. */
-    popoutReady: () => invoke<{
-      threadId: string | null;
-      chatThreads: unknown[];
-      chatMessages: unknown[];
-      activeProjectId: string | null;
-    }>("chat:popoutReady"),
-    /** Called by pop-out page: sends final state back, closes window. */
-    popIn: (payload: {
-      threadId: string | null;
-      chatThreads: unknown[];
-      chatMessages: unknown[];
-      activeProjectId: string | null;
-    }) => invoke<{ ok: boolean }>("chat:popIn", payload),
+      popOut: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }) => invoke<{ ok: boolean; reason?: string }>("chat:popOut", payload),
+    /** Called by pop-out page: signals readiness, returns the shared session id. */
+      popoutReady: () => invoke<{ sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null; reason?: string }>("chat:popoutReady"),
+    /** Called by pop-out page: closes the window; session state is not copied. */
+    popIn: (payload: { sessionId: string }) => invoke<{ ok: boolean; reason?: string }>("chat:popIn", payload),
     /** Called by main window: asks the pop-out to return (relayed via main process). */
-    requestPopIn: () => invoke<{ ok: boolean }>("chat:requestPopIn"),
+    requestPopIn: () => invoke<{ ok: boolean; reason?: string }>("chat:requestPopIn"),
     /** Listener on the main window: received when pop-in completes with final state. */
-    onChatPoppedIn: (cb: (payload: {
-      threadId: string | null;
-      chatThreads: unknown[];
-      chatMessages: unknown[];
-      activeProjectId: string | null;
-    }) => void) => {
+    onChatPoppedIn: (cb: (payload: { sessionId: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, payload: any) => cb(payload);
       ipcRenderer.on("chat:poppedIn", handler);
@@ -512,6 +418,13 @@ const api = {
       const handler = () => cb();
       ipcRenderer.on("chat:requestPopIn", handler);
       return () => ipcRenderer.off("chat:requestPopIn", handler);
+    },
+    /** Listener on the pop-out page: received when main window pushes an updated session (C2 race fix). */
+    onChatSessionUpdated: (cb: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, payload: any) => cb(payload);
+      ipcRenderer.on("chat:sessionUpdated", handler);
+      return () => ipcRenderer.off("chat:sessionUpdated", handler);
     },
   },
 
@@ -1005,178 +918,82 @@ const api = {
   },
 
   // ── Cairn native agent (pi) ───────────────────
-  piAgent: {
+  session: {
     /** Send a prompt to an existing or new session. Fire-and-forget. */
-    prompt: (req: unknown) => ipcRenderer.send("pi-agent:prompt", req),
-    /** Whether a runAgentLoop is currently in flight for this session. */
-    isRunning: (sessionId: string) => invoke<boolean>("pi-agent:is-running", { sessionId }),
+    prompt: (req: unknown) => ipcRenderer.send("session:prompt", req),
+    /** Canonical raw DSH session/event stream shared by Chat and Coding. */
+    onEvent: (cb: (e: SessionEventEnvelope) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);
+      ipcRenderer.on("session:event", handler);
+      return () => ipcRenderer.off("session:event", handler);
+    },
+    /** Reasoning-provenance snapshot for the agent panel's Context Ring badge */
+    contextRing: (sessionId: string) => invoke<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }>("session:context-ring", { sessionId }),
+    isRunning: (sessionId: string) => invoke<{
+      running: boolean;
+      pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string; nonce?: string }>;
+      /** Outstanding question asks (ask_questions / plan-review). The
+       *  renderer surfaces these into pendingQuestions after a reload so a
+       *  plan under review isn't lost. */
+      pendingQuestions?: Array<{ callId: string; questions: Array<{ id: string; [k: string]: unknown }>; nonce?: string }>;
+    }>("session:is-running", { sessionId }),
+    /** Bulk snapshot of session ids whose loop is in flight right now. */
+    runningIds: () => invoke<{ ids: string[] }>("session:running-ids", {}),
     /** Abort the current in-flight turn for this session. */
-    abort: (sessionId: string) => ipcRenderer.send("pi-agent:abort", { sessionId }),
+    abort: (sessionId: string) => ipcRenderer.send("session:abort", { sessionId }),
     /** Clear message history for a session (start fresh). */
-    clear: (sessionId: string) => ipcRenderer.send("pi-agent:clear", { sessionId }),
+    clear: (sessionId: string) => ipcRenderer.send("session:clear", { sessionId }),
     /** Destroy a session when the tab is closed. */
-    destroy: (sessionId: string) => ipcRenderer.send("pi-agent:destroy", { sessionId }),
+    destroy: (sessionId: string) => ipcRenderer.send("session:destroy", { sessionId }),
     /** Trigger immediate LLM-based compaction on demand (/compact command). */
-    compactNow: (req: unknown) => ipcRenderer.send("pi-agent:compact-now", req),
+    compactNow: (req: unknown) => ipcRenderer.send("session:compact-now", req),
 
-    onToken: (cb: (e: { sessionId: string; delta: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; delta: string }) => cb(e);
-      ipcRenderer.on("pi-agent:token", handler);
-      return () => ipcRenderer.off("pi-agent:token", handler);
-    },
-    onThought: (cb: (e: { sessionId: string; delta: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; delta: string }) => cb(e);
-      ipcRenderer.on("pi-agent:thought", handler);
-      return () => ipcRenderer.off("pi-agent:thought", handler);
-    },
-    onTool: (cb: (e: { sessionId: string; name: string; label: string; args?: Record<string, unknown>; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; name: string; label: string; args?: Record<string, unknown>; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => cb(e);
-      ipcRenderer.on("pi-agent:tool", handler);
-      return () => ipcRenderer.off("pi-agent:tool", handler);
-    },
-    onDone: (cb: (e: { sessionId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string }) => cb(e);
-      ipcRenderer.on("pi-agent:done", handler);
-      return () => ipcRenderer.off("pi-agent:done", handler);
-    },
-    onError: (cb: (e: { sessionId: string; error: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; error: string }) => cb(e);
-      ipcRenderer.on("pi-agent:error", handler);
-      return () => ipcRenderer.off("pi-agent:error", handler);
-    },
-    onToolsReady: (cb: (e: { sessionId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string }) => cb(e);
-      ipcRenderer.on("pi-agent:tools-ready", handler);
-      return () => ipcRenderer.off("pi-agent:tools-ready", handler);
-    },
-    onStep: (cb: (e: { sessionId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string }) => cb(e);
-      ipcRenderer.on("pi-agent:step", handler);
-      return () => ipcRenderer.off("pi-agent:step", handler);
-    },
-    onUsage: (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; cacheReadTokens?: number; cacheCreationTokens?: number }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; cacheReadTokens?: number; cacheCreationTokens?: number }) => cb(e);
-      ipcRenderer.on("pi-agent:usage", handler);
-      return () => ipcRenderer.off("pi-agent:usage", handler);
-    },
-    /** Fired before each automatic retry on a transient error. delayMs is the backoff wait. */
-    onRetry: (cb: (e: { sessionId: string; attempt: number; maxRetries: number; delayMs: number; error: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; attempt: number; maxRetries: number; delayMs: number; error: string }) => cb(e);
-      ipcRenderer.on("pi-agent:retry", handler);
-      return () => ipcRenderer.off("pi-agent:retry", handler);
-    },
-    /** Fired when the session starts or finishes an LLM-based compaction pass. */
-    onCompact: (cb: (e: { sessionId: string; status: "start" | "end"; auto?: boolean }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; status: "start" | "end"; auto?: boolean }) => cb(e);
-      ipcRenderer.on("pi-agent:compact", handler);
-      return () => ipcRenderer.off("pi-agent:compact", handler);
-    },
-    /** Fired after a /compact slash command completes with the result. */
-    onCompactResult: (cb: (e: { sessionId: string; messageCount: number; summary: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; messageCount: number; summary: string }) => cb(e);
-      ipcRenderer.on("pi-agent:compact-result", handler);
-      return () => ipcRenderer.off("pi-agent:compact-result", handler);
-    },
-    onSubagent: (cb: (e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => cb(e);
-      ipcRenderer.on("pi-agent:subagent", handler);
-      return () => ipcRenderer.off("pi-agent:subagent", handler);
+    onProjection: (cb: (projection: SessionProjection) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: SessionProjection) => cb(payload);
+      ipcRenderer.on("session:projection", handler);
+      return () => ipcRenderer.off("session:projection", handler);
     },
     /** Fired when the agent calls ensure_note in plan mode — carries the PRD note ID */
-    onPlanNote: (cb: (e: { sessionId: string; noteId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; noteId: string }) => cb(e);
-      ipcRenderer.on("pi-agent:plan-note", handler);
-      return () => ipcRenderer.off("pi-agent:plan-note", handler);
-    },
-    /** Fired after any note-write tool (patch_note, ensure_note, append_to_note) completes — delivers fresh note content for live task-list updates */
-    onNoteUpdated: (cb: (e: { sessionId: string; noteId: string; content: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; noteId: string; content: string }) => cb(e);
-      ipcRenderer.on("pi-agent:note-updated", handler);
-      return () => ipcRenderer.off("pi-agent:note-updated", handler);
-    },
-    /** Fired after the todowrite tool persists a new list — live todo-dock updates */
-    onTodos: (cb: (e: { sessionId: string; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }> }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }> }) => cb(e);
-      ipcRenderer.on("pi-agent:todos", handler);
-      return () => ipcRenderer.off("pi-agent:todos", handler);
-    },
-    /** Fired when the model repeats the same tool call with identical args (doom loop) — blocks until the user responds */
-    onDoomLoop: (cb: (e: { sessionId: string; toolName: string; count: number; args?: Record<string, unknown>; callId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; toolName: string; count: number; args?: Record<string, unknown>; callId: string }) => cb(e);
-      ipcRenderer.on("pi-agent:doom-loop", handler);
-      return () => ipcRenderer.off("pi-agent:doom-loop", handler);
-    },
-    /** Resolve a doom-loop pause: allow → continue the repeated call; deny → halt the loop */
-    respondDoomLoop: (sessionId: string, callId: string, allow: boolean) => ipcRenderer.send("pi-agent:respond-doom-loop", { sessionId, callId, allow }),
-    /** Fired when the session mode switches (plan → execute after approval) */
-    onModeChange: (cb: (e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => cb(e);
-      ipcRenderer.on("pi-agent:mode-change", handler);
-      return () => ipcRenderer.off("pi-agent:mode-change", handler);
-    },
-    /** Approve the plan — switches session to execute mode and starts implementation */
-    approvePlan: (req: unknown) => ipcRenderer.send("pi-agent:approve-plan", req),
-    /** Fired when the agent calls ask_questions — renderer should render an inline form */
-    onAskQuestions: (cb: (e: { sessionId: string; callId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; callId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => cb(e);
-      ipcRenderer.on("pi-agent:ask-questions", handler);
-      return () => ipcRenderer.off("pi-agent:ask-questions", handler);
-    },
-    /** Answer a blocked ask_questions call — the text is fed back to the model as the tool result */
-    respondQuestions: (sessionId: string, callId: string, answers: string) => ipcRenderer.send("pi-agent:respond-questions", { sessionId, callId, answers }),
-    /** List all persisted pi sessions for a project (project-scoped history) */
-    listSessions:   (projectId: string) => invoke("db:piSession:list", { projectId }),
-    /** Persist a new pi session row to SQLite */
-    createSession:  (args: unknown) => invoke("db:piSession:create", args),
-    /** Delete a pi session and all its messages from SQLite */
-    deleteSession:  (id: string) => invoke("db:piSession:delete", { id }),
-    /** Fetch the full message transcript for a session */
-    getMessages:    (sessionId: string) => invoke("db:piSession:messages", { sessionId }),
-    /** Fetch the persisted todo list for a session */
-    getTodos:       (sessionId: string) => invoke<Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }>>("db:piSession:todos", { sessionId }),
-    /** Bulk-save the full message array for a session (replaces existing rows) */
-    saveMessages:   (sessionId: string, messages: unknown[]) => invoke("db:piSession:saveMessages", { sessionId, messages }),
-    /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */
-    restoreContext: (sessionId: string) => ipcRenderer.send("pi-agent:restore-context", { sessionId }),
     /**
-     * Preview the assembled system prompt and discovered skills for a given cwd.
-     * Used by Settings → Coding Agents to show what the agent will receive.
+     * Fired when the agent produces a plan for user review. Two shapes carry
+     * this today:
+     *   - dsh-plan-mode's `exit_plan_mode` tool call (planContent is set,
+     *     noteId is undefined) — the plan is in the tool call args and dsh's
+     *     userQuestions.ask surfaces the review card;
+     *   - the legacy PRD-note flow (noteId is set, planContent is undefined)
+     *     where the agent calls `ensure_note` while in plan mode.
+     * A given session may emit both over its lifetime; the renderer uses
+     * whichever fields are populated to update the UI.
      */
-    previewPrompt: (req: { cwd: string; projectId?: string; mode?: "plan" | "execute" }) =>
-      invoke<{ systemPrompt: string; skills: Array<{ name: string; description: string; filePath: string; dirPath: string; license?: string; compatibility?: string }> }>(
-        "pi-agent:preview-prompt", req
-      ),
-    /** Dynamically switch a session's mode */
+    /** Approve the plan — switches session to execute mode and starts implementation */
+    approvePlan: (req: unknown) => ipcRenderer.send("session:approve-plan", req),
+    /** Fired when the agent calls ask_questions — renderer should render an inline form */
+    /** Answer a blocked ask_questions call — the text is fed back to the model as the tool result */
+    respondQuestions: (sessionId: string, callId: string, answers: string, nonce?: string) => ipcRenderer.send("session:respond-questions", { sessionId, callId, answers, nonce }),
+    /** List all persisted coding sessions for a project (project-scoped history) */
+    listSessions:   (projectId: string) => invoke("db:session:list", { projectId }),
+    /** Persist a new coding session row to SQLite */
+    createSession:  (args: unknown) => invoke("db:session:create", args),
+    /** Delete a coding session and all its messages from SQLite */
+    deleteSession:  (id: string) => invoke("db:session:delete", { id }),
+    /** Fetch session transcript from the dsh JSONL log (session-as-truth), SQLite fallback */
+    getSessionMessages: (sessionId: string) => invoke("db:session:messages", { sessionId }),
+    /** Fetch the persisted todo list for a session */
+    getTodos:       (sessionId: string) => invoke<Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }>>("db:session:todos", { sessionId }),
+    /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */
+    restoreContext: (sessionId: string) => ipcRenderer.send("session:restore-context", { sessionId }),
+    /**
+     * Dynamically switch a session's mode */
     setMode: (sessionId: string, mode: "plan" | "execute") =>
-      ipcRenderer.send("pi-agent:set-mode", { sessionId, mode }),
-    /** Approve or deny a pending tool call */
-    respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command") =>
-      ipcRenderer.send("pi-agent:respond-tool", { sessionId, callId, approved, grant }),
-    /** Listen for tool call confirmation requests */
-    onToolConfirmRequired: (cb: (e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown> }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; callId: string; name: string; label: string; args?: Record<string, unknown> }) => cb(e);
-      ipcRenderer.on("pi-agent:tool-confirm-required", handler);
-      return () => ipcRenderer.off("pi-agent:tool-confirm-required", handler);
-    },
+      ipcRenderer.send("session:set-mode", { sessionId, mode }),
+    /** Approve or deny a pending tool call; grant:"command" echoes the exact bash command to standing-allow */
+    respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command" | "workspace", command?: string, nonce?: string) =>
+      ipcRenderer.send("session:respond-tool", { sessionId, callId, approved, grant, command, nonce }),
+    /** Workspace-persistent "Always allow" grants */
+    listApprovalGrants: (workspaceId: string) => invoke("approval-grants:list", { workspaceId }),
+    deleteApprovalGrant: (id: string) => invoke("approval-grants:delete", { id }),
+    clearApprovalGrants: (workspaceId: string) => invoke("approval-grants:clear-workspace", { workspaceId }),
+
   },
 
   // ── AI Tool Builder (streaming builder session) ───────────────
@@ -1351,6 +1168,22 @@ const api = {
       llm: { healthy: boolean; model: string | null; loaded: boolean; port: number | null };
     }>("runtime:status"),
     stop: () => invoke<{ ok: boolean }>("runtime:stop"),
+    /** List dsh registry commands (name + description) — palette source. */
+    listCommands: () => invoke<Array<{ name: string; description: string }>>("cordis:listCommands"),
+    /** Execute a dsh registry command (/plan, /compact, …) on a session's agent. */
+    executeCommand: (req: { sessionId: string; line: string }) => invoke<{ kind?: string; text?: string }>(
+      "cordis:executeCommand", req
+    ),
+    /** Assemble the real dsh system prompt (Cordis engine) + breakdown. */
+    systemPromptPreview: (req: { cwd?: string }) => invoke<{
+      text: string;
+      sections: Array<{ name: string; order: number; text: string; index: number }>;
+      contexts: Array<{ name: string; order: number; text: string }>;
+      skills: Array<{ name: string; description: string }>;
+      tools: Array<{ name: string; description?: string }>;
+      variables: Record<string, string | undefined>;
+      error?: string;
+    }>("runtime:systemPrompt:preview", req),
     onProgress: (cb: (e: {
       modelId: string;
       status: string;
@@ -1481,6 +1314,30 @@ const api = {
       ipcRenderer.on("mobile:status-changed", handler);
       return () => ipcRenderer.off("mobile:status-changed", handler);
     }
+  },
+  /** UI plugins (dev-gated): pull renderer-side plugin sources + live-change events. */
+  plugins: {
+    listUi: () => invoke<Array<{ id: string; source: string }>>("plugins:listUi"),
+    onUiChanged: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on("plugins:ui-changed", handler);
+      return () => ipcRenderer.off("plugins:ui-changed", handler);
+    },
+    /** Settings section: full manifest (enabled + disabled), toggle, open folder. */
+    list: () => invoke<{
+      devEnabled: boolean;
+      root: string;
+      plugins: Array<{ id: string; kind: "ui" | "backend" | "both"; name: string | null; ui: string | null; source: string | null; disabled: boolean }>;
+    }>("plugins:list"),
+    setEnabled: (id: string, enabled: boolean) => invoke<{ ok: boolean }>("plugins:setEnabled", { id, enabled }),
+    openFolder: () => invoke<{ ok: boolean }>("plugins:openFolder"),
+    /** Install from a spec (github:owner/repo | owner/repo | local path). Dev-gated. */
+    install: (spec: string) =>
+      invoke<{ id: string; name: string | null; ui: string | null; kind: "ui" | "backend" | "both" }>("plugins:install", { spec }),
+    /** Update an installed plugin by re-running its recorded source spec. Dev-gated. */
+    update: (id: string) =>
+      invoke<{ id: string; name: string | null; ui: string | null; kind: "ui" | "backend" | "both" }>("plugins:update", { id }),
+    uninstall: (id: string) => invoke<{ ok: boolean }>("plugins:uninstall", { id }),
   }
 } as const;
 

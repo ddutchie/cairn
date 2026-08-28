@@ -42,7 +42,7 @@ describe("usage-queries", () => {
 
   it("inserts and aggregates totals/series/source/model", () => {
     insertLlmUsage(db, rec({ source: "chat", model: "deepseek-v4-flash", promptTokens: 100, completionTokens: 50, costUsd: 0.01, createdAt: NOW - DAY }));
-    insertLlmUsage(db, rec({ source: "pi-agent", model: "claude-sonnet-4-5", promptTokens: 200, completionTokens: 60, reasoningTokens: 20, costUsd: 0.5, createdAt: NOW }));
+    insertLlmUsage(db, rec({ source: "coding-agent", model: "claude-sonnet-4-5", promptTokens: 200, completionTokens: 60, reasoningTokens: 20, costUsd: 0.5, createdAt: NOW }));
     insertLlmUsage(db, rec({ source: "automation", model: "deepseek-v4-flash", promptTokens: 300, completionTokens: 90, costUsd: 0.02, createdAt: NOW }));
 
     const overview = queryUsageOverview(db, {});
@@ -58,8 +58,8 @@ describe("usage-queries", () => {
     expect(overview.series).toHaveLength(2);
     expect(overview.series[0].day).toBe("2026-08-05");
     expect(overview.series[1].day).toBe("2026-08-06");
-    // Source breakdown sorted by tokens desc: automation (390), pi-agent (260), chat (150).
-    expect(overview.bySource.map((s) => s.source)).toEqual(["automation", "pi-agent", "chat"]);
+    // Source breakdown sorted by tokens desc: automation (390), coding-agent (260), chat (150).
+    expect(overview.bySource.map((s) => s.source)).toEqual(["automation", "coding-agent", "chat"]);
     // Model breakdown: deepseek-v4-flash 540 > claude-sonnet-4-5 260.
     expect(overview.byModel[0].model).toBe("deepseek-v4-flash");
     expect(overview.byModel[0].promptTokens).toBe(400);
@@ -81,7 +81,7 @@ describe("usage-queries", () => {
 
   it("scopes by source filter", () => {
     insertLlmUsage(db, rec({ source: "chat", promptTokens: 100 }));
-    insertLlmUsage(db, rec({ source: "pi-agent", promptTokens: 200 }));
+    insertLlmUsage(db, rec({ source: "coding-agent", promptTokens: 200 }));
     const overview = queryUsageOverview(db, { source: "chat" });
     expect(overview.totals.requests).toBe(1);
     expect(overview.totals.promptTokens).toBe(100);
@@ -104,11 +104,11 @@ describe("usage-queries", () => {
   it("returns recent rows newest-first", () => {
     insertLlmUsage(db, rec({ source: "chat", model: "old", createdAt: NOW - 2 * DAY }));
     insertLlmUsage(db, rec({ source: "chat", model: "mid", createdAt: NOW - DAY }));
-    insertLlmUsage(db, rec({ source: "pi-agent", model: "new", costUsd: 0.5, costEstimated: true, createdAt: NOW }));
+    insertLlmUsage(db, rec({ source: "coding-agent", model: "new", costUsd: 0.5, costEstimated: true, createdAt: NOW }));
 
     const recent = queryRecentUsage(db, {}, 10);
     expect(recent.map((r) => r.model)).toEqual(["new", "mid", "old"]);
-    expect(recent[0].source).toBe("pi-agent");
+    expect(recent[0].source).toBe("coding-agent");
     expect(recent[0].reasoningTokens).toBe(0);
     expect(recent[0].costUsd).toBe(0.5);
     expect(recent[0].costEstimated).toBe(true);
@@ -126,7 +126,7 @@ describe("usage-queries", () => {
 
   it("persists and aggregates prompt-cache tokens", () => {
     insertLlmUsage(db, rec({ source: "chat", promptTokens: 1000, cacheReadTokens: 700, cacheCreationTokens: 0, createdAt: NOW - DAY }));
-    insertLlmUsage(db, rec({ source: "pi-agent", promptTokens: 500, cacheReadTokens: 100, cacheCreationTokens: 50, createdAt: NOW }));
+    insertLlmUsage(db, rec({ source: "coding-agent", promptTokens: 500, cacheReadTokens: 100, cacheCreationTokens: 50, createdAt: NOW }));
 
     const overview = queryUsageOverview(db, {});
     expect(overview.totals.cacheReadTokens).toBe(800);
@@ -135,7 +135,7 @@ describe("usage-queries", () => {
     expect(overview.series).toHaveLength(2);
 
     const recent = queryRecentUsage(db, {}, 10);
-    expect(recent[0].source).toBe("pi-agent");
+    expect(recent[0].source).toBe("coding-agent");
     expect(recent[0].cacheReadTokens).toBe(100);
     expect(recent[0].cacheCreationTokens).toBe(50);
     expect(recent[1].cacheReadTokens).toBe(700);
@@ -145,7 +145,7 @@ describe("usage-queries", () => {
   it("keeps all rows but hides estimated/missing cost from cost totals when the filter is set", () => {
     insertLlmUsage(db, rec({ source: "chat", promptTokens: 100, costUsd: 0.01, costEstimated: false, createdAt: NOW - 1000 }));
     insertLlmUsage(db, rec({ source: "chat", promptTokens: 200, costUsd: 0.02, costEstimated: true, createdAt: NOW }));
-    insertLlmUsage(db, rec({ source: "pi-agent", promptTokens: 300, costUsd: 0.03, costEstimated: false, createdAt: NOW }));
+    insertLlmUsage(db, rec({ source: "coding-agent", promptTokens: 300, costUsd: 0.03, costEstimated: false, createdAt: NOW }));
     // Not an estimate, but the provider reported no cost AND no model price is
     // known — no real cost either, so it must not contribute to cost totals.
     insertLlmUsage(db, rec({ source: "chat", promptTokens: 400, costUsd: undefined, costEstimated: false, createdAt: NOW }));

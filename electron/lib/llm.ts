@@ -78,6 +78,23 @@ export interface LLMConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
+  contextWindow?: number;
+  maxTokens?: number;
+  /** Reasoning effort for reasoning-capable models. Uses the pi-ai / dsh
+   *  thinking vocabulary consumed by installModelSelection → resolveReasoningLevel
+   *  ("off" omits reasoning; low/medium/high are universally supported). Absent =
+   *  the model's own default. */
+  reasoningEffort?: "off" | "low" | "medium" | "high";
+  /** Whether the model reasons (models.dev `reasoning: true`). Drives the pi-ai
+   *  model declaration's `reasoningEfforts` so the harness offers effort levels
+   *  instead of treating the hand-declared model as non-reasoning (which makes
+   *  any explicit effort throw UNSUPPORTED_REASONING_EFFORT). */
+  isReasoningModel?: boolean;
+  /** Explicit wire protocol for this endpoint (Cairn never auto-probes for the
+   *  Cordis path). Maps to the pi-ai `api`: completions→openai-completions,
+   *  responses→openai-responses, anthropic-messages→anthropic-messages. Absent =
+   *  completions. */
+  apiMode?: "responses" | "completions" | "anthropic-messages";
 }
 
 export type OpenAIMessage = {
@@ -133,7 +150,7 @@ export function isSendableMessage(m: {
 }
 
 /** Optional attribution for a one-shot `callLLM` — drives the Usage log row. */
-export interface LlmCallOpts {
+interface LlmCallOpts {
   /** Where the call originated (defaults to "chat"). */
   source?: UsageSource;
   sessionId?: string;
@@ -165,7 +182,7 @@ export interface LlmCallOpts {
  * endpoints reject the `stream_options` field with a 400 — retry once without
  * it so a usage-requesting call still succeeds against them.
  */
-export async function postChatCompletions(
+async function postChatCompletions(
   url: string,
   headers: Record<string, string>,
   body: Record<string, unknown>,
@@ -411,80 +428,6 @@ export async function callLLM(
   return content;
 }
 
-/**
- * Stream a chat completion. Yields text delta chunks as they arrive.
- * Handles SSE parsing and authorization headers automatically.
- */
-export async function* streamCompletion(
-  config: LLMConfig,
-  messages: OpenAIMessage[],
-  tools?: object[],
-  onUsage?: (pt: number, ct: number) => void,
-): AsyncGenerator<string> {
-  if (config.provider === "localllm") {
-    const { streamLocalLLMChat } = await import("./local-llm");
-    for await (const chunk of streamLocalLLMChat(messages)) {
-      if (chunk.usage && onUsage) {
-        onUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0);
-      }
-      const delta = chunk.choices?.[0]?.delta?.content ?? "";
-      if (delta) yield delta;
-    }
-    return;
-  }
-
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
-
-  const body: Record<string, unknown> = {
-    model: config.model,
-    messages,
-    max_tokens: 4096,
-    temperature: resolveTemperatureForModel(config.model, 0.3),
-    stream: true,
-  };
-  if (tools && tools.length > 0) {
-    body.tools = tools;
-    body.tool_choice = "none";
-  }
-  if (onUsage) {
-    body.stream_options = { include_usage: true };
-  }
-
-  const response = await fetch(buildApiUrl(config.baseUrl, "chat/completions"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    throw new Error(`LLM stream error ${response.status}: ${await response.text().catch(() => response.statusText)}`);
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No readable stream");
-
-  const decoder = new TextDecoder();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const jsonStr = trimmed.slice(5).trim();
-      if (jsonStr === "[DONE]") return;
-      try {
-        const obj = JSON.parse(jsonStr);
-        if (obj.usage && onUsage) {
-          onUsage(obj.usage.prompt_tokens ?? 0, obj.usage.completion_tokens ?? 0);
-        }
-        const delta: string = obj.choices?.[0]?.delta?.content ?? "";
-        if (delta) yield delta;
-      } catch { /* skip malformed lines */ }
-    }
-  }
-}
-
 export interface TokenBreakdown {
   systemPrompt: number;
   skills: number;
@@ -654,28 +597,45 @@ export function scaleBreakdown(
   breakdown: TokenBreakdown,
   targetTotal: number
 ): TokenBreakdown {
-  const sum =
+  const fixed =
     breakdown.systemPrompt +
     breakdown.skills +
     breakdown.tools +
-    breakdown.conversation +
-    breakdown.toolOutputs +
     breakdown.rules +
     breakdown.mcp +
     breakdown.subagentDefinitions;
 
-  if (sum <= 0 || targetTotal <= 0) return breakdown;
+  if (targetTotal <= 0) return breakdown;
+  if (targetTotal <= fixed) {
+    const ratio = targetTotal / (fixed || 1);
+    return {
+      systemPrompt: Math.round(breakdown.systemPrompt * ratio),
+      skills: Math.round(breakdown.skills * ratio),
+      tools: Math.round(breakdown.tools * ratio),
+      rules: Math.round(breakdown.rules * ratio),
+      mcp: Math.round(breakdown.mcp * ratio),
+      subagentDefinitions: Math.round(breakdown.subagentDefinitions * ratio),
+      conversation: 0,
+      toolOutputs: 0,
+    };
+  }
 
-  const ratio = targetTotal / sum;
+  const dynamic = breakdown.conversation + breakdown.toolOutputs;
+  const remaining = targetTotal - fixed;
+
+  if (dynamic <= 0) {
+    return {
+      ...breakdown,
+      conversation: remaining,
+    };
+  }
+
+  const ratio = remaining / dynamic;
   return {
-    systemPrompt: Math.round(breakdown.systemPrompt * ratio),
-    skills: Math.round(breakdown.skills * ratio),
-    tools: Math.round(breakdown.tools * ratio),
+    ...breakdown,
     conversation: Math.round(breakdown.conversation * ratio),
     toolOutputs: Math.round(breakdown.toolOutputs * ratio),
-    rules: Math.round(breakdown.rules * ratio),
-    mcp: Math.round(breakdown.mcp * ratio),
-    subagentDefinitions: Math.round(breakdown.subagentDefinitions * ratio),
   };
 }
+
 

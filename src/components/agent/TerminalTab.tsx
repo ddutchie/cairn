@@ -5,6 +5,10 @@ import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TerminalSession } from "@/types";
 
+function sanitizeAriaId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 interface TerminalTabProps {
   session: TerminalSession;
   isActive: boolean;
@@ -13,12 +17,16 @@ interface TerminalTabProps {
 }
 
 export function TerminalTab({ session, isActive, onActivate, onClose }: TerminalTabProps) {
+  const tabId = `tab-${sanitizeAriaId(session.sessionId)}`;
+  const panelId = `panel-${sanitizeAriaId(session.sessionId)}`;
   return (
-    <div className="flex items-center h-full flex-shrink-0 group">
+    <div role="presentation" className="flex items-center h-full flex-shrink-0 group">
       <button
+        id={tabId}
         onClick={onActivate}
         role="tab"
         aria-selected={isActive}
+        aria-controls={panelId}
         className={cn(
           "flex items-center gap-1.5 px-3 h-full text-xs font-semibold whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0",
           isActive
@@ -26,7 +34,7 @@ export function TerminalTab({ session, isActive, onActivate, onClose }: Terminal
             : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
         )}
       >
-        {session.sessionType === "pi" ? (
+        {session.sessionType === "coding" ? (
           <MessageSquare
             size={8}
             className={cn(
@@ -49,6 +57,9 @@ export function TerminalTab({ session, isActive, onActivate, onClose }: Terminal
         <span className="max-w-[120px] truncate">{session.taskTitle}</span>
         <span className="text-[var(--text-tertiary)]">{session.agentName}</span>
 
+        {session.status === "running" && (
+          <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">running</span>
+        )}
         {session.status === "exited" && (
           <span className="text-[0.65rem] text-[var(--text-tertiary)]">
             [{session.exitCode}]

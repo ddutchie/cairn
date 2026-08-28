@@ -1,308 +1,227 @@
+/**
+ * Cairn — automation-approval unit tests (post-Cordis).
+ *
+ * The pre-Cordis `automation-approval.test.ts` (deleted in 90f0b960) covered a
+ * runtime approval-inbox gate (`makeApprovalGate`/`waitForApproval`) that no
+ * longer exists — the gate is now the Cordis approval waterfall
+ * (electron/cordis/cairn-plugins.ts) and the automation-specific auto-allow
+ * transport (electron/lib/heartbeat-runner.ts). What DOES still live in this
+ * module is a small set of security-relevant classifiers + a standing-rule
+ * sanitiser that the manifest sync path calls on ingest, and the gate reads
+ * on match. This file guards those.
+ *
+ * Restores the specific invariants the deleted suite proved:
+ *   - run_script / bash NEVER receive a target-less standing rule (wildcard
+ *     grant of arbitrary execution) — even if the manifest tries;
+ *   - read-only tools are classified so the gate can waive them without
+ *     bothering the user;
+ *   - external (mcp__ / svc__) tools ARE classified as gate-worthy;
+ *   - the "always allow" target extracted for a call matches what the
+ *     resolve handler will persist (so grant/match can't disagree).
+ */
+
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject } from "../db/queries";
 import { createAutomation, createAutomationRun, getAutomationById, type Automation, type AutomationRun } from "../db/automation-queries";
-import { listPendingApprovals, parkApproval, resolveApproval } from "../db/approval-queries";
-import { makeApprovalGate, waitForApproval, isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance, sanitizeStandingRules } from "./automation-approval";
+import {
+  isExternalTool,
+  isReadTool,
+  standingRuleTarget,
+  recordStandingAllowance,
+  sanitizeStandingRules,
+  APPROVAL_TIMEOUT_MS,
+} from "./automation-approval";
 
 let db: Database.Database;
-let automation: Automation;
-let run: AutomationRun;
-
-function makeAutomation(
-  approvalMode: "auto" | "ask",
-  requires: Array<{ kind: "mcp" | "service"; name: string }> = [],
-  standingRules: Array<{ tool: string; target?: string }> = [],
-): Automation {
-  const a = createAutomation(db, {
-    workspaceId: "ws-1",
-    projectId: "proj-1",
-    name: "Test",
-    instructions: "Do something",
-    scheduleKind: "every",
-    scheduleExpr: "every 1 hour",
-    nextRunAt: new Date(Date.now() + 60_000).toISOString(),
-    approvalMode,
-    requires,
-    standingRules,
-  });
-  return a;
-}
 
 beforeEach(() => {
   db = new BetterSqlite3(":memory:");
   applySchema(db);
-  createWorkspace(db, { id: "ws-1", name: "W" });
-  createProject(db, { id: "proj-1", workspaceId: "ws-1", name: "P" });
-  automation = makeAutomation("ask");
-  run = createAutomationRun(db, automation.id, "running");
 });
 
 afterEach(() => {
   db.close();
 });
 
-/** Poll until the gate has parked an approval (or a short deadline is hit). */
-async function waitForPending(): Promise<ReturnType<typeof listPendingApprovals>> {
-  for (let i = 0; i < 100; i++) {
-    const items = listPendingApprovals(db);
-    if (items.length > 0) return items;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error("approval was never parked");
+function seedRun(): { automation: Automation; run: AutomationRun } {
+  createWorkspace(db, { id: "ws-1", name: "Test" });
+  createProject(db, { id: "proj-1", workspaceId: "ws-1", name: "Proj" });
+  const a = createAutomation(db, {
+    workspaceId: "ws-1",
+    projectId: "proj-1",
+    name: "test",
+    description: "",
+    instructions: "test instructions",
+    scheduleKind: "manual",
+    scheduleExpr: "manual",
+    nextRunAt: new Date().toISOString(),
+    approvalMode: "ask",
+    requires: [],
+    standingRules: [],
+  } as never);
+  const r = createAutomationRun(db, a.id);
+  return { automation: a, run: r };
 }
 
-describe("automation approval gate", () => {
-  it("auto mode still yields a gate (run_script must never be auto-approved)", async () => {
-    const a = makeAutomation("auto");
-    const gate = makeApprovalGate(db, run, a);
-    expect(gate).toBeDefined();
-    // Data tools run freely in auto mode.
-    const res = await gate("create_task", { title: "Ship it" });
-    expect(res.allow).toBe(true);
+describe("isReadTool", () => {
+  it("classifies get_/list_/search_ tools as read-only", () => {
+    for (const name of ["get_note", "list_folders", "search_notes", "search_tasks", "get_project_context_pack"]) {
+      expect(isReadTool(name), name).toBe(true);
+    }
+  });
+  it("classifies mutating tools as NOT read-only", () => {
+    for (const name of ["ensure_note", "create_task", "delete_note", "bash", "write", "run_script", "update_task"]) {
+      expect(isReadTool(name), name).toBe(false);
+    }
+  });
+});
+
+describe("isExternalTool", () => {
+  it("classifies mcp__ / svc__ tools as external (gate-worthy)", () => {
+    expect(isExternalTool("mcp__foo__bar")).toBe(true);
+    expect(isExternalTool("svc__github__create_issue")).toBe(true);
+  });
+  it("classifies built-in Cairn tools as internal", () => {
+    for (const name of ["get_note", "bash", "write", "run_script", "todo_write"]) {
+      expect(isExternalTool(name), name).toBe(false);
+    }
+  });
+});
+
+describe("standingRuleTarget", () => {
+  it("run_script grants the script NAME, never blanket shell", () => {
+    expect(standingRuleTarget("run_script", { name: "build.sh" })).toBe("build.sh");
+    expect(standingRuleTarget("run_script", {})).toBeUndefined();
+    // Explicit empty string collapses to undefined so it can't record ""
+    // as a wildcard.
+    expect(standingRuleTarget("run_script", { name: "" })).toBeUndefined();
+  });
+  it("bash grants the exact command string, never a shell wildcard", () => {
+    expect(standingRuleTarget("bash", { command: "npm test" })).toBe("npm test");
+    expect(standingRuleTarget("bash", {})).toBeUndefined();
+    expect(standingRuleTarget("bash", { command: "" })).toBeUndefined();
+  });
+  it("other tools grant a natural identifier (path / noteId / cardId / title)", () => {
+    expect(standingRuleTarget("write", { path: "src/foo.ts" })).toBe("src/foo.ts");
+    expect(standingRuleTarget("ensure_note", { noteId: "n-1" })).toBe("n-1");
+    expect(standingRuleTarget("update_task", { cardId: "c-1" })).toBe("c-1");
+    expect(standingRuleTarget("ensure_note", { title: "Meeting notes" })).toBe("Meeting notes");
+    expect(standingRuleTarget("write", {})).toBeUndefined();
+  });
+});
+
+describe("recordStandingAllowance", () => {
+  it("REFUSES to record a target-less rule for run_script (no wildcard grants)", () => {
+    const { run } = seedRun();
+    recordStandingAllowance(db, run.id, "run_script", {});
+    const after = getAutomationById(db, run.automationId);
+    expect(after?.standingRules).toEqual([]);
   });
 
-  it("classifies read vs write tools", () => {
-    expect(isReadTool("get_note")).toBe(true);
-    expect(isReadTool("list_overdue_tasks")).toBe(true);
-    expect(isReadTool("search_notes")).toBe(true);
-    expect(isReadTool("create_task")).toBe(false);
-    expect(isReadTool("ensure_note")).toBe(false);
+  it("REFUSES to record a target-less rule for bash (no wildcard grants)", () => {
+    const { run } = seedRun();
+    recordStandingAllowance(db, run.id, "bash", {});
+    const after = getAutomationById(db, run.automationId);
+    expect(after?.standingRules).toEqual([]);
   });
 
-  it("classifies external (namespaced mcp/svc) tools", () => {
-    expect(isExternalTool("mcp__srv1__linear_search_issues")).toBe(true);
-    expect(isExternalTool("svc__s1__brave_web_search")).toBe(true);
-    expect(isExternalTool("create_task")).toBe(false);
-    expect(isExternalTool("get_note")).toBe(false);
+  it("records a target-scoped run_script rule and dedupes on repeat", () => {
+    const { run } = seedRun();
+    recordStandingAllowance(db, run.id, "run_script", { name: "build.sh" });
+    recordStandingAllowance(db, run.id, "run_script", { name: "build.sh" });
+    const after = getAutomationById(db, run.automationId);
+    expect(after?.standingRules).toEqual([{ tool: "run_script", target: "build.sh" }]);
   });
 
-  it("allows read tools immediately in ask mode", async () => {
-    const gate = makeApprovalGate(db, run, automation)!;
-    const res = await gate("get_note", {});
-    expect(res.allow).toBe(true);
+  it("records a target-scoped bash rule with the exact command", () => {
+    const { run } = seedRun();
+    recordStandingAllowance(db, run.id, "bash", { command: "npm test" });
+    const after = getAutomationById(db, run.automationId);
+    expect(after?.standingRules).toEqual([{ tool: "bash", target: "npm test" }]);
   });
 
-  it("parks a write tool and allows it once approved", async () => {
-    const gate = makeApprovalGate(db, run, automation)!;
-    const promise = gate("create_task", { title: "Ship it" });
-
-    const pending = await waitForPending();
-    expect(pending.length).toBe(1);
-    expect(pending[0].tool).toBe("create_task");
-    expect(pending[0].runId).toBe(run.id);
-
-    resolveApproval(db, pending[0].id, "approved_once");
-    const res = await promise;
-    expect(res.allow).toBe(true);
-  });
-
-  it("denies a write tool when the user denies", async () => {
-    const gate = makeApprovalGate(db, run, automation)!;
-    const promise = gate("create_task", { title: "Nope" });
-
-    const pending = await waitForPending();
-    resolveApproval(db, pending[0].id, "denied");
-    const res = await promise;
-    expect(res.allow).toBe(false);
-    expect(res.reason).toContain("denied");
-  });
-
-  it("fails closed on timeout", async () => {
-    // APPROVAL_POLL_MS is 1s; use waitForApproval directly with a tiny timeout.
-    const item = parkApproval(db, {
-      runId: run.id,
-      tool: "create_task",
-      args: {},
-    });
-    const res = await waitForApproval(db, item.id, 50);
-    expect(res).toBeNull();
-    const after = listPendingApprovals(db);
-    expect(after.length).toBe(0); // timed out → resolved as denied
-  });
-
-  it("fails closed when the run's abort signal fires while waiting", async () => {
-    const item = parkApproval(db, { runId: run.id, tool: "create_task", args: {} });
-    const ctrl = new AbortController();
-    const promise = waitForApproval(db, item.id, 5_000, ctrl.signal);
-    ctrl.abort();
-    const res = await promise;
-    expect(res).toBeNull();
-    const after = listPendingApprovals(db);
-    expect(after.length).toBe(0); // aborted → resolved as denied, not left parked
-  });
-
-  it("refuses to record a target-less standing rule for run_script (no wildcard grants)", () => {
-    // An "Always allow" click on a run_script call with no derivable script
-    // name must NOT persist a blanket rule for every future script.
-    recordStandingAllowance(db, run.id, "run_script", { args: ["-prompt", "x"] });
-    expect(getAutomationById(db, automation.id)!.standingRules).toEqual([]);
-
-    // Concrete targets still record as before.
-    recordStandingAllowance(db, run.id, "run_script", { name: "generate_images" });
-    expect(getAutomationById(db, automation.id)!.standingRules).toEqual([
-      { tool: "run_script", target: "generate_images" },
+  it("records a non-executing tool rule with or without a target", () => {
+    const { run } = seedRun();
+    recordStandingAllowance(db, run.id, "ensure_note", { noteId: "n-1" });
+    recordStandingAllowance(db, run.id, "write", {}); // target-less non-exec is allowed
+    const after = getAutomationById(db, run.automationId);
+    expect(after?.standingRules).toEqual([
+      { tool: "ensure_note", target: "n-1" },
+      { tool: "write" },
     ]);
   });
 
-  it("connector-aware auto automation still gates EXTERNAL tools", async () => {
-    const a = makeAutomation("auto", [{ kind: "mcp", name: "Linear" }]);
-    const gate = makeApprovalGate(db, run, a)!;
-    expect(gate).toBeDefined();
+  it("is a no-op for an unknown run id (safe when the run was deleted)", () => {
+    // No throw, no persistence.
+    recordStandingAllowance(db, "nonexistent-run", "bash", { command: "npm test" });
+    expect(true).toBe(true);
+  });
+});
 
-    // External tool call → parked for approval.
-    const promise = gate("mcp__srv1__linear_create_issue", { title: "X" });
-    const pending = await waitForPending();
-    expect(pending[0].tool).toBe("mcp__srv1__linear_create_issue");
-
-    resolveApproval(db, pending[0].id, "approved_once");
-    expect((await promise).allow).toBe(true);
+describe("sanitizeStandingRules", () => {
+  it("returns empty on non-array input", () => {
+    expect(sanitizeStandingRules(null)).toEqual({ rules: [], dropped: [] });
+    expect(sanitizeStandingRules("not a rule")).toEqual({ rules: [], dropped: [] });
+    expect(sanitizeStandingRules(undefined)).toEqual({ rules: [], dropped: [] });
   });
 
-  it("connector-aware auto automation lets built-in data tools run freely", async () => {
-    const a = makeAutomation("auto", [{ kind: "mcp", name: "Linear" }]);
-    const gate = makeApprovalGate(db, run, a)!;
-    // Built-in write tools are NOT parked — only external calls are gated.
-    const res = await gate("create_task", { title: "Ship it" });
-    expect(res.allow).toBe(true);
-    expect(listPendingApprovals(db).length).toBe(0);
+  it("drops rules missing a tool name (malformed manifest)", () => {
+    const res = sanitizeStandingRules([
+      { tool: "" },
+      { target: "orphan" },
+      null,
+      "not an object",
+      { tool: "  " },
+    ]);
+    expect(res.rules).toEqual([]);
+    expect(res.dropped).toHaveLength(5);
   });
 
-  it("data-only auto automation yields a gate but never parks data tools", async () => {
-    const a = makeAutomation("auto");
-    const gate = makeApprovalGate(db, run, a)!;
-    const res = await gate("create_task", { title: "Ship it" });
-    expect(res.allow).toBe(true);
-    expect(listPendingApprovals(db).length).toBe(0);
+  it("DROPS a target-less run_script rule with a user-visible reason", () => {
+    const res = sanitizeStandingRules([{ tool: "run_script" }]);
+    expect(res.rules).toEqual([]);
+    expect(res.dropped[0]).toMatch(/run_script/);
+    expect(res.dropped[0]).toMatch(/blanket-approve/);
   });
 
-  describe("run_script gating", () => {
-    it("parks run_script in AUTO mode (EXEC is never silently auto-approved)", async () => {
-      const a = makeAutomation("auto");
-      const gate = makeApprovalGate(db, run, a)!;
-      const promise = gate("run_script", { name: "generate_images", args: ["-prompt", "news"] });
-
-      const pending = await waitForPending();
-      expect(pending[0].tool).toBe("run_script");
-
-      resolveApproval(db, pending[0].id, "approved_once");
-      expect((await promise).allow).toBe(true);
-    });
-
-    it("parks run_script in ASK mode too", async () => {
-      const gate = makeApprovalGate(db, run, automation)!;
-      const promise = gate("run_script", { name: "generate_images" });
-
-      const pending = await waitForPending();
-      expect(pending[0].tool).toBe("run_script");
-
-      resolveApproval(db, pending[0].id, "approved_once");
-      expect((await promise).allow).toBe(true);
-    });
-
-    it("allows run_script without parking when a script-scoped standing rule matches", async () => {
-      const a = makeAutomation("auto", [], [{ tool: "run_script", target: "generate_images" }]);
-      const gate = makeApprovalGate(db, run, a)!;
-      const res = await gate("run_script", { name: "generate_images" });
-      expect(res.allow).toBe(true);
-      expect(listPendingApprovals(db).length).toBe(0);
-    });
-
-    it("does not let a standing rule for one script auto-allow a different script", async () => {
-      const a = makeAutomation("auto", [], [{ tool: "run_script", target: "generate_images" }]);
-      const gate = makeApprovalGate(db, run, a)!;
-      const promise = gate("run_script", { name: "fetch_data" });
-      const pending = await waitForPending();
-      expect(pending[0].args.name).toBe("fetch_data");
-      resolveApproval(db, pending[0].id, "approved_once");
-      await promise;
-    });
-
-    it("persists 'always allow' as a standing rule that the gate honours next time", async () => {
-      // Resolve with approved_always → recordStandingAllowance writes the rule.
-      recordStandingAllowance(db, run.id, "run_script", { name: "generate_images", args: [] });
-      const a = getAutomationById(db, automation.id)!;
-      expect(a.standingRules).toEqual([{ tool: "run_script", target: "generate_images" }]);
-
-      // A NEW gate built from the updated automation lets the script through.
-      const gate = makeApprovalGate(db, run, a)!;
-      const res = await gate("run_script", { name: "generate_images" });
-      expect(res.allow).toBe(true);
-      expect(listPendingApprovals(db).length).toBe(0);
-    });
-
-    it("recordStandingAllowance dedupes by tool + target", () => {
-      recordStandingAllowance(db, run.id, "run_script", { name: "generate_images" });
-      recordStandingAllowance(db, run.id, "run_script", { name: "generate_images" });
-      recordStandingAllowance(db, run.id, "run_script", { name: "fetch_data" });
-      expect(getAutomationById(db, automation.id)!.standingRules).toEqual([
-        { tool: "run_script", target: "generate_images" },
-        { tool: "run_script", target: "fetch_data" },
-      ]);
-    });
-
-    it("derives standing-rule targets per tool (script name / command / identifier)", () => {
-      expect(standingRuleTarget("run_script", { name: "gen.js" })).toBe("gen.js");
-      expect(standingRuleTarget("bash", { command: "npm test" })).toBe("npm test");
-      expect(standingRuleTarget("create_task", { title: "Ship it" })).toBe("Ship it");
-      expect(standingRuleTarget("ensure_note", { path: "/notes/x.md" })).toBe("/notes/x.md");
-      expect(standingRuleTarget("create_task", {})).toBeUndefined();
-    });
-
-    it("a standing rule short-circuits ANY gated tool (not just run_script)", async () => {
-      // ask-mode automation + a standing rule for create_task → no prompt.
-      const a = makeAutomation("ask", [], [{ tool: "create_task" }]);
-      const gate = makeApprovalGate(db, run, a)!;
-      const res = await gate("create_task", { title: "Anything" });
-      expect(res.allow).toBe(true);
-      expect(listPendingApprovals(db).length).toBe(0);
-    });
+  it("DROPS a target-less bash rule with a user-visible reason", () => {
+    const res = sanitizeStandingRules([{ tool: "bash" }]);
+    expect(res.rules).toEqual([]);
+    expect(res.dropped[0]).toMatch(/bash/);
   });
 
-  describe("sanitizeStandingRules (manifest sync)", () => {
-    it("rejects target-less run_script / bash rules (the wildcard grant)", () => {
-      const { rules, dropped } = sanitizeStandingRules([
-        { tool: "run_script" },
-        { tool: "bash" },
-        { tool: "run_script", target: "generate_images" },
-      ]);
-      expect(rules).toEqual([{ tool: "run_script", target: "generate_images" }]);
-      expect(dropped.length).toBe(2);
-      expect(dropped[0]).toContain("run_script");
-      expect(dropped[1]).toContain("bash");
-    });
+  it("passes through target-scoped run_script / bash rules", () => {
+    const res = sanitizeStandingRules([
+      { tool: "run_script", target: "build.sh" },
+      { tool: "bash", target: "npm test" },
+    ]);
+    expect(res.rules).toEqual([
+      { tool: "run_script", target: "build.sh" },
+      { tool: "bash", target: "npm test" },
+    ]);
+    expect(res.dropped).toEqual([]);
+  });
 
-    it("keeps target-less data-tool rules (matching how the inbox records them)", () => {
-      const { rules, dropped } = sanitizeStandingRules([
-        { tool: "create_task" },
-        { tool: "todowrite" },
-      ]);
-      expect(rules).toEqual([{ tool: "create_task" }, { tool: "todowrite" }]);
-      expect(dropped).toEqual([]);
-    });
+  it("passes through non-exec rules with or without a target, trimming whitespace", () => {
+    const res = sanitizeStandingRules([
+      { tool: "ensure_note", target: "  n-1  " },
+      { tool: "write" },
+      { tool: "  update_task  ", target: "  " }, // empty target after trim → dropped target
+    ]);
+    expect(res.rules).toEqual([
+      { tool: "ensure_note", target: "n-1" },
+      { tool: "write" },
+      { tool: "update_task" },
+    ]);
+    expect(res.dropped).toEqual([]);
+  });
+});
 
-    it("drops malformed / unknown entries", () => {
-      const { rules, dropped } = sanitizeStandingRules([
-        null,
-        42,
-        { target: "no-tool" },
-        { tool: "   " },
-        { tool: "bash", target: "npm test" },
-      ]);
-      expect(rules).toEqual([{ tool: "bash", target: "npm test" }]);
-      expect(dropped.length).toBe(4);
-    });
-
-    it("trims rule targets", () => {
-      const { rules } = sanitizeStandingRules([{ tool: "run_script", target: "  gen.js  " }]);
-      expect(rules).toEqual([{ tool: "run_script", target: "gen.js" }]);
-    });
-
-    it("returns empty rules for non-array input", () => {
-      expect(sanitizeStandingRules(undefined)).toEqual({ rules: [], dropped: [] });
-      expect(sanitizeStandingRules({ tool: "run_script" })).toEqual({ rules: [], dropped: [] });
-    });
+describe("APPROVAL_TIMEOUT_MS", () => {
+  it("is 10 minutes (fail-closed budget for the interactive HITL seam)", () => {
+    expect(APPROVAL_TIMEOUT_MS).toBe(10 * 60_000);
   });
 });

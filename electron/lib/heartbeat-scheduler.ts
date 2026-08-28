@@ -26,8 +26,6 @@ import {
   type Automation,
   type AutomationRun,
 } from "../db/automation-queries";
-import { expireStaleApprovals } from "../db/approval-queries";
-import { APPROVAL_TIMEOUT_MS } from "./automation-approval";
 
 export interface HeartbeatSchedulerOptions {
   /** Live DB accessor — re-read every tick so workspace reinitialise is transparent. */
@@ -103,7 +101,6 @@ export class HeartbeatScheduler {
     // marked expired so it doesn't sit in the inbox forever. Cutoff derives from
     // the same injected clock as the tick so tests control one source of time.
     try {
-      expireStaleApprovals(db, new Date(new Date(nowIso).getTime() - APPROVAL_TIMEOUT_MS).toISOString());
     } catch { /* best-effort */ }
     const due = listDueAutomations(db, nowIso);
     for (const automation of due) {

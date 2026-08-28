@@ -28,6 +28,10 @@ import {
   type GitStatusData,
   type GitLogData,
   diffKey,
+  areGitStatusesEqual,
+  areBranchesEqual,
+  areLogEntriesEqual,
+  arePrStatusesEqual,
 } from "./git/git-helpers";
 import { FileSection } from "./git/FileSection";
 import { FileRow } from "./git/FileRow";
@@ -93,8 +97,8 @@ export function GitView({ cwd }: GitViewProps) {
     if (!window.electron?.git) return;
     try {
       const s = await window.electron.git.status(cwd);
-      setStatus(s);
-      setError(null);
+      setStatus((prev) => (areGitStatusesEqual(prev, s) ? prev : s));
+      setError((prev) => (prev !== null ? null : prev));
       // Notify the FileTree only when the working-tree file SET changes (a path
       // added/removed/renamed), not when an existing path merely changes status
       // (e.g. staged ↔ unstaged) — that doesn't alter the directory listing.
@@ -109,7 +113,7 @@ export function GitView({ cwd }: GitViewProps) {
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setLoading(false);
+      setLoading((prev) => (prev ? false : prev));
     }
   }, [cwd]);
 
@@ -117,7 +121,7 @@ export function GitView({ cwd }: GitViewProps) {
     if (!window.electron?.git) return;
     try {
       const res = await window.electron.git.branches(cwd);
-      setBranches(res.branches);
+      setBranches((prev) => (areBranchesEqual(prev, res.branches) ? prev : res.branches));
     } catch { /* best-effort */ }
   }, [cwd]);
 
@@ -125,7 +129,7 @@ export function GitView({ cwd }: GitViewProps) {
     if (!window.electron?.git) return;
     try {
       const entries = await window.electron.git.log(cwd, 15);
-      setLog(entries);
+      setLog((prev) => (areLogEntriesEqual(prev, entries) ? prev : entries));
     } catch { /* log fetch is best-effort */ }
   }, [cwd]);
 
@@ -133,7 +137,7 @@ export function GitView({ cwd }: GitViewProps) {
     if (!window.electron?.git) return;
     try {
       const status = await window.electron.git.prStatus(cwd);
-      setPrStatus(status);
+      setPrStatus((prev) => (arePrStatusesEqual(prev, status) ? prev : status));
     } catch {
       setPrStatus(null);
     }

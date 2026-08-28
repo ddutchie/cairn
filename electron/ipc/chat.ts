@@ -4,28 +4,54 @@
  * Runs the OpenAI-compatible completions loop in the Electron main process
  * so it works in the packaged app (no Next.js server needed).
  *
- * Registered as: registerIpcOn("chat:stream", ...)
+ * Registered through the canonical session:prompt IPC handler.
  */
 
-import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { registerIpcHandle, broadcastEvent } from "./registry";
+import { handle } from "./result-helpers";
 import { broadcastToChat } from "../chat-popout";
+import { mintAskNonce, dropAskNonce, clearAskNoncesForSession } from "./approval-state";
+import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-state";
+import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
+import { forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import type { DbContext } from "./result-helpers";
-import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown, isSendableMessage } from "../lib/llm";
-import { TOOLS, buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
-import { getExternalToolDefs } from "../lib/external-tools";
+import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
+import type { ChatRequest } from "../lib/tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
-import { runToolLoop } from "../lib/chat-loop";
-import { resolveSystemRole } from "../lib/llm-stream";
 import { resolveLlmApiKey } from "../lib/secure-store";
-import { buildAttachmentParts } from "../../shared/models/pdf-attach";
-import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
-import { fetchProvidersManifest } from "../lib/community-registry";
-import { recordLlmUsage } from "../lib/usage-recorder";
-import { applyRecoveredTurnCost } from "../db/usage-queries";
-import { createDeltaBatcher } from "../lib/delta-batcher";
+import { registerPendingQuestion, recordPendingQuestion } from "../cordis/pending-question-broker";
+import { makeSessionProjection } from "../../shared/agent/session-projection";
 
-// Track one AbortController per renderer webContents ID
-const abortControllers = new Map<number, AbortController>();
+// One controller and concurrency slot per canonical session, regardless of
+// which renderer issued the prompt.
+const abortControllers = new Map<string, AbortController>();
+
+/**
+ * Threads that currently have an in-flight streaming turn. Prevents two
+ * concurrent session:prompt requests on the SAME thread from writing to the
+ * same session.jsonl.zstd in parallel — dsh's in-process persistence
+ * serialises WRITES (so the file doesn't tear), but the two turns' events
+ * still interleave into an incoherent transcript. Mirrors the coding session
+ * runtime's
+ * `runningLoops` guard on the coding side (review finding M13).
+ */
+const runningThreads = new Set<string>();
+
+export function getRunningChatIds(): string[] {
+  return Array.from(runningThreads).map((id) => `chat-${id}`);
+}
+
+export function isChatThreadRunning(sessionId: string): boolean {
+  const raw = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
+  return runningThreads.has(raw);
+}
+
+export function abortChatSession(sessionId: string): void {
+  abortControllers.get(sessionId)?.abort();
+  abortControllers.delete(sessionId);
+  const raw = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
+  runningThreads.delete(raw);
+}
 
 function resolveAIConfig(config?: {
   provider?: string;
@@ -79,55 +105,48 @@ export { callLLM } from "../lib/llm";
  * them by value here is what previously left a freshly-onboarded workspace's
  * chat bound to the throwaway boot DB until the app was restarted.
  */
-export function registerChatHandler(ctx: DbContext): void {
-  const getWin = ctx.getWin;
-
-  registerIpcHandle("chat:compactThread", async (_event, req: {
+export function registerChatHandler(_ctx: DbContext): void {
+  registerIpcHandle("chat:compactThread", (_event, req: {
     messages: Array<{ role: string; content: string }>;
     threadId?: string;
-    config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string };
-  }) => {
-    try {
+    config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; apiMode?: "responses" | "completions" | "anthropic-messages" };
+  }) => handle(async () => {
       const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
-      
-      const llmConfig = {
-        baseUrl,
-        model,
-        apiKey,
-        maxSteps: 20,
-        temperature: 0.1,
-      };
+      const threadId = req.threadId;
+      if (!threadId) throw new Error("compact: threadId required");
 
-      const { generateSummary } = await import("../lib/compaction");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const agentMsgs = req.messages as any[];
-      const summary = await generateSummary(agentMsgs, llmConfig, new AbortController().signal, { sessionId: req.threadId });
-      return { data: { summary } };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { error: msg };
+      // Session-as-truth compaction via the SHARED flow (also registered as the
+      // dsh `compact` command — one implementation, two entry points).
+      const { compactChatSession } = await import("../cordis/cairn-commands");
+      const { getContext } = await import("../cordis/run-cordis-loop");
+      const res = await compactChatSession(getContext, threadId, { baseUrl, model, apiKey, apiMode: req.config.apiMode });
+      if (!res.ok) throw new Error(res.error ?? "compact failed");
+      console.log("[chat:compactThread] compactNow result", { threadId, compacted: res.compacted });
+      return { compacted: res.compacted };
+  }));
+
+}
+
+/** Shared Chat profile runner used by the canonical session:prompt handler. */
+export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent, req: ChatRequest): Promise<void> {
+    const getWin = ctx.getWin;
+    const sessionId = `chat-${req.threadId}`;
+    // Concurrent-stream guard on the same thread: if another window (pop-out,
+    // second Cairn instance) is already streaming this thread, refuse the
+    // second stream instead of racing on the same session.jsonl.zstd. dsh's
+    // persistence serialises writes, but the two turns would still interleave
+    // into a semantically incoherent transcript. Check BEFORE aborting so a
+    // concurrent turn is not killed and the new turn does not also start.
+    if (req.threadId && runningThreads.has(req.threadId)) {
+       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — please wait for the current turn to finish.", code: "already-running" }));
+       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+       return;
     }
-  });
-
-  // chat:abort — cancel the in-flight stream for this renderer
-  registerIpcOn("chat:abort", (event) => {
-    const ctrl = abortControllers.get(event.sender.id);
-    if (ctrl) {
-      ctrl.abort();
-      abortControllers.delete(event.sender.id);
-    }
-  });
-
-  // chat:stream — fire-and-forget (registerIpcOn, not handle).
-  // Emits:
-  //   chat:token   { delta: string }   — one SSE content chunk
-  //   chat:tool-call { tool, label, args } — tool being invoked
-  //   chat:done    { content: string, contextRefs: [], error?: string }
-  registerIpcOn("chat:stream", async (event, req: ChatRequest) => {
-    // Cancel any previous in-flight request from this renderer
-    abortControllers.get(event.sender.id)?.abort();
+    // A new turn supersedes a previous turn from the same session.
+    abortChatSession(sessionId);
+    if (req.threadId) runningThreads.add(req.threadId);
     const abortCtrl = new AbortController();
-    abortControllers.set(event.sender.id, abortCtrl);
+     abortControllers.set(sessionId, abortCtrl);
     
     const { provider, baseUrl, model, apiKey } = resolveAIConfig(req.config);
     const isLocalEndpointUrl = isLocalEndpoint(baseUrl);
@@ -135,20 +154,58 @@ export function registerChatHandler(ctx: DbContext): void {
     const send = (ch: string, payload: unknown) => {
       // Tag every streaming event with the originating threadId so renderer
       // consumers (chat panel vs. the note "Spawn tasks" one-shot) can filter
-      // events that aren't theirs. Without this, a spawn stream's chat:done
+      // events that aren't theirs. Without this, a spawn stream's completion
       // would toggle the chat panel's loading state and disable its input.
       const tagged = (payload && typeof payload === "object")
-        ? { ...(payload as Record<string, unknown>), threadId: req.threadId }
+        ? { sessionId, ...(payload as Record<string, unknown>), threadId: req.threadId }
         : payload;
-      if (!event.sender.isDestroyed()) event.sender.send(ch, tagged);
-      broadcastToChat(ch, tagged, event.sender.id);
+        const outChannel = ch;
+        const outPayload = tagged;
+       if (!event.sender.isDestroyed()) event.sender.send(outChannel, outPayload);
+       // Intentionally scoped to chat participants (main + pop-out) — not
+       // broadcastEvent (all windows + mobile). Coding sessions use
+       // broadcastEvent because they are not participant-gated (see
+       // session-runtime-handlers.ts). This split is deliberate; don't unify
+       // without auditing the pop-out participant set.
+       broadcastToChat(outChannel, outPayload, event.sender.id);
     };
 
+    // Chat HITL: interactive approval transport so EXTERNAL/EXEC tools (and
+    // deletions) gate through the same approval cards as coding. Mirrors the
+    // coding loop's setConfirmTransport pattern; the pending-ask state is
+    // shared via approval-state.ts so session:respond-tool's global handler
+    // can resolve it regardless of which profile created the ask.
+    const chatLoopSend = (channel: string, payload: Record<string, unknown>) => {
+      if (channel === "session:projection" && payload && typeof payload === "object" && (payload as { kind?: unknown }).kind === "approval") {
+        const data = (payload as { data?: { status?: string; callId?: string; name?: string; label?: string; nonce?: string } }).data;
+        if (data?.status === "required" && data.callId && !data.nonce) {
+          const nonce = mintAskNonce(sessionId, data.callId);
+          (data as { nonce?: string }).nonce = nonce;
+          pendingAsks.record({ sessionId, name: data.name ?? "tool", label: data.label ?? data.name ?? "tool", callId: data.callId, nonce });
+        } else if (data?.status === "expired" && data.callId) {
+          pendingAsks.resolve(sessionId, data.callId);
+          dropAskNonce(sessionId, data.callId);
+          forgetSessionApprovalArgs(sessionId);
+        }
+      }
+      send(channel, payload);
+    };
+    const chatConfirmTransport = createInteractiveConfirmTransport({
+      sessionId,
+      send: chatLoopSend,
+      registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
+        const key = pendingKey(sessionId, callId);
+        cordisPendingApprovals.set(key, resolve);
+        return () => cordisPendingApprovals.delete(key);
+      },
+    });
+    setConfirmTransport(sessionId, chatConfirmTransport);
+
     if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {
-      send("chat:done", {
-        content: "AI chat is not configured. Set an API key in **Settings → AI & Chat**, or use a local endpoint (Ollama, LM Studio) with no key needed.",
-        contextRefs: [],
-      });
+       abortControllers.delete(sessionId);
+      if (req.threadId) runningThreads.delete(req.threadId);
+      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Missing API key — configure provider in Settings.", code: "missing-api-key" }));
+      broadcastEvent("session:busy", { sessionId, reason: "missing-api-key" });
       return;
     }
 
@@ -159,297 +216,74 @@ export function registerChatHandler(ctx: DbContext): void {
     // all expose arbitrary names. The renderer gates what may attach (it knows
     // the catalog), so a part that arrives here is meant for this model / endpoint.
 
-    const userMessage: OpenAIMessage = req.images?.length
-      ? ({
-          role: "user",
-          content: buildAttachmentParts(req.message, req.images),
-        } as unknown as OpenAIMessage)
-      : { role: "user", content: req.message };
-
-    // Compose the system prompt ONCE — buildSystemPrompt embeds the current
-    // date, so recomputing it later (the token-usage breakdown) could measure a
-    // different string if a turn crosses midnight.
-    const systemContent = withPersonality(buildSystemPrompt(req), req.personality);
-
-    const messages: OpenAIMessage[] = [
-      {
-        role: resolveSystemRole({ isReasoningModel: req.config?.isReasoningModel, baseUrl, provider, modelId: model }),
-        content: systemContent,
-      },
-      ...(req.history ?? [])
-        // Drop assistant turns that carry neither content nor tool_calls — a
-        // thinking model that timed out or stopped mid-reasoning leaves such a
-        // turn behind, and replaying it makes the provider reject the whole
-        // request with "content or tool_calls must be set" (400).
-        .filter(isSendableMessage)
-        .map((m) => {
-          const out: OpenAIMessage = { role: m.role, content: m.content };
-          if (m.tool_calls) out.tool_calls = m.tool_calls;
-          if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
-          if (m.name) out.name = m.name;
-          // Round-trip reasoning metadata persisted on the message so a resumed
-          // thread keeps its chain-of-thought (chat-loop gates on model key).
-          if (m.reasoning) out.reasoning = m.reasoning;
-          if (m.reasoningField) out.reasoningField = m.reasoningField;
-          if (m.reasoningModel) out.reasoningModel = m.reasoningModel;
-          if (m.reasoningItems) out.reasoningItems = m.reasoningItems;
-          return out;
-        }),
-      userMessage,
-    ];
-
-    const emitToolCall = (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => {
-      send("chat:tool-call", e);
-    };
-
-    const emitToolCallDone = (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => {
-      send("chat:tool-call-done", e);
-    };
-
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let reasoningTokens = 0;
-    let cacheReadTokens = 0;
-    let cacheCreationTokens = 0;
-    let costUsd: number | undefined = undefined;
-    let lastBreakdown: TokenBreakdown | undefined = undefined;
-
-    // Assemble external tool defs (MCP servers + custom services) in scope for
-    // this workspace/project. Failures degrade to no external tools.
-    let externalDefs: typeof TOOLS = [];
-    try {
-      externalDefs = (await getExternalToolDefs(ctx.db, req.workspaceId ?? "", req.projectId ?? "")) as typeof TOOLS;
-    } catch (err) {
-      console.error("[chat] failed to assemble external tools:", err);
-    }
-    const allTools = externalDefs.length > 0 ? [...TOOLS, ...externalDefs] : TOOLS;
-
-    const addUsage = (pt: number, ct: number, rt?: number, cost?: number, cacheRead?: number, cacheCreate?: number) => {
-      // Persist one usage row per tool-loop round (source = chat) for the Usage view.
-      recordLlmUsage({
-        source: "chat",
-        sessionId: req.threadId,
-        projectId: req.projectId,
-        workspaceId: req.workspaceId,
-        provider,
-        model,
-        baseUrl,
-        promptTokens: pt,
-        completionTokens: ct,
-        reasoningTokens: typeof rt === "number" ? rt : 0,
-        cacheReadTokens: cacheRead,
-        cacheCreationTokens: cacheCreate,
-        costUsd: cost,
-      });
-      promptTokens = pt;
-      completionTokens += ct;
-      if (typeof rt === "number") reasoningTokens += rt;
-      // Cache tokens are last-round only, mirroring promptTokens (the context
-      // window shown is the current round's, not a running sum).
-      if (typeof cacheRead === "number") cacheReadTokens = cacheRead;
-      if (typeof cacheCreate === "number") cacheCreationTokens = cacheCreate;
-      // Provider-reported USD cost of this call (e.g. Neuralwatt usage.cost);
-      // accumulated across tool-loop rounds like completion tokens. Only
-      // non-negative finite values are accepted; an explicitly reported 0 is
-      // preserved, and nothing is set when the provider reports no cost.
-      if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) {
-        costUsd = (costUsd ?? 0) + cost;
-      }
-      try {
-        const rawBreakdown = calculatePromptBreakdown(systemContent, messages, allTools);
-        lastBreakdown = scaleBreakdown(rawBreakdown, promptTokens);
-      } catch (err) {
-        console.error("[chat] failed to calculate breakdown:", err);
-      }
-      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens });
-    };
-
-    // Final usage object attached to chat:done (or undefined when nothing ran —
-    // a cost-only report is still retained, not dropped for having no tokens).
-    const finalUsage = () =>
-      promptTokens > 0 || costUsd != null
-        ? {
-            promptTokens,
-            completionTokens,
-            reasoningTokens,
-            breakdown: lastBreakdown,
-            costUsd: costUsd != null ? costUsd : undefined,
-            cacheReadTokens,
-            cacheCreationTokens,
-          }
-        : undefined;
+    // NOTE: usage is recorded exclusively by `cairnUsagePlugin` (mounted for
+    // every Cordis session in mountCordisSessionPlugins). A per-turn
+    // recordLlmUsage used to live here as well, which double-counted every chat
+    // turn's tokens and cost in the Usage view.
 
     // ── Subagent mode ─────────────────────────────────────────────────────────
-    // Per-thread toggle routes the turn through the dispatch → research/write
-    // loop. It streams a live, expandable subagent trace to the renderer via
-    // chat:subagent* events, then streams the dispatcher's final reply as tokens.
-    if (req.useSubagents && provider !== "localllm") {
-      const { runDispatchLoop } = await import("../lib/chat-subagent-loop");
+    // The builtin dispatch → research/write subagent loop (chat-subagent-loop)
+    // has been removed — Cordis handles subagents natively via cairn-subagent
+    // (the dsh subagent tool, run-cordis-loop.ts:144) which emits chat:subagent*
+    // events. So `req.useSubagents` is covered by the Cordis loop below.
+
+    // ── Cordis engine (only path — local models via llama-server at 127.0.0.1:<port>/v1 are also OpenAI-compatible) ──
+    if (true) {
+      const { runCordisLoop } = await import("../cordis/run-cordis-loop");
       try {
-        const dispatchResult = await runDispatchLoop(
-          ctx.db, req, ctx.workspacePath, { baseUrl, model, apiKey, provider },
-          getWin,
-          {
-            signal: abortCtrl.signal,
-            events: {
-              onSubagentStart: (e) => send("chat:subagent", { ...e, status: "start" }),
-              onSubagentDone: (e) => send("chat:subagent", { ...e, status: "done" }),
-              onSubagentToken: (e) => send("chat:subagent-token", e),
-              onSubagentThought: (e) => send("chat:subagent-thought", e),
-              onSubagentToolCall: (e) => send("chat:subagent-tool-call", e),
-              onSubagentToolCallDone: (e) => send("chat:subagent-tool-call-done", e),
-              onSubagentUsage: (e) => send("chat:subagent-usage", e),
-            },
+         await runCordisLoop({
+          db: ctx.db,
+          req,
+          workspacePath: ctx.workspacePath,
+          llmConfig: {
+            baseUrl,
+            model,
+            apiKey,
+            provider: (provider === "openai" || provider === "localllm" ? provider : "openai"),
+            contextWindow: req.config?.contextLimit ?? req.config?.contextWindow,
+            maxTokens: req.config?.maxTokens,
+            reasoningEffort: req.config?.reasoningEffort,
+            isReasoningModel: req.config?.isReasoningModel,
+            apiMode: req.config?.apiMode,
           },
-        );
-
-        // The main/total ContextRing must reflect the DISPATCHER's context window —
-        // the system prompt + the subagent briefs fed back — NOT the summed cost of
-        // every subagent turn. Each subagent reports its own usage via
-        // chat:subagent-usage for its own ring. (metrics.promptTokens is the total
-        // cost figure; metrics.dispatcherPromptTokens is the context figure.)
-        const m = dispatchResult.metrics;
-        promptTokens = m.dispatcherPromptTokens;
-        completionTokens = m.dispatcherCompletionTokens;
-        reasoningTokens = m.dispatcherReasoningTokens;
-        cacheReadTokens = m.dispatcherCacheReadTokens;
-        cacheCreationTokens = m.dispatcherCacheCreationTokens;
-        if (typeof m.costUsd === "number") costUsd = m.costUsd;
-        send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens });
-
-        // Stream the dispatcher's final reply as content tokens so it renders like
-        // a normal assistant message.
-        if (!abortCtrl.signal.aborted && dispatchResult.content) send("chat:token", { delta: dispatchResult.content });
-
-        if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
-        send("chat:done", {
-          content: abortCtrl.signal.aborted ? "" : dispatchResult.content,
-          reasoning: dispatchResult.reasoning,
-          reasoningItems: dispatchResult.reasoningItems,
-          reasoningField: dispatchResult.reasoningField,
-          reasoningModel: dispatchResult.reasoningModel,
-          contextRefs: [],
-          usage: finalUsage(),
-        });
-      } catch (err) {
-        // Cancellation or an unexpected failure must never leave the input
-        // disabled — always emit chat:done so the renderer resolves the turn.
-        if (!abortCtrl.signal.aborted) {
-          console.error("[chat] subagent dispatch failed:", err);
-          send("chat:done", { content: `Subagent run failed: ${String(err)}`, contextRefs: [] });
-        } else {
-          send("chat:done", { content: "", contextRefs: [] });
-        }
+          signal: abortCtrl.signal,
+          getWin,
+             sendSubagent: (channel, payload) => send(channel.replace(/^chat:/, "session:"), payload),
+           approvals: {
+             send: chatLoopSend,
+             registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
+               const key = pendingKey(sessionId, callId);
+               cordisPendingApprovals.set(key, resolve);
+               return () => cordisPendingApprovals.delete(key);
+             },
+           },
+           questions: {
+              send: (channel, payload) => chatLoopSend(channel, payload),
+               emitQuestions: (requestId, questions) => {
+                 const nonce = mintAskNonce(sessionId, requestId);
+                 recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
+                  chatLoopSend("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions, nonce } as never));
+               },
+             registerPending: (requestId, resolve) => {
+               return registerPendingQuestion(sessionId, requestId, resolve);
+              },
+           },
+           onSessionEvent: (sessionEvent) => broadcastEvent("session:event", { sessionId, event: sessionEvent }),
+         });
+         if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
+       } catch (err) {
+         if (!abortCtrl.signal.aborted) {
+           console.error("[chat] cordis loop failed:", err);
+         }
       } finally {
-        abortControllers.delete(event.sender.id);
+         abortControllers.delete(sessionId);
+        if (req.threadId) runningThreads.delete(req.threadId);
+        setConfirmTransport(sessionId, undefined);
+        pendingAsks.clearSession(sessionId);
+        clearAskNoncesForSession(sessionId);
+        forgetSessionApprovalArgs(sessionId);
+        for (const k of Array.from(cordisPendingApprovals.keys())) if (k.startsWith(`${sessionId}::`)) cordisPendingApprovals.delete(k);
       }
       return;
     }
-
-    // Pre-stream snapshot of provider credits (for providers like NeuralWatt
-    // that don't include cost in streaming responses). We diff after the stream
-    // to recover per-request cost — only used when the stream didn't report it.
-    // `turnStart` scopes the recovery write-back to exactly this turn's rows.
-    const turnStart = Date.now();
-    let creditsBefore: number | null = null;
-    if (apiKey && !isLocalEndpointUrl) {
-      try {
-        const { manifest } = await fetchProvidersManifest();
-        const spec = resolveCreditSpec(baseUrl, manifest.providers);
-        if (spec) {
-          const probe = await probeCredits(spec.url, apiKey, spec.shape);
-          if (probe.info?.usage != null) creditsBefore = probe.info.usage;
-          else if (probe.info?.remaining != null && probe.info?.limit != null) {
-            creditsBefore = probe.info.limit - probe.info.remaining;
-          }
-        }
-      } catch { /* best-effort — no snapshot */ }
-    }
-
-    // Batch streamed deltas — one IPC event per flush instead of per token, so a
-    // dense stream can't flood the renderer. Flushed before every chat:done below.
-    const tokens = createDeltaBatcher((delta) => send("chat:token", { delta }));
-    const thoughts = createDeltaBatcher((delta) => send("chat:thought", { delta }));
-    const flushStream = () => { tokens.flush(); thoughts.flush(); };
-
-    let loopResult: Awaited<ReturnType<typeof runToolLoop>>;
-    try {
-      loopResult = await runToolLoop(
-        ctx.db, req, ctx.workspacePath, baseUrl, model, apiKey, messages,
-        emitToolCall, abortCtrl.signal, getWin, provider, addUsage,
-        emitToolCallDone,
-        (delta) => {
-          tokens.push(delta);
-        },
-        (delta) => {
-          thoughts.push(delta);
-        },
-        externalDefs,
-      );
-    } catch (err) {
-      // A crashed loop must still resolve the turn: flush any buffered tokens,
-      // release the abort controller, and send a terminal error chat:done so
-      // the renderer never stays stuck in its loading state.
-      flushStream();
-      abortControllers.delete(event.sender.id);
-      if (!abortCtrl.signal.aborted) {
-        console.error("[chat] tool loop failed:", err);
-        send("chat:done", { content: `Chat loop failed: ${(err as Error)?.message ?? String(err)}`, contextRefs: [] });
-      } else {
-        send("chat:done", { content: "", contextRefs: [] });
-      }
-      return;
-    }
-
-    abortControllers.delete(event.sender.id);
-
-    // If the provider didn't report cost inline (streaming responses from
-    // NeuralWatt etc. lack a cost field), recover it by diffing /quota usage.
-    if (costUsd === undefined && creditsBefore !== null && apiKey && !abortCtrl.signal.aborted) {
-      try {
-        const { manifest } = await fetchProvidersManifest();
-        const spec = resolveCreditSpec(baseUrl, manifest.providers);
-        if (spec) {
-          const probe = await probeCredits(spec.url, apiKey, spec.shape);
-          if (probe.info) {
-            const after = probe.info.usage != null
-              ? probe.info.usage
-              : probe.info.remaining != null && probe.info.limit != null
-                ? probe.info.limit - probe.info.remaining
-                : null;
-            if (after !== null) {
-              const diff = after - creditsBefore;
-              if (Number.isFinite(diff) && diff >= 0) {
-                costUsd = diff;
-                if (promptTokens > 0) {
-                  send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown, costUsd, cacheReadTokens, cacheCreationTokens });
-                }
-                // Write the recovered provider-reported cost back onto this
-                // turn's recorded usage rows (they were persisted during the
-                // loop, when the provider's inline cost wasn't known yet).
-                applyRecoveredTurnCost(ctx.db, req.threadId, turnStart, diff);
-              }
-            }
-          }
-        }
-      } catch { /* best-effort — no cost recovered */ }
-    }
-
-    // Broadcast db:changed so mobile SSE clients (and other Electron windows)
-    // re-hydrate the store after any tool calls that wrote to the DB.
-    // The chat stream runs tool calls internally — we broadcast once after all
-    // tools have finished so the board, notes, and other views stay in sync.
-    if (!abortCtrl.signal.aborted) {
-      broadcastEvent("db:changed", null);
-    }
-
-    if (abortCtrl.signal.aborted) {
-      flushStream();
-      send("chat:done", { content: "", reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
-      return;
-    }
-
-    flushStream();
-    send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, reasoningSummary: loopResult.reasoningSummary, reasoningItems: loopResult.reasoningItems, reasoningField: loopResult.reasoningField, reasoningModel: loopResult.reasoningModel, contextRefs: [], usage: finalUsage() });
-  });
 }

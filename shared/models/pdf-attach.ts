@@ -41,15 +41,44 @@ export function validateAttachmentDataUrl(dataUrl: unknown): string | null {
   if (!dataUrl.startsWith("data:")) {
     return "attachment must be a data: URL";
   }
+  // Early cap on total data URL length to prevent slicing huge strings (M2).
+  // 35M chars ≈ ~26M decoded bytes + header, safely above MAX_ATTACHMENT_BYTES.
+  if (dataUrl.length > 35_000_000) {
+    return `attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`;
+  }
   const comma = dataUrl.indexOf(",");
   if (comma < 0) return "malformed data: URL (missing payload)";
-  const mime = dataUrl.slice(5, comma).split(";")[0].toLowerCase();
+  const header = dataUrl.slice(5, comma).toLowerCase();
+  // Require ;base64 marker — non-base64 data URLs are not supported.
+  if (!header.includes(";base64")) {
+    return "attachment must be base64-encoded (missing ;base64)";
+  }
+  const mime = header.split(";")[0];
   if (mime !== "application/pdf" && !mime.startsWith("image/")) {
     return `unsupported attachment MIME type: ${mime}`;
   }
-  const bytes = Math.floor((dataUrl.slice(comma + 1).length / 4) * 3);
-  if (bytes > MAX_ATTACHMENT_BYTES) {
-    return `attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`;
+  try {
+    let b64 = dataUrl.slice(comma + 1);
+    // Strip whitespace (newlines/spaces) that may be injected — base64 ignores it but we validate strictly.
+    b64 = b64.replace(/\s/g, "");
+    if (b64.length === 0) return "attachment has invalid base64 encoding";
+    // Base64 alphabet + padding only; reject semicolons/control chars that would have been sliced incorrectly.
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) {
+      return "attachment has invalid base64 encoding";
+    }
+    if (b64.length % 4 !== 0) {
+      return "attachment has invalid base64 encoding";
+    }
+    // Validate via length without allocating Buffer; also caps decoded size.
+    const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+    const len = Math.floor(b64.length * 3 / 4) - padding;
+    if (len > MAX_ATTACHMENT_BYTES) {
+      return `attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`;
+    }
+    // Reject negative/overflow from malformed padding
+    if (len < 0) return "attachment has invalid base64 encoding";
+  } catch {
+    return "attachment has invalid base64 encoding";
   }
   return null;
 }

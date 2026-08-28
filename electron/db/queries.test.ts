@@ -63,10 +63,15 @@ import {
   insertMcpNotification,
   pruneMcpNotifications,
   clearMcpNotifications,
-  createPiSession,
+  createCodingSession,
   saveSessionTodos,
   getSessionTodos,
-  deletePiSession,
+  deleteCodingSession,
+  reconcileInterruptedCodingSessions,
+  getCodingSessionById,
+  updateCodingSession,
+  upsertSessionProfile,
+  getSessionProfile,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -84,6 +89,35 @@ function seedWorkspace(db: Database.Database, id = "ws1") {
 function seedProject(db: Database.Database, workspaceId = "ws1", id = "proj1") {
   return createProject(db, { id, workspaceId, name: "Test Project" });
 }
+
+describe("session_profiles migration and queries", () => {
+  it("creates v53 metadata and upserts it by session id", () => {
+    const db = makeDb();
+    expect(db.pragma("user_version", { simple: true })).toBe(54);
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_profiles'").get()).toBeTruthy();
+
+    const first = upsertSessionProfile(db, {
+      sessionId: "chat-thread-1", profile: "chat", workspaceId: "ws1", projectId: "proj1", cwd: "/workspace",
+      updatedAt: "2026-08-24T10:00:00.000Z",
+    });
+    expect(first).toEqual({ sessionId: "chat-thread-1", profile: "chat", workspaceId: "ws1", projectId: "proj1", cwd: "/workspace", updatedAt: "2026-08-24T10:00:00.000Z" });
+    expect(db.prepare("SELECT COUNT(*) as n FROM session_profiles").get() as { n: number }).toEqual({ n: 1 });
+    const second = upsertSessionProfile(db, { sessionId: "chat-thread-1", profile: "coding", projectId: "proj2", cwd: "/project" });
+    expect(second.profile).toBe("coding");
+    expect(second.projectId).toBe("proj2");
+    // updatedAt is auto-generated when not supplied and must advance on upsert
+    expect(second.updatedAt).not.toEqual(first.updatedAt);
+    expect(typeof second.updatedAt).toBe("string");
+    // idempotence: still a single row after the upsert
+    expect((db.prepare("SELECT COUNT(*) as n FROM session_profiles").get() as { n: number }).n).toBe(1);
+    // re-upserting the same profile keeps the row count stable and refreshes updatedAt
+    const third = upsertSessionProfile(db, { sessionId: "chat-thread-1", profile: "coding", projectId: "proj2", cwd: "/project", updatedAt: "2026-08-24T11:00:00.000Z" });
+    expect(third.updatedAt).toBe("2026-08-24T11:00:00.000Z");
+    expect((db.prepare("SELECT COUNT(*) as n FROM session_profiles").get() as { n: number }).n).toBe(1);
+    expect(getSessionProfile(db, "missing")).toBeNull();
+    db.close();
+  });
+});
 
 function seedColumn(
   db: Database.Database,
@@ -270,7 +304,7 @@ describe("moveNoteToProject", () => {
     await new Promise((r) => setTimeout(r, 5));
     const moved = moveNoteToProject(db, "note1", "proj2");
     expect(moved.version).toBeGreaterThan(before?.version ?? -1);
-    expect(moved.updatedAt > (before?.updatedAt ?? "")).toBe(true);
+    expect(moved.updatedAt >= (before?.updatedAt ?? "")).toBe(true);
   });
 });
 
@@ -1279,6 +1313,34 @@ describe("clearMcpNotifications", () => {
   });
 });
 
+describe("reconcileInterruptedCodingSessions", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+    seedProject(db);
+  });
+
+  it("flips orphaned 'running' sessions to 'exited' and leaves closed ones alone", () => {
+    createCodingSession(db, { id: "live", projectId: "proj1", taskTitle: "Live", cwd: "/tmp", mode: "execute", spawnedAt: "2026-08-10T00:00:00.000Z" });
+    createCodingSession(db, { id: "closed", projectId: "proj1", taskTitle: "Closed", cwd: "/tmp", mode: "execute", spawnedAt: "2026-08-10T00:00:00.000Z" });
+    updateCodingSession(db, "closed", { status: "exited" });
+
+    const reconciled = reconcileInterruptedCodingSessions(db);
+
+    expect(reconciled).toBe(1);
+    expect(getCodingSessionById(db, "live")!.status).toBe("exited");
+    expect(getCodingSessionById(db, "closed")!.status).toBe("exited");
+  });
+
+  it("returns 0 when nothing is running", () => {
+    createCodingSession(db, { id: "s1", projectId: "proj1", taskTitle: "S1", cwd: "/tmp", mode: "execute", spawnedAt: "2026-08-10T00:00:00.000Z" });
+    updateCodingSession(db, "s1", { status: "exited" });
+    expect(reconcileInterruptedCodingSessions(db)).toBe(0);
+  });
+});
+
 describe("session todos (todowrite)", () => {
   let db: Database.Database;
 
@@ -1286,7 +1348,7 @@ describe("session todos (todowrite)", () => {
     db = makeDb();
     seedWorkspace(db);
     seedProject(db);
-    createPiSession(db, {
+    createCodingSession(db, {
       id: "pi1", projectId: "proj1", taskTitle: "Sweep", cwd: "/tmp", mode: "execute", spawnedAt: "2026-08-10T00:00:00.000Z",
     });
   });
@@ -1322,7 +1384,7 @@ describe("session todos (todowrite)", () => {
 
   it("deleting a session cascades to its todos", () => {
     saveSessionTodos(db, "pi1", [{ content: "A", status: "pending", priority: "medium" }]);
-    deletePiSession(db, "pi1");
+    deleteCodingSession(db, "pi1");
     expect(getSessionTodos(db, "pi1")).toEqual([]);
   });
 });

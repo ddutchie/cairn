@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import type { StreamOptions, StreamedTurn } from "./llm-stream";
 
 // Re-export the pure shared helpers so existing desktop importers (llm.ts,
-// llm-transport.ts, compaction.ts, chat-subagent-loop.ts) are unchanged.
+// llm-transport.ts) are unchanged.
 export {
   isResponsesEndpoint,
   isEndpointNotFound,

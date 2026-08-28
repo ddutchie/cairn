@@ -92,6 +92,18 @@ const ALLOWED_NATIVE_DEPS = new Set([
   "@yao-pkg/pkg/node_modules/esbuild",
   "playwright/node_modules/fsevents",
   "vite/node_modules/fsevents",
+  // dsh/pi-ai transitive deps (Cordis engine):
+  // - @google/genai — the Google GenAI SDK. Pure JS (build/prepare scripts
+  //   only, no native binding); flagged for hasInstallScript but never compiles
+  //   native code. Used only by pi-ai's Google provider, which Cairn doesn't use.
+  "koffi",
+  // - koffi — native FFI library; compiles/downloads prebuilt binaries via
+  //   cnoke + @koromix/koffi-* (all platforms incl. win32-arm64).
+  "@google/genai",
+  // - dsh-subprocess-local — postinstall ensures a spawn helper; its nested
+  //   node-pty ships prebuilt binaries (hasPrebuilds: true, same as root).
+  "@deepseek-ai/dsh-subprocess-local",
+  "@deepseek-ai/dsh-subprocess-local/node_modules/node-pty",
 ]);
 
 /**

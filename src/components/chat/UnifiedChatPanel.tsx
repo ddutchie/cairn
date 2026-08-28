@@ -16,20 +16,26 @@ interface UnifiedChatPanelProps {
 export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPanelProps) {
   const {
     activeView,
+    sessionPresentation,
     chatOpen,
     setChatPanelWidth,
     sidebarCollapsed,
     activePreviewItem,
+    activeContextPanel,
     chatPanelResizing,
     setChatPanelResizing,
+    shellVariant,
   } = useCairnStore(useShallow((s) => ({
     activeView: s.activeView,
+    sessionPresentation: s.sessionPresentation,
     chatOpen: s.chatOpen,
     setChatPanelWidth: s.setChatPanelWidth,
     sidebarCollapsed: s.sidebarCollapsed,
     activePreviewItem: s.activePreviewItem,
+    activeContextPanel: s.activeContextPanel,
     chatPanelResizing: s.chatPanelResizing,
     setChatPanelResizing: s.setChatPanelResizing,
+    shellVariant: s.shellVariant,
   })));
 
   const panelRef = useRef<HTMLElement>(null);
@@ -99,23 +105,34 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     };
   }, [setChatPanelWidth, setChatPanelResizing, activeView]);
 
-  const isCenterMode = activeView === "chat";
+  const isCenterMode = sessionPresentation === "center";
 
   // Determine positioning coordinates
   let positioningClasses = "";
   let widthStyle: React.CSSProperties = {};
 
   if (isCenterMode) {
-    // Center mode: spans from the right of the sidebar (dynamic width based on collapse status) to the right screen edge
-    const sidebarWidth = sidebarCollapsed ? "3rem" : "14rem";
-    positioningClasses = "left-0 md:left-[var(--sidebar-width)] right-0 w-auto border-l-0 bg-[var(--background)]";
+    // Center mode: spans from the right of the sidebar to the right screen edge.
+    // Shell-aware: Dock rail is 4rem/15.25rem (w-16 / w-[244px]), Studio is 16.25rem, Calm is 3.25rem.
+    // top overlaps the header's border-b by 1px so the two 1px lines occupy the
+    // same pixel row (y=43-44, or banner-adjusted chromeTop). Result is a single
+    // 1px continuous line, not two adjacent 1px lines (2px).
+    let sidebarWidth: string;
+    if (shellVariant === "A") sidebarWidth = sidebarCollapsed ? "4rem" : "15.25rem";
+    else if (shellVariant === "B") sidebarWidth = "16.25rem";
+    else if (shellVariant === "C") sidebarWidth = "3.25rem";
+    else sidebarWidth = sidebarCollapsed ? "3rem" : "14rem";
+    positioningClasses = "top-[calc(var(--chrome-top)-1px)] left-0 md:left-[var(--sidebar-width)] right-0 w-auto border-t border-[var(--border)] bg-[var(--background)]";
     widthStyle = {
       "--sidebar-width": sidebarWidth,
     } as React.CSSProperties;
   } else {
     // Sidebar mode. Width comes from the :root `--chat-panel-width` variable
     // (shared with the centered content margin) so the drag reflows both live.
-    positioningClasses = "right-0 border-l border-[var(--border)] bg-[var(--surface)] left-[calc(100%-var(--chat-panel-width,320px))]";
+    // top -1px overlaps header's border-b (both 1px at y=43-44) -> single 1px
+    // line continuous across the window. border-t + border-l meet at a clean
+    // 90° corner (same element, same color, overlapping pixel, no step).
+    positioningClasses = "top-[calc(var(--chrome-top)-1px)] right-0 w-[var(--chat-panel-width,320px)] border-t border-l border-[var(--border)] bg-[var(--surface)] shadow-[-12px_0_32px_rgba(0,0,0,.28)]";
     if (chatOpen) {
       positioningClasses += " opacity-100 translate-x-0";
     } else {
@@ -127,7 +144,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     <aside
       ref={panelRef}
       className={cn(
-        "fixed top-[var(--chrome-top,40px)] bottom-0 z-30 flex overflow-hidden",
+        "fixed bottom-0 z-30 flex overflow-hidden",
         !chatPanelResizing && "transition-all duration-300 ease-in-out",
         positioningClasses
       )}
@@ -153,7 +170,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
       </div>
 
       {/* Side-by-side preview panel (renders only in Center Mode when note/task is clicked) */}
-      {isCenterMode && activePreviewItem && <PreviewPane />}
+      {isCenterMode && (activeContextPanel ?? activePreviewItem) && <PreviewPane />}
     </aside>
   );
 }

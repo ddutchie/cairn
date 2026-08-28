@@ -5,6 +5,16 @@ on:
     branches:
       - main
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      run_electron_e2e:
+        description: "Run the Electron E2E suite (CORDIS_LIVE=1). Requires CORDIS_DUMMY_KEY secret."
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
   # ── Type check ──────────────────────────────────────────────────────────────
@@ -108,6 +118,47 @@ jobs:
         # code under test) and compiles before running vitest.
         run: npm test
 
+  # ── Bundle guards ───────────────────────────────────────────────────────────
+  # test:bundle runs three lightweight suites that assert the shipped
+  # main.ts / mcp-server.ts / native binding bundle is intact — a wrong
+  # esbuild --external, a missing @deepseek-ai package, or a dsh service
+  # dropping a peer would surface here before it broke a real build. Kept
+  # separate from `test` because it needs a fresh compile that the unit-test
+  # job's cached artifacts don't cover.
+  test-bundle:
+    name: Bundle guards
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Cache node_modules and vitest-native
+        id: cache-npm
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            node_modules
+            vitest-native
+          key: npm-deps-test-${{ runner.os }}-node-24-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Provision vitest-native SQLite binding
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p vitest-native
+          cp "node_modules/better-sqlite3/prebuilds/$(node -e 'process.stdout.write(process.platform + "-" + process.arch)').node" vitest-native/better_sqlite3.node
+
+      - name: Bundle guards
+        run: npm run test:bundle
+
   # ── Build ───────────────────────────────────────────────────────────────────
   build:
     name: Build
@@ -207,5 +258,69 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  # ── Electron E2E (opt-in via workflow_dispatch) ─────────────────────────────
+  # Boots the real desktop app against an isolated throwaway profile and
+  # exercises chat / coding-agent / heartbeat end-to-end through IPC and the
+  # renderer. Gated behind workflow_dispatch (not run on every PR) because
+  # each turn needs a reachable model endpoint (CORDIS_DUMMY_KEY secret) and
+  # takes minutes, not seconds. See tests/e2e/electron/cordis-qa.test.ts and
+  # playwright.electron.config.ts.
+  e2e-electron:
+    name: E2E tests (Electron, opt-in)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_electron_e2e == 'true'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Cache node_modules
+        id: cache-npm
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: node_modules
+          key: npm-deps-${{ runner.os }}-node-24-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Install Playwright + Electron system deps
+        run: |
+          npx playwright install-deps chromium
+          # Electron needs its own runtime shared libs on headless runners
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libatk1.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64 || sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libatk1.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2
+
+      - name: Generate licenses + What's New registry
+        run: |
+          node scripts/generate-licenses.js
+          node scripts/generate-features.js
+
+      - name: Compile Electron bundles
+        run: npm run compile
+
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild
+
+      - name: Run Electron E2E suite
+        env:
+          CORDIS_LIVE: "1"
+          CORDIS_DUMMY_KEY: ${{ secrets.CORDIS_DUMMY_KEY || 'local' }}
+        run: xvfb-run -a npm run test:e2e:electron
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: playwright-electron-report
           path: playwright-report/
           retention-days: 7

@@ -21,7 +21,9 @@ import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
 import { buildShortcutMap, modKey, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
 import { getActiveCrossProjectDrag, setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
+import { SlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
 import type { Project } from "@/types";
+import { SessionBrowser } from "@/components/agent/SessionBrowser";
 
 // ── View nav config ───────────────────────────────────────────────────────────
 
@@ -50,26 +52,26 @@ const VIEW_NAV: ViewNavItem[] = [
 export function Sidebar() {
   const {
     sidebarCollapsed, toggleSidebar,
-    activeWorkspaceId, activeProjectId, activeView,
+     activeWorkspaceId, activeProjectId, activeSessionId, activeView,
     workspaces, projects: allProjects, getWorkspaceProjects,
-    setActiveProject, setView, toggleSearch, toggleChat,
+     setActiveProject, setView, toggleSearch, toggleChat,
     createProject, updateProject, deleteProject, mergeProject,
      cards, chatOpen, searchOpen,
      hiddenViews,
-     pendingApprovalCount,
     notificationUnreadCount,
     notificationOpen,
     setNotificationOpen,
      moveFolderToProject, moveCardToProject, moveNoteToProject,
    } = useCairnStore(useShallow((s) => ({    sidebarCollapsed:    s.sidebarCollapsed,
      toggleSidebar:       s.toggleSidebar,
-     activeWorkspaceId:   s.activeWorkspaceId,
-     activeProjectId:     s.activeProjectId,
+      activeWorkspaceId:   s.activeWorkspaceId,
+      activeProjectId:     s.activeProjectId,
+      activeSessionId:     s.activeSessionId,
      activeView:          s.activeView,
      workspaces:          s.workspaces,
      projects:            s.projects,
      getWorkspaceProjects: s.getWorkspaceProjects,
-     setActiveProject:    s.setActiveProject,
+      setActiveProject:    s.setActiveProject,
      setView:             s.setView,
      toggleSearch:        s.toggleSearch,
      toggleChat:          s.toggleChat,
@@ -81,7 +83,6 @@ export function Sidebar() {
      chatOpen:            s.chatOpen,
      searchOpen:          s.searchOpen,
      hiddenViews:         s.hiddenViews,
-     pendingApprovalCount: s.pendingApprovalCount,
     notificationUnreadCount: s.notificationUnreadCount,
     notificationOpen: s.notificationOpen,
     setNotificationOpen: s.setNotificationOpen,
@@ -283,7 +284,8 @@ export function Sidebar() {
                     onToggleExpand={() => toggleProjectExpand(project.id)}
                     onSelectProject={() => { setActiveProject(project.id); setView("overview"); if (!expandedProjects.has(project.id)) toggleProjectExpand(project.id); closeSidebarOnMobile(); }}
                     activeView={activeView}
-                    onSelectView={(view) => { setActiveProject(project.id); setView(view); closeSidebarOnMobile(); }}
+                     onSelectView={(view) => { setActiveProject(project.id); setView(view); closeSidebarOnMobile(); }}
+                     activeSessionId={activeSessionId}
                     onRename={(name) => updateProject(project.id, { name })}
                     onDelete={() => deleteProject(project.id)}
                     mergeTargets={projects.filter((p) => p.id !== project.id)}
@@ -323,11 +325,6 @@ export function Sidebar() {
               className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
                 activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Zap size={13} /><span>Automations</span>
-              {pendingApprovalCount > 0 && (
-                <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">
-                  {pendingApprovalCount}
-                </span>
-              )}
             </button>
 
             {/* Divider — separates Automations from the workspace views below */}
@@ -365,6 +362,9 @@ export function Sidebar() {
                 activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Settings size={13} /><span>Settings</span>
             </button>
+
+            {/* Plugin-UI: extra rows at the sidebar bottom (sidebar.footer). */}
+            <SlotOutlet name="sidebar.footer" props={{}} />
           </div>
         </div>
       </aside>
@@ -378,6 +378,7 @@ interface ProjectItemProps {
   project: Project; isActive: boolean; isExpanded: boolean;
   onToggleExpand: () => void; onSelectProject: () => void;
   activeView: string;
+  activeSessionId: string | null;
   onSelectView: (view: "overview" | "notes" | "board" | "calendar" | "flow" | "graph" | "chat" | "agent") => void;
   onRename: (name: string) => void; onDelete: () => void;
   /** Other projects in this workspace this one can be merged into. */
@@ -390,7 +391,7 @@ interface ProjectItemProps {
   onCrossProjectDrop: (targetProjectId: string) => boolean;
 }
 
-function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, mergeTargets, onMerge, openCardCount, hiddenViews: _hiddenViews, visibleNavItems, onCrossProjectDrop }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, activeSessionId, onSelectView, onRename, onDelete, mergeTargets, onMerge, openCardCount, hiddenViews: _hiddenViews, visibleNavItems, onCrossProjectDrop }: ProjectItemProps) {
   const [renaming, setRenaming]             = useState(false);
   const [renameValue, setRenameValue]       = useState(project.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -601,6 +602,11 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
                 onClick={() => onSelectView(item.view as "board" | "calendar" | "flow" | "agent" | "chat")}
               />
             ))}
+            <SessionBrowser
+              projectId={project.id}
+              variant="project"
+              activeSessionId={activeSessionId}
+            />
           </div>
         )}
       </div>

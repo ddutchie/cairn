@@ -39,6 +39,12 @@ const eslintConfig = defineConfig([
     // Downgrade to warn so build-blocking errors don't fire on this idiom.
     "react-hooks/purity": "warn",
 
+      // useTilt exposes a stable ref object (not ref.current) during render
+      // via `ref={tilt.ref}` — the rule's `ref.current` guard false-positives
+      // on this shape. Downgrade to warn; tilt still opts into reduced-motion
+      // and rAF correctly.
+      "react-hooks/refs": "warn",
+
     // Honour the _name convention for intentionally-unused vars/params.
       "@typescript-eslint/no-unused-vars": ["warn", {
         varsIgnorePattern: "^_",

@@ -49,7 +49,7 @@ function fakeWin() {
 }
 
 describe("startMcpNotificationPoller — workspace swap", () => {
-  it("pushes the NEW workspace's unread count on the swap tick, before any write", () => {
+  it("pushes the NEW workspace's unread count on the swap tick, before any write", async () => {
     vi.useFakeTimers();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-poller-"));
     // Workspace A: 1 unread. Workspace B: 3 unread.
@@ -75,14 +75,14 @@ describe("startMcpNotificationPoller — workspace swap", () => {
       // no workspace change and lastMtime already at the file's mtime, the
       // "changed" branch may not fire. We only care that the SWAP pushes, so
       // don't assert on this baseline; just clear the mock afterwards.
-      poller.tick();
+      await poller.tick();
       updateBadge.mockClear();
 
       // Swap to workspace B without writing to it.
       activeDb = dbB;
       activeDbPath = dbPathB;
 
-      poller.tick();
+      await poller.tick();
 
       // Badge must reflect B's 3 unread — pushed eagerly on the swap, not
       // deferred until the next write to B.

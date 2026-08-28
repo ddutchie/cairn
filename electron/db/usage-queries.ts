@@ -13,9 +13,9 @@ import { newId } from "./utils";
 /** Where an LLM request originated — drives the "source" breakdown in the UI. */
 export type UsageSource =
   | "chat"
-  | "pi-agent"
+  | "coding-agent"
   | "chat-subagent"
-  | "pi-subagent"
+  | "coding-subagent"
   | "automation"
   | "prd"
   | "commit-message"
@@ -29,9 +29,9 @@ export type UsageSource =
 /** Human label for a source, used by the renderer (kept here so it never drifts). */
 export const USAGE_SOURCE_LABELS: Record<UsageSource, string> = {
   chat: "Chat",
-  "pi-agent": "Agent",
+  "coding-agent": "Agent",
   "chat-subagent": "Chat subagent",
-  "pi-subagent": "Agent subagent",
+  "coding-subagent": "Agent subagent",
   automation: "Automation",
   prd: "PRD",
   "commit-message": "Commit message",
@@ -48,7 +48,7 @@ export interface LlmUsageRecord {
   workspaceId?: string;
   projectId?: string;
   source: UsageSource;
-  /** Chat threadId / pi-agent session id / automation run id this request belongs to. */
+  /** Chat threadId / coding-agent session id / automation run id this request belongs to. */
   sessionId?: string;
   provider?: string;
   model: string;

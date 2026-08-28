@@ -78,21 +78,25 @@ export function isReservedCommandName(name: string): boolean {
 }
 
 /**
- * Merge built-in commands for a pane with the workspace's custom/community
- * commands, filtered by scope. A custom command with the same name as a built-in
- * overrides it, so users can tweak a built-in's inserted text.
+ * Merge built-in commands for a pane with dsh registry commands (executable —
+ * /plan, /compact, plugin commands) and the workspace's custom/community
+ * commands (prompt inserters), filtered by scope. Precedence: custom >
+ * registry > built-in, so users can still override inserted text; registry
+ * commands shadow same-name built-ins because they are executable.
  */
 export function getCommandsForScope(
   target: "chat" | "agent",
-  customCommands: CustomSlashCommand[]
+  customCommands: CustomSlashCommand[],
+  registryCommands: Array<{ name: string; description: string }> = [],
 ): SlashCommand[] {
   const builtins = target === "chat" ? BUILTIN_CHAT_COMMANDS : BUILTIN_AGENT_COMMANDS;
   const scopedCustom = customCommands.filter((c) => scopeMatches(c.scope, target));
-  const customNames = new Set(scopedCustom.map((c) => c.name));
+  const taken = new Set<string>([...scopedCustom.map((c) => c.name), ...registryCommands.map((c) => c.name)]);
 
   const merged: SlashCommand[] = [
+    ...registryCommands.map((c) => ({ name: c.name, description: c.description, insertText: `/${c.name}` })),
     ...builtins
-      .filter((b) => !customNames.has(b.name))
+      .filter((b) => !taken.has(b.name))
       .map((b) => ({ name: b.name, description: b.description, insertText: b.insertText })),
     ...scopedCustom.map((c) => ({ name: c.name, description: c.description, insertText: c.insertText })),
   ];

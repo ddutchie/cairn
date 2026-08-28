@@ -2,15 +2,22 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
+import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
 import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
 import { historyManager, ownWriteGuard } from "@/lib/history";
 import { markAiNoteWriteStarted, markAiNoteWriteEnded, hasRecentAiNoteWrite } from "@/store/ipc";
 import { useIpcErrorToasts } from "@/hooks/useIpcErrorToasts";
+import { AppOverlayLayer, AppStatusBar } from "@/lib/plugin-ui/SlotOutlet";
+import { startUIPlugins } from "@/lib/plugin-ui/loader";
 import { TitleBar } from "@/components/layout/title-bar";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { UnifiedRail } from "@/components/layout/shells/UnifiedRail";
+import { DockSidebar } from "@/components/layout/shells/DockSidebar";
+import { StudioSidebar } from "@/components/layout/shells/StudioSidebar";
+import { CalmRail, CalmTop } from "@/components/layout/shells/CalmShell";
 import { ProjectOverview } from "@/components/layout/project-overview";
 import { NotesView } from "@/components/notes/notes-view";
 import { KanbanBoard } from "@/components/kanban/board";
@@ -49,6 +56,7 @@ export default function Home() {
     hydrate,
     hydrateFromElectron,
     activeView,
+    sessionPresentation,
     chatOpen,
     searchOpen,
     toggleSearch,
@@ -61,18 +69,20 @@ export default function Home() {
     chatPanelWidth,
     chatPanelResizing,
     lastContentView,
-    startApprovalPolling,
-    stopApprovalPolling,
-    fetchApprovalCount,
     startNotificationPolling,
     stopNotificationPolling,
     notificationOpen,
     setNotificationOpen,
     runningAutomationCount,
+    startRunCountPolling,
+    stopRunCountPolling,
+    shellVariant,
+    setShellVariant,
   } = useCairnStore(useShallow((s) => ({
     hydrate:             s.hydrate,
     hydrateFromElectron: s.hydrateFromElectron,
     activeView:          s.activeView,
+    sessionPresentation: s.sessionPresentation,
     chatOpen:            s.chatOpen,
     searchOpen:          s.searchOpen,
     toggleSearch:        s.toggleSearch,
@@ -85,14 +95,15 @@ export default function Home() {
     chatPanelWidth:      s.chatPanelWidth,
     chatPanelResizing:   s.chatPanelResizing,
     lastContentView:     s.lastContentView,
-    startApprovalPolling: s.startApprovalPolling,
-    stopApprovalPolling:  s.stopApprovalPolling,
-    fetchApprovalCount:   s.fetchApprovalCount,
     startNotificationPolling: s.startNotificationPolling,
     stopNotificationPolling:  s.stopNotificationPolling,
     notificationOpen:    s.notificationOpen,
     setNotificationOpen: s.setNotificationOpen,
     runningAutomationCount: s.runningAutomationCount,
+    startRunCountPolling: s.startRunCountPolling,
+    stopRunCountPolling:  s.stopRunCountPolling,
+    shellVariant:       s.shellVariant,
+    setShellVariant:    s.setShellVariant,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
   const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations", "usage"] as const).filter(
@@ -110,6 +121,11 @@ export default function Home() {
   const onboardingStateRef = useRef<"workspace" | "create" | "dev" | false | null>(null);
   // Keep ref in sync whenever state changes
   useEffect(() => { onboardingStateRef.current = onboardingState; }, [onboardingState]);
+
+  // Start the UI-plugin loader once (dev-gated in main; no-op otherwise). Pulls
+  // renderer-side plugin sources from <userData>/plugins and activates them into
+  // Cairn's plugin-UI slots (app.overlay, statusbar, …), live-reloading on change.
+  useEffect(() => { startUIPlugins(); }, []);
 
   // Expose the chat panel width as a :root CSS variable so the fixed chat panel
   // and the centered content margin share one live source. The drag writes the
@@ -142,15 +158,13 @@ export default function Home() {
     (window as unknown as { __cairnStoreRef?: typeof useCairnStore }).__cairnStoreRef = useCairnStore;
   }, []);
 
-  // Live pending-approval polling for the sidebar badge / inbox. Lightweight:
-  // a COUNT query every few seconds so a parked approval from a background run
+  // Live running-automation polling for the sidebar badge. Lightweight:
   // surfaces without a full renderer reload.
   useEffect(() => {
-    if (typeof window === "undefined" || !window.electron?.approval) return;
-    void fetchApprovalCount();
-    startApprovalPolling();
-    return () => stopApprovalPolling();
-  }, [startApprovalPolling, stopApprovalPolling, fetchApprovalCount]);
+    if (typeof window === "undefined") return;
+    startRunCountPolling();
+    return () => stopRunCountPolling();
+  }, [startRunCountPolling, stopRunCountPolling]);
 
   // Live unread-notification polling for the bell badge + center (same pattern;
   // also subscribes to the main-process mcp:unread-count pushes).
@@ -182,22 +196,34 @@ export default function Home() {
           setOnboardingState(ws.length === 0 ? "create" : false);
         }
 
-        // Restore last pi session for the active project
+        // Restore the last coding session for the active project
         const state = useCairnStore.getState();
         const projId = state.activeProjectId;
         if (projId && window.electron) {
           try {
-            await state.fetchPiSessionHistory(projId);
-            const history = useCairnStore.getState().piSessionHistory;
+            await state.fetchCodingSessionHistory(projId);
+            const history = useCairnStore.getState().codingSessionHistory;
             if (history.length > 0) {
               const latest = history[0];
-              // Load messages for the latest session
-              const rows = await window.electron.piAgent.getMessages(latest.id) as Array<{
+              // Load messages for the latest session — session-as-truth (dsh JSONL),
+              // SQLite fallback for pre-dsh sessions. Mirrors the chat load path.
+              // db:session:messages returns an ENVELOPE
+              // ({ messages, usage?, contextRing?, todos? }) — not a bare array
+              // (and IPC results may be result-wrapped) — so unwrap defensively
+              // exactly like useAgentSessionActions.handleResumeSession.
+              type SessionRow = {
                 id: string; role: "user" | "assistant" | "error"; content: string;
                 reasoning: string | null;
                 toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
-              }>;
-              const piMessages = rows.map((r) => ({
+              };
+              const sessRes = await (window.electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(latest.id);
+              const payload = unwrapSessionPayload(sessRes);
+              const rows: SessionRow[] | undefined = payload.messages.length > 0 ? payload.messages as unknown as SessionRow[] : undefined;
+              const lastUsage = payload.usage as import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"];
+              if (payload.todos && payload.todos.length > 0) {
+                state.setSessionTodos(latest.id, payload.todos.map((t) => ({ content: t.title, status: t.status, priority: "medium" as const })));
+              }
+              const messages = (rows ?? []).map((r) => ({
                 id: r.id,
                 role: r.role,
                 content: r.content,
@@ -205,7 +231,7 @@ export default function Home() {
                 toolCalls: r.toolCalls ?? undefined,
                 subagents: r.subagents ?? undefined,
                 timestamp: r.timestamp,
-              })) as import("@/store/slices/terminal-sessions").PiAgentMessage[];
+              })) as import("@/store/slices/terminal-sessions").AgentMessage[];
 
               state.addTerminalSession({
                 sessionId:   latest.id,
@@ -218,17 +244,19 @@ export default function Home() {
                 status:      latest.status,
                 exitCode:    null,
                 spawnedAt:   latest.spawnedAt,
-                sessionType: "pi",
-                piMessages,
+                 sessionType: "coding",
+                 messages,
                 mode:        latest.mode,
                 planNoteId:  latest.planNoteId ?? undefined,
+                planContent: latest.planContent ?? undefined,
+                lastUsage,
               });
-              state.setPersistentPiSession(latest.id);
+                    state.setActiveCodingSession(latest.id);
               // Restore LLM context in main process
-              window.electron.piAgent.restoreContext(latest.id);
+              window.electron.session.restoreContext(latest.id);
             }
           } catch (e) {
-            console.error("[startup] failed to restore pi session", e);
+            console.error("[startup] failed to restore coding session", e);
           }
         }
       });
@@ -330,6 +358,13 @@ export default function Home() {
         e.preventDefault();
         void historyManager.redo();
       }
+      // Shell preview — dev only: ⌘⇧1..4 switches chrome variant (Current / A / B / C)
+      else if (process.env.NODE_ENV === "development" && mod && e.shiftKey && /^[1-4]$/.test(key)) {
+        e.preventDefault();
+        const map = ["current","A","B","C"] as const;
+        const idx = parseInt(key,10) - 1;
+        setShellVariant(map[idx]);
+      }
       // ⌘⇧. — jump to onboarding appearance step (dev only)
       else if (process.env.NODE_ENV === "development" && mod && e.shiftKey && key === ".") {
         e.preventDefault();
@@ -348,7 +383,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView, lastContentView]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView, lastContentView, setShellVariant]);
 
   // Auto-activate Cairn Agent tab and auto-open right panel drawer if we switch to Agent view
   useEffect(() => {
@@ -360,8 +395,8 @@ export default function Home() {
       // Only auto-activate the Cairn Agent (coding) session when the project has a codebase.
       const hasCodeDirectory = !!state.projects.find((p) => p.id === state.activeProjectId)?.codeDirectory;
       if (hasCodeDirectory && (state.activeSessionId === null || state.activeSessionId === "chat")) {
-        if (state.persistentPiSessionId) {
-          state.setActiveSession(state.persistentPiSessionId);
+        if (state.activeCodingSessionId) {
+          state.setActiveSession(state.activeCodingSessionId);
         }
       }
     }
@@ -421,9 +456,146 @@ export default function Home() {
   // Topbar (which sits right below the title bar in normal flow).
   const updateBannerVisible = !!(updateVersion || updateDownloaded);
   const conflictBannerVisible = syncConflicts > 0;
-  // Each banner is h-9 (2.25rem). Stack their heights onto the 40px title bar.
+  // Each banner is h-9 (2.25rem). Stack onto the header height: TitleBar 40px fixed, UnifiedRail h-11=2.75rem, Calm h-10=2.5rem (rem scales with --font-scale)
+  const isRail = shellVariant === "A" || shellVariant === "B";
+  const isCalm = shellVariant === "C";
+  const headerH = isRail ? "2.75rem" : isCalm ? "2.5rem" : "40px";
   const bannerRems = (updateBannerVisible ? 2.25 : 0) + (conflictBannerVisible ? 2.25 : 0);
-  const chromeTop = bannerRems > 0 ? `calc(40px + ${bannerRems}rem)` : "40px";
+  const chromeTop = bannerRems > 0 ? `calc(${headerH} + ${bannerRems}rem)` : headerH;
+
+  const mainViews = (
+    <div className="flex flex-1 min-h-0 overflow-hidden">
+      {lastContentView === "overview"  && <ProjectOverview />}
+      {lastContentView === "notes"     && <NotesView />}
+      {lastContentView === "board"     && <KanbanBoard />}
+      {lastContentView === "calendar"  && <CalendarView />}
+      {lastContentView === "calendar-all" && <CalendarView scope="workspace" />}
+      {lastContentView === "flow"      && <IdeaFlowView />}
+     {lastContentView === "graph"     && <KnowledgeGraphView />}
+      {lastContentView === "insights"  && <InsightsView />}
+      {lastContentView === "automations" && <AutomationsView />}
+      {lastContentView === "usage" && <UsageView />}
+      {lastContentView === "settings"  && <SettingsView />}
+     {/* AgentView stays mounted to preserve terminal sessions and agent state.
+         CSS-hidden when inactive so xterm + AgentChatPane refs survive view switches. */}
+     <div className={lastContentView === "agent" ? "contents" : "hidden"}>
+       <AgentView />
+     </div>
+    </div>
+  );
+
+  // Shell preview — live chrome toggle with real tokens + data
+  // In preview, the rail IS the header — no extra banner so it truly replaces TitleBar+Topbar.
+  if (shellVariant !== "current") {
+    return (
+      <main
+        className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]"
+        style={{ "--chrome-top": chromeTop } as React.CSSProperties}
+      >
+        {shellVariant === "A" && <UnifiedRail />}
+        {shellVariant === "B" && <UnifiedRail />}
+        {shellVariant === "C" && <CalmTop />}
+        {/* Running automations bar */}
+        {runningAutomationCount > 0 && (
+          <button
+            onClick={() => setView("automations")}
+            className="flex items-center gap-2 px-4 py-1 text-xs text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] border-b border-[color-mix(in_srgb,var(--accent)_20%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] transition-colors text-left"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+            {runningAutomationCount} automation{runningAutomationCount === 1 ? "" : "s"} running
+            <span className="ml-auto text-[0.714rem] opacity-80">View →</span>
+          </button>
+        )}
+        <UpdateBanner
+          version={updateVersion}
+          downloaded={updateDownloaded}
+          onInstall={() => window.electron?.updater.install()}
+          onDismiss={() => { setUpdateVersion(null); setUpdateDownloaded(false); }}
+        />
+        <ConflictBanner />
+        <ConflictResolutionModal open={conflictModalOpen} onClose={closeConflictModal} />
+
+        {shellVariant === "A" && (
+          <>
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+              <DockSidebar />
+              <div
+                className={cn("flex flex-col flex-1 min-w-0 overflow-hidden", !chatPanelResizing && "transition-[margin-right] duration-300 ease-in-out")}
+                style={{ marginRight: (sessionPresentation !== "center" && chatOpen) ? "var(--chat-panel-width, 320px)" : "0px" }}
+              >
+                {mainViews}
+              </div>
+            </div>
+            <UnifiedChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />
+            {searchOpen && <SearchPanel />}
+          </>
+        )}
+
+        {shellVariant === "B" && (
+          <>
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+              <StudioSidebar />
+              <div
+                className={cn("flex flex-col flex-1 min-w-0 overflow-hidden bg-[radial-gradient(900px_400px_at_50%_0%,color-mix(in_srgb,var(--surface-2)_60%,transparent),transparent_60%),var(--background)] p-3 md:p-4", !chatPanelResizing && "transition-[margin-right] duration-300 ease-in-out")}
+                style={{ marginRight: (sessionPresentation !== "center" && chatOpen) ? "var(--chat-panel-width, 320px)" : "0px" }}
+              >
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden max-w-[1280px] mx-auto w-full bg-[var(--surface)] border border-[var(--border)] rounded-[18px] overflow-hidden" style={{ boxShadow: "0 12px 40px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.04)" }}>
+                  <div className="flex items-center gap-1 px-3 h-9 border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-2)_55%,transparent)] flex-shrink-0 overflow-x-auto scrollbar-none">
+                    {(["overview","notes","board","calendar","flow","agent"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setView(v as never)}
+                        className={cn("px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap border", lastContentView === v ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)]" : "bg-[var(--surface)] text-[var(--text-tertiary)] border-[var(--border)] hover:text-[var(--text-primary)]")}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                    <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] hidden sm:inline">Well · B</span>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    {mainViews}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <UnifiedChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />
+            {searchOpen && <SearchPanel />}
+          </>
+        )}
+
+        {shellVariant === "C" && (
+          <>
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+              <CalmRail />
+              <div
+                className={cn("flex flex-col flex-1 min-w-0 overflow-hidden", !chatPanelResizing && "transition-[margin-right] duration-300 ease-in-out")}
+                style={{ marginRight: (sessionPresentation !== "center" && chatOpen) ? "var(--chat-panel-width, 320px)" : "0px" }}
+              >
+                <div className="flex-1 overflow-auto">
+                  <div className="max-w-[1060px] mx-auto w-full px-6 py-6">
+                    {mainViews}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <UnifiedChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />
+            {searchOpen && <SearchPanel />}
+          </>
+        )}
+
+        {/* Notification center popover (top-right, thin; navigable rows) */}
+        {notificationOpen && (
+          <NotificationCenter onClose={() => setNotificationOpen(false)} />
+        )}
+        <ErrorToasts toasts={toasts} onDismiss={dismiss} />
+        <NewFeatureModal onClose={handleNewFeatureModalClose} />
+        <AppTutorial />
+        <AppOverlayLayer activeView={activeView} activeProjectId={activeProjectId} />
+        <AppStatusBar activeView={activeView} activeProjectId={activeProjectId} />
+      </main>
+    );
+  }
+
   return (
     <main
       className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]"
@@ -469,36 +641,18 @@ export default function Home() {
             !chatPanelResizing && "transition-[margin-right] duration-300 ease-in-out"
           )}
           style={{
-            marginRight: (activeView !== "chat" && chatOpen) ? "var(--chat-panel-width, 320px)" : "0px",
+            marginRight: (sessionPresentation !== "center" && chatOpen) ? "var(--chat-panel-width, 320px)" : "0px",
           }}
         >
           <Topbar />
-          <div className="flex flex-1 min-h-0 overflow-hidden">
-            {lastContentView === "overview"  && <ProjectOverview />}
-            {lastContentView === "notes"     && <NotesView />}
-            {lastContentView === "board"     && <KanbanBoard />}
-            {lastContentView === "calendar"  && <CalendarView />}
-            {lastContentView === "calendar-all" && <CalendarView scope="workspace" />}
-            {lastContentView === "flow"      && <IdeaFlowView />}
-           {lastContentView === "graph"     && <KnowledgeGraphView />}
-            {lastContentView === "insights"  && <InsightsView />}
-            {lastContentView === "automations" && <AutomationsView />}
-            {lastContentView === "usage" && <UsageView />}
-            {lastContentView === "settings"  && <SettingsView />}
-           {/* AgentView stays mounted to preserve terminal sessions and agent state.
-               CSS-hidden when inactive so xterm + AgentChatPane refs survive view switches. */}
-           <div className={lastContentView === "agent" ? "contents" : "hidden"}>
-             <AgentView />
-           </div>
-          </div>
+          {mainViews}
         </div>
-
-        {/* Unified Chat Panel (sidebar, center, or popout depending on state) */}
-        <UnifiedChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />
-
-        {/* Global search overlay */}
-        {searchOpen && <SearchPanel />}
       </div>
+      {/* Unified Chat Panel — fixed, outside overflow-hidden so top border isn't clipped */}
+      <UnifiedChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />
+
+      {/* Global search overlay */}
+      {searchOpen && <SearchPanel />}
 
       {/* Notification center popover (top-right, thin; navigable rows) */}
       {notificationOpen && (
@@ -513,6 +667,14 @@ export default function Home() {
 
       {/* Interactive App Tutorial Overlay */}
       <AppTutorial />
+
+      {/* Plugin-UI slots: frame-wide floating overlay (app.overlay) — the home
+          for plugin-drawn chrome like a bouncing DVD logo, badges, toasts. */}
+      <AppOverlayLayer activeView={activeView} activeProjectId={activeProjectId} />
+
+      {/* Plugin-UI: persistent bottom status bar (app.statusbar). Renders nothing
+          until a plugin registers an item, so layout is unaffected otherwise. */}
+      <AppStatusBar activeView={activeView} activeProjectId={activeProjectId} />
     </main>
   );
 }

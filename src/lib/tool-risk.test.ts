@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalPreview, riskForTool, approvalGrantScope, approvalScopeLabel } from "./tool-risk";
+import { APPROVAL_SAFE_TOOLS, approvalPreview, riskForTool, approvalGrantScope, approvalScopeLabel } from "./tool-risk";
 
 describe("tool approval presentation rules", () => {
   it("classifies local, executable, and external tools", () => {
@@ -38,9 +38,9 @@ describe("tool approval presentation rules", () => {
   it("offers no standing grant for reads or non-bash exec", () => {
     expect(approvalGrantScope("read")).toBe("none");
     expect(approvalGrantScope("grep")).toBe("none");
-    // spawn_subagent is EXEC but not bash → no command-scoped grant, and EXEC is
+    // subagent is EXEC but not bash → no command-scoped grant, and EXEC is
     // excluded from session grants, so one-off only.
-    expect(approvalGrantScope("spawn_subagent")).toBe("none");
+    expect(approvalGrantScope("subagent")).toBe("none");
   });
 
   it("states where each action reaches, distinguishing local from external", () => {
@@ -55,5 +55,25 @@ describe("tool approval presentation rules", () => {
     for (const tool of ["read", "write", "bash", "mcp__x__y"]) {
       expect(approvalScopeLabel(tool)).not.toMatch(/\bMac\b/);
     }
+  });
+});
+
+// Drift regressions (audit G7): these were labelled READ/no-grant by the old
+// renderer-only taxonomy while the main gate asked for them.
+describe("taxonomy drift fixes (shared source of truth)", () => {
+  it("labels dsh editor/todo writes as session-grantable local writes", () => {
+    expect(riskForTool("str_replace_editor")).toBe("WRITE_LOCAL");
+    expect(approvalGrantScope("str_replace_editor")).toBe("session");
+    expect(riskForTool("todo_write")).toBe("WRITE_LOCAL");
+  });
+
+  it("labels Cairn data deletes as writes, not reads", () => {
+    expect(riskForTool("delete_note")).toBe("WRITE_LOCAL");
+    expect(riskForTool("delete_task")).toBe("WRITE_LOCAL");
+    expect(approvalGrantScope("delete_note")).toBe("session");
+  });
+
+  it("still classifies every approval-safe tool as READ", () => {
+    for (const name of APPROVAL_SAFE_TOOLS) expect(riskForTool(name)).toBe("READ");
   });
 });

@@ -7,8 +7,7 @@
  * hide that the user's voice can't be matched. This chip surfaces it with a
  * "Set up writing style" action that pops the wizard modal directly.
  *
- * Shared by chat (ToolCallIndicator) and the coding agent (AgentMessageBubble
- * ToolChip), mirroring cairn-ref-chip.
+ * Shared by Chat and Coding tool renderers, mirroring cairn-ref-chip.
  */
 
 import { useState } from "react";

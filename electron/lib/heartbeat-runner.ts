@@ -4,8 +4,8 @@
  * Executes one scheduled automation as a headless, data-only agent turn.
  *
  * v1 design decisions (see plan note §7 "Persona design"):
- *   - The default persona is the KNOWLEDGE-WORK agent: it runs through
- *     `runToolLoop`, whose `executeTool` surface is Cairn data tools only
+ *   - The default persona is the KNOWLEDGE-WORK agent: it runs through the
+ *     Cordis loop, whose `executeTool` surface is Cairn data tools only
  *     (notes/tasks/tags/idea-flow/dashboards/knowledge-graph) — no bash, no
  *     arbitrary file writes. This keeps a background run's blast radius bounded
  *     to Cairn entities, even when it auto-approves its own writes.
@@ -20,7 +20,6 @@
 import type Database from "better-sqlite3";
 import path from "path";
 import type { OpenAIMessage } from "./llm";
-import { runToolLoop } from "./chat-loop";
 import { getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
 import { buildSystemPrompt, TOOLS, type ChatRequest } from "./tools";
@@ -36,9 +35,9 @@ import {
   type Automation,
   type AutomationRun,
 } from "../db/automation-queries";
-import { makeApprovalGate } from "./automation-approval";
-import { getExternalToolDefs, checkRequirements } from "./external-tools";
-import { recordLlmUsage } from "./usage-recorder";
+import { isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance } from "./automation-approval";
+import { getExternalToolDefs, checkRequirements, externalToolLabel } from "./external-tools";
+import { createSessionEventFold } from "../../shared/agent/session-event-fold";
 import {
   automationFolderDir,
   automationOutDir,
@@ -54,6 +53,12 @@ import {
   runAutomationScript,
   writeRunFile,
   deliverFile,
+  RUN_SCRIPT_TOOL_NAME,
+  WRITE_RUN_FILE_TOOL_NAME,
+  DELIVER_FILE_TOOL_NAME,
+  runScriptToolDefinition,
+  writeRunFileToolDefinition,
+  deliverFileToolDefinition,
   type AutomationScriptContext,
   type RunScriptArgs,
   type RunScriptHandler,
@@ -62,9 +67,11 @@ import {
   type DeliverFileArgs,
   type DeliverFileHandler,
 } from "./automation-script";
+import type { RunCordisCodingOptions } from "../cordis/run-cordis-coding";
 import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
 import { getSecretValue } from "./secure-store";
 import { toSlug } from "../shared/text-utils";
+import type { SessionProjection } from "../../shared/agent/session-projection";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -75,6 +82,72 @@ export interface AutomationRunContext {
    * nothing.
    */
   send?: (channel: string, payload: unknown) => void;
+}
+
+// ── HITL approval forwarding (Cordis) ───────────────────────────────────────
+// The coding agent's approval seam blocks on resolve({approved}); for a headless
+// heartbeat we forward to the renderer via an automation:run approval event +
+// a new automation:approve IPC (resolves this map). Keyed by callId, but scoped
+// to runId via composite `${runId}::${callId}` so concurrent runs with the same
+// provider callId don't collide (P0-1). Each entry also carries the tool name/args
+// so an "always allow" can persist a standing rule, and the db/runId for
+// recordStandingAllowance.
+interface PendingAutomationApproval {
+  tool: string;
+  args: Record<string, unknown>;
+  db: Database.Database;
+  runId: string;
+  resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void;
+}
+const pendingAutomationApprovals = new Map<string, PendingAutomationApproval>();
+function automationKey(runId: string, callId: string): string { return `${runId}::${callId}`; }
+/**
+ * Resolve a pending automation tool approval (called by the automation:approve IPC).
+ * Accepts either a bare callId (legacy/best-effort) or composite runId::callId.
+ * @param callId - the approval's callId (or composite key).
+ * @param approved - approve or deny.
+ * @param grant - "session" remembers for the rest of this turn; "always" persists
+ *   an "always allow" standing rule on the automation so future runs skip it.
+ */
+export function resolveAutomationApproval(callId: string, approved: boolean, grant?: "session" | "always"): void {
+  let pending = pendingAutomationApprovals.get(callId);
+  let key = callId;
+  if (!pending) {
+    // Try any runId prefix match for bare callId fallback.
+    for (const [k, v] of pendingAutomationApprovals.entries()) {
+      if (k.endsWith(`::${callId}`)) { pending = v; key = k; break; }
+    }
+    if (!pending) return;
+  }
+  pendingAutomationApprovals.delete(key);
+  if (grant === "always") {
+    recordStandingAllowance(pending.db, pending.runId, pending.tool, pending.args);
+  }
+  pending.resolve({ approved, grant: grant === "session" ? "session" : undefined });
+}
+
+/**
+ * Decide whether a tool call is auto-allowed by the automation's approval
+ * policy, or must be forwarded to the user for approval. The Cordis seam
+ * resolves via resolve({approved}) — no DB approval inbox behind it (the
+ * inbox and its makeApprovalGate/parkAndWait mechanics were retired with
+ * the pre-Cordis loop).
+ *   - read tools + standing rules → allow
+ *   - 'ask' mode → gate every write (forward)
+ *   - 'auto' mode → only forward external MCP/service calls when connector-aware
+ *   - run_script is always gated (code execution)
+ * Standing-rule per-arg matching (e.g. bash:<cmd>) uses the tool's primary
+ * identifier (path/note/card/title) — args are not carried through the seam.
+ */
+function shouldAutoAllowAutomationTool(db: Database.Database, run: AutomationRun, automation: Automation, name: string, args: Record<string, unknown>): boolean {
+  if (isReadTool(name)) return true;
+  if (name === RUN_SCRIPT_TOOL_NAME) return false;
+  const target = standingRuleTarget(name, args);
+  if (automation.standingRules.some((r) => r.tool === name && (r.target === undefined || r.target === target))) return true;
+  if (automation.approvalMode === "ask") return false;
+  const connectorAware = (automation.requires ?? []).length > 0;
+  if (connectorAware && isExternalTool(name)) return false;
+  return true;
 }
 
 const DEFAULT_MAX_STEPS = 10;
@@ -140,7 +213,7 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
       await runAutomation(ctx, run, automation);
     } catch (err) {
       // runAutomation normally sets its own terminal status, but if it throws
-      // (e.g. a provider/network failure inside runToolLoop) transition the run
+      // (e.g. a provider/network failure inside the Cordis loop) transition the run
       // out of running so it doesn't block later runs / report a phantom run,
       // persist a run-log.json, and emit `finished` so watchers close cleanly.
       failRun(ctx, run, err instanceof Error ? err.message : String(err));
@@ -288,11 +361,6 @@ export async function runAutomation(
     /* fall back to the row */
   }
 
-  // const-narrowed copies so the onUsage closure below keeps string types
-  // (TS does not preserve property narrowing into closures).
-  const cachedModel = cached.model;
-  const cachedBaseUrl = cached.baseUrl;
-
   const req: ChatRequest = {
     message: recipe,
     threadId: run.id,
@@ -309,7 +377,7 @@ export async function runAutomation(
     },
   };
 
-  const messages: OpenAIMessage[] = [
+  const _messages: OpenAIMessage[] = [
     { role: "system", content: buildSystemPrompt(req) },
     { role: "user", content: recipe },
   ];
@@ -318,17 +386,18 @@ export async function runAutomation(
   // (MCP servers / custom services) and offer them to the loop as extraTools.
   // getExternalToolDefs filters to enabled + project/global-attached connectors,
   // so a missing/attached-only requirement simply contributes no tools and the
-  // agent works with what's actually in scope. External calls stay gated behind
-  // the approval inbox by makeApprovalGate (never auto-approved side effects).
+  // agent works with what's actually in scope. External calls stay gated by
+  // the Cordis approval waterfall (shouldAutoAllowAutomationTool below +
+  // cairnApprovalPlugin) — never auto-approved side effects.
   // A connector-load failure is NOT degraded away: the recipe declared these
   // connectors as required, so a run that can't assemble their tools is failed
   // up front rather than silently continuing with built-in tools only.
-  // The cast mirrors chat.ts/pi-agent-loop: external defs are OpenAIToolDef[]
+  // The cast mirrors chat.ts's shape: external defs are OpenAIToolDef[]
   // (open tool-name strings), the loop's extraTools slot is the typed TOOLS.
-  let extraTools: typeof TOOLS | undefined;
+  let _extraTools: typeof TOOLS | undefined;
   if ((automation.requires ?? []).length > 0) {
     try {
-      extraTools = (await getExternalToolDefs(
+      _extraTools = (await getExternalToolDefs(
         db,
         automation.workspaceId,
         automation.projectId ?? "",
@@ -431,69 +500,131 @@ export async function runAutomation(
       : { type: "automation", id: automation.id };
 
   emitRun("started", { recipe });
-  const result = await runToolLoop(
+
+  // ── Cordis engine (only path) — run a FULL coding agent in the run folder ──
+  // Heartbeat drives runCordisCodingLoop (the full agent: bash/write/edit/read/
+  // grep/todo + Cairn data tools + connector/MCP tools + skill) scoped to the
+  // per-run folder, so an automation can actually make changes (write files,
+  // run scripts, call connectors) — not just a data-only chat turn.
+  const runDirForAgent = runDir ?? workspacePath;
+  const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
+  let finalContent = "";
+  // Tool name per pending approval callId, captured from the coding agent's
+  // `session:tool-confirm-required` event (the seam doesn't carry the name).
+  const confirmToolByCallId = new Map<string, string>();
+  const loopSend = (channel: string, payload: Record<string, unknown>) => {
+    if (channel !== "session:projection") return;
+    const projection = payload as unknown as SessionProjection;
+    const data = projection.data as Record<string, unknown>;
+    if (projection.kind === "approval" && data.status === "required" && typeof data.callId === "string") {
+      confirmToolByCallId.set(data.callId as string, (data.name as string | undefined) ?? "tool");
+      emitRun("toolConfirmRequired", { tool: data.name, callId: data.callId, label: data.label });
+      return;
+    }
+  };
+
+  const fold = createSessionEventFold({
+    onText: (text) => { finalContent += text; emitRun("token", { delta: text }); },
+    onReasoning: (text) => { log.thoughts += text; emitRun("thought", { delta: text }); },
+    onToolCall: (call) => {
+      const label = externalToolLabel(call.name, db);
+      currentTool(call.name);
+      logTool(call.name, label, call.args);
+      emitRun("tool", { tool: call.name, label, args: call.args, status: "start", callId: call.callId });
+    },
+    onToolResult: (result) => {
+      recordArtifact(result.name, result.meta?.cairnRef as { type: "note" | "task"; id: string; title: string } | undefined);
+      logToolDone(result.name, result.ok, result.output, result.error);
+      flushLog();
+      emitRun("toolDone", { tool: result.name, ok: result.ok, output: result.output, error: result.error, callId: result.callId });
+    },
+    // Usage is recorded by cairnUsagePlugin (source "automation", passed via
+    // runCordisCodingLoop's usageSource). Recording it here as well double-counted
+    // every automation run in the Usage view.
+  });
+
+  // The automation-specific tools registered on the coding agent: run_script,
+  // write_run_file (agent→script data bridge into runDir), deliver_file (copy
+  // out/ → <workspace>/attachments/<automationId>/ so the note can embed the
+  // generated images). Only offered when the folders exist.
+  const automationTools: RunCordisCodingOptions["extraTools"] = [];
+  if (runScript) automationTools.push({ name: RUN_SCRIPT_TOOL_NAME, description: runScriptToolDefinition.function.description, parameters: runScriptToolDefinition.function.parameters, execute: (a) => runScript(a as never) });
+  if (writeRunFileHandler) automationTools.push({ name: WRITE_RUN_FILE_TOOL_NAME, description: writeRunFileToolDefinition.function.description, parameters: writeRunFileToolDefinition.function.parameters, execute: (a) => writeRunFileHandler(a as never) });
+  if (deliverFileHandler) automationTools.push({ name: DELIVER_FILE_TOOL_NAME, description: deliverFileToolDefinition.function.description, parameters: deliverFileToolDefinition.function.parameters, execute: (a) => deliverFileHandler(a as never) });
+
+  // Plugin confirmation seam for this run (audit §5 C #9): bind the headless
+  // transport so ctx.cairn.confirm during automation turns routes plugin asks
+  // through the SAME pending-approval map + auto-allow classifier that native
+  // asks use. Unbound after the run settles.
+  const { createHeadlessConfirmTransport, setConfirmTransport } = await import("../cordis/approval-transports");
+  const { readPendingApprovalArgs } = await import("../cordis/approval-grants");
+  setConfirmTransport(run.id, createHeadlessConfirmTransport({
+    emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
+    registerPending: (callId, resolve) => {
+      const key = automationKey(run.id, callId);
+      const trusted = readPendingApprovalArgs(run.id, callId) ?? {};
+      pendingAutomationApprovals.set(key, { tool: "plugin_confirm", args: trusted, db, runId: run.id, resolve: (d) => resolve(d.approved) });
+      return () => { pendingAutomationApprovals.delete(key); };
+    },
+
+  }));
+
+  const codingResult = await runCordisCodingLoop({
     db,
     req,
     workspacePath,
-    cached.baseUrl,
-    cached.model,
-    apiKey,
-    messages,
-    (e) => {                       // emitToolCall — record + stream the active tool
-      currentTool(e.tool);
-      logTool(e.tool, e.label, e.args);
-      emitRun("tool", { tool: e.tool, label: e.label, args: e.args, status: "start" });
+    sessionId: run.id,
+    cwd: runDirForAgent,
+    systemPrompt: recipe,
+    llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
+    mode: "execute",
+    sandboxMode: "workspace-write",
+    // Automation runs on the coding profile but is its own Usage-view source.
+    usageSource: "automation",
+    // Ask mode gates writes through the Cordis approval waterfall (native
+    // asks + shouldAutoAllowAutomationTool below); Auto skips the gate.
+    autoApprove: automation.approvalMode !== "ask",
+    signal: abortCtrl.signal,
+    send: loopSend,
+    extraTools: automationTools,
+    approvals: {
+      // Forward HITL approvals: auto-allow tools the automation's policy
+      // permits (read tools, standing rules, auto-mode built-ins); otherwise
+      // emit an automation:run approval event to the renderer and block until
+      // the user approves/denies via the automation:approve IPC.
+      registerPending: (callId, resolve) => {
+        const toolName = confirmToolByCallId.get(callId) ?? "tool";
+        confirmToolByCallId.delete(callId);
+        const trusted = readPendingApprovalArgs(run.id, callId) ?? {};
+        if (shouldAutoAllowAutomationTool(db, run, automation, toolName, trusted)) {
+          resolve({ approved: true });
+          return () => {};
+        }
+        const key = automationKey(run.id, callId);
+        pendingAutomationApprovals.set(key, { tool: toolName, args: trusted, db, runId: run.id, resolve });
+        emitRun("approval", { tool: toolName, callId });
+        return () => { pendingAutomationApprovals.delete(key); };
+      },
     },
-    abortCtrl.signal,
-    undefined,                       // getWin
-    provider,
-    // Persist one usage row per automation round for the Usage view (previously
-    // usage was never captured for background runs).
-    (pt, ct, rt, costUsd, cacheRead, cacheCreate) => {
-      recordLlmUsage({
-        source: "automation",
-        sessionId: run.id,
-        projectId: automation.projectId ?? undefined,
-        workspaceId: automation.workspaceId,
-        provider,
-        model: cachedModel,
-        baseUrl: cachedBaseUrl,
-        promptTokens: pt,
-        completionTokens: ct,
-        reasoningTokens: rt ?? 0,
-        cacheReadTokens: cacheRead,
-        cacheCreationTokens: cacheCreate,
-        costUsd,
-      });
-    },
-    (e) => {                       // emitToolCallDone — collect artifacts + stream result
-      recordArtifact(e.tool, e.cairnRef);
-      logToolDone(e.tool, e.ok, e.output, e.error);
-      flushLog(); // incremental transcript — survives a crash mid-run
-      emitRun("toolDone", { tool: e.tool, ok: e.ok, output: e.output, error: e.error, cairnRef: e.cairnRef });
-    },
-    (delta) => emitRun("token", { delta }),   // onToken (live stream; final text lands in the log)
-    (delta) => { log.thoughts += delta; emitRun("thought", { delta }); }, // onThought
-    extraTools,                      // connector-aware recipes get their attached external tools
-    undefined,                       // toolsOverride
-    undefined,                       // argMutator
-    makeApprovalGate(db, run, automation, abortCtrl.signal),
-    runScript,                       // run_script executor (scripts/ + run cwd + out/)
-    writeRunFileHandler,             // write_run_file executor (agent→script data bridge)
-    deliverFileHandler,              // deliver_file executor (out/ → attachments for the note)
-  );
-  emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content });
+    onSessionEvent: fold,
+  });
+  const result = { content: finalContent || recipe, exhausted: !codingResult.ok, error: codingResult.error };
+  // Run settled — unbind the plugin confirm seam (its asks are all resolved).
+  setConfirmTransport(run.id, undefined);
+  emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content, error: result.error });
   log.tokens = result.content;
 
-  if (result.exhausted) {
-    finaliseLog("exhausted", "Reached the step limit; run may be incomplete.");
+  // A failed coding turn (provider error, abnormal end) is a run ERROR, not
+  // "exhausted" — the coding loop resolves ok:false with the error message.
+  if (!codingResult.ok) {
+    finaliseLog("error", result.error ?? "Agent turn failed.");
     updateAutomationRun(db, run.id, {
-      status: "exhausted",
+      status: "error",
       resultNoteId: null,
-      error: "Reached the step limit; run may be incomplete.",
+      error: result.error ?? "Agent turn failed.",
       scratch: finalScratch(),
     });
-    insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content, "completed (step limit reached)"), completionTarget());
+    insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, summarize(automation, result.content, "failed"), completionTarget());
     cleanupRuns();
     return;
   }

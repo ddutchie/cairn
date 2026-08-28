@@ -158,7 +158,7 @@ export async function bashTool(
     let output = "";
     let truncated = false;
     // Throttle live label updates: one IPC event per stdout/stderr chunk would
-    // flood the renderer (each becomes a full pi-agent:tool event + React
+     // flood the renderer (each becomes a full tool projection + React
     // re-render). Coalesce to a bounded cadence; a final update is flushed when
     // the process closes so the chip still ends on the final output.
     let lastUpdateMs = 0;

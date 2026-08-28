@@ -46,7 +46,6 @@ import {
   toTag,
   toSlashCommand,
   toChatThread,
-  toChatMessage,
   toMcpNotification,
   toIdeaFlow,
   toIdeaFlowNode,
@@ -55,9 +54,50 @@ import {
 } from "../shared/db-mappers";
 import { normalizeNoteTitle, stripMarkdown } from "../shared/text-utils";
 import { ftsMatchQuery } from "../../shared/notes/text";
+import type { SessionProfileId } from "../../shared/agent/session-profile";
 
 /** Re-export for callers that only need a new ID without importing utils directly. */
 export { newId as generateId };
+
+export interface SessionProfileRow {
+  sessionId: string;
+  profile: SessionProfileId;
+  workspaceId: string | null;
+  projectId: string | null;
+  cwd: string | null;
+  updatedAt: string;
+}
+
+export function upsertSessionProfile(db: Database.Database, profile: {
+  sessionId: string;
+  profile: SessionProfileId;
+  workspaceId?: string | null;
+  projectId?: string | null;
+  cwd?: string | null;
+  updatedAt?: string;
+}): SessionProfileRow {
+  const updatedAt = profile.updatedAt ?? ts();
+  return db.transaction(() => {
+    const row = db.prepare(`
+      INSERT INTO session_profiles (session_id, profile, workspace_id, project_id, cwd, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        profile = excluded.profile, workspace_id = excluded.workspace_id,
+        project_id = excluded.project_id, cwd = excluded.cwd, updated_at = excluded.updated_at
+      RETURNING session_id, profile, workspace_id, project_id, cwd, updated_at
+    `).get(profile.sessionId, profile.profile, profile.workspaceId ?? null, profile.projectId ?? null, profile.cwd ?? null, updatedAt) as {
+      session_id: string; profile: SessionProfileId; workspace_id: string | null; project_id: string | null; cwd: string | null; updated_at: string;
+    };
+    return { sessionId: row.session_id, profile: row.profile, workspaceId: row.workspace_id, projectId: row.project_id, cwd: row.cwd, updatedAt: row.updated_at };
+  })();
+}
+
+export function getSessionProfile(db: Database.Database, sessionId: string): SessionProfileRow | null {
+  const row = db.prepare("SELECT session_id, profile, workspace_id, project_id, cwd, updated_at FROM session_profiles WHERE session_id = ?").get(sessionId) as {
+    session_id: string; profile: SessionProfileId; workspace_id: string | null; project_id: string | null; cwd: string | null; updated_at: string;
+  } | undefined;
+  return row ? { sessionId: row.session_id, profile: row.profile, workspaceId: row.workspace_id, projectId: row.project_id, cwd: row.cwd, updatedAt: row.updated_at } : null;
+}
 
 // ── Workspace ─────────────────────────────────
 
@@ -188,7 +228,7 @@ export interface MergeProjectResult {
  *   - task_cards     → target project + workspace + remapped column_id
  *   - idea_flow      → source flow's nodes/edges are moved into the target's flow
  *   - chat_threads   → repointed (no FK, so a bare project delete would orphan them)
- *   - tool_attachments, pi_agent_sessions → repointed
+ *   - tool_attachments, agent_session_metadata → repointed
  *
  * Returns the moved notes so the caller can relocate their .md files (the DB
  * move alone leaves the files under the old project's folder).
@@ -297,7 +337,7 @@ export function mergeProject(db: Database.Database, sourceId: string, targetId: 
        SELECT ?, tool_type, tool_id, enabled FROM tool_attachments WHERE project_id = ?`,
     ).run(targetId, sourceId);
     db.prepare("DELETE FROM tool_attachments WHERE project_id = ?").run(sourceId);
-    db.prepare("UPDATE pi_agent_sessions SET project_id = ? WHERE project_id = ?").run(targetId, sourceId);
+    db.prepare("UPDATE agent_session_metadata SET project_id = ? WHERE project_id = ?").run(targetId, sourceId);
 
     // ── 5. Delete the emptied source project ──────────────────────────────
     // Everything owned by it has been repointed; a direct row delete (rather
@@ -353,7 +393,7 @@ export function getNotes(db: Database.Database, projectId?: string) {
  *
  * This is the AUTHORITATIVE existence check for ensure_note — it reads the live
  * DB rather than a pre-call snapshot, so it stays correct when two ensure_note
- * calls for the same title run in the same agent turn (the pi-agent-loop fires a
+  * calls for the same title run in the same agent turn (the Cordis runtime fires a
  * turn's tool calls concurrently). better-sqlite3 is synchronous, so pairing
  * this lookup with the createNote INSERT inside a single db.transaction() makes
  * the check-then-create atomic — no other JS callback can interleave between the
@@ -1037,23 +1077,7 @@ export function upsertChatThread(db: Database.Database, t: {
 }
 
 export function deleteChatThread(db: Database.Database, threadId: string) {
-  db.prepare("DELETE FROM chat_messages WHERE thread_id = ?").run(threadId);
   db.prepare("DELETE FROM chat_threads WHERE id = ?").run(threadId);
-}
-
-export function getChatMessages(db: Database.Database, threadId: string) {
-  return db.prepare("SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY created_at").all(threadId).map(toChatMessage);
-}
-
-export function addChatMessage(db: Database.Database, m: {
-  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown; reasoning?: string; reasoningSummary?: string; subagents?: unknown; reasoningItems?: unknown; reasoningField?: string; reasoningModel?: string;
-}) {
-  const now = ts();
-  db.prepare(`
-    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, reasoning, reasoning_summary, reasoning_items, reasoning_field, reasoning_model, subagents, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, m.reasoning ?? null, m.reasoningSummary ?? null, m.reasoningItems ? JSON.stringify(m.reasoningItems) : null, m.reasoningField ?? null, m.reasoningModel ?? null, m.subagents ? JSON.stringify(m.subagents) : null, now);
-  return toChatMessage(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(m.id));
 }
 
 // ── MCP Notifications ─────────────────────────
@@ -1578,9 +1602,9 @@ export function clearToolAttachment(
     .run(a.projectId, a.toolType, a.toolId);
 }
 
-// ── Pi Agent Sessions ────────────────────────────────────────────────────────────────────
+// ── Coding Agent Sessions ───────────────────────────────────────────────────────────────
 
-export interface PiSessionRow {
+export interface CodingSessionRow {
   id: string;
   projectId: string;
   taskTitle: string;
@@ -1588,6 +1612,13 @@ export interface PiSessionRow {
   cwd: string;
   mode: "plan" | "execute";
   planNoteId: string | null;
+  /**
+   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`
+   * tool for this session. Cached so the execute-mode system prompt can
+   * carry the approved plan forward without folding the entire session log.
+   * NULL when the session never called exit_plan_mode.
+   */
+  planContent: string | null;
   status: "running" | "exited";
   spawnedAt: string;
   updatedAt: string;
@@ -1595,7 +1626,7 @@ export interface PiSessionRow {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toPiSession(row: any): PiSessionRow {
+function toCodingSession(row: any): CodingSessionRow {
   return {
     id:          row.id as string,
     projectId:   row.project_id as string,
@@ -1604,6 +1635,7 @@ function toPiSession(row: any): PiSessionRow {
     cwd:         row.cwd as string,
     mode:        (row.mode ?? "execute") as "plan" | "execute",
     planNoteId:  row.plan_note_id as string | null,
+    planContent: (row.plan_content ?? null) as string | null,
     status:      (row.status ?? "running") as "running" | "exited",
     spawnedAt:   row.spawned_at as string,
     updatedAt:   row.updated_at as string,
@@ -1623,141 +1655,92 @@ export function normalizeSessionRole(raw: unknown): "default" | "automation-dev"
   return raw === undefined || raw === null ? "default" : "automation-dev";
 }
 
-export function createPiSession(
+export function createCodingSession(
   db: Database.Database,
   session: { id: string; projectId: string; taskTitle: string; taskId?: string | null; cwd: string; mode: "plan" | "execute"; spawnedAt: string; role?: "default" | "automation-dev" },
-): PiSessionRow {
+): CodingSessionRow {
   const now = ts();
   const role = normalizeSessionRole(session.role);
   db.prepare(`
-    INSERT INTO pi_agent_sessions (id, project_id, task_title, task_id, cwd, mode, role, status, spawned_at, updated_at)
+    INSERT INTO agent_session_metadata (id, project_id, task_title, task_id, cwd, mode, role, status, spawned_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)
   `).run(session.id, session.projectId, session.taskTitle, session.taskId ?? null, session.cwd, session.mode, role, session.spawnedAt, now);
-  return getPiSessionById(db, session.id)!;
+  return getCodingSessionById(db, session.id)!;
 }
 
-export function getPiSessionById(db: Database.Database, id: string): PiSessionRow | null {
-  const row = db.prepare("SELECT * FROM pi_agent_sessions WHERE id = ?").get(id);
-  return row ? toPiSession(row) : null;
+export function getCodingSessionById(db: Database.Database, id: string): CodingSessionRow | null {
+  const row = db.prepare("SELECT * FROM agent_session_metadata WHERE id = ?").get(id);
+  return row ? toCodingSession(row) : null;
 }
 
-export function getPiSessions(db: Database.Database, projectId: string): PiSessionRow[] {
-  return (db.prepare("SELECT * FROM pi_agent_sessions WHERE project_id = ? ORDER BY updated_at DESC LIMIT 50").all(projectId) as unknown[])
-    .map(toPiSession);
+export function getCodingSessions(db: Database.Database, projectId: string): CodingSessionRow[] {
+  return (db.prepare("SELECT * FROM agent_session_metadata WHERE project_id = ? ORDER BY updated_at DESC LIMIT 50").all(projectId) as unknown[])
+    .map(toCodingSession);
 }
 
-export function updatePiSession(
+export function updateCodingSession(
   db: Database.Database,
   sessionId: string,
-  patch: { mode?: "plan" | "execute"; planNoteId?: string | null; status?: "running" | "exited"; updatedAt?: string },
+  patch: { mode?: "plan" | "execute"; planNoteId?: string | null; planContent?: string | null; status?: "running" | "exited"; updatedAt?: string },
 ) {
   const now = patch.updatedAt ?? ts();
   if (patch.mode !== undefined) {
-    db.prepare("UPDATE pi_agent_sessions SET mode = ?, updated_at = ? WHERE id = ?").run(patch.mode, now, sessionId);
+    db.prepare("UPDATE agent_session_metadata SET mode = ?, updated_at = ? WHERE id = ?").run(patch.mode, now, sessionId);
   }
   if (patch.planNoteId !== undefined) {
-    db.prepare("UPDATE pi_agent_sessions SET plan_note_id = ?, updated_at = ? WHERE id = ?").run(patch.planNoteId, now, sessionId);
+    db.prepare("UPDATE agent_session_metadata SET plan_note_id = ?, updated_at = ? WHERE id = ?").run(patch.planNoteId, now, sessionId);
+  }
+  if (patch.planContent !== undefined) {
+    db.prepare("UPDATE agent_session_metadata SET plan_content = ?, updated_at = ? WHERE id = ?").run(patch.planContent, now, sessionId);
   }
   if (patch.status !== undefined) {
-    db.prepare("UPDATE pi_agent_sessions SET status = ?, updated_at = ? WHERE id = ?").run(patch.status, now, sessionId);
+    db.prepare("UPDATE agent_session_metadata SET status = ?, updated_at = ? WHERE id = ?").run(patch.status, now, sessionId);
   }
-  if (patch.mode === undefined && patch.planNoteId === undefined && patch.status === undefined) {
-    db.prepare("UPDATE pi_agent_sessions SET updated_at = ? WHERE id = ?").run(now, sessionId);
+  if (patch.mode === undefined && patch.planNoteId === undefined && patch.planContent === undefined && patch.status === undefined) {
+    db.prepare("UPDATE agent_session_metadata SET updated_at = ? WHERE id = ?").run(now, sessionId);
   }
 }
 
-export function deletePiSession(db: Database.Database, sessionId: string) {
-  db.prepare("DELETE FROM pi_agent_sessions WHERE id = ?").run(sessionId);
+export function deleteCodingSession(db: Database.Database, sessionId: string) {
+  db.prepare("DELETE FROM agent_session_metadata WHERE id = ?").run(sessionId);
 }
 
-// ── Pi Agent Messages ───────────────────────────────────────────────────────────────────
-
-export interface PiMessageRow {
-  id: string;
-  sessionId: string;
-  role: "user" | "assistant" | "error" | "system";
-  content: string;
-  reasoning: string | null;
-  toolCalls: unknown[] | null;
-  subagents: unknown[] | null;
-  timestamp: string;
-  order: number;
+/**
+ * Mark every coding session still stuck in 'running' as 'exited'. A session's
+ * status is set to 'running' on creation and only flipped to 'exited' on a
+ * clean close, so a crash / quit / dev reload mid-session leaves the row
+ * 'running' forever — which the session browser would otherwise paint as a
+ * live "active" session indefinitely. Called once on startup, mirroring the
+ * automation runs' recoverInterruptedRuns. Returns the number reconciled.
+ */
+export function reconcileInterruptedCodingSessions(db: Database.Database): number {
+  const info = db.prepare("UPDATE agent_session_metadata SET status = 'exited', updated_at = ? WHERE status = 'running'").run(ts());
+  return info.changes;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toPiMessage(row: any): PiMessageRow {
-  return {
-    id:        row.id as string,
-    sessionId: row.session_id as string,
-    role:      row.role as "user" | "assistant" | "error" | "system",
-    content:   row.content as string,
-    reasoning: (row.reasoning as string | null) ?? null,
-    toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : null,
-    subagents: row.subagents ? JSON.parse(row.subagents as string) : null,
-    timestamp: row.timestamp as string,
-    order:     row.order as number,
-  };
-}
+// ── Coding Agent Messages ───────────────────────────────────────────────────────────────
 
-export function upsertPiMessage(
-  db: Database.Database,
-  msg: { id: string; sessionId: string; role: "user" | "assistant" | "error" | "system"; content: string; reasoning?: string | null; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string; order: number },
-) {
-  db.prepare(`
-    INSERT INTO pi_agent_messages (id, session_id, role, content, reasoning, tool_calls, subagents, timestamp, "order")
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      content    = excluded.content,
-      reasoning  = excluded.reasoning,
-      tool_calls = excluded.tool_calls,
-      subagents  = excluded.subagents
-  `).run(
-    msg.id, msg.sessionId, msg.role, msg.content,
-    msg.reasoning ?? null,
-    msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
-    msg.subagents ? JSON.stringify(msg.subagents) : null,
-    msg.timestamp, msg.order,
-  );
-}
 
-export function savePiMessages(
-  db: Database.Database,
-  sessionId: string,
-  messages: Array<{ id: string; role: "user" | "assistant" | "error" | "system"; content: string; reasoning?: string | null; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string }>,
-) {
-  const save = db.transaction(() => {
-    db.prepare("DELETE FROM pi_agent_messages WHERE session_id = ?").run(sessionId);
-    messages.forEach((msg, i) => {
-      upsertPiMessage(db, { ...msg, sessionId, order: i });
-    });
-  });
-  save();
-}
 
-export function getPiMessages(db: Database.Database, sessionId: string): PiMessageRow[] {
-  return (db.prepare(`SELECT * FROM pi_agent_messages WHERE session_id = ? ORDER BY "order" ASC`).all(sessionId) as unknown[])
-    .map(toPiMessage);
-}
+// ── Coding Agent Session Todos ─────────────────────────────────────────────────
 
-// ── Pi Agent Session Todos ─────────────────────────────────────────────────────
-
-export interface PiSessionTodo {
+export interface SessionTodo {
   content: string;
   status: "pending" | "in_progress" | "completed" | "cancelled";
   priority: "high" | "medium" | "low";
 }
 
-interface PiTodoRow {
+interface SessionTodoRow {
   content: string;
   status: string;
   priority: string;
 }
 
-function toPiTodo(row: PiTodoRow): PiSessionTodo {
+function toSessionTodo(row: SessionTodoRow): SessionTodo {
   return {
     content: row.content,
-    status: row.status as PiSessionTodo["status"],
-    priority: row.priority as PiSessionTodo["priority"],
+    status: row.status as SessionTodo["status"],
+    priority: row.priority as SessionTodo["priority"],
   };
 }
 
@@ -1765,68 +1748,20 @@ function toPiTodo(row: PiTodoRow): PiSessionTodo {
  * Replace-wholesale save for a session's todo list (the model sends the entire
  * list each `todowrite` call). Delete + insert by position in one transaction.
  */
-export function saveSessionTodos(db: Database.Database, sessionId: string, todos: PiSessionTodo[]) {
+export function saveSessionTodos(db: Database.Database, sessionId: string, todos: SessionTodo[]) {
   const save = db.transaction(() => {
-    db.prepare("DELETE FROM pi_session_todos WHERE session_id = ?").run(sessionId);
+    db.prepare("DELETE FROM session_todos WHERE session_id = ?").run(sessionId);
     todos.forEach((todo, position) => {
-      db.prepare("INSERT INTO pi_session_todos (session_id, content, status, priority, position) VALUES (?, ?, ?, ?, ?)")
+      db.prepare("INSERT INTO session_todos (session_id, content, status, priority, position) VALUES (?, ?, ?, ?, ?)")
         .run(sessionId, todo.content, todo.status, todo.priority, position);
     });
   });
   save();
 }
 
-export function getSessionTodos(db: Database.Database, sessionId: string): PiSessionTodo[] {
-  return (db.prepare("SELECT content, status, priority FROM pi_session_todos WHERE session_id = ? ORDER BY position ASC").all(sessionId) as PiTodoRow[])
-    .map(toPiTodo);
-}
-
-// ── Pi Agent LLM History ──────────────────────────────────────────────────────────────────
-
-export interface LlmHistoryRow {
-  role: string;
-  content: string;
-}
-
-/**
- * Persist the full LLM message history for a session.
- *
- * Each message is serialised as JSON and stored in the `content` column so that
- * tool_calls (assistant→tool) and tool_call_id (tool result) are preserved across
- * restarts. The `role` column is kept for quick filtering without a JSON parse.
- */
-export function saveLlmHistory(
-  db: Database.Database,
-  sessionId: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  messages: Array<Record<string, any>>,
-) {
-  const save = db.transaction(() => {
-    db.prepare("DELETE FROM pi_agent_llm_history WHERE session_id = ?").run(sessionId);
-    messages.forEach((msg, i) => {
-      db.prepare(`INSERT INTO pi_agent_llm_history (session_id, "order", role, content) VALUES (?, ?, ?, ?)`)
-        .run(sessionId, i, msg.role as string, JSON.stringify(msg));
-    });
-  });
-  save();
-}
-
-/**
- * Restore the full LLM message history for a session.
- *
- * The `content` column contains a JSON-serialised AgentMessage object. We parse
- * it back out; if parsing fails (legacy plain-text rows) we fall back to a minimal
- * { role, content } shape so old sessions degrade gracefully.
- */
-export function getLlmHistory(db: Database.Database, sessionId: string): LlmHistoryRow[] {
-  const rows = db.prepare(`SELECT role, content FROM pi_agent_llm_history WHERE session_id = ? ORDER BY "order" ASC`).all(sessionId) as LlmHistoryRow[];
-  return rows.map((row) => {
-    try {
-      const parsed = JSON.parse(row.content);
-      if (parsed && typeof parsed === "object" && "role" in parsed) return parsed as LlmHistoryRow;
-    } catch { /* legacy plain-text row — fall through */ }
-    return row;
-  });
+export function getSessionTodos(db: Database.Database, sessionId: string): SessionTodo[] {
+  return (db.prepare("SELECT content, status, priority FROM session_todos WHERE session_id = ? ORDER BY position ASC").all(sessionId) as SessionTodoRow[])
+    .map(toSessionTodo);
 }
 
 // ── Codebase semantic indexing ────────────────

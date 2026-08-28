@@ -5,10 +5,11 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Check, X, Server, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SavedProvider } from "@/store/slices/ui";
+import type { SavedProvider, ApiMode } from "@/store/slices/ui";
 import { dedupeProviders } from "@/store/slices/ui";
 import { SettingsRow } from "./shared";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown";
+import { Select } from "@/components/ui/select";
 import { ModelPicker } from "@/components/ui/model-picker";
 import { useEndpointConfig, CreditsBadge } from "./endpoint-components";
 import { ConnectorLogo } from "./tools/ConnectorLogo";
@@ -255,12 +256,12 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
           initial={editingProvider}
           defaultModel="gpt-5.6-luna"
           onCancel={() => setEditing(null)}
-          onSave={async ({ name, baseUrl, model, rawKey, keyDirty }) => {
+          onSave={async ({ name, baseUrl, model, rawKey, keyDirty, apiMode }) => {
             if (editing === "new") {
               // Create first (no key), then store the raw key in the OS keychain
               // and save the returned reference token — the raw key never lands
               // in the store, localStorage, or the settings cache.
-              const id = addSavedProvider({ name, baseUrl, model, apiKey: "" }, kind);
+              const id = addSavedProvider({ name, baseUrl, model, apiKey: "", apiMode }, kind);
               if (keyDirty && rawKey) {
                 try {
                   const ref = await window.electron?.secrets?.set("llm", id, "apiKey", rawKey);
@@ -272,7 +273,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                 }
               }
             } else {
-              const patch: { name: string; baseUrl: string; model: string; apiKey?: string } = { name, baseUrl, model };
+              const patch: { name: string; baseUrl: string; model: string; apiKey?: string; apiMode: ApiMode } = { name, baseUrl, model, apiMode };
               if (keyDirty) {
                 if (rawKey) {
                   const ref = await window.electron?.secrets?.set("llm", editing, "apiKey", rawKey);
@@ -300,12 +301,15 @@ function ProviderForm({
 }: {
   initial?: SavedProvider;
   defaultModel: string;
-  onSave: (data: { name: string; baseUrl: string; model: string; rawKey: string; keyDirty: boolean }) => Promise<void>;
+  onSave: (data: { name: string; baseUrl: string; model: string; rawKey: string; keyDirty: boolean; apiMode: ApiMode }) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(initial?.baseUrl ?? "https://api.openai.com");
   const [model, setModel] = useState(initial?.model ?? defaultModel);
+  // Explicit wire protocol for this endpoint (Cairn never auto-probes). Default
+  // "completions" — the universally-supported chat-completions surface.
+  const [apiMode, setApiMode] = useState<ApiMode>(initial?.apiMode ?? "completions");
   // The stored key is a keychain reference, never shown. `keyInput` holds only a
   // newly-typed raw key; `keyDirty` marks that the user changed it.
   const [keyInput, setKeyInput] = useState("");
@@ -333,7 +337,7 @@ function ProviderForm({
     setSaving(true);
     setSaveError(null);
     try {
-      await onSave({ name: name.trim(), baseUrl: baseUrl.trim(), model: model.trim(), rawKey: keyInput.trim(), keyDirty });
+      await onSave({ name: name.trim(), baseUrl: baseUrl.trim(), model: model.trim(), rawKey: keyInput.trim(), keyDirty, apiMode });
       // onSave closes the form on success.
     } catch (e) {
       // Keychain (or persistence) failure — keep the form open so the user can
@@ -389,6 +393,22 @@ function ProviderForm({
           />
           <span className="text-[0.643rem] text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
         </label>
+        <div className="flex flex-col gap-1">
+          <span className="text-[0.714rem] text-[var(--text-tertiary)]">API protocol</span>
+          <Select<ApiMode>
+            value={apiMode}
+            onChange={setApiMode}
+            size="md"
+            ariaLabel="API protocol"
+            className="w-full"
+            options={[
+              { value: "completions", label: "Chat Completions (/v1/chat/completions)" },
+              { value: "responses", label: "Responses (/v1/responses)" },
+              { value: "anthropic-messages", label: "Anthropic Messages (/v1/messages)" },
+            ]}
+          />
+          <span className="text-[0.643rem] text-[var(--text-tertiary)]">Wire protocol this endpoint speaks. Pinned, not auto-detected.</span>
+        </div>
       </div>
       {keyInfo && (
         <div className="flex items-center gap-1.5">

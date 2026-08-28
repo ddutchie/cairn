@@ -218,7 +218,7 @@ metadata that doesn't partition well).
 - Kept `workspace.workspaceId` + `workspace.name` (the wrapped shape)
   untouched because the existing tests in `chat-executor.test.ts` assert
   `result.activeProject` and `result.columns` exist at the top level, and
-  the agent prompt at `pi-agent-prompt.ts:164` instructs the agent to read
+  the agent prompt at `coding-session-prompt.ts:164` instructs the agent to read
   `get_active_context` to "get column IDs" — so the workspace+project ID
   are the load-bearing fields.
 - Kept id-naming convention (`noteId`, `columnId`, `taskId`, `projectId`,
@@ -303,4 +303,3 @@ Reproduce the baseline numbers yourself:
 ```
 npx vitest run electron/mcp/payload-baseline.test.ts
 ```
-

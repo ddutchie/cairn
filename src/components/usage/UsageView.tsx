@@ -92,9 +92,9 @@ function ProviderLogo({ baseUrl }: { baseUrl: string | null }) {
 
 const SOURCE_TAG_STYLE: Record<string, string> = {
   chat: "bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[var(--accent-hover)]",
-  "pi-agent": "bg-[color-mix(in_srgb,var(--info)_14%,transparent)] text-[var(--info)]",
+  "coding-agent": "bg-[color-mix(in_srgb,var(--info)_14%,transparent)] text-[var(--info)]",
   "chat-subagent": "bg-[color-mix(in_srgb,var(--node-project)_14%,transparent)] text-[var(--node-project)]",
-  "pi-subagent": "bg-[color-mix(in_srgb,var(--node-project)_14%,transparent)] text-[var(--node-project)]",
+  "coding-subagent": "bg-[color-mix(in_srgb,var(--node-project)_14%,transparent)] text-[var(--node-project)]",
   automation: "bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] text-[var(--warning)]",
 };
 

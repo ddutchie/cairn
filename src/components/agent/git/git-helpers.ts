@@ -56,3 +56,77 @@ export function statusColor(s: string): string {
 export function diffKey(path: string, staged: boolean): string {
   return `${staged ? "s" : "u"}:${path}`;
 }
+
+export function areFileListsEqual(
+  a: GitFileEntry[],
+  b: GitFileEntry[]
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].path !== b[i].path || a[i].status !== b[i].status) return false;
+  }
+  return true;
+}
+
+export function areGitStatusesEqual(
+  a: GitStatusData | null,
+  b: GitStatusData | null
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (
+    a.branch !== b.branch ||
+    a.ahead !== b.ahead ||
+    a.behind !== b.behind ||
+    a.hasUpstream !== b.hasUpstream ||
+    a.defaultBranch !== b.defaultBranch
+  ) {
+    return false;
+  }
+  return (
+    areFileListsEqual(a.staged, b.staged) &&
+    areFileListsEqual(a.unstaged, b.unstaged) &&
+    areFileListsEqual(a.untracked, b.untracked)
+  );
+}
+
+export function areBranchesEqual(
+  a: Array<{ name: string; current: boolean }>,
+  b: Array<{ name: string; current: boolean }>
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].name !== b[i].name || a[i].current !== b[i].current) return false;
+  }
+  return true;
+}
+
+export function areLogEntriesEqual(
+  a: GitLogData,
+  b: GitLogData
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].hash !== b[i].hash ||
+      a[i].subject !== b[i].subject ||
+      a[i].author !== b[i].author ||
+      a[i].date !== b[i].date
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function arePrStatusesEqual(
+  a: { url: string | null; state: string | null; title: string | null } | null,
+  b: { url: string | null; state: string | null; title: string | null } | null
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.url === b.url && a.state === b.state && a.title === b.title;
+}

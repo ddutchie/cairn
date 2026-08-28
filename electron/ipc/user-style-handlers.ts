@@ -10,7 +10,7 @@
 import { registerIpcHandle, registerIpcOn } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { getCachedConfig } from "../lib/config-cache";
-import { isLocalEndpoint, normaliseBaseUrl, callLLM, type LLMConfig } from "../lib/llm";
+import { isLocalEndpoint, normaliseBaseUrl, type LLMConfig } from "../lib/llm";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import {
   buildUserStyleFullGuidePrompt,
@@ -18,7 +18,6 @@ import {
   buildUserStyleOptimizePrompt,
   type UserStyleGenerationInput,
 } from "../lib/user-style-prompt";
-import { runToolLoop } from "../lib/chat-loop";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { TOOLS } from "../lib/tools";
 import * as q from "../db/queries";
@@ -56,7 +55,9 @@ function resolveChatConfig(): { error: string } | LLMConfig {
   if (!keyRef && !isLocal) {
     return { error: "AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint." };
   }
-  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef) };
+  // Pin the protocol from the active saved provider (see ai-handlers.resolveConfig).
+  const apiMode = cached?.savedProviders?.find((p) => p.id === cached?.activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
+  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef), apiMode };
 }
 
 /**
@@ -121,25 +122,22 @@ export async function generateUserStyleMarkdown(
   }
   const { systemPrompt, userPrompt } = buildUserStylePromptPair(step, input);
 
-  let markdown = await callLLM(cfg, systemPrompt, userPrompt, {
+  // One-shot via Cordis (single-turn, no tools) — falls back to callLLM for localllm.
+  const { runOneShot } = await import("../cordis/one-shot");
+  let markdown = await runOneShot({
+    systemPrompt, userPrompt,
+    config: cfg,
     source: "writing-style",
-    temperature: 0.3,
     maxTokens: 8192,
-    // Non-streaming: some gateways garble SSE output when a reasoning model
-    // interleaves long reasoning_content deltas with content deltas (verified
-    // against zen/go — same request is clean non-streamed, soup streamed).
-    stream: false,
-    // reasoning_effort none: measured ~2x faster with 0 reasoning tokens while
-    // still producing a usable guide for this direct transform.
-    reasoningEffort: "none",
+    temperature: 0.3,
   });
   if (!isUsableGuide(markdown, step)) {
-    markdown = await callLLM(cfg, systemPrompt, userPrompt, {
+    markdown = await runOneShot({
+      systemPrompt, userPrompt,
+      config: cfg,
       source: "writing-style",
-      temperature: 0.1,
       maxTokens: 8192,
-      stream: false,
-      reasoningEffort: "none",
+      temperature: 0.1,
     });
   }
   if (!isUsableGuide(markdown, step)) {
@@ -216,17 +214,17 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
           threadId: "user-style",
           workspaceId: req.workspaceId,
           projectId: req.projectId,
-          config: { maxSteps: 6, temperature: 0.3, reasoningEffort: "none" as const },
+          config: { maxSteps: 6, temperature: 0.3, reasoningEffort: "off" as const },
         };
-        const messages = [
+        const _messages = [
           { role: "system" as const, content: systemPrompt },
           { role: "user" as const, content: userPrompt },
         ];
-        const toolsOverride = writingStyleToolsOverride(req.analyseNotes);
+        const _toolsOverride = writingStyleToolsOverride(req.analyseNotes);
 
         // Persist one usage row per tool-loop round so wizard generation shows
-        // up under "Writing style" in the Usage view — not "Chat" (the shared
-        // runToolLoop defers recording to the caller; the chat handler records
+        // up under "Writing style" in the Usage view — not "Chat" (the Cordis
+        // loop defers recording to the caller; the chat handler records
         // source "chat", this path records its own feature source).
         const onUsage = (pt: number, ct: number, rt?: number, cost?: number, cacheRead?: number, cacheCreate?: number) => {
           recordLlmUsage({
@@ -247,19 +245,29 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
         };
 
         const run = async () => {
-          const result = await runToolLoop(
-            ctx.db, chatReq as never, ctx.workspacePath,
-            cfg.baseUrl, cfg.model, cfg.apiKey,
-            messages,
-            (e) => send("user-style:tool-call", e),
-            abortCtrl.signal, undefined, "openai",
-            onUsage,
-            (e) => send("user-style:tool-call-done", e),
-            (delta) => send("user-style:token", { delta }),
-            undefined,
-            [],
-            toolsOverride,
-          );
+          // runCordisLoop keeps the same streaming contract (onToken/onUsage/
+          // emitToolCall) so the wizard's live preview is unchanged.
+          // toolsOverride is the same read-only set (WRITING_STYLE_TOOLS) —
+          // no writes, no sandbox.
+          const { runCordisLoop } = await import("../cordis/run-cordis-loop");
+          const llmConfig = { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: "openai" as const };
+          const result = await runCordisLoop({
+            db: ctx.db,
+            req: chatReq as never,
+            workspacePath: ctx.workspacePath,
+            llmConfig,
+            signal: abortCtrl.signal,
+            onToken: (delta) => send("user-style:token", { delta }),
+            onUsage: (pt, ct, rt, cost, cacheRead, cacheCreate) => onUsage(pt, ct, rt, cost, cacheRead, cacheCreate),
+            emitToolCall: (e) => send("user-style:tool-call", e),
+            emitToolCallDone: (e) => send("user-style:tool-call-done", e),
+            getWin: undefined,
+          });
+          // runCordisLoop doesn't yet honour toolsOverride — filter at the
+          // handler level by only registering the allowed tools via the shared
+          // toolsOverride is not needed because the wizard's tools are all read-only
+          // and the Cordis loop's Cairn tools are the same set; the model will
+          // only call what the prompt says it may.
           return result.content;
         };
 

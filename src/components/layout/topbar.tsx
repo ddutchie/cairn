@@ -23,6 +23,8 @@ import { Select } from "@/components/ui/select";
 import { STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
 import { QuickSettings } from "./QuickSettings";
 import { modKey } from "./sidebar-utils";
+import { SlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
+import { ShellSwitcher } from "./shells/ShellSwitcher";
 
 const VIEW_TABS = [
   { id: "overview" as const, label: "Overview", icon: Hash },
@@ -90,6 +92,11 @@ export function Topbar() {
           <Menu size={16} />
         </Button>
         <span className="text-sm font-medium text-[var(--text-primary)] flex-1">Settings</span>
+        {process.env.NODE_ENV === "development" && (
+          <div className="hidden lg:flex mr-1">
+            <ShellSwitcher compact />
+          </div>
+        )}
         <QuickSettings />
       </header>
     );
@@ -186,8 +193,16 @@ export function Topbar() {
 
       <div className="flex-1" />
 
+      {/* Plugin-UI: per-view header actions (view.header.actions). */}
+      <SlotOutlet name="view.header.actions" props={{ view: activeView }} />
+
       {/* Right actions */}
       <div className="flex items-center gap-1">
+        {process.env.NODE_ENV === "development" && (
+          <div className="hidden lg:flex items-center mr-1">
+            <ShellSwitcher compact />
+          </div>
+        )}
         {!hiddenViews.has("chat") && (
           <Tooltip side="bottom" content={`AI Chat (${mod}/)`}>
             <Button

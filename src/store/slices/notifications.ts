@@ -44,9 +44,7 @@ export interface NotificationsSlice {
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
 
-let notificationPollTimer: ReturnType<typeof setInterval> | null = null;
 let unsubUnread: (() => void) | null = null;
-const NOTIFICATION_POLL_MS = 3_000;
 
 export const createNotificationsSlice: StateCreator<CairnStore, [], [], NotificationsSlice> = (
   set,
@@ -115,7 +113,6 @@ export const createNotificationsSlice: StateCreator<CairnStore, [], [], Notifica
   },
 
   startNotificationPolling() {
-    if (notificationPollTimer) return;
     const electron = typeof window !== "undefined" ? window.electron : undefined;
     if (electron?.notification && electron.onMcpUnreadCount && !unsubUnread) {
       unsubUnread = electron.onMcpUnreadCount((count) => {
@@ -123,16 +120,9 @@ export const createNotificationsSlice: StateCreator<CairnStore, [], [], Notifica
       });
     }
     void get().fetchNotificationUnread();
-    notificationPollTimer = setInterval(() => {
-      void get().fetchNotificationUnread();
-    }, NOTIFICATION_POLL_MS);
   },
 
   stopNotificationPolling() {
-    if (notificationPollTimer) {
-      clearInterval(notificationPollTimer);
-      notificationPollTimer = null;
-    }
     unsubUnread?.();
     unsubUnread = null;
   },

@@ -49,12 +49,16 @@ const RUNTIME_PROVIDED = new Set([
 ]);
 
 /**
- * Transitive deps of bundled libraries (e.g. gray-matter → js-yaml → esprima)
- * that the source code wraps in `try { require(...) } catch {}` so their
- * absence is non-fatal. These never need to ship.
+ * Transitive deps of bundled libraries (e.g. gray-matter → js-yaml → esprima,
+ * ws → bufferutil/utf-8-validate) that the source code wraps in
+ * `try { require(...) } catch {}` so their absence is non-fatal. These never
+ * need to ship.
  */
 const OPTIONAL_TRANSITIVE = new Set([
   "esprima",
+  // ws optional native accelerators — guarded requires, non-fatal when absent.
+  "bufferutil",
+  "utf-8-validate",
 ]);
 
 /**
@@ -129,6 +133,9 @@ const NODE_BUILTINS = new Set([
   "node:string_decoder", "node:sys", "node:test", "node:timers",
   "node:tls", "node:trace_events", "node:tty", "node:url", "node:util",
   "node:v8", "node:vm", "node:wasi", "node:worker_threads", "node:zlib",
+  // Node 22 stream/util subpath builtins (used via the node: prefix).
+  "node:stream/promises", "node:stream/web", "node:util/types",
+  "node:timers/promises",
 ]);
 
 /* ──────────────────────────────────────────────────────────────────────── *

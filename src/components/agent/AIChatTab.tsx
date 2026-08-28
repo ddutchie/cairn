@@ -15,7 +15,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
   const {
     chatThreads, chatMessages, activeProjectId, activeWorkspaceId,
     activeChatThreadId, setActiveChatThreadId,
-    createNewThread, deleteThread, renameThread,
+    createNewThread, deleteThread, renameThread, clearAllThreads,
   } = useCairnStore(useShallow((s) => ({
     chatThreads: s.chatThreads,
     chatMessages: s.chatMessages,
@@ -26,6 +26,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     createNewThread: s.createNewThread,
     deleteThread: s.deleteThread,
     renameThread: s.renameThread,
+    clearAllThreads: (s as unknown as { clearAllThreads?: (ws: string, proj?: string) => Promise<void> }).clearAllThreads,
   })));
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -35,7 +36,12 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
 
   const projectThreads = chatThreads
     .filter((t) => t.projectId === activeProjectId)
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .sort((a, b) => {
+      const aHas = chatMessages.some((m) => m.threadId === a.id);
+      const bHas = chatMessages.some((m) => m.threadId === b.id);
+      if (aHas !== bHas) return bHas ? 1 : -1;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    })
     .slice(0, 15);
 
   useEffect(() => {
@@ -51,6 +57,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
   }, [dropdownOpen]);
 
   function handleSwitchThread(threadId: string) {
+    console.log("[AIChatTab] handleSwitchThread", { from: activeChatThreadId, to: threadId, projectThreads: projectThreads.map((t) => t.id) });
     setActiveChatThreadId(threadId);
     setDropdownOpen(false);
     setRenamingId(null);
@@ -64,6 +71,28 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
       const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
       setActiveChatThreadId(next.id);
     }
+  }
+
+  async function handleClearAll(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!activeWorkspaceId) return;
+    const count = chatThreads.filter((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId)).length;
+    if (count === 0) return;
+    if (!confirm(`Clear all ${count} chat threads for this ${activeProjectId ? "project" : "workspace"}? This cannot be undone.`)) return;
+    console.log("[AIChatTab] clearAll", { ws: activeWorkspaceId, proj: activeProjectId, count });
+    if (clearAllThreads) {
+      await clearAllThreads(activeWorkspaceId, activeProjectId ?? undefined);
+    } else {
+      // Fallback: delete one by one
+      for (const t of chatThreads.filter((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId))) {
+        deleteThread(t.id);
+      }
+      if (activeWorkspaceId) {
+        const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
+        setActiveChatThreadId(next.id);
+      }
+    }
+    setDropdownOpen(false);
   }
 
   return (
@@ -104,9 +133,21 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
               <span className="text-[0.643rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Chat threads</span>
             </div>
           </div>
+          {projectThreads.length > 1 && (
+            <div className="px-3 py-1.5 border-b border-[var(--border)] flex justify-end">
+              <button
+                onClick={handleClearAll}
+                className="text-[0.643rem] font-medium text-[var(--text-tertiary)] hover:text-[var(--danger)] flex items-center gap-1 transition-colors"
+                title="Clear all threads for this project"
+              >
+                <X size={10} /> Clear all ({projectThreads.length})
+              </button>
+            </div>
+          )}
           <div className="max-h-72 overflow-y-auto">
             {projectThreads.map((t) => {
               const firstMsg = chatMessages.find((m) => m.threadId === t.id && m.role === "user");
+              const msgCount = chatMessages.filter((m) => m.threadId === t.id).length;
               const isActiveThread = t.id === activeChatThreadId;
               return (
                 <div
@@ -135,11 +176,12 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
                         className="w-full bg-transparent text-[0.786rem] font-medium text-[var(--accent)] outline-none border-b border-[var(--accent)]"
                       />
                     ) : (
-                      <span className={cn("text-[0.714rem] truncate font-medium", isActiveThread ? "text-[var(--accent)]" : "text-[var(--text-primary)]")}>
-                        {t.title ?? (firstMsg?.content.slice(0, 50) ?? "New thread")}{(!t.title && (firstMsg?.content.length ?? 0) > 50) ? "…" : ""}
+                      <span className={cn("text-[0.714rem] truncate font-medium flex items-center gap-1", isActiveThread ? "text-[var(--accent)]" : "text-[var(--text-primary)]")}>
+                        <span className="truncate">{t.title ?? (firstMsg?.content.slice(0, 50) ?? "New thread")}{(!t.title && (firstMsg?.content.length ?? 0) > 50) ? "…" : ""}</span>
+                        {msgCount > 0 && <span className="text-[0.607rem] px-1 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-tertiary)] flex-shrink-0">{msgCount}</span>}
                       </span>
                     )}
-                    <span className="text-[0.607rem] text-[var(--text-tertiary)]">{formatRelative(t.updatedAt)}</span>
+                    <span className="text-[0.607rem] text-[var(--text-tertiary)]">{formatRelative(t.updatedAt)} {msgCount > 0 ? `· ${msgCount} msgs` : "· empty"}</span>
                   </button>
                   <div className="opacity-0 group-hover:opacity-100 flex items-center flex-shrink-0 mr-1.5 gap-0.5 transition-all">
                     <button

@@ -24,6 +24,7 @@ import { useNoteMarkdownComponents } from "./note-markdown-components";
 import { resolveFontPreset } from "../../../shared/ui/fonts";
 import { storage } from "@/lib/storage";
 import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
+import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 
 interface NoteEditorProps {
   note: Note;
@@ -385,16 +386,24 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       const electron = window.electron;
       if (!electron) return;
 
-      setAiLoading(true);
-      try {
-        const prompt = buildAIActionPrompt(action, sel.text, customPrompt);
-        const result = await new Promise<{ content: string }>((resolve) => {
-          const unsub = electron.chat.onDone((e) => { unsub(); resolve(e); });
-          electron.chat.stream({
-            message: prompt,
-            threadId: "ai-text-action",
-            config: { provider: aiConfig.provider, baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
-          });
+       setAiLoading(true);
+       try {
+         const prompt = buildAIActionPrompt(action, sel.text, customPrompt);
+         const result = await new Promise<{ content: string }>((resolve) => {
+           let content = "";
+           const fold = createSessionEventFold({
+             onAssistantMessage: (message) => { content = message.text; },
+             onTurnEnd: () => { unsub(); resolve({ content }); },
+           });
+           const unsub = electron.session.onEvent((e) => {
+             if (e.sessionId === "chat-ai-text-action") fold(e.event);
+           });
+            electron.session.prompt({
+              sessionId: "chat-ai-text-action",
+              profile: "chat",
+              prompt,
+             config: { provider: aiConfig.provider, baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
+           });
         });
 
         const replacement = result.content?.trim();
@@ -458,19 +467,6 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     }
   }, [openWikilinkPicker]);
 
-  useEffect(() => {
-    if (!spawnLoading) return;
-    const electron = window.electron;
-    if (!electron) return;
-    const unsub = electron.chat.onToolCall((e) => {
-      if (e.threadId != null && e.threadId !== "spawn-tasks") return;
-      if (e.tool === "create_task") {
-        setSpawnToolCalls((prev) => [...prev, e.label]);
-      }
-    });
-    return () => { unsub(); };
-  }, [spawnLoading]);
-
   const handleSpawnTasks = useCallback(async () => {
     const electron = window.electron;
     if (!electron || !activeProjectId) return;
@@ -484,15 +480,27 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     setSpawnToolCalls([]);
     try {
       const result = await new Promise<{ content: string }>((resolve) => {
-        const unsub = electron.chat.onDone((e) => {
-          // The chat channel is shared — only resolve on our own spawn stream.
-          if (e.threadId != null && e.threadId !== "spawn-tasks") return;
-          unsub();
-          resolve(e);
+        let content = "";
+        const fold = createSessionEventFold({
+          onToolCall: (call) => {
+            if (call.name === "create_task") {
+              const title = typeof call.args?.title === "string" ? call.args.title : "";
+              setSpawnToolCalls((prev) => [...prev, `Creating task "${title}"`]);
+            }
+          },
+          onAssistantMessage: (message) => { content = message.text; },
+          onTurnEnd: () => {
+            unsub();
+            resolve({ content });
+          },
         });
-        electron.chat.stream({
-          message: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
-          threadId: "spawn-tasks",
+        const unsub = electron.session.onEvent((e) => {
+          if (e.sessionId === "chat-spawn-tasks") fold(e.event);
+        });
+         electron.session.prompt({
+           sessionId: "chat-spawn-tasks",
+           profile: "chat",
+           prompt: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
           projectId: activeProjectId,
           config: { provider: aiConfig.provider, baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
         });

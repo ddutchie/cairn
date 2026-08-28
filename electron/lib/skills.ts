@@ -42,6 +42,11 @@ export interface SkillMeta {
   compatibility?: string;
   /** Arbitrary string-to-string metadata. */
   metadata?: Record<string, string>;
+  /** When to use — forwarded to summary for better routing. */
+  whenToUse?: string;
+  /** Disable flags for invocation gating (maps to modelInvocable/userInvocable). */
+  disableModelInvocation?: boolean;
+  disableUserInvocation?: boolean;
   /** Absolute path to the SKILL.md file. */
   filePath: string;
   /** Absolute path to the skill directory (for bundled resource access). */
@@ -165,6 +170,9 @@ function parseSkillFile(filePath: string, dirName: string): SkillMeta | null {
     metadata:      data.metadata && typeof data.metadata === "object"
                      ? (data.metadata as Record<string, string>)
                      : undefined,
+    whenToUse:    typeof (data as Record<string, unknown>).whenToUse === "string" ? String((data as Record<string, unknown>).whenToUse).trim() : undefined,
+    disableModelInvocation: (data as Record<string, unknown>).disableModelInvocation === true || (data as Record<string, unknown>)["disable-model-invocation"] === true,
+    disableUserInvocation: (data as Record<string, unknown>).disableUserInvocation === true || (data as Record<string, unknown>)["disable-user-invocation"] === true,
     filePath,
     dirPath: path.dirname(filePath),
   };
@@ -274,21 +282,3 @@ export function loadSkill(name: string, skills: SkillMeta[]): SkillContent | nul
   };
 }
 
-/**
- * Renders the available skills as an XML block for injection into the system
- * prompt. Only name and description are included — the full body is lazy.
- *
- * Returns an empty string if there are no skills.
- */
-export function renderSkillsXml(skills: SkillMeta[]): string {
-  if (skills.length === 0) return "";
-
-  const items = skills
-    .map(
-      (s) =>
-        `  <skill>\n    <name>${s.name}</name>\n    <description>${s.description}</description>\n  </skill>`,
-    )
-    .join("\n");
-
-  return `<available_skills>\n${items}\n</available_skills>`;
-}

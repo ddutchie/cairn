@@ -8,17 +8,18 @@
  * the summary node (both edge directions), skips other `ai_summary` nodes,
  * and feeds the collected text into `callLLM`.
  *
- * **TODO**: the BFS here is partly duplicated by `q.getResolvedFlow`
+ * NOTE (tracked): the BFS here is partly duplicated by `q.getResolvedFlow`
  * (`db/queries.ts:651-735`). A deeper refactor could extract a shared
  * `walkReachableNodes(db, nodeId)` helper into `db/queries.ts`. Out of scope
- * for P2 (which is a no-behaviour-change refactor).
+ * for P2 (no-behaviour-change refactor) — file as follow-up if flow
+ * traversal diverges.
  */
 
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { stripMarkdown } from "../shared/text-utils";
-import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
+import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 
@@ -32,6 +33,7 @@ function resolveAiConfig(input: { baseUrl?: string; model?: string; apiKey?: str
   baseUrl: string;
   model: string;
   apiKey: string;
+  apiMode?: "responses" | "completions" | "anthropic-messages";
 } | { error: string } {
   let reqConfig: { baseUrl?: string; model?: string; apiKey?: string } = input;
   if (!reqConfig?.apiKey) {
@@ -53,8 +55,11 @@ function resolveAiConfig(input: { baseUrl?: string; model?: string; apiKey?: str
   if (!keyRef && !isLocal) {
     return { error: "AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint." };
   }
+  // Pin the protocol from the active saved provider (see ai-handlers.resolveConfig).
+  const ai = getCachedConfig().aiConfig;
+  const apiMode = ai?.savedProviders?.find((p) => p.id === ai?.activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
   // `keyRef` is a keychain reference token; resolve to the real key for this request only.
-  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef) };
+  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef), apiMode };
 }
 
 export function registerFlowHandlers(ctx: DbContext): void {
@@ -110,7 +115,7 @@ export function registerFlowHandlers(ctx: DbContext): void {
 
         const resolved = resolveAiConfig(args.config);
         if ("error" in resolved) throw new Error(resolved.error);
-        const { baseUrl, model, apiKey } = resolved;
+        const { baseUrl, model, apiKey, apiMode } = resolved;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         type DbRow = Record<string, any>;
@@ -226,7 +231,10 @@ export function registerFlowHandlers(ctx: DbContext): void {
 
         let summary: string;
         try {
-          summary = await callLLM({ baseUrl, model, apiKey }, systemPrompt, userPrompt, {
+          const { runOneShot } = await import("../cordis/one-shot");
+          summary = await runOneShot({
+            systemPrompt, userPrompt,
+            config: { baseUrl, model, apiKey, provider: "openai", apiMode },
             source: "flow-ai-summary",
             sessionId: args.nodeId,
             projectId: flowProjectId,

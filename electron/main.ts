@@ -26,17 +26,20 @@ import { registerToolsHandlers } from "./ipc/tools";
 import { registerToolBuilderHandlers } from "./ipc/tool-builder";
 import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
 import { registerGitHandlers } from "./ipc/git";
-import { registerPiAgentHandler } from "./ipc/pi-agent";
+import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
+import { setSessionRoot } from "./cordis/run-cordis-loop";
+import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
-import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies } from "./db/queries";
+import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions } from "./db/queries";
 import { recoverInterruptedRuns } from "./db/automation-queries";
 import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
 import { createTray } from "./lib/tray";
 import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
+import { readThemeSurface } from "./lib/theme-surface";
 import { HeartbeatScheduler } from "./lib/heartbeat-scheduler";
 import { runAutomation } from "./lib/heartbeat-runner";
 import { stopServerSync } from "./lib/llama-server";
@@ -142,40 +145,9 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-// Returns the window background colour for the stored theme.
-// Used as BrowserWindow.backgroundColor (fills the window before React renders).
-function getStoredThemeBackground(): string {
-  try {
-    const userDataPath = app.getPath("userData");
-    const themeFile = path.join(userDataPath, "theme.json");
-    if (fs.existsSync(themeFile)) {
-      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
-      if (t === "light") return "#f5f4f1";
-    }
-  } catch { /* ignore */ }
-  return "#0d0d0d";
-}
-
-// Returns the --surface colour for the stored theme.
-// Used as the titleBarOverlay colour on Windows so the native min/max/close
-// buttons blend with the rendered TitleBar component (bg-[var(--surface)]).
-// Must match the --surface values in globals.css exactly.
-function getStoredThemeSurface(): string {
-  try {
-    const userDataPath = app.getPath("userData");
-    const themeFile = path.join(userDataPath, "theme.json");
-    if (fs.existsSync(themeFile)) {
-      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
-      if (t === "light") return "#ffffff";  // --surface in .light (globals.css:35)
-    }
-  } catch { /* ignore */ }
-  return "#141414";  // --surface in .dark (globals.css:11)
-}
-
 function createWindow(): BrowserWindow {
   const isWin = process.platform === "win32";
-  const bg = getStoredThemeBackground();
-  const surface = getStoredThemeSurface();
+  const { surface, bg } = readThemeSurface();
 
   // On macOS: hiddenInset keeps the traffic lights in the title bar area.
   // On Windows: hidden removes the native title text; titleBarOverlay places
@@ -203,23 +175,62 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // H7: sandbox:false widens the renderer blast radius (no OS-level sandbox).
+      // TODO: roadmap to sandbox:true — requires auditing preload exposure and
+      // moving sqlite/native work to a utilityProcess. Tracked separately; don't
+      // flip this flag without that hardening.
       sandbox: false,
     },
   });
 
   if (isDev) {
     win.loadURL("http://localhost:3000");
-    win.webContents.openDevTools({ mode: "detach" });
+    // Keep DevTools closed in headless/recording runs (CAIRN_NO_DEVTOOLS=1, used
+    // by the demo/QA harness) so the detached inspector window doesn't steal the
+    // Playwright video recording or pop a second window during capture.
+    if (process.env.CAIRN_NO_DEVTOOLS !== "1") {
+      win.webContents.openDevTools({ mode: "detach" });
+    }
   } else {
     win.loadURL("app://./index.html");
   }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:" || parsed.protocol === "mailto:") {
+        shell.openExternal(url);
+      }
+    } catch { /* malformed URL — deny */ }
     return { action: "deny" };
   });
 
+  // Deny any in-page navigation to external origins. Only allow the bundled
+  // app:// scheme, the asset:// scheme, and the localhost dev server.
+  win.webContents.on("will-navigate", (event, url) => {
+    try {
+      const parsed = new URL(url);
+      const allowed =
+        parsed.protocol === "app:" ||
+        parsed.protocol === "asset:" ||
+        (parsed.protocol === "http:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
+        (parsed.protocol === "ws:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
+        (parsed.protocol === "https:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"));
+      if (!allowed) event.preventDefault();
+    } catch {
+      event.preventDefault();
+    }
+  });
+
   return win;
+}
+
+// Test/QA isolation hook: when CAIRN_USER_DATA_DIR is set (used by the
+// Playwright Electron e2e harness), redirect the userData dir so the app runs
+// against a throwaway profile instead of the developer's real Cairn data. Must
+// run before whenReady resolves (whenReady reads app.getPath("userData") at boot).
+if (process.env.CAIRN_USER_DATA_DIR) {
+  app.setPath("userData", process.env.CAIRN_USER_DATA_DIR);
 }
 
 app.whenReady().then(async () => {
@@ -237,6 +248,57 @@ app.whenReady().then(async () => {
   });
 
   const userDataPath = app.getPath("userData");
+
+  // ── Diagnostic log ──────────────────────────────────────────────────────
+  // Point the persistent debug log at <userData>/logs before anything that
+  // might want to log. In a packaged app there is no attached terminal, so this
+  // file is the only record of turn timings and abnormal turn endings.
+  setDebugLogRoot(userDataPath);
+  dlog("main", "app starting", { userDataPath, version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch });
+
+  // ── Configure dsh session persistence root (jsonl) ──────────────────────
+  // Chats/sessions live in dsh's jsonl session log under userData, NOT in
+  // Cairn's SQLite (the DB is for MCP/tool access only). Must be set before the
+  // first Cordis context is built.
+  const sessionRoot = path.join(userDataPath, "sessions");
+  fs.mkdirSync(sessionRoot, { recursive: true });
+  setSessionRoot(sessionRoot);
+
+  // Session-log retention (§ H16 from the pre-merge review): dsh's jsonl
+  // session logs accumulate indefinitely — a heavy user (~20 sessions/day)
+  // grows GBs per year with no ceiling. Sweep at boot + every 24h thereafter.
+  // Default budget 90 days; overridable via CAIRN_SESSION_MAX_AGE_DAYS env
+  // var (mostly for tests / power users). The sweep is best-effort:
+  // fs failures are logged and don't block boot.
+  try {
+    const { pruneSessionLogs } = await import("./lib/artifact-hygiene");
+    const runSessionSweep = () => {
+      try {
+        const res = pruneSessionLogs(sessionRoot);
+        if (res.removed > 0) {
+          const mb = (res.bytesFreed / (1024 * 1024)).toFixed(1);
+          console.log(`[session-hygiene] removed ${res.removed}/${res.scanned} old sessions (${mb} MB freed)`);
+        }
+      } catch (err) {
+        console.warn("[session-hygiene] sweep failed:", (err as Error)?.message ?? err);
+      }
+    };
+    // Defer boot sweep so it doesn't compete with the splash animation.
+    setTimeout(runSessionSweep, 30_000);
+    // Every 24h thereafter.
+    setInterval(runSessionSweep, 24 * 60 * 60 * 1000).unref();
+  } catch {
+    // artifact-hygiene import is optional at this early stage; the sweep
+    // just doesn't run and the app boots as before.
+  }
+
+  // ── Runtime plugin dir (§10 Tier 2/3) ──────────────────────────────────
+  // User/agent-authored plugins live here; with CAIRN_PLUGINS_DEV=1 the Cordis
+  // context loads <userData>/plugins/plugins.yml and hot-reloads on change.
+  try {
+    const { setPluginsRoot } = await import("./cordis/plugin-loader");
+    setPluginsRoot(path.join(userDataPath, "plugins"));
+  } catch { /* plugin loader is optional */ }
 
   // ── Resolve workspace path ────────────────────────────────────────────
   const config = readWorkspaceConfig(userDataPath);
@@ -271,8 +333,8 @@ app.whenReady().then(async () => {
   registerToolBuilderHandlers(ctx);
   registerCommunityRegistryHandlers();
   registerGitHandlers(ctx);
-  registerPiAgentHandler(ctx);
-  registerChatPopoutHandlers();
+  registerSessionRuntimeHandlers(ctx);
+  registerChatPopoutHandlers(ctx);
 
   // ── Splash + boot sequence ────────────────────────────────────────────
   // Create the splash window immediately so the user sees something while
@@ -312,6 +374,15 @@ app.whenReady().then(async () => {
   // ── Create main window ─────────────────────────────────────────────────
   const win = createWindow();
   _win = win;
+
+  // UI plugins (dev-gated): serve renderer-side plugin sources + live-change
+  // events from <userData>/plugins to this window.
+  try {
+    const { registerUiPluginHandlers } = await import("./ipc/ui-plugin-handlers");
+    registerUiPluginHandlers(() => _win?.webContents);
+  } catch (err) {
+    console.error("[cairn-plugins] ui handlers failed to register:", err instanceof Error ? err.message : err);
+  }
 
   // Close splash after the main window has finished loading its first page.
   // The main window is created hidden (show: false) so only the splash is
@@ -447,6 +518,18 @@ app.whenReady().then(async () => {
     if (recovered > 0) console.log(`[heartbeat] recovered ${recovered} interrupted automation run(s)`);
   } catch (err) {
     console.warn("[heartbeat] failed to recover interrupted runs:", err);
+  }
+
+  // Coding sessions default to 'running' on creation and only flip to 'exited'
+  // on a clean close, so a crash / quit / dev reload mid-session leaves a stale
+  // 'running' row the session browser would paint as "active" forever. Flip any
+  // orphaned rows to 'exited' — the loop set in the main process is the only
+  // source of truth for genuinely-live sessions.
+  try {
+    const reconciled = reconcileInterruptedCodingSessions(ctx.db);
+    if (reconciled > 0) console.log(`[session] reconciled ${reconciled} interrupted coding session(s)`);
+  } catch (err) {
+    console.warn("[session] failed to reconcile interrupted coding sessions:", err);
   }
   const heartbeatScheduler = new HeartbeatScheduler({
     dbGetter: () => ctx.db,
@@ -613,11 +696,14 @@ app.whenReady().then(async () => {
     const drainInterval = setInterval(() => {
       try {
         if (!getSyncFolder(ctx.db)) return;
-        drainDesktop(ctx.db);
-        // Reflect the current pending/conflict counts in the title-bar indicator.
-        refreshSyncStatus(ctx.db);
+        const drained = drainDesktop(ctx.db);
+        if (drained > 0) {
+          // Reflect the updated pending/conflict counts in the title-bar indicator.
+          refreshSyncStatus(ctx.db);
+        }
       } catch (err) { console.error("[sync] drain:", err); }
     }, 5_000);
+    if (typeof drainInterval.unref === "function") drainInterval.unref();
     // Full folder sync (publish + reconcile peers) as the primary + safety net.
     const syncInterval = setInterval(() => runFullSync("periodic"), 30_000);
 

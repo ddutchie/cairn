@@ -4,7 +4,7 @@
  * AgentTodoDock — collapsible todo list for a coding-agent session.
  *
  * Rendered above the input area in AgentChatPane. Data comes from the
- * `todowrite` tool (via pi-agent:todos IPC events + SQLite). Mirrors opencode's
+ * `todowrite` tool (via the coding-agent todos IPC events + SQLite). Mirrors opencode's
  * SessionTodoDock: a compact summary line ([3/5 todos - Current task]) that
  * expands to the full checklist. Status is derived purely from each todo's
  * `status` field.
@@ -13,14 +13,14 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Check, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PiTodo } from "@/types";
+import type { SessionTodo } from "@/types";
 
 interface AgentTodoDockProps {
-  todos: PiTodo[];
+  todos: SessionTodo[];
   live?: boolean;
 }
 
-function statusIcon(status: PiTodo["status"]) {
+function statusIcon(status: SessionTodo["status"]) {
   if (status === "completed" || status === "cancelled") return <Check size={12} className="shrink-0 mt-px" />;
   if (status === "in_progress") return <Minus size={12} className="shrink-0 mt-px" />;
   return <span className="w-3 h-3 rounded-full border border-[var(--text-tertiary)] shrink-0 mt-px box-border" />;

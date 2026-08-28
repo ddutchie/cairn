@@ -20,8 +20,8 @@ import os from "os";
 import path from "path";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createNote, getNoteById } from "../db/queries";
-import { executeTool } from "./chat-executor";
-import { parseToolArgs } from "../lib/parse-tool-args";
+import { executeTool } from "../cordis/chat-executor";
+import { parseToolArgs } from "../../shared/chat/parse-tool-args";
 import type { LLMConfig } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
 

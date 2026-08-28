@@ -21,7 +21,7 @@ import { __isWriteChannel as isWriteChannel } from "./registry";
 
 describe("isWriteChannel", () => {
   it("treats non-db channels as non-writes (they never broadcast db:changed)", () => {
-    for (const c of ["app:setTheme", "git:status", "chat:stream", "updater:install"]) {
+    for (const c of ["app:setTheme", "git:status", "session:prompt", "updater:install"]) {
       expect(isWriteChannel(c)).toBe(false);
     }
   });
@@ -36,12 +36,10 @@ describe("isWriteChannel", () => {
       "db:card:addBlocker",
       "db:card:removeBlocker",
       "db:cards:archive-done",
-      "db:chat:addMessage",
       "db:chat:upsertThread",
       "db:chat:deleteThread",
       "db:chat:clearThreadMessages",
       "db:project:updateSettings",
-      "db:piSession:saveMessages",
       "db:graph:recompute",
       "db:embeddings:reindex",
       "db:embeddings:recomputeProjections",
@@ -66,8 +64,7 @@ describe("isWriteChannel", () => {
       "db:tag:list",
       "db:chat:threads",
       "db:chat:messages",
-      "db:piSession:list",
-      "db:piSession:messages",
+      "db:session:list",
       "db:embeddings:search",
     ];
     for (const c of reads) expect(isWriteChannel(c)).toBe(false);

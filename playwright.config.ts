@@ -11,6 +11,14 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./tests/e2e",
+  // Exclude the Electron-launched suite — it uses _electron.launch which the
+  // Chromium/browser config here can't drive. That suite has its own config
+  // at playwright.electron.config.ts and its own npm script
+  // (`npm run test:e2e:electron`). Without this ignore, the recursive test
+  // walker collects tests/e2e/electron/*.test.ts under this config and
+  // schedules them for browser execution, where they silently no-op via
+  // test.skip(!LIVE) — the wrong test runner, hiding the real coverage gap.
+  testIgnore: "**/electron/**",
 
   // Run tests serially — the dev server is shared, parallel runs can race on
   // React hydration timing. Increase if the suite grows and timing is stable.

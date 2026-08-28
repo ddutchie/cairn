@@ -30,7 +30,8 @@ export { type DbContext } from "./result-helpers";
 // Per-domain registrars
 import { registerDbHandlers } from "./db-handlers";
 import { registerChatDbHandlers } from "./chat-db-handlers";
-import { registerPiSessionHandlers } from "./pi-session-handlers";
+import { registerChatSessionHandlers } from "./chat-session";
+import { registerSessionHandlers } from "./session-handlers";
 import { registerFlowHandlers } from "./flow-handlers";
 import { registerAiHandlers } from "./ai-handlers";
 import { registerLlamaHandlers } from "./llama-handlers";
@@ -67,8 +68,9 @@ export function registerIpcHandlers(ctx: DbContext): void {
   registerDbHandlers(ctx);
   registerChatHandler(ctx);
   registerChatDbHandlers(ctx);
+  registerChatSessionHandlers(ctx);
   registerUserStyleHandlers(ctx);
-  registerPiSessionHandlers(ctx);
+  registerSessionHandlers(ctx);
   registerFlowHandlers(ctx);
   registerAiHandlers(ctx);
   registerLlamaHandlers(ctx);
@@ -275,7 +277,7 @@ export function registerAppHandlers(
 
   // ── Reset all data — wipe every table then relaunch ──────────────────────
   registerIpcHandle("app:reset", () => handle(() => {
-    const tables = ["chat_messages", "chat_threads", "mcp_notifications", "task_cards", "board_columns", "notes", "tags", "projects", "workspaces"];
+    const tables = ["chat_threads", "mcp_notifications", "task_cards", "board_columns", "notes", "tags", "projects", "workspaces"];
     for (const t of tables) {
       ctx.db.prepare(`DELETE FROM ${t}`).run();
     }

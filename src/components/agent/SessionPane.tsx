@@ -11,24 +11,33 @@
  * preserve IPC subscriptions, scroll position, and React state.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2 } from "lucide-react";
+import { X, Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2, MoreHorizontal } from "lucide-react";
 import { useCairnStore } from "@/store";
-import type { ChatThread, ChatMessage } from "@/types";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { modKey } from "@/components/layout/sidebar-utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown";
 import { SpawnAgentModal } from "./SpawnAgentModal";
 import { TerminalManager } from "./TerminalManager";
 import { AgentChatPane } from "./AgentChatPane";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { SessionMount } from "./SessionMount";
-import { AIChatTab } from "./AIChatTab";
-import { AgentSessionTab } from "./AgentSessionTab";
 import { TerminalTab } from "./TerminalTab";
 import { AgentEmptyState } from "./AgentEmptyState";
 import { useAgentSessionActions } from "./useAgentSessionActions";
+import { SessionBrowser } from "./SessionBrowser";
+import { chatSessionId } from "../../../shared/agent/session-identity";
+
+function sanitizeAriaId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
 
 interface SessionPaneProps {
   isRightPanel?: boolean;
@@ -41,35 +50,35 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     terminalSessions,
     activeSessionId,
     setActiveSession,
+    openSession,
     removeTerminalSession,
-    persistentPiSessionId,
+    activeCodingSessionId,
     activeProjectId,
-    fetchPiSessionHistory,
     toggleChat,
     activeView,
     chatOpen,
     projects,
-    setActiveChatThreadId,
     chatPoppedOut,
     setChatPoppedOut,
     setView,
+    setSessionPresentation,
     lastContentView,
   } = useCairnStore(useShallow((s) => ({
     terminalSessions: s.terminalSessions,
     activeSessionId: s.activeSessionId,
     setActiveSession: s.setActiveSession,
+    openSession: s.openSession,
     removeTerminalSession: s.removeTerminalSession,
-    persistentPiSessionId: s.persistentPiSessionId,
+    activeCodingSessionId: s.activeCodingSessionId,
     activeProjectId: s.activeProjectId,
-    fetchPiSessionHistory: s.fetchPiSessionHistory,
     toggleChat: s.toggleChat,
     activeView: s.activeView,
     chatOpen: s.chatOpen,
     projects: s.projects,
-    setActiveChatThreadId: s.setActiveChatThreadId,
     chatPoppedOut: s.chatPoppedOut,
     setChatPoppedOut: s.setChatPoppedOut,
     setView: s.setView,
+    setSessionPresentation: s.setSessionPresentation,
     lastContentView: s.lastContentView,
   })));
 
@@ -79,9 +88,12 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [mod] = useState(() => modKey());
   const newMenuRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerOverflows, setHeaderOverflows] = useState(false);
 
   const createNewThread = useCairnStore((s) => s.createNewThread);
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
+  const fetchCodingSessionHistoryForProjects = useCairnStore((s) => s.fetchCodingSessionHistoryForProjects);
   const { handleNewSession } = useAgentSessionActions();
 
   useEffect(() => {
@@ -91,26 +103,53 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
         setNewMenuOpen(false);
       }
     }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setNewMenuOpen(false);
+        document.getElementById("unified-new-btn")?.focus();
+      }
+    }
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, [newMenuOpen]);
 
   function handleNewChatThread() {
     if (!activeWorkspaceId) return;
     setNewMenuOpen(false);
     const thread = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
-    setActiveChatThreadId(thread.id);
-    setActiveSession("chat");
+    openSession(thread.id, "chat", "drawer");
   }
 
   async function handleNewAgentSession() {
     setNewMenuOpen(false);
+    setSessionPresentation("drawer");
     await handleNewSession();
   }
 
+  // Memoized project ids key — avoids refetch loop when `projects` array
+  // identity changes on every hydrate (store replaces array reference).
+  const projectIdsKey = useMemo(() => {
+    if (!activeWorkspaceId) return "";
+    return projects
+      .filter((p) => p.workspaceId === activeWorkspaceId)
+      .map((p) => p.id)
+      .sort()
+      .join(",");
+  }, [projects, activeWorkspaceId]);
+  const prevProjectIdsKeyRef = useRef<string>("");
   useEffect(() => {
-    if (activeProjectId) fetchPiSessionHistory(activeProjectId);
-  }, [activeProjectId, fetchPiSessionHistory]);
+    if (!activeWorkspaceId) return;
+    if (projectIdsKey === prevProjectIdsKeyRef.current) return;
+    prevProjectIdsKeyRef.current = projectIdsKey;
+    const ids = projectIdsKey ? projectIdsKey.split(",") : [];
+    if (ids.length === 0) return;
+    void fetchCodingSessionHistoryForProjects(ids);
+  }, [activeWorkspaceId, fetchCodingSessionHistoryForProjects, projectIdsKey]);
 
   const handleClose = useCallback((sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -119,8 +158,20 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     window.electron?.agent.kill(sessionId).catch(console.error);
   }, [removeTerminalSession]);
 
-  const persistentSession = terminalSessions.find((t) => t.sessionId === persistentPiSessionId && t.sessionType === "pi");
+  const persistentSession = terminalSessions.find((t) => t.sessionId === activeCodingSessionId && t.sessionType === "coding");
   const ptySessions = terminalSessions.filter((t) => t.sessionType === "pty");
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      // Collapse to hamburger when panel is narrow (<360) — scrollWidth check flickers when we hide content, so use width threshold
+      setHeaderOverflows(el.clientWidth < 360);
+    });
+    ro.observe(el);
+    setHeaderOverflows(el.clientWidth < 360);
+    return () => ro.disconnect();
+  }, [ptySessions.length, activeSessionId]);
 
   useEffect(() => {
     if (activeSessionId === null) {
@@ -132,10 +183,10 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     if (!hasCodeDirectory && activeSessionId !== "chat" && activeSessionId !== null) {
       const isAgentSession =
         activeSessionId === "agent" ||
-        (persistentPiSessionId !== null && activeSessionId === persistentPiSessionId);
+        (activeCodingSessionId !== null && activeSessionId === activeCodingSessionId);
       if (isAgentSession) setActiveSession("chat");
     }
-  }, [hasCodeDirectory, activeSessionId, persistentPiSessionId, setActiveSession]);
+  }, [hasCodeDirectory, activeSessionId, activeCodingSessionId, setActiveSession]);
 
   const prevChatOpenRef = useRef(chatOpen);
 
@@ -154,17 +205,34 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     prevChatOpenRef.current = chatOpen;
   }, [activeView, chatOpen, setActiveSession]);
 
-  // ── Pop-out chat ────────────────────────────────────────────────────────────────
+  // ── Pop-out session ─────────────────────────────────────────────────────────────
   const handlePopOut = useCallback(async () => {
     const state = useCairnStore.getState();
+    const isChat = state.activeSessionId === "chat";
+    // Single lookup: resolve the coding session id once (handles the "agent" alias)
+    const codingSessionId = state.activeSessionId === "agent" ? state.activeCodingSessionId : state.activeSessionId;
+    const coding = codingSessionId ? state.terminalSessions.find((s) => s.sessionId === codingSessionId && s.sessionType === "coding") : undefined;
+    const sessionId = isChat ? (state.activeChatThreadId ? chatSessionId(state.activeChatThreadId) : null) : coding?.sessionId;
+    if (!sessionId) return;
+    const project = state.projects.find((item) => item.id === (coding?.projectId ?? state.activeProjectId));
     const result = await window.electron?.chat.popOut({
-      threadId: state.activeChatThreadId,
-      chatThreads: state.chatThreads,
-      chatMessages: state.chatMessages,
-      activeProjectId: state.activeProjectId,
-    });
+      sessionId,
+      activeProjectId: coding?.projectId ?? state.activeProjectId,
+      profile: isChat ? "chat" : coding?.role === "automation-dev" ? "automation-dev" : "coding",
+      workspaceId: project?.workspaceId ?? state.activeWorkspaceId,
+      cwd: coding?.cwd ?? null,
+    }) as { ok: boolean; reason?: string } | undefined;
     if (result?.ok) {
       setChatPoppedOut(true);
+    } else if (result && !result.ok) {
+      const reason = result.reason ?? "unknown";
+      const message =
+        reason === "profile-mismatch"
+          ? "Pop-out failed — profile mismatch"
+          : reason === "invalid-payload"
+            ? "Pop-out failed — invalid session"
+            : `Pop-out failed — ${reason}`;
+      window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message } }));
     }
   }, [setChatPoppedOut]);
 
@@ -174,28 +242,23 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   const handleClosePanel = useCallback(() => {
     if (!isRightPanel) {
+      // Center mode is visible independently of chatOpen. Return to drawer
+      // presentation first, then close the drawer only when it is open; this
+      // prevents "Close panel" from leaving the centered session on screen or
+      // opening a drawer that was never open.
+      setSessionPresentation("drawer");
       setView(lastContentView);
+      if (chatOpen) toggleChat();
+      return;
     }
     toggleChat();
-  }, [isRightPanel, setView, lastContentView, toggleChat]);
+  }, [chatOpen, isRightPanel, lastContentView, setSessionPresentation, setView, toggleChat]);
 
   // Listen for pop-in final state from the main process
   useEffect(() => {
     const electron = window.electron;
     if (!electron?.chat.onChatPoppedIn) return;
-    const unsub = electron.chat.onChatPoppedIn((payload) => {
-      if (payload.chatThreads) {
-        useCairnStore.setState({
-          chatThreads: payload.chatThreads as ChatThread[],
-          chatMessages: payload.chatMessages as ChatMessage[],
-        });
-      }
-      if (payload.threadId) {
-        useCairnStore.getState().setActiveChatThreadId(payload.threadId);
-      }
-      if (payload.activeProjectId != null) {
-        useCairnStore.setState({ activeProjectId: payload.activeProjectId });
-      }
+    const unsub = electron.chat.onChatPoppedIn((_payload) => {
       setChatPoppedOut(false);
     });
     return () => { unsub?.(); };
@@ -213,57 +276,55 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   const pinnedIsActive =
     activeSessionId === "agent" ||
-    (persistentPiSessionId !== null && activeSessionId === persistentPiSessionId);
+    (activeCodingSessionId !== null && activeSessionId === activeCodingSessionId);
 
   return (
     <>
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      {/* Tab bar */}
-      <div className="flex items-center h-11 border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)]">
-        <AIChatTab
-          isActive={activeSessionId === "chat"}
-          onActivate={() => setActiveSession("chat")}
-        />
-
-        {hasCodeDirectory && (
-          <AgentSessionTab
-            isActive={pinnedIsActive}
-            onActivate={() => {
-              if (persistentPiSessionId) {
-                setActiveSession(persistentPiSessionId);
-              } else {
-                setActiveSession("agent");
-              }
-            }}
-          />
-        )}
-
-        <div className="flex-1 flex items-center overflow-x-auto min-w-0 h-full">
+      {/* Tab bar — instrument header, matches rail grammar */}
+      <div ref={headerRef} className="flex items-center h-11 px-1.5 gap-1.5 border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)] shadow-[inset_0_1px_0_rgba(255,255,255,.04)] min-w-0 flex-nowrap">
+        {/* Session switcher — flexes so + never gets pushed off (outer must be overflow-visible so dropdown isn't clipped) */}
+        <div className="flex-1 min-w-0 max-w-[220px] overflow-visible">
+          <SessionBrowser activeSessionId={activeSessionId} variant="dropdown" />
+        </div>
+        <div
+          role="tablist"
+          aria-orientation="horizontal"
+          aria-label="Terminal tabs"
+          className={cn(
+            "flex items-center gap-1 min-w-0 h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-[var(--text-tertiary)] hover:scrollbar-thumb-[var(--text-secondary)] scrollbar-track-transparent [scrollbar-width:thin] [scrollbar-gutter:stable] [scrollbar-color:var(--text-tertiary)_transparent] py-1",
+            ptySessions.length > 0 ? "flex-1" : "flex-shrink-0",
+            ptySessions.length >= 4 && "[mask-image:linear-gradient(to_right,transparent,black_8px,black_calc(100%-8px),transparent)]",
+          )}
+          style={{ scrollbarWidth: "thin", scrollbarColor: "var(--text-tertiary) transparent" }}
+        >
           {ptySessions.map((session) => (
             <TerminalTab
               key={session.sessionId}
               session={session}
               isActive={session.sessionId === activeSessionId}
-              onActivate={() => setActiveSession(session.sessionId)}
+              onActivate={() => openSession(session.sessionId, "terminal", "drawer")}
               onClose={(e) => handleClose(session.sessionId, e)}
             />
           ))}
         </div>
 
-        {/* Unified new-item button */}
-        <div ref={newMenuRef} className="relative flex-shrink-0">
+        {/* Unified new-item button — right-aligned pill */}
+        <div ref={newMenuRef} className="relative flex-shrink-0 ml-auto">
           <Tooltip content="New…" side="bottom">
             <button
               id="unified-new-btn"
+              aria-haspopup="menu"
+              aria-expanded={newMenuOpen}
               onClick={() => setNewMenuOpen((v) => !v)}
               className={cn(
-                "px-3 h-11 flex items-center justify-center transition-colors border-l border-[var(--border)]",
+                "w-7 h-7 rounded-full grid place-items-center border transition-colors",
                 newMenuOpen
-                  ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                  ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)] shadow-sm"
+                  : "bg-[var(--surface-2)] text-[var(--text-tertiary)] border-[var(--border)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] hover:bg-[var(--surface-3)]"
               )}
             >
-              <Plus size={12} />
+              <Plus size={12} strokeWidth={1.75} />
             </button>
           </Tooltip>
 
@@ -297,13 +358,13 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           )}
         </div>
 
-        {/* Header Actions */}
-        <div className="flex items-center h-full">
-          {activeSessionId === "chat" && !chatPoppedOut && (
-            <Tooltip content="Pop out chat window" side="bottom">
+        {/* Header Actions — pop out + expand, collapse to hamburger when clipped */}
+        <div className={cn("flex items-center gap-1 shrink-0", headerOverflows && "hidden")}>
+          {(activeSessionId === "chat" || activeSessionId === "agent" || persistentSession?.sessionId === activeSessionId) && !chatPoppedOut && (
+            <Tooltip content="Pop out session window" side="bottom">
               <button
                 onClick={handlePopOut}
-                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+                className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
               >
                 <ExternalLink size={11} />
               </button>
@@ -313,8 +374,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           {isRightPanel ? (
             <Tooltip content="Expand to central view" side="bottom">
               <button
-                onClick={() => setView("chat")}
-                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+                onClick={() => { setSessionPresentation("center"); setView("chat"); }}
+                className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
               >
                 <Maximize2 size={11} />
               </button>
@@ -322,32 +383,66 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           ) : (
             <Tooltip content={`Collapse to sidebar (${mod}/)`} side="bottom">
               <button
-                onClick={() => setView(lastContentView)}
-                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+                onClick={() => { setSessionPresentation("drawer"); setView(lastContentView); }}
+                className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
               >
                 <Minimize2 size={11} />
               </button>
             </Tooltip>
           )}
-
-          <Tooltip content={`Close panel (${mod}/)`} side="bottom">
-            <button
-              onClick={handleClosePanel}
-              className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
-            >
-              <X size={12} />
-            </button>
-          </Tooltip>
         </div>
+
+        {headerOverflows && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="w-7 h-7 rounded-md grid place-items-center border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] shrink-0" aria-label="More actions">
+                <MoreHorizontal size={12} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {(activeSessionId === "chat" || activeSessionId === "agent" || persistentSession?.sessionId === activeSessionId) && !chatPoppedOut && (
+                <DropdownMenuItem onClick={handlePopOut} className="flex items-center gap-2 text-xs">
+                  <ExternalLink size={12} /> Pop out session
+                </DropdownMenuItem>
+              )}
+              {isRightPanel ? (
+                <DropdownMenuItem onClick={() => { setSessionPresentation("center"); setView("chat"); }} className="flex items-center gap-2 text-xs">
+                  <Maximize2 size={12} /> Expand to center
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={() => { setSessionPresentation("drawer"); setView(lastContentView); }} className="flex items-center gap-2 text-xs">
+                  <Minimize2 size={12} /> Collapse to sidebar
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        <Tooltip content={`Close panel (${mod}/)`} side="bottom">
+          <button
+            onClick={handleClosePanel}
+            className="w-7 h-7 rounded-md grid place-items-center border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] hover:border-[var(--muted)] transition-colors shrink-0"
+          >
+            <X size={12} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Session content — CSS-hidden instead of unmounted */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--background)]">
-        <div className={activeSessionId === "chat" ? "flex flex-1 flex-col min-h-0 overflow-hidden" : "hidden"}>
+        <div
+          role="tabpanel"
+          id="panel-chat"
+          aria-labelledby="tab-chat"
+          hidden={activeSessionId !== "chat"}
+          aria-hidden={activeSessionId !== "chat"}
+          {...(activeSessionId !== "chat" ? ({ inert: true } as unknown as React.HTMLAttributes<HTMLDivElement>) : {})}
+          className={activeSessionId === "chat" ? "flex flex-1 flex-col min-h-0 overflow-hidden" : "hidden"}
+        >
           {chatPoppedOut ? (
             <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center px-6">
               <ExternalLink size={20} className="text-[var(--text-tertiary)]" />
-              <p className="text-xs text-[var(--text-secondary)]">Chat is in a pop-out window</p>
+              <p className="text-xs text-[var(--text-secondary)]">Session is in a pop-out window</p>
               <button
                 onClick={handlePopIn}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[0.714rem] text-[var(--text-primary)] bg-[var(--surface-3)] hover:bg-[var(--surface-4)] transition-colors"
@@ -363,23 +458,55 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
         {hasCodeDirectory && (
           persistentSession ? (
-            <div className={pinnedIsActive ? "flex flex-col flex-1 min-h-0 overflow-hidden" : "hidden"}>
-              <AgentChatPane session={persistentSession} isActive={pinnedIsActive} />
+            <div
+              role="tabpanel"
+              id="panel-agent"
+              aria-labelledby="tab-agent"
+              hidden={!pinnedIsActive}
+              aria-hidden={!pinnedIsActive}
+              {...(!pinnedIsActive ? ({ inert: true } as unknown as React.HTMLAttributes<HTMLDivElement>) : {})}
+              className={pinnedIsActive ? "flex flex-col flex-1 min-h-0 overflow-hidden" : "hidden"}
+            >
+              {chatPoppedOut && (persistentSession.sessionId === activeSessionId || activeSessionId === "agent") ? (
+                <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center px-6">
+                  <ExternalLink size={20} className="text-[var(--text-tertiary)]" />
+                  <p className="text-xs text-[var(--text-secondary)]">Session is in a pop-out window</p>
+                  <button onClick={handlePopIn} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[0.714rem] text-[var(--text-primary)] bg-[var(--surface-3)] hover:bg-[var(--surface-4)] transition-colors"><ArrowLeftFromLine size={11} /> Pop in</button>
+                </div>
+              ) : <AgentChatPane session={persistentSession} isActive={pinnedIsActive} />}
             </div>
           ) : pinnedIsActive ? (
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div
+              role="tabpanel"
+              id="panel-agent"
+              aria-labelledby="tab-agent"
+              className="flex-1 min-h-0 overflow-hidden"
+            >
               <AgentEmptyState />
             </div>
           ) : null
         )}
 
-        {ptySessions.map((session) => (
-          <SessionMount
-            key={session.sessionId}
-            session={session}
-            isActive={session.sessionId === activeSessionId}
-          />
-        ))}
+        {ptySessions.map((session) => {
+          const tabId = `tab-${sanitizeAriaId(session.sessionId)}`;
+          const panelId = `panel-${sanitizeAriaId(session.sessionId)}`;
+          const isActive = session.sessionId === activeSessionId;
+          return (
+            <div
+              key={session.sessionId}
+              role="tabpanel"
+              id={panelId}
+              aria-labelledby={tabId}
+              hidden={!isActive}
+              className={cn("flex-1 min-h-0 flex flex-col overflow-hidden", !isActive && "hidden")}
+            >
+              <SessionMount
+                session={session}
+                isActive={isActive}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
     <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />

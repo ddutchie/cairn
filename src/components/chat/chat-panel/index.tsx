@@ -1,32 +1,32 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { Trash2, ChevronDown, ArrowLeftFromLine, Loader2, Clock } from "lucide-react";
+import { type VirtuosoHandle } from "react-virtuoso";
+import { Trash2, ChevronDown, ArrowLeftFromLine, History } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { chatSessionId } from "../../../../shared/agent/session-identity";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
-import type { ChatToolCall, PendingQuestion } from "@/hooks/useChatStream";
 import { useChatMessageQueue, useQueueDrain, type QueuedMessage } from "@/hooks/useChatMessageQueue";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { ipcAwaitResult } from "@/store/ipc";
 import { resolvePromptContext } from "@/lib/context-resolver";
+import { storage } from "@/lib/storage";
+import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
-import type { ChatHistoryEntry, ChatSubagent } from "@/types";
+import type { ChatHistoryEntry } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
-import { ChatInputArea } from "../ChatInputArea";
+import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
-import { ChatMessageBubble } from "./ChatMessageBubble";
-import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SuggestedPrompts } from "./SuggestedPrompts";
-import { ToolCallIndicator } from "./ToolCallIndicator";
-import { useCommunityConnectorMap, type ChatConnectorMeta } from "./connector-context";
-import { QuestionForm } from "./QuestionForm";
-import { ContextRing } from "@/components/agent/ContextRing";
+import { useCommunityConnectorMap } from "./connector-context";
+import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { getCommandsForScope } from "@/lib/slash-commands";
+import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { cn, id } from "@/lib/utils";
+import { ChatTimeline, deriveSpansFromMessages } from "../ChatTimeline";
 import {
   getModelInfo,
   getModelCatalogVersion,
@@ -36,6 +36,11 @@ import {
 } from "@/lib/models-dev";
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
+import { toConversationMessage } from "@/components/conversation/conversation-message";
+import { toLiveConversationMessage, withLiveTurn } from "@/components/conversation/conversation-live";
+import { ActionsList } from "./ActionsList";
+import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
+import { ConversationPane } from "@/components/conversation/ConversationPane";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -86,61 +91,17 @@ interface ChatPanelProps {
  * INSIDE the Virtuoso scroller, so it grows downward in the scroll flow with
  * the list's padding.
  */
-interface StreamingFooterValue {
-  isLoading: boolean;
-  pendingQuestions: PendingQuestion[] | null;
-  subagents: ChatSubagent[];
-  toolCalls: ChatToolCall[];
-  streamingContent: string;
-  streamingThought: string;
-  connectorMap: Record<string, ChatConnectorMeta> | undefined;
-  activeView: string;
-  handleSend: ((text?: string, attachments?: never[]) => void) | null;
-}
-const StreamingFooterContext = React.createContext<StreamingFooterValue>({
-  isLoading: false,
-  pendingQuestions: null,
-  subagents: [],
-  toolCalls: [],
-  streamingContent: "",
-  streamingThought: "",
-  connectorMap: undefined,
-  activeView: "",
-  handleSend: null,
-});
-
-/** Stable Footer — rendered inside the Virtuoso so it grows downward in the
- *  scroll flow with the list's padding, but never remounts while streaming
- *  (consumes the context above, so it re-renders on each token reactively). */
-function ChatFooter() {
-  const s = React.useContext(StreamingFooterContext);
-  const handleSend = s.handleSend;
-  return (
-    <div className={cn("px-3 py-3 space-y-3", s.activeView === "chat" && "max-w-3xl mx-auto w-full")}>
-      {s.isLoading && s.subagents.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {s.subagents.map((sub) => (
-            <ChatSubagentBlock key={sub.childId} sub={sub} />
-          ))}
-        </div>
-      )}
-      {s.isLoading && (
-        <ToolCallIndicator
-          toolCalls={s.toolCalls}
-          streamingContent={s.streamingContent}
-          streamingThought={s.streamingThought}
-          connectors={s.connectorMap}
-        />
-      )}
-      {s.pendingQuestions && handleSend && (
-        <QuestionForm
-          questions={s.pendingQuestions}
-          onSubmit={(text) => handleSend(text)}
-          disabled={s.isLoading}
-        />
-      )}
-    </div>
-  );
+/** Bottom padding inside the Virtuoso scroller.
+ *
+ *  Chat used to render its whole in-flight turn here (a `ToolCallIndicator`
+ *  tree fed by a `StreamingFooterContext`, so the footer could re-render per
+ *  token without Virtuoso remounting it). That made chat a SECOND renderer of
+ *  the same event stream, which is why it never gained the approval card,
+ *  expandable tool output, or Open file / View diff, and why the empty-bubble
+ *  guard only ever bit coding. The live turn is now appended to `messages` by
+ *  `toLiveConversationMessage`, so all that remains here is spacing. */
+function ChatTranscriptPadding() {
+  return <div className="px-3 pt-3 pb-3 space-y-3" />;
 }
 
 export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelProps = {}) {
@@ -187,14 +148,16 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const connectorMap = useCommunityConnectorMap();
 
   const [input, setInput] = useState("");
+  const handleSendRef = useRef<(text?: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => Promise<void>>(async () => {});
   // Messages the user queued while a turn was running — sent (FIFO) when the
   // current reply finishes. Each item carries the thread + attachments captured
   // at enqueue time so a thread switch or queued images/PDFs are never lost.
   // Session-scoped; cleared on thread switch.
   const { queued, queueExpanded, setQueueExpanded, enqueue, removeQueued, clearQueue, drainNext } = useChatMessageQueue<QueuedMessage>();
+  const registryCommands = useRegistryCommands();
   const chatCommands = useMemo(
-    () => getCommandsForScope("chat", customCommands),
-    [customCommands]
+    () => getCommandsForScope("chat", customCommands, registryCommands),
+    [customCommands, registryCommands]
   );
   // Virtualized transcript handle — used to jump to the newest message when the
   // panel activates or a question form appears (followOutput handles streaming).
@@ -210,7 +173,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const allowImages = supportsImageInput(getModelInfo(aiConfig.model));
   const allowPdf = supportsPdfInput(getModelInfo(aiConfig.model));
 
-  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions, answerQuestions } = useChatStream(threadId);
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -256,18 +219,35 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     return items;
   }, [notes, cards, activeWorkspaceId, activeProjectId]);
 
-  const handleClear = useCallback(() => {
+  const handleClear = useCallback(async () => {
     if (!threadId) return;
-    // Drop queued messages FIRST: stopping the stream flips isLoading to false,
-    // which fires the queue-drain — a pending prompt must not be sent into a
-    // just-cleared thread.
+    // Preserve project context across the clear (the "lose project context after
+    // clear" bug — after a clear the next turn's req.projectId was null because
+    // the in-memory Cordis session was not remounted with the thread's project).
+    const thread = useCairnStore.getState().chatThreads.find((t) => t.id === threadId);
+    const projectIdToRestore = thread?.projectId ?? activeProjectId ?? null;
+    const workspaceIdToRestore = thread?.workspaceId ?? activeWorkspaceId ?? null;
     clearQueue();
     if (isLoading) stopStream();
-    // Drop any in-flight questions form too — it belongs to this thread and
-    // would otherwise linger after the transcript is cleared.
     clearQuestions();
-    clearThreadMessages(threadId);
-  }, [threadId, isLoading, stopStream, clearThreadMessages, clearQuestions, clearQueue]);
+    await clearThreadMessages(threadId);
+    // Restore the thread's project/workspace so the next turn's get_active_context
+    // and project-scoped tools still resolve (clearThreadMessages keeps the thread
+    // row but the in-memory Context's per-turn mount would otherwise lose it).
+    if (projectIdToRestore) {
+      const cur = useCairnStore.getState().activeProjectId;
+      if (cur !== projectIdToRestore) {
+        useCairnStore.setState({ activeProjectId: projectIdToRestore });
+        try { storage.set(ACTIVE_PROJECT_KEY, projectIdToRestore); } catch {}
+      }
+    }
+    if (workspaceIdToRestore) {
+      const curWs = useCairnStore.getState().activeWorkspaceId;
+      if (curWs !== workspaceIdToRestore) {
+        useCairnStore.setState({ activeWorkspaceId: workspaceIdToRestore });
+      }
+    }
+  }, [threadId, isLoading, stopStream, clearThreadMessages, clearQuestions, clearQueue, activeProjectId, activeWorkspaceId]);
 
   const handleArchiveChat = useCallback(async () => {
     if (!threadId) return;
@@ -301,6 +281,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
               baseUrl: aiConfig.baseUrl,
               model: aiConfig.model,
               apiKey: aiConfig.apiKey,
+              apiMode: aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode ?? "completions",
             },
           }) as { summary: string };
           return { data: summaryObj };
@@ -394,39 +375,84 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     prevProjectIdRef.current = activeProjectId;
     prevWorkspaceIdRef.current = activeWorkspaceId;
 
-    // Workspace changed — invalidate the active thread regardless of project match
-    if (prevWorkspace !== activeWorkspaceId) {
-      // Fall through to getOrCreateThread below
-    } else if (prevProject === activeProjectId) {
-      // Neither changed — only initialise if no thread is active yet
-      if (activeChatThreadId) return;
-    } else {
-      // Project changed — check if the current thread still matches
-      if (activeChatThreadId) {
-        const currentThread = useCairnStore.getState().chatThreads.find(
-          (t) => t.id === activeChatThreadId,
-        );
-        // Keep the thread if it matches the new project or is workspace-scoped
-        if (currentThread && currentThread.projectId === activeProjectId) return;
+    const projectOrWorkspaceChanged =
+      prevWorkspace !== activeWorkspaceId || prevProject !== activeProjectId;
+
+    // If within the same project and workspace, preserve user selection
+    if (!projectOrWorkspaceChanged && activeChatThreadId) {
+      const currentThread = useCairnStore.getState().chatThreads.find(
+        (t) => t.id === activeChatThreadId,
+      );
+      if (currentThread && currentThread.workspaceId === activeWorkspaceId) {
+        if (activeProjectId ? currentThread.projectId === activeProjectId : !currentThread.projectId) {
+          return;
+        }
       }
+    }
+
+    // When switching project/workspace or starting up, pick the most recent thread scoped to this project:
+    const candidates = useCairnStore.getState().chatThreads
+      .filter((t) => t.workspaceId === activeWorkspaceId && (activeProjectId ? t.projectId === activeProjectId : !t.projectId))
+      .sort((a, b) => {
+        const aHas = useCairnStore.getState().chatMessages.some((m) => m.threadId === a.id);
+        const bHas = useCairnStore.getState().chatMessages.some((m) => m.threadId === b.id);
+        if (aHas !== bHas) return bHas ? 1 : -1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+
+    if (candidates.length > 0) {
+      setActiveChatThreadId(candidates[0].id);
+      return;
     }
 
     const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
     setActiveChatThreadId(t.id);
   }, [activeWorkspaceId, activeProjectId, activeChatThreadId, setActiveChatThreadId]);
 
-  // Also initialise on first mount when activeChatThreadId is already null
-  useEffect(() => {
-    if (!activeWorkspaceId || activeChatThreadId) return;
-    const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
-    setActiveChatThreadId(t.id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
 
   const messages = useMemo(
-    () => threadId ? chatMessages.filter((m) => m.threadId === threadId) : [],
+    () => (threadId ? chatMessages.filter((m) => m.threadId === threadId) : []),
     [threadId, chatMessages],
   );
+  const conversationMessages = useMemo(
+    () => messages.map((message) => toConversationMessage(message, message.actions && message.actions.length > 0 ? <ActionsList actions={message.actions} /> : undefined)),
+    [messages],
+  );
+
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [timelineRange, setTimelineRange] = useState<{ start: number; end: number } | null>(null);
+  const timelineSpans = useMemo(() => deriveSpansFromMessages(messages as unknown as Array<{ role: string; toolCalls?: unknown[]; reasoning?: string }>), [messages]);
+  const visibleMessages = useMemo(() => {
+    if (!timelineRange) return messages;
+    const n = messages.length;
+    if (n === 0) return messages;
+    const s = Math.floor(timelineRange.start * n);
+    const e = Math.ceil(timelineRange.end * n);
+    return messages.slice(s, e);
+  }, [messages, timelineRange]);
+
+  // The in-flight turn, rendered as a normal message (shared with coding and the
+  // pop-out). One stable createdAt per turn: deriving it inline would produce a
+  // new value on every token.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one timestamp per turn
+  const liveCreatedAt = useMemo(() => new Date().toISOString(), [isLoading]);
+  const liveMessage = toLiveConversationMessage(
+    `chat-${threadId ?? ""}`,
+    { isLoading, streamingContent, streamingThought, toolCalls, subagents },
+    liveCreatedAt,
+  );
+  // The timeline scrubber slices the SETTLED transcript only — the live turn is
+  // always appended after the slice so scrubbing can never hide it.
+  const displayMessages = useMemo(() => {
+    const settled = timelineRange
+      ? conversationMessages.slice(
+        Math.floor(timelineRange.start * conversationMessages.length),
+        Math.ceil(timelineRange.end * conversationMessages.length),
+      )
+      : conversationMessages;
+    return withLiveTurn(settled, liveMessage);
+  }, [conversationMessages, timelineRange, liveMessage]);
 
   const isChatActive = useCairnStore((s) => s.activeSessionId === "chat");
 
@@ -455,14 +481,20 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const handleSend = useCallback(async (text?: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = []) => {
     const content = text ?? input.trim();
     if ((!content || !content.trim()) && attachments.length === 0) return;
-    if (!threadId) return;
+    let targetThreadId: string | null = threadId;
+    if (!targetThreadId && activeWorkspaceId) {
+      const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
+      targetThreadId = t.id;
+      setActiveChatThreadId(t.id);
+    }
+    if (!targetThreadId) return;
 
     // A turn is already running — queue this message instead of interrupting it.
     // The queue drains (FIFO) when the current reply finishes. Attachments are
     // queued alongside the text so staged images/PDFs are never silently dropped.
     if (isLoadingRef.current) {
       if (!content.trim() && attachments.length === 0) return;
-      enqueue({ id: id(), content, threadId, attachments });
+      enqueue({ id: id(), content, threadId: targetThreadId!, attachments });
       setInput("");
       return;
     }
@@ -471,13 +503,33 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     if (!attachments.length) {
       if (trimmed === "/compact" || trimmed === "/ compact") {
         setInput("");
-        useCairnStore.getState().compactChatThread(threadId);
+        useCairnStore.getState().compactChatThread(targetThreadId!);
         return;
       }
 
       if (trimmed === "/archive-chat" || trimmed === "/archive" || trimmed === "/ archive-chat" || trimmed === "/ archive") {
         setInput("");
         handleArchiveChat();
+        return;
+      }
+
+      // Other dsh registry commands (e.g. /plan from a future chat surface,
+      // plugin commands) execute through the runtime on this thread's agent.
+      const commandName = trimmed.startsWith("/")
+        ? trimmed.slice(1).trim().split(/\s+/, 1)[0]
+        : "";
+      const commandMatch = commandName
+        ? registryCommands.find((c) => c.name === commandName)
+          ?? (commandName === "plan" ? { name: "plan", description: "Enter or leave plan mode" } : undefined)
+        : undefined;
+      if (commandMatch) {
+        setInput("");
+        const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
+        void window.electron?.runtime?.executeCommand({ sessionId: `chat-${targetThreadId}`, line: trimmed }).then((result) => {
+          if (commandName === "plan" && commandArgs && commandArgs !== "off" && result?.kind === "success") {
+            void handleSendRef.current(commandArgs);
+          }
+        }).catch(() => { /* command errors are reported by the runtime layer */ });
         return;
       }
     }
@@ -487,7 +539,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     const attachmentsToSend = attachments.length > 0 ? attachments : undefined;
     const attachmentUrls = attachments.map((a) => ({ url: a.dataUrl, name: a.name, kind: a.kind }));
 
-    addMessage(threadId, "user", content, undefined, undefined, undefined, undefined, attachmentUrls);
+    addMessage(targetThreadId!, "user", content, undefined, undefined, undefined, undefined, attachmentUrls);
 
     // Resolve context references and append to prompt payload
     const store = useCairnStore.getState();
@@ -572,11 +624,18 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       return history;
     };
 
+    // Timeline scrub is view-only (like dsh TrajectoryTimeline timelineFocusIndexes) — it dims
+    // rows outside range via visibleMessages for Virtuoso, but history sent to the
+    // model is always the full transcript (messages), not the scrubbed slice. The
+    // previous bug was historyForLog derived from visibleMessages, so scrubbing to
+    // 20% would send only 20% of history as context and the next turn would lose
+    // track (the "bonkers" duplicate Hello! after a scrub).
+    const historyForLog = formatChatHistory(messages);
     sendStream({
-      message: resolvedMessage, threadId,
+      message: resolvedMessage, threadId: targetThreadId!,
       projectId: activeProjectId,
       workspaceId: activeWorkspaceId,
-      history: formatChatHistory(messages),
+      history: historyForLog,
       config: {
         provider:    aiConfig.provider    || "openai",
         baseUrl:     aiConfig.baseUrl     || undefined,
@@ -595,6 +654,16 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         ),
         // Reasoning models get the `developer` system role (OpenAI convention).
         isReasoningModel: getModelInfo(aiConfig.model)?.reasoning === true,
+        // Only send reasoning effort to reasoning-capable models, and only when
+        // the user pinned a concrete level — "auto" (default) sends NO override
+        // so the model/provider default applies. Non-reasoning models never get it.
+        reasoningEffort: (getModelInfo(aiConfig.model)?.reasoning === true && aiConfig.reasoningEffort && aiConfig.reasoningEffort !== "auto")
+          ? aiConfig.reasoningEffort
+          : undefined,
+        // Explicit wire protocol pinned on the active provider (default completions).
+        apiMode: (aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode) ?? "completions",
+        contextLimit: aiConfig.contextLimit,
+        contextWindow: aiConfig.contextLimit,
       },
       systemPrompt,
       // Active chat personality (Default = none). The main process appends it
@@ -605,7 +674,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       // per-thread flag. Ignored server-side / here for the localllm provider.
       useSubagents: aiConfig.provider !== "localllm" && (aiConfig.subagentsEnabled ?? false),
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, enqueue]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, enqueue, registryCommands, setActiveChatThreadId]);
+
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  }, [handleSend]);
 
   // Drain the queue: when a turn finishes (loading went true → false), send the
   // next queued message. Keep the queue on Stop (the user only cancels the
@@ -665,19 +738,42 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   const handlePopIn = useCallback(async () => {
     const state = useCairnStore.getState();
-    await window.electron?.chat.popIn({
-      threadId: state.activeChatThreadId as string | null,
-      chatThreads: state.chatThreads as unknown[],
-      chatMessages: state.chatMessages as unknown[],
-      activeProjectId: state.activeProjectId as string | null,
-    });
+    if (state.activeChatThreadId) {
+      await window.electron?.chat.popIn({ sessionId: chatSessionId(state.activeChatThreadId) });
+    }
   }, []);
 
   return (
     <div className="chat-themed flex flex-1 flex-col min-h-0 overflow-hidden">
-      {/* Sub-header / toolbar */}
-      <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
-        {popoutMode ? (
+      {timelineOpen && (
+        <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
+          <ChatTimeline
+            spans={timelineSpans}
+            range={timelineRange}
+            onRangeChange={setTimelineRange}
+            onSpanSelect={(idx) => chatVirtuosoRef.current?.scrollToIndex({ index: idx, align: "center", behavior: "smooth" })}
+          />
+          {timelineRange && <div className="text-[0.607rem] text-[var(--text-tertiary)] mt-1">Showing {visibleMessages.length} of {messages.length} messages — drag or wheel to zoom, double-click to reset</div>}
+        </div>
+      )}
+
+      {/* ConversationPane owns the shared transcript, questions, composer, and
+          session-bound rendering. The in-flight turn is appended to `messages`
+          as a normal streaming message (see conversation-live.ts), so chat and
+          coding render it through the same bubble. */}
+        <ConversationPane
+          className="flex-1 min-h-0"
+          sessionId={`chat-${threadId ?? ""}`}
+          profile="chat"
+          messages={displayMessages}
+          input={input}
+          onInputChange={setInput}
+          onPrompt={(text, attachments) => handleSend(text, attachments)}
+          onAbort={stopStream}
+          isLoading={isLoading}
+          transcriptRef={chatVirtuosoRef}
+          centered={activeView === "chat"}
+          title={popoutMode ? (
           <div ref={projectRef} className="relative flex-1">
             <button
               onClick={() => setProjectOpen((v) => !v)}
@@ -709,166 +805,36 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             {activeView === "graph" ? "Graph Assistant" : project?.name ?? workspace?.name ?? "AI Assistant"}
           </span>
         )}
-
-        {activeThread?.lastUsage && (
-          <ContextRing
-            promptTokens={activeThread.lastUsage.promptTokens}
-            contextLimit={aiConfig.contextLimit ?? 128000}
-            breakdown={activeThread.lastUsage.breakdown}
-            completionTokens={activeThread.lastUsage.completionTokens}
-            reasoningTokens={activeThread.lastUsage.reasoningTokens}
-            cacheReadTokens={activeThread.lastUsage.cacheReadTokens}
-            cacheCreationTokens={activeThread.lastUsage.cacheCreationTokens}
-            costUsd={activeThread.lastUsage.costUsd}
-          />
-        )}
-
-        {threadId && (
-          <ChatQuickSettings disabled={isLoading} />
-        )}
-
-
-        {messages.length > 0 && (
-          <Tooltip content="Clear conversation" side="left">
-            <button onClick={handleClear}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-3)] transition-colors">
-              <Trash2 size={11} />
-            </button>
-          </Tooltip>
-        )}
-
-        {popoutMode && (
-          <Tooltip content="Return chat to main window" side="left">
-            <button onClick={handlePopIn}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
-              <ArrowLeftFromLine size={11} />
-            </button>
-          </Tooltip>
-        )}
-      </div>
-
-      {/* Messages — virtualized so long threads never balloon the DOM; only the
-          items near the viewport are mounted no matter how far you scroll. The
-          StreamingFooterContext feeds the stable Footer (see ChatFooter) so the
-          streaming indicator stays inside the scroller, growing downward. */}
-      <StreamingFooterContext.Provider
-        value={{
-          isLoading,
-          pendingQuestions,
-          subagents,
-          toolCalls,
-          streamingContent,
-          streamingThought,
-          connectorMap,
-          activeView,
-          handleSend,
-        }}
-      >
-        <Virtuoso
-          ref={chatVirtuosoRef}
-          className="flex-1 min-h-0"
-          data={messages}
-          initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-          followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
-          components={{
-            EmptyPlaceholder: () => (
-              <div className={cn("px-3 py-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-                <SuggestedPrompts
-                  onSend={handleSend}
-                  disabled={isLoading || !threadId}
-                  prompts={activeView === "graph" ? graphPrompts : undefined}
-                  subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
-                />
-              </div>
-            ),
-            Footer: ChatFooter,
-          }}
-          itemContent={(_index, message) => (
-            <div className={cn("px-3 py-1.5", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
-              <ChatMessageBubble
-                message={message}
-                onRetry={!isLoading ? handleRetry : undefined}
-                connectors={connectorMap}
-              />
+          usage={activeThread?.lastUsage}
+          contextLimit={aiConfig.contextLimit ?? 128000}
+          actions={(
+            <>
+              {threadId && <ChatQuickSettings disabled={isLoading} />}
+              <Tooltip content={timelineOpen ? "Hide timeline scrubber" : "Show timeline scrubber"} side="left">
+                <button onClick={() => setTimelineOpen((v) => !v)} className={cn("p-1 rounded transition-colors", timelineOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]")} aria-pressed={timelineOpen}><History size={11} /></button>
+              </Tooltip>
+              {messages.length > 0 && <Tooltip content="Clear conversation" side="left"><button onClick={handleClear} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-3)] transition-colors"><Trash2 size={11} /></button></Tooltip>}
+              {popoutMode && <Tooltip content="Return chat to main window" side="left"><button onClick={handlePopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"><ArrowLeftFromLine size={11} /></button></Tooltip>}
+            </>
+          )}
+          connectors={connectorMap}
+          onRetry={!isLoading ? handleRetry : undefined}
+          projection={{ pendingQuestions }}
+          onAnswerQuestions={(answers) => { if (!answerQuestions(answers)) void handleSend(answers); }}
+          emptyState={<ConversationEmptyState content={<SuggestedPrompts onSend={handleSend} disabled={isLoading || !threadId} prompts={activeView === "graph" ? graphPrompts : undefined} subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined} />} />}
+          transcriptFooter={ChatTranscriptPadding}
+          composerBefore={(
+            <div className={cn("flex-shrink-0 border-t border-[var(--border)] bg-[var(--surface)]", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
+              {isLoading && <ConversationWorkingStatus label="Cairn is working — you can queue messages below" />}
+              <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
+              <ChatFooterSlot threadId={threadId ?? null} usage={activeThread?.lastUsage ? { ...activeThread.lastUsage, contextLimit: activeThread.lastUsage.contextLimit ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000, contextWindow: activeThread.lastUsage.contextWindow ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000 } : undefined} />
             </div>
           )}
-        />
-      </StreamingFooterContext.Provider>
-
-      {/* Input */}
-      {(isLoading || queued.length > 0) && (
-        <div className={cn("border-t border-[var(--border)] bg-[var(--surface)]", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
-          {isLoading && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5">
-              <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">Cairn is working — you can queue messages below</span>
-            </div>
-          )}
-          {queued.length > 0 && (
-            <div className={isLoading ? "border-t border-[var(--border)]" : undefined}>
-              <button
-                type="button"
-                onClick={() => setQueueExpanded((v) => !v)}
-                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-[var(--surface-2)] transition-colors"
-              >
-                <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
-                <span className="text-[0.714rem] text-[var(--text-secondary)]">
-                  {queued.length} message{queued.length === 1 ? "" : "s"} queued — will send after the current reply
-                </span>
-                <ChevronDown
-                  size={11}
-                  className={`ml-auto text-[var(--text-tertiary)] shrink-0 transition-transform ${queueExpanded ? "rotate-180" : ""}`}
-                />
-              </button>
-              {queueExpanded && (
-                <div className="px-3 pb-2 space-y-2">
-                  {queued.map((q) => (
-                    <div key={q.id} className="flex items-start gap-2">
-                      <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
-                        {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
-                        {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : null}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeQueued(q.id)}
-                        className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0 transition-colors"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      <div className={cn("border-t border-[var(--border)] p-3 flex-shrink-0", activeView === "chat" && "border-t-0 bg-transparent p-6 max-w-3xl mx-auto w-full")}>
-        <ChatInputArea
-          ref={inputRef}
-          value={input}
-          onChange={setInput}
-          onSubmit={(text, attachments) => handleSend(text, attachments)}
-          onStop={stopStream}
-          isLoading={isLoading}
+          composerRef={inputRef}
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
-          commands={chatCommands}
-          suggestions={mentionSuggestions}
-          allowImages={allowImages}
-          allowPdf={allowPdf}
-          providerModelTarget="ai"
-          variant={activeView === "chat" ? "overview" : "default"}
-          showSparkles={activeView === "chat"}
-          statusText={isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
-          queueWhileBusy={isLoading}
-          queuedCount={queued.length}
-          footerTrailing={aiConfig.provider === "localllm" ? (
-            <span className="text-[0.625rem] font-bold text-[var(--accent-fg)] bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_srgb,var(--accent)_60%,var(--background))] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
-              {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}
-            </span>
-          ) : undefined}
+          composerProps={{ centered: activeView === "chat", commands: chatCommands, suggestions: mentionSuggestions, allowImages, allowPdf, providerModelTarget: "ai", variant: activeView === "chat" ? "overview" : "default", showSparkles: activeView === "chat", statusText: isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send", queueWhileBusy: isLoading, queuedCount: queued.length, footerTrailing: aiConfig.provider === "localllm" ? <span className="text-[0.625rem] font-bold text-[var(--accent-fg)] bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_srgb,var(--accent)_60%,var(--background))] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">{chatPanelWidth < 360 ? "Local" : "On-Device Llama"}</span> : undefined }}
         />
-      </div>
+
     </div>
   );
 }

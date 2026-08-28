@@ -104,6 +104,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   maxOutputAuto: true,
   aiEnabled:    true,
   subagentsEnabled: false,
+  // Reasoning effort. "auto" = send NO override (model/provider default) — the
+  // safe default. Users can pin off/low/medium/high per the composer pill; only
+  // sent to reasoning-capable models. Distinct from "off" (explicitly disable).
+  reasoningEffort: "auto",
 };
 
 /** Default Coding Agent config values. */
@@ -116,7 +120,12 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   contextAuto:  true,
   maxOutputTokens: 8192,
   maxOutputAuto: true,
-  autoApprove:  true,
+  // Default OFF: with auto-approve on, the coding agent runs bash / write /
+  // edit / delete_note / delete_project etc. with no prompt, which combined
+  // with prompt injection (a crafted README, an MCP tool result, a community
+  // automation recipe) is arbitrary code execution as the user with no UI
+  // shown. Users can opt in per-session from Agent Settings.
+  autoApprove:  false,
 };
 
 // ── localStorage keys ─────────────────────────────────────────────────────────

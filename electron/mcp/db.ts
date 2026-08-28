@@ -163,6 +163,7 @@ export function findDbPath(): string | null {
   if (fromConfig) return fromConfig.dbPath;
 
   const base = getConfigBasePath();
+  // Allowlist — hardcoded app names, never raw FS input; safe to join.
   const names = ["Cairn", "cairn", "Electron"];
   let best: string | null = null;
   let bestCount = -1;
@@ -171,6 +172,7 @@ export function findDbPath(): string | null {
     const p = path.join(base, name, "cairn", "cairn.db");
     if (!fs.existsSync(p)) continue;
     try {
+      // Allowed: readonly probe for workspace detection, closed immediately, uses MCP_NATIVE_BINDING — third bootstrap site intentionally.
       const db = new Database(p, { readonly: true, ...(MCP_NATIVE_BINDING ? { nativeBinding: MCP_NATIVE_BINDING } : {}) });
       const row = db.prepare("SELECT COUNT(*) as cnt FROM workspaces").get() as { cnt: number };
       db.close();

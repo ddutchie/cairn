@@ -12,6 +12,7 @@ import { shell } from "electron";
 import fs from "fs";
 import path from "path";
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { resolveWithinRoot } from "./path-safety";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, hardDeleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders, findNoteFilePath } from "../notes-files";
@@ -36,14 +37,12 @@ import {
   type AutomationEnv,
   type AutomationInput,
 } from "../db/automation-queries";
-import { runAutomationNow } from "../lib/heartbeat-runner";
+import { runAutomationNow, resolveAutomationApproval } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
-import { recordStandingAllowance } from "../lib/automation-approval";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog, removeAutomationDir } from "../lib/automation-folder";
 import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret, deleteToolSecrets } from "../lib/secure-store";
-import { listPendingApprovals, resolveApproval, countPendingApprovals, type ApprovalResolution } from "../db/approval-queries";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
 
@@ -492,7 +491,8 @@ export function registerDbHandlers(ctx: DbContext): void {
         if (fs.existsSync(obsidianAppJson)) {
           const obsConfig = JSON.parse(fs.readFileSync(obsidianAppJson, "utf-8"));
           if (typeof obsConfig.attachmentFolderPath === "string" && obsConfig.attachmentFolderPath) {
-            attachDir = path.join(ctx.workspacePath, obsConfig.attachmentFolderPath);
+            const resolved = resolveWithinRoot(ctx.workspacePath, obsConfig.attachmentFolderPath);
+            attachDir = resolved ?? path.join(ctx.workspacePath, "attachments");
           } else {
             // Obsidian default: vault root
             attachDir = path.join(ctx.workspacePath, "attachments");
@@ -506,8 +506,11 @@ export function registerDbHandlers(ctx: DbContext): void {
 
       fs.mkdirSync(attachDir, { recursive: true });
       const buf = Buffer.from(data);
+      if (buf.length > 10 * 1024 * 1024) throw new Error("file too large (max 10MB)");
+      const ALLOWED_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".pdf"]);
       const ext = path.extname(filename).toLowerCase() || ".png";
-      const baseName = path.basename(filename, ext);
+      if (!ALLOWED_EXTS.has(ext)) throw new Error(`unsupported file type "${ext}"`);
+      const baseName = path.basename(filename, ext).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 100) || "image";
 
       // Dedup: if filename already exists with different content, append suffix
       let destName = `${baseName}${ext}`;
@@ -770,6 +773,14 @@ export function registerDbHandlers(ctx: DbContext): void {
     return runId === null ? { skipped: true } : { runId };
   }));
 
+  // Resolve a pending tool approval for a running automation (Cordis engine).
+  // The renderer fires this when the user approves/denies a gated tool; it
+  // resolves the coding agent's approval seam. grant "session" remembers for
+  // the turn; "always" persists an "always allow" standing rule on the automation.
+  registerIpcOn("automation:approve", (_e, { callId, approved, grant }: { callId: string; approved: boolean; grant?: "session" | "always" }) => {
+    resolveAutomationApproval(callId, approved, grant);
+  });
+
   // The automation's folder on disk (<project>/.automations/<id>/) — the dev
   // agent's cwd when building/testing the automation's scripts. The folder is
   // CREATED here (scripts/ + out/ + .env + manifest) so a Develop session on a
@@ -885,17 +896,6 @@ export function registerDbHandlers(ctx: DbContext): void {
   }));
 
   // ── Approval inbox ──────────────────────────────
-  registerIpcHandle("db:approval:listPending", (_e, { limit }: { limit?: number }) => handle(() => listPendingApprovals(ctx.db, limit)));
-  registerIpcHandle("db:approval:resolve", (_e, { id, resolution }: { id: string; resolution: ApprovalResolution }) => handle(() => {
-    const resolved = resolveApproval(ctx.db, id, resolution);
-    // "Always allow" must persist across runs: write a standing rule on the
-    // owning automation so the gate lets it through next time without asking.
-    if (resolution === "approved_always" && resolved?.runId) {
-      recordStandingAllowance(ctx.db, resolved.runId, resolved.tool, resolved.args);
-    }
-    return resolved;
-  }));
-  registerIpcHandle("db:approval:count", () => handle(() => countPendingApprovals(ctx.db)));
 
   // ── In-app notification center ─────────────────
   registerIpcHandle("db:notification:list", (_e, { limit }: { limit?: number }) => handle(() => q.listMcpNotifications(ctx.db, limit)));

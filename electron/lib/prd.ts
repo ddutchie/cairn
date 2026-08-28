@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { writeNoteFile } from "../notes-files";
-import { callLLM, type LLMConfig } from "./llm";
+import { type LLMConfig } from "./llm";
 import { newId } from "../db/utils";
 
 export interface GeneratePrdArgs {
@@ -29,7 +29,10 @@ export async function generatePrd(
 
   let prdMarkdown: string;
   try {
-    prdMarkdown = await callLLM(llmConfig, systemPrompt, userPrompt, {
+    const { runOneShot } = await import("../cordis/one-shot");
+    prdMarkdown = await runOneShot({
+      systemPrompt, userPrompt,
+      config: llmConfig,
       source: "prd",
       projectId: args.projectId,
       workspaceId: project.workspaceId,

@@ -4,13 +4,18 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ID, AppUIState, SettingsSection } from "@/types";
+import type { ContextPanel, ID, AppUIState, SessionPresentation, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
 import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
 import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, manifestToChatThemes, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
+
+// ── Shell preview variant ───────────────────────────────────────────────────
+/** In-app shell chrome preview — lets the user toggle between the current shell and the A/B/C proposals with live tokens + data. */
+export type ShellVariant = "current" | "A" | "B" | "C";
+export const SHELL_VARIANT_KEY = "shellVariant";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -51,7 +56,20 @@ export interface SavedProvider {
   source?: "manual" | "community";
   /** Community catalog id when `source === "community"` — dedups re-installs. */
   communityId?: string;
+  /**
+   * Wire protocol for this endpoint. EXPLICIT, never auto-probed: Cairn defaults
+   * to "completions" (the universally-supported chat-completions surface) and
+   * only uses "responses" or "anthropic-messages" when the user opts in.
+   * Auto-probing was removed because a transient failure could flip the transport
+   * across restarts, corrupting cross-API replay of the resumed session log.
+   * Absent = "completions".
+   */
+  apiMode?: ApiMode;
 }
+
+/** OpenAI-compatible / Anthropic wire protocol for a provider endpoint.
+ *  Explicit — Cairn never auto-probes. */
+export type ApiMode = "responses" | "completions" | "anthropic-messages";
 
 /**
  * An installed chat personality — a set of behavioral rules appended to the
@@ -262,6 +280,12 @@ export async function migrateLlmKeysToKeychain(
 }
 
 
+/** Reasoning effort for reasoning-capable models. "auto" = send NO override (use
+ *  the model/provider default) — distinct from "off" (explicitly disable thinking).
+ *  low/medium/high are universally supported. A real string (not undefined) so it
+ *  round-trips through JSON persistence. */
+export type ReasoningEffort = "auto" | "off" | "low" | "medium" | "high";
+
 export interface AIConfig {
   /** The AI provider ('openai' or 'localllm') */
   provider?: "openai" | "localllm";
@@ -326,6 +350,14 @@ export interface AIConfig {
    *  `null` = explicitly "None" — must survive hydration, so it is persisted as
    *  null (JSON + the backend cache) rather than dropped as undefined. */
   personalityId?: string | null;
+  /**
+   * Reasoning effort for reasoning-capable models (models.dev `reasoning: true`).
+   * Controls how much the model "thinks" before answering — chat defaults to a
+   * lower budget so everyday replies aren't dominated by long thinking traces
+   * (deepseek-v4-flash defaults to high effort otherwise). Absent = the model's
+   * own default. Only sent for reasoning-capable models.
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface AgentConfig {
@@ -371,6 +403,13 @@ export interface AgentConfig {
    * existing consumer keeps working unchanged.
    */
   activeProviderId?: string;
+  /**
+   * Reasoning effort for reasoning-capable models (models.dev `reasoning: true`).
+   * Absent = the model's own default (the coding agent generally wants the full
+   * thinking budget, so leaving this unset is fine). Only sent for
+   * reasoning-capable models.
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -702,6 +741,8 @@ export interface UISlice extends AppUIState {
   // Active preview item for chat-centric layout
   activePreviewItem: { type: "note" | "task"; id: ID } | null;
   setActivePreviewItem: (item: { type: "note" | "task"; id: ID } | null) => void;
+  activeContextPanel: ContextPanel | null;
+  setActiveContextPanel: (panel: ContextPanel | null) => void;
 
   // Chat panel resizing state
   chatPanelResizing: boolean;
@@ -709,6 +750,10 @@ export interface UISlice extends AppUIState {
 
   // Last content view before entering chat or search mode
   lastContentView: AppUIState["lastContentView"];
+
+  /** Transient placement of the selected conversation; intentionally not persisted. */
+  sessionPresentation: SessionPresentation;
+  setSessionPresentation: (presentation: SessionPresentation) => void;
 
   /** Optional target section for the Settings view (consumed once on open). */
   settingsSection: SettingsSection | null;
@@ -740,6 +785,10 @@ export interface UISlice extends AppUIState {
   /** Notification center modal (openable from the title bar + sidebar bells). */
   notificationOpen: boolean;
   setNotificationOpen: (open: boolean) => void;
+
+  /** Shell chrome preview variant (persisted, dev preview). */
+  shellVariant: ShellVariant;
+  setShellVariant: (v: ShellVariant) => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -756,13 +805,16 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   chatOpen: false,
   searchOpen: false,
   activePreviewItem: null,
+  activeContextPanel: null,
   chatPanelResizing: false,
   lastContentView: "overview",
+  sessionPresentation: "drawer",
   settingsSection: null,
   notificationOpen: false,
   calendarProjectIds: [],
   seenFeatures: [],  tutorialActive: false,
   tutorialStepIndex: 0,
+  shellVariant: "A" as ShellVariant,
 
   aiConfig: DEFAULT_AI_CONFIG,
   agentConfig: DEFAULT_AGENT_CONFIG,
@@ -1157,6 +1209,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       activeProjectId: projects[0]?.id ?? null,
       activeView: "overview",
       activePreviewItem: null,
+      activeContextPanel: null,
   lastContentView: "overview",
     });
     // Pull this workspace's chat threads/messages from SQLite (the durable
@@ -1165,16 +1218,24 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   },
 
   setActiveProject(projId) {
-    set({ activeProjectId: projId, activeView: "overview", activePreviewItem: null, lastContentView: "overview" });
+    set({ activeProjectId: projId, activeView: "overview", activePreviewItem: null, activeContextPanel: null, lastContentView: "overview" });
     if (projId) storage.set(ACTIVE_PROJECT_KEY, projId);
   },
 
   setView(view) {
     if (view !== "chat" && view !== "search") {
-      set({ activeView: view, lastContentView: view as AppUIState["lastContentView"] });
+      set({
+        activeView: view,
+        lastContentView: view as AppUIState["lastContentView"],
+        ...(view === "agent" ? { sessionPresentation: "drawer" as const } : {}),
+      });
     } else {
-      set({ activeView: view });
+      set({ activeView: view, ...(view === "chat" ? { sessionPresentation: "center" as const } : {}) });
     }
+  },
+
+  setSessionPresentation(presentation) {
+    set({ sessionPresentation: presentation });
   },
 
   setSettingsSection(section) {
@@ -1186,7 +1247,11 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   },
 
   setActivePreviewItem(item) {
-    set({ activePreviewItem: item });
+    set({ activePreviewItem: item, activeContextPanel: item });
+  },
+
+  setActiveContextPanel(panel) {
+    set({ activeContextPanel: panel });
   },
 
   setChatPanelResizing(resizing) {
@@ -1198,7 +1263,12 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   },
 
   toggleChat() {
-    set((s) => ({ chatOpen: !s.chatOpen }));
+    set((s) => ({
+      chatOpen: !s.chatOpen,
+      // The global Chat affordance opens the drawer. The center view has its
+      // own explicit setView("chat") transition.
+      ...(s.chatOpen ? {} : { sessionPresentation: "drawer" as const }),
+    }));
   },
 
   toggleSearch() {
@@ -1207,6 +1277,11 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   setNotificationOpen(open) {
     set({ notificationOpen: open });
+  },
+
+  setShellVariant(v) {
+    set({ shellVariant: v });
+    storage.set(SHELL_VARIANT_KEY, v);
   },
 
   markFeatureAsSeen(id) {

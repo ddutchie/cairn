@@ -16,7 +16,6 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { ModalShell } from "@/components/ui/modal-shell";
-import { PendingApprovals } from "./pending-approvals";
 import { ScheduleBuilder } from "./schedule-builder";
 import { BrowseAutomationsContent } from "./browse-automations";
 import { TimePicker } from "@/components/ui/time-picker";
@@ -88,7 +87,7 @@ function runScratchArtifacts(run: AutomationRun | undefined): ArtifactRef[] {
 export function AutomationsView() {
   const {
     activeWorkspaceId, activeProjectId, projects, setView,
-    automations, lastRuns, pendingApprovals, runsById,
+    automations, lastRuns, runsById,
     fetchAutomations, createAutomation, updateAutomation, deleteAutomation, runNow, fetchRun, fetchRuns,
     addTerminalSession,
     terminalSessions,
@@ -103,7 +102,6 @@ export function AutomationsView() {
     setView: s.setView,
     automations: s.automations,
     lastRuns: s.lastRuns,
-    pendingApprovals: s.pendingApprovals,
     runsById: s.runsById,
     fetchAutomations: s.fetchAutomations,
     createAutomation: s.createAutomation,
@@ -294,7 +292,7 @@ export function AutomationsView() {
       if (forceNew) {
         const stale = automationDevSessions[a.id];
         if (stale && terminalSessions.some((t) => t.sessionId === stale)) {
-          electron.piAgent.destroy(stale);
+          electron.session.destroy(stale);
           removeTerminalSession(stale);
         }
         clearAutomationDevSession(a.id);
@@ -302,7 +300,7 @@ export function AutomationsView() {
       const sessionId = id();
       const now = new Date().toISOString();
       const taskTitle = `Develop: ${a.name}`;
-      await electron.piAgent.createSession({
+      await electron.session.createSession({
         id: sessionId,
         projectId,
         taskTitle,
@@ -323,8 +321,8 @@ export function AutomationsView() {
         status: "running",
         exitCode: null,
         spawnedAt: now,
-        sessionType: "pi",
-        piMessages: [],
+        sessionType: "coding",
+        messages: [],
         mode: "execute",
         role: "automation-dev",
         initialPrompt: buildAutomationDevPrompt(a),
@@ -386,14 +384,13 @@ export function AutomationsView() {
 
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
-        <PendingApprovals />
         {developError && (
           <div className="rounded-md border border-[var(--danger)]/40 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] px-3 py-2 text-xs text-[var(--danger)] flex items-center gap-2">
             <span className="flex-1">{developError}</span>
             <button type="button" onClick={() => setDevelopError(null)} className="hover:text-[var(--text-primary)]">Dismiss</button>
           </div>
         )}
-        {automations.length === 0 && pendingApprovals.length === 0 && (
+        {automations.length === 0 && (
           <div className="rounded-lg border border-[var(--border)] p-10 text-center text-sm text-[var(--text-tertiary)]">
             No automations yet. Create one to run scheduled tasks in the background.
           </div>

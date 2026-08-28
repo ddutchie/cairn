@@ -16,7 +16,6 @@ import { BrowserWindow, Notification } from "electron";
 import fs from "fs";
 import type Database from "better-sqlite3";
 import { getUnreadMcpNotifications, getActiveMcpWrites, pruneMcpNotifications } from "../db/queries";
-import { countPendingApprovals } from "../db/approval-queries";
 
 export interface McpPollerOptions {
   /** Live getter — the handle is swapped by `reinitialise()` on workspace change. */
@@ -31,8 +30,22 @@ export interface McpPollerOptions {
 export interface McpPoller {
   /** No-op for backward compatibility — the unread count is DB-derived now. */
   resetCount: () => void;
-  /** Run one poll tick synchronously. Exposed for tests; the interval calls it. */
-  tick: () => void;
+  /** Run one poll tick. Exposed for tests; the interval calls it. */
+  tick: () => Promise<void> | void;
+}
+
+async function getMtimeAsync(walPath: string, dbPath: string): Promise<number> {
+  try {
+    const walStat = await fs.promises.stat(walPath);
+    return walStat.mtimeMs;
+  } catch {
+    try {
+      const dbStat = await fs.promises.stat(dbPath);
+      return dbStat.mtimeMs;
+    } catch {
+      return 0;
+    }
+  }
 }
 
 export function startMcpNotificationPoller({
@@ -54,103 +67,107 @@ export function startMcpNotificationPoller({
   // Retention guard — prune old notifications at most once a day.
   let lastPruneTs = 0;
   const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  let inFlight = false;
 
-  try {
-    lastMtime = fs.statSync(fs.existsSync(walPath) ? walPath : dbPath).mtimeMs;
-  } catch { /* db not yet created */ }
+  void getMtimeAsync(walPath, dbPath).then((mtime) => {
+    if (lastMtime === 0) lastMtime = mtime;
+  });
 
   function sendToWin(channel: string, payload: unknown): void {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   }
 
   function pushUnread(count: number): void {
-    // Dock/tray badge = combined attention (notifications + pending approvals),
-    // so a parked approval never silently disappears even if notifications were
-    // marked read. The renderer bell gets the notifications-only count.
-    let approvalCount = 0;
-    try { approvalCount = countPendingApprovals(getDb()); } catch { /* db transient */ }
-    updateBadge(count + approvalCount);
+    // Dock/tray badge = unread notifications. (The legacy DB approval inbox —
+    // once also counted here — was retired with the pre-Cordis engines.)
+    updateBadge(count);
     if (count !== lastUnread) {
       lastUnread = count;
       sendToWin("mcp:unread-count", count);
     }
   }
 
-  function check() {
-    const db = getDb();
-    // The workspace can be swapped in place (`reinitialise()`), which points us
-    // at a different cairn.db. Re-target the WAL watch and re-baseline the mtime
-    // so the first tick after a swap isn't misread as "changed" (or, worse, so
-    // we don't keep watching the abandoned workspace's WAL forever).
-    const currentPath = getDbPath();
-    if (currentPath !== dbPath) {
-      dbPath = currentPath;
-      walPath = dbPath + "-wal";
-      lastMtime = 0;
-      prevLocked = new Set<string>();
-      try {
-        lastMtime = fs.statSync(fs.existsSync(walPath) ? walPath : dbPath).mtimeMs;
-      } catch { /* db not yet created */ }
-      // We just re-baselined lastMtime to the new file's current mtime, so the
-      // `mtime > lastMtime` branch below won't fire until the NEXT write to the
-      // new workspace. Push its unread count now so the badge reflects the new
-      // workspace immediately instead of showing the old one's until something
-      // writes. Force a broadcast by resetting lastUnread first.
-      lastUnread = -1;
-      try { pushUnread(getUnreadMcpNotifications(db).length); } catch { /* db transient */ }
-    }
-    // Retention: prune old notifications once a day (30d / 1000 rows cap).
-    if (Date.now() - lastPruneTs >= PRUNE_INTERVAL_MS) {
-      lastPruneTs = Date.now();
-      try { pruneMcpNotifications(db); } catch { /* best-effort */ }
-    }
+  async function check(): Promise<void> {
+    if (inFlight) return;
+    inFlight = true;
     try {
-      const target = fs.existsSync(walPath) ? walPath : dbPath;
-      const mtime = fs.statSync(target).mtimeMs;
-      if (mtime > lastMtime) {
-        lastMtime = mtime;
-        onDbChanged();
+      const db = getDb();
+      // The workspace can be swapped in place (`reinitialise()`), which points us
+      // at a different cairn.db. Re-target the WAL watch and re-baseline the mtime
+      // so the first tick after a swap isn't misread as "changed" (or, worse, so
+      // we don't keep watching the abandoned workspace's WAL forever).
+      const currentPath = getDbPath();
+      if (currentPath !== dbPath) {
+        dbPath = currentPath;
+        walPath = dbPath + "-wal";
+        prevLocked = new Set<string>();
+        // We re-baseline lastMtime to the new file's current mtime, so the
+        // `mtime > lastMtime` branch below won't fire until the NEXT write to the
+        // new workspace. Push its unread count now so the badge reflects the new
+        // workspace immediately instead of showing the old one's until something
+        // writes. Force a broadcast by resetting lastUnread first.
+        lastUnread = -1;
+        try { pushUnread(getUnreadMcpNotifications(db).length); } catch { /* db transient */ }
+        lastMtime = await getMtimeAsync(walPath, dbPath);
+      }
+      // Retention: prune old notifications once a day (30d / 1000 rows cap).
+      if (Date.now() - lastPruneTs >= PRUNE_INTERVAL_MS) {
+        lastPruneTs = Date.now();
+        try { pruneMcpNotifications(db); } catch { /* best-effort */ }
+      }
+      try {
+        const mtime = await getMtimeAsync(walPath, dbPath);
+        const mtimeChanged = mtime > lastMtime;
+        if (mtimeChanged) {
+          lastMtime = mtime;
+          onDbChanged();
 
-        const unread = getUnreadMcpNotifications(db);
-        const appFocused = !win.isDestroyed() && win.isFocused();
-        // Toast NEW notifications only while the app is unfocused (the user can
-        // already see the badge/inbox in-app when focused).
-        if (!appFocused && Notification.isSupported()) {
-          for (const n of unread) {
-            if (toastedIds.has(n.id)) continue;
-            toastedIds.add(n.id);
-            new Notification({ title: n.title, body: n.body, silent: false }).show();
+          const unread = getUnreadMcpNotifications(db);
+          const appFocused = !win.isDestroyed() && win.isFocused();
+          // Toast NEW notifications only while the app is unfocused (the user can
+          // already see the badge/inbox in-app when focused).
+          if (!appFocused && Notification.isSupported()) {
+            for (const n of unread) {
+              if (toastedIds.has(n.id)) continue;
+              toastedIds.add(n.id);
+              new Notification({ title: n.title, body: n.body, silent: false }).show();
+            }
+          } else {
+            // While focused, remember the ids so they don't toast later on focus loss.
+            for (const n of unread) toastedIds.add(n.id);
           }
-        } else {
-          // While focused, remember the ids so they don't toast later on focus loss.
-          for (const n of unread) toastedIds.add(n.id);
+          // Forget ids that are no longer unread (read or pruned) so the dedupe
+          // set can't grow for the whole session.
+          const unreadIds = new Set(unread.map((n) => n.id));
+          for (const id of toastedIds) if (!unreadIds.has(id)) toastedIds.delete(id);
+          pushUnread(unread.length);
         }
-        // Forget ids that are no longer unread (read or pruned) so the dedupe
-        // set can't grow for the whole session.
-        const unreadIds = new Set(unread.map((n) => n.id));
-        for (const id of toastedIds) if (!unreadIds.has(id)) toastedIds.delete(id);
-        pushUnread(unread.length);
-      }
 
-      // Diff mcp_active_writes on every tick (independent of WAL mtime) so the
-      // renderer gets started/ended events promptly even if the write completes
-      // within the same WAL flush window.
-      const currentLocked = getActiveMcpWrites(db);
-      for (const noteId of currentLocked) {
-        if (!prevLocked.has(noteId)) {
-          sendToWin("note:aiWriteStarted", { noteId });
+        // Diff mcp_active_writes when mtime changed or active writes are tracked,
+        // so the renderer gets started/ended events promptly without running
+        // DB queries every second on an idle app.
+        if (mtimeChanged || prevLocked.size > 0) {
+          const currentLocked = getActiveMcpWrites(db);
+          for (const noteId of currentLocked) {
+            if (!prevLocked.has(noteId)) {
+              sendToWin("note:aiWriteStarted", { noteId });
+            }
+          }
+          for (const noteId of prevLocked) {
+            if (!currentLocked.has(noteId)) {
+              sendToWin("note:aiWriteEnded", { noteId });
+            }
+          }
+          prevLocked = currentLocked;
         }
-      }
-      for (const noteId of prevLocked) {
-        if (!currentLocked.has(noteId)) {
-          sendToWin("note:aiWriteEnded", { noteId });
-        }
-      }
-      prevLocked = currentLocked;
-    } catch { /* db file not yet created */ }
+      } catch { /* db file not yet created */ }
+    } finally {
+      inFlight = false;
+    }
   }
 
-  setInterval(check, 1000);
+  const intervalId = setInterval(() => { void check(); }, 1000);
+  if (typeof intervalId.unref === "function") intervalId.unref();
 
   return {
     resetCount: () => { /* no-op — count is DB-derived */ },

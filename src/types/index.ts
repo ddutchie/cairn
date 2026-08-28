@@ -564,6 +564,9 @@ export interface ChatThread {
     breakdown?: TokenBreakdown;
     /** Provider-reported USD cost of the turn (e.g. Neuralwatt usage.cost), when present. */
     costUsd?: number;
+    /** Model capacity / context limit. */
+    contextLimit?: number;
+    contextWindow?: number;
   };
 }
 
@@ -616,6 +619,13 @@ export interface ChatToolCallRecord {
    */
   ok?: boolean;
   error?: string;
+  /**
+   * Presentation metadata recomputed from the registered tool definition's
+   * output.presentationMeta(args, value) (NOT persisted in the session log —
+   * dsh recomputes it at render time like its web shell). Rich toolviews keyed
+   * to this tool read it off the block; absent → generic text rendering.
+   */
+  meta?: Record<string, unknown>;
 }
 
 /**
@@ -698,35 +708,27 @@ export interface ChatMessage {
   contextRefs?: LinkedContextReference[];
   /** Tool calls made during this assistant turn — persisted so they remain visible after streaming ends */
   toolCalls?: ChatToolCallRecord[];
-  /** If this message triggered a write action */
-  pendingAction?: PendingAction;
   /** Suggested connection actions for graph assistant */
   actions?: SuggestedAction[];
   /** Attachments on this message — inline base64 data URLs, ephemeral (not persisted to disk) */
   images?: Array<{ url: string; name: string; kind?: "image" | "pdf" }>;
   /** Subagent runs during this turn (subagent mode) — expandable inline traces. */
   subagents?: ChatSubagent[];
+  /** Per-turn throughput/latency stats (TTFT, tok/s, output tokens) folded from
+   *  the session log; shown in a compact stats line under the assistant bubble.
+   *  Absent when timing/usage is unavailable (UI shows no stats line). */
+  stats?: MessageStats;
   createdAt: string;
 }
 
-// ── Agent Action Model ────────────────────────
-export type ActionType =
-  | "create_note"
-  | "update_note"
-  | "create_task"
-  | "update_task_status"
-  | "link_note_to_task"
-  | "move_task";
-
-export type ActionStatus = "pending" | "confirmed" | "rejected";
-
-export interface PendingAction {
-  id: ID;
-  type: ActionType;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  payload: Record<string, any>;
-  status: ActionStatus;
-  createdAt: string;
+/** Per-message throughput/latency reading (mirrors the session-stats TurnStats). */
+export interface MessageStats {
+  /** First-token latency in ms. */
+  ttftMs?: number;
+  /** Decode throughput (provider output tokens / decode seconds). */
+  tokensPerSecond?: number;
+  /** Provider-reported output tokens for the turn. */
+  outputTokens?: number;
 }
 
 // ── Idea Flow ────────────────────────────────
@@ -846,6 +848,24 @@ export interface KnowledgeGraph {
 
 export type GraphLayoutMode = "force" | "radial";
 
+/** How the currently selected conversation is presented in the app shell. */
+export type SessionPresentation = "center" | "drawer" | "workbench";
+
+/** Session families shown by the unified conversation browser. */
+export type SessionKind = "chat" | "coding" | "terminal";
+
+export type SessionLoadState =
+  | { status: "idle" }
+  | { status: "loading"; sessionId: string }
+  | { status: "ready"; sessionId: string }
+  | { status: "error"; sessionId: string; message: string };
+
+/** Transient object preview shown beside a centered conversation. */
+export type ContextPanel =
+  | { type: "note" | "task"; id: string }
+  | { type: "file"; path: string }
+  | { type: "diff"; path?: string };
+
 export interface GraphFilters {
   projectIds: string[];
   nodeTypes: GraphNodeType[];
@@ -863,12 +883,15 @@ export type SettingsSection =
   | "tools"
   | "commands"
   | "writing-style"
+  | "plugins"
   | "mobile"
   | "sync"
   | "data"
   | "about"
   | "shortcuts"
-  | "tags";
+  | "tags"
+  | "extensions"
+  | "system";
 
 export interface AppUIState {
   activeWorkspaceId: ID | null;
@@ -934,16 +957,16 @@ export function isIpcError<T>(result: IpcResult<T>): result is { error: string }
   );
 }
 
-// ── Pi Agent message + session types ─────────────────────────────────────────
+// ── Agent message + session types ────────────────────────────────────────────
 // Moved here from store/slices/terminal-sessions.ts (P5-1 of the cleanup plan)
 // so all domain types live in one place. The slice re-exports them for backwards
 // compatibility.
 
-export interface PiSubagentMessage {
+export interface AgentSubagentMessage {
   /** Unique child session ID */
   childSessionId: string;
   /** Messages streamed by the subagent */
-  messages: PiAgentMessage[];
+  messages: AgentMessage[];
   /** Whether the subagent is still running */
   running: boolean;
   /** Final result returned to the parent */
@@ -953,13 +976,13 @@ export interface PiSubagentMessage {
 }
 
 /** One item in the agent session's todo list (todowrite tool). */
-export interface PiTodo {
+export interface SessionTodo {
   content: string;
   status: "pending" | "in_progress" | "completed" | "cancelled";
   priority: "high" | "medium" | "low";
 }
 
-export interface PiAgentMessage {
+export interface AgentMessage {
   id: string;
   role: "user" | "assistant" | "error" | "system";
   content: string;
@@ -978,9 +1001,18 @@ export interface PiAgentMessage {
     output?: string;
     cairnRef?: { type: "note" | "task"; id: string; title: string };
     confirmRequired?: boolean;
+    /**
+     * Per-ask nonce minted main-side and echoed back on the session runtime's
+     * respond-tool event.
+     * Prevents a compromised renderer from approving asks it never saw the
+     * push for. Present when confirmRequired is true; cleared on settle.
+     */
+    approvalNonce?: string;
   }[];
-  subagents?: PiSubagentMessage[];
+  subagents?: AgentSubagentMessage[];
   isStreaming?: boolean;
+  /** Per-turn throughput/latency stats (TTFT, tok/s, output tokens) from the session log. */
+  stats?: MessageStats;
   timestamp: string;
 }
 
@@ -995,19 +1027,25 @@ export interface TerminalSession {
   status: "running" | "exited";
   exitCode: number | null;
   spawnedAt: string;
-  sessionType: "pty" | "pi";
-  piMessages?: PiAgentMessage[];
+  sessionType: "pty" | "coding";
+  messages?: AgentMessage[];
   initialPrompt?: string;
   lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
   mode?: "plan" | "execute";
   /** Session persona — "automation-dev" restricts the toolset to file tools. */
   role?: "default" | "automation-dev";
   planNoteId?: string;
+  /**
+   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`,
+   * hydrated from the DB on session load. Preferred over planNoteId for the
+   * plan-review card in plan mode and for the PlanTaskList in execute mode.
+   */
+  planContent?: string;
   /** Explicit plan approval choice for this session, if one was made. */
   autoApprove?: boolean;
 }
 
-export interface PiSessionSummary {
+export interface CodingSessionSummary {
   id: string;
   projectId: string;
   taskTitle: string;
@@ -1015,6 +1053,13 @@ export interface PiSessionSummary {
   cwd: string;
   mode: "plan" | "execute";
   planNoteId: string | null;
+  /**
+   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`
+   * for this session (persisted by the coding-plugin's tool/call handler).
+   * NULL when the session never called exit_plan_mode; sessions that used
+   * the legacy PRD-note flow only will have planNoteId set instead.
+   */
+  planContent: string | null;
   status: "running" | "exited";
   spawnedAt: string;
   updatedAt: string;

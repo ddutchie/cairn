@@ -20,7 +20,7 @@ import {
   updateNote, updateCard, createTag,
 } from "../db/queries";
 import { executeTool as executeMcpTool } from "../mcp-server";
-import { executeTool as executeChatTool } from "../ipc/chat-executor";
+import { executeTool as executeChatTool } from "../cordis/chat-executor";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 

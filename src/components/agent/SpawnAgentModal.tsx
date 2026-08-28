@@ -8,12 +8,12 @@
  * labelled "Ad-hoc session".
  *
  * Session types:
- *   "pi"  — Cairn native agent (structured chat, no PTY)
+ *   "coding" — Cairn coding agent (structured chat, no PTY)
  *   "pty" — External PTY agent (xterm.js terminal)
  */
 
 import { useState, useEffect } from "react";
-import { Terminal, MessageSquare, AlertTriangle, Zap, Map as MapIcon } from "lucide-react";
+import { Terminal, MessageSquare, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -33,7 +33,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   const {
     agents, fetchAgents, activeProjectId, projects,
     addTerminalSession, setActiveSession, setView, updateProject, agentConfig,
-    setPersistentPiSession, fetchPiSessionHistory,
+    setActiveCodingSession, fetchCodingSessionHistory,
   } = useCairnStore(useShallow((s) => ({
     agents:                  s.agents,
     fetchAgents:             s.fetchAgents,
@@ -44,15 +44,14 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     setView:                 s.setView,
     updateProject:           s.updateProject,
     agentConfig:             s.agentConfig,
-    setPersistentPiSession:  s.setPersistentPiSession,
-    fetchPiSessionHistory:   s.fetchPiSessionHistory,
+    setActiveCodingSession:  s.setActiveCodingSession,
+    fetchCodingSessionHistory:   s.fetchCodingSessionHistory,
   })));
 
   const project      = projects.find((p) => p.id === activeProjectId) ?? null;
   const codeDirectory = project?.codeDirectory ?? null;
 
-  const [sessionType, setSessionType]   = useState<"pi" | "pty">("pi");
-  const [agentMode, setAgentMode]       = useState<"execute" | "plan">("execute");
+  const [sessionType, setSessionType]   = useState<"coding" | "pty">("coding");
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [prompt, setPrompt]             = useState("");
   const [spawning, setSpawning]         = useState(false);
@@ -79,8 +78,8 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   }, [open, agents, card]);
 
   const canSpawnPty = agents.length > 0 && !!codeDirectory && !!selectedAgentId && !!window.electron;
-  const canSpawnPi  = !!codeDirectory && !!window.electron;
-  const canSpawn    = sessionType === "pi" ? canSpawnPi : canSpawnPty;
+  const canSpawnCoding = !!codeDirectory && !!window.electron;
+  const canSpawn        = sessionType === "coding" ? canSpawnCoding : canSpawnPty;
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
 
@@ -94,17 +93,17 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     const taskTitle  = card?.title ?? "Ad-hoc session";
 
     try {
-      if (sessionType === "pi") {
+      if (sessionType === "coding") {
         const now = new Date().toISOString();
         // Persist the session row to SQLite immediately
         try {
-          await window.electron!.piAgent.createSession({
+          await window.electron!.session.createSession({
             id: sessionId,
             projectId: project.id,
             taskTitle,
             taskId: card?.id ?? null,
             cwd: codeDirectory,
-            mode: agentMode,
+            mode: "execute",
             spawnedAt: now,
           });
         } catch (e) {
@@ -122,15 +121,15 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           status:        "running",
           exitCode:      null,
           spawnedAt:     now,
-          sessionType:   "pi",
-          piMessages:    [],
-          mode:          agentMode,
+          sessionType:   "coding",
+          messages:      [],
+          mode:          "execute",
           initialPrompt: prompt.trim() || undefined,
         });
 
-        setPersistentPiSession(sessionId);
+        setActiveCodingSession(sessionId);
         // Refresh history so the new session appears in the dropdown
-        fetchPiSessionHistory(project.id);
+        fetchCodingSessionHistory(project.id);
         setActiveSession(sessionId);
         setView("agent");
         onClose();
@@ -175,7 +174,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
       <DialogContent size="md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {sessionType === "pi"
+            {sessionType === "coding"
               ? <MessageSquare size={15} />
               : <Terminal size={15} />}
             {card ? "Spawn Agent" : "New Session"}
@@ -191,40 +190,18 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             </p>
             <SegmentedControl
               options={[
-                { value: "pi", label: "Cairn Agent", icon: <MessageSquare size={12} /> },
+                { value: "coding", label: "Cairn Agent", icon: <MessageSquare size={12} /> },
                 { value: "pty", label: "External Agent", icon: <Terminal size={12} /> },
               ]}
               value={sessionType}
               onChange={setSessionType}
             />
-            {sessionType === "pi" && (
+            {sessionType === "coding" && (
               <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
                 Uses {agentConfig.model || "gpt-5.6-luna"} · reads/writes code + Cairn board
               </p>
             )}
           </div>
-
-          {/* Plan / Execute mode toggle — Cairn Agent only */}
-          {sessionType === "pi" && (
-            <div>
-              <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">
-                Mode
-              </p>
-              <SegmentedControl
-                options={[
-                  { value: "execute", label: "Execute", icon: <Zap size={12} /> },
-                  { value: "plan", label: "Plan", icon: <MapIcon size={12} /> },
-                ]}
-                value={agentMode}
-                onChange={setAgentMode}
-              />
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
-                {agentMode === "plan"
-                  ? "Discuss and refine a plan first — no code written until you approve"
-                  : "Jump straight into implementation"}
-              </p>
-            </div>
-          )}
 
           {/* Task label — only shown when launched from a card */}
           {card && (
@@ -287,7 +264,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           {/* Prompt textarea */}
           <div>
             <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-              {sessionType === "pi" && agentMode === "plan" ? "What do you want to build?" : sessionType === "pi" ? "Initial prompt (optional)" : "Prompt"}
+              {sessionType === "coding" ? "Initial prompt (optional)" : "Prompt"}
             </label>
             <textarea
               value={prompt}
@@ -296,9 +273,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               rows={5}
               className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-2 font-mono resize-y focus:outline-none"
               placeholder={
-                sessionType === "pi" && agentMode === "plan"
-                  ? "Describe what you want to build — the agent will ask questions and build a plan…"
-                  : sessionType === "pi"
+                sessionType === "coding"
                   ? "Describe what you want the agent to do…"
                   : "Describe the task for the agent…"
               }
@@ -322,7 +297,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               onClick={handleSpawn}
               disabled={!canSpawn || spawning}
             >
-              {sessionType === "pi" ? <MessageSquare size={13} /> : <Terminal size={13} />}
+              {sessionType === "coding" ? <MessageSquare size={13} /> : <Terminal size={13} />}
               {spawning ? "Starting…" : card ? "Spawn" : "Start"}
             </Button>
           </div>

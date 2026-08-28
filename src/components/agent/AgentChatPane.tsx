@@ -3,38 +3,42 @@
 /**
  * AgentChatPane — chat UI for Cairn native agent sessions.
  *
- * Rendered inside SessionPane when session.sessionType === "pi".
- * Subscribes to pi-agent:* IPC events and updates Zustand store.
+ * Rendered inside SessionPane when session.sessionType === "coding".
+ * Subscribes to session:* IPC events and updates Zustand store.
  * Multi-turn: each new message continues the same session's history.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
-import { Trash2, FileText, Zap, Map as MapIcon, Loader2, Clock, ChevronDown } from "lucide-react";
-import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
-import { ChatInputArea } from "@/components/chat/ChatInputArea";
+import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
-import type { PendingQuestion } from "@/hooks/useChatStream";
+import type { PendingQuestion } from "@/components/conversation/conversation-message";
+import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { id } from "@/lib/utils";
+import { cn, id } from "@/lib/utils";
 import { getCommandsForScope } from "@/lib/slash-commands";
+import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { resolveMaxOutputTokens, supportsImageInput, normalizeContextLimit } from "../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../shared/models/pdf-attach";
-import { AgentMessageBubble } from "./AgentMessageBubble";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { PlanApprovalCard } from "./PlanApprovalCard";
+import type { ConnectorMeta as AgentConnectorMeta } from "@/components/shared/ConnectorToolCard";
+import { type VirtuosoHandle } from "react-virtuoso";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
-import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
+import { isBenignTurnEnd } from "../../../shared/agent/turn-end-reason";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import { useChatMessageQueue, useQueueDrain } from "@/hooks/useChatMessageQueue";
 import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion, effectiveTemperatureForModel } from "@/lib/models-dev";
 import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
-import type { PiAgentMessage, TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
-import type { AgentConnectorMeta } from "./AgentMessageBubble";
+import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
+import { toConversationMessage } from "@/components/conversation/conversation-message";
+import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
+import { ConversationPane } from "@/components/conversation/ConversationPane";
+import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
+import type { SessionProjection } from "../../../shared/agent/session-projection";
+import { useSessionConversation } from "@/hooks/useSessionConversation";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -72,44 +76,6 @@ function extractCairnRef(
   }
 }
 
-/**
- * Persist the session's finalised message transcript to the backend. Reads the
- * latest store state imperatively (so it is safe to call from IPC callbacks),
- * drops still-streaming messages, and fire-and-forgets the save. Shared by the
- * `onDone` and `onError` handlers, which previously inlined identical blocks.
- */
-function redactPiMessage(message: PiAgentMessage): PiAgentMessage {
-  return {
-    ...message,
-    toolCalls: message.toolCalls?.map(redactAgentToolCall),
-    subagents: message.subagents?.map((sub) => ({
-      ...sub,
-      messages: sub.messages.map(redactPiMessage),
-    })),
-  };
-}
-
-function persistPiTranscript(sessionId: string): void {
-  const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
-  const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    images: m.images ?? null,
-    reasoning: m.reasoning ?? null,
-    toolCalls: m.toolCalls?.map(redactAgentToolCall) ?? null,
-    subagents: m.subagents?.map((sub) => ({
-      ...sub,
-      messages: sub.messages.map(redactPiMessage),
-    })) ?? null,
-    timestamp: m.timestamp,
-  }));
-  window.electron?.piAgent.saveMessages(sessionId, saveable).catch((err) =>
-    console.error(`[AgentChatPane] failed to persist transcript for session ${sessionId}:`, err),
-  );
-}
-
-
 interface AgentChatPaneProps {
   session: TerminalSession;
   isActive: boolean;
@@ -125,45 +91,47 @@ interface AgentChatPaneProps {
 
 export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Actions — stable Zustand references, never trigger re-renders
-  const addPiMessage             = useCairnStore((s) => s.addPiMessage);
-  const appendPiToken            = useCairnStore((s) => s.appendPiToken);
-  const appendPiThought          = useCairnStore((s) => s.appendPiThought);
-  const finalisePiMessage        = useCairnStore((s) => s.finalisePiMessage);
-  const addPiToolCall             = useCairnStore((s) => s.addPiToolCall);
-  const clearPiMessages          = useCairnStore((s) => s.clearPiMessages);
-  const ensurePiStreamingMessage = useCairnStore((s) => s.ensurePiStreamingMessage);
-  const updatePiUsage            = useCairnStore((s) => s.updatePiUsage);
-  const updatePiSubagentUsage    = useCairnStore((s) => s.updatePiSubagentUsage);
-  const updatePiToolCall         = useCairnStore((s) => s.updatePiToolCall);
-  const updatePiSubagentToolCall = useCairnStore((s) => s.updatePiSubagentToolCall);
-  const addPiSubagent            = useCairnStore((s) => s.addPiSubagent);
-  const appendPiSubagentToken    = useCairnStore((s) => s.appendPiSubagentToken);
-  const appendPiSubagentThought  = useCairnStore((s) => s.appendPiSubagentThought);
-  const _finalisePiSubagentMessage = useCairnStore((s) => s.finalisePiSubagentMessage);
-  const addPiSubagentToolCall    = useCairnStore((s) => s.addPiSubagentToolCall);
-  const completePiSubagent       = useCairnStore((s) => s.completePiSubagent);
-  const stepPiSubagent           = useCairnStore((s) => s.stepPiSubagent);
-  const setPiMode                = useCairnStore((s) => s.setPiMode);
-  const setPiAutoApprove         = useCairnStore((s) => s.setPiAutoApprove);
-  const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
-  const setPiSessionTodos        = useCairnStore((s) => s.setPiSessionTodos);
+  const addAgentMessage             = useCairnStore((s) => s.addAgentMessage);
+  const appendAgentToken            = useCairnStore((s) => s.appendAgentToken);
+  const appendAgentThought          = useCairnStore((s) => s.appendAgentThought);
+  const finaliseAgentMessage        = useCairnStore((s) => s.finaliseAgentMessage);
+  const addAgentToolCall             = useCairnStore((s) => s.addAgentToolCall);
+  const clearAgentMessages          = useCairnStore((s) => s.clearAgentMessages);
+  const updateAgentUsage            = useCairnStore((s) => s.updateAgentUsage);
+  const updateAgentSubagentUsage    = useCairnStore((s) => s.updateAgentSubagentUsage);
+  const updateAgentToolCall         = useCairnStore((s) => s.updateAgentToolCall);
+  const updateAgentSubagentToolCall = useCairnStore((s) => s.updateAgentSubagentToolCall);
+  const addAgentSubagentToolCall    = useCairnStore((s) => s.addAgentSubagentToolCall);
+  const stepAgentSubagent           = useCairnStore((s) => s.stepAgentSubagent);
+  const appendAgentSubagentToken    = useCairnStore((s) => s.appendAgentSubagentToken);
+  const appendAgentSubagentThought  = useCairnStore((s) => s.appendAgentSubagentThought);
+  const finaliseAgentSubagentMessage = useCairnStore((s) => s.finaliseAgentSubagentMessage);
+  const setAgentMode                = useCairnStore((s) => s.setAgentMode);
+  const _setAgentAutoApprove         = useCairnStore((s) => s.setAgentAutoApprove);
+  const setAgentToolConfirmRequired = useCairnStore((s) => s.setAgentToolConfirmRequired);
+  const setSessionTodos          = useCairnStore((s) => s.setSessionTodos);
   const setView                  = useCairnStore((s) => s.setView);
 
   // Reactive state — only values that actually drive re-renders
-  const { agentConfig, projects, activeWorkspaceId, mcpServers, customServices } = useCairnStore(useShallow((s) => ({
+  const { agentConfig, aiConfig, projects, activeWorkspaceId, mcpServers, customServices } = useCairnStore(useShallow((s) => ({
     agentConfig:       s.agentConfig,
+    aiConfig:          s.aiConfig,
     projects:          s.projects,
     activeWorkspaceId: s.activeWorkspaceId,
     mcpServers:        s.mcpServers,
     customServices:    s.customServices,
   })));
-    const sessionTodos = useCairnStore((s) => s.piSessionTodos[session.sessionId]);
-  const customCommands = useCairnStore((s) => s.customCommands);  const agentCommands = useMemo(
-    () => getCommandsForScope("agent", customCommands),
-    [customCommands]
+  const sessionPresentation = useCairnStore((s) => s.sessionPresentation);
+  const sessionTodos = useCairnStore((s) => s.sessionTodos[session.sessionId]);
+  const customCommands = useCairnStore((s) => s.customCommands);
+  const registryCommands = useRegistryCommands();
+  const agentCommands = useMemo(
+    () => getCommandsForScope("agent", customCommands, registryCommands),
+    [customCommands, registryCommands]
   );
 
-  const messages    = session.piMessages ?? [];
+  const messages = session.messages ?? [];
+  const conversationMessages = useMemo(() => (session.messages ?? []).map((message) => toConversationMessage(message)), [session.messages]);
 
   // ── Virtualized transcript (react-virtuoso) ───────────────────────────────
   // Only messages near the viewport are mounted, so a session with thousands of
@@ -193,11 +161,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   const [input, setInput]                         = useState("");
   const [isLoading, setIsLoading]                 = useState(false);
-  const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
-  /** callId of the blocked ask_questions call — echoed back on answer. */
-  const [pendingQuestionCallId, setPendingQuestionCallId] = useState<string | null>(null);
-  /** Active doom-loop pause — the agent repeated a tool call with identical args. */
-  const [doomLoop, setDoomLoop]                   = useState<{ toolName: string; count: number; callId: string; args?: Record<string, unknown> } | null>(null);
   // Live PRD note content — updated whenever the agent writes to the plan note
   const [planNoteContent, setPlanNoteContent]     = useState<string | null>(null);
   // Retry state — shown in status bar when the loop is backing off after a transient error
@@ -205,6 +168,31 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Compaction state — shown in status bar while an LLM summary call is in flight
   const [isCompacting, setIsCompacting]           = useState(false);
   const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
+
+  // The shared controller owns canonical session:event folding and transport
+  // filtering. Coding persistence remains an adapter because it is transcript-
+  // oriented, unlike Chat's single assistant-message commit.
+  const sessionConversation = useSessionConversation({
+    sessionId: session.sessionId,
+    adapter: {
+      onTurnStart: () => { setIsLoading(true); finaliseAgentMessage(session.sessionId); },
+      onText: (delta) => appendAgentToken(session.sessionId, delta),
+      onReasoning: (delta) => appendAgentThought(session.sessionId, delta),
+      onUsage: (usage) => updateAgentUsage(session.sessionId, usage.promptTokens, usage.completionTokens, usage.reasoningTokens, usage.breakdown as TokenBreakdown | undefined, usage.cacheReadTokens, usage.cacheCreationTokens),
+      onToolCall: (call) => addAgentToolCall(session.sessionId, { callId: call.callId ?? `${call.name}:${Date.now()}`, name: call.name, label: call.name, args: call.args, running: true, ok: true }),
+      onToolResult: (result) => {
+        if (!result.callId) return;
+        updateAgentToolCall(session.sessionId, result.callId, { label: result.name, args: result.args, running: false, ok: result.ok, output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output, cairnRef: extractCairnRef(result.name, result.output) });
+      },
+      onTurnEnd: (reason, _snapshot, detail) => {
+        finaliseAgentMessage(session.sessionId); setIsLoading(false); setRetryInfo(null); setIsCompacting(false); sessionConversation.setQuestions(null);
+        // `detail` carries the structured failure message; `reason` alone only
+        // ever said "(error)" and hid the actual cause.
+        if (reason && !isBenignTurnEnd(reason)) addAgentMessage(session.sessionId, { id: id(), role: "error", content: detail ?? `Agent turn ended abnormally (${reason})`, timestamp: new Date().toISOString() });
+      },
+    },
+  });
+  const { pendingQuestions, pendingQuestionCallId, pendingQuestionNonce } = sessionConversation as typeof sessionConversation & { pendingQuestionNonce?: string };
 
   // Attachment support follows the agent's selected model (same as chat). The
   // models.dev catalog loads in the background, so subscribe to it — without
@@ -249,11 +237,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Scroll to bottom on new messages / streaming growth, and whenever the
   // Scroll to the very END of the virtualized content when the pane becomes
-  // active or the ask_questions form appears (the form renders in Virtuoso's
-  // Footer, so it can otherwise stay below the viewport if the user had
-  // scrolled up when the model asked its questions). Streaming follow is
-  // handled by Virtuoso's followOutput. Use a scalar (pendingQuestions?.length)
-  // rather than the array so React doesn't flag the dependency change.
+  // active or the ask_questions form appears. Streaming follow is handled by
+  // Virtuoso's followOutput. Use a scalar (pendingQuestions?.length) rather
+  // than the array so React doesn't flag the dependency change.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (isActive && virtuosoRef.current && messages.length > 0) {
@@ -272,10 +258,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Restore the busy state when this pane (re)mounts. isLoading is local state,
   // so a session that kept working while its UI was unmounted (e.g. the
   // automation Develop modal closed mid-run) would otherwise come back showing
-  // an idle input. The main process tracks the live loop (`pi-agent:is-running`)
+  // an idle input. The main process tracks the live loop (`session:is-running`)
   // — poll it once on mount. When it reports not-running, any assistant message
   // the previous mount left in a streaming state (it unmounted before
-  // pi-agent:done) is stale — finalise it so no ghost bubble lingers.
+  // session:done) is stale — finalise it so no ghost bubble lingers.
   //
   // Declared BEFORE the initial-prompt effect on purpose: on a genuinely fresh
   // mount the session hasn't fired a prompt yet, which means THIS mount is about
@@ -291,25 +277,41 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // could read false in the split second before runningLoops is populated —
       // which would wrongly flip the input to idle and finalise a live bubble.
       await new Promise((resolve) => setTimeout(resolve, 150));
-      const running = (await window.electron?.piAgent.isRunning(session.sessionId)) ?? false;
+      const res = await window.electron?.session.isRunning(session.sessionId);
       if (cancelled) return;
+      const running = res?.running ?? false;
+      // Re-surface approval asks whose original push was lost to a reload —
+      // the main-process loop is still blocked waiting on them.
+      for (const ask of res?.pendingAsks ?? []) {
+        setAgentToolConfirmRequired(session.sessionId, ask.callId, true, ask.nonce);
+      }
+      // Re-surface pending question asks (ask_questions / plan-review). The
+      // main process kept the full question payload so we can rehydrate a
+      // plan-review card after reload — otherwise the review would hang
+      // forever with no visible answer path.
+      const pq = res?.pendingQuestions?.[0];
+      if (pq && pq.questions.length > 0) {
+        sessionConversation.setQuestions(pq.questions as PendingQuestion[], pq.callId, (pq as { nonce?: string }).nonce);
+      }
       if (running) {
         setIsLoading(true);
         return;
       }
       // Not running: anything still streaming is stale — the loop ended while
-      // this pane was unmounted (pi-agent:done was missed). Finalise it so no
+      // this pane was unmounted (session:done was missed). Finalise it so no
       // ghost bubble lingers, and show the idle input.
       setIsLoading(false);
-      finalisePiMessage(session.sessionId);
+      finaliseAgentMessage(session.sessionId);
       setRetryInfo(null);
-      setPendingQuestions(null);
-      setPendingQuestionCallId(null);
-      setDoomLoop(null);
+      sessionConversation.setQuestions(null);
     };
     void sync();
     return () => { cancelled = true; };
-  }, [session.sessionId, finalisePiMessage]);
+  // `sessionConversation.setQuestions` is ref-backed by the shared controller;
+  // the hook result object is intentionally not a dependency because it is a
+  // fresh view-model object on each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.sessionId, finaliseAgentMessage, setAgentToolConfirmRequired]);
 
   // Fire initialPrompt once when the session is loaded (set by SpawnAgentModal).
   // Uses a ref so we always call the current sendPrompt (not a stale closure).
@@ -332,262 +334,42 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const { sessionId } = session;
 
-    const unsubToken = electron.piAgent.onToken((e) => {
-      if (e.sessionId !== sessionId) return;
-      appendPiToken(sessionId, e.delta);
-    });
-
-    const unsubThought = electron.piAgent.onThought?.((e) => {
-      if (e.sessionId !== sessionId) return;
-      appendPiThought(sessionId, e.delta);
-    });
-
-    const unsubUsage = electron.piAgent.onUsage((e) => {
-      if (e.sessionId === sessionId) {
-        // Parent step — update the parent ring
-        updatePiUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
-      } else if (e.sessionId.startsWith(`${sessionId}:sub:`)) {
-        // Subagent step — update usage on the subagent inline block, not the parent ring
-        updatePiSubagentUsage(sessionId, e.sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
+    const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
+      if (projection.sessionId !== sessionId) return;
+      const e = projection.data as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (projection.kind === "subagent-trace" && e.parentSession === sessionId) {
+        if (e.trace === "token") appendAgentSubagentToken(sessionId, e.childId, e.delta);
+        else if (e.trace === "thought") appendAgentSubagentThought(sessionId, e.childId, e.delta);
+        else if (e.trace === "tool-call") addAgentSubagentToolCall(sessionId, e.childId, { callId: e.callId ?? `${e.tool}:${Date.now()}`, name: e.tool, label: e.label, args: e.args, running: true, ok: true });
+        else if (e.trace === "tool-done") updateAgentSubagentToolCall(sessionId, e.childId, e.callId ?? `${e.tool}:unknown`, { label: e.tool, running: false, ok: e.ok ?? true, output: READ_ONLY_TOOLS.has(e.tool) ? undefined : redactAgentToolCall({ output: e.output }).output, cairnRef: e.cairnRef ?? extractCairnRef(e.tool, e.output) });
+        else if (e.trace === "usage") updateAgentSubagentUsage(sessionId, e.childId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
+        else if (e.trace === "status" && e.status === "done") { stepAgentSubagent(sessionId, e.childId); finaliseAgentSubagentMessage(sessionId, e.childId); }
+        else if (e.trace === "status" && e.status === "start") addAgentSubagentToolCall(sessionId, e.childId, { callId: `${e.childId}:start`, name: "subagent", label: e.role ?? "subagent", running: false, ok: true });
+        return;
       }
-    });
-
-    const unsubToolsReady = electron.piAgent.onToolsReady((e) => {
-      if (e.sessionId === sessionId) {
-        ensurePiStreamingMessage(sessionId);
-      } else if (e.sessionId.startsWith(`${sessionId}:sub:`)) {
-        // subagent — handled via subagent store (no-op here, subagent messages auto-create)
+      if (projection.kind === "plan-note") { if (e.planContent) setPlanNoteContent(e.planContent); setAgentMode(sessionId, "plan", e.noteId); }
+      else if (projection.kind === "mode-change") setAgentMode(sessionId, e.mode, e.planNoteId);
+      else if (projection.kind === "approval") setAgentToolConfirmRequired(sessionId, e.callId, e.status === "required", e.nonce);
+      else if (projection.kind === "note-updated") {
+        const planId = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.planNoteId;
+        if (planId && e.noteId === planId) setPlanNoteContent(e.content);
+      } else if (projection.kind === "todos") setSessionTodos(sessionId, e.todos as never);
+      else if (projection.kind === "retry") { setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs }); setTimeout(() => setRetryInfo(null), e.delayMs + 500); }
+      else if (projection.kind === "compact") { setIsCompacting(e.status === "start"); if (e.status === "end" && e.auto) addAgentMessage(sessionId, { id: id(), role: "system" as const, content: "----- Session Compacted -----", timestamp: new Date().toISOString() }); }
+      else if (projection.kind === "compact-result") {
+        void (async () => {
+          try {
+            const result = await (electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId);
+            const rows = unwrapSessionPayload(result).messages;
+            if (rows.length) useCairnStore.setState((s) => ({ terminalSessions: s.terminalSessions.map((t) => t.sessionId === sessionId ? { ...t, messages: rows as never } : t) }));
+          } catch (err) { console.warn("[AgentChatPane] compact reload failed", err); }
+          addAgentMessage(sessionId, { id: id(), role: "system" as const, content: e.messageCount > 0 ? `Context compacted — session history summarised into ${e.messageCount} messages.` : "Nothing to compact — session history is too short.", timestamp: new Date().toISOString() });
+        })();
       }
-    });
-
-    // callId set: tracks in-flight callIds so we can clean up on end.
-    // Keyed by callId (not tool name) so parallel calls to the same tool work correctly.
-    const activeCallIds = new Set<string>();
-
-    const unsubTool = electron.piAgent.onTool((e) => {
-      if (e.sessionId !== sessionId) return;
-      if (e.status === "pending") {
-        // Chip created during SSE streaming — appears immediately with tool name as label.
-        // flushSync ensures React commits this before the stream continues.
-        const callId = e.callId ?? `${e.name}:${Date.now()}`;
-        activeCallIds.add(callId);
-         addPiToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
-      } else if (e.status === "start") {
-        // Execution starting — update the existing pending chip with the resolved label.
-        const callId = e.callId ?? `${e.name}:${Date.now()}`;
-        activeCallIds.add(callId);
-         addPiToolCall(sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
-      } else if (e.status === "end") {
-        const callId = e.callId ?? `${e.name}:unknown`;
-        activeCallIds.delete(callId);
-        updatePiToolCall(sessionId, callId, {
-           label:    e.label,
-           args:     e.args,
-          running:  false,
-          ok:       e.ok ?? true,
-          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : redactAgentToolCall({ output: e.output }).output,
-          cairnRef: extractCairnRef(e.name, e.output),
-        });
-      } else {
-        console.warn("[AgentChatPane] unhandled pi-agent:tool status:", e.status, e);
-      }
-    });
-
-    const unsubStep = electron.piAgent.onStep((e) => {
-      if (e.sessionId !== sessionId) return;
-      // Finalise the previous turn's assistant message so the next turn's
-      // tokens appear in a separate bubble.
-      finalisePiMessage(sessionId);
-    });
-
-    const unsubDone = electron.piAgent.onDone((e) => {
-      if (e.sessionId !== sessionId) return;
-      finalisePiMessage(sessionId);
-      setIsLoading(false);
-      setRetryInfo(null);
-      setIsCompacting(false);
-      setPendingQuestions(null);
-      setPendingQuestionCallId(null);
-      setDoomLoop(null);
-      // Persist the full message transcript after the turn completes
-      persistPiTranscript(sessionId);
-    });
-
-    const unsubError = electron.piAgent.onError((e) => {
-      if (e.sessionId !== sessionId) return;
-      finalisePiMessage(sessionId);
-      setRetryInfo(null);
-      setIsCompacting(false);
-      setPendingQuestions(null);
-      setPendingQuestionCallId(null);
-      setDoomLoop(null);
-      addPiMessage(sessionId, {
-        id:        id(),
-        role:      "error",
-        content:   e.error,
-        timestamp: new Date().toISOString(),
-      });
-      setIsLoading(false);
-      // Persist the message transcript including the error message
-      setTimeout(() => persistPiTranscript(sessionId), 0);
-    });
-
-    // ── Subagent events (child session IDs routed back to parent) ──────────
-    const unsubSubagent = electron.piAgent.onSubagent((e) => {
-      if (e.parentSessionId !== sessionId) return;
-      if (e.status === "start") {
-        addPiSubagent(sessionId, e.childSessionId);
-      } else {
-        completePiSubagent(sessionId, e.childSessionId, e.result ?? "");
-      }
-    });
-
-    const unsubSubToken = electron.piAgent.onToken((e) => {
-      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      appendPiSubagentToken(sessionId, e.sessionId, e.delta);
-    });
-
-    const unsubSubThought = electron.piAgent.onThought?.((e) => {
-      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      appendPiSubagentThought(sessionId, e.sessionId, e.delta);
-    });
-
-    // Keyed by callId (not tool name) so parallel calls to the same tool resolve correctly.
-    const activeSubCallIds = new Set<string>();
-
-    const unsubSubTool = electron.piAgent.onTool((e) => {
-      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      if (e.status === "pending" || e.status === "start") {
-        const callId = e.callId ?? `${e.name}:${Date.now()}`;
-        activeSubCallIds.add(callId);
-         addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, args: e.args, running: true, ok: true });
-      } else if (e.status === "end") {
-        const callId = e.callId ?? `${e.name}:unknown`;
-        activeSubCallIds.delete(callId);
-        updatePiSubagentToolCall(sessionId, e.sessionId, callId, {
-           label:    e.label,
-           args:     e.args,
-          running:  false,
-          ok:       e.ok ?? true,
-          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : redactAgentToolCall({ output: e.output }).output,
-          cairnRef: extractCairnRef(e.name, e.output),
-        });
-      } else {
-        console.warn("[AgentChatPane] unhandled pi-agent:tool status (subagent):", e.status, e);
-      }
-    });
-
-    const unsubSubStep = electron.piAgent.onStep((e) => {
-      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      stepPiSubagent(sessionId, e.sessionId);
-    });
-
-    // Plan mode events
-    const unsubPlanNote = electron.piAgent.onPlanNote((e) => {
-      if (e.sessionId !== sessionId) return;
-      setPiMode(sessionId, "plan", e.noteId);
-    });
-
-    const unsubModeChange = electron.piAgent.onModeChange((e) => {
-      if (e.sessionId !== sessionId) return;
-      setPiMode(sessionId, e.mode, e.planNoteId);
-    });
-
-    const unsubAskQuestions = electron.piAgent.onAskQuestions((e) => {
-      if (e.sessionId !== sessionId) return;
-      setPendingQuestions(e.questions);
-      setPendingQuestionCallId(e.callId);
-    });
-
-    const unsubToolConfirmRequired = electron.piAgent.onToolConfirmRequired((e) => {
-      if (e.sessionId !== sessionId) return;
-      setPiToolConfirmRequired(sessionId, e.callId, true);
-    });
-
-    // Live plan note content updates — keep task list in sync as agent patches the PRD
-    const unsubNoteUpdated = electron.piAgent.onNoteUpdated((e) => {
-      if (e.sessionId !== sessionId) return;
-      // Only track updates to this session's plan note
-      const currentPlanNoteId = useCairnStore.getState().terminalSessions.find(
-        (t) => t.sessionId === sessionId
-      )?.planNoteId;
-      if (!currentPlanNoteId || e.noteId !== currentPlanNoteId) return;
-      setPlanNoteContent(e.content);
-    });
-
-    // Todo list updates — live dock as the agent runs the todowrite tool
-    const unsubTodos = electron.piAgent.onTodos((e) => {
-      if (e.sessionId !== sessionId) return;
-      setPiSessionTodos(sessionId, e.todos);
-    });
-
-    // Doom-loop pause — the agent repeated a tool call with identical args.
-    const unsubDoomLoop = electron.piAgent.onDoomLoop((e) => {
-      if (e.sessionId !== sessionId) return;
-      setDoomLoop({ toolName: e.toolName, count: e.count, callId: e.callId, args: e.args });
-    });
-
-    // Initial hydrate — load persisted todos when the pane mounts so a restored
-    // session shows its list before the agent touches it again.
-    electron.piAgent.getTodos?.(sessionId).then((result) => {
-      if (result?.length) setPiSessionTodos(sessionId, result);
-    }).catch(() => { /* no persisted todos — dock stays hidden */ });
-
-    // Retry events — show backoff countdown in the status bar
-    const unsubRetry = electron.piAgent.onRetry((e) => {
-      if (e.sessionId !== sessionId) return;
-      setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs });
-      // Auto-clear the retry badge once enough time has passed (delayMs + 500ms grace)
-      setTimeout(() => setRetryInfo(null), e.delayMs + 500);
-    });
-
-    // Compaction events — show "Compacting…" in status bar while LLM summary is in flight
-    const unsubCompact = electron.piAgent.onCompact((e) => {
-      if (e.sessionId !== sessionId) return;
-      setIsCompacting(e.status === "start");
-      if (e.status === "end" && e.auto) {
-        addPiMessage(sessionId, {
-          id: id(),
-          role: "system" as const,
-          content: "----- Session Compacted -----",
-          timestamp: new Date().toISOString(),
-        });
-      }
-    });
-
-    // /compact result — inject a system message confirming compaction
-    const unsubCompactResult = electron.piAgent.onCompactResult((e) => {
-      if (e.sessionId !== sessionId) return;
-      const msg = e.messageCount > 0
-        ? `Context compacted — session history summarised into ${e.messageCount} messages.`
-        : "Nothing to compact — session history is too short.";
-      addPiMessage(sessionId, { id: id(), role: "system" as const, content: msg, timestamp: new Date().toISOString() });
     });
 
     return () => {
-      unsubToken();
-      unsubThought?.();
-      unsubUsage();
-      unsubToolsReady();
-      unsubTool();
-      unsubStep();
-      unsubDone();
-      unsubError();
-      unsubSubagent();
-      unsubSubToken();
-      unsubSubThought();
-      unsubSubTool();
-      unsubSubStep();
-      unsubPlanNote();
-      unsubModeChange();
-      unsubAskQuestions();
-      unsubToolConfirmRequired();
-      unsubNoteUpdated();
-      unsubTodos();
-      unsubDoomLoop();
-      unsubRetry();
-      unsubCompact();
-      unsubCompactResult();
+      unsubProjection();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
@@ -617,28 +399,58 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // ── Slash commands ─────────────────────────────────────────────────────
     if (trimmed === "/compact") {
       setInput("");
-      window.electron?.piAgent.compactNow({
+      window.electron?.session.compactNow({
         sessionId: session.sessionId,
         config: {
+          // Never coerce localhost URLs to "localllm" — that slug means the
+          // built-in on-device llama-server (chat-only). Saved providers like
+          // Ollama / LM Studio on localhost are plain OpenAI-compatible
+          // endpoints and must reach the loop with their real baseUrl intact.
+          provider: "openai",
           baseUrl:  agentConfig.baseUrl  || undefined,
           model:    agentConfig.model    || undefined,
           apiKey:   agentConfig.apiKey   || undefined,
           // Keep compaction's context-window threshold in sync with the agent's
           // real model limit (it would otherwise default to 128K).
           contextWindow: agentConfig.contextLimit,
+          // Pin the summariser protocol to this provider's apiMode so compaction
+          // never mounts a different api than the live turns (replay stays valid).
+          apiMode: (aiConfig.savedProviders?.find((p) => p.id === agentConfig.activeProviderId)?.apiMode) ?? "completions",
         },
       });
       return;
     }
 
+    // Other registry commands (/plan, plugin commands) execute through the dsh
+    // command runtime on this session's resumed agent.
+    const commandName = trimmed.startsWith("/")
+      ? trimmed.slice(1).trim().split(/\s+/, 1)[0]
+      : "";
+    const commandMatch = commandName
+      ? registryCommands.find((c) => c.name === commandName)
+        ?? (commandName === "plan" ? { name: "plan", description: "Enter or leave plan mode" } : undefined)
+      : undefined;
+    if (commandMatch) {
+      setInput("");
+      const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
+      void window.electron?.runtime?.executeCommand({ sessionId: session.sessionId, line: trimmed }).then((result) => {
+        // dsh's /plan handler uses agent.steer() for its suffix. That works
+        // while a live turn is open, but this command runs on an idle resumed
+        // agent in Cairn. Submit the suffix as a normal user turn after the
+        // command commits so it is not stranded in the disposed agent inbox.
+        if (commandName === "plan" && commandArgs && commandArgs !== "off" && result?.kind === "success") {
+          void sendPromptRef.current(commandArgs);
+        }
+      }).catch(() => { /* command errors are reported by the runtime layer */ });
+      return;
+    }
+
     setInput("");
-    setIsLoading(true);
-    setPendingQuestions(null);
-    setPendingQuestionCallId(null);
-    setDoomLoop(null);
+    sessionConversation.startPrompt(() => undefined);
+    sessionConversation.setQuestions(null);
 
     // Add user message to store (attachments rendered as thumbnails in transcript)
-    addPiMessage(session.sessionId, {
+    addAgentMessage(session.sessionId, {
       id:        id(),
       role:      "user",
       content:   trimmed,
@@ -647,7 +459,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     // Create placeholder streaming assistant message
-    addPiMessage(session.sessionId, {
+    addAgentMessage(session.sessionId, {
       id:          id(),
       role:        "assistant",
       content:     "",
@@ -667,6 +479,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const promptPayload = {
       sessionId:   session.sessionId,
+      profile:     session.role === "automation-dev" ? "automation-dev" : "coding",
       prompt:      resolvedPrompt,
       projectId:   session.projectId,
       workspaceId: activeWorkspaceId ?? undefined,
@@ -675,6 +488,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       mode:        session.mode ?? "execute",
       attachments: attachments.length > 0 ? attachments : undefined,
       config: {
+        // See the /compact comment above: localhost ≠ built-in Local Engine.
+        // Ollama / LM Studio providers stay "openai" with their own baseUrl.
+        provider:   "openai",
         baseUrl:     agentConfig.baseUrl     || undefined,
         model:       agentConfig.model       || undefined,
         apiKey:      agentConfig.apiKey      || undefined,
@@ -698,10 +514,20 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           autoApprove: session.autoApprove ?? agentConfig.autoApprove ?? true,
           // Reasoning models get the `developer` system role (OpenAI convention).
           isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
+          // Only send reasoning effort to reasoning-capable models, and only when
+          // the user pinned a concrete level — "auto"/unset sends NO override so
+          // the model/provider default applies. Non-reasoning models never get it.
+          reasoningEffort: (getModelInfo(agentConfig.model)?.reasoning === true && agentConfig.reasoningEffort && agentConfig.reasoningEffort !== "auto")
+            ? agentConfig.reasoningEffort
+            : undefined,
+          // Explicit wire protocol pinned on the agent's active saved provider
+          // (default completions) — never auto-probed, so resumed coding sessions
+          // stay on a stable protocol across restarts.
+          apiMode: (aiConfig.savedProviders?.find((p) => p.id === agentConfig.activeProviderId)?.apiMode) ?? "completions",
        },
     };
-    window.electron?.piAgent.prompt(promptPayload);
-  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage, setInput, enqueue]);
+    window.electron?.session.prompt(promptPayload);
+  }, [isLoading, session, agentConfig, aiConfig, activeWorkspaceId, addAgentMessage, setInput, enqueue, registryCommands, sessionConversation]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
@@ -716,12 +542,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Doom-loop decision: allow → the repeated call runs and the session stops
   // re-pausing; deny → the main loop halts with an error.
-  const resolveDoomLoop = useCallback((allow: boolean) => {
-    if (!doomLoop) return;
-    const { sessionId } = session;
-    window.electron?.piAgent.respondDoomLoop(sessionId, doomLoop.callId, allow);
-    setDoomLoop(null);
-  }, [doomLoop, session]);
 
   // Answers to a blocked ask_questions call. The formatted text is returned to
   // the loop as the tool result (opencode-style) rather than starting a new turn.
@@ -731,10 +551,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       void sendPrompt(answersText);
       return;
     }
-    window.electron?.piAgent.respondQuestions(session.sessionId, pendingQuestionCallId, answersText);
-    setPendingQuestions(null);
-    setPendingQuestionCallId(null);
-  }, [pendingQuestionCallId, session, sendPrompt]);
+    window.electron?.session.respondQuestions(session.sessionId, pendingQuestionCallId, answersText, pendingQuestionNonce);
+    sessionConversation.setQuestions(null);
+  }, [pendingQuestionCallId, pendingQuestionNonce, session, sendPrompt, sessionConversation]);
 
   const handleSearchFiles = useCallback(async (query: string): Promise<SuggestionItem[]> => {
     if (!window.electron || !session.cwd) return [];
@@ -747,18 +566,16 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         subtitle: "File",
       }));
     } catch (err) {
-      console.error("[pi-agent:autocomplete] searchFiles failed:", err);
+      console.error("[session:autocomplete] searchFiles failed:", err);
       return [];
     }
   }, [session.cwd]);
 
   function handleStop() {
-    window.electron?.piAgent.abort(session.sessionId);
-    finalisePiMessage(session.sessionId);
+    sessionConversation.stop();
+    finaliseAgentMessage(session.sessionId);
     setIsLoading(false);
-    setPendingQuestions(null);
-    setPendingQuestionCallId(null);
-    setDoomLoop(null);
+    sessionConversation.setQuestions(null);
   }
 
   function handleClear() {
@@ -767,294 +584,71 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // drain effect (which fires when handleStop flips isLoading to false) would
     // otherwise immediately send the queued prompts into a cleared session.
     clearQueue();
-    clearPiMessages(session.sessionId);
-    setPiSessionTodos(session.sessionId, []);
-    window.electron?.piAgent.clear(session.sessionId);
+    clearAgentMessages(session.sessionId);
+    setSessionTodos(session.sessionId, []);
+    window.electron?.session.clear(session.sessionId);
   }
 
-  function handleApprovePlan(autoApprove: boolean) {
-    if (!session.planNoteId || isLoading || !session.cwd) return;
-    setPiAutoApprove(session.sessionId, autoApprove);
-    setIsLoading(true);
-    // Add a system-style user message to mark the transition in the chat
-    addPiMessage(session.sessionId, {
-      id:        id(),
-      role:      "user",
-      content:   "Plan approved. Begin implementation.",
-      timestamp: new Date().toISOString(),
-    });
-    addPiMessage(session.sessionId, {
-      id:          id(),
-      role:        "assistant",
-      content:     "",
-      isStreaming: true,
-      timestamp:   new Date().toISOString(),
-    });
-    window.electron?.piAgent.approvePlan({
-      sessionId:   session.sessionId,
-      planNoteId:  session.planNoteId,
-      projectId:   session.projectId,
-      workspaceId: activeWorkspaceId ?? undefined,
-      cwd:         session.cwd,
-      taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
-      config: {
-        baseUrl:     agentConfig.baseUrl     || undefined,
-        model:       agentConfig.model       || undefined,
-        apiKey:      agentConfig.apiKey      || undefined,
-        maxSteps:    agentConfig.maxSteps    ?? 30,
-         // Same effective-temperature resolution as the prompt path.
-         temperature: effectiveTemperatureForModel(agentConfig.model, agentConfig.temperature),
-         contextWindow: agentConfig.contextLimit,
-         maxTokens:   resolveMaxOutputTokens(
-           agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,
-           getModelInfo(agentConfig.model)?.maxOutput,
-         ),
-         autoApprove,
-         isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
-      },
-    });
-  }
+  // Plan approval flows through dsh's exit_plan_mode tool and the structured
+  // review ask in QuestionForm. Approval unblocks the same coding turn; dsh
+  // applies the mode exit at the next step boundary.
+
 
   return (
-    <div className="flex flex-col h-full bg-[var(--surface)]">
-
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
-        <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1">
-          {session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
-        </span>
-
-        {/* Mode badge */}
-        {session.mode === "plan" ? (
-          <button
-            disabled={isLoading}
-            onClick={() => window.electron?.piAgent.setMode(session.sessionId, "execute")}
-            className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)] hover:bg-[color-mix(in_srgb,var(--warning,#f59e0b)_25%,transparent)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <MapIcon size={9} />
-            PLAN
-          </button>
-        ) : session.mode === "execute" ? (
-          <button
-            disabled={isLoading}
-            onClick={() => window.electron?.piAgent.setMode(session.sessionId, "plan")}
-            className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Zap size={9} />
-            EXECUTE
-          </button>
-        ) : null}
-
-        {/* PRD note chip — shown when plan note exists */}
-        {session.planNoteId && (
-          <Tooltip content="Open plan note" side="left">
-            <button
-              onClick={() => revealNote(setView, session.planNoteId!)}
-              className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"
-            >
-              <FileText size={9} />
-              PRD
-            </button>
-          </Tooltip>
-        )}
-
-
-        {session.lastUsage && (
-          <ContextRing
-            promptTokens={session.lastUsage.promptTokens}
-            contextLimit={normalizeContextLimit(agentConfig.contextLimit)}
-            breakdown={session.lastUsage.breakdown}
-            completionTokens={session.lastUsage.completionTokens}
-            reasoningTokens={session.lastUsage.reasoningTokens}
-            cacheReadTokens={session.lastUsage.cacheReadTokens}
-            cacheCreationTokens={session.lastUsage.cacheCreationTokens}
-            costUsd={session.lastUsage.costUsd}
-          />
-        )}
-        <Tooltip content="Clear conversation" side="left">
-          <button
-            onClick={handleClear}
-            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-          >
-            <Trash2 size={12} />
-          </button>
-        </Tooltip>
-      </div>
-
-      {/* Messages */}
-      {/* Messages — virtualized so a session with thousands of persisted
-          messages (each with reasoning, tool chips, subagent traces) only ever
-          mounts the items near the viewport, no matter how far you scroll. */}
-      <Virtuoso
-        ref={virtuosoRef}
-        className="flex-1 min-h-0"
-        data={messages}
-        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-        followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
-        components={{
-          EmptyPlaceholder: () => (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-3">
-              <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">
-                {session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
-              </p>
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-48">
-                {session.mode === "plan"
-                  ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
-                  : "Ask me to read, edit, or run code — or manage your project board."}
-              </p>
-            </div>
-          ),
-          Footer: () => (
-            <div className="px-3 pb-3 space-y-3">
-              {pendingQuestions && (
-                <QuestionForm
-                  questions={pendingQuestions}
-                  onSubmit={submitQuestions}
-                  disabled={false}
-                />
-              )}
-              {doomLoop && (
-                <div
-                  data-testid="doom-loop-card"
-                  className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5"
-                >
-                  <div className="flex items-start gap-2">
-                    <Loader2 size={14} className="mt-0.5 text-[var(--warning)] animate-spin shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">
-                        The agent is repeating the same action
-                      </p>
-                      <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">
-                        <span className="font-mono text-[var(--text-secondary)]">{doomLoop.toolName}</span> has been
-                        called {doomLoop.count} times in a row with identical arguments — this looks like a loop.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-2 flex items-center justify-end gap-1.5">
-                    <button
-                      data-testid="doom-loop-deny"
-                      onClick={() => resolveDoomLoop(false)}
-                      className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-colors"
-                    >
-                      Stop
-                    </button>
-                    <button
-                      data-testid="doom-loop-allow"
-                      onClick={() => resolveDoomLoop(true)}
-                      className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded transition-opacity"
-                    >
-                      Continue anyway
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ),
-        }}
-        itemContent={(_index, msg) => (
-          <div className="px-3 pt-3">
-            <AgentMessageBubble
-              message={msg}
-              sessionId={session.sessionId}
-              connectors={connectorMap}
-            />
-          </div>
-        )}
-      />
-
-      {/* Input — with upward-expanding plan task list docked above it */}
-      <div className="border-t border-[var(--border)] flex-shrink-0">
-        {/* Pinned status strip: always visible above the input even when the
-            transcript is scrolled up. Shows the working state and the queued
-            message count — the queue stays collapsed so full message content
-            is only rendered when the user expands it. */}
-        {isLoading && !pendingQuestions && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)]">
-            <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
-            <span className="text-[0.714rem] text-[var(--text-secondary)]">
-              Agent is working — you can queue messages below
-            </span>
-          </div>
-        )}
-        {queued.length > 0 && (
-          <div className="border-b border-[var(--border)] bg-[var(--surface)]">
-            <button
-              type="button"
-              onClick={() => setQueueExpanded((v) => !v)}
-              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-[var(--surface-2)] transition-colors"
-            >
-              <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">
-                {queued.length} message{queued.length === 1 ? "" : "s"} queued — will send after the current run
-              </span>
-              <ChevronDown
-                size={11}
-                className={`ml-auto text-[var(--text-tertiary)] shrink-0 transition-transform ${queueExpanded ? "rotate-180" : ""}`}
-              />
-            </button>
-            {queueExpanded && (
-              <div className="px-3 pb-2 space-y-2">
-                {queued.map((q) => (
-                  <div key={q.id} className="flex items-start gap-2">
-                    <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
-                      {q.content || (q.attachments && q.attachments.length > 0 ? "(attachment)" : "")}
-                      {q.attachments && q.attachments.length > 0 && q.content ? ` · ${q.attachments.length} attachment${q.attachments.length === 1 ? "" : "s"}` : null}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removeQueued(q.id)}
-                      className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0 transition-colors"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {session.mode === "plan" && planNoteContent && session.planNoteId && (
-          <PlanApprovalCard
-            content={planNoteContent}
-            busy={isLoading}
-            onApprove={handleApprovePlan}
-            onRequestChanges={(feedback) => void sendPrompt(`Please revise the plan based on this feedback:\n\n${feedback}`)}
-          />
-        )}
-        {session.mode === "execute" && planNoteContent && (
-          <PlanTaskList content={planNoteContent} />
-        )}
-        {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && (
-          <AgentTodoDock todos={sessionTodos ?? []} live={false} />
-        )}
-      <div className="p-3">
-        <ChatInputArea
-          ref={textareaRef}
-          value={input}
-          onChange={setInput}
-          onSubmit={sendPrompt}
-          onStop={handleStop}
-          isLoading={isLoading}
-          queueWhileBusy={isLoading}
-          queuedCount={queued.length}
-          placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
-          commands={agentCommands}
-          onSearchSuggestions={handleSearchFiles}
-          allowImages={allowImages}
-          allowPdf={allowPdf}
-          providerModelTarget="agent"
-          statusText={retryInfo
-            ? `Transient error — retrying (${retryInfo.attempt}/${retryInfo.maxRetries}) in ${Math.round(retryInfo.delayMs / 1000)}s…`
-            : pendingQuestions
-              ? "Waiting for your answers…"
-              : isCompacting
-                ? "Compacting context…"
-                : isLoading
-                  ? "Working… click ◼ to stop"
-                  : "Shift+Enter for new line · Enter to send"}
+    <ConversationPane
+      className="h-full bg-[var(--surface)]"
+      sessionId={session.sessionId}
+      profile={session.role === "automation-dev" ? "automation-dev" : "coding"}
+      messages={conversationMessages}
+      input={input}
+      onInputChange={setInput}
+      onPrompt={sendPrompt}
+      onAbort={handleStop}
+      isLoading={isLoading}
+      transcriptRef={virtuosoRef}
+      composerRef={textareaRef}
+      usage={session.lastUsage}
+      contextLimit={normalizeContextLimit(agentConfig.contextLimit)}
+      connectors={connectorMap}
+      centered={sessionPresentation === "center"}
+      title={session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
+      emptyState={(
+        <ConversationEmptyState
+          title={session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
+          description={session.mode === "plan"
+            ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
+            : "Ask me to read, edit, or run code — or manage your project board."}
         />
-      </div>
-      </div>
-    </div>
+      )}
+      projection={{ pendingQuestions }}
+      onAnswerQuestions={submitQuestions}
+      transcriptFooter={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
+      actions={(
+        <>
+          {session.mode === "plan" && <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]"><MapIcon size={9} /> PLAN</span>}
+          {session.planNoteId && <Tooltip content="Open plan note" side="left"><button onClick={() => revealNote(setView, session.planNoteId!)} className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"><FileText size={9} /> PRD</button></Tooltip>}
+          <Tooltip content="Clear conversation" side="left"><button onClick={handleClear} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"><Trash2 size={12} /></button></Tooltip>
+        </>
+      )}
+      composerBefore={(
+        <div className={cn("flex-shrink-0", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
+          {isLoading && !pendingQuestions && <ConversationWorkingStatus label="Agent is working — you can queue messages below" />}
+          <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
+          {session.mode === "execute" && planNoteContent && <PlanTaskList content={planNoteContent} />}
+          {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && <AgentTodoDock todos={sessionTodos ?? []} live={false} />}
+        </div>
+      )}
+      composerProps={{
+        centered: sessionPresentation === "center",
+        queueWhileBusy: isLoading,
+        queuedCount: queued.length,
+        commands: agentCommands,
+        onSearchSuggestions: handleSearchFiles,
+        allowImages,
+        allowPdf,
+        providerModelTarget: "agent",
+        statusText: retryInfo ? `Transient error — retrying (${retryInfo.attempt}/${retryInfo.maxRetries}) in ${Math.round(retryInfo.delayMs / 1000)}s…` : pendingQuestions ? "Waiting for your answers…" : isCompacting ? "Compacting context…" : isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send",
+      }}
+    />
   );
 }

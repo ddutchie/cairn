@@ -379,6 +379,22 @@ export function NotesView() {
     const note = createNote(activeProjectId, "Untitled Note", "note", inFolder);
     setActiveNoteId(note.id);
     setMobileShowEditor(true);
+    // Reveal in hierarchy: expand ancestor folders and scroll into view
+    if (inFolder) {
+      const parts = inFolder.split("/").filter(Boolean);
+      let path = "";
+      for (const part of parts) {
+        path = path ? `${path}/${part}` : part;
+        setNotesFolderCollapsed(activeProjectId, path, false);
+      }
+    }
+    // Ensure the tree has rendered the new row before scrolling
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = sidebarRef.current?.querySelector(`[data-note-id="${CSS.escape(note.id)}"]`);
+        el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    });
   }
 
   function handleMoveNoteToFolder(noteId: string, folder: string) {

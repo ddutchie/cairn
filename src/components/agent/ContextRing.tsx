@@ -9,6 +9,12 @@ import { formatBalance, formatUsd } from "../../../shared/chat/provider-credits"
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TokenBreakdown } from "@/types";
 import { cacheHitColor } from "@/lib/cache-metrics";
+// The ring donut itself is the shared dsh-context-ring component (also shipped
+// as a dsh community plugin). Cairn imports it here and projects it into its own
+// rich popover + placements, so there is ONE ring implementation. Cairn supplies
+// its extra breakdown categories + fill-threshold colour; the popover, cache,
+// cost, and account-balance sections stay Cairn-specific below.
+import { ContextRing as SharedRing, type ContextRingCategory } from "dsh-context-ring/react";
 
 /** Provider remaining-balance (account-level), the desktop CreditInfo shape. */
 interface ProviderBalance {
@@ -151,9 +157,6 @@ export function ContextRing({
   const hasCache = cacheRead > 0 || cacheCreation > 0;
 
   const pct  = Math.min(promptTokens / contextLimit, 1);
-  const r    = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const dash = pct * circ;
 
   const colour =
     pct > 0.85 ? "var(--danger)" :
@@ -162,14 +165,15 @@ export function ContextRing({
 
   const pctLabel = `${Math.round(pct * 100)}%`;
 
-  const system = breakdown?.systemPrompt ?? Math.min(promptTokens, 1500);
-  const tools = breakdown?.tools ?? 0;
+  const system = breakdown?.systemPrompt ?? Math.min(promptTokens, 350);
+  const tools = breakdown?.tools ?? Math.min(Math.max(0, promptTokens - system), 2650);
   const rules = breakdown?.rules ?? 0;
   const skills = breakdown?.skills ?? 0;
   const mcp = breakdown?.mcp ?? 0;
   const subagent = breakdown?.subagentDefinitions ?? 0;
   const toolOutputs = breakdown?.toolOutputs ?? 0;
-  const conversation = breakdown?.conversation ?? Math.max(0, promptTokens - system - toolOutputs);
+  const conversation = breakdown?.conversation ?? Math.max(0, promptTokens - system - tools - rules - skills - mcp - subagent - toolOutputs);
+
 
   const thinkingTokens = reasoningTokens ?? 0;
   const answerTokens = Math.max(0, (completionTokens ?? 0) - thinkingTokens);
@@ -192,25 +196,18 @@ export function ContextRing({
     return num.toString();
   }
 
+  // Cairn's ordered breakdown slices for the shared ring (its 8 categories).
+  const ringCategories: ContextRingCategory[] = categories.map((c) => ({ key: c.label, value: c.count, color: c.color }));
+
   const ringSvg = (
     <div className="cursor-pointer select-none flex-shrink-0 hover:opacity-80 transition-opacity flex items-center justify-center">
-      <svg width={size} height={size} className="-rotate-90">
-        <circle
-          cx={size / 2} cy={size / 2} r={r}
-          fill="none"
-          stroke="var(--border)"
-          strokeWidth={stroke}
-        />
-        <circle
-          cx={size / 2} cy={size / 2} r={r}
-          fill="none"
-          stroke={colour}
-          strokeWidth={stroke}
-          strokeDasharray={`${dash} ${circ}`}
-          strokeLinecap="round"
-          style={{ transition: "stroke-dasharray 0.4s ease, stroke 0.4s ease" }}
-        />
-      </svg>
+      <SharedRing
+        usage={{ promptTokens, completionTokens: completionTokens ?? 0, contextLimit, contextWindow: contextLimit }}
+        size={size}
+        strokeWidth={stroke}
+        categories={ringCategories}
+        fillColor={colour}
+      />
     </div>
   );
 
