@@ -587,7 +587,12 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
     if (!u) return;
     recordedInTurn = true;
 
-    const promptTokens = u.inputTokens ?? 0;
+    const rawInput = u.inputTokens ?? 0;
+    const rawCacheRead = u.cacheReadTokens ?? 0;
+    // dsh/Anthropic reports input as total, but some paths (second turn) report
+    // input as uncached delta (35) with cacheRead as total cached (20480) →
+    // 35+20480=20515. Heuristic: if cacheRead > rawInput, rawInput is delta.
+    const promptTokens = rawCacheRead > rawInput ? rawInput + rawCacheRead : rawInput;
     const completionTokens = u.outputTokens ?? 0;
     const reasoningTokens = u.reasoningTokens ?? 0;
     // dsh emits usage events that carry no counts (e.g. the synthetic
