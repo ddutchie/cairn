@@ -31,6 +31,30 @@ import { riskForTool as riskForToolShared } from "../../shared/agent/tool-risk";
 import type { RiskClass } from "../../shared/agent/tool-risk";
 import { needsApprovalForCall } from "../../shared/agent/tool-risk";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
+import { isSecretFile, bashReferencesSecretFile } from "../lib/coding-tools/secrets";
+
+const secretGrantsBySession = new Map<string, Set<string>>();
+function getSecretGrants(sessionId: string): Set<string> {
+  let s = secretGrantsBySession.get(sessionId);
+  if (!s) { s = new Set(); secretGrantsBySession.set(sessionId, s); }
+  return s;
+}
+export function clearSecretGrants(sessionId: string): void {
+  secretGrantsBySession.delete(sessionId);
+}
+function secretPathForCall(name: string, args: Record<string, unknown>): string | undefined {
+  if (name === "bash" && typeof args.command === "string" && bashReferencesSecretFile(args.command)) {
+    // use the raw command as key — exact match for session grant
+    return `bash:${args.command}`;
+  }
+  const candidates = ["file_path", "path", "filePath", "file", "filepath"] as const;
+  for (const k of candidates) {
+    const v = args[k];
+    if (typeof v === "string" && v && isSecretFile(v)) return v;
+  }
+  // also check nested file_path in some tools
+  return undefined;
+}
 
 function sendProjection(send: (channel: string, payload: Record<string, unknown>) => void, sessionId: string, kind: SessionProjectionKind, data: Record<string, unknown>): void {
   send("session:projection", makeSessionProjection(sessionId, kind, data as never) as unknown as Record<string, unknown>);
@@ -914,6 +938,19 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const next = args[1] as (() => Promise<unknown>) | undefined;
       const name = exec?.name;
       const argsObj = (exec?.arguments && typeof exec.arguments === "object") ? exec.arguments as Record<string, unknown> : {};
+      // Secret-file gate — runs before the risk gate so even "read" (otherwise safe)
+      // still asks. Default is deny; Allow once / Allow for session (grant:session)
+      // adds the file path to the per-session secret allowlist.
+      if (typeof name === "string") {
+        const secretPath = secretPathForCall(name, argsObj);
+        if (secretPath) {
+          const granted = getSecretGrants(sessionId).has(secretPath);
+          if (!granted) {
+            if (exec?.callId) recordPendingApprovalArgs(sessionId, exec.callId, { ...argsObj, __secretPath: secretPath });
+            return Promise.resolve({ kind: "ask", reason: `"${name}" targets a protected secret file and needs your approval.` });
+          }
+        }
+      }
       if (typeof name === "string" && needsApprovalForCall(name, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
         // Stash the TRUSTED args so session:respond-tool can record a
         // grant:'command' against what dsh will actually execute — not
@@ -992,7 +1029,13 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           resolve(outcome);
         };
         disposeRef.current = registerPending(callId, (decision) => {
-          if (decision.approved && decision.grant === "session") grants.tools.add(toolName);
+          if (decision.approved && decision.grant === "session") {
+            grants.tools.add(toolName);
+            // Secret-file session grant — allow that exact secret path for the rest of the session
+            const trusted = readPendingApprovalArgs(sessionId, callId) as Record<string, unknown> | undefined;
+            const secretPath = trusted?.__secretPath as string | undefined;
+            if (secretPath) getSecretGrants(sessionId).add(secretPath);
+          }
           // grant:"command" is recorded by the session:respond-tool handler,
           // which owns the canonicalized command text (dsh's ApprovalRequest
           // deliberately carries no args). grant:"workspace" persists to the

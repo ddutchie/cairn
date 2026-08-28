@@ -27,6 +27,7 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { getSessionGrants, clearSessionGrants, canonicalBashCommand, readPendingApprovalArgs, forgetPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
+import { clearSecretGrants } from "../cordis/cairn-plugins";
 import { addWorkspaceApprovalGrant } from "../db/approval-grant-queries";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
@@ -97,6 +98,7 @@ function sweepSessionPendings(sessionId: string): void {
     }
   }
   clearSessionGrants(sessionId);
+  clearSecretGrants(sessionId);
   pendingAsks.clearSession(sessionId);
   clearPendingQuestions(sessionId);
   clearAskNoncesForSession(sessionId);
