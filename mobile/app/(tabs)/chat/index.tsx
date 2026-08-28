@@ -33,6 +33,7 @@ import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { CairnMorphComposer } from "@/components/chat/CairnMorphComposer";
 import { CairnAttachmentHost, type CairnAttachmentHostHandle } from "@/components/chat/attachment-panel/CairnAttachmentHost";
+import { UnifiedMorphExperiment } from "@/components/chat/attachment-panel/UnifiedMorphExperiment";
 import { ChatPatternOverlay } from "@/components/chat/ChatPatternOverlay";
 import { safeToolOutput } from "@/chat/tool-output";
 import { fetchManifest } from "@/chat/registry";
@@ -97,6 +98,7 @@ export default function ChatScreen() {
   // Content + attachments for the next queued send — read by `send` when the
   // queue drains.
   const pendingSendRef = useRef<{ content: string; attachments?: Attachment[] } | null>(null);
+  const [showUnifiedExperiment, setShowUnifiedExperiment] = useState(false);
   const [configured, setConfigured] = useState(true);
   // Context-window usage for the ring (Apple provider reports it per turn).
   // Seeded from the last persisted value so the ring survives closing/reopening
@@ -416,6 +418,13 @@ export default function ChatScreen() {
           accessibilityLabel="AI settings"
           onPress={toolbarPress(() => router.push("/settings/ai"))}
         />
+        {__DEV__ ? (
+          <Stack.Toolbar.Button
+            icon={{ sfSymbol: "sparkles" } as never}
+            accessibilityLabel="Toggle unified morph experiment"
+            onPress={() => setShowUnifiedExperiment((v) => !v)}
+          />
+        ) : null}
       </Stack.Toolbar>
       <View style={{ flex: 1, backgroundColor: t.chatBg }}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
@@ -513,6 +522,11 @@ export default function ChatScreen() {
           </EmptyState>
         ) : null}
 
+        {showUnifiedExperiment ? (
+          <View style={{ position: "absolute", left: 0, right: 0, bottom: closedLift + 56, top: 0, justifyContent: "flex-end", zIndex: 10 }} pointerEvents="box-none">
+            <UnifiedMorphExperiment />
+          </View>
+        ) : null}
         <CairnMorphComposer
           ref={composerInputRef}
           input={input}
@@ -532,14 +546,16 @@ export default function ChatScreen() {
           allowImages={allowImages}
           queuedCount={queued.length}
         />
-        <CairnAttachmentHost
-          ref={hostRef}
-          strip={strip}
-          plusOut={plusOut}
-          composerBottom={composerBottom}
-          existingCount={attachments.length}
-          onAddAttachments={onAddAttachments}
-        />
+        {!showUnifiedExperiment ? (
+          <CairnAttachmentHost
+            ref={hostRef}
+            strip={strip}
+            plusOut={plusOut}
+            composerBottom={composerBottom}
+            existingCount={attachments.length}
+            onAddAttachments={onAddAttachments}
+          />
+        ) : null}
       </View>
     </TabScreen>
   );
