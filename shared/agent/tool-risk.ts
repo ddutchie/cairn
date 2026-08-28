@@ -57,10 +57,29 @@ export function needsApproval(name: string): boolean {
   return !APPROVAL_SAFE_TOOLS.has(name);
 }
 
+/**
+ * Args-aware approval gate. Identical to `needsApproval` except it recognises
+ * read-only invocations of multiplexed tools: `str_replace_editor` with
+ * `command:"view"` only reads a file, so it should not prompt (its
+ * create/str_replace/insert commands still do). Falls back to the name-only
+ * gate for every other tool. Both the main-process gate and the renderer card
+ * use this so they never diverge.
+ */
+export function needsApprovalForCall(name: string, args: Record<string, unknown> = {}): boolean {
+  if (name === "str_replace_editor" && args.command === "view") return false;
+  return needsApproval(name);
+}
+
 export function riskForTool(name: string): RiskClass {
   if (/^(?:mcp|svc)__/.test(name)) return "EXTERNAL";
   if (name === "bash") return "EXEC";
-  if (name === "spawn_subagent") return "EXEC";
+  // `subagent` (dsh-tool-subagent, registered under toolName "subagent") spawns
+  // an in-process child agent that inherits the coding tool stack — including
+  // bash/fs/editor — so it reaches the shell and is EXEC-class, not a local
+  // write. The old `spawn_subagent` name matched nothing the runtime registers,
+  // so the real tool silently fell through to WRITE_LOCAL and was offered a
+  // standing "session" grant (understating a shell-capable delegation).
+  if (name === "subagent") return "EXEC";
   if (CAIRN_WRITE_TOOLS.has(name) || DSH_WRITE_TOOLS.has(name)) return "WRITE_LOCAL";
   if (APPROVAL_SAFE_TOOLS.has(name)) return "READ";
   // Unknown tool — label conservatively. The classifier independently defaults

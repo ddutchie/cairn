@@ -3,7 +3,8 @@
  * The dsh agent loop handles the model↔tool↔model iteration internally — this
  * wrapper only:
  *
- *   - mounts the shared Cordis tree + pi-ai adapter (protocol auto-selected),
+  *   - mounts the shared Cordis tree + pi-ai adapter (protocol PINNED per the
+  *     saved provider's apiMode via prepareCordisRuntime — never auto-probed),
  *   - mounts the coding capability stack (mountCodingStack) + Cairn data tools,
  *   - mounts cairnCodingPlugin (bridges dsh session/event → Cairn projections),
  *   - creates a dsh agent for one turn, follows up with the user message,

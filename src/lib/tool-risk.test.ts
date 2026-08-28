@@ -38,9 +38,9 @@ describe("tool approval presentation rules", () => {
   it("offers no standing grant for reads or non-bash exec", () => {
     expect(approvalGrantScope("read")).toBe("none");
     expect(approvalGrantScope("grep")).toBe("none");
-    // spawn_subagent is EXEC but not bash → no command-scoped grant, and EXEC is
+    // subagent is EXEC but not bash → no command-scoped grant, and EXEC is
     // excluded from session grants, so one-off only.
-    expect(approvalGrantScope("spawn_subagent")).toBe("none");
+    expect(approvalGrantScope("subagent")).toBe("none");
   });
 
   it("states where each action reaches, distinguishing local from external", () => {

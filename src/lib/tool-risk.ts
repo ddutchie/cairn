@@ -7,6 +7,7 @@
 export {
   APPROVAL_SAFE_TOOLS,
   needsApproval,
+  needsApprovalForCall,
   riskForTool,
   approvalPreview,
   approvalGrantScope,

@@ -326,6 +326,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
               baseUrl: aiConfig.baseUrl,
               model: aiConfig.model,
               apiKey: aiConfig.apiKey,
+              apiMode: aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode ?? "completions",
             },
           }) as { summary: string };
           return { data: summaryObj };

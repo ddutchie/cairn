@@ -1,7 +1,7 @@
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import type { Database } from "better-sqlite3";
 import { buildCordisUserContent } from "./cairn-attachment-store";
-import { registerCairnTools, registerExternalCairnTools, CHAT_FORBIDDEN_TOOLS } from "./cairn-tools";
+import { registerCairnTools, CHAT_FORBIDDEN_TOOLS } from "./cairn-tools";
 import { cairnSystemPromptPlugin, CAIRN_DB } from "./cairn-plugins";
 import { getChatAgentCache } from "./chat-agent-cache";
 import { extractCairnRef } from "./session-replay";

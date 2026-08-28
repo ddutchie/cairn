@@ -42,9 +42,10 @@ export interface CodingStackOptions {
   /** Working directory the coding tools are scoped to (the session cwd). */
   cwd: string;
   /**
-   * Sandbox policy mode. "danger-full-access" mirrors Cairn's current coding
-   * agent (unsandboxed fs/bash within cwd); a tighter preset can be swapped in
-   * once the approval layer lands (Phase 1.5 step 2e/2j).
+   * Sandbox policy mode. Defaults to the safer "workspace-write" (fs/bash
+   * confined to cwd) when a caller omits it — defense in depth. Production
+   * always passes an explicit mode (see session-runtime-handlers / run-cordis-
+   * coding), so this default only guards a future caller that forgets to.
    */
   sandboxMode?: "danger-full-access" | "workspace-write" | "read-only";
   /**
@@ -141,7 +142,7 @@ export function remapChatArtifactDirs(ctx: Context): void {
  * is complete before returning.
  */
 export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): Promise<() => void> {
-  const { cwd, sandboxMode = "danger-full-access", role = "default" } = opts;
+  const { cwd, sandboxMode = "workspace-write", role = "default" } = opts;
   const disposers: Array<() => void> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
     const name = (plugin as { name?: string })?.name ?? (plugin as { apply?: { name?: string } })?.apply?.name ?? "unknown";

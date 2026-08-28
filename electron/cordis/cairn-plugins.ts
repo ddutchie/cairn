@@ -26,7 +26,7 @@ import { recordLlmUsage } from "../lib/usage-recorder";
 import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos, updateCodingSession } from "../db/queries";
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
-import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
+import { needsApprovalForCall } from "../../shared/agent/tool-risk";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
 
 function sendProjection(send: (channel: string, payload: Record<string, unknown>) => void, sessionId: string, kind: SessionProjectionKind, data: Record<string, unknown>): void {
@@ -747,11 +747,6 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 // bridges that to Cairn's renderer confirm UI (session:tool-confirm-required ⇄
 // session:respond-tool). Read-only tools always pass (never ask).
 
-/** Tools that never need approval (read-only / safe) — canonical list lives in
- *  shared/agent/tool-risk.ts, the same source the renderer's approval card uses
- *  so classification and UI can never drift again. */
-const APPROVAL_SAFE = APPROVAL_SAFE_TOOLS;
-
 export interface CairnApprovalConfig {
   /** When true, every tool runs without a confirm prompt (no asks). */
   autoApprove: boolean;
@@ -816,7 +811,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const next = args[1] as (() => Promise<unknown>) | undefined;
       const name = exec?.name;
       const argsObj = (exec?.arguments && typeof exec.arguments === "object") ? exec.arguments as Record<string, unknown> : {};
-      if (typeof name === "string" && !APPROVAL_SAFE.has(name) && !isGranted(name, argsObj)) {
+      if (typeof name === "string" && needsApprovalForCall(name, argsObj) && !isGranted(name, argsObj)) {
         // Stash the TRUSTED args so session:respond-tool can record a
         // grant:'command' against what dsh will actually execute — not
         // whatever string a compromised renderer echoes back. dsh's

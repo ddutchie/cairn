@@ -409,6 +409,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
             baseUrl: aiConfig.baseUrl,
             model: aiConfig.model,
             apiKey: aiConfig.apiKey,
+            apiMode: aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode ?? "completions",
           },
         }) as { compacted: boolean };
         return { data: obj };

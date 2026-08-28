@@ -31,6 +31,14 @@ export interface AgentLLMConfig {
   maxTokens?: number;
   /** Whether the selected model is a reasoning/thinking model. */
   isReasoningModel?: boolean;
+  /** Reasoning effort for reasoning-capable models. "auto"/unset → omit (vendor
+   *  default). Maps to the pi-ai reasoning vocabulary via prepareCordisRuntime. */
+  reasoningEffort?: "off" | "low" | "medium" | "high";
+  /** Explicit wire protocol for this endpoint (Cairn never auto-probes on the
+   *  Cordis path). completions→openai-completions, responses→openai-responses,
+   *  anthropic-messages→anthropic-messages. Absent = completions. Pinned per
+   *  saved provider so resumed sessions stay on a stable protocol. */
+  apiMode?: "responses" | "completions" | "anthropic-messages";
   /** Provider slug (e.g. "openai", "localllm"). */
   provider?: string;
 }

@@ -111,8 +111,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const setView                  = useCairnStore((s) => s.setView);
 
   // Reactive state — only values that actually drive re-renders
-  const { agentConfig, projects, activeWorkspaceId, mcpServers, customServices } = useCairnStore(useShallow((s) => ({
+  const { agentConfig, aiConfig, projects, activeWorkspaceId, mcpServers, customServices } = useCairnStore(useShallow((s) => ({
     agentConfig:       s.agentConfig,
+    aiConfig:          s.aiConfig,
     projects:          s.projects,
     activeWorkspaceId: s.activeWorkspaceId,
     mcpServers:        s.mcpServers,
@@ -364,196 +365,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       }
     });
 
-    /* ── Subagent events (handled by the single projection subscription above) ──
-    // Coding-agent subagents (dsh child sessions with header.origin=='subagent'
-    // and header.parentSession==sessionId) come through the shared
-    // chat:subagent* bus that cairnSubagentPlugin emits (not the session:*
-    // bus — the pre-fix code subscribed to `session:*` with a `${sessionId}:sub:`
-    // prefix that nothing ever emitted, making every delegation trace
-    // invisible during a live run). Each event includes parentSession so we
-    // can filter to just this pane's children.
-    //
-    // We map onto the SAME per-session subagent store the chat pane uses.
-    const matchesParent = (parentSession?: string) => parentSession === sessionId;
-
-    const unsubSubToken = electron.session.onSubagentToken?.((e) => {
-      if (!matchesParent(e.parentSession)) return;
-      appendAgentSubagentToken(sessionId, e.childId, e.delta);
-    });
-    const unsubSubThought = electron.session.onSubagentThought?.((e) => {
-      if (!matchesParent(e.parentSession)) return;
-      appendAgentSubagentThought(sessionId, e.childId, e.delta);
-    });
-
-    // Keyed by callId (not tool name) so parallel calls to the same tool resolve correctly.
-    const activeSubCallIds = new Set<string>();
-
-    const unsubSubToolCall = electron.session.onSubagentToolCall?.((e) => {
-      if (!matchesParent(e.parentSession)) return;
-      const callId = e.callId ?? `${e.tool}:${Date.now()}`;
-      activeSubCallIds.add(callId);
-      addAgentSubagentToolCall(sessionId, e.childId, { callId, name: e.tool, label: e.label, args: e.args, running: true, ok: true });
-    });
-    const unsubSubToolCallDone = electron.session.onSubagentToolCallDone?.((e) => {
-      if (!matchesParent(e.parentSession)) return;
-      const callId = e.callId ?? `${e.tool}:unknown`;
-      activeSubCallIds.delete(callId);
-      updateAgentSubagentToolCall(sessionId, e.childId, callId, {
-        label:    e.tool,
-        running:  false,
-        ok:       e.ok ?? true,
-        output:   READ_ONLY_TOOLS.has(e.tool) ? undefined : redactAgentToolCall({ output: e.output }).output,
-        cairnRef: e.cairnRef ?? extractCairnRef(e.tool, e.output),
-      });
-    });
-    const unsubSubUsage = electron.session.onSubagentUsage?.((e) => {
-      if (!matchesParent(e.parentSession)) return;
-      updateAgentSubagentUsage(sessionId, e.childId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
-    });
-    const unsubSub = electron.session.onSubagent?.((e) => {
-      if (!matchesParent(e.parentSession)) return;
-      if (e.status === "done") {
-        // Finalise the child block when its session ends.
-        stepAgentSubagent(sessionId, e.childId);
-        finaliseAgentSubagentMessage(sessionId, e.childId);
-      }
-    });
-
-    // Plan mode events
-    const unsubPlanNote = electron.session.onPlanNote((e) => {
-      if (e.sessionId !== sessionId) return;
-      // Two shapes carry this event today:
-      //   - dsh-plan-mode's exit_plan_mode: e.planContent is the full plan
-      //     text (from the tool call args), e.noteId is undefined. Show the
-      //     plan immediately without waiting for a note round-trip.
-      //   - Legacy PRD-note flow: e.noteId is a real note id, e.planContent
-      //     is undefined; the plan will be re-fetched via onNoteUpdated.
-      if (e.planContent) setPlanNoteContent(e.planContent);
-      setAgentMode(sessionId, "plan", e.noteId);
-    });
-
-    const unsubModeChange = electron.session.onModeChange((e) => {
-      if (e.sessionId !== sessionId) return;
-      setAgentMode(sessionId, e.mode, e.planNoteId);
-    });
-
-    const unsubAskQuestions = electron.session.onAskQuestions((e) => {
-      if (e.sessionId !== sessionId) return;
-      sessionConversation.setQuestions(e.questions, e.callId);
-    });
-
-    const unsubToolConfirmRequired = electron.session.onToolConfirmRequired((e) => {
-      if (e.sessionId !== sessionId) return;
-      setAgentToolConfirmRequired(sessionId, e.callId, true, e.nonce);
-    });
-
-    // The ask timed out unanswered and the loop settled it fail-closed —
-    // retire the card so no dead approve/deny buttons linger.
-    const unsubToolConfirmExpired = electron.session.onToolConfirmExpired?.((e) => {
-      if (e.sessionId !== sessionId) return;
-      setAgentToolConfirmRequired(sessionId, e.callId, false);
-    });
-
-    // Live plan note content updates — keep task list in sync as agent patches the PRD
-    const unsubNoteUpdated = electron.session.onNoteUpdated((e) => {
-      if (e.sessionId !== sessionId) return;
-      // Only track updates to this session's plan note
-      const currentPlanNoteId = useCairnStore.getState().terminalSessions.find(
-        (t) => t.sessionId === sessionId
-      )?.planNoteId;
-      if (!currentPlanNoteId || e.noteId !== currentPlanNoteId) return;
-      setPlanNoteContent(e.content);
-    });
-
-    // Todo list updates — live dock as the agent runs the todowrite tool
-    const unsubTodos = electron.session.onTodos((e) => {
-      if (e.sessionId !== sessionId) return;
-      setSessionTodos(sessionId, e.todos);
-    });
-
-    // Doom-loop pause — the agent repeated a tool call with identical args.
-
-    // Initial hydrate — load persisted todos when the pane mounts so a restored
-    // session shows its list before the agent touches it again.
-    electron.session.getTodos?.(sessionId).then((result) => {
-      if (result?.length) setSessionTodos(sessionId, result);
-    }).catch(() => { // no persisted todos; dock stays hidden
-    });
-
-    // Retry events — show backoff countdown in the status bar
-    const unsubRetry = electron.session.onRetry((e) => {
-      if (e.sessionId !== sessionId) return;
-      setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs });
-      // Auto-clear the retry badge once enough time has passed (delayMs + 500ms grace)
-      setTimeout(() => setRetryInfo(null), e.delayMs + 500);
-    });
-
-    // Compaction events — show "Compacting…" in status bar while LLM summary is in flight
-    const unsubCompact = electron.session.onCompact((e) => {
-      if (e.sessionId !== sessionId) return;
-      setIsCompacting(e.status === "start");
-      if (e.status === "end" && e.auto) {
-        addAgentMessage(sessionId, {
-          id: id(),
-          role: "system" as const,
-          content: "----- Session Compacted -----",
-          timestamp: new Date().toISOString(),
-        });
-      }
-    });
-
-    // /compact result — dsh's compactNow has rewritten the session surface (a
-    // summary replace node). Reload the transcript from the JSONL session log
-    // (session-as-truth) so the in-memory view matches the compacted history and
-    // survives reload, then append a confirmation system message.
-    const unsubCompactResult = electron.session.onCompactResult((e) => {
-      if (e.sessionId !== sessionId) return;
-      void (async () => {
-        try {
-          type RowType = {
-            id: string; role: "user" | "assistant" | "error"; content: string;
-            reasoning?: string | null; toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
-          };
-          const sessRes = await (electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId);
-          let rows: RowType[] | undefined = undefined;
-          let usage: TerminalSession["lastUsage"] = undefined;
-
-          if (Array.isArray(sessRes)) {
-            rows = sessRes as RowType[];
-          } else if (sessRes && typeof sessRes === "object") {
-            const raw = "data" in sessRes && (sessRes as { data?: unknown }).data ? (sessRes as { data: unknown }).data : sessRes;
-            if (Array.isArray(raw)) {
-              rows = raw as RowType[];
-            } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
-              rows = (raw as { messages: RowType[] }).messages;
-              usage = (raw as { usage?: TerminalSession["lastUsage"] }).usage;
-            }
-          }
-
-          if (rows && rows.length > 0) {
-            const fresh = rows.map((r) => ({
-              id: r.id, role: r.role, content: r.content,
-              reasoning: (r.reasoning ?? undefined) as never,
-              toolCalls: (r.toolCalls ?? undefined) as never,
-              subagents: (r.subagents ?? undefined) as never,
-              timestamp: r.timestamp,
-            }));
-            useCairnStore.setState((s) => ({
-              terminalSessions: s.terminalSessions.map((t) => (t.sessionId === sessionId ? { ...t, messages: fresh, ...(usage ? { lastUsage: usage } : {}) } : t)),
-            }));
-          }
-        } catch (err) {
-          console.warn("[AgentChatPane] compact reload failed", err);
-        }
-
-
-        const msg = e.messageCount > 0
-          ? `Context compacted — session history summarised into ${e.messageCount} messages.`
-          : "Nothing to compact — session history is too short.";
-        addAgentMessage(sessionId, { id: id(), role: "system" as const, content: msg, timestamp: new Date().toISOString() });
-      })();
-    }); */
-
     return () => {
       unsubProjection();
     };
@@ -599,6 +410,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           // Keep compaction's context-window threshold in sync with the agent's
           // real model limit (it would otherwise default to 128K).
           contextWindow: agentConfig.contextLimit,
+          // Pin the summariser protocol to this provider's apiMode so compaction
+          // never mounts a different api than the live turns (replay stays valid).
+          apiMode: (aiConfig.savedProviders?.find((p) => p.id === agentConfig.activeProviderId)?.apiMode) ?? "completions",
         },
       });
       return;
@@ -697,10 +511,20 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           autoApprove: session.autoApprove ?? agentConfig.autoApprove ?? true,
           // Reasoning models get the `developer` system role (OpenAI convention).
           isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
+          // Only send reasoning effort to reasoning-capable models, and only when
+          // the user pinned a concrete level — "auto"/unset sends NO override so
+          // the model/provider default applies. Non-reasoning models never get it.
+          reasoningEffort: (getModelInfo(agentConfig.model)?.reasoning === true && agentConfig.reasoningEffort && agentConfig.reasoningEffort !== "auto")
+            ? agentConfig.reasoningEffort
+            : undefined,
+          // Explicit wire protocol pinned on the agent's active saved provider
+          // (default completions) — never auto-probed, so resumed coding sessions
+          // stay on a stable protocol across restarts.
+          apiMode: (aiConfig.savedProviders?.find((p) => p.id === agentConfig.activeProviderId)?.apiMode) ?? "completions",
        },
     };
     window.electron?.session.prompt(promptPayload);
-  }, [isLoading, session, agentConfig, activeWorkspaceId, addAgentMessage, setInput, enqueue, registryCommands, sessionConversation]);
+  }, [isLoading, session, agentConfig, aiConfig, activeWorkspaceId, addAgentMessage, setInput, enqueue, registryCommands, sessionConversation]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date

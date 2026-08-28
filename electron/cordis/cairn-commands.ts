@@ -9,24 +9,48 @@
  * implementation).
  */
 import type { Context } from "@deepseek-ai/cordis";
+import { ManualCompactionError } from "@deepseek-ai/dsh-compaction";
 import "./ctx-augment";
+
+/**
+ * Concise human messages for the expected `ManualCompactionError` codes —
+ * mirrors dsh-command-compact's `expectedFailure` so the user gets the same
+ * classified guidance (especially the `commit` "inspect before retrying" and
+ * `persistence` "couldn't be saved" warnings) instead of a raw error string.
+ */
+function manualCompactionMessage(code: ManualCompactionError["code"]): string {
+  switch (code) {
+    case "busy": return "Compaction is unavailable — this process already has an active compaction, or the agent is not idle.";
+    case "cancelled": return "Compaction cancelled.";
+    case "changed": return "The history selected for compaction changed before it could be replaced. The conversation is unchanged; the attempt is recorded in the session log.";
+    case "summary": return "Compaction could not produce a useful summary. The conversation is unchanged; the attempt is recorded in the session log.";
+    case "commit": return "Compaction did not finish cleanly; some session history may have changed. Inspect the current session state before retrying.";
+    case "persistence": return "Compaction finished, but the session could not be saved.";
+    default: return "Compaction failed.";
+  }
+}
 
 /** Shared compaction flow: resume the thread's agent + run compactNow. */
 export async function compactChatSession(
   getContext: () => Promise<Context>,
   threadId: string,
-  model: { baseUrl?: string; model?: string; apiKey?: string } = {},
-): Promise<{ ok: boolean; compacted: boolean; error?: string }> {
+  model: { baseUrl?: string; model?: string; apiKey?: string; apiMode?: "responses" | "completions" | "anthropic-messages" } = {},
+): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }> {
   try {
     const { ensureAgentAiAdapter, resumeChatAgent } = await import("./run-cordis-loop");
-    const { resolveTransport } = await import("../lib/llm-transport");
     const ctx = await getContext();
     const baseUrl = model.baseUrl ?? "";
     const apiKey = model.apiKey ?? "";
     const modelName = model.model ?? "";
-    // Ensure the pi-ai route is mounted for the summariser model call.
-    const transport = await resolveTransport(baseUrl, apiKey);
-    await ensureAgentAiAdapter(ctx, { baseUrl, model: modelName, apiKey, api: transport.mode === "responses" ? "openai-responses" : "openai-completions" });
+    // Mount the pi-ai route for the summariser call on the SAME protocol the
+    // live turns use — pinned from the saved provider's apiMode, never
+    // auto-probed. Probing (resolveTransport) could mount a different `api`
+    // than the session was written under and corrupt replay, and it can never
+    // select anthropic-messages. completions is the default.
+    const api = model.apiMode === "responses" ? "openai-responses"
+      : model.apiMode === "anthropic-messages" ? "anthropic-messages"
+      : "openai-completions";
+    await ensureAgentAiAdapter(ctx, { baseUrl, model: modelName, apiKey, api });
 
     // NOTE: the third arg here is the resumed session's workspacePath (used
     // for CreateAgentOptions.meta.cwd on a fresh session, and IGNORED for a
@@ -39,8 +63,22 @@ export async function compactChatSession(
     const compaction = ctx.compaction;
     if (!compaction) return { ok: false, compacted: false, error: "compaction engine not available" };
 
-    const result = await compaction.compactNow(agent as never, new AbortController().signal);
-    return { ok: true, compacted: result !== null };
+    try {
+      const result = await compaction.compactNow(agent as never, new AbortController().signal);
+      if (result === null) return { ok: true, compacted: false };
+      const r = result as { shadowedSeqs?: unknown[]; shadowedTokenCount?: number };
+      const count = r.shadowedSeqs?.length ?? 0;
+      const summaryText = count > 0
+        ? `Compacted ${count} history item${count === 1 ? "" : "s"}${typeof r.shadowedTokenCount === "number" ? ` (~${r.shadowedTokenCount} tokens)` : ""}.`
+        : "Conversation history compacted.";
+      return { ok: true, compacted: true, summaryText };
+    } catch (err) {
+      // Expected capability failures carry a classified code → human message.
+      if (err instanceof ManualCompactionError) {
+        return { ok: false, compacted: false, error: manualCompactionMessage(err.code) };
+      }
+      throw err;
+    }
   } catch (err) {
     return { ok: false, compacted: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -55,16 +93,24 @@ export function registerCairnCommands(ctx: Context): void {
       name: "compact",
       description: "Summarise and compact this conversation's history",
       recordInput: false,
-      async handler({ agent }: { agent: unknown }) {
+      async handler(invocation: { agent: unknown; rawInput?: string }) {
+        // /compact takes no arguments — reject stray input like dsh's own command.
+        if (typeof invocation.rawInput === "string" && invocation.rawInput.trim().length > 0) {
+          return { kind: "error", text: "Usage: /compact (no arguments)" };
+        }
         // The executing agent IS the thread's resumed chat agent
         // (sessionId chat-<threadId>) — compact it directly.
-        const sessionId = String((agent as { session?: { id?: unknown } }).session?.id ?? "");
+        const sessionId = String((invocation.agent as { session?: { id?: unknown } }).session?.id ?? "");
         const threadId = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
         const { getCachedConfig } = await import("../lib/config-cache");
-        const cfg = getCachedConfig().agentConfig ?? {};
-        const res = await compactChatSession(() => Promise.resolve(ctx), threadId, { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey });
-        if (!res.ok && res.error) return { kind: "error", text: `compact failed: ${res.error}` };
-        return { kind: "success", text: res.compacted ? "Conversation history compacted." : "Nothing to compact yet." };
+        const cached = getCachedConfig();
+        const cfg = cached.agentConfig ?? {};
+        // apiMode is pinned on the agent's active saved provider (the list lives
+        // on aiConfig.savedProviders; agentConfig only tracks activeProviderId).
+        const apiMode = cached.aiConfig?.savedProviders?.find((p) => p.id === cfg.activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
+        const res = await compactChatSession(() => Promise.resolve(ctx), threadId, { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, apiMode });
+        if (!res.ok && res.error) return { kind: "error", text: res.error };
+        return { kind: "success", text: res.compacted ? (res.summaryText ?? "Conversation history compacted.") : "Nothing to compact yet." };
       },
     });
   } catch (err) {

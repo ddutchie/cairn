@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from "vitest";
 import { TOOL_SCHEMAS } from "../../electron/lib/tool-schemas";
-import { APPROVAL_SAFE_TOOLS, riskForTool, approvalGrantScope, needsApproval } from "./tool-risk";
+import { APPROVAL_SAFE_TOOLS, riskForTool, approvalGrantScope, needsApproval, needsApprovalForCall, type RiskClass, type GrantScope } from "./tool-risk";
 
 // Sets local to this test file — the same shape tool-risk.ts uses
 // internally, re-declared here so the coverage assertion doesn't have to
@@ -30,14 +30,34 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "layout_idea_flow", "codebase_reindex",
   "generate_prd", "suggest_connections",
 ]);
-const EXEC_TOOLS = new Set<string>(["bash", "spawn_subagent"]);
+const EXEC_TOOLS = new Set<string>(["bash", "subagent"]);
 // dsh coding-stack tools are registered by mountCodingStack, not
 // TOOL_SCHEMAS — the coverage check below asserts only Cairn-owned tools
 // (the TOOL_SCHEMAS keys), while riskForTool ALSO handles dsh names.
 const DSH_TOOL_NAMES = new Set<string>([
   "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
   "write", "edit", "str_replace_editor", "todo_write", "skill", "bash",
+  "subagent",
 ]);
+
+// Expected risk bucket + approval behaviour for each dsh coding-stack tool the
+// runtime actually registers (names taken from cordis-context.ts / dsh
+// tool-*). This locks the taxonomy to the real names so a rename (like the
+// old `spawn_subagent` phantom) can't silently mis-gate a tool again.
+const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
+  ["read", "READ", false, "none"],
+  ["read_image", "READ", false, "none"],
+  ["glob", "READ", false, "none"],
+  ["grep", "READ", false, "none"],
+  ["exit_plan_mode", "READ", false, "none"],
+  ["skill", "READ", false, "none"],
+  ["write", "WRITE_LOCAL", true, "session"],
+  ["edit", "WRITE_LOCAL", true, "session"],
+  ["str_replace_editor", "WRITE_LOCAL", true, "session"],
+  ["todo_write", "WRITE_LOCAL", true, "session"],
+  ["bash", "EXEC", true, "command"],
+  ["subagent", "EXEC", true, "none"],
+];
 
 describe("tool-risk classifier — set membership", () => {
   it("every Cairn-registered tool is classified into exactly ONE bucket", () => {
@@ -92,11 +112,22 @@ describe("tool-risk classifier — set membership", () => {
     }
   });
 
-  it("bash is EXEC with a command grant scope; spawn_subagent is EXEC with none", () => {
+  it("bash is EXEC with a command grant scope; subagent is EXEC with none", () => {
     expect(riskForTool("bash")).toBe("EXEC");
     expect(approvalGrantScope("bash")).toBe("command");
-    expect(riskForTool("spawn_subagent")).toBe("EXEC");
-    expect(approvalGrantScope("spawn_subagent")).toBe("none");
+    expect(riskForTool("subagent")).toBe("EXEC");
+    expect(approvalGrantScope("subagent")).toBe("none");
+    // `spawn_subagent` was the old phantom name — it must NOT be treated as the
+    // real tool. It falls through to the conservative WRITE_LOCAL default.
+    expect(riskForTool("spawn_subagent")).toBe("WRITE_LOCAL");
+  });
+
+  it("every registered dsh coding-stack tool maps to its expected risk bucket", () => {
+    for (const [name, risk, gated, scope] of DSH_TOOL_EXPECTATIONS) {
+      expect(riskForTool(name), `${name} risk`).toBe(risk);
+      expect(needsApproval(name), `${name} gated`).toBe(gated);
+      expect(approvalGrantScope(name), `${name} grant scope`).toBe(scope);
+    }
   });
 
   it("mcp__ / svc__ prefixes classify as EXTERNAL and never gain a standing grant path", () => {
@@ -109,5 +140,18 @@ describe("tool-risk classifier — set membership", () => {
   it("unknown tools fail closed — needsApproval=true, WRITE_LOCAL risk", () => {
     expect(needsApproval("some_new_tool_not_yet_classified")).toBe(true);
     expect(riskForTool("some_new_tool_not_yet_classified")).toBe("WRITE_LOCAL");
+  });
+
+  it("str_replace_editor view is read-only (no prompt); its writes still gate", () => {
+    // view only reads a file — args-aware gate lets it through.
+    expect(needsApprovalForCall("str_replace_editor", { command: "view", path: "/x" })).toBe(false);
+    // create/str_replace/insert still require approval.
+    expect(needsApprovalForCall("str_replace_editor", { command: "create", path: "/x" })).toBe(true);
+    expect(needsApprovalForCall("str_replace_editor", { command: "str_replace", path: "/x" })).toBe(true);
+    // No args → falls back to the name-only gate (still gated).
+    expect(needsApprovalForCall("str_replace_editor")).toBe(true);
+    // Other tools are unaffected by the args-aware path.
+    expect(needsApprovalForCall("bash", { command: "view" })).toBe(true);
+    expect(needsApprovalForCall("read", {})).toBe(false);
   });
 });

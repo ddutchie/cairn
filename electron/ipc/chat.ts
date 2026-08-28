@@ -107,7 +107,7 @@ export function registerChatHandler(_ctx: DbContext): void {
   registerIpcHandle("chat:compactThread", (_event, req: {
     messages: Array<{ role: string; content: string }>;
     threadId?: string;
-    config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string };
+    config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; apiMode?: "responses" | "completions" | "anthropic-messages" };
   }) => handle(async () => {
       const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
       const threadId = req.threadId;
@@ -117,7 +117,7 @@ export function registerChatHandler(_ctx: DbContext): void {
       // dsh `compact` command — one implementation, two entry points).
       const { compactChatSession } = await import("../cordis/cairn-commands");
       const { getContext } = await import("../cordis/run-cordis-loop");
-      const res = await compactChatSession(getContext, threadId, { baseUrl, model, apiKey });
+      const res = await compactChatSession(getContext, threadId, { baseUrl, model, apiKey, apiMode: req.config.apiMode });
       if (!res.ok) throw new Error(res.error ?? "compact failed");
       console.log("[chat:compactThread] compactNow result", { threadId, compacted: res.compacted });
       return { compacted: res.compacted };

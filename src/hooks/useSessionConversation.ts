@@ -175,17 +175,14 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
       },
       onPlanMode: (active) => {
         const label = active ? "Entering plan mode" : "Leaving plan mode";
-        const next = appendSessionToolCall(toolsRef.current, { name: `plan:${active ? "on" : "off"}`, args: { status: label }, callId: `plan-${Date.now()}` });
+        const callId = `plan-${Date.now()}`;
+        const next = appendSessionToolCall(toolsRef.current, { name: `plan:${active ? "on" : "off"}`, args: { status: label }, callId });
         toolsRef.current = next; setToolCalls(next);
-        // auto-resolve after short delay to show as done
+        // auto-resolve after a short delay to render the chip as done — resolve by
+        // the SAME callId we appended (recomputing Date.now() would never match).
         setTimeout(() => {
-          const done = resolveSessionToolResult(toolsRef.current, { callId: `plan-${Date.now()}`, name: `plan:${active ? "on" : "off"}`, ok: true, output: label } as never);
-          // best-effort: find last plan: entry and mark done
-          const last = toolsRef.current[toolsRef.current.length - 1];
-          if (last?.tool.startsWith("plan:")) {
-            const updated = toolsRef.current.map((t, i) => i === toolsRef.current.length - 1 ? { ...t, status: "done" as const, output: label, ok: true } : t);
-            toolsRef.current = updated; setToolCalls(updated);
-          }
+          const resolved = resolveSessionToolResult(toolsRef.current, { callId, name: `plan:${active ? "on" : "off"}`, ok: true, output: label } as never);
+          toolsRef.current = resolved; setToolCalls(resolved);
         }, 50);
       },
       onRetry: (data) => {

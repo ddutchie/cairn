@@ -165,6 +165,8 @@ interface AgentPromptRequest {
     contextWindow?: number;
     /** Chat's legacy name for the same context limit. */
     contextLimit?: number;
+    reasoningEffort?: "off" | "low" | "medium" | "high";
+    apiMode?: "responses" | "completions" | "anthropic-messages";
   };
 }
 
@@ -187,6 +189,8 @@ interface AgentApprovePlanRequest {
     isReasoningModel?: boolean;
     /** The agent's context-window size — drives the sliding-window pruner. */
     contextWindow?: number;
+    reasoningEffort?: "off" | "low" | "medium" | "high";
+    apiMode?: "responses" | "completions" | "anthropic-messages";
   };
 }
 
@@ -296,7 +300,7 @@ async function runCordisCodingSession(
       sessionId,
       cwd: toolCtx.cwd,
       systemPrompt,
-      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: llmConfig.provider === "localllm" ? "localllm" : "openai" },
+      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: llmConfig.provider === "localllm" ? "localllm" : "openai", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens, isReasoningModel: llmConfig.isReasoningModel, reasoningEffort: llmConfig.reasoningEffort, apiMode: llmConfig.apiMode },
       mode,
       autoApprove: payload.autoApprove,
       sandboxMode: payload.sandboxMode,
@@ -612,6 +616,8 @@ export function registerSessionRuntimeHandlers(
       // arrives explicitly from the chat surface.
       provider: reqConfig?.provider,
       contextWindow: reqConfig?.contextWindow,
+      reasoningEffort: reqConfig?.reasoningEffort,
+      apiMode: reqConfig?.apiMode,
     };
 
     let session = sessions.get(sessionId);
@@ -754,6 +760,8 @@ export function registerSessionRuntimeHandlers(
       // Same no-coercion rule as session:prompt (see above).
       provider: reqConfig?.provider,
       contextWindow: reqConfig?.contextWindow,
+      reasoningEffort: reqConfig?.reasoningEffort,
+      apiMode: reqConfig?.apiMode,
     };
 
     let session = sessions.get(sessionId);
@@ -801,7 +809,7 @@ export function registerSessionRuntimeHandlers(
   // thresholdRatio 0.8) runs between steps automatically; this is the explicit
   // user-triggered variant. It opens the session's agent from its persisted jsonl
   // (idle), runs ctx.compaction.compactNow(agent), then disposes it.
-  registerIpcOn("session:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number } }) => {
+  registerIpcOn("session:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number; apiMode?: "responses" | "completions" | "anthropic-messages" } }) => {
     try {
       assertSafeId(req.sessionId, "sessionId");
     } catch {
@@ -826,19 +834,26 @@ export function registerSessionRuntimeHandlers(
       maxSteps: 20,
       temperature: 0.1,
       contextWindow: req.config?.contextWindow,
+      apiMode: req.config?.apiMode,
     };
     send("session:compact", { sessionId, status: "start" });
     try {
       const { getContext } = await import("../cordis/run-cordis-loop");
       const { openCordisAgent } = await import("../cordis/run-cordis-coding");
       const ctxC = await getContext();
+      // Pin the summariser protocol to the saved provider's apiMode (never
+      // auto-probe): mounting a different `api` than the session was written
+      // under corrupts replay, and a probe can never yield anthropic-messages.
+      const compactApi = llmConfig.apiMode === "responses" ? "openai-responses"
+        : llmConfig.apiMode === "anthropic-messages" ? "anthropic-messages"
+        : "openai-completions";
       await (await import("../cordis/run-cordis-loop")).ensureAgentAiAdapter(ctxC, {
         baseUrl: llmConfig.baseUrl,
         model: llmConfig.model,
         apiKey: llmConfig.apiKey,
-        api: (await (await import("../lib/llm-transport")).resolveTransport(llmConfig.baseUrl, llmConfig.apiKey)).mode === "responses" ? "openai-responses" : "openai-completions",
+        api: compactApi,
       });
-      const handle = await openCordisAgent(ctxC, { sessionId, cwd, llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: "openai" as const }, signal: new AbortController().signal });
+      const handle = await openCordisAgent(ctxC, { sessionId, cwd, llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: "openai" as const, apiMode: llmConfig.apiMode }, signal: new AbortController().signal });
       try {
         // Ensure idle before compactNow (P1-5 busy race): session:compact-now
         // bypasses runningLoops for races outside its own map; check whenIdle.

@@ -53,14 +53,9 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     adapter: {
       trackToolCall: (call) => call.name !== "ask_questions",
       onToolCall: (call) => {
-        if (call.name === "ask_questions") {
-          const questions = call.args?.questions;
-          if (Array.isArray(questions)) {
-            // The controller handles the typed question projection; this is only
-            // needed for built-in chat tools that expose questions as raw args.
-            // A projection normally arrives for the Cordis path.
-          }
-        } else if (call.name === "suggest_connections") {
+        // The controller handles ask_questions via the typed question projection;
+        // here we only capture suggest_connections' inline action payload.
+        if (call.name === "suggest_connections") {
           pendingActionsRef.current = (call.args?.actions ?? []) as SuggestedAction[];
         }
       },
