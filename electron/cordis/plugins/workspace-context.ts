@@ -9,7 +9,9 @@ import type { Context } from "@deepseek-ai/cordis";
 
 export interface WorkspaceContextInfo {
   workspaceName?: string;
+  workspaceId?: string;
   projectName?: string;
+  projectId?: string;
   projectDescription?: string;
   cwd?: string;
   activeNotePath?: string;
@@ -46,9 +48,9 @@ export function mountWorkspaceContext(ctx: Context): void {
           const lines: string[] = [];
           const sessionId = String(assembly?.agent?.session?.id ?? "");
           const currentContextInfo = contextBySession.get(sessionId) ?? {};
-          const { workspaceName, projectName, projectDescription, cwd, activeNotePath, activeColumn, focusedTaskTitle, gitBranch } = currentContextInfo;
-          if (workspaceName) lines.push(`Workspace: ${workspaceName}`);
-          if (projectName) lines.push(`Project: ${projectName}${projectDescription ? ` (${projectDescription})` : ""}`);
+          const { workspaceName, workspaceId, projectName, projectId, projectDescription, cwd, activeNotePath, activeColumn, focusedTaskTitle, gitBranch } = currentContextInfo;
+          if (workspaceName) lines.push(`Workspace: ${workspaceName}${workspaceId ? ` (${workspaceId})` : ""}`);
+          if (projectName) lines.push(`Project: ${projectName}${projectId ? ` (${projectId})` : ""}${projectDescription ? ` — ${projectDescription}` : ""}`);
           if (cwd) lines.push(`Working Directory: ${cwd}`);
           if (activeNotePath) lines.push(`Active Note: ${activeNotePath}`);
           if (activeColumn) lines.push(`Active Kanban Column: ${activeColumn}`);

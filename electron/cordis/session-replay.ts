@@ -341,6 +341,8 @@ export interface LoadSessionMessagesResult {
   todos?: SessionTodoItem[];
   /** Whole-session throughput/latency aggregate (for the composer stats line). */
   stats?: SessionStats;
+  /** Latest folded session title (chat-only, null before first eligible title). */
+  title?: string | null;
 }
 
 export async function loadSessionMessages(
@@ -359,6 +361,16 @@ export async function loadSessionMessages(
   const contextRing = foldContextRing(events);
   const todos = foldSessionTodos(events);
   const stats = foldSessionStats(events);
+  // Session title — pure fold over the same log. Chat-only in phase 1 but
+  // folding is cheap and the result is null for non-chat sessions anyway.
+  let title: string | null | undefined;
+  try {
+    const { foldSessionTitle } = await import("@deepseek-ai/dsh-session-title");
+    const snap = foldSessionTitle(events as unknown as Parameters<typeof foldSessionTitle>[0]);
+    title = snap?.title ?? null;
+  } catch {
+    title = undefined;
+  }
 
   // Attach per-turn throughput/latency to assistant bubbles. collapse produces
   // exactly one assistant bubble per turn, in order, and turns are 1-based and
@@ -462,5 +474,5 @@ export async function loadSessionMessages(
   }
   const subagents = attachedSubs;
 
-  return { messages, subagents, usage, contextRing, todos, stats };
+  return { messages, subagents, usage, contextRing, todos, stats, ...(title !== undefined ? { title } : {}) };
 }

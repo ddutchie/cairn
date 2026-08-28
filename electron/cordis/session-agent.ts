@@ -39,6 +39,31 @@ export async function openCordisSessionAgent(
   ctx: Context,
   { sessionId, cwd, llmConfig, signal, createIfMissing = true }: OpenCordisSessionAgentOptions,
 ): Promise<CordisSessionAgentHandle> {
+  // Eagerly mount the pi-ai route for the summariser (compaction) before the
+  // agent is created/resumed, so a `/compact` invocation that later calls
+  // `ctx.compaction.compactNow(invocation.agent)` as-is already has the
+  // correct apiMode-pinned adapter. Upstream dsh-command-compact does not
+  // re-resolve apiMode per turn; Cairn pins it from the saved provider so
+  // replay is stable.
+  try {
+    const { ensureAgentAiAdapter } = await import("./session-runtime");
+    const api = llmConfig.apiMode === "responses"
+      ? "openai-responses" as const
+      : llmConfig.apiMode === "anthropic-messages"
+        ? "anthropic-messages" as const
+        : "openai-completions" as const;
+    await ensureAgentAiAdapter(ctx, {
+      baseUrl: llmConfig.baseUrl,
+      model: llmConfig.model,
+      apiKey: llmConfig.apiKey,
+      api,
+      contextWindow: llmConfig.contextWindow,
+      maxTokens: llmConfig.maxTokens,
+      reasoning: llmConfig.isReasoningModel === true,
+    });
+  } catch (err) {
+    console.warn("[cordis] openCordisSessionAgent ensureAgentAiAdapter failed:", err instanceof Error ? err.message : err);
+  }
   const stableId = SessionId(sessionId);
   const selection: ModelSelection = {
     provider: "cairn",

@@ -953,6 +953,10 @@ const api = {
       ipcRenderer.on("session:projection", handler);
       return () => ipcRenderer.off("session:projection", handler);
     },
+    /** Latest folded session title (chat-only). Null before first eligible title. */
+    title: (threadId: string) => invoke<{ title: string | null }>("session:title", { threadId }),
+    /** Pin a manual title (kind:'user' — stops auto-titling). Chat-only. */
+    renameTitle: (threadId: string, title: string) => invoke<{ title: string }>("session:renameTitle", { threadId, title }),
     /** Fired when the agent calls ensure_note in plan mode — carries the PRD note ID */
     /**
      * Fired when the agent produces a plan for user review. Two shapes carry

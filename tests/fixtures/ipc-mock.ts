@@ -362,6 +362,8 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       onEvent:        makeListener("session:onEvent"),
       onProjection:   makeListener("session:onProjection"),
       contextRing:    () => Promise.resolve({ available: false }),
+      title:          () => Promise.resolve({ title: null }),
+      renameTitle:    () => Promise.resolve({ title: "Mock Title" }),
       isRunning:      () => Promise.resolve({ running: false, pendingQuestions: [], pendingAsks: [] }),
       runningIds:     () => Promise.resolve({ ids: [] }),
       abort:          noop,

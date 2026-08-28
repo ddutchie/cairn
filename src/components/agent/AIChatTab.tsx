@@ -13,12 +13,13 @@ interface AIChatTabProps {
 
 export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
   const {
-    chatThreads, chatMessages, activeProjectId, activeWorkspaceId,
+    chatThreads, chatMessages, projectedTitles, activeProjectId, activeWorkspaceId,
     activeChatThreadId, setActiveChatThreadId,
     createNewThread, deleteThread, renameThread, clearAllThreads,
   } = useCairnStore(useShallow((s) => ({
     chatThreads: s.chatThreads,
     chatMessages: s.chatMessages,
+    projectedTitles: (s as unknown as { projectedTitles?: Record<string, string | null> }).projectedTitles ?? {},
     activeProjectId: s.activeProjectId,
     activeWorkspaceId: s.activeWorkspaceId,
     activeChatThreadId: s.activeChatThreadId,
@@ -28,6 +29,21 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     renameThread: s.renameThread,
     clearAllThreads: (s as unknown as { clearAllThreads?: (ws: string, proj?: string) => Promise<void> }).clearAllThreads,
   })));
+
+  // Live title projection: dsh's session/title fold broadcasts on session:projection
+  // kind:'title' (chat-* only). Keep the store's projectedTitles map warm so the
+  // dropdown shows the LLM auto-title immediately without a reload.
+  useEffect(() => {
+    const electron = window.electron as unknown as { session?: { onProjection: (cb: (p: { kind: string; sessionId: string; data: { title?: string | null } }) => void) => () => void } } | undefined;
+    if (!electron?.session?.onProjection) return;
+    const unsub = electron.session.onProjection((proj) => {
+      if (proj.kind !== "title" || !proj.sessionId.startsWith("chat-")) return;
+      const threadId = proj.sessionId.slice(5);
+      const title = (proj.data as { title?: string | null }).title ?? null;
+      useCairnStore.getState().setProjectedTitle(threadId, title);
+    });
+    return () => { try { unsub(); } catch {} };
+  }, []);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -149,6 +165,8 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
               const firstMsg = chatMessages.find((m) => m.threadId === t.id && m.role === "user");
               const msgCount = chatMessages.filter((m) => m.threadId === t.id).length;
               const isActiveThread = t.id === activeChatThreadId;
+              const displayTitle = projectedTitles[t.id] ?? t.title ?? (firstMsg?.content.slice(0, 50) ?? "New thread");
+              const needsEllipsis = !(projectedTitles[t.id] ?? t.title) && (firstMsg?.content.length ?? 0) > 50;
               return (
                 <div
                   key={t.id}
@@ -177,7 +195,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
                       />
                     ) : (
                       <span className={cn("text-[0.714rem] truncate font-medium flex items-center gap-1", isActiveThread ? "text-[var(--accent)]" : "text-[var(--text-primary)]")}>
-                        <span className="truncate">{t.title ?? (firstMsg?.content.slice(0, 50) ?? "New thread")}{(!t.title && (firstMsg?.content.length ?? 0) > 50) ? "…" : ""}</span>
+                        <span className="truncate">{displayTitle}{needsEllipsis ? "…" : ""}</span>
                         {msgCount > 0 && <span className="text-[0.607rem] px-1 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-tertiary)] flex-shrink-0">{msgCount}</span>}
                       </span>
                     )}
@@ -185,7 +203,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
                   </button>
                   <div className="opacity-0 group-hover:opacity-100 flex items-center flex-shrink-0 mr-1.5 gap-0.5 transition-all">
                     <button
-                      onClick={(e) => { e.stopPropagation(); setRenamingId(t.id); setRenameValue(t.title ?? firstMsg?.content.slice(0, 50) ?? ""); }}
+                      onClick={(e) => { e.stopPropagation(); setRenamingId(t.id); setRenameValue(projectedTitles[t.id] ?? t.title ?? firstMsg?.content.slice(0, 50) ?? ""); }}
                       className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
                       title="Rename thread"
                     >

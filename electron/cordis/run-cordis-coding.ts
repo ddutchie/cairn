@@ -191,7 +191,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
           const { execSync } = await import("node:child_process");
           gitBranch = execSync("git branch --show-current", { cwd, encoding: "utf8", timeout: 800 }).trim() || undefined;
         } catch { /* not a git repo */ }
-        updateWorkspaceContext(sessionId, { workspaceName: wsRow?.name, projectName: projRow?.name, projectDescription: projRow?.description, cwd, gitBranch });
+        updateWorkspaceContext(sessionId, { workspaceName: wsRow?.name, workspaceId: req.workspaceId, projectName: projRow?.name, projectId: req.projectId, projectDescription: projRow?.description, cwd, gitBranch });
       } catch (e) { console.warn("[cordis-coding] workspace context update failed:", e instanceof Error ? e.message : e); }
       timer.mark("workspace-context (incl. git branch execSync)");
       const toolDisposers = registerCairnTools(ctx, {

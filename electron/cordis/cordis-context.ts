@@ -14,6 +14,7 @@ import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolS
 import JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
 import approvalService from "@deepseek-ai/dsh-user-approval";
 import TokenMeter from "@deepseek-ai/dsh-token-meter";
+import ToolResultPruner from "@deepseek-ai/dsh-compaction-tool-result-pruner";
 import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
 import SkillRegistry from "@deepseek-ai/dsh-skill";
 import InvariantRegistry from "@deepseek-ai/dsh-invariants";
@@ -21,6 +22,9 @@ import CommandRuntime from "@deepseek-ai/dsh-commands";
 import planModePlugin from "@deepseek-ai/dsh-plan-mode";
 import { apply as toolSkillApply, inject as toolSkillInject, name as toolSkillName } from "@deepseek-ai/dsh-tool-skill";
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
+import { apply as commandCompactApply, inject as commandCompactInject, name as commandCompactName } from "@deepseek-ai/dsh-command-compact";
+import SessionTitleService from "@deepseek-ai/dsh-session-title";
+import { apply as firstPromptApply, inject as firstPromptInject, name as firstPromptName } from "@deepseek-ai/dsh-session-title-first-prompt-llm";
 import { LocalAttachmentStore } from "@deepseek-ai/dsh-attachment-local";
 import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
 import * as SpillPolicy from "@deepseek-ai/dsh-spill-policy";
@@ -69,6 +73,7 @@ export async function getContext(): Promise<Context> {
     B["dsh:session-persistence"] = JsonlSessionPersistence;
     B["dsh:agent-loop"] = agentLoopPlugin;
     B["dsh:token-meter"] = TokenMeter;
+    B["dsh:tool-result-pruner"] = ToolResultPruner;
     B["dsh:compaction"] = BasicCompactionEngine;
     B["dsh:subagent"] = subagentServicePlugin;
     B["dsh:skills"] = SkillRegistry;
@@ -82,6 +87,11 @@ export async function getContext(): Promise<Context> {
     B["cairn:llm-retry"] = { apply: llmRetryApply, inject: llmRetryInject, name: llmRetryName };
     B["cairn:subagent-spawn"] = { apply: spawnProviderApply, inject: spawnProviderInject, name: spawnProviderName };
     B["cairn:tool-subagent"] = { apply: toolSubagentApply, inject: toolSubagentInject, name: toolSubagentName };
+    B["dsh:command-compact"] = { apply: commandCompactApply, inject: commandCompactInject, name: commandCompactName };
+    B["dsh:session-title"] = SessionTitleService;
+    B["dsh:session-title-first-prompt-llm"] = { apply: firstPromptApply, inject: firstPromptInject, name: firstPromptName };
+    // Alias for task description shorthand — same plugin under the shorter key.
+    B["dsh:session-title-llm"] = { apply: firstPromptApply, inject: firstPromptInject, name: firstPromptName };
     const entries: Array<Record<string, unknown>> = [
       { id: "session", name: "cordis:dsh:session" },
       { id: "llm", name: "cordis:dsh:llm" },
@@ -96,26 +106,62 @@ export async function getContext(): Promise<Context> {
       { id: "spill", name: "cordis:dsh:spill", config: { root: path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "spill") } },
       { id: "spill-policy", name: "cordis:dsh:spill-policy", config: { maxInlineBytes: 32768 } },
       { id: "token-meter", name: "cordis:dsh:token-meter" },
+      { id: "tool-result-pruner", name: "cordis:dsh:tool-result-pruner" },
       { id: "compaction", name: "cordis:dsh:compaction", config: { auto: true, thresholdRatio: 0.8 } },
+      // Session-title service (log-backed fallback) + first-prompt LLM provider.
+      // The provider omits provider/model so it inherits the chat route's exact
+      // logged request/header — no separate title model; the chat model titles.
+      { id: "session-title", name: "cordis:dsh:session-title", config: { fallbackMaxWords: 5, fallbackMaxBytes: 40, maxTitleBytes: 80 } },
+      { id: "session-title-first-prompt", name: "cordis:dsh:session-title-first-prompt-llm", config: { targetWords: 5, targetCjkCharacters: 10, maxInputBytes: 4096, maxOutputTokens: 32, timeoutMs: 10000 } },
       { id: "llm-retry", name: "cordis:cairn:llm-retry", config: {} },
       { id: "subagent", name: "cordis:dsh:subagent" },
       { id: "skills", name: "cordis:dsh:skills" },
       { id: "invariants", name: "cordis:dsh:invariants" },
       { id: "tool-skill", name: "cordis:dsh:tool-skill" },
       { id: "commands", name: "cordis:dsh:commands" },
+      { id: "command-compact", name: "cordis:dsh:command-compact" },
       { id: "plan-mode", name: "cordis:dsh:plan-mode", config: { section: "You are in plan mode. Stay in plan mode until the user switches the session mode. Explore and read first; do not edit files or run mutating commands." } },
       { id: "subagent-spawn", name: "cordis:cairn:subagent-spawn", config: { providerName: "spawn" } },
       { id: "tool-subagent", name: "cordis:cairn:tool-subagent", config: { provider: "spawn", toolName: "subagent", backgroundMode: "one-shot" } },
     ];
     for (const entry of entries) await loader.create(entry);
     await loader.await();
-    try { const { registerCairnCommands } = await import("./cairn-commands"); registerCairnCommands(ctx); } catch (err) { console.warn("[cordis] cairn command registration failed:", err instanceof Error ? err.message : err); }
+    // Thin pre-step: ensure the summariser adapter is pinned to the current
+    // provider's apiMode before any manual compaction. Upstream
+    // dsh-command-compact calls ctx.compaction.compactNow(agent) as-is with no
+    // per-turn resolution; eager mount in openCordisSessionAgent covers
+    // creation/resume, but a provider switch between turns would leave the
+    // cached live chat agent stale — patching here makes /compact idempotent.
+    try {
+      const comp = ctx.compaction as { compactNow?: (...args: unknown[]) => Promise<unknown> } | undefined;
+      if (comp?.compactNow) {
+        const orig = comp.compactNow.bind(comp);
+        (comp as { compactNow: typeof orig }).compactNow = async (...args: unknown[]) => {
+          try {
+            const { getCachedConfig } = await import("../lib/config-cache");
+            const { ensureAgentAiAdapter } = await import("./session-runtime");
+            const cached = getCachedConfig();
+            const cfg = (cached as { agentConfig?: { baseUrl?: string; model?: string; apiKey?: string; activeProviderId?: string } }).agentConfig ?? {};
+            const providers = (cached as { aiConfig?: { savedProviders?: Array<{ id: string; apiMode?: string }> } }).aiConfig?.savedProviders;
+            const apiMode = providers?.find((p) => p.id === (cfg as { activeProviderId?: string }).activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
+            const api = apiMode === "responses" ? "openai-responses" as const : apiMode === "anthropic-messages" ? "anthropic-messages" as const : "openai-completions" as const;
+            if (cfg.baseUrl && cfg.model) {
+              await ensureAgentAiAdapter(ctx, { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: (cfg as { apiKey?: string }).apiKey ?? "", api });
+            }
+          } catch { /* best-effort */ }
+          return orig(...(args as [never, never, never]));
+        };
+      }
+    } catch { /* best-effort */ }
     try { if (ctx.skills) ctx.skills.registerProvider(() => createCairnSkillProvider()); } catch (err) { console.error("[cordis] cairn skill provider registration failed:", err instanceof Error ? err.message : err); }
     try { const { defineTool } = await import("@deepseek-ai/dsh-tools"); ctx.cairn = { defineTool, confirm: async (sessionId, req, opts) => { const { getConfirmTransport } = await import("./approval-transports"); const transport = getConfirmTransport(sessionId); if (!transport) return "cancelled" as const; return transport.confirm({ ...req, signal: opts?.signal }); } }; } catch { /* best-effort */ }
     try { const { PermissionPresetService } = await import("@deepseek-ai/dsh-permission-presets"); (ctx.plugin as (p: unknown, c?: unknown) => unknown)(PermissionPresetService, {}); } catch (err) { console.warn("[cordis] permission presets unavailable:", err instanceof Error ? err.message : err); }
     try { const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection"); (ctx.plugin as (p: unknown, c?: unknown) => unknown)(ProjectionRegistry, {}); } catch (err) { console.warn("[cordis] session projections unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountContextRing } = await import("./plugins/context-ring"); mountContextRing(ctx); } catch (err) { console.warn("[cordis] context ring unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountWorkspaceContext } = await import("./plugins/workspace-context"); mountWorkspaceContext(ctx); } catch (err) { console.warn("[cordis] workspace context unavailable:", err instanceof Error ? err.message : err); }
+    try { const { mountSessionTitleBridge } = await import("./plugins/session-title"); mountSessionTitleBridge(ctx); } catch (err) { console.warn("[cordis] session-title bridge unavailable:", err instanceof Error ? err.message : err); }
+    try { const { mountPruneGuard } = await import("./prune-hook"); mountPruneGuard(ctx); } catch (err) { console.warn("[cordis] prune guard unavailable:", err instanceof Error ? err.message : err); }
+    try { const { mountSessionDurability } = await import("./plugins/session-durability"); mountSessionDurability(ctx); } catch (err) { console.warn("[cordis] session durability unavailable:", err instanceof Error ? err.message : err); }
     try { const { loadUserPlugins, watchUserPlugins } = await import("./plugin-loader"); await loadUserPlugins(ctx); watchUserPlugins(ctx); } catch (err) { console.error("[cairn-plugins] runtime plugin layer failed to init:", err instanceof Error ? err.message : err); }
     sharedCtx = ctx;
     return ctx;
