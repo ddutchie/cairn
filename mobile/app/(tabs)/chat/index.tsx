@@ -418,13 +418,11 @@ export default function ChatScreen() {
           accessibilityLabel="AI settings"
           onPress={toolbarPress(() => router.push("/settings/ai"))}
         />
-        {__DEV__ ? (
-          <Stack.Toolbar.Button
-            icon={{ sfSymbol: "sparkles" } as never}
-            accessibilityLabel="Toggle unified morph experiment"
-            onPress={() => setShowUnifiedExperiment((v) => !v)}
-          />
-        ) : null}
+        <Stack.Toolbar.Button
+          icon={{ sfSymbol: "sparkles" } as never}
+          accessibilityLabel="Toggle unified morph experiment"
+          onPress={() => setShowUnifiedExperiment((v) => !v)}
+        />
       </Stack.Toolbar>
       <View style={{ flex: 1, backgroundColor: t.chatBg }}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
