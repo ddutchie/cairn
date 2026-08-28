@@ -7,7 +7,6 @@ import { useCairnStore } from "@/store";
 import { chatSessionId } from "../../../../shared/agent/session-identity";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
-import type { ChatToolCall, PendingQuestion } from "@/hooks/useChatStream";
 import { useChatMessageQueue, useQueueDrain, type QueuedMessage } from "@/hooks/useChatMessageQueue";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { ipcAwaitResult } from "@/store/ipc";
@@ -15,15 +14,14 @@ import { resolvePromptContext } from "@/lib/context-resolver";
 import { storage } from "@/lib/storage";
 import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
-import type { ChatHistoryEntry, ChatSubagent } from "@/types";
+import type { ChatHistoryEntry } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SuggestedPrompts } from "./SuggestedPrompts";
-import { ToolCallIndicator } from "./ToolCallIndicator";
-import { useCommunityConnectorMap, type ChatConnectorMeta } from "./connector-context";
+import { useCommunityConnectorMap } from "./connector-context";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
@@ -39,8 +37,7 @@ import {
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
 import { toConversationMessage } from "@/components/conversation/conversation-message";
-import { toConversationSubagent } from "@/components/conversation/conversation-message";
-import { ConversationSubagentBlock } from "@/components/conversation/ConversationSubagentBlock";
+import { toLiveConversationMessage, withLiveTurn } from "@/components/conversation/conversation-live";
 import { ActionsList } from "./ActionsList";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
@@ -94,59 +91,17 @@ interface ChatPanelProps {
  * INSIDE the Virtuoso scroller, so it grows downward in the scroll flow with
  * the list's padding.
  */
-interface StreamingFooterValue {
-  isLoading: boolean;
-  pendingQuestions: PendingQuestion[] | null;
-  subagents: ChatSubagent[];
-  toolCalls: ChatToolCall[];
-  streamingContent: string;
-  streamingThought: string;
-  connectorMap: Record<string, ChatConnectorMeta> | undefined;
-  activeView: string;
-  handleSend: ((text?: string, attachments?: never[]) => void) | null;
-  /** Answer a blocking ask_questions same-turn (Cordis); false = not blocking. */
-  answerQuestions?: (answersJson: string) => boolean;
-}
-const StreamingFooterContext = React.createContext<StreamingFooterValue>({
-  isLoading: false,
-  pendingQuestions: null,
-  subagents: [],
-  toolCalls: [],
-  streamingContent: "",
-  streamingThought: "",
-  connectorMap: undefined,
-  activeView: "",
-  handleSend: null,
-});
-
-/** Stable Footer — rendered inside the Virtuoso so it grows downward in the
- *  scroll flow with the list's padding, but never remounts while streaming
- *  (consumes the context above, so it re-renders on each token reactively). */
-function ChatFooter() {
-  const s = React.useContext(StreamingFooterContext);
-  return (
-    <div className={cn("px-3 py-3 space-y-3", s.activeView === "chat" && "max-w-3xl mx-auto w-full")}>
-      {s.isLoading && s.subagents.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {s.subagents.map((sub) => (
-            <ConversationSubagentBlock key={sub.childId} subagent={toConversationSubagent(sub)} />
-          ))}
-        </div>
-      )}
-      {s.isLoading && (
-        <ToolCallIndicator
-          toolCalls={s.toolCalls}
-          streamingContent={s.streamingContent}
-          streamingThought={s.streamingThought}
-          connectors={s.connectorMap}
-        />
-      )}
-      {/* The pending-question form is rendered by ConversationPane (just above
-          the composer, its canonical location). Do NOT also render it here in
-          the transcript footer — doing so showed the ask_questions form twice
-          (one inert copy in the scroll flow + the active one above the composer). */}
-    </div>
-  );
+/** Bottom padding inside the Virtuoso scroller.
+ *
+ *  Chat used to render its whole in-flight turn here (a `ToolCallIndicator`
+ *  tree fed by a `StreamingFooterContext`, so the footer could re-render per
+ *  token without Virtuoso remounting it). That made chat a SECOND renderer of
+ *  the same event stream, which is why it never gained the approval card,
+ *  expandable tool output, or Open file / View diff, and why the empty-bubble
+ *  guard only ever bit coding. The live turn is now appended to `messages` by
+ *  `toLiveConversationMessage`, so all that remains here is spacing. */
+function ChatTranscriptPadding() {
+  return <div className="px-3 pt-3 pb-3 space-y-3" />;
 }
 
 export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelProps = {}) {
@@ -477,6 +432,28 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     return messages.slice(s, e);
   }, [messages, timelineRange]);
 
+  // The in-flight turn, rendered as a normal message (shared with coding and the
+  // pop-out). One stable createdAt per turn: deriving it inline would produce a
+  // new value on every token.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one timestamp per turn
+  const liveCreatedAt = useMemo(() => new Date().toISOString(), [isLoading]);
+  const liveMessage = toLiveConversationMessage(
+    `chat-${threadId ?? ""}`,
+    { isLoading, streamingContent, streamingThought, toolCalls, subagents },
+    liveCreatedAt,
+  );
+  // The timeline scrubber slices the SETTLED transcript only — the live turn is
+  // always appended after the slice so scrubbing can never hide it.
+  const displayMessages = useMemo(() => {
+    const settled = timelineRange
+      ? conversationMessages.slice(
+        Math.floor(timelineRange.start * conversationMessages.length),
+        Math.ceil(timelineRange.end * conversationMessages.length),
+      )
+      : conversationMessages;
+    return withLiveTurn(settled, liveMessage);
+  }, [conversationMessages, timelineRange, liveMessage]);
+
   const isChatActive = useCairnStore((s) => s.activeSessionId === "chat");
 
   // Scroll to the bottom when messages/loading change, and whenever the
@@ -781,26 +758,14 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       )}
 
       {/* ConversationPane owns the shared transcript, questions, composer, and
-          session-bound rendering. Chat only supplies its live footer and controls. */}
-      <StreamingFooterContext.Provider
-        value={{
-          isLoading,
-          pendingQuestions,
-          subagents,
-          toolCalls,
-          streamingContent,
-          streamingThought,
-          connectorMap,
-          activeView,
-          handleSend,
-          answerQuestions,
-        }}
-      >
+          session-bound rendering. The in-flight turn is appended to `messages`
+          as a normal streaming message (see conversation-live.ts), so chat and
+          coding render it through the same bubble. */}
         <ConversationPane
           className="flex-1 min-h-0"
           sessionId={`chat-${threadId ?? ""}`}
           profile="chat"
-          messages={timelineRange ? conversationMessages.slice(Math.floor(timelineRange.start * conversationMessages.length), Math.ceil(timelineRange.end * conversationMessages.length)) : conversationMessages}
+          messages={displayMessages}
           input={input}
           onInputChange={setInput}
           onPrompt={(text, attachments) => handleSend(text, attachments)}
@@ -857,7 +822,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           projection={{ pendingQuestions }}
           onAnswerQuestions={(answers) => { if (!answerQuestions(answers)) void handleSend(answers); }}
           emptyState={<ConversationEmptyState content={<SuggestedPrompts onSend={handleSend} disabled={isLoading || !threadId} prompts={activeView === "graph" ? graphPrompts : undefined} subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined} />} />}
-          transcriptFooter={ChatFooter}
+          transcriptFooter={ChatTranscriptPadding}
           composerBefore={(
             <div className={cn("flex-shrink-0 border-t border-[var(--border)] bg-[var(--surface)]", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
               {isLoading && <ConversationWorkingStatus label="Cairn is working — you can queue messages below" />}
@@ -869,7 +834,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
           composerProps={{ centered: activeView === "chat", commands: chatCommands, suggestions: mentionSuggestions, allowImages, allowPdf, providerModelTarget: "ai", variant: activeView === "chat" ? "overview" : "default", showSparkles: activeView === "chat", statusText: isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send", queueWhileBusy: isLoading, queuedCount: queued.length, footerTrailing: aiConfig.provider === "localllm" ? <span className="text-[0.625rem] font-bold text-[var(--accent-fg)] bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_srgb,var(--accent)_60%,var(--background))] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">{chatPanelWidth < 360 ? "Local" : "On-Device Llama"}</span> : undefined }}
         />
-      </StreamingFooterContext.Provider>
 
     </div>
   );

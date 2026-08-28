@@ -987,8 +987,12 @@ const api = {
     setMode: (sessionId: string, mode: "plan" | "execute") =>
       ipcRenderer.send("session:set-mode", { sessionId, mode }),
     /** Approve or deny a pending tool call; grant:"command" echoes the exact bash command to standing-allow */
-    respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command", command?: string, nonce?: string) =>
+    respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command" | "workspace", command?: string, nonce?: string) =>
       ipcRenderer.send("session:respond-tool", { sessionId, callId, approved, grant, command, nonce }),
+    /** Workspace-persistent "Always allow" grants */
+    listApprovalGrants: (workspaceId: string) => invoke("approval-grants:list", { workspaceId }),
+    deleteApprovalGrant: (id: string) => invoke("approval-grants:delete", { id }),
+    clearApprovalGrants: (workspaceId: string) => invoke("approval-grants:clear-workspace", { workspaceId }),
 
   },
 

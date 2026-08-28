@@ -12,7 +12,7 @@
  * halves would call registerToolView(key, Component) the same way.
  */
 import React from "react";
-import type { ChatToolCall } from "@/hooks/useChatStream";
+import type { ConversationLiveToolCall as ChatToolCall } from "@/components/conversation/conversation-message";
 import { getToolView, registerToolView, registeredToolViewKeys } from "./registry";
 import { toToolCallViewProps } from "./adapter";
 import { SkillRow } from "./SkillRow";

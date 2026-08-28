@@ -7,8 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useCairnStore } from "@/store";
 import { useChatStream } from "@/hooks/useChatStream";
 import { effectiveTemperatureForModel } from "@/lib/models-dev";
-import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
-import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
+import { MarkdownContent } from "@/components/conversation/MarkdownContent";
+import { QuestionForm } from "@/components/conversation/QuestionForm";
 import { cn, prettifyToolLabel } from "@/lib/utils";
 import { createSessionEventFold } from "../../../../shared/agent/session-event-fold";
 

@@ -51,9 +51,15 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
   const scope = approvalScopeLabel(toolCall.name);
   const command = typeof toolCall.args?.command === "string" ? toolCall.args.command : undefined;
   if (!sessionId || !toolCall.callId) return <ToolCallBody toolCall={toolCall} />;
-  const respond = (approved: boolean, grant?: "command" | "session") => {
-    void window.electron?.session.respondTool(sessionId, toolCall.callId!, approved, grant, grant === "command" ? command : undefined, toolCall.approvalNonce);
+  const respond = (approved: boolean, grant?: "command" | "session" | "workspace") => {
+    void window.electron?.session.respondTool(sessionId, toolCall.callId!, approved, grant as never, grant === "command" ? command : undefined, toolCall.approvalNonce);
   };
+  // Workspace-persistent "Always allow" — the per-workspace grant answered for
+  // Stage 3a. For bash it is command-scoped (exact `command`), for every other
+  // tool it is tool-scoped. Not shown for READ (should never gate, but guard
+  // anyway) and not for bare external failures that have no stable trust
+  // target — those remain Allow once / Deny only.
+  const showAlwaysAllow = risk !== "READ";
   return (
     <div data-testid="approval-card" className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5">
       <div className="flex items-start gap-2">
@@ -68,6 +74,7 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
       <div className="mt-2 flex items-center justify-end gap-1.5">
         <button data-testid="approval-deny" onClick={() => respond(false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded">Deny</button>
         {command && <button data-testid="approval-allow-command" onClick={() => respond(true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow command</button>}
+        {showAlwaysAllow && <button data-testid="approval-allow-always" onClick={() => respond(true, "workspace")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow</button>}
         <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
       </div>
     </div>

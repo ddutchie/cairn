@@ -69,14 +69,31 @@ export function cairnDoomLoopPlugin(ctx: Context, config: CairnDoomLoopConfig): 
 
   type PreHandler = (...args: unknown[]) => Promise<unknown> | unknown;
   // Reset on new user input so a loop in one turn doesn't poison the next.
-  const unsubReset = (ctx as unknown as { on: (ev: string, fn: (...a: unknown[]) => unknown) => () => void }).on(
+  //
+  // `agent/pre-step` is a WATERFALL, not an observer: dsh's agent loop uses the
+  // listener's return value as the step decision and immediately reads
+  // `decision.kind` (see dsh-agent-loop Agent#preStep). A listener that returns
+  // undefined without calling next() therefore collapses the whole waterfall to
+  // undefined and the turn dies instantly with
+  // `TypeError: Cannot read properties of undefined (reading 'kind')`, surfaced
+  // to the user as "Agent turn ended abnormally (error)". This handler is purely
+  // observational, so it must ALWAYS delegate with `return next()`.
+  //
+  // The payload is `{ agent, messages, turn, step, signal }` — there is no
+  // top-level `source`. A new user turn is detected by inspecting the claimed
+  // messages for a user-sourced one.
+  const unsubReset = (ctx as unknown as { on: (ev: string, fn: PreHandler) => () => void }).on(
     "agent/pre-step" as string,
-    (...a: unknown[]) => {
-      const data = a[0] as { source?: { kind?: string } } | undefined;
-      if (data?.source?.kind === "user") {
-        recent.length = 0;
-        lastPromptedAt = 0;
-      }
+    async (...a: unknown[]) => {
+      const next = a[1] as (() => Promise<unknown>) | undefined;
+      try {
+        const messages = (a[0] as { messages?: Array<{ source?: { kind?: string } }> } | undefined)?.messages;
+        if (Array.isArray(messages) && messages.some((m) => m?.source?.kind === "user")) {
+          recent.length = 0;
+          lastPromptedAt = 0;
+        }
+      } catch { /* never let bookkeeping break the step decision */ }
+      return next ? next() : undefined;
     },
   );
   const unsub = (ctx as unknown as { on: (ev: string, fn: PreHandler) => () => void }).on(

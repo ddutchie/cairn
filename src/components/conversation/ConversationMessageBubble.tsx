@@ -4,9 +4,9 @@ import React from "react";
 import { Check, Copy, FileText, FolderOpen, Info, Kanban, RotateCcw, Search } from "lucide-react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { cn } from "@/lib/utils";
-import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
-import { ThinkingPanel } from "@/components/chat/chat-panel/ThinkingPanel";
-import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
+import { MarkdownContent } from "@/components/conversation/MarkdownContent";
+import { ThinkingPanel } from "@/components/conversation/ThinkingPanel";
+import { MessageAvatar, StreamingCursor } from "@/components/conversation/message-ui";
 import type { LinkedContextReference } from "@/types";
 import { toConversationSubagent } from "./conversation-message";
 import type { ConversationMessage } from "./conversation-message";
@@ -42,6 +42,12 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
   const isError = message.role === "error";
   const { copied, copy } = useCopyToClipboard();
   const [statsOpen, setStatsOpen] = React.useState(false);
+  // Whitespace-only content still renders as a blank bubble, so treat it as
+  // empty. Defensive `?? ""`: persisted transcripts predate the required type.
+  const hasContent = (message.content ?? "").trim().length > 0;
+  const hasReasoning = Boolean(message.reasoning || message.reasoningSummary);
+  const hasToolCalls = (message.toolCalls?.length ?? 0) > 0;
+  const hasSubagents = (message.subagents?.length ?? 0) > 0;
 
   if (isSystem) {
     return (
@@ -93,10 +99,26 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
             ))}
           </div>
         )}
-        <div className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full", isUser ? "chat-bubble-user rounded-tr-sm" : "chat-bubble-ai rounded-tl-sm")}>
-          <MarkdownContent content={message.content} isUser={isUser} />
-          {!isUser && message.isStreaming && <StreamingCursor size="md" />}
-        </div>
+        {/* The content bubble is padding + background, so rendering it with an
+            empty `content` produces a blank second "message". That happens on
+            every reasoning-only or tool-only step, where the model streams
+            thinking (or calls a tool) before writing any text.
+
+            Chat never showed this because its live turn is drawn by
+            ToolCallIndicator, which has always guarded on `hasContent`; Coding
+            streams through real AgentMessages and so hit the unguarded shared
+            bubble — hence "a thinking block and an empty message below" on the
+            coding agent only.
+
+            The streaming fallback keeps a visible cursor when there is nothing
+            else on screen yet (the equivalent of Chat's "Thinking…" chip), so a
+            live turn is never rendered as completely empty. */}
+        {(hasContent || (message.isStreaming && !hasReasoning && !hasToolCalls && !hasSubagents)) && (
+          <div className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full", isUser ? "chat-bubble-user rounded-tr-sm" : "chat-bubble-ai rounded-tl-sm")}>
+            {hasContent && <MarkdownContent content={message.content} isUser={isUser} />}
+            {!isUser && message.isStreaming && <StreamingCursor size="md" />}
+          </div>
+        )}
         {/* Per-turn throughput/latency — behind a small info button on settled
             assistant messages, shown only when derivable (no zero/NaN lines). */}
         {!isUser && !message.isStreaming && (() => {
@@ -138,14 +160,19 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
             {message.contextRefs.map((ref, index) => <ContextRefChip key={`${ref.id ?? ref.title ?? ""}-${index}`} ref_={ref} />)}
           </div>
         )}
-        <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "")}>
-          <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5 transition-opacity">
-            <button onClick={() => copy(message.content)} title="Copy" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
-              {copied ? <Check size={10} className="text-[var(--success)]" /> : <Copy size={10} />}
-            </button>
-            {isUser && onRetry && <button onClick={() => onRetry(message.content)} title="Retry" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"><RotateCcw size={10} /></button>}
+        {/* Copy/Retry both act on `content`, so they are pointless on a
+            reasoning-only or tool-only message — and the empty flex row still
+            reserved layout under the thinking panel. */}
+        {hasContent && (
+          <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "")}>
+            <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5 transition-opacity">
+              <button onClick={() => copy(message.content)} title="Copy" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
+                {copied ? <Check size={10} className="text-[var(--success)]" /> : <Copy size={10} />}
+              </button>
+              {isUser && onRetry && <button onClick={() => onRetry(message.content)} title="Retry" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"><RotateCcw size={10} /></button>}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -6,7 +6,7 @@
  * ok/error, running-vs-done) on ChatToolCall — we just reshape it into dsh's
  * RunningToolCall (streaming) / ToolResultNode (settled) block union.
  */
-import type { ChatToolCall } from "@/hooks/useChatStream";
+import type { ConversationLiveToolCall as ChatToolCall } from "@/components/conversation/conversation-message";
 import type { ToolCallViewProps, ToolCallBlock, RunningToolCall, ToolResultNode } from "./contract";
 
 /** Build the dsh `block` union from a Cairn tool call. */

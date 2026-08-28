@@ -9,6 +9,7 @@ import { id, now } from "@/lib/utils";
 import { storage } from "@/lib/storage";
 import { ACTIVE_CHAT_THREAD_KEY } from "@/lib/constants";
 import { ipc, ipcAwait, ipcAwaitResult } from "../ipc";
+import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -112,18 +113,11 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
              
             (e) => (e.chat as unknown as { sessionMessages: (id: string) => Promise<{ data: unknown } | { error: string }> }).sessionMessages(t.id)
           );
-          let data: ChatMessage[] | null = null;
-          let usage: unknown = undefined;
-          let raw: unknown = sessRes;
-          if (raw && typeof raw === "object" && "data" in raw && (raw as { data: unknown }).data !== undefined) {
-            raw = (raw as { data: unknown }).data;
-          }
-          if (Array.isArray(raw)) {
-            data = raw as ChatMessage[];
-          } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
-            data = (raw as { messages: ChatMessage[] }).messages;
-            usage = (raw as { usage?: unknown }).usage;
-          }
+          // Shared unwrapper — see unwrapSessionPayload for why this used to be
+          // open-coded here (and drifted from the other three call sites).
+          const payload = unwrapSessionPayload(sessRes);
+          const data: ChatMessage[] | null = payload.messages.length > 0 ? payload.messages as ChatMessage[] : null;
+          const usage: unknown = payload.usage;
 
           if (usage) usageByThreadId.set(t.id, usage);
           if (data && data.length > 0) {

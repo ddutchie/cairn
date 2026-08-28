@@ -28,6 +28,7 @@ import { registerCommunityRegistryHandlers } from "./ipc/community-registry-hand
 import { registerGitHandlers } from "./ipc/git";
 import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
 import { setSessionRoot } from "./cordis/run-cordis-loop";
+import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
@@ -247,6 +248,13 @@ app.whenReady().then(async () => {
   });
 
   const userDataPath = app.getPath("userData");
+
+  // ── Diagnostic log ──────────────────────────────────────────────────────
+  // Point the persistent debug log at <userData>/logs before anything that
+  // might want to log. In a packaged app there is no attached terminal, so this
+  // file is the only record of turn timings and abnormal turn endings.
+  setDebugLogRoot(userDataPath);
+  dlog("main", "app starting", { userDataPath, version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch });
 
   // ── Configure dsh session persistence root (jsonl) ──────────────────────
   // Chats/sessions live in dsh's jsonl session log under userData, NOT in

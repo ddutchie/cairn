@@ -1,5 +1,22 @@
 import type { ReactNode } from "react";
 import type { AgentMessage, AgentSubagentMessage, ChatMessage, ChatSubagent, ChatToolCallRecord, LinkedContextReference, TokenBreakdown } from "@/types";
+import type { SessionConversationQuestion, SessionConversationToolCall } from "@/hooks/useSessionConversation";
+
+/**
+ * Live tool-call and question shapes for the shared conversation layer.
+ *
+ * These used to live in `@/hooks/useChatStream`, which meant the profile-neutral
+ * conversation components (and `@/lib/dsh-toolview`) imported from the CHAT
+ * hook — the shared layer depending on one of its two consumers. They are
+ * declared here so both chat and coding depend on the shared layer instead, not
+ * on each other. `useChatStream` re-exports them for compatibility.
+ */
+export type ConversationLiveToolCall = SessionConversationToolCall & {
+  cairnRef?: { type: "note" | "task"; id: string; title: string };
+  externalRef?: { url: string; title?: string; snippet?: string };
+};
+export type PendingQuestionOption = string | { label: string; description?: string };
+export type PendingQuestion = SessionConversationQuestion;
 
 export interface ConversationToolCall {
   callId?: string;

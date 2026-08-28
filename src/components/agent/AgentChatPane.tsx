@@ -11,7 +11,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
 import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
-import type { PendingQuestion } from "@/hooks/useChatStream";
+import type { PendingQuestion } from "@/components/conversation/conversation-message";
+import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, id } from "@/lib/utils";
@@ -25,6 +26,7 @@ import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
+import { isBenignTurnEnd } from "../../../shared/agent/turn-end-reason";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import { useChatMessageQueue, useQueueDrain } from "@/hooks/useChatMessageQueue";
 import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion, effectiveTemperatureForModel } from "@/lib/models-dev";
@@ -182,9 +184,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         if (!result.callId) return;
         updateAgentToolCall(session.sessionId, result.callId, { label: result.name, args: result.args, running: false, ok: result.ok, output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output, cairnRef: extractCairnRef(result.name, result.output) });
       },
-      onTurnEnd: (reason) => {
+      onTurnEnd: (reason, _snapshot, detail) => {
         finaliseAgentMessage(session.sessionId); setIsLoading(false); setRetryInfo(null); setIsCompacting(false); sessionConversation.setQuestions(null);
-        if (reason && reason !== "completed" && reason !== "aborted") addAgentMessage(session.sessionId, { id: id(), role: "error", content: `Agent turn ended abnormally (${reason})`, timestamp: new Date().toISOString() });
+        // `detail` carries the structured failure message; `reason` alone only
+        // ever said "(error)" and hid the actual cause.
+        if (reason && !isBenignTurnEnd(reason)) addAgentMessage(session.sessionId, { id: id(), role: "error", content: detail ?? `Agent turn ended abnormally (${reason})`, timestamp: new Date().toISOString() });
       },
     },
   });
@@ -356,8 +360,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         void (async () => {
           try {
             const result = await (electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId);
-            const raw = result && typeof result === "object" && "data" in result ? (result as { data: unknown }).data : result;
-            const rows = Array.isArray(raw) ? raw : (raw && typeof raw === "object" && "messages" in raw ? (raw as { messages: unknown[] }).messages : []);
+            const rows = unwrapSessionPayload(result).messages;
             if (rows.length) useCairnStore.setState((s) => ({ terminalSessions: s.terminalSessions.map((t) => t.sessionId === sessionId ? { ...t, messages: rows as never } : t) }));
           } catch (err) { console.warn("[AgentChatPane] compact reload failed", err); }
           addAgentMessage(sessionId, { id: id(), role: "system" as const, content: e.messageCount > 0 ? `Context compacted — session history summarised into ${e.messageCount} messages.` : "Nothing to compact — session history is too short.", timestamp: new Date().toISOString() });

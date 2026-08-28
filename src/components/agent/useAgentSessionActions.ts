@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { id } from "@/lib/utils";
 import type { AgentMessage, CodingSessionSummary, SessionPresentation, TerminalSession } from "@/types";
+import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
 
 /**
  * Shared hook for creating new Cairn Agent sessions and resuming existing ones.
@@ -82,22 +83,13 @@ export function useAgentSessionActions() {
           toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
         };
         const sessRes = await (window.electron?.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> })?.getSessionMessages(summary.id);
-        let rows: RowType[] | undefined = undefined;
-
-        if (Array.isArray(sessRes)) {
-          rows = sessRes as RowType[];
-        } else if (sessRes && typeof sessRes === "object") {
-          const raw = "data" in sessRes && (sessRes as { data?: unknown }).data ? (sessRes as { data: unknown }).data : sessRes;
-          if (Array.isArray(raw)) {
-            rows = raw as RowType[];
-          } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
-            rows = (raw as { messages: RowType[] }).messages;
-            lastUsage = (raw as { usage?: TerminalSession["lastUsage"] }).usage;
-            const rawTodos = (raw as { todos?: Array<{ id: string; title: string; status: "pending" | "in_progress" | "completed" }> }).todos;
-            if (rawTodos && rawTodos.length > 0) {
-              useCairnStore.getState().setSessionTodos(summary.id, rawTodos.map((t) => ({ content: t.title, status: t.status, priority: "medium" as const })));
-            }
-          }
+        // Shared unwrapper — the same three response shapes the chat history
+        // path sees (see unwrapSessionPayload).
+        const payload = unwrapSessionPayload(sessRes);
+        const rows: RowType[] | undefined = payload.messages.length > 0 ? payload.messages as unknown as RowType[] : undefined;
+        lastUsage = payload.usage as TerminalSession["lastUsage"];
+        if (payload.todos && payload.todos.length > 0) {
+          useCairnStore.getState().setSessionTodos(summary.id, payload.todos.map((t) => ({ content: t.title, status: t.status, priority: "medium" as const })));
         }
 
         if (rows) {

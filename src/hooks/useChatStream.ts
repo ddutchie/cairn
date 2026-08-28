@@ -3,14 +3,15 @@
 import { useRef } from "react";
 import { useCairnStore } from "@/store";
 import type { SuggestedAction, ChatHistoryEntry } from "@/types";
-import { useSessionConversation, type SessionConversationQuestion, type SessionConversationToolCall } from "./useSessionConversation";
+import { useSessionConversation } from "./useSessionConversation";
+import type { ConversationLiveToolCall, PendingQuestion as ConversationPendingQuestion, PendingQuestionOption as ConversationPendingQuestionOption } from "@/components/conversation/conversation-message";
 
-export type ChatToolCall = SessionConversationToolCall & {
-  cairnRef?: { type: "note" | "task"; id: string; title: string };
-  externalRef?: { url: string; title?: string; snippet?: string };
-};
-export type PendingQuestionOption = string | { label: string; description?: string };
-export type PendingQuestion = SessionConversationQuestion;
+// These now live in the shared conversation layer so the profile-neutral
+// components no longer import from the chat hook. Re-exported here because
+// chat call sites (and tests) refer to them by these names.
+export type ChatToolCall = ConversationLiveToolCall;
+export type PendingQuestionOption = ConversationPendingQuestionOption;
+export type PendingQuestion = ConversationPendingQuestion;
 
 export interface ChatStreamRequest {
   message: string;

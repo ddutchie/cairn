@@ -4,17 +4,43 @@ import { toConversationMessage } from "./conversation-message";
 
 export type SessionMessage = ChatMessage | AgentMessage;
 
+/** Sidecar fields the session-history IPC returns alongside the transcript. */
+export interface SessionPayload {
+  messages: SessionMessage[];
+  usage?: unknown;
+  todos?: Array<{ id: string; title: string; status: "pending" | "in_progress" | "completed" }>;
+}
+
+/**
+ * Unwrap a session-history response into its parts.
+ *
+ * Both history channels (`db:chat:sessionMessages`, `db:session:messages`) return
+ * one of three shapes — a bare array, `{messages, usage, todos}`, or either of
+ * those behind an ipc `{data}` envelope. Four call sites each open-coded this
+ * ladder, and they had drifted: some handled the `{data}` wrapper, some didn't,
+ * and only two recovered `usage`. One unwrapper keeps them honest.
+ */
+export function unwrapSessionPayload(value: unknown): SessionPayload {
+  const raw = value && typeof value === "object" && "data" in value && (value as { data?: unknown }).data !== undefined
+    ? (value as { data: unknown }).data
+    : value;
+  if (Array.isArray(raw)) return { messages: raw as SessionMessage[] };
+  if (raw && typeof raw === "object") {
+    const record = raw as { messages?: unknown; usage?: unknown; todos?: unknown };
+    if (Array.isArray(record.messages)) {
+      return {
+        messages: record.messages as SessionMessage[],
+        usage: record.usage,
+        todos: Array.isArray(record.todos) ? record.todos as SessionPayload["todos"] : undefined,
+      };
+    }
+  }
+  return { messages: [] };
+}
+
 /** Accept the response envelopes used by the chat and native session APIs. */
 export function unwrapSessionMessages(value: unknown): SessionMessage[] {
-  const raw = value && typeof value === "object" && "data" in value
-    ? (value as { data?: unknown }).data
-    : value;
-  if (Array.isArray(raw)) return raw as SessionMessage[];
-  if (raw && typeof raw === "object" && "messages" in raw) {
-    const messages = (raw as { messages?: unknown }).messages;
-    if (Array.isArray(messages)) return messages as SessionMessage[];
-  }
-  return [];
+  return unwrapSessionPayload(value).messages;
 }
 
 export function normalizeSessionMessages(value: unknown): ConversationMessage[] {

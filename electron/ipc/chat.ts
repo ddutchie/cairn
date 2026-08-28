@@ -10,15 +10,17 @@
 import { registerIpcHandle, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 import { broadcastToChat } from "../chat-popout";
+import { mintAskNonce, dropAskNonce, clearAskNoncesForSession } from "./ask-nonce";
+import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-state";
+import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
+import { forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import type { DbContext } from "./result-helpers";
 import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
-import { recordLlmUsage } from "../lib/usage-recorder";
 import { registerPendingQuestion, recordPendingQuestion } from "../cordis/pending-question-broker";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
-import { mintAskNonce } from "./ask-nonce";
 
 // One controller and concurrency slot per canonical session, regardless of
 // which renderer issued the prompt.
@@ -168,6 +170,37 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
        broadcastToChat(outChannel, outPayload, event.sender.id);
     };
 
+    // Chat HITL: interactive approval transport so EXTERNAL/EXEC tools (and
+    // deletions) gate through the same approval cards as coding. Mirrors the
+    // coding loop's setConfirmTransport pattern; the pending-ask state is
+    // shared via approval-state.ts so session:respond-tool's global handler
+    // can resolve it regardless of which profile created the ask.
+    const chatLoopSend = (channel: string, payload: Record<string, unknown>) => {
+      if (channel === "session:projection" && payload && typeof payload === "object" && (payload as { kind?: unknown }).kind === "approval") {
+        const data = (payload as { data?: { status?: string; callId?: string; name?: string; label?: string; nonce?: string } }).data;
+        if (data?.status === "required" && data.callId && !data.nonce) {
+          const nonce = mintAskNonce(sessionId, data.callId);
+          (data as { nonce?: string }).nonce = nonce;
+          pendingAsks.record({ sessionId, name: data.name ?? "tool", label: data.label ?? data.name ?? "tool", callId: data.callId, nonce });
+        } else if (data?.status === "expired" && data.callId) {
+          pendingAsks.resolve(sessionId, data.callId);
+          dropAskNonce(sessionId, data.callId);
+          forgetSessionApprovalArgs(sessionId);
+        }
+      }
+      send(channel, payload);
+    };
+    const chatConfirmTransport = createInteractiveConfirmTransport({
+      sessionId,
+      send: chatLoopSend,
+      registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
+        const key = pendingKey(sessionId, callId);
+        cordisPendingApprovals.set(key, resolve);
+        return () => cordisPendingApprovals.delete(key);
+      },
+    });
+    setConfirmTransport(sessionId, chatConfirmTransport);
+
     if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {
        abortControllers.delete(sessionId);
       if (req.threadId) runningThreads.delete(req.threadId);
@@ -183,24 +216,10 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     // all expose arbitrary names. The renderer gates what may attach (it knows
     // the catalog), so a part that arrives here is meant for this model / endpoint.
 
-    const addUsage = (pt: number, ct: number, rt?: number, cost?: number, cacheRead?: number, cacheCreate?: number) => {
-      // Persist one usage row per tool-loop round (source = chat) for the Usage view.
-      recordLlmUsage({
-        source: "chat",
-        sessionId: req.threadId,
-        projectId: req.projectId,
-        workspaceId: req.workspaceId,
-        provider,
-        model,
-        baseUrl,
-        promptTokens: pt,
-        completionTokens: ct,
-        reasoningTokens: typeof rt === "number" ? rt : 0,
-        cacheReadTokens: cacheRead,
-        cacheCreationTokens: cacheCreate,
-        costUsd: cost,
-      });
-    };
+    // NOTE: usage is recorded exclusively by `cairnUsagePlugin` (mounted for
+    // every Cordis session in mountCordisSessionPlugins). A per-turn
+    // recordLlmUsage used to live here as well, which double-counted every chat
+    // turn's tokens and cost in the Usage view.
 
     // ── Subagent mode ─────────────────────────────────────────────────────────
     // The builtin dispatch → research/write subagent loop (chat-subagent-loop)
@@ -228,15 +247,22 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
             apiMode: req.config?.apiMode,
           },
           signal: abortCtrl.signal,
-           onUsage: addUsage,
           getWin,
              sendSubagent: (channel, payload) => send(channel.replace(/^chat:/, "session:"), payload),
+           approvals: {
+             send: chatLoopSend,
+             registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
+               const key = pendingKey(sessionId, callId);
+               cordisPendingApprovals.set(key, resolve);
+               return () => cordisPendingApprovals.delete(key);
+             },
+           },
            questions: {
-              send: (channel, payload) => send(channel, payload),
+              send: (channel, payload) => chatLoopSend(channel, payload),
                emitQuestions: (requestId, questions) => {
                  const nonce = mintAskNonce(sessionId, requestId);
                  recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
-                  send("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions, nonce } as never));
+                  chatLoopSend("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions, nonce } as never));
                },
              registerPending: (requestId, resolve) => {
                return registerPendingQuestion(sessionId, requestId, resolve);
@@ -252,6 +278,11 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
       } finally {
          abortControllers.delete(sessionId);
         if (req.threadId) runningThreads.delete(req.threadId);
+        setConfirmTransport(sessionId, undefined);
+        pendingAsks.clearSession(sessionId);
+        clearAskNoncesForSession(sessionId);
+        forgetSessionApprovalArgs(sessionId);
+        for (const k of Array.from(cordisPendingApprovals.keys())) if (k.startsWith(`${sessionId}::`)) cordisPendingApprovals.delete(k);
       }
       return;
     }

@@ -544,7 +544,9 @@ export async function runAutomation(
       flushLog();
       emitRun("toolDone", { tool: result.name, ok: result.ok, output: result.output, error: result.error, callId: result.callId });
     },
-    onUsage: (usage) => recordLlmUsage({ source: "automation", sessionId: run.id, projectId: automation.projectId ?? undefined, workspaceId: automation.workspaceId, provider, model: cachedModel, baseUrl: cachedBaseUrl, promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, reasoningTokens: usage.reasoningTokens, cacheReadTokens: usage.cacheReadTokens, cacheCreationTokens: usage.cacheCreationTokens, costUsd: usage.costUsd }),
+    // Usage is recorded by cairnUsagePlugin (source "automation", passed via
+    // runCordisCodingLoop's usageSource). Recording it here as well double-counted
+    // every automation run in the Usage view.
   });
 
   // The automation-specific tools registered on the coding agent: run_script,
@@ -583,6 +585,8 @@ export async function runAutomation(
     llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
     mode: "execute",
     sandboxMode: "workspace-write",
+    // Automation runs on the coding profile but is its own Usage-view source.
+    usageSource: "automation",
     // Ask mode gates writes through the Cordis approval waterfall (native
     // asks + shouldAutoAllowAutomationTool below); Auto skips the gate.
     autoApprove: automation.approvalMode !== "ask",

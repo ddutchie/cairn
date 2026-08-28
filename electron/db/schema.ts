@@ -1305,6 +1305,28 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_session_profiles_updated ON session_profiles(updated_at);
     `);
   },
+
+  // v54: Workspace-persistent approval grants ("Always allow").
+  // Each row is a single tool (and, for bash, an exact canonical command) the
+  // user marked "Always allow" for a workspace. Mirrors automation standing
+  // rules (target-aware, deduped by tool+target, exec refuses wildcard) but
+  // scoped to a workspace rather than to one automation. The next session in
+  // the same workspace auto-allows it — no re-ask. Intentionally NOT synced
+  // (not in SYNCABLE_TABLES): a trust decision made on one device must not
+  // silently apply on another.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS approval_grants (
+        id           TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tool         TEXT NOT NULL,
+        target       TEXT,
+        created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UNIQUE(workspace_id, tool, target)
+      );
+      CREATE INDEX IF NOT EXISTS idx_approval_grants_workspace ON approval_grants(workspace_id);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

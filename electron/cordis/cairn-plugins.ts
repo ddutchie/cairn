@@ -23,9 +23,12 @@ import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
 // See electron/cordis/ctx-augment.ts — same augmentation load.
 import "./ctx-augment";
 import { recordLlmUsage } from "../lib/usage-recorder";
+import type { UsageSource } from "../db/usage-queries";
 import { newId } from "../db/utils";
 import { saveSessionTodos, getSessionTodos, updateCodingSession } from "../db/queries";
-import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
+import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, readPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
+import { riskForTool as riskForToolShared } from "../../shared/agent/tool-risk";
+import type { RiskClass } from "../../shared/agent/tool-risk";
 import { needsApprovalForCall } from "../../shared/agent/tool-risk";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
 
@@ -503,26 +506,54 @@ export interface CairnUsageConfig {
   provider?: string;
   model: string;
   baseUrl?: string;
+  /**
+   * Which feature this session's usage belongs to, for the Usage view's
+   * by-source breakdown. Previously hardcoded to "chat", which mis-attributed
+   * every coding and automation turn. Subagent turns are re-tagged at record
+   * time (see below) using the `*-subagent` counterpart.
+   */
+  source: UsageSource;
 }
 
-/** Record token/cost usage from dsh usage chunks and messages into Cairn's llm_usage table. */
+/**
+ * Record token/cost usage from dsh usage chunks and messages into `llm_usage`.
+ *
+ * This is the SINGLE writer for every Cordis session kind (chat, coding,
+ * automation). It used to be one of three — `ipc/chat.ts` also wrote a per-turn
+ * row and `lib/heartbeat-runner.ts` a per-event row — so chat and automation
+ * turns were counted two or three times over.
+ *
+ * One row per model REQUEST, carrying that request's OWN tokens. The previous
+ * version accumulated (`prompt = max(...)`, `completion += ...`) and wrote a row
+ * on every usage event, so a 4-step turn produced four rows of running totals;
+ * since `queryUsageOverview` SUMs rows, a single turn's prompt tokens were
+ * counted ~4x and its cost inflated to match. Per-request rows sum correctly:
+ * you are billed for the prefill of every request.
+ */
 export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
-  const { threadId, workspaceId, projectId, provider, model, baseUrl } = config;
-  let prompt = 0;
-  let completion = 0;
-  let reasoning = 0;
+  const { threadId, workspaceId, projectId, provider, model, baseUrl, source } = config;
   let recordedInTurn = false;
 
-  ctx.on("session/event", (_session: Session, event: SessionEvent) => {
-    let u: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } | undefined = undefined;
+  // Named rather than `typeof u`: a self-referential annotation narrows to never.
+  type DshUsage = {
+    inputTokens?: number;
+    outputTokens?: number;
+    reasoningTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+    costUsd?: number;
+  };
+
+  ctx.on("session/event", (session: Session, event: SessionEvent) => {
+    let u: DshUsage | undefined = undefined;
 
     if (event.type === "assistant/chunk") {
-      const chunk = (event.data as { chunk?: { type?: string; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }).chunk;
+      const chunk = (event.data as { chunk?: { type?: string; usage?: DshUsage } }).chunk;
       if (chunk?.type === "usage" && chunk.usage) {
         u = chunk.usage;
       }
     } else if (event.type === "assistant/message") {
-      const msgUsage = (event.data as { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }).usage;
+      const msgUsage = (event.data as { usage?: DshUsage }).usage;
       if (msgUsage && !recordedInTurn) {
         u = msgUsage;
       }
@@ -530,23 +561,39 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
     }
 
     if (!u) return;
-
     recordedInTurn = true;
-    prompt = Math.max(prompt, u.inputTokens ?? 0);
-    completion += u.outputTokens ?? 0;
-    reasoning += u.reasoningTokens ?? 0;
+
+    const promptTokens = u.inputTokens ?? 0;
+    const completionTokens = u.outputTokens ?? 0;
+    const reasoningTokens = u.reasoningTokens ?? 0;
+    // dsh emits usage events that carry no counts (e.g. the synthetic
+    // breakdown event the chat runner injects for the Context Ring). Writing
+    // them produced rows of all-zeros that inflate the row count and show up as
+    // empty entries in Recent usage.
+    if (promptTokens === 0 && completionTokens === 0 && reasoningTokens === 0) return;
+
+    // Subagent children run on their own dsh session under the same context, so
+    // their usage arrives here too. Attribute it to the `*-subagent` source
+    // instead of silently booking it against the parent feature.
+    const isChild = (session as { header?: { origin?: string } }).header?.origin === "subagent";
+    const resolvedSource: UsageSource = isChild
+      ? (source === "chat" ? "chat-subagent" : "coding-subagent")
+      : source;
 
     recordLlmUsage({
-      source: "chat",
+      source: resolvedSource,
       sessionId: threadId,
       projectId,
       workspaceId,
       provider,
       model,
       baseUrl,
-      promptTokens: prompt,
-      completionTokens: completion,
-      reasoningTokens: reasoning,
+      promptTokens,
+      completionTokens,
+      reasoningTokens,
+      ...(typeof u.cacheReadTokens === "number" ? { cacheReadTokens: u.cacheReadTokens } : {}),
+      ...(typeof u.cacheCreationTokens === "number" ? { cacheCreationTokens: u.cacheCreationTokens } : {}),
+      ...(typeof u.costUsd === "number" ? { costUsd: u.costUsd } : {}),
     });
   });
 }
@@ -768,10 +815,35 @@ export interface CairnApprovalConfig {
    * disposer. The session:respond-tool IPC handler invokes the resolver with
    * the user's decision.
    */
-  registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void) => () => void;
+  registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => () => void;
   signal?: AbortSignal;
   /** Fail-closed idle timeout for one ask. Defaults to APPROVAL_TIMEOUT_MS. */
   timeoutMs?: number;
+  /**
+   * Workspace-persistent "Always allow" grants. When a workspaceId is supplied,
+   * a grant stored via `grant:"workspace"` (persisted by session:respond-tool)
+   * auto-allows the same tool (and, for bash, the same exact command) in every
+   * future session of that workspace — not just this one. Mirrors automation
+   * standing rules (target-aware, exec refuses wildcard). When absent (coding
+   * sessions without a workspace context, tests), only the in-memory session
+   * grants are consulted.
+   */
+  workspaceId?: string;
+  /** DB handle for persistent-grant lookups. Required when workspaceId is set. */
+  db?: import("better-sqlite3").Database;
+  /**
+   * When set, only tools whose risk class is in the set gate through the
+   * approval seam — everything else is implicitly allowed. Chat uses this to
+   * auto-allow Cairn DB writes (WRITE_LOCAL) while still gating EXTERNAL
+   * (MCP/service) and EXEC (bash/subagent).
+   */
+  askRiskClasses?: ReadonlySet<RiskClass>;
+  /**
+   * Additional predicate: when it returns true the tool is gated even if its
+   * risk class is not in askRiskClasses. Chat uses this to gate deletions
+   * (which are WRITE_LOCAL) while still auto-allowing creates/updates.
+   */
+  askFilter?: (name: string, args: Record<string, unknown>) => boolean;
 }
 
 /**
@@ -794,17 +866,38 @@ export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
  * turn — this mount is disposed with it.
  */
 export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): (() => void) | void {
-  const { autoApprove, sessionId, send, registerPending, signal, timeoutMs } = config;
+  const { autoApprove, sessionId, send, registerPending, signal, timeoutMs, workspaceId, db, askRiskClasses, askFilter } = config;
   if (autoApprove) return;
 
+  /** True when the tool's risk class is in the ask set, or when no filter is set (ask for everything mutating). */
+  const riskGates = (name: string, argsObj: Record<string, unknown>): boolean => {
+    if (askFilter?.(name, argsObj)) return true;
+    if (!askRiskClasses) return true;
+    return askRiskClasses.has(riskForToolShared(name));
+  };
+
   const disposers: Array<() => void> = [];
-  // Durable per-session grants (survive this turn; cleared with the session).
+  // Per-session grants (survive this turn) + workspace-persistent grants.
   const grants = getSessionGrants(sessionId);
   const isGranted = (name: string, argsObj: Record<string, unknown>): boolean => {
     if (grants.tools.has(name)) return true;
     if (name === "bash") {
       const cmd = canonicalBashCommand(argsObj.command);
       if (cmd && grants.bashCommands.has(cmd)) return true;
+    }
+    // Workspace-persistent grants (mirrors automation standing rules, but
+    // scoped to a workspace rather than to one automation; target-aware,
+    // exec refuses wildcard). Consulted here so an "Always allow" survives
+    // across sessions — not just the session:respond-tool fallback.
+    if (workspaceId && db) {
+      try {
+        const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
+        if (isWorkspaceGranted(db, workspaceId, name)) return true;
+        if (name === "bash") {
+          const cmd = canonicalBashCommand(argsObj.command);
+          if (cmd && isWorkspaceGranted(db, workspaceId, name, cmd)) return true;
+        }
+      } catch { /* DB not yet migrated or closed — fall through to no grant */ }
     }
     return false;
   };
@@ -820,7 +913,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const next = args[1] as (() => Promise<unknown>) | undefined;
       const name = exec?.name;
       const argsObj = (exec?.arguments && typeof exec.arguments === "object") ? exec.arguments as Record<string, unknown> : {};
-      if (typeof name === "string" && needsApprovalForCall(name, argsObj) && !isGranted(name, argsObj)) {
+      if (typeof name === "string" && needsApprovalForCall(name, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
         // Stash the TRUSTED args so session:respond-tool can record a
         // grant:'command' against what dsh will actually execute — not
         // whatever string a compromised renderer echoes back. dsh's
@@ -843,6 +936,14 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const toolName = req?.toolName ?? "tool";
       const callId = req?.callId ?? `approve-${newId()}`;
       if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
+      // Workspace-persistent grants also short-circuit the ask without emitting
+      // a card, so an "Always allow" covers future sessions silently.
+      if (workspaceId && db) {
+        try {
+          const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
+          if (isWorkspaceGranted(db, workspaceId, toolName)) return Promise.resolve("allowed-once");
+        } catch { /* DB not migrated — fall through to ask */ }
+      }
        sendProjection(send, sessionId, "approval", { status: "required", name: toolName, label: toolName, callId });
       return new Promise<string>((resolve) => {
         // Single-settle guard: exactly one of respond / abort / timeout wins,
@@ -892,7 +993,24 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           if (decision.approved && decision.grant === "session") grants.tools.add(toolName);
           // grant:"command" is recorded by the session:respond-tool handler,
           // which owns the canonicalized command text (dsh's ApprovalRequest
-          // deliberately carries no args).
+          // deliberately carries no args). grant:"workspace" persists to the
+          // workspace DB so future sessions auto-allow (the same handler also
+          // persists it — this in-plugin path covers the headless/auto-allow
+          // transports that settle without going through the IPC handler).
+          if (decision.approved && decision.grant === "workspace" && workspaceId && db) {
+            try {
+              const { addWorkspaceApprovalGrant } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
+              const trusted = readPendingApprovalArgs(sessionId, callId);
+              // For bash the workspace grant is command-scoped (like grant:command);
+              // for everything else it is tool-scoped (target = null).
+              const target = toolName === "bash" && trusted ? canonicalBashCommand(trusted.command) : null;
+              addWorkspaceApprovalGrant(db, workspaceId, toolName, target);
+              // Also grant this session immediately so the current turn proceeds
+              // without waiting for the DB read to take effect on the next ask.
+              grants.tools.add(toolName);
+              if (toolName === "bash" && target) grants.bashCommands.add(target);
+            } catch { /* DB not migrated or closed — session grant already applied */ }
+          }
           settle(decision.approved ? "allowed-once" : "rejected");
         });
         // Replay a buffered sync outcome now that disposeRef is populated.

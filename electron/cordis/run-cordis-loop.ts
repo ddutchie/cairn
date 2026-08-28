@@ -33,6 +33,8 @@ export interface RunCordisLoopOptions {
   emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string; meta?: unknown }) => void;
   sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
   questions?: { send: (channel: string, payload: Record<string, unknown>) => void; emitQuestions?: (requestId: string, questions: unknown[]) => void; registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void };
+  /** Interactive HITL approvals (chat+coding). When present the loop mounts cairnApprovalPlugin+doomLoop. */
+  approvals?: { send: (channel: string, payload: Record<string, unknown>) => void; registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => () => void };
   getWin?: () => Electron.BrowserWindow | null;
   signal?: AbortSignal;
   onSessionEvent?: (event: SessionEvent) => void;

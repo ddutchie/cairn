@@ -1,8 +1,9 @@
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import type { Database } from "better-sqlite3";
 import { buildCordisUserContent } from "./cairn-attachment-store";
-import { registerCairnTools, CHAT_FORBIDDEN_TOOLS } from "./cairn-tools";
-import { cairnSystemPromptPlugin, CAIRN_DB } from "./cairn-plugins";
+import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
+import { cairnSystemPromptPlugin, CAIRN_DB, cairnApprovalPlugin } from "./cairn-plugins";
+import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { getChatAgentCache } from "./chat-agent-cache";
 import { extractCairnRef } from "./session-replay";
 import { openCordisSessionAgent } from "./session-agent";
@@ -13,6 +14,7 @@ import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loo
 import { dropChatAgentForThread, getContext, resolvePresentationMeta } from "./cordis-context";
 import { foldSessionUsage } from "./plugins/context-ring";
 import { foldSessionStats } from "./session-stats";
+import { startPhaseTimer } from "../lib/debug-log";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
@@ -129,8 +131,14 @@ function emitTurnStats(events: readonly SessionEvent[], onSessionEvent?: (event:
 /** Chat-specific profile over the shared Cordis session lifecycle. */
 export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<RunCordisLoopResult> {
   const turnStart = markNow();
+  // Always-on phase timing to the persistent debug log, in addition to the
+  // opt-in CAIRN_TIMING console output. The console-only route was unusable for
+  // diagnosing a report of a slow turn after the fact (packaged builds have no
+  // terminal, and nothing was retained across restarts).
+  const timer = startPhaseTimer("chat", { threadId: opts.req.threadId, model: opts.llmConfig.model });
   const ctx = await getContext();
   markLog("getContext", turnStart);
+  timer.mark("getContext (cold: builds 26 Cordis plugins sequentially)");
   const { db, req, workspacePath, signal } = opts;
   let llmConfig = opts.llmConfig;
 
@@ -155,6 +163,9 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   } catch (error) {
     console.error("[cordis] fs chain mount for plugins failed:", error instanceof Error ? error.message : error);
   }
+  // Runs synchronous fs walks over the workspace, throttled to once per 10 min —
+  // so it is invisible on most turns and pays a one-off cost on others.
+  timer.mark("plugin fs chain + artifact hygiene");
 
   const baseSystem = withPersonality(buildSystemPrompt(req), req.personality);
   const chatAgents = getChatAgentCache();
@@ -163,6 +174,18 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   let currentAttemptSessionId: unknown = null;
   let firstTokenLogged = false;
   const logFirstToken = () => { if (TIMING && !firstTokenLogged) { firstTokenLogged = true; markLog("time-to-first-token (from turn entry)", turnStart); } };
+  // The single most diagnostic pair of numbers for a slow turn, both measured
+  // from turn entry: when the assembled request left Cairn (`request/header`)
+  // and when the first token came back. A large gap between them is upstream
+  // latency (provider/proxy/network) and NOT something Cairn's assembly causes —
+  // without this split, all anyone can say is "the turn took 13 seconds".
+  const wallStart = Date.now();
+  let requestHeaderAtMs: number | undefined;
+  let firstTokenAtMs: number | undefined;
+  const noteFirstToken = () => {
+    firstTokenAtMs ??= Date.now() - wallStart;
+    logFirstToken();
+  };
   // Per-turn request counter — each provider (re)attempt emits its own
   // request/header. >1 header before the first token means the pi-ai adapter's
   // retryPolicy is silently retrying (a stall we can tune), not pure provider
@@ -199,6 +222,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         // Use the real workspacePath (the agent's sandbox root), not code_directory which may be stale.
         updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: workspace?.name, projectName: project?.name, projectDescription: project?.description, cwd: workspacePath, gitBranch });
       } catch (error) { console.warn("[cordis] workspace context update failed:", error instanceof Error ? error.message : error); }
+      timer.mark("workspace-context (incl. git branch execSync, 800ms cap)");
       await mount(cairnSystemPromptPlugin, { systemText: baseSystem });
 
       const doneIds = new Set<string>();
@@ -207,9 +231,12 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       const streamDisposer = ctx.on("session/event", (session, event) => {
         if ((session as { header?: { origin?: string } }).header?.origin === "subagent") return;
         if ((session as { id?: unknown }).id !== currentAttemptSessionId) return;
+        if (event.type === "request/header") {
+          requestHeaderCount += 1;
+          requestHeaderAtMs ??= Date.now() - wallStart;
+        }
         if (TIMING && (event.type === "request/header" || event.type === "request/context")) {
           if (event.type === "request/header") {
-            requestHeaderCount += 1;
             console.log(`[timing] request/header #${requestHeaderCount} at ${Date.now() - turnStart}ms${requestHeaderCount > 1 ? "  ⚠️ RETRY — previous attempt did not stream a token" : ""}`);
           } else {
             markLog(`event ${event.type} (request assembled → about to hit provider)`, turnStart);
@@ -217,8 +244,8 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         }
         if (event.type === "assistant/chunk") {
           const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
-          if (c?.type === "text-delta" && c.text) { logFirstToken(); liveText += c.text; opts.onToken?.(c.text); }
-          else if (c?.type === "reasoning-delta" && c.text) { logFirstToken(); liveReasoning += c.text; opts.onThought?.(c.text); }
+          if (c?.type === "text-delta" && c.text) { noteFirstToken(); liveText += c.text; opts.onToken?.(c.text); }
+          else if (c?.type === "reasoning-delta" && c.text) { noteFirstToken(); liveReasoning += c.text; opts.onThought?.(c.text); }
           return;
         }
         if (event.type === "assistant/message" && !liveReasoning) {
@@ -251,11 +278,41 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         if (event.callId) doneIds.add(event.callId);
         opts.emitToolCallDone?.(event);
       };
-      const disposers = registerCairnTools(ctx, { getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db, req, workspacePath, llmConfig: preparedConfig, getWin: opts.getWin, emit: undefined, emitDone }, { exclude: CHAT_FORBIDDEN_TOOLS });
+      // Chat has the same HITL seam as coding, but only EXTERNAL (MCP/service)
+      // and EXEC (bash/subagent) are gated — Cairn DB writes (notes/tasks) are
+      // part of chat's core job and auto-allow, otherwise every note creation
+      // would prompt. This is the risk-scoped policy chosen for per-workspace
+      // "Always allow" (see plan note).
+      const disposers = registerCairnTools(ctx, { getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db, req, workspacePath, llmConfig: preparedConfig, getWin: opts.getWin, emit: undefined, emitDone });
       disposers.forEach((dispose) => resources.add(dispose));
-      // P0-3: external/MCP tools would run ungated on chat (no approval/Doom cards).
-      // Withhold them here until chat gains the same HITL seam as coding.
+      // Doom-loop guard (same as coding): pause on repeated identical calls.
+      // Mounted BEFORE the approval plugin — see run-cordis-coding.ts comment
+      // — so every gated call counts toward detection.
+      if (opts.approvals) {
+        await mount(cairnDoomLoopPlugin, { sessionId: `chat-${req.threadId}`, signal });
+        await mount(cairnApprovalPlugin, {
+          autoApprove: false,
+          sessionId: `chat-${req.threadId}`,
+          send: opts.approvals.send,
+          registerPending: opts.approvals.registerPending,
+          signal,
+          workspaceId: req.workspaceId ?? undefined,
+          db,
+          askRiskClasses: new Set(["EXTERNAL", "EXEC"] as const),
+          askFilter: (name: string) => name === "delete_note" || name === "delete_task" || name === "delete_project",
+        });
+      }
+      // Workspace-scoped external tools (MCP/service) — chat's reason to have
+      // the approval seam. Gated, so an unknown connector can't mutate
+      // externally without confirmation.
+      try {
+        const extDisposers = await registerExternalCairnTools(ctx, { db, workspaceId: req.workspaceId ?? "", projectId: req.projectId ?? "" });
+        extDisposers.forEach((d) => resources.add(d));
+      } catch (e) {
+        console.warn("[cordis] registerExternalCairnTools (chat) failed:", (e as Error)?.message ?? e);
+      }
       markLog("setup (plugins + tool registration)", turnStart);
+      timer.mark("registerCairnTools (recompiles every schema)");
     },
     open: async ({ llmConfig: preparedConfig }) => {
       const openStart = markNow();
@@ -309,11 +366,14 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     },
     run: async ({ agent }) => {
       const runStart = markNow();
+      timer.mark("open agent (cache hit, or resume/replay JSONL)");
       const typed = agent as unknown as CordisTurnAgent & { session: { events: readonly SessionEvent[] } };
       currentAttemptSessionId = SessionId(`chat-${req.threadId}`);
       const content = await buildCordisUserContent(ctx, req.message, req.images);
       markLog("run: content built, dispatching followup", runStart);
+      timer.mark("build user content (pre-turn setup total)");
       const { firstSeq } = await runCordisTurn({ agent: typed, content, signal });
+      timer.mark("model turn (followup → idle)");
       const result = collect(typed.session.events, firstSeq);
       const end = typed.session.events.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
       const kind = (end?.data as { reason?: { kind?: string } } | undefined)?.reason?.kind;
@@ -353,5 +413,22 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   const content = liveText || attempt.text;
   const reasoning = liveReasoning || attempt.reasoning;
   if (opts.onUsage && (attempt.pt > 0 || attempt.ct > 0)) opts.onUsage(attempt.pt, attempt.ct, attempt.rt);
+  // `providerTtftMs` is the wait AFTER Cairn handed the assembled request to the
+  // provider. When it dominates totalMs, the latency is upstream (model, proxy,
+  // network) and no amount of Cairn-side optimisation will help; `promptTokens`
+  // and `requestHeaderCount` are recorded alongside it because prefill size and
+  // silent retries are the two things that do move that number.
+  timer.end("chat turn finished", {
+    ...(requestHeaderAtMs !== undefined ? { requestSentAtMs: requestHeaderAtMs } : {}),
+    ...(firstTokenAtMs !== undefined ? { firstTokenAtMs } : {}),
+    ...(requestHeaderAtMs !== undefined && firstTokenAtMs !== undefined
+      ? { providerTtftMs: firstTokenAtMs - requestHeaderAtMs }
+      : {}),
+    requestHeaderCount,
+    promptTokens: attempt.pt,
+    completionTokens: attempt.ct,
+    reasoningTokens: attempt.rt,
+    ...(attempt.failedKind ? { failedKind: attempt.failedKind } : {}),
+  });
   return { exhausted: signal?.aborted === true, content, reasoning };
 }

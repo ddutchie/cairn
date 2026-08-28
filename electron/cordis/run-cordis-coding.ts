@@ -38,6 +38,8 @@ import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
+import { describeTurnEndReason } from "../../shared/agent/turn-end-reason";
+import { dlog, startPhaseTimer } from "../lib/debug-log";
 
 export interface RunCordisCodingOptions {
   db: Database;
@@ -82,7 +84,7 @@ export interface RunCordisCodingOptions {
    * Required for autoApprove:false; omitted → autoApprove is forced on.
    */
   approvals?: {
-    registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void) => () => void;
+    registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => () => void;
   };
   /**
    * Doom-loop adapter. registerPending stores a resolver keyed by callId
@@ -96,6 +98,11 @@ export interface RunCordisCodingOptions {
   getWin?: () => Electron.BrowserWindow | null;
   signal?: AbortSignal;
   onSessionEvent?: (event: import("@deepseek-ai/dsh-session").SessionEvent) => void;
+  /**
+   * Usage-view attribution. Defaults to "coding-agent"; automation runs use the
+   * coding profile but must be booked as "automation".
+   */
+  usageSource?: import("../db/usage-queries").UsageSource;
 }
 
 export interface RunCordisCodingResult {
@@ -105,7 +112,12 @@ export interface RunCordisCodingResult {
 }
 
 export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise<RunCordisCodingResult> {
+  // Always-on phase timing. The coding path previously had no instrumentation
+  // at all, so a slow turn was indistinguishable from a hung one and there was
+  // no record after the fact. Each mark below names the work that just finished.
+  const timer = startPhaseTimer("cordis-coding", { sessionId: opts.sessionId, model: opts.llmConfig.model });
   const ctx = await getContext();
+  timer.mark("getContext");
   const { db, req, workspacePath, sessionId, cwd, systemPrompt, mode, send, questions, approvals, getWin, signal } = opts;
   // Sandbox: confine fs/bash mutations to cwd by default (workspace-write).
   const sandboxMode = opts.sandboxMode ?? "workspace-write";
@@ -126,11 +138,19 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   const onSessionEvent = (event: import("@deepseek-ai/dsh-session").SessionEvent) => {
     opts.onSessionEvent?.(event);
     if (event.type !== "turn/end") return;
-    const reason = (event.data as { reason?: { kind?: string } }).reason?.kind;
-    if (reason === "completed") resolveTerminal({ ok: true });
-    else if (["aborted", "blocked", "error", "max-tokens"].includes(reason ?? "")) {
-      resolveTerminal({ ok: false, error: reason ? `Agent turn ended abnormally (${reason})` : "Agent turn ended abnormally" });
-    }
+    // `reason` is dsh's TurnEndReason. For kind:"error" it carries a structured
+    // LlmFailure at `reason.error` ({message, code}) — the ONLY description of
+    // what actually went wrong. Reporting the bare kind ("error") threw that
+    // away and made every failure mode look identical, so surface the message
+    // and code, and mirror the whole reason to the debug log for post-hoc
+    // diagnosis (a UNKNOWN-coded failure is a thrown JS error inside the loop,
+    // typically a misbehaving plugin, not a provider problem).
+    const reasonRaw = (event.data as { reason?: { kind?: string; error?: { message?: string; code?: string } } }).reason;
+    const reason = reasonRaw?.kind;
+    if (reason === "completed") { resolveTerminal({ ok: true }); return; }
+    if (!["aborted", "blocked", "error", "max-tokens", "interrupted"].includes(reason ?? "")) return;
+    dlog("cordis-coding", "turn ended abnormally", { sessionId, reason: reasonRaw });
+    resolveTerminal({ ok: false, error: describeTurnEndReason(reasonRaw) });
   };
 
   // automation-dev persona: exclude every Cairn data tool. The pre-Cordis
@@ -146,6 +166,13 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   return runCordisSession<RunCordisCodingResult>({
     ctx, db, req, sessionId, llmConfig: opts.llmConfig, signal,
       profileId: opts.role === "automation-dev" ? "automation-dev" : "coding",
+      usageSource: opts.usageSource ?? "coding-agent",
+      // Bridge subagent child sessions onto session:projection. cairnSubagentPlugin
+      // was written for both profiles ("the calling chat thread OR coding-agent
+      // session") and self-scopes on header.parentSession, but only chat ever
+      // passed an adapter — so the coding agent had the `subagent` tool and a UI
+      // that renders traces, with nothing connecting them.
+      sendSubagent: send,
       cwd,
       workspaceId: req.workspaceId,
       projectId: req.projectId,
@@ -166,6 +193,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
         } catch { /* not a git repo */ }
         updateWorkspaceContext(sessionId, { workspaceName: wsRow?.name, projectName: projRow?.name, projectDescription: projRow?.description, cwd, gitBranch });
       } catch (e) { console.warn("[cordis-coding] workspace context update failed:", e instanceof Error ? e.message : e); }
+      timer.mark("workspace-context (incl. git branch execSync)");
       const toolDisposers = registerCairnTools(ctx, {
         getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db,
         req,
@@ -176,6 +204,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
         emitDone: undefined,
       }, cairnToolsExclude ? { exclude: cairnToolsExclude } : undefined);
       toolDisposers.forEach((dispose) => resources.add(dispose));
+      timer.mark("registerCairnTools");
     // Skills (Phase 1.5 step 2i): read the merged skill catalog through the dsh
     // Skills are owned by dsh (`dsh-tool-skill`, mounted globally): it registers
     // the `skill` tool and injects <available_skills> as a per-step
@@ -216,6 +245,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       console.error(`[cordis-coding] mountCodingStack failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
       throw e;
     }
+    timer.mark("mountCodingStack (13 dsh plugins)");
     let externalDisposers: Array<() => void> = [];
     try {
       externalDisposers = await registerExternalCairnTools(ctx, {
@@ -227,6 +257,10 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       console.error(`[cordis-coding] registerExternalCairnTools failed:`, (e as Error)?.message ?? e);
     }
       externalDisposers.forEach((dispose) => resources.add(dispose));
+    // MCP servers are queried over the network here (mcp-client uses a 15s
+    // connect timeout per server), so an unreachable connector shows up as a
+    // large "externalTools" phase rather than as unexplained turn latency.
+    timer.mark("registerExternalCairnTools (MCP listTools over network)");
     // Automation-specific tools (run_script / write_run_file / deliver_file) —
     // registered from the heartbeat caller via extraTools.
     for (const def of opts.extraTools ?? []) {
@@ -259,7 +293,14 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       }
     }
     },
-    open: ({ llmConfig }) => openCordisAgent(ctx, { sessionId, cwd, llmConfig, signal }),
+    open: async ({ llmConfig }) => {
+      const opened = await openCordisAgent(ctx, { sessionId, cwd, llmConfig, signal });
+      // inspect() + resume() both read and fold the whole JSONL log, and the
+      // coding profile does NOT retain its agent between turns, so this cost is
+      // paid on every turn and grows with transcript length.
+      timer.mark("open agent (inspect + resume JSONL)");
+      return opened;
+    },
     run: async ({ agent, mount }) => {
       const typedAgent = agent as CordisTurnAgent & { session: { events: unknown[] } };
     try {
@@ -273,6 +314,9 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
         .filter(Boolean)
         .sort();
       if (toolNames.length === 0) console.error(`[cordis-coding] NO TOOLS REGISTERED — mountCodingStack + registerCairnTools produced 0 tools`);
+      // Tool schemas dominate the request's static prefix, so the count is the
+      // first thing to check when prefill (and therefore cost/latency) is high.
+      else dlog("cordis-coding", "tools registered", { sessionId, count: toolNames.length, tools: toolNames });
     } catch (e) {
       console.error(`[cordis-coding] tools diagnostic failed:`, e);
     }
@@ -316,10 +360,25 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // are admitted through the mounted attachment store and become ImageBlocks
     // (step 2l); without this, req.images would be silently dropped.
     const content = await buildCordisUserContent(ctx, req.message, req.images);
+    timer.mark("build user content (pre-turn setup total)");
     const turn = await runCordisTurn({ agent: typedAgent, content, signal, completion: terminal });
+    timer.mark("model turn (followup → idle)");
     return (turn.completion as RunCordisCodingResult | undefined) ?? { ok: true };
     },
-  }).catch((e) => ({ ok: false, error: (e as Error)?.message ?? String(e) }));
+  }).then(
+    (result) => {
+      timer.end("coding turn finished", { ok: result.ok, ...(result.error ? { error: result.error } : {}) });
+      return result;
+    },
+    // A throw here is a Cairn-side failure (mount/setup), distinct from a
+    // turn/end error reported through onSessionEvent — record the stack, which
+    // the previous bare `.catch` discarded along with any timing context.
+    (e: unknown) => {
+      const error = e instanceof Error ? e : new Error(String(e));
+      timer.end("coding turn threw", { error: error.message, stack: error.stack });
+      return { ok: false, error: error.message };
+    },
+  );
 }
 
 /**

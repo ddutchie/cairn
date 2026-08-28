@@ -9,6 +9,7 @@ import { ConversationPane } from "@/components/conversation/ConversationPane";
 import type { ConversationMessage } from "@/components/conversation/conversation-message";
 import { type ChatPopoutPayload, type SessionPopoutProfile } from "../../../shared/agent/chat-popout";
 import { normalizeSessionMessages, applyApprovalProjection } from "@/components/conversation/conversation-session";
+import { toLiveConversationMessage, withLiveTurn } from "@/components/conversation/conversation-live";
 import { useSessionConversation } from "@/hooks/useSessionConversation";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
@@ -383,10 +384,11 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
     },
   });
   const { isLoading, streamingContent, streamingThought, toolCalls, subagents, pendingQuestions, pendingQuestionCallId } = sessionConversation;
-  const liveMessage: ConversationMessage | null = isLoading || streamingContent || streamingThought || toolCalls.length || subagents.length
-    ? { id: `stream-${sessionId}`, role: "assistant", content: streamingContent, reasoning: streamingThought || undefined, toolCalls: toolCalls.map((tool) => ({ callId: tool.callId, name: tool.tool, label: tool.label, args: tool.args ? JSON.parse(tool.args) as Record<string, unknown> : undefined, running: tool.status === "running", ok: tool.ok !== false, output: tool.output, error: tool.error, meta: tool.meta, confirmRequired: tool.confirmRequired, approvalNonce: tool.approvalNonce })), subagents, isStreaming: true, createdAt: new Date().toISOString() }
-    : null;
-  const displayMessages = liveMessage ? [...messages, liveMessage] : messages;
+  // One stable timestamp per turn: generating it inline produced a new value on
+  // every token, so the live message's identity churned needlessly.
+  const liveCreatedAt = useMemo(() => new Date().toISOString(), [isLoading]);
+  const liveMessage = toLiveConversationMessage(sessionId, { isLoading, streamingContent, streamingThought, toolCalls, subagents }, liveCreatedAt);
+  const displayMessages = withLiveTurn(messages, liveMessage);
 
   useEffect(() => {
     let cancelled = false;

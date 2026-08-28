@@ -1,4 +1,5 @@
 import type { SessionEventEnvelope } from "./session-event";
+import { describeTurnEndReason, type TurnEndReasonLike } from "./turn-end-reason";
 
 export type RendererSessionEvent = SessionEventEnvelope["event"];
 
@@ -49,7 +50,13 @@ export interface SessionEventFoldHandlers {
     contextRefs?: unknown[];
   }) => void;
   onTurnStart?: () => void;
-  onTurnEnd?: (reason?: string) => void;
+  /**
+   * @param reason - the raw `TurnEndReason.kind` (unchanged, for control flow).
+   * @param detail - a human sentence describing the ending, including the
+   *   structured failure message on `kind:"error"`. Without this, every failure
+   *   mode rendered identically as "(error)" and the actual cause was lost.
+   */
+  onTurnEnd?: (reason?: string, detail?: string) => void;
   onCompaction?: (status: "start" | "summary" | "end", data: Record<string, unknown>) => void;
   onRetry?: (data: Record<string, unknown>) => void;
   onPlanMode?: (active: boolean) => void;
@@ -217,7 +224,9 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
     }
 
     if (event.type === "turn/end") {
-      handlers.onTurnEnd?.(typeof record(data.reason).kind === "string" ? String(record(data.reason).kind) : undefined);
+      const reason = record(data.reason);
+      const kind = typeof reason.kind === "string" ? String(reason.kind) : undefined;
+      handlers.onTurnEnd?.(kind, describeTurnEndReason(reason as TurnEndReasonLike));
     }
   };
 }

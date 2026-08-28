@@ -27,6 +27,7 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { getSessionGrants, clearSessionGrants, canonicalBashCommand, createPendingAskRegistry, readPendingApprovalArgs, forgetPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
+import { addWorkspaceApprovalGrant } from "../db/approval-grant-queries";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
@@ -59,21 +60,10 @@ const clearingSessions = new Set<string>();
 // requestId for questions). The session:respond-* IPC handlers resolve these,
 // exactly like the builtin loop's pendingApprovals/pendingDoomLoop maps. Kept
 // module-level so the (single) respond handlers can reach any session's turn.
-const cordisPendingApprovals = new Map<string, (d: { approved: boolean; grant?: "session" | "command" }) => void>();
-
-/**
- * Pending maps are keyed `${sessionId}::${callId}` so a respond event can only
- * ever resolve its OWN session's ask — dsh callIds are provider-generated and
- * not guaranteed collision-free across concurrent coding/automation sessions.
- */
-const pendingKey = (sessionId: string, callId: string): string => `${sessionId}::${callId}`;
-
-/**
- * Outstanding tool-approval asks, so a reloading renderer can pull them back
- * via session:is-running instead of losing the card (and leaving the main
- * promise blocked with no visible way to answer it).
- */
-const pendingAsks = createPendingAskRegistry();
+// Extracted to approval-state.ts so the chat loop can share the same maps
+// (previously coding-only — `session:respond-tool`'s global handler found an
+// empty map for `chat-*` sessions).
+import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-state";
 
 /**
  * Outstanding QUESTION asks (ask_questions / exit_plan_mode's plan-review),
@@ -285,7 +275,7 @@ async function runCordisCodingSession(
   setConfirmTransport(sessionId, createInteractiveConfirmTransport({
     sessionId,
     send: loopSend,
-    registerPending: (callId, resolve) => {
+    registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
       const key = pendingKey(sessionId, callId);
       cordisPendingApprovals.set(key, resolve);
       return () => cordisPendingApprovals.delete(key);
@@ -399,7 +389,7 @@ async function runCordisCodingSession(
         },
       },
       approvals: {
-        registerPending: (callId, resolve) => {
+        registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
           const key = pendingKey(sessionId, callId);
           cordisPendingApprovals.set(key, resolve);
           return () => cordisPendingApprovals.delete(key);
@@ -962,7 +952,7 @@ export function registerSessionRuntimeHandlers(
   // dsh will execute is what we stashed via recordPendingApprovalArgs. If the
   // two disagree (or the renderer's command is absent), the grant is a no-op:
   // fail-closed on the record path.
-  registerIpcOn("session:respond-tool", (_event, { sessionId, callId, approved, grant, nonce }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command"; command?: string; nonce?: string }) => {
+  registerIpcOn("session:respond-tool", (_event, { sessionId, callId, approved, grant, nonce }: { sessionId: string; callId: string; approved: boolean; grant?: "session" | "command" | "workspace"; command?: string; nonce?: string }) => {
     try {
       assertSafeId(sessionId, "sessionId");
       assertSafeId(callId, "callId");
@@ -983,6 +973,9 @@ export function registerSessionRuntimeHandlers(
     const key = pendingKey(sessionId, callId);
     const cordisPending = cordisPendingApprovals.get(key);
     if (!cordisPending) return;
+    // Capture the ask's tool name BEFORE the pending-ask registry is cleared,
+    // so a workspace grant can be bound to the exact tool that was asked.
+    const pendingMetaForGrant = pendingAsks.listForSession(sessionId).find((m) => m.callId === callId);
     cordisPending({ approved, grant: approved ? grant : undefined });
     cordisPendingApprovals.delete(key);
     pendingAsks.resolve(sessionId, callId);
@@ -996,6 +989,36 @@ export function registerSessionRuntimeHandlers(
       const trustedCommand = trusted && typeof trusted.command === "string" ? trusted.command : undefined;
       const cmd = canonicalBashCommand(trustedCommand);
       if (cmd) getSessionGrants(sessionId).bashCommands.add(cmd);
+    }
+    if (approved && grant === "workspace") {
+      // Persistent workspace grant — survives across sessions. The tool name is
+      // stashed in the pending-ask registry main-side, so a compromised
+      // renderer can't grant a different tool than the one that was asked.
+      const toolName = pendingMetaForGrant?.name;
+      if (toolName) {
+        try {
+          // WorkspaceId is durable per session; resolve it from session_profiles
+          // first (chat+coding), then fall back to the chat-thread row (pre-v53
+          // threads) — whatever is available for this sessionId's workspace.
+          const wsRow =
+            (ctx.db.prepare("SELECT workspace_id FROM session_profiles WHERE session_id = ?").get(sessionId) as { workspace_id?: string } | undefined)?.workspace_id
+            ?? (sessionId.startsWith("chat-") ? (ctx.db.prepare("SELECT workspace_id FROM chat_threads WHERE id = ?").get(sessionId.slice(5)) as { workspace_id?: string } | undefined)?.workspace_id : undefined);
+          const workspaceId = wsRow ?? undefined;
+          if (workspaceId) {
+            const trusted = readPendingApprovalArgs(sessionId, callId);
+            const target = toolName === "bash" && trusted ? canonicalBashCommand(trusted.command) : null;
+            const grantRec = addWorkspaceApprovalGrant(ctx.db, workspaceId, toolName, target);
+            // Also grant this session immediately so the current turn proceeds
+            // without needing to re-read the DB before the next ask.
+            if (grantRec) {
+              if (toolName === "bash" && target) getSessionGrants(sessionId).bashCommands.add(target);
+              else getSessionGrants(sessionId).tools.add(toolName);
+            }
+          }
+        } catch (e) {
+          console.warn(`[session] workspace grant persist failed for ${sessionId}/${callId}:`, (e as Error)?.message ?? e);
+        }
+      }
     }
   });
 
@@ -1171,6 +1194,32 @@ export function registerSessionRuntimeHandlers(
     // down abnormally) so nothing leaks across sessions.
     sweepSessionPendings(sessionId);
   });
+
+  // ── approval grants (workspace-persistent "Always allow") ─────────────────
+  // Device-local, not synced: a trust decision on this machine must not
+  // silently apply on another. One row per (workspace, tool, target) — target
+  // is the exact bash command for "bash", otherwise null (whole tool).
+  registerIpcHandle("approval-grants:list", (_event, { workspaceId }: { workspaceId: string }) =>
+    handle(async () => {
+      assertSafeId(workspaceId, "workspaceId");
+      const { getWorkspaceApprovalGrants } = await import("../db/approval-grant-queries");
+      return getWorkspaceApprovalGrants(ctx.db, workspaceId);
+    }),
+  );
+  registerIpcHandle("approval-grants:delete", (_event, { id }: { id: string }) =>
+    handle(async () => {
+      assertSafeId(id, "id");
+      const { deleteWorkspaceApprovalGrant } = await import("../db/approval-grant-queries");
+      return { deleted: deleteWorkspaceApprovalGrant(ctx.db, id) };
+    }),
+  );
+  registerIpcHandle("approval-grants:clear-workspace", (_event, { workspaceId }: { workspaceId: string }) =>
+    handle(async () => {
+      assertSafeId(workspaceId, "workspaceId");
+      const { clearWorkspaceApprovalGrants } = await import("../db/approval-grant-queries");
+      return { deleted: clearWorkspaceApprovalGrants(ctx.db, workspaceId) };
+    }),
+  );
 
   // ── session:restore-context ───────────────────────────────────────────────────────
   // On the Cordis engine, session context resumes automatically via the dsh

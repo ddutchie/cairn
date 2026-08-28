@@ -61,7 +61,7 @@ export interface InteractiveConfirmTransportDeps {
   /** Emit `session:*` events (already tagged with sessionId upstream). */
   send: (channel: string, payload: Record<string, unknown>) => void;
   /** Same pairing the native approval bridge uses (composite-keyed upstream). */
-  registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" }) => void) => () => void;
+  registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => () => void;
   timeoutMs?: number;
 }
 

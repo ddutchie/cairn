@@ -4,6 +4,7 @@ import type { LLMConfig } from "../lib/llm";
 import { type ApiMode } from "../lib/llm-transport";
 import type { Database } from "better-sqlite3";
 import type { ChatRequest } from "../lib/tools";
+import type { UsageSource } from "../db/usage-queries";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnQuestionsPlugin } from "./cairn-plugins";
 
 let piAiDisposer: (() => Promise<void>) | null = null;
@@ -51,11 +52,13 @@ export interface MountCordisSessionPluginsOptions {
   includeSessionIndex?: boolean;
   sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
   questions?: CordisQuestionAdapter;
+  /** Usage-view attribution for this session's rows. */
+  usageSource: UsageSource;
 }
 
 /** Mount the Cairn-owned session services shared by Chat and Coding turns. */
 export async function mountCordisSessionPlugins({
-  mount, db, req, sessionId, llmConfig, signal, includeSessionIndex = false, sendSubagent, questions,
+  mount, db, req, sessionId, llmConfig, signal, includeSessionIndex = false, sendSubagent, questions, usageSource,
 }: MountCordisSessionPluginsOptions): Promise<void> {
   await mount(cairnDbPlugin, { db });
   if (includeSessionIndex) {
@@ -72,6 +75,7 @@ export async function mountCordisSessionPlugins({
     provider: llmConfig.provider,
     model: llmConfig.model,
     baseUrl: llmConfig.baseUrl,
+    source: usageSource,
   });
   if (sendSubagent) await mount(cairnSubagentPlugin, { send: sendSubagent, sessionId });
   if (questions) {

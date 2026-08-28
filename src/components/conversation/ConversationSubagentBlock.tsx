@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, GitBranch, Loader2 } from "lucide-react";
 import { useCairnStore } from "@/store";
-import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
+import { MarkdownContent } from "@/components/conversation/MarkdownContent";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { ConversationMessageBubble } from "./ConversationMessageBubble";
 import { ConversationToolCall } from "./ConversationToolCall";

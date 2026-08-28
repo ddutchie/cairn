@@ -52,7 +52,7 @@ export interface SessionConversationAdapter {
   trackToolCall?: (call: FoldedToolCall) => boolean;
   onToolResult?: (result: FoldedToolResult) => void;
   onAssistantMessage?: (message: SessionConversationSnapshot["assistant"]) => void;
-  onTurnEnd?: (reason: string | undefined, snapshot: SessionConversationSnapshot) => void;
+  onTurnEnd?: (reason: string | undefined, snapshot: SessionConversationSnapshot, detail?: string) => void;
   onProjection?: (projection: SessionProjection) => void;
 }
 
@@ -149,9 +149,9 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
         toolsRef.current = next; setToolCalls(next);
       },
       onAssistantMessage: (message) => { assistantRef.current = message; adapterRef.current.onAssistantMessage?.(message); },
-      onTurnEnd: (reason) => {
+      onTurnEnd: (reason, detail) => {
         const snapshot = { toolCalls: toolsRef.current.map((item) => item.status === "running" ? { ...item, status: "done" as const } : item), text: textRef.current, thought: thoughtRef.current, subagents: subagentsRef.current, assistant: assistantRef.current, stats: statsRef.current };
-        adapterRef.current.onTurnEnd?.(reason, snapshot);
+        adapterRef.current.onTurnEnd?.(reason, snapshot, detail);
         resetTransient();
       },
       onCommand: (phase, data) => {

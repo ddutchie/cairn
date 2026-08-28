@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
+import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
 import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
@@ -216,22 +217,11 @@ export default function Home() {
                 toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
               };
               const sessRes = await (window.electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(latest.id);
-              let rows: SessionRow[] | undefined;
-              let lastUsage: import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"];
-              if (Array.isArray(sessRes)) {
-                rows = sessRes as SessionRow[];
-              } else if (sessRes && typeof sessRes === "object") {
-                const raw = "data" in sessRes && (sessRes as { data?: unknown }).data ? (sessRes as { data: unknown }).data : sessRes;
-                if (Array.isArray(raw)) {
-                  rows = raw as SessionRow[];
-                } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
-                  rows = (raw as { messages: SessionRow[] }).messages;
-                  lastUsage = (raw as { usage?: import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"] }).usage;
-                  const rawTodos = (raw as { todos?: Array<{ id: string; title: string; status: string }> }).todos;
-                  if (rawTodos && rawTodos.length > 0) {
-                    state.setSessionTodos(latest.id, rawTodos.map((t) => ({ content: t.title, status: t.status === "completed" ? "completed" : t.status === "in_progress" ? "in_progress" : "pending", priority: "medium" as const })));
-                  }
-                }
+              const payload = unwrapSessionPayload(sessRes);
+              const rows: SessionRow[] | undefined = payload.messages.length > 0 ? payload.messages as unknown as SessionRow[] : undefined;
+              const lastUsage = payload.usage as import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"];
+              if (payload.todos && payload.todos.length > 0) {
+                state.setSessionTodos(latest.id, payload.todos.map((t) => ({ content: t.title, status: t.status, priority: "medium" as const })));
               }
               const messages = (rows ?? []).map((r) => ({
                 id: r.id,

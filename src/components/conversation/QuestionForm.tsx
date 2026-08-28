@@ -6,7 +6,7 @@ import { MessageAvatar } from "./message-ui";
 import { MarkdownContent } from "./MarkdownContent";
 import { cn } from "@/lib/utils";
 import { modKey } from "@/components/layout/sidebar-utils";
-import type { PendingQuestion, PendingQuestionOption } from "@/hooks/useChatStream";
+import type { PendingQuestion, PendingQuestionOption } from "@/components/conversation/conversation-message";
 
 interface QuestionFormProps {
   questions: PendingQuestion[];

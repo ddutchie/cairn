@@ -6,7 +6,9 @@ import { createCordisDisposerStack, mountCordisSessionPlugins, prepareCordisRunt
 import type { CordisSessionAgentHandle } from "./session-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { upsertSessionProfile } from "../db/queries";
+import { dlog } from "../lib/debug-log";
 import type { SessionProfileId } from "../../shared/agent/session-profile";
+import type { UsageSource } from "../db/usage-queries";
 
 export interface CordisSessionProfile<T> {
   ctx: Context;
@@ -24,6 +26,11 @@ export interface CordisSessionProfile<T> {
   questions?: CordisQuestionAdapter;
   /** Forward the raw DSH event before any Cairn presentation projection. */
   onSessionEvent?: (event: SessionEvent) => void;
+  /**
+   * Usage-view attribution. Defaults from `profileId`; automation runs reuse the
+   * coding profile but must be booked as "automation", so they pass it through.
+   */
+  usageSource?: UsageSource;
   /** Mount mode-specific services and register mode-specific tools. */
   setup: (runtime: { llmConfig: LLMConfig; resources: CordisDisposerStack; mount: (plugin: unknown, config?: unknown) => Promise<void> }) => Promise<void>;
   open: (runtime: { llmConfig: LLMConfig }) => Promise<CordisSessionAgentHandle>;
@@ -45,7 +52,18 @@ export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Pro
     workspaceId: profile.workspaceId,
     projectId: profile.projectId,
   });
+  // Remounts the pi-ai adapter whenever the model route changes (see
+  // ensureAgentAiAdapter) and starts the local llama server for provider
+  // "localllm" — both are multi-second costs paid before the turn starts, so
+  // they get their own log line rather than hiding inside the caller's total.
+  const runtimeStart = Date.now();
   const prepared = await prepareCordisRuntime(profile.ctx, profile.llmConfig);
+  const runtimeMs = Date.now() - runtimeStart;
+  if (runtimeMs > 250) {
+    dlog("cordis-session", "prepareCordisRuntime was slow", {
+      sessionId: profile.sessionId, profile: profile.profileId, ms: runtimeMs, provider: profile.llmConfig.provider,
+    });
+  }
   const resources = createCordisDisposerStack();
   const mount = (plugin: unknown, config?: unknown) => resources.mount(profile.ctx, plugin, config);
   let handle: CordisSessionAgentHandle | undefined;
@@ -68,6 +86,7 @@ export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Pro
       includeSessionIndex: profile.includeSessionIndex,
       sendSubagent: profile.sendSubagent,
       questions: profile.questions,
+      usageSource: profile.usageSource ?? (profile.profileId === "chat" ? "chat" : "coding-agent"),
     });
     await profile.setup({ llmConfig: prepared.llmConfig, resources, mount });
     handle = await profile.open({ llmConfig: prepared.llmConfig });

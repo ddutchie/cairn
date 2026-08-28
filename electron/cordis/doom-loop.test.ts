@@ -12,11 +12,13 @@ type ConfirmOutcome = "allowed-once" | "rejected" | "cancelled";
 
 function makeCtx(scriptedOutcomes: ConfirmOutcome[]) {
   let preHandler: PreHandler | null = null;
+  let preStepHandler: PreHandler | null = null;
   const asks: Array<{ title?: string; detail?: string; toolName?: string }> = [];
   const ctx = {
     on: (ev: string, fn: PreHandler) => {
       if (ev === "tools/pre-execute") preHandler = fn;
-      return () => { preHandler = null; };
+      if (ev === "agent/pre-step") preStepHandler = fn;
+      return () => { preHandler = null; preStepHandler = null; };
     },
     cairn: {
       confirm: async (_sessionId: string, req: { title?: string; detail?: string; toolName?: string }) => {
@@ -27,7 +29,16 @@ function makeCtx(scriptedOutcomes: ConfirmOutcome[]) {
   };
   const invoke = (name: string, args: unknown) =>
     (preHandler as PreHandler)({ name, arguments: args }, async () => ({ kind: "allow" }));
-  return { ctx, invoke, asks };
+  /**
+   * Drive the `agent/pre-step` waterfall exactly as dsh's agent loop does:
+   * pass the real payload shape and a `next` that yields the default decision.
+   */
+  const preStep = (messages: Array<{ source?: { kind?: string } }>) =>
+    (preStepHandler as PreHandler)(
+      { messages, turn: 1, step: 1, signal: new AbortController().signal },
+      async () => ({ kind: "enter", messages }),
+    );
+  return { ctx, invoke, asks, preStep, hasPreStep: () => preStepHandler !== null };
 }
 
 describe("cairnDoomLoopPlugin (ctx.cairn.confirm pilot)", () => {
@@ -92,5 +103,55 @@ describe("cairnDoomLoopPlugin (ctx.cairn.confirm pilot)", () => {
       on: (_ev: string, fn: PreHandler) => { void fn; return () => {}; },
     };
     expect(cairnDoomLoopPlugin(ctx as never, { sessionId: "s5" })).toBeUndefined();
+  });
+
+  // ── agent/pre-step waterfall contract ─────────────────────────────────────
+  // Regression guard. `agent/pre-step` is a WATERFALL: dsh's agent loop uses the
+  // listener's return value as the step decision and immediately reads
+  // `decision.kind`. The reset listener previously returned undefined without
+  // calling next(), which collapsed the waterfall and killed EVERY coding turn
+  // ~2ms after turn/start with "Cannot read properties of undefined (reading
+  // 'kind')" — surfaced to users only as "Agent turn ended abnormally (error)".
+  describe("agent/pre-step waterfall contract", () => {
+    it("always returns the downstream decision, never undefined", async () => {
+      const { ctx, preStep } = makeCtx([]);
+      cairnDoomLoopPlugin(ctx as never, { sessionId: "w1" });
+
+      // A user-sourced message (the reset path) must still yield a decision.
+      const userDecision = await preStep([{ source: { kind: "user" } }]);
+      expect(userDecision).toBeDefined();
+      expect((userDecision as { kind?: string }).kind).toBe("enter");
+
+      // ...and so must a non-user step (the non-reset path).
+      const toolDecision = await preStep([{ source: { kind: "plugin" } }]);
+      expect(toolDecision).toBeDefined();
+      expect((toolDecision as { kind?: string }).kind).toBe("enter");
+
+      // An empty claim (no messages at all) must not throw or short-circuit.
+      const emptyDecision = await preStep([]);
+      expect((emptyDecision as { kind?: string }).kind).toBe("enter");
+    });
+
+    it("resets the repeat streak when a new user message enters the step", async () => {
+      // Trip the threshold, then start a "new user turn" and confirm the streak
+      // no longer counts toward it — i.e. the reset actually fires. It never did
+      // before, because the handler read a non-existent `payload.source.kind`.
+      const { ctx, invoke, asks, preStep } = makeCtx(["rejected", "rejected"]);
+      cairnDoomLoopPlugin(ctx as never, { sessionId: "w2" });
+
+      const args = { command: "ls" };
+      await invoke("bash", args);
+      await invoke("bash", args);
+      await invoke("bash", args);     // trips at 3
+      expect(asks).toHaveLength(1);
+
+      await preStep([{ source: { kind: "user" } }]);   // new user turn → reset
+
+      await invoke("bash", args);
+      await invoke("bash", args);
+      expect(asks).toHaveLength(1);   // streak restarted, not yet at 3
+      await invoke("bash", args);
+      expect(asks).toHaveLength(2);   // trips again at 3 from the reset baseline
+    });
   });
 });
