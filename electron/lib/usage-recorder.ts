@@ -190,16 +190,26 @@ export function extractCacheTokens(raw: unknown): CacheTokens {
   const details = (u.prompt_tokens_details ?? {}) as Record<string, unknown>;
   const num = (v: unknown): number =>
     typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
+  // Providers duplicate the same cached value across multiple fields for
+  // compatibility (e.g. top-level `cache_read_input_tokens` plus
+  // `prompt_tokens_details.cached_tokens` carrying the identical number).
+  // Summing all fields would double/triple-count — 311% in the wild.
+  // Deduplicate equal values and sum the distinct partitions only.
+  const readCandidates = [
+    num(u.cache_read_input_tokens),
+    num(u.prompt_cache_hit_tokens),
+    num(details.cached_tokens),
+    num(details.cache_read_input_tokens),
+  ].filter((v) => v > 0);
+  const writeCandidates = [
+    num(u.cache_creation_input_tokens),
+    num(details.cache_creation_input_tokens),
+    num(details.cache_creation_tokens),
+  ].filter((v) => v > 0);
+  const dedupSum = (vals: number[]): number => [...new Set(vals)].reduce((a, b) => a + b, 0);
   return {
-    cacheReadTokens:
-      num(u.cache_read_input_tokens) +
-      num(u.prompt_cache_hit_tokens) +
-      num(details.cached_tokens) +
-      num(details.cache_read_input_tokens),
-    cacheCreationTokens:
-      num(u.cache_creation_input_tokens) +
-      num(details.cache_creation_input_tokens) +
-      num(details.cache_creation_tokens),
+    cacheReadTokens: dedupSum(readCandidates),
+    cacheCreationTokens: dedupSum(writeCandidates),
   };
 }
 

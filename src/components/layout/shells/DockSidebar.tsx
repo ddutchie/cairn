@@ -152,23 +152,21 @@ export function DockSidebar() {
             </Tooltip>
           </div>
 
-          {/* current project — radar bottom-right aligned inside card */}
+          {/* current project — title on its own row above open + radar to avoid compact crowding */}
           {(() => {
             const project = projects.find((p) => p.id === activeProjectId);
             if (!project) return null;
             return (
-              <div className="mx-2 mt-3 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
-                <div className="flex gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <ProjectIcon name={project.icon} size={14} className="text-[var(--accent)]" />
-                      <span className="text-xs font-semibold truncate flex-1">{project.name}</span>
-                      <span className="text-[0.643rem] px-1.5 py-0.5 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] shrink-0">{openCounts.get(project.id) ?? 0} open</span>
-                    </div>
-                    <div className="text-[0.714rem] text-[var(--text-tertiary)] mt-1 truncate">{project.description ?? "No description"}</div>
-                  </div>
-                  <div className="shrink-0 self-end">
-                    <SidebarMiniRadar projectId={project.id} size={72} bare />
+              <div className="mx-2 mt-2.5 p-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
+                <div className="flex items-center gap-1.5">
+                  <ProjectIcon name={project.icon} size={13} className="text-[var(--accent)] shrink-0" />
+                  <span className="text-xs font-semibold leading-none truncate flex-1">{project.name}</span>
+                </div>
+                <div className="text-[0.688rem] leading-none text-[var(--text-tertiary)] mt-1 truncate">{project.description ?? "No description"}</div>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-[0.643rem] px-1.5 py-0.5 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] shrink-0 leading-none">{openCounts.get(project.id) ?? 0} open</span>
+                  <div className="ml-auto shrink-0">
+                    <SidebarMiniRadar projectId={project.id} size={52} bare />
                   </div>
                 </div>
               </div>

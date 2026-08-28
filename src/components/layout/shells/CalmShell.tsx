@@ -1,11 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, Zap, Settings, Search, Bell, CalendarDays } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SyncStatusIndicator } from "../sync-status-indicator";
+import { modKey } from "../sidebar-utils";
 
 const NAV = [
   { id: "overview", label: "Overview", icon: Hash },
@@ -20,6 +21,7 @@ export function CalmRail() {
   const { activeView, setView, toggleSearch, hiddenViews } = useCairnStore(
     useShallow((s) => ({ activeView: s.activeView, setView: s.setView, toggleSearch: s.toggleSearch, hiddenViews: s.hiddenViews }))
   );
+  const mod = useMemo(() => modKey(), []);
   return (
     <nav className="w-[52px] flex-shrink-0 flex flex-col items-center py-3 gap-1.5 border-r border-[var(--border-subtle)] bg-[var(--background)]">
       <div className="w-8 h-8 rounded-lg bg-[var(--surface)] border border-[var(--border)] grid place-items-center text-[var(--accent)]">◆</div>
@@ -40,7 +42,7 @@ export function CalmRail() {
           </button>
         );
       })}
-      <button aria-label="Search (⌘K)" onClick={toggleSearch} className="w-8 h-8 rounded-lg grid place-items-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] border border-transparent hover:border-[var(--border)]" title="Search (⌘K)">
+      <button aria-label={`Search (${mod}K)`} onClick={toggleSearch} className="w-8 h-8 rounded-lg grid place-items-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] border border-transparent hover:border-[var(--border)]" title={`Search (${mod}K)`}>
         <Search size={14} />
       </button>
       <div className="w-4 h-px bg-[var(--border)] my-1" />

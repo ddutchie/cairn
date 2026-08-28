@@ -178,7 +178,10 @@ export function UsageView() {
   const rangeLabel = range.days == null ? "period" : `${range.days}d`;
 
   // Overall cache-read share of input, for the "Cached input" stat colour.
-  const cachePct = totals && totals.promptTokens > 0 ? totals.cacheReadTokens / totals.promptTokens : 0;
+  // Clamp to 1 — deduped extraction still guards raw rows, but a single
+  // request that double-reports cache must never display 311%.
+  const rawCachePct = totals && totals.promptTokens > 0 ? totals.cacheReadTokens / totals.promptTokens : 0;
+  const cachePct = Math.min(rawCachePct, 1);
   const cacheColor = totals && cachePct > 0 ? cacheHitColor(cachePct) : undefined;
 
   const byModel = useMemo(() => {
@@ -410,8 +413,8 @@ export function UsageView() {
                             <span className="inline-flex flex-col items-end leading-tight">
                               <span className="font-mono tabular-nums text-[var(--warning)]">{fmtFull(r.cacheReadTokens)}</span>
                               {r.promptTokens > 0 && (
-                                <span className="text-[0.571rem]" style={{ color: cacheHitColor(r.cacheReadTokens / r.promptTokens) }}>
-                                  {Math.round((r.cacheReadTokens / r.promptTokens) * 100)}% of input
+                                <span className="text-[0.571rem]" style={{ color: cacheHitColor(Math.min(r.cacheReadTokens / r.promptTokens, 1)) }}>
+                                  {Math.round(Math.min(r.cacheReadTokens / r.promptTokens, 1) * 100)}% of input
                                 </span>
                               )}
                             </span>
