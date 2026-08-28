@@ -6,6 +6,7 @@ import { redactSensitiveText, redactToolOutput, redactTranscriptValue } from "@/
 import { createSessionEventFold, type FoldedToolCall, type FoldedToolResult, type FoldedUsage, type FoldedStats } from "../../shared/agent/session-event-fold";
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import type { SessionProjection } from "../../shared/agent/session-projection";
+import { foldSessionStats } from "../../shared/session-stats";
 
 export interface SessionConversationToolCall {
   tool: string;
@@ -105,8 +106,13 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   const subagentsRef = useRef<ChatSubagent[]>([]);
   const assistantRef = useRef<SessionConversationSnapshot["assistant"]>(undefined);
   const statsRef = useRef<FoldedStats | undefined>(undefined);
+  const eventsRef = useRef<Array<{ type: string; time?: unknown; data?: unknown }>>([]);
 
   useEffect(() => {
+    if (sessionIdRef.current !== sessionId) {
+      // new session — drop prior log so live stats don't leak across sessions
+      eventsRef.current = [];
+    }
     sessionIdRef.current = sessionId;
     adapterRef.current = adapter;
   }, [sessionId, adapter]);
@@ -121,6 +127,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   const resetTransient = (keepQuestions = false) => {
     setIsLoading(false); setStreamingContent(""); setStreamingThought(""); setToolCalls([]); setSubagents([]);
     textRef.current = ""; thoughtRef.current = ""; toolsRef.current = []; subagentsRef.current = []; assistantRef.current = undefined; statsRef.current = undefined;
+    // keep eventsRef for live stats fallback until next turn/start clears it
     if (!keepQuestions) clearQuestionsFor(sessionIdRef.current);
   };
 
@@ -132,7 +139,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
       setSubagents((current) => { const next = current.map((item) => item.childId === childId ? update(item) : item); subagentsRef.current = next; return next; });
     };
     const fold = createSessionEventFold({
-      onTurnStart: () => { setIsLoading(true); adapterRef.current.onTurnStart?.(); },
+      onTurnStart: () => { eventsRef.current = []; statsRef.current = undefined; setIsLoading(true); adapterRef.current.onTurnStart?.(); },
       onText: (delta) => { textRef.current += delta; setStreamingContent((current) => current + delta); adapterRef.current.onText?.(delta); },
       onReasoning: (delta) => { thoughtRef.current += delta; setStreamingThought((current) => current + delta); adapterRef.current.onReasoning?.(delta); },
       onUsage: (usage) => adapterRef.current.onUsage?.(usage),
@@ -155,7 +162,23 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
       },
       onAssistantMessage: (message) => { assistantRef.current = message; adapterRef.current.onAssistantMessage?.(message); },
       onTurnEnd: (reason, detail) => {
-        const snapshot = { toolCalls: toolsRef.current.map((item) => item.status === "running" ? { ...item, status: "done" as const } : item), text: textRef.current, thought: thoughtRef.current, subagents: subagentsRef.current, assistant: assistantRef.current, stats: statsRef.current };
+        // Live fallback: harness only derives stats on reload (foldSessionStats over the
+        // durable log). If no stats chunk arrived, fold the turn's raw events (step/start,
+        // assistant/chunk, assistant/message, tool/call) the same way the replay path does.
+        let liveStats = statsRef.current;
+        if (!liveStats && eventsRef.current.length > 0) {
+          const folded = foldSessionStats(eventsRef.current);
+          if (folded) {
+            const turns = Object.keys(folded.byTurn).map(Number);
+            const lastTurn = turns.length ? Math.max(...turns) : undefined;
+            if (lastTurn !== undefined) liveStats = folded.byTurn[lastTurn];
+            // also backfill aggregate for the composer's session line if needed
+            if (!liveStats && folded.tokensPerSecond !== undefined) {
+              liveStats = { tokensPerSecond: folded.tokensPerSecond };
+            }
+          }
+        }
+        const snapshot = { toolCalls: toolsRef.current.map((item) => item.status === "running" ? { ...item, status: "done" as const } : item), text: textRef.current, thought: thoughtRef.current, subagents: subagentsRef.current, assistant: assistantRef.current, stats: liveStats ?? statsRef.current };
         adapterRef.current.onTurnEnd?.(reason, snapshot, detail);
         resetTransient();
       },
@@ -211,7 +234,12 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
         }
       },
     });
-    const unsubscribeEvent = electron.session.onEvent((envelope: SessionEventEnvelope) => { if (matches(envelope.sessionId)) fold(envelope.event); });
+    const unsubscribeEvent = electron.session.onEvent((envelope: SessionEventEnvelope) => {
+      if (!matches(envelope.sessionId)) return;
+      // keep raw events for live stats fallback (mirrors electron/cordis/session-replay.ts replay path)
+      eventsRef.current.push(envelope.event as { type: string; time?: unknown; data?: unknown });
+      fold(envelope.event);
+    });
     const unsubscribeProjection = electron.session.onProjection((projection: SessionProjection) => {
       if (!matches(projection.sessionId)) return;
       const data = projection.data as Record<string, unknown>;
