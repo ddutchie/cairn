@@ -29,6 +29,8 @@ export interface ColumnRow {
   /** Column semantics — "done" columns trigger the task-complete celebration. */
   type: string;
   order: number;
+  /** Optional WIP limit — drives the honest WIP status on the Overview instrument. */
+  card_limit?: number | null;
 }
 
 export interface CardRow {

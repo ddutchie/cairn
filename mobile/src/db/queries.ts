@@ -1004,11 +1004,15 @@ export interface ProjectMeta {
   priority: string;
   due_date: string | null;
   tag_ids: string;
+  /** Honest dates / at-a-glance code folder — mirrors desktop ProjectOverview. */
+  created_at: string;
+  code_directory: string | null;
 }
 
 /** A board column including its `type` (needed to find the done column + order + colour). */
 export interface OverviewColumn extends ColumnRow {
   type: string;
+  card_limit: number | null;
 }
 
 /** A card with the extra fields the Overview needs (due date + updated_at). */
@@ -1033,13 +1037,13 @@ export function getProjectOverview(projectId: string): ProjectOverviewData {
   const db = getDb();
   const project =
     db.getFirstSync<ProjectMeta>(
-      `SELECT id, name, icon, description, status, priority, due_date, tag_ids
+      `SELECT id, name, icon, description, status, priority, due_date, tag_ids, created_at, code_directory
        FROM projects WHERE id = ? AND ${LIVE}`,
       projectId,
     ) ?? null;
 
   const columns = db.getAllSync<OverviewColumn>(
-    `SELECT id, project_id, name, type, "order" FROM board_columns
+    `SELECT id, project_id, name, type, "order", card_limit FROM board_columns
      WHERE deleted_at IS NULL AND project_id = ? ORDER BY "order"`,
     projectId,
   );
