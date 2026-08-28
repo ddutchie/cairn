@@ -891,6 +891,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
     // across sessions — not just the session:respond-tool fallback.
     if (workspaceId && db) {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
         if (isWorkspaceGranted(db, workspaceId, name)) return true;
         if (name === "bash") {
@@ -940,6 +941,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       // a card, so an "Always allow" covers future sessions silently.
       if (workspaceId && db) {
         try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
           if (isWorkspaceGranted(db, workspaceId, toolName)) return Promise.resolve("allowed-once");
         } catch { /* DB not migrated — fall through to ask */ }
@@ -999,6 +1001,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           // transports that settle without going through the IPC handler).
           if (decision.approved && decision.grant === "workspace" && workspaceId && db) {
             try {
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
               const { addWorkspaceApprovalGrant } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
               const trusted = readPendingApprovalArgs(sessionId, callId);
               // For bash the workspace grant is command-scoped (like grant:command);

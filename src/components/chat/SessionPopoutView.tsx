@@ -386,6 +386,9 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
   const { isLoading, streamingContent, streamingThought, toolCalls, subagents, pendingQuestions, pendingQuestionCallId } = sessionConversation;
   // One stable timestamp per turn: generating it inline produced a new value on
   // every token, so the live message's identity churned needlessly.
+  // isLoading is intentionally the dep — new turn → new timestamp — even though
+  // the factory doesn't read it directly.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const liveCreatedAt = useMemo(() => new Date().toISOString(), [isLoading]);
   const liveMessage = toLiveConversationMessage(sessionId, { isLoading, streamingContent, streamingThought, toolCalls, subagents }, liveCreatedAt);
   const displayMessages = withLiveTurn(messages, liveMessage);

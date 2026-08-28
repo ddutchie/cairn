@@ -46,12 +46,12 @@ function referencedPath(toolCall: ConversationToolCall): string | undefined {
 }
 
 function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
+  const [pending, setPending] = useState<null | "allow" | "deny" | "always" | "command">(null);
   const risk = riskForTool(toolCall.name);
   const preview = approvalPreview(toolCall.name, toolCall.args);
   const scope = approvalScopeLabel(toolCall.name);
   const command = typeof toolCall.args?.command === "string" ? toolCall.args.command : undefined;
   if (!sessionId || !toolCall.callId) return <ToolCallBody toolCall={toolCall} />;
-  const [pending, setPending] = useState<null | "allow" | "deny" | "always" | "command">(null);
   const respond = (approved: boolean, grant?: "command" | "session" | "workspace") => {
     if (pending) return;
     setPending(grant === "workspace" ? "always" : grant === "command" ? "command" : approved ? "allow" : "deny");

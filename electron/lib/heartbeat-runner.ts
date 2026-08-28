@@ -37,7 +37,6 @@ import {
 } from "../db/automation-queries";
 import { isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance } from "./automation-approval";
 import { getExternalToolDefs, checkRequirements, externalToolLabel } from "./external-tools";
-import { recordLlmUsage } from "./usage-recorder";
 import { createSessionEventFold } from "../../shared/agent/session-event-fold";
 import {
   automationFolderDir,
@@ -361,11 +360,6 @@ export async function runAutomation(
   } catch {
     /* fall back to the row */
   }
-
-  // const-narrowed copies so the onUsage closure below keeps string types
-  // (TS does not preserve property narrowing into closures).
-  const cachedModel = cached.model;
-  const cachedBaseUrl = cached.baseUrl;
 
   const req: ChatRequest = {
     message: recipe,
