@@ -59,6 +59,15 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  update_user_writing_style: {
+    description: "Append an observation to the user's writing style guide mid-session. Use when the user explicitly asks you to remember a style preference, or you notice a consistent correction worth preserving. Appends to the full guide (section-aware for the canonical 12-section ## N. format), preserving existing content and persona. Prefer explicit user request — do not hallucinate preferences. Check for duplicates before appending. Canonical 12 sections: 1. Voice in one line, 2. Sentence Length & Rhythm, 3. Tone & Register, 4. Openings & Closings, 5. Punctuation Habits, 6. Vocabulary & Phrases, 7. How I Give Feedback or Disagree, 8. Emoji Use, 9. Formatting, 10. Other Distinctive Patterns, 11. Anti-Patterns — Does NOT Sound Like Me, 12. Preserve These Voice Tells. Call get_user_writing_style first to see current guide and choose the right section.",
+    schema: z.object({
+      mode: z.enum(["append"]).describe('Update mode; currently only "append" is supported.'),
+      section: z.string().optional().describe('Target section of the 12-section guide — use exact heading or number, e.g. "5. Punctuation Habits", "Punctuation", "Emoji Use", or "5". Canonical: 1 Voice in one line, 2 Sentence Length & Rhythm, 3 Tone & Register, 4 Openings & Closings, 5 Punctuation Habits, 6 Vocabulary & Phrases, 7 How I Give Feedback or Disagree, 8 Emoji Use, 9 Formatting, 10 Other Distinctive Patterns, 11 Anti-Patterns, 12 Preserve These Voice Tells. If omitted, appends to end.'),
+      content: z.string().min(1).describe("The observation to append — a concise style rule or voice note, e.g. 'Prefers plain hyphens over em-dashes (—)'. Will be inserted as a bullet in that section."),
+    }),
+  },
+
   get_note: {
     description: "Get the full content of a note by ID.",
     schema: z.object({ noteId: sId }),
