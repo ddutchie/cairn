@@ -407,7 +407,8 @@ export function AgentSettings() {
 
   // Connection fields (baseUrl/apiKey/model) are managed by the ProviderManager
   // switcher below; here we only need `model` (context lookup) + behavioural fields.
-  const { model: modelAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent, autoApprove = true } = agentConfig;
+  const { model: modelAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent, autoApprove: _autoApprove, mode: _agentMode } = agentConfig as typeof agentConfig & { mode?: import("../../../shared/agent/approval-mode").Mode };
+  const autoApprove = _agentMode ? _agentMode === "auto" : _autoApprove ?? true;
 
   function updateAgent(patch: Partial<typeof agentConfig>) {
     setAgentConfig(patch);

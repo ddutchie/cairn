@@ -393,8 +393,10 @@ export interface AgentConfig {
   maxOutputTokens?: number;
   /** When true, the Auto cap is used. Defaults to true. */
   maxOutputAuto?: boolean;
-  /** Automatically approve tool execution without prompt. */
+  /** Automatically approve tool execution without prompt. @deprecated — use `mode`. Kept as alias: true→"auto", false→"interactive". */
   autoApprove: boolean;
+  /** OpenWorker-style approval Mode. When set it takes precedence over autoApprove. */
+  mode?: import("../../../shared/agent/approval-mode").Mode;
   /**
    * Id of the active saved provider for the coding agent. The saved-provider
    * *list* is shared and lives on `aiConfig.savedProviders` (single source of
@@ -1058,9 +1060,22 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   // ── Agent config ───────────────────────────────
   setAgentConfig(patch) {
     set((s) => {
-      const next = { ...s.agentConfig, ...patch };
+      const next = { ...s.agentConfig, ...patch } as typeof s.agentConfig & { mode?: import("../../../shared/agent/approval-mode").Mode };
+      // Keep mode ↔ autoApprove in sync so old readers (main cache, legacy UI)
+      // and new readers (mode-aware gate) agree. Patch may carry either shape.
+      const hasMode = "mode" in patch && (patch as { mode?: unknown }).mode !== undefined;
+      const hasAuto = "autoApprove" in patch && (patch as { autoApprove?: unknown }).autoApprove !== undefined;
+      if (hasMode && !hasAuto) {
+        const m = (patch as { mode?: import("../../../shared/agent/approval-mode").Mode }).mode;
+        next.autoApprove = m === "auto";
+      } else if (hasAuto && !hasMode) {
+        const a = (patch as { autoApprove?: boolean }).autoApprove;
+        next.mode = a ? "auto" : "interactive";
+      } else if (hasMode && hasAuto) {
+        // both supplied — keep as-is (caller is authoritative)
+      }
       persistAgent(next);
-      return { agentConfig: next };
+      return { agentConfig: next as typeof s.agentConfig };
     });
   },
 

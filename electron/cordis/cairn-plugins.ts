@@ -29,8 +29,32 @@ import { saveSessionTodos, getSessionTodos, updateCodingSession } from "../db/qu
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, readPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { riskForTool as riskForToolShared } from "../../shared/agent/tool-risk";
 import type { RiskClass } from "../../shared/agent/tool-risk";
-import { needsApprovalForCall } from "../../shared/agent/tool-risk";
+import { shouldAskForTool, modeFromAutoApprove, isMode, type Mode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
+import { isSecretFile, bashReferencesSecretFile } from "../lib/coding-tools/secrets";
+
+const secretGrantsBySession = new Map<string, Set<string>>();
+function getSecretGrants(sessionId: string): Set<string> {
+  let s = secretGrantsBySession.get(sessionId);
+  if (!s) { s = new Set(); secretGrantsBySession.set(sessionId, s); }
+  return s;
+}
+export function clearSecretGrants(sessionId: string): void {
+  secretGrantsBySession.delete(sessionId);
+}
+function secretPathForCall(name: string, args: Record<string, unknown>): string | undefined {
+  if (name === "bash" && typeof args.command === "string" && bashReferencesSecretFile(args.command)) {
+    // use the raw command as key — exact match for session grant
+    return `bash:${args.command}`;
+  }
+  const candidates = ["file_path", "path", "filePath", "file", "filepath"] as const;
+  for (const k of candidates) {
+    const v = args[k];
+    if (typeof v === "string" && v && isSecretFile(v)) return v;
+  }
+  // also check nested file_path in some tools
+  return undefined;
+}
 
 function sendProjection(send: (channel: string, payload: Record<string, unknown>) => void, sessionId: string, kind: SessionProjectionKind, data: Record<string, unknown>): void {
   send("session:projection", makeSessionProjection(sessionId, kind, data as never) as unknown as Record<string, unknown>);
@@ -563,7 +587,12 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
     if (!u) return;
     recordedInTurn = true;
 
-    const promptTokens = u.inputTokens ?? 0;
+    const rawInput = u.inputTokens ?? 0;
+    const rawCacheRead = u.cacheReadTokens ?? 0;
+    // dsh/Anthropic reports input as total, but some paths (second turn) report
+    // input as uncached delta (35) with cacheRead as total cached (20480) →
+    // 35+20480=20515. Heuristic: if cacheRead > rawInput, rawInput is delta.
+    const promptTokens = rawCacheRead > rawInput ? rawInput + rawCacheRead : rawInput;
     const completionTokens = u.outputTokens ?? 0;
     const reasoningTokens = u.reasoningTokens ?? 0;
     // dsh emits usage events that carry no counts (e.g. the synthetic
@@ -804,8 +833,10 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 // session:respond-tool). Read-only tools always pass (never ask).
 
 export interface CairnApprovalConfig {
-  /** When true, every tool runs without a confirm prompt (no asks). */
-  autoApprove: boolean;
+  /** When true, every tool runs without a confirm prompt (no asks) — legacy alias for mode:"auto". */
+  autoApprove?: boolean;
+  /** OpenWorker-style approval Mode. When set it takes precedence over autoApprove. */
+  mode?: Mode;
   /** The caller's sessionId — scopes the confirm IPC. */
   sessionId: string;
   /** Emit a `session:*` IPC event (sessionId NOT yet tagged). */
@@ -866,8 +897,12 @@ export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
  * turn — this mount is disposed with it.
  */
 export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): (() => void) | void {
-  const { autoApprove, sessionId, send, registerPending, signal, timeoutMs, workspaceId, db, askRiskClasses, askFilter } = config;
-  if (autoApprove) return;
+  const { sessionId, send, registerPending, signal, timeoutMs, workspaceId, db, askRiskClasses, askFilter } = config;
+  const effectiveMode: Mode = config.mode && isMode(config.mode)
+    ? config.mode
+    : modeFromAutoApprove(config.autoApprove);
+  // No early-return for "auto": EXTERNAL still asks (OpenWorker taxonomy).
+  // READ never asks in any mode — handled by shouldAskForTool.
 
   /** True when the tool's risk class is in the ask set, or when no filter is set (ask for everything mutating). */
   const riskGates = (name: string, argsObj: Record<string, unknown>): boolean => {
@@ -914,7 +949,20 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const next = args[1] as (() => Promise<unknown>) | undefined;
       const name = exec?.name;
       const argsObj = (exec?.arguments && typeof exec.arguments === "object") ? exec.arguments as Record<string, unknown> : {};
-      if (typeof name === "string" && needsApprovalForCall(name, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
+      // Secret-file gate — runs before the risk gate so even "read" (otherwise safe)
+      // still asks. Default is deny; Allow once / Allow for session (grant:session)
+      // adds the file path to the per-session secret allowlist.
+      if (typeof name === "string") {
+        const secretPath = secretPathForCall(name, argsObj);
+        if (secretPath) {
+          const granted = getSecretGrants(sessionId).has(secretPath);
+          if (!granted) {
+            if (exec?.callId) recordPendingApprovalArgs(sessionId, exec.callId, { ...argsObj, __secretPath: secretPath });
+            return Promise.resolve({ kind: "ask", reason: `"${name}" targets a protected secret file and needs your approval.` });
+          }
+        }
+      }
+      if (typeof name === "string" && shouldAskForTool(name, effectiveMode, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
         // Stash the TRUSTED args so session:respond-tool can record a
         // grant:'command' against what dsh will actually execute — not
         // whatever string a compromised renderer echoes back. dsh's
@@ -936,15 +984,21 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const req = args[0] as { toolName?: string; callId?: string; reason?: string; signal?: AbortSignal } | undefined;
       const toolName = req?.toolName ?? "tool";
       const callId = req?.callId ?? `approve-${newId()}`;
-      if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
-      // Workspace-persistent grants also short-circuit the ask without emitting
-      // a card, so an "Always allow" covers future sessions silently.
-      if (workspaceId && db) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
-          if (isWorkspaceGranted(db, workspaceId, toolName)) return Promise.resolve("allowed-once");
-        } catch { /* DB not migrated — fall through to ask */ }
+      // Protected-file requests must be authorized by the exact secret path, not by a generic tool grant.
+      const pendingSecret = readPendingApprovalArgs(sessionId, callId)?.__secretPath as string | undefined;
+      if (pendingSecret) {
+        if (getSecretGrants(sessionId).has(pendingSecret)) return Promise.resolve("allowed-once");
+      } else {
+        if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
+        // Workspace-persistent grants also short-circuit the ask without emitting
+        // a card, so an "Always allow" covers future sessions silently.
+        if (workspaceId && db) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
+            if (isWorkspaceGranted(db, workspaceId, toolName)) return Promise.resolve("allowed-once");
+          } catch { /* DB not migrated — fall through to ask */ }
+        }
       }
        sendProjection(send, sessionId, "approval", { status: "required", name: toolName, label: toolName, callId });
       return new Promise<string>((resolve) => {
@@ -992,7 +1046,13 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           resolve(outcome);
         };
         disposeRef.current = registerPending(callId, (decision) => {
-          if (decision.approved && decision.grant === "session") grants.tools.add(toolName);
+          if (decision.approved && decision.grant === "session") {
+            grants.tools.add(toolName);
+            // Secret-file session grant — allow that exact secret path for the rest of the session
+            const trusted = readPendingApprovalArgs(sessionId, callId) as Record<string, unknown> | undefined;
+            const secretPath = trusted?.__secretPath as string | undefined;
+            if (secretPath) getSecretGrants(sessionId).add(secretPath);
+          }
           // grant:"command" is recorded by the session:respond-tool handler,
           // which owns the canonicalized command text (dsh's ApprovalRequest
           // deliberately carries no args). grant:"workspace" persists to the

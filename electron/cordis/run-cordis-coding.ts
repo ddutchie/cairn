@@ -40,6 +40,7 @@ import type { LLMConfig } from "../lib/llm";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { describeTurnEndReason } from "../../shared/agent/turn-end-reason";
 import { dlog, startPhaseTimer } from "../lib/debug-log";
+import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 
 export interface RunCordisCodingOptions {
   db: Database;
@@ -51,8 +52,10 @@ export interface RunCordisCodingOptions {
   systemPrompt: string;
   llmConfig: LLMConfig;
   mode: "plan" | "execute";
-  /** When false, mutating tools require user confirmation before running. Default true. */
+  /** When false, mutating tools require user confirmation before running. Default true. @deprecated — use `approvalMode`. */
   autoApprove?: boolean;
+  /** OpenWorker-style approval Mode. When set it takes precedence over autoApprove. */
+  approvalMode?: Mode;
   /**
    * Filesystem/bash sandbox mode. "workspace-write" (default) confines all
    * mutations to `cwd`; "read-only" forbids all mutation; "danger-full-access"
@@ -121,19 +124,21 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   const { db, req, workspacePath, sessionId, cwd, systemPrompt, mode, send, questions, approvals, getWin, signal } = opts;
   // Sandbox: confine fs/bash mutations to cwd by default (workspace-write).
   const sandboxMode = opts.sandboxMode ?? "workspace-write";
-  // autoApprove defaults ON, but when caller explicitly asks for HITL (false) and
-  // forgets to pass an approvals adapter, fail CLOSED with a warning instead of
-  // silently forcing allow-all (P0-4).
-  let autoApprove: boolean;
-  if (opts.autoApprove !== false) autoApprove = true;
-  else if (approvals) autoApprove = false;
-  else {
-    console.warn(`[cordis-coding] autoApprove:false but no approvals adapter supplied for ${sessionId} — forcing deny (fail-closed)`);
-    autoApprove = false;
-    // approvals stays undefined → cairnApprovalPlugin not mounted, so tools/pre-execute
-    // would run un-gated; instead we rely on dsh ApprovalService going unavailable → deny.
-    // Log the mis-wiring so the caller is visible.
+  // Approval mode: prefer explicit `approvalMode`, then map legacy `autoApprove`
+  // (true→auto, false→interactive) so stored configs round-trip. Absent → auto
+  // (previous default ON when caller omitted the flag).
+  let effectiveMode: Mode;
+  if (opts.approvalMode && isMode(opts.approvalMode)) effectiveMode = opts.approvalMode;
+  else if (typeof opts.autoApprove === "boolean") effectiveMode = modeFromAutoApprove(opts.autoApprove);
+  else effectiveMode = "auto";
+  // Fail-closed when caller asked for HITL but forgot the adapter — the gate
+  // would be absent and tools would run un-gated. Keep effectiveMode as-is
+  // for the policy fold so the audit log reflects "ask", but log the wiring.
+  if (effectiveMode !== "auto" && !approvals) {
+    console.warn(`[cordis-coding] approval mode ${effectiveMode} but no approvals adapter supplied for ${sessionId} — forcing deny (fail-closed)`);
   }
+  // Legacy alias kept for the policy fold below (auto ↔ never, else ask).
+  const autoApprove = effectiveMode === "auto";
   let resolveTerminal: (r: RunCordisCodingResult) => void = () => {};
   const onSessionEvent = (event: import("@deepseek-ai/dsh-session").SessionEvent) => {
     opts.onSessionEvent?.(event);
@@ -191,7 +196,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
           const { execSync } = await import("node:child_process");
           gitBranch = execSync("git branch --show-current", { cwd, encoding: "utf8", timeout: 800 }).trim() || undefined;
         } catch { /* not a git repo */ }
-        updateWorkspaceContext(sessionId, { workspaceName: wsRow?.name, projectName: projRow?.name, projectDescription: projRow?.description, cwd, gitBranch });
+        updateWorkspaceContext(sessionId, { workspaceName: wsRow?.name, workspaceId: req.workspaceId, projectName: projRow?.name, projectId: req.projectId, projectDescription: projRow?.description, cwd, gitBranch });
       } catch (e) { console.warn("[cordis-coding] workspace context update failed:", e instanceof Error ? e.message : e); }
       timer.mark("workspace-context (incl. git branch execSync)");
       const toolDisposers = registerCairnTools(ctx, {
@@ -226,10 +231,11 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // unconditionally: sessions without a confirm transport (headless) fail
     // closed to "cancelled" → deterministic loop-halt.
       await mount(cairnDoomLoopPlugin, { sessionId, signal });
-    // HITL tool approval (no-op when autoApprove is on).
-    if (!autoApprove && approvals) {
+    // HITL tool approval — mounted whenever an approvals adapter is present.
+    // Mode decides what asks: "auto" only gates EXTERNAL, "interactive"/"plan"/"discuss" gate all mutating tools.
+    if (approvals) {
       await mount(cairnApprovalPlugin, {
-        autoApprove,
+        mode: effectiveMode,
         sessionId,
         send,
         registerPending: approvals.registerPending,

@@ -334,8 +334,8 @@ export function ContextRing({
               {cacheRead > 0 && promptTokens > 0 && (
                 <div className="flex items-center justify-between text-[0.714rem]">
                   <span className="text-[var(--text-tertiary)]">% of input cached</span>
-                  <span className="font-mono font-medium" style={{ color: cacheHitColor(cacheRead / promptTokens) }}>
-                    {Math.round((cacheRead / promptTokens) * 100)}%
+                  <span className="font-mono font-medium" style={{ color: cacheHitColor(Math.min(cacheRead / promptTokens, 1)) }}>
+                    {Math.round(Math.min(cacheRead / promptTokens, 1) * 100)}%
                   </span>
                 </div>
               )}

@@ -95,6 +95,10 @@ export interface LLMConfig {
    *  responses→openai-responses, anthropic-messages→anthropic-messages. Absent =
    *  completions. */
   apiMode?: "responses" | "completions" | "anthropic-messages";
+  /** OpenWorker-style approval Mode. When set it takes precedence over autoApprove. */
+  mode?: import("../../shared/agent/approval-mode").Mode;
+  /** @deprecated — use `mode`. Kept as alias: true→"auto", false→"interactive". */
+  autoApprove?: boolean;
 }
 
 export type OpenAIMessage = {

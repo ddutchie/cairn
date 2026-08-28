@@ -7,7 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { cn, getDueDateStatus } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
-import { countOpenCardsByProject } from "../sidebar-utils";
+import { countOpenCardsByProject, modKey, buildShortcutMap } from "../sidebar-utils";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import { ProjectCreateForm } from "../sidebar/ProjectCreateForm";
 import { useProjectMetrics } from "../project-overview/useProjectMetrics";
@@ -63,6 +63,18 @@ export function DockSidebar() {
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
   const projects = useMemo(() => (activeWorkspaceId ? allProjects.filter((p) => p.workspaceId === activeWorkspaceId) : []), [activeWorkspaceId, allProjects]);
   const openCounts = useMemo(() => countOpenCardsByProject(cards), [cards]);
+  const mod = useMemo(() => modKey(), []);
+  const shortcutMap = useMemo(() => {
+    const visible = [
+      { view: "overview" },
+      { view: "notes" },
+      ...(!hiddenViews.has("board") ? [{ view: "board" }] : []),
+      ...(!hiddenViews.has("calendar") ? [{ view: "calendar" }] : []),
+      ...(!hiddenViews.has("flow") ? [{ view: "flow" }] : []),
+      ...(!hiddenViews.has("agent") ? [{ view: "agent" }] : []),
+    ];
+    return buildShortcutMap(visible);
+  }, [hiddenViews]);
 
   const [creatingProject, setCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
@@ -107,17 +119,17 @@ export function DockSidebar() {
             </Tooltip>
           )}
           <div className="w-5 h-px bg-[var(--border)] my-1" />
-          <Tooltip content="Search" side="right"><button aria-label="Search" onClick={toggleSearch} className={cn("p-2 rounded-md", searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Search size={15} /></button></Tooltip>
+          <Tooltip content={`Search (${mod}K)`} side="right"><button aria-label="Search" onClick={toggleSearch} className={cn("p-2 rounded-md", searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Search size={15} /></button></Tooltip>
           {!hiddenViews.has("chat") && (
-            <Tooltip content="Chat" side="right"><button aria-label="Chat" onClick={toggleChat} className={cn("p-2 rounded-md", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><MessageSquare size={15} /></button></Tooltip>
+            <Tooltip content={`Chat (${mod}/)`} side="right"><button aria-label="Chat" onClick={toggleChat} className={cn("p-2 rounded-md", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><MessageSquare size={15} /></button></Tooltip>
           )}
           <div className="w-5 h-px bg-[var(--border)] my-1" />
-          <Tooltip content="Overview" side="right"><button aria-label="Overview" onClick={() => setView("overview")} className={cn("p-2 rounded-md", activeView === "overview" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Hash size={15} /></button></Tooltip>
-          <Tooltip content="Notes" side="right"><button aria-label="Notes" onClick={() => setView("notes")} className={cn("p-2 rounded-md", activeView === "notes" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><FileText size={15} /></button></Tooltip>
-          <Tooltip content="Board" side="right"><button aria-label="Board" onClick={() => setView("board")} className={cn("p-2 rounded-md", activeView === "board" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Kanban size={15} /></button></Tooltip>
-          {!hiddenViews.has("calendar") && <Tooltip content="Calendar" side="right"><button aria-label="Calendar" onClick={() => setView("calendar")} className={cn("p-2 rounded-md", activeView === "calendar" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><CalendarDays size={15} /></button></Tooltip>}
-          {!hiddenViews.has("flow") && <Tooltip content="Flow" side="right"><button aria-label="Flow" onClick={() => setView("flow")} className={cn("p-2 rounded-md", activeView === "flow" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Workflow size={15} /></button></Tooltip>}
-          {!hiddenViews.has("agent") && <Tooltip content="Agent" side="right"><button aria-label="Agent" onClick={() => setView("agent")} className={cn("p-2 rounded-md", activeView === "agent" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Terminal size={15} /></button></Tooltip>}
+          <Tooltip content={`Overview (${shortcutMap.get("overview") ?? ""})`} side="right"><button aria-label="Overview" onClick={() => setView("overview")} className={cn("p-2 rounded-md", activeView === "overview" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Hash size={15} /></button></Tooltip>
+          <Tooltip content={`Notes (${shortcutMap.get("notes") ?? ""})`} side="right"><button aria-label="Notes" onClick={() => setView("notes")} className={cn("p-2 rounded-md", activeView === "notes" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><FileText size={15} /></button></Tooltip>
+          {!hiddenViews.has("board") && <Tooltip content={`Board (${shortcutMap.get("board") ?? ""})`} side="right"><button aria-label="Board" onClick={() => setView("board")} className={cn("p-2 rounded-md", activeView === "board" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Kanban size={15} /></button></Tooltip>}
+          {!hiddenViews.has("calendar") && <Tooltip content={`Calendar (${shortcutMap.get("calendar") ?? ""})`} side="right"><button aria-label="Calendar" onClick={() => setView("calendar")} className={cn("p-2 rounded-md", activeView === "calendar" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><CalendarDays size={15} /></button></Tooltip>}
+          {!hiddenViews.has("flow") && <Tooltip content={`Flow (${shortcutMap.get("flow") ?? ""})`} side="right"><button aria-label="Flow" onClick={() => setView("flow")} className={cn("p-2 rounded-md", activeView === "flow" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Workflow size={15} /></button></Tooltip>}
+          {!hiddenViews.has("agent") && <Tooltip content={`Agent (${shortcutMap.get("agent") ?? ""})`} side="right"><button aria-label="Agent" onClick={() => setView("agent")} className={cn("p-2 rounded-md", activeView === "agent" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}><Terminal size={15} /></button></Tooltip>}
           <div className="flex-1" aria-hidden="true" />
           <div className="mt-auto w-full flex flex-col items-center gap-1 pt-2 border-t border-[var(--border)]">
             <Tooltip content="Automations" side="right"><button aria-label="Automations" onClick={() => setView("automations")} className={cn("p-2 rounded-md", activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Zap size={15} /></button></Tooltip>
@@ -152,23 +164,21 @@ export function DockSidebar() {
             </Tooltip>
           </div>
 
-          {/* current project — radar bottom-right aligned inside card */}
+          {/* current project — title on its own row above open + radar to avoid compact crowding */}
           {(() => {
             const project = projects.find((p) => p.id === activeProjectId);
             if (!project) return null;
             return (
-              <div className="mx-2 mt-3 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
-                <div className="flex gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <ProjectIcon name={project.icon} size={14} className="text-[var(--accent)]" />
-                      <span className="text-xs font-semibold truncate flex-1">{project.name}</span>
-                      <span className="text-[0.643rem] px-1.5 py-0.5 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] shrink-0">{openCounts.get(project.id) ?? 0} open</span>
-                    </div>
-                    <div className="text-[0.714rem] text-[var(--text-tertiary)] mt-1 truncate">{project.description ?? "No description"}</div>
-                  </div>
-                  <div className="shrink-0 self-end">
-                    <SidebarMiniRadar projectId={project.id} size={72} bare />
+              <div className="mx-2 mt-2.5 p-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
+                <div className="flex items-center gap-1.5">
+                  <ProjectIcon name={project.icon} size={13} className="text-[var(--accent)] shrink-0" />
+                  <span className="text-xs font-semibold leading-none truncate flex-1">{project.name}</span>
+                </div>
+                <div className="text-[0.688rem] leading-none text-[var(--text-tertiary)] mt-1 truncate">{project.description ?? "No description"}</div>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-[0.643rem] px-1.5 py-0.5 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] shrink-0 leading-none">{openCounts.get(project.id) ?? 0} open</span>
+                  <div className="ml-auto shrink-0">
+                    <SidebarMiniRadar projectId={project.id} size={52} bare />
                   </div>
                 </div>
               </div>
@@ -180,12 +190,12 @@ export function DockSidebar() {
             <div>
               <div className="text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Views</div>
               <div className="space-y-0.5">
-                <button onClick={() => setView("overview")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", activeView === "overview" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={13} /> Overview</button>
-                <button onClick={() => setView("notes")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", activeView === "notes" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={13} /> Notes</button>
-                {!hiddenViews.has("board") && <button onClick={() => setView("board")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "board" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Kanban size={13} /> Board</button>}
-                {!hiddenViews.has("calendar") && <button onClick={() => setView("calendar")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "calendar" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><CalendarDays size={13} /> Calendar</button>}
-                {!hiddenViews.has("flow") && <button onClick={() => setView("flow")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "flow" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Workflow size={13} /> Flow</button>}
-                {!hiddenViews.has("agent") && <button onClick={() => setView("agent")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "agent" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Terminal size={13} /> Agent</button>}
+                <button onClick={() => setView("overview")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", activeView === "overview" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={13} /> Overview<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("overview")}</span></button>
+                <button onClick={() => setView("notes")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", activeView === "notes" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={13} /> Notes<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("notes")}</span></button>
+                {!hiddenViews.has("board") && <button onClick={() => setView("board")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "board" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Kanban size={13} /> Board<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("board")}</span></button>}
+                {!hiddenViews.has("calendar") && <button onClick={() => setView("calendar")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "calendar" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><CalendarDays size={13} /> Calendar<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("calendar")}</span></button>}
+                {!hiddenViews.has("flow") && <button onClick={() => setView("flow")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "flow" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Workflow size={13} /> Flow<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("flow")}</span></button>}
+                {!hiddenViews.has("agent") && <button onClick={() => setView("agent")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "agent" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Terminal size={13} /> Agent<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("agent")}</span></button>}
               </div>
             </div>
 

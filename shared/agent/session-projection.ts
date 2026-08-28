@@ -2,7 +2,7 @@
 
 export type SessionProjectionKind =
   | "approval" | "question" | "subagent-trace" | "todos" | "plan-note"
-  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result" | "error";
+  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result" | "title" | "error";
 
 /**
  * Shared busy/error envelope for session:* channels.
@@ -34,6 +34,7 @@ export type SessionProjectionData = {
   retry: { attempt: number; maxRetries: number; delayMs: number; error: string };
   compact: { status: "start" | "end"; auto?: boolean };
   "compact-result": { messageCount: number; summary: string };
+  title: { title: string | null };
   error: { message: string; code?: SessionBusyReason | string };
 };
 

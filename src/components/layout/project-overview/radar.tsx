@@ -39,7 +39,7 @@ export function ProjectHealthRadar({
   });
 
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]" style={{ boxShadow: "0 8px 24px rgba(0,0,0,.28)" }}>
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 pl-6 md:p-[18px] md:pl-7" style={{ boxShadow: "0 8px 24px rgba(0,0,0,.28)" }}>
       <div className="flex items-center gap-2 mb-3">
         <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-[0.625rem]">⬢</span>
         <h2 className="text-[0.813rem] font-semibold tracking-tight">Project health</h2>
@@ -48,7 +48,7 @@ export function ProjectHealthRadar({
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
-        <div className="w-full max-w-[280px] aspect-square flex-shrink-0 mr-2">
+        <div className="w-full max-w-[280px] aspect-square flex-shrink-0 mr-2 pl-2">
           <svg width="100%" height="100%" viewBox={`0 0 ${size} ${size}`} className="overflow-visible block" role="img" aria-label="Project health radar">
           {/* rings */}
           {rings.map((pts, i) => (

@@ -7,6 +7,7 @@
 
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
+import { appendToStyleGuide } from "../../shared/user-style";
 
 export const USER_STYLE_ID = "global";
 
@@ -87,11 +88,37 @@ export function saveUserStyle(db: Database.Database, input: UserStyleSaveInput):
       full_guide   = excluded.full_guide,
       cheatsheet   = excluded.cheatsheet,
       source       = excluded.source,
-      updated_at   = excluded.updated_at
+      updated_at   = excluded.updated_at,
+      deleted_at   = NULL
   `).run(USER_STYLE_ID, personaJson, fullGuide, cheatsheet, input.source, now);
   return getUserStyle(db)!;
 }
 
 export function clearUserStyle(db: Database.Database): void {
   db.prepare("DELETE FROM user_style WHERE id = ?").run(USER_STYLE_ID);
+}
+
+export { appendToStyleGuide };
+
+/**
+ * Append an observation to the persisted user_style row.
+ * Preserves persona and cheatsheet, upserts via saveUserStyle (sync-captured).
+ * Returns the saved row, or null when no change was needed (duplicate).
+ */
+export function appendUserStyleObservation(
+  db: Database.Database,
+  section: string | undefined,
+  content: string,
+): { row: UserStyleRow | null; updated: boolean; reason?: string } {
+  const trimmed = content.trim();
+  if (!trimmed) return { row: getUserStyle(db), updated: false, reason: "Empty content — no change." };
+  const existing = getUserStyle(db);
+  const existingGuide = existing?.fullGuide ?? "";
+  const nextGuide = appendToStyleGuide(existingGuide, section, trimmed);
+  if (nextGuide === existingGuide) {
+    return { row: existing, updated: false, reason: "Observation already present — no change." };
+  }
+  const source: UserStyleSource = existing && existing.source !== "none" ? existing.source : "manual";
+  const row = saveUserStyle(db, { fullGuide: nextGuide, source });
+  return { row, updated: true };
 }

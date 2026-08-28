@@ -15,3 +15,13 @@ export {
   type RiskClass,
   type GrantScope,
 } from "../../shared/agent/tool-risk";
+export {
+  type Mode,
+  MODES,
+  isMode,
+  modeFromAutoApprove,
+  autoApproveFromMode,
+  resolveMode,
+  shouldAskForRisk,
+  shouldAskForTool,
+} from "../../shared/agent/approval-mode";

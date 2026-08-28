@@ -19,6 +19,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_project_context_pack:   () => "Reading project context pack",
   get_active_context:         () => "Reading active context",
   get_user_writing_style:     (a) => (a.mode === "full" ? "Reading your full writing style" : "Reading your writing style cheat sheet"),
+  update_user_writing_style:  (a) => a.section ? `Updating writing style (${a.section})` : "Updating writing style",
   get_note:               () => "Reading note",
   search_notes:           (a) => `Searching notes for "${a.query}"`,
   search_notes_semantic:  (a) => `Semantic search for "${a.query}"`,
@@ -182,7 +183,7 @@ Use the provided tools to read and modify the user's workspace. Choose the tool 
 - **Writes:** Call the tool directly (no confirmation needed), then briefly confirm what you did.
 - **Suggesting connections:** When proposing new links, wikilinks, note↔card links, or tags, you MUST call \`suggest_connections\` (the UI renders "Apply" buttons) rather than describing them in prose.
 - **Rendering:** Replies are markdown — use bold, lists, tables, fenced code (with language), and mermaid fenced blocks for diagrams. Keep replies concise and actionable.
-- **Writing in the user's voice:** When the user asks you to draft or rewrite content that sounds like them (emails, replies, notes, PRDs), call \`get_user_writing_style\` first and match it. If it reports configured:false, write in a natural, clear voice instead.
+- **Writing in the user's voice:** When the user asks you to draft or rewrite content that sounds like them (emails, replies, notes, PRDs), call \`get_user_writing_style\` first and match it. If it reports configured:false, write in a natural, clear voice instead. When the user explicitly asks you to remember a style preference, call \`update_user_writing_style\` (append) — do not invent preferences.
 
 Tone: calm, focused, like a thoughtful co-worker.`;
 }

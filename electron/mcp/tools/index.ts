@@ -23,7 +23,7 @@ import {
   codebase_get_references,
   codebase_get_file_symbols
 } from "./codebase";
-import { getUserStyle } from "../../db/queries";
+import { getUserStyle, appendUserStyleObservation } from "../../db/queries";
 import {
   RELATIONSHIP_AFFECTING_TOOLS,
   collectEntityIds,
@@ -235,6 +235,18 @@ function dispatchTool(db: Database.Database, workspacePath: string, toolName: st
         persona: style.persona,
         updatedAt: style.updatedAt,
       };
+    }
+
+    case "update_user_writing_style": {
+      const mode = args.mode as string | undefined;
+      const content = typeof args.content === "string" ? args.content : "";
+      const section = typeof args.section === "string" ? args.section : undefined;
+      if (mode !== "append") return { error: `Unsupported mode "${mode}" — only "append" is supported.` };
+      if (!content.trim()) return { error: "content is required and must be non-empty." };
+      if (content.trim().length > 2000) return { error: "content is too long (max 2000 characters)." };
+      const { row, updated, reason } = appendUserStyleObservation(db, section, content);
+      if (!updated) return { ok: true, updated: false, message: reason ?? "No change.", style: row };
+      return { ok: true, updated: true, message: section ? `Appended to "${section}".` : "Appended to the guide.", style: row };
     }
 
     default:

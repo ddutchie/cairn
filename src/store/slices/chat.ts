@@ -17,10 +17,13 @@ export interface ChatSlice {
   chatThreads: ChatThread[];
   chatMessages: ChatMessage[];
   activeChatThreadId: string | null;
+  /** Projected titles from dsh's session/title fold (null = no title yet). Chat-only. */
+  projectedTitles: Record<string, string | null>;
 
   getOrCreateThread: (workspaceId: ID, projectId?: ID) => ChatThread;
   setActiveChatThreadId: (threadId: string | null) => void;
   loadChatFromDb: (workspaceId: ID) => Promise<void>;
+  setProjectedTitle: (threadId: string, title: string | null) => void;
   addMessage: (
     threadId: ID,
     role: ChatMessage["role"],
@@ -63,6 +66,11 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   chatThreads: [],
   chatMessages: [],
   activeChatThreadId: null,
+  projectedTitles: {},
+
+  setProjectedTitle(threadId, title) {
+    set((s) => ({ projectedTitles: { ...s.projectedTitles, [threadId]: title } }));
+  },
 
   setActiveChatThreadId(threadId) {
     set({ activeChatThreadId: threadId });
@@ -106,6 +114,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     // been persisted) simply renders empty until the first assistant reply
     // is written — expected behaviour, not a fallback.
     const usageByThreadId = new Map<string, unknown>();
+    const titleByThreadId = new Map<string, string | null>();
     const messageLists = await Promise.all(
       dbThreads.map(async (t) => {
         try {
@@ -118,6 +127,8 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
           const payload = unwrapSessionPayload(sessRes);
           const data: ChatMessage[] | null = payload.messages.length > 0 ? payload.messages as ChatMessage[] : null;
           const usage: unknown = payload.usage;
+          const maybeTitle = (payload as { title?: string | null }).title;
+          if (maybeTitle !== undefined) titleByThreadId.set(t.id, maybeTitle ?? null);
 
           if (usage) usageByThreadId.set(t.id, usage);
           if (data && data.length > 0) {
@@ -148,6 +159,12 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
         }),
         ...s.chatThreads.filter((t) => !dbThreadIds.has(t.id)),
       ];
+      // Merge projected titles (session/title fold) — authoritative auto-titles.
+      const nextProjected: Record<string, string | null> = { ...s.projectedTitles };
+      for (const [tid, title] of titleByThreadId) {
+        if (title) nextProjected[tid] = title;
+        else if (title === null) nextProjected[tid] = null;
+      }
 
       // Merge messages: session (dsh) is the source of truth for all loaded
       // threads. Replace in-memory copies for those threads so stale optimistic
@@ -194,7 +211,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
         ...s.chatMessages.filter((m) => !dbLoadedThreadIds.has(m.threadId) || preserveInMemory.has(m.threadId)),
       ];
 
-      return { chatThreads: mergedThreads, chatMessages: mergedMessages };
+      return { chatThreads: mergedThreads, chatMessages: mergedMessages, projectedTitles: nextProjected };
     });
 
     get().persist();
@@ -319,11 +336,15 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     try {
       window.electron?.session.abort(`chat-${threadId}`);
     } catch {}
-    set((s) => ({
-      chatThreads: s.chatThreads.filter((t) => t.id !== threadId),
-      chatMessages: s.chatMessages.filter((m) => m.threadId !== threadId),
-      ...(wasActive ? { activeChatThreadId: null } : {}),
-    }));
+    set((s) => {
+      const { [threadId]: _omit, ...rest } = s.projectedTitles;
+      return {
+        chatThreads: s.chatThreads.filter((t) => t.id !== threadId),
+        chatMessages: s.chatMessages.filter((m) => m.threadId !== threadId),
+        projectedTitles: rest,
+        ...(wasActive ? { activeChatThreadId: null } : {}),
+      };
+    });
     if (wasActive) {
       storage.delete(ACTIVE_CHAT_THREAD_KEY);
       // If other threads remain for the same scope, activate the most recent one
@@ -347,14 +368,23 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   renameThread(threadId, title) {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    // Optimistic update — projected title wins immediately, and SQLite is
+    // updated via the sessionTitle service (which pins kind:'user').
     set((s) => ({
       chatThreads: s.chatThreads.map((t) =>
-        t.id === threadId ? { ...t, title: title.trim() || undefined, updatedAt: now() } : t
+        t.id === threadId ? { ...t, title: trimmed || undefined, updatedAt: now() } : t
       ),
+      projectedTitles: { ...s.projectedTitles, [threadId]: trimmed || null },
     }));
     get().persist();
+    // Pin via dsh's sessionTitle.rename (kind:'user' — stops auto-titling).
+    // Chat-only: coding sessions are not auto-titled in phase 1.
+    ipcAwait((e) => (e as unknown as { session: { renameTitle: (args: { threadId: string; title: string }) => Promise<unknown> } }).session.renameTitle({ threadId, title: trimmed }));
+    // Also keep SQLite index row in sync (SQLite is the thread-list fallback).
     const thread = get().chatThreads.find((t) => t.id === threadId);
-    if (thread) ipc((e) => e.chat.upsertThread(thread));
+    if (thread) ipc((e) => e.chat.upsertThread({ ...thread, title: trimmed || undefined, updatedAt: now() }));
   },
 
   createNewThread(workspaceId, projectId) {
@@ -467,11 +497,16 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       (t) => t.workspaceId === workspaceId && (projectId ? t.projectId === projectId : true)
     );
     const ids = new Set(toDelete.map((t) => t.id));
-    set((s) => ({
-      chatThreads: s.chatThreads.filter((t) => !ids.has(t.id)),
-      chatMessages: s.chatMessages.filter((m) => !ids.has(m.threadId)),
-      activeChatThreadId: ids.has(s.activeChatThreadId ?? "") ? null : s.activeChatThreadId,
-    }));
+    set((s) => {
+      const nextTitles: Record<string, string | null> = { ...s.projectedTitles };
+      for (const id of ids) delete nextTitles[id];
+      return {
+        chatThreads: s.chatThreads.filter((t) => !ids.has(t.id)),
+        chatMessages: s.chatMessages.filter((m) => !ids.has(m.threadId)),
+        projectedTitles: nextTitles,
+        activeChatThreadId: ids.has(s.activeChatThreadId ?? "") ? null : s.activeChatThreadId,
+      };
+    });
     get().persist();
     // Clear last-active pointer if it was one of the deleted threads
     if (ids.has(storage.get<string>(ACTIVE_CHAT_THREAD_KEY) ?? "")) {

@@ -9,6 +9,7 @@ export interface SessionPayload {
   messages: SessionMessage[];
   usage?: unknown;
   todos?: Array<{ id: string; title: string; status: "pending" | "in_progress" | "completed" }>;
+  title?: string | null;
 }
 
 /**
@@ -26,12 +27,13 @@ export function unwrapSessionPayload(value: unknown): SessionPayload {
     : value;
   if (Array.isArray(raw)) return { messages: raw as SessionMessage[] };
   if (raw && typeof raw === "object") {
-    const record = raw as { messages?: unknown; usage?: unknown; todos?: unknown };
+    const record = raw as { messages?: unknown; usage?: unknown; todos?: unknown; title?: unknown };
     if (Array.isArray(record.messages)) {
       return {
         messages: record.messages as SessionMessage[],
         usage: record.usage,
         todos: Array.isArray(record.todos) ? record.todos as SessionPayload["todos"] : undefined,
+        title: typeof record.title === "string" && record.title.trim() ? record.title : (record.title === null ? null : undefined),
       };
     }
   }

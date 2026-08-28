@@ -1,12 +1,13 @@
 /**
- * cairn-commands — registers Cairn's executable commands into the dsh command
- * runtime (ctx.commands) so they share one namespace with plugin commands
- * (/plan, /permission, …) and are executed through the same logged path.
+ * cairn-commands — shared compaction helper.
  *
- * Today: `compact` — session-as-truth compaction via ctx.compaction.compactNow
- * on the thread's resumed agent (the same flow the chat:compactThread IPC uses;
- * both delegate to compactChatSession below so there is exactly one
- * implementation).
+ * The human-facing `/compact` command is now provided by
+ * `@deepseek-ai/dsh-command-compact` (mounted in cordis-context). This module
+ * retains only the session-as-truth helper `compactChatSession`, which backs
+ * the `chat:compactThread` IPC — the underlying `ctx.compaction.compactNow`
+ * seam is the same, but the IPC path needs the explicit
+ * `ensureAgentAiAdapter` + `resumeChatAgent` dance that the dsh command (which
+ * compacts `invocation.agent` as-is) does not.
  */
 import type { Context } from "@deepseek-ai/cordis";
 import { ManualCompactionError } from "@deepseek-ai/dsh-compaction";
@@ -84,36 +85,4 @@ export async function compactChatSession(
   }
 }
 
-/** Register Cairn's commands on the dsh command runtime (best-effort). */
-export function registerCairnCommands(ctx: Context): void {
-  const commands = ctx.commands;
-  if (!commands || typeof commands.register !== "function") return;
-  try {
-    commands.register({
-      name: "compact",
-      description: "Summarise and compact this conversation's history",
-      recordInput: false,
-      async handler(invocation: { agent: unknown; rawInput?: string }) {
-        // /compact takes no arguments — reject stray input like dsh's own command.
-        if (typeof invocation.rawInput === "string" && invocation.rawInput.trim().length > 0) {
-          return { kind: "error", text: "Usage: /compact (no arguments)" };
-        }
-        // The executing agent IS the thread's resumed chat agent
-        // (sessionId chat-<threadId>) — compact it directly.
-        const sessionId = String((invocation.agent as { session?: { id?: unknown } }).session?.id ?? "");
-        const threadId = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
-        const { getCachedConfig } = await import("../lib/config-cache");
-        const cached = getCachedConfig();
-        const cfg = cached.agentConfig ?? {};
-        // apiMode is pinned on the agent's active saved provider (the list lives
-        // on aiConfig.savedProviders; agentConfig only tracks activeProviderId).
-        const apiMode = cached.aiConfig?.savedProviders?.find((p) => p.id === cfg.activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
-        const res = await compactChatSession(() => Promise.resolve(ctx), threadId, { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, apiMode });
-        if (!res.ok && res.error) return { kind: "error", text: res.error };
-        return { kind: "success", text: res.compacted ? (res.summaryText ?? "Conversation history compacted.") : "Nothing to compact yet." };
-      },
-    });
-  } catch (err) {
-    console.warn("[cairn-commands] failed to register compact:", err instanceof Error ? err.message : err);
-  }
-}
+

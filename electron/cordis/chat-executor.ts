@@ -324,6 +324,27 @@ export async function executeTool(
       };
     }
 
+    case "update_user_writing_style": {
+      const mode = args.mode as string | undefined;
+      const content = typeof args.content === "string" ? args.content : "";
+      const section = typeof args.section === "string" ? args.section : undefined;
+      if (mode !== "append") {
+        return { error: `Unsupported mode "${mode}" — only "append" is supported.` };
+      }
+      if (!content.trim()) {
+        return { error: "content is required and must be non-empty." };
+      }
+      // Guard: content length (avoid bloating the guide with a huge blob)
+      if (content.trim().length > 2000) {
+        return { error: "content is too long (max 2000 characters)." };
+      }
+      const { row, updated, reason } = q.appendUserStyleObservation(db, section, content);
+      if (!updated) {
+        return { ok: true, updated: false, message: reason ?? "No change.", style: row };
+      }
+      return { ok: true, updated: true, message: section ? `Appended to "${section}".` : "Appended to the guide.", style: row };
+    }
+
     default:
       return { error: `Unknown tool: ${name}` };
   }

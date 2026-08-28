@@ -12,6 +12,7 @@ import { queryTerms, ftsMatchQuery } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "@cairn/shared/notes/folder-tree";
 import { buildNoteMarkdown } from "@cairn/shared/notes/export";
+import { appendToStyleGuide } from "@cairn/shared/user-style";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import type {
   NoteRow,
@@ -1432,4 +1433,59 @@ export function getUserStyle(): UserStyleRow | null {
     source: row.source ?? "none",
     updatedAt: row.updated_at,
   };
+}
+
+export function saveUserStyle(input: {
+  persona?: UserStyleRow["persona"];
+  fullGuide?: string;
+  cheatsheet?: string;
+  source: string;
+}): UserStyleRow | null {
+  const existing = getUserStyle();
+  const personaJson =
+    input.persona !== undefined
+      ? JSON.stringify(input.persona)
+      : existing?.persona
+        ? JSON.stringify(existing.persona)
+        : null;
+  const fullGuide = input.fullGuide !== undefined ? input.fullGuide : (existing?.fullGuide ?? "");
+  const cheatsheet = input.cheatsheet !== undefined ? input.cheatsheet : (existing?.cheatsheet ?? "");
+  const now = new Date().toISOString();
+  getDb().runSync(
+    `INSERT INTO user_style (id, persona_json, full_guide, cheatsheet, source, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       persona_json = excluded.persona_json,
+       full_guide   = excluded.full_guide,
+       cheatsheet   = excluded.cheatsheet,
+       source       = excluded.source,
+       updated_at   = excluded.updated_at,
+       deleted_at   = NULL`,
+    "global",
+    personaJson,
+    fullGuide,
+    cheatsheet,
+    input.source,
+    now,
+  );
+  return getUserStyle();
+}
+
+export { appendToStyleGuide };
+
+export function appendUserStyleObservation(
+  section: string | undefined,
+  content: string,
+): { row: UserStyleRow | null; updated: boolean; reason?: string } {
+  const trimmed = content.trim();
+  if (!trimmed) return { row: getUserStyle(), updated: false, reason: "Empty content — no change." };
+  const existing = getUserStyle();
+  const existingGuide = existing?.fullGuide ?? "";
+  const nextGuide = appendToStyleGuide(existingGuide, section, trimmed);
+  if (nextGuide === existingGuide) {
+    return { row: existing, updated: false, reason: "Observation already present — no change." };
+  }
+  const source = existing && existing.source !== "none" ? existing.source : "manual";
+  const row = saveUserStyle({ fullGuide: nextGuide, source });
+  return { row, updated: true };
 }

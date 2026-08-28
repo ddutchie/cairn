@@ -126,6 +126,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   // automation recipe) is arbitrary code execution as the user with no UI
   // shown. Users can opt in per-session from Agent Settings.
   autoApprove:  false,
+  mode: "interactive" as const,
 };
 
 // ── localStorage keys ─────────────────────────────────────────────────────────

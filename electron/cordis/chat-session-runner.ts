@@ -220,7 +220,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
           gitBranch = execSync("git branch --show-current", { cwd: workspacePath, encoding: "utf8", timeout: 800 }).trim() || undefined;
         } catch { /* not a git repo */ }
         // Use the real workspacePath (the agent's sandbox root), not code_directory which may be stale.
-        updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: workspace?.name, projectName: project?.name, projectDescription: project?.description, cwd: workspacePath, gitBranch });
+        updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: workspace?.name, workspaceId: req.workspaceId, projectName: project?.name, projectId: req.projectId, projectDescription: project?.description, cwd: workspacePath, gitBranch });
       } catch (error) { console.warn("[cordis] workspace context update failed:", error instanceof Error ? error.message : error); }
       timer.mark("workspace-context (incl. git branch execSync, 800ms cap)");
       // Clarify the approval flow for the model. The dsh ASK_SENTENCE
@@ -301,7 +301,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       if (opts.approvals) {
         await mount(cairnDoomLoopPlugin, { sessionId: `chat-${req.threadId}`, signal });
         await mount(cairnApprovalPlugin, {
-          autoApprove: false,
+          mode: "interactive",
           sessionId: `chat-${req.threadId}`,
           send: opts.approvals.send,
           registerPending: opts.approvals.registerPending,
@@ -384,6 +384,15 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       timer.mark("build user content (pre-turn setup total)");
       const { firstSeq } = await runCordisTurn({ agent: typed, content, signal });
       timer.mark("model turn (followup → idle)");
+      // Post-turn durability: the write-behind batches on a 200ms timer and
+      // retained chat agents skip the disposal drain, so a crash right after
+      // idle would lose the final batch. The plugin already flushes in
+      // session-turn.ts; this is a second best-effort barrier at the
+      // presentation layer (idempotent if already flushed).
+      try {
+        const { flushSession } = await import("./plugins/session-durability");
+        await flushSession(ctx as never, (typed as unknown as { session?: unknown }).session);
+      } catch { /* best-effort */ }
       const result = collect(typed.session.events, firstSeq);
       const end = typed.session.events.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
       const kind = (end?.data as { reason?: { kind?: string } } | undefined)?.reason?.kind;
