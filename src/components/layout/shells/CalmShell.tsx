@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, Zap, Settings, Search, Bell } from "lucide-react";
+import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, Zap, Settings, Search, Bell, CalendarDays } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ const NAV = [
   { id: "overview", label: "Overview", icon: Hash },
   { id: "notes", label: "Notes", icon: FileText },
   { id: "board", label: "Board", icon: Kanban },
+  { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "flow", label: "Flow", icon: Workflow },
   { id: "agent", label: "Agent", icon: Terminal },
 ] as const;

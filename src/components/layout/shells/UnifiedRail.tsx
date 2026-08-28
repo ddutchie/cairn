@@ -7,12 +7,8 @@ import {
   Bell,
   Menu,
   Loader2,
-  Hash,
   FileText,
   Kanban,
-  CalendarDays,
-  Workflow,
-  Code2,
   MessageSquare,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
@@ -25,7 +21,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { SlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
 import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
-import type { ToggleableView } from "@/store/slices/ui";
 import { modKey } from "../sidebar-utils";
 import {
   DropdownMenu,
@@ -34,21 +29,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import { revealCard } from "@/lib/events";
-
-const VIEW_TABS = [
-  { id: "overview" as const, label: "Overview", icon: Hash },
-  { id: "notes" as const, label: "Notes", icon: FileText },
-  { id: "board" as const, label: "Board", icon: Kanban },
-  { id: "calendar" as const, label: "Calendar", icon: CalendarDays },
-  { id: "flow" as const, label: "Flow", icon: Workflow },
-  { id: "agent" as const, label: "Agent", icon: Code2 },
-] as const;
-
-type ViewTabId = (typeof VIEW_TABS)[number]["id"];
-
-function isHidden(hidden: Set<ToggleableView>, id: ViewTabId): boolean {
-  return hidden.has(id as ToggleableView);
-}
 
 export function UnifiedRail() {
   const [platform, setPlatform] = useState<"darwin" | "win32" | "linux" | null>(null);
@@ -153,65 +133,6 @@ export function UnifiedRail() {
           </div>
         )}
       </div>
-
-      {/* View tabs — icons + tooltips only; hidden on <lg to avoid crowding, in hamburger */}
-      {project && (
-        <nav className="hidden lg:flex items-center gap-0.5 ml-1 shrink-0 overflow-hidden" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties} aria-label="Views">
-          {VIEW_TABS.filter((tab) => !isHidden(hiddenViews, tab.id)).map((tab) => {
-            const Icon = tab.icon;
-            const active = activeView === tab.id || lastContentView === tab.id;
-            return (
-              <Tooltip key={tab.id} side="bottom" content={tab.label}>
-                <button
-                  onClick={() => setView(tab.id)}
-                  aria-current={active ? "page" : undefined}
-                  aria-label={tab.label}
-                  className={cn(
-                    "w-7 h-7 grid place-items-center rounded-md transition-colors",
-                    active ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                  )}
-                >
-                  <Icon size={13} className="shrink-0" />
-                </button>
-              </Tooltip>
-            );
-          })}
-        </nav>
-      )}
-
-      {/* Hamburger — <lg collapses view tabs + shell switcher to avoid overflow */}
-      {project && (
-        <div className="lg:hidden flex items-center ml-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="w-7 h-7 grid place-items-center rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)]" aria-label="More views">
-                <Menu size={13} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <div className="px-2 py-1.5 text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">Views</div>
-              {VIEW_TABS.filter((tab) => !isHidden(hiddenViews, tab.id)).map((tab) => {
-                const Icon = tab.icon;
-                const active = activeView === tab.id || lastContentView === tab.id;
-                return (
-                  <DropdownMenuItem key={tab.id} onClick={() => setView(tab.id)} className={cn("flex items-center gap-2 text-xs", active && "bg-[var(--surface-2)] text-[var(--accent)]")}>
-                    <Icon size={12} /> {tab.label}
-                  </DropdownMenuItem>
-                );
-              })}
-              {process.env.NODE_ENV === "development" && (
-                <>
-                  <div className="my-1 border-t border-[var(--border)]" />
-                  <div className="px-2 py-1">
-                    <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] mb-1">Shell</div>
-                    <ShellSwitcher />
-                  </div>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
 
       {/* Center: omnibox — true window-centered (absolute) so 80px Mac inset doesn't pull it off) */}
       <div className="hidden sm:flex absolute left-1/2 -translate-x-1/2 items-center" aria-hidden="true">

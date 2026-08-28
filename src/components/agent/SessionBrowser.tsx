@@ -242,7 +242,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   return (
     <div
       ref={rootRef}
-      className={cn("relative", projectNav ? "flex-shrink-0 h-auto" : "flex-1 min-w-0 h-full")}
+      className={cn("relative", projectNav ? "flex-shrink-0 h-auto" : "flex-1 min-w-0")}
       onBlur={(e) => {
         if (!open) return;
         const related = e.relatedTarget as Node | null;
@@ -261,34 +261,40 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
         onClick={() => setOpen((value) => !value)}
         className={cn(
           projectNav
-            ? "flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs text-[var(--text-tertiary)] text-left transition-colors"
-            : "group flex items-center gap-2 px-3 h-full w-full border-r border-[var(--border)] text-left transition-colors",
-          open ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "hover:bg-[var(--surface-2)]",
+            ? "flex items-center gap-2 w-full rounded-md px-2 py-1 text-[0.714rem] text-[var(--text-tertiary)] text-left transition-colors"
+            : "group flex w-full min-w-0 items-center justify-between gap-1.5 rounded-md border bg-[var(--surface-2)] px-2 py-1 text-left transition-colors",
+          projectNav
+            ? open ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "hover:bg-[var(--surface-2)]"
+            : open
+              ? "border-[var(--accent)] text-[var(--text-primary)]"
+              : "border-[var(--border)] text-[var(--text-primary)] hover:border-[var(--muted)]",
         )}
       >
-        <span className={cn("flex-shrink-0", projectNav ? "text-[var(--text-tertiary)]" : "text-[var(--accent)]")}>
-          <SessionTypeIcon kind={currentKind ?? "chat"} size={projectNav ? 13 : 12} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className={cn("block truncate", projectNav ? "" : "text-[0.714rem] font-semibold text-[var(--text-primary)]")}>
-            {projectNav ? "Conversations" : active?.title ?? "Sessions"}
+        <span className={cn("flex items-center gap-1.5 min-w-0 flex-1", projectNav ? "text-[var(--text-tertiary)]" : "text-[var(--accent)]")}>
+          <span className="flex-shrink-0">
+            <SessionTypeIcon kind={currentKind ?? "chat"} size={projectNav ? 12 : 11} />
           </span>
-          {!projectNav && (
-            <span className="block text-[0.607rem] text-[var(--text-tertiary)]">
-              {active ? kindLabel(active.kind) : "Choose a session"} · {sessions.length} session{sessions.length === 1 ? "" : "s"}
+          <span className="min-w-0 flex-1 text-left leading-tight">
+            <span className={cn("block truncate", projectNav ? "" : "text-[0.714rem] font-medium leading-none text-[var(--text-primary)]")}>
+              {projectNav ? "Conversations" : active?.title ?? "Sessions"}
             </span>
-          )}
+            {!projectNav && (
+              <span className="block truncate text-[0.607rem] leading-none text-[var(--text-tertiary)]">
+                {active ? kindLabel(active.kind) : "Choose a session"} · {sessions.length} session{sessions.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </span>
         </span>
         {projectNav ? (
           <>
-            <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">{sessions.length}</span>
+            <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] shrink-0">{sessions.length}</span>
             {open
-              ? <ChevronDown size={12} className="text-[var(--text-tertiary)]" />
-              : <ChevronRight size={12} className="text-[var(--text-tertiary)]" />}
+              ? <ChevronDown size={12} className="text-[var(--text-tertiary)] shrink-0" />
+              : <ChevronRight size={12} className="text-[var(--text-tertiary)] shrink-0" />}
           </>
         ) : (
           <ChevronDown
-            size={14}
+            size={12}
             className={cn(
               "ml-auto flex-shrink-0 text-[var(--text-tertiary)] transition-transform group-hover:text-[var(--text-secondary)]",
               open && "rotate-180 text-[var(--text-secondary)]",
@@ -302,11 +308,11 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
         <div className={cn(
           projectNav
             ? "mt-0.5 ml-2 border-l border-[var(--border)] pl-1.5"
-            : "absolute left-0 top-full z-50 mt-0.5 w-80 min-w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden",
+            : "absolute left-0 top-full z-50 mt-1 w-80 min-w-full max-h-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg py-1 animate-fade-in flex flex-col overflow-hidden",
         )}>
-          <div className={projectNav ? "px-1 pb-1" : "px-3 py-2 border-b border-[var(--border)]"}>
-            <div className={cn("flex items-center gap-1.5", projectNav && "rounded-md bg-[var(--surface-2)] px-2 py-1.5")}>
-              <Search size={12} className="text-[var(--text-tertiary)]" />
+          <div className={projectNav ? "px-1 pb-1" : "sticky top-0 z-10 bg-[var(--surface)] p-1"}>
+            <div className={cn("flex items-center gap-1.5", projectNav ? "rounded-md bg-[var(--surface-2)] px-2 py-1" : "rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1")}>
+              <Search size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
               <input
                 ref={searchInputRef}
                 autoFocus
@@ -322,17 +328,24 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
                       setOpen(false);
                       triggerRef.current?.focus();
                     }
-                  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    return;
+                  }
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
                     e.preventDefault();
                     const options = listboxRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
                     if (!options || options.length === 0) return;
                     if (e.key === "ArrowDown") options[0]?.focus();
                     else options[options.length - 1]?.focus();
+                    return;
                   }
+                  // Prevent Radix typeahead from hijacking keystrokes when this
+                  // input lives inside a DropdownMenuContent (future portal)
+                  // and keep Search typing in-place.
+                  if (e.key.length === 1 || e.key === "Backspace" || e.key === "Delete") e.stopPropagation();
                 }}
                 placeholder="Search sessions"
-                className="flex-1 min-w-0 bg-transparent text-[0.714rem] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
               />
               {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear session search" className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"><X size={11} /></button>}
             </div>
@@ -340,7 +353,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
           {/* The dropdown menu keeps its section label; the inline sidebar tree
               omits it — the "Conversations" header above already names it. */}
           {!projectNav && (
-            <div className="px-3 py-1.5 border-b border-[var(--border)] text-[0.607rem] uppercase tracking-wider text-[var(--text-tertiary)]">
+            <div className="px-2.5 py-1 text-[0.643rem] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
               All sessions
             </div>
           )}
@@ -352,7 +365,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
             aria-orientation="vertical"
             tabIndex={-1}
             onKeyDown={handleListboxKeyDown}
-            className={cn("max-h-80 overflow-y-auto", projectNav && "pb-1 space-y-0.5")}
+            className={cn("flex-1 min-h-0 overflow-y-auto", projectNav ? "pb-1 space-y-0.5" : "px-1 pb-1 space-y-0.5")}
           >
             {visibleSessions.length === 0 ? (
               <p className="px-2 py-3 text-center text-[0.714rem] text-[var(--text-tertiary)]">No matching sessions</p>

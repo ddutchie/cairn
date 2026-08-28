@@ -84,7 +84,7 @@ export function StudioSidebar() {
                   </div>
                   {isActive && activeProject && (
                     <div className="flex gap-1 mt-2 flex-wrap">
-                      {(["overview", "notes", "board", "flow", "agent"] as const)
+                      {(["overview", "notes", "board", "calendar", "flow", "agent"] as const)
                         .filter((v) => !(v !== "overview" && v !== "notes" && hiddenViews.has(v as never)))
                         .map((v) => (
                           <button
@@ -112,6 +112,7 @@ export function StudioSidebar() {
               <button onClick={() => setView("overview")} className={cn("flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs", activeView === "overview" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-secondary)]")}><Hash size={13} /> Overview</button>
               <button onClick={() => setView("notes")} className={cn("flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs", activeView === "notes" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]")}><FileText size={13} /> Notes</button>
               {!hiddenViews.has("board") && <button onClick={() => setView("board")} className={cn("flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs", activeView === "board" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]")}><Kanban size={13} /> Board</button>}
+              {!hiddenViews.has("calendar") && <button onClick={() => setView("calendar")} className={cn("flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs", activeView === "calendar" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={13} /> Calendar</button>}
               {!hiddenViews.has("flow") && <button onClick={() => setView("flow")} className={cn("flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs", activeView === "flow" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]")}><Workflow size={13} /> Idea Flow</button>}
               {!hiddenViews.has("agent") && <button onClick={() => setView("agent")} className={cn("flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs", activeView === "agent" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]")}><Terminal size={13} /> Agent</button>}
             </div>
