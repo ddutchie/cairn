@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs */
 /**
  * Stacked toast — ported from react-native-motion spring-toast/toast.tsx
  * Adapted to Cairn theme (useTheme, lucide icons, variant colors) and keeps

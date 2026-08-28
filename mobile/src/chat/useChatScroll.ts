@@ -1,29 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from "react";
-import { Platform, AppState, type AppStateStatus, type ViewStyle, type StyleProp } from "react-native";
-import {
-  useSharedValue,
-  withTiming,
-  useAnimatedStyle,
-  interpolate,
-  type SharedValue,
-} from "react-native-reanimated";import {
-  KeyboardChatScrollView,
-  useReanimatedKeyboardAnimation,
-} from "react-native-keyboard-controller";
+import { Platform, AppState, type AppStateStatus } from "react-native";
+import { useSharedValue, withTiming, type SharedValue } from "react-native-reanimated";
+import { KeyboardChatScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { tabBarClosedLift, KEYBOARD_OPEN_GAP } from "@/theme";
 
 /** Composer height assumed before its first onLayout measurement. */
 export const COMPOSER_FALLBACK_H = 60;
-
-/**
- * Downward shift applied to the native attach GlassMenu when the keyboard is
- * open, to counter the SwiftUI Host mis-tracking the composer's KeyboardStickyView
- * OPENED offset (it double-counts KEYBOARD_OPEN_GAP, so the icon otherwise sits
- * high). DEVICE-TUNED — measured ≈ 2×KEYBOARD_OPEN_GAP; not derivable from the
- * transform math, so re-verify on device if the composer's sticky offsets change.
- */
-const ATTACH_OPEN_NUDGE = 2 * KEYBOARD_OPEN_GAP;
 
 type ScrollRef = React.RefObject<ComponentRef<typeof KeyboardChatScrollView> | null>;
 
@@ -38,8 +21,6 @@ export interface ChatScroll {
   offset: number;
   /** Bottom padding the transcript keeps clear below the last message. */
   extraContentPadding: SharedValue<number>;
-  /** Counter-transform keeping the native attach Host from drifting on open. */
-  attachCounterStyle: StyleProp<ViewStyle>;
   /** How far the composer rests above the tab bar when the keyboard is closed. */
   closedLift: number;
   /** Report the measured composer height (onLayout). */
@@ -121,16 +102,6 @@ export function useChatScroll(msgCount: number): ChatScroll {
   // (shared with the search scope bar so both rest at the same height).
   const closedLift = tabBarClosedLift(insets.bottom);
 
-  // The native attach GlassMenu's SwiftUI Host tracks the composer's
-  // KeyboardStickyView transform, but not its OPENED offset — when the keyboard
-  // opens the icon sits too high (centered at rest, so only the open state is
-  // wrong). Counter it with ATTACH_OPEN_NUDGE, gliding on the same `progress`
-  // the composer animates with: 0 when closed, ATTACH_OPEN_NUDGE (down) when open.
-  const { progress: kbProgress } = useReanimatedKeyboardAnimation();
-  const attachCounterStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(kbProgress.value, [0, 1], [0, ATTACH_OPEN_NUDGE]) }],
-  }));
-
   // Height the composer occupies, measured lazily (falls back before layout).
   const [composerH, setComposerH] = useState(COMPOSER_FALLBACK_H);
   // Bottom padding the transcript keeps clear below the last message so it's not
@@ -156,9 +127,6 @@ export function useChatScroll(msgCount: number): ChatScroll {
     nearBottom,
     offset: Math.max(closedLift - KEYBOARD_OPEN_GAP, 0),
     extraContentPadding,
-    // Reanimated's style handle is opaque to the plain RN StyleProp type but is
-    // accepted by Animated.View (its only consumer); cast at the boundary.
-    attachCounterStyle: attachCounterStyle as unknown as StyleProp<ViewStyle>,
     closedLift,
     setComposerH,
     followEnd,
