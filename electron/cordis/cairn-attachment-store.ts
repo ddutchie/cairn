@@ -8,9 +8,9 @@
  * this branch, upstream ships @deepseek-ai/dsh-attachment-local (the
  * persistent content-addressed store backed by sharp with proper image
  * normalization + compression limiting) at the same pinned version, so
- * the hand-rolled backend was retired — see run-cordis-loop.ts, which now
- * mounts LocalAttachmentStore under the "cairn:attachment-store" plugin
- * name (kept for backwards compatibility of the ENTRY_LIST id).
+ * the hand-rolled backend was retired — see cordis-context.ts, which mounts
+ * LocalAttachmentStore under the "cairn:attachment-store" plugin name (kept
+ * for backwards compatibility of the ENTRY_LIST id).
  *
  * What remains here is the ONE piece that's genuinely Cairn business
  * logic: mapping Cairn's `ChatRequest.images` (a mix of image data URLs
@@ -74,6 +74,19 @@ export async function buildCordisUserContent(
 
   const store = ctx.get("attachments") as AttachmentStore | undefined;
 
+  // Enforce the per-MESSAGE aggregate caps up front. saveImage() (called per
+  // image below) only checks the PER-IMAGE limit; the batch caps
+  // (maxImagesPerMessage, maxMessageImageBytes) live in validateImageBatch,
+  // which the single-image path never runs. Without this, a message with many
+  // just-under-limit images is fully admitted and each decoded/normalized
+  // through sharp — an unbounded-work / OOM vector. We do it inline (rather
+  // than store.saveImages) to preserve graceful per-attachment degradation and
+  // PDF interleaving; the aggregate is a hard cap that drops the overflow.
+  let admittedImages = 0;
+  let admittedBytes = 0;
+  const maxImages = store?.imageLimits.maxImagesPerMessage ?? Infinity;
+  const maxBytes = store?.imageLimits.maxMessageImageBytes ?? Infinity;
+
   for (const att of attachments) {
     const parsed = parseDataUrl(att.dataUrl);
     if (!parsed) continue;
@@ -96,9 +109,15 @@ export async function buildCordisUserContent(
     if (!store) continue;
     const mediaType = parsed.mediaType as ImageMediaType;
     if (!store.imageLimits.mediaTypes.includes(mediaType)) continue;
+    // Aggregate caps: stop admitting once either the count or total-byte budget
+    // for this message is reached (drop the overflow rather than OOM).
+    if (admittedImages >= maxImages) continue;
+    if (admittedBytes + parsed.bytes.byteLength > maxBytes) continue;
     try {
       const ref = await store.saveImage({ data: parsed.bytes, mediaType, ...(att.name ? { name: att.name } : {}) });
       blocks.push({ type: "image", attachment: ref });
+      admittedImages += 1;
+      admittedBytes += parsed.bytes.byteLength;
     } catch { /* omit an image the store rejects (too large / bad bytes) */ }
   }
   return blocks;

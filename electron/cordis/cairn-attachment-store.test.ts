@@ -119,4 +119,22 @@ describe("buildCordisUserContent", () => {
     expect(blocks).toEqual([{ type: "text", text: "hi" }]);
     expect(store.saveImage).not.toHaveBeenCalled();
   });
+
+  it("enforces the per-message image-COUNT cap (drops the overflow)", async () => {
+    const store = { ...makeFakeStore(), imageLimits: { mediaTypes: ["image/png"], maxImagesPerMessage: 2, maxMessageImageBytes: Infinity } };
+    const imgs = Array.from({ length: 5 }, (_, i) => ({ kind: "image" as const, dataUrl: PNG_DATA_URL, name: `${i}.png` }));
+    const blocks = await buildCordisUserContent(ctxWith(store), "many", imgs);
+    // text + at most 2 images (the count cap), rest dropped.
+    expect(blocks.filter((b) => b.type === "image")).toHaveLength(2);
+    expect(store.saveImage).toHaveBeenCalledTimes(2);
+  });
+
+  it("enforces the per-message aggregate BYTE cap (drops the overflow)", async () => {
+    // PNG_DATA_URL decodes to ~70 bytes; a 100-byte budget admits 1, drops the rest.
+    const store = { ...makeFakeStore(), imageLimits: { mediaTypes: ["image/png"], maxImagesPerMessage: Infinity, maxMessageImageBytes: 100 } };
+    const imgs = Array.from({ length: 4 }, (_, i) => ({ kind: "image" as const, dataUrl: PNG_DATA_URL, name: `${i}.png` }));
+    const blocks = await buildCordisUserContent(ctxWith(store), "big", imgs);
+    expect(blocks.filter((b) => b.type === "image")).toHaveLength(1);
+    expect(store.saveImage).toHaveBeenCalledOnce();
+  });
 });

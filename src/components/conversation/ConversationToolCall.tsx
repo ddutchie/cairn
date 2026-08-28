@@ -110,7 +110,18 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
 export function ConversationToolCall({ toolCall, sessionId, connectors }: ConversationToolCallProps) {
   const toolViewEntries = useSlotEntries("tool.call.toolview");
   if (toolViewEntries.some((entry) => entry.key === toolCall.name)) {
-    return <KeyedSlotOutlet name="tool.call.toolview" matchKey={toolCall.name} props={toToolCallViewProps({ tool: toolCall.name, label: toolCall.label, args: JSON.stringify(toolCall.args ?? {}), output: toolCall.output, ok: toolCall.ok, callId: toolCall.callId } as never)} />;
+    return <KeyedSlotOutlet name="tool.call.toolview" matchKey={toolCall.name} props={toToolCallViewProps({
+      tool: toolCall.name,
+      label: toolCall.label,
+      // Map the durable ConversationToolCall's `running` flag onto the adapter's
+      // ChatToolCall `status` — omitting it made the adapter always take the
+      // settled path, so a still-running keyed toolview rendered as done/OK.
+      status: toolCall.running ? "running" : "done",
+      args: JSON.stringify(toolCall.args ?? {}),
+      output: toolCall.output,
+      ok: toolCall.ok,
+      callId: toolCall.callId,
+    })} />;
   }
   if (toolCall.confirmRequired) return <ApprovalCard toolCall={toolCall} sessionId={sessionId} connectors={connectors} />;
   if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Loader2 size={9} className="text-[var(--accent)] animate-spin" /><span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;

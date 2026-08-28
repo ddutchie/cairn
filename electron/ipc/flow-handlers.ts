@@ -33,6 +33,7 @@ function resolveAiConfig(input: { baseUrl?: string; model?: string; apiKey?: str
   baseUrl: string;
   model: string;
   apiKey: string;
+  apiMode?: "responses" | "completions" | "anthropic-messages";
 } | { error: string } {
   let reqConfig: { baseUrl?: string; model?: string; apiKey?: string } = input;
   if (!reqConfig?.apiKey) {
@@ -54,8 +55,11 @@ function resolveAiConfig(input: { baseUrl?: string; model?: string; apiKey?: str
   if (!keyRef && !isLocal) {
     return { error: "AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint." };
   }
+  // Pin the protocol from the active saved provider (see ai-handlers.resolveConfig).
+  const ai = getCachedConfig().aiConfig;
+  const apiMode = ai?.savedProviders?.find((p) => p.id === ai?.activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
   // `keyRef` is a keychain reference token; resolve to the real key for this request only.
-  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef) };
+  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef), apiMode };
 }
 
 export function registerFlowHandlers(ctx: DbContext): void {
@@ -111,7 +115,7 @@ export function registerFlowHandlers(ctx: DbContext): void {
 
         const resolved = resolveAiConfig(args.config);
         if ("error" in resolved) throw new Error(resolved.error);
-        const { baseUrl, model, apiKey } = resolved;
+        const { baseUrl, model, apiKey, apiMode } = resolved;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         type DbRow = Record<string, any>;
@@ -230,7 +234,7 @@ export function registerFlowHandlers(ctx: DbContext): void {
           const { runOneShot } = await import("../cordis/one-shot");
           summary = await runOneShot({
             systemPrompt, userPrompt,
-            config: { baseUrl, model, apiKey, provider: "openai" },
+            config: { baseUrl, model, apiKey, provider: "openai", apiMode },
             source: "flow-ai-summary",
             sessionId: args.nodeId,
             projectId: flowProjectId,

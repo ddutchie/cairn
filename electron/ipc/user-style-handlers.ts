@@ -55,7 +55,9 @@ function resolveChatConfig(): { error: string } | LLMConfig {
   if (!keyRef && !isLocal) {
     return { error: "AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint." };
   }
-  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef) };
+  // Pin the protocol from the active saved provider (see ai-handlers.resolveConfig).
+  const apiMode = cached?.savedProviders?.find((p) => p.id === cached?.activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
+  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef), apiMode };
 }
 
 /**

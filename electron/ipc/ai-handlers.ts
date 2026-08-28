@@ -38,8 +38,13 @@ function resolveConfig(
     const sectionName = cacheKey === "ai" ? "Settings → AI & Chat" : "Settings";
     return { error: `AI is not configured. Add an API key in ${sectionName}, or use a local endpoint.` };
   }
+  // Pin the wire protocol from the active saved provider (the list lives on
+  // aiConfig.savedProviders; agentConfig only tracks activeProviderId). Absent
+  // = completions. Threads through to one-shot so Anthropic/Responses providers
+  // aren't silently issued over the completions wire.
+  const apiMode = getCachedConfig().aiConfig?.savedProviders?.find((p) => p.id === cached?.activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
   // Resolve the ref to the real key only now, for this request.
-  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef) };
+  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef), apiMode };
 }
 
 function cleanOutput(text: string): string {

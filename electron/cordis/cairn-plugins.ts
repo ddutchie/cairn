@@ -209,6 +209,15 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     // making every coding-agent subagent trace unreachable at runtime.
     const parentSession = header?.parentSession != null ? String(header.parentSession) : undefined;
 
+    // Filter at the SOURCE: this plugin is mounted per-turn on the SHARED
+    // singleton context, so without this guard every concurrently-running
+    // thread's plugin instance would see (and re-emit) every child's events —
+    // O(threads × children) redundant IPC, correctness resting solely on the
+    // renderer's downstream `parentSession === sessionId` guard. Emit only for
+    // children of the session this instance drives. (dsh's own rule: enforce a
+    // decision in the operation that makes it.)
+    if (parentSession !== undefined && parentSession !== sessionId) return;
+
     if (event.type === "user/message") {
       // The child's first non-snapshot user/message is the delegated prompt.
       // Skip the runtime-context snapshot (form:snapshot) so the instruction is

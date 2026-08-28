@@ -11,14 +11,13 @@
  * (`dsh-llm` at `node_modules/@deepseek-ai/dsh-llm/lib/types/index.d.ts:32`).
  * `provider:"cairn"` is the internal route key — its `baseURL` is the user's
  * selected endpoint (OpenAI, Rork, etc. via `run-cordis-loop.ts:188`), not a
- * vendor lock-in. Local models (`localllm`) are not covered and should keep
- * calling `callLLM` directly.
+ * vendor lock-in. Local models (`localllm`) are handled here too: the
+ * llama-server is started and its OpenAI-compatible endpoint is used.
  */
 
 import { getContext, ensureAgentAiAdapter } from "./run-cordis-loop";
 import "./ctx-augment";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import { resolveTransport, type ApiMode } from "../lib/llm-transport";
 import { recordLlmUsage } from "../lib/usage-recorder";
 import type { LLMConfig } from "../lib/llm";
 
@@ -38,8 +37,8 @@ export interface OneShotOptions {
 
 /**
  * Run a single-turn LLM call via the Cordis pi-ai route and return the
- * accumulated text. For `localllm` it falls back to `callLLM` so on-device
- * models keep working.
+ * accumulated text. For `localllm` it starts the on-device llama-server and
+ * uses its OpenAI-compatible endpoint.
  */
 export async function runOneShot(opts: OneShotOptions): Promise<string> {
   const { systemPrompt, userPrompt, config, source, projectId, workspaceId, sessionId, maxTokens, temperature, signal } = opts;
@@ -54,14 +53,18 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
   }
 
   const ctx = await getContext();
-  const transport = await resolveTransport(effectiveConfig.baseUrl, effectiveConfig.apiKey);
-  const apiFor = (m: ApiMode): "openai-completions" | "openai-responses" =>
-    m === "responses" ? "openai-responses" : "openai-completions";
+  // Pin the wire protocol from the saved provider's apiMode — never probe.
+  // resolveTransport can only ever return responses/completions (it can't
+  // detect anthropic-messages) and probing violates the "protocol is pinned,
+  // stable across restarts" invariant the coding/compaction paths follow.
+  const piApi = effectiveConfig.apiMode === "responses" ? "openai-responses"
+    : effectiveConfig.apiMode === "anthropic-messages" ? "anthropic-messages"
+    : "openai-completions";
   await ensureAgentAiAdapter(ctx, {
     baseUrl: effectiveConfig.baseUrl,
     model: effectiveConfig.model,
     apiKey: effectiveConfig.apiKey,
-    api: apiFor(transport.mode),
+    api: piApi,
   });
 
   let text = "";

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DshToolView, hasToolView, registeredToolViewKeys, registerBuiltinToolViews } from "./index";
+import { toToolCallViewProps } from "./adapter";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 
 /**
@@ -67,5 +68,22 @@ describe("DshToolView (§11 toolview micro-host)", () => {
     const other: ChatToolCall = { tool: "get_note", label: "get_note", status: "done", ok: true, callId: "c", args: "{}", output: "note" };
     const { container } = render(<DshToolView tc={other} />);
     expect(container.firstChild).toBeNull();
+  });
+
+  // Regression: the durable/pop-out transcript maps ConversationToolCall.running
+  // -> status. When that mapping was missing (status undefined), the adapter
+  // always took the settled path, so a running keyed toolview rendered as done.
+  it("adapter emits a running block when status is running (not settled)", () => {
+    const props = toToolCallViewProps({
+      tool: "skill",
+      label: "skill",
+      status: "running",
+      callId: "c",
+      args: JSON.stringify({ name: "loading-skill" }),
+    } as ChatToolCall);
+    // A RunningToolCall has no kind:"tool-result" discriminator.
+    expect("kind" in props.block).toBe(false);
+    const { container } = render(<DshToolView tc={{ tool: "skill", label: "skill", status: "running", callId: "c", args: JSON.stringify({ name: "loading-skill" }) } as ChatToolCall} />);
+    expect(container.querySelector('[data-tool="skill"][data-state="running"]')).toBeTruthy();
   });
 });
