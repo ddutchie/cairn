@@ -54,14 +54,14 @@ export const COMPOSER_STRIP_HEIGHT = COMPOSER.stripPaddingTop + COMPOSER.thumbSi
 
 export const MENU = {
   width: 280,
-  itemHeight: 66,
-  paddingVertical: 12,
-  radius: 46,
-  iconWell: 42,
-  iconSize: 22,
-  iconInset: 24,
-  labelGap: 18,
-  labelSize: 19,
+  itemHeight: 56,
+  paddingVertical: 10,
+  radius: 32,
+  iconWell: 36,
+  iconSize: 18,
+  iconInset: 20,
+  labelGap: 14,
+  labelSize: 15,
   centerOffset: 7,
 } as const;
 
