@@ -106,6 +106,8 @@ function sweepSessionPendings(sessionId: string): void {
   setConfirmTransport(sessionId, undefined);
 }
 
+import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
+
 /** The raw turn inputs the Cordis coding loop needs (prompt + attachments + config). */
 interface CordisTurnPayload {
   message: string;
@@ -113,7 +115,8 @@ interface CordisTurnPayload {
   projectId?: string;
   workspaceId?: string;
   personality?: string;
-  autoApprove: boolean;
+  autoApprove?: boolean;
+  mode?: Mode;
   /** automation-dev → read-only sandbox (file-only, no escape); else workspace-write. */
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
   /** Session persona ("default" | "automation-dev"). automation-dev is a
@@ -152,6 +155,7 @@ interface AgentPromptRequest {
     temperature?: number;
     maxTokens?: number;
     autoApprove?: boolean;
+    mode?: Mode;
     isReasoningModel?: boolean;
     /** The agent's context-window size — drives the sliding-window pruner. */
     contextWindow?: number;
@@ -178,6 +182,7 @@ interface AgentApprovePlanRequest {
     temperature?: number;
     maxTokens?: number;
     autoApprove?: boolean;
+    mode?: Mode;
     isReasoningModel?: boolean;
     /** The agent's context-window size — drives the sliding-window pruner. */
     contextWindow?: number;
@@ -292,9 +297,10 @@ async function runCordisCodingSession(
       sessionId,
       cwd: toolCtx.cwd,
       systemPrompt,
-      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: llmConfig.provider === "localllm" ? "localllm" : "openai", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens, isReasoningModel: llmConfig.isReasoningModel, reasoningEffort: llmConfig.reasoningEffort, apiMode: llmConfig.apiMode },
+      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: llmConfig.provider === "localllm" ? "localllm" : "openai", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens, isReasoningModel: llmConfig.isReasoningModel, reasoningEffort: llmConfig.reasoningEffort, apiMode: llmConfig.apiMode, mode: payload.mode, autoApprove: payload.autoApprove },
       mode,
       autoApprove: payload.autoApprove,
+      approvalMode: payload.mode,
       sandboxMode: payload.sandboxMode,
       role: payload.role,
       onSessionEvent: payload.onSessionEvent,
@@ -556,7 +562,8 @@ export function registerSessionRuntimeHandlers(
     }
 
     // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
-    // by the cache layer, never a raw key).
+    // by the cache layer, never a raw key). Mode + autoApprove are co-persisted
+    // so old renderers reading `autoApprove` and new code reading `mode` stay aligned.
     cacheLlmConnection("agent", {
       baseUrl: req.config?.baseUrl,
       model: req.config?.model,
@@ -565,7 +572,8 @@ export function registerSessionRuntimeHandlers(
       temperature: req.config?.temperature,
       maxTokens: req.config?.maxTokens,
       autoApprove: req.config?.autoApprove,
-    });
+      mode: (req.config as { mode?: Mode })?.mode,
+    } as never);
 
     let reqConfig = req.config;
     const cached = getCachedConfig().agentConfig;
@@ -582,14 +590,26 @@ export function registerSessionRuntimeHandlers(
         temperature: reqConfig?.temperature,
         maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-      };
+        mode: (reqConfig as { mode?: Mode })?.mode ?? (cached as { mode?: Mode })?.mode,
+      } as typeof reqConfig;
     } else if (cached) {
       reqConfig = {
         ...reqConfig,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-      };
+        mode: (reqConfig as { mode?: Mode })?.mode ?? (cached as { mode?: Mode })?.mode,
+      } as typeof reqConfig;
     }
 
+    const _reqMode = (reqConfig as { mode?: unknown })?.mode;
+    const _reqModeValid = typeof _reqMode === "string" && isMode(_reqMode as Mode) ? _reqMode as Mode : undefined;
+    const _cachedMode = (cached as { mode?: unknown })?.mode;
+    const _cachedModeValid = typeof _cachedMode === "string" && isMode(_cachedMode as Mode) ? _cachedMode as Mode : undefined;
+    // Resolve Mode from explicit mode, then legacy autoApprove, then cached mode, then default.
+    const resolvedMode: Mode = _reqModeValid
+      ?? (typeof reqConfig?.autoApprove === "boolean" ? modeFromAutoApprove(reqConfig.autoApprove) : undefined)
+      ?? _cachedModeValid
+      ?? (typeof cached?.autoApprove === "boolean" ? modeFromAutoApprove(cached.autoApprove) : undefined)
+      ?? "interactive";
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
       model:       reqConfig?.model       || "gpt-5.6-luna",
@@ -599,7 +619,8 @@ export function registerSessionRuntimeHandlers(
       // undefined = omit → vendor default).
       temperature: reqConfig?.temperature,
       maxTokens:   reqConfig?.maxTokens,
-      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : false,
+      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : _cachedModeValid ? _cachedModeValid === "auto" : cached?.autoApprove !== undefined ? cached.autoApprove : false,
+      mode: resolvedMode,
       isReasoningModel: reqConfig?.isReasoningModel,
       // No isLocalEndpoint→"localllm" coercion: a custom local endpoint
       // (Ollama, LM Studio, user-run llama.cpp) must keep its own baseUrl —
@@ -660,7 +681,8 @@ export function registerSessionRuntimeHandlers(
       images: req.attachments,
       projectId,
       workspaceId,
-      autoApprove: llmConfig.autoApprove !== false,
+      autoApprove: llmConfig.autoApprove,
+      mode: llmConfig.mode,
       // Confine fs mutations to cwd for every coding session. automation-dev
       // has its own persona-scoped tool filter (see role below) that removes
       // bash + Cairn data tools, restoring the pre-Cordis AUTOMATION_DEV_TOOLS
@@ -704,7 +726,7 @@ export function registerSessionRuntimeHandlers(
     }
 
     // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
-    // by the cache layer, never a raw key).
+    // by the cache layer, never a raw key). Mode + autoApprove are co-persisted.
     cacheLlmConnection("agent", {
       baseUrl: req.config?.baseUrl,
       model: req.config?.model,
@@ -713,7 +735,8 @@ export function registerSessionRuntimeHandlers(
       temperature: req.config?.temperature,
       maxTokens: req.config?.maxTokens,
       autoApprove: req.config?.autoApprove,
-    });
+      mode: (req.config as { mode?: Mode })?.mode,
+    } as never);
 
     let reqConfig = req.config;
     const cached = getCachedConfig().agentConfig;
@@ -730,14 +753,25 @@ export function registerSessionRuntimeHandlers(
         temperature: reqConfig?.temperature,
         maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-      };
+        mode: (reqConfig as { mode?: Mode })?.mode ?? (cached as { mode?: Mode })?.mode,
+      } as typeof reqConfig;
     } else if (cached) {
       reqConfig = {
         ...reqConfig,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-      };
+        mode: (reqConfig as { mode?: Mode })?.mode ?? (cached as { mode?: Mode })?.mode,
+      } as typeof reqConfig;
     }
 
+    const _reqMode2 = (reqConfig as { mode?: unknown })?.mode;
+    const _reqModeValid2 = typeof _reqMode2 === "string" && isMode(_reqMode2 as Mode) ? _reqMode2 as Mode : undefined;
+    const _cachedMode2 = (cached as { mode?: unknown })?.mode;
+    const _cachedModeValid2 = typeof _cachedMode2 === "string" && isMode(_cachedMode2 as Mode) ? _cachedMode2 as Mode : undefined;
+    const resolvedMode2: Mode = _reqModeValid2
+      ?? (typeof reqConfig?.autoApprove === "boolean" ? modeFromAutoApprove(reqConfig.autoApprove) : undefined)
+      ?? _cachedModeValid2
+      ?? (typeof cached?.autoApprove === "boolean" ? modeFromAutoApprove(cached.autoApprove) : undefined)
+      ?? "interactive";
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
       model:       reqConfig?.model       || "gpt-5.6-luna",
@@ -747,7 +781,8 @@ export function registerSessionRuntimeHandlers(
       // undefined = omit → vendor default).
       temperature: reqConfig?.temperature,
       maxTokens:   reqConfig?.maxTokens,
-      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : false,
+      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : _cachedModeValid2 ? _cachedModeValid2 === "auto" : cached?.autoApprove !== undefined ? cached.autoApprove : false,
+      mode: resolvedMode2,
       isReasoningModel: reqConfig?.isReasoningModel,
       // Same no-coercion rule as session:prompt (see above).
       provider: reqConfig?.provider,
@@ -790,7 +825,8 @@ export function registerSessionRuntimeHandlers(
       message: `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_note if needed.`,
       projectId,
       workspaceId,
-      autoApprove: llmConfig.autoApprove !== false,
+      autoApprove: llmConfig.autoApprove,
+      mode: llmConfig.mode,
       sandboxMode: "workspace-write",
       role,
     });

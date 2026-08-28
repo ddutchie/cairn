@@ -47,6 +47,7 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   // codebase_reindex writes the local semantic index → mutating (local data).
   "layout_idea_flow", "codebase_reindex",
   "generate_prd", "suggest_connections",
+  "update_user_writing_style",
 ]);
 
 /** Mutating dsh coding-stack tools (fs/editor/todo). bash is EXEC, not here. */

@@ -301,7 +301,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       if (opts.approvals) {
         await mount(cairnDoomLoopPlugin, { sessionId: `chat-${req.threadId}`, signal });
         await mount(cairnApprovalPlugin, {
-          autoApprove: false,
+          mode: "interactive",
           sessionId: `chat-${req.threadId}`,
           send: opts.approvals.send,
           registerPending: opts.approvals.registerPending,

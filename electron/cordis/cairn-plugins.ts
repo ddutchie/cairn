@@ -29,7 +29,7 @@ import { saveSessionTodos, getSessionTodos, updateCodingSession } from "../db/qu
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, readPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { riskForTool as riskForToolShared } from "../../shared/agent/tool-risk";
 import type { RiskClass } from "../../shared/agent/tool-risk";
-import { needsApprovalForCall } from "../../shared/agent/tool-risk";
+import { shouldAskForTool, modeFromAutoApprove, isMode, type Mode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
 import { isSecretFile, bashReferencesSecretFile } from "../lib/coding-tools/secrets";
 
@@ -828,8 +828,10 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 // session:respond-tool). Read-only tools always pass (never ask).
 
 export interface CairnApprovalConfig {
-  /** When true, every tool runs without a confirm prompt (no asks). */
-  autoApprove: boolean;
+  /** When true, every tool runs without a confirm prompt (no asks) — legacy alias for mode:"auto". */
+  autoApprove?: boolean;
+  /** OpenWorker-style approval Mode. When set it takes precedence over autoApprove. */
+  mode?: Mode;
   /** The caller's sessionId — scopes the confirm IPC. */
   sessionId: string;
   /** Emit a `session:*` IPC event (sessionId NOT yet tagged). */
@@ -890,8 +892,12 @@ export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
  * turn — this mount is disposed with it.
  */
 export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): (() => void) | void {
-  const { autoApprove, sessionId, send, registerPending, signal, timeoutMs, workspaceId, db, askRiskClasses, askFilter } = config;
-  if (autoApprove) return;
+  const { sessionId, send, registerPending, signal, timeoutMs, workspaceId, db, askRiskClasses, askFilter } = config;
+  const effectiveMode: Mode = config.mode && isMode(config.mode)
+    ? config.mode
+    : modeFromAutoApprove(config.autoApprove);
+  // No early-return for "auto": EXTERNAL still asks (OpenWorker taxonomy).
+  // READ never asks in any mode — handled by shouldAskForTool.
 
   /** True when the tool's risk class is in the ask set, or when no filter is set (ask for everything mutating). */
   const riskGates = (name: string, argsObj: Record<string, unknown>): boolean => {
@@ -951,7 +957,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           }
         }
       }
-      if (typeof name === "string" && needsApprovalForCall(name, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
+      if (typeof name === "string" && shouldAskForTool(name, effectiveMode, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
         // Stash the TRUSTED args so session:respond-tool can record a
         // grant:'command' against what dsh will actually execute — not
         // whatever string a compromised renderer echoes back. dsh's

@@ -72,7 +72,7 @@ function systemMessage(): UIMessage {
           "Call get_cairn_context first to get project ids, columns, and tags (there is no separate 'list projects' tool), then reuse them — never invent an id. Choose the tool whose description matches the request.",
           "For information beyond the user's notes/tasks — current events, external facts, docs — use any connected web/search tools available to you, and cite sources as markdown links.",
           "When you mention a specific note or task, link it as [[id]] using its exact id (it renders as the title and can't be confused with a same-titled item); if you don't have the id, [[Title]] also works. After a write, briefly confirm. Answer in concise markdown.",
-          "Writing in the user's voice: when the user asks you to draft or rewrite content that sounds like them (emails, replies, notes), call get_user_writing_style first and match it. If it reports configured:false, write in a natural, clear voice instead.",
+          "Writing in the user's voice: when the user asks you to draft or rewrite content that sounds like them (emails, replies, notes), call get_user_writing_style first and match it. If it reports configured:false, write in a natural, clear voice instead. When the user explicitly asks you to remember a style preference, call update_user_writing_style (append) — do not invent preferences.",
           ...personalityLayer(),
         ].join(" "),
       },

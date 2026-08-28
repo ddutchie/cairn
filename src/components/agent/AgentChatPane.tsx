@@ -511,7 +511,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,
             getModelInfo(agentConfig.model)?.maxOutput,
           ),
-          autoApprove: session.autoApprove ?? agentConfig.autoApprove ?? true,
+          autoApprove: session.autoApprove ?? agentConfig.autoApprove ?? (agentConfig.mode === "auto"),
+          mode: (agentConfig as { mode?: import("../../../shared/agent/approval-mode").Mode }).mode ?? (session.autoApprove !== undefined ? (session.autoApprove ? "auto" : "interactive") : agentConfig.autoApprove ? "auto" : "interactive"),
           // Reasoning models get the `developer` system role (OpenAI convention).
           isReasoningModel: getModelInfo(agentConfig.model)?.reasoning === true,
           // Only send reasoning effort to reasoning-capable models, and only when

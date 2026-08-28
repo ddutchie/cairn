@@ -1433,3 +1433,110 @@ export function getUserStyle(): UserStyleRow | null {
     updatedAt: row.updated_at,
   };
 }
+
+export function saveUserStyle(input: {
+  persona?: UserStyleRow["persona"];
+  fullGuide?: string;
+  cheatsheet?: string;
+  source: string;
+}): UserStyleRow | null {
+  const existing = getUserStyle();
+  const personaJson =
+    input.persona !== undefined
+      ? JSON.stringify(input.persona)
+      : existing?.persona
+        ? JSON.stringify(existing.persona)
+        : null;
+  const fullGuide = input.fullGuide !== undefined ? input.fullGuide : (existing?.fullGuide ?? "");
+  const cheatsheet = input.cheatsheet !== undefined ? input.cheatsheet : (existing?.cheatsheet ?? "");
+  const now = new Date().toISOString();
+  getDb().runSync(
+    `INSERT INTO user_style (id, persona_json, full_guide, cheatsheet, source, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       persona_json = excluded.persona_json,
+       full_guide   = excluded.full_guide,
+       cheatsheet   = excluded.cheatsheet,
+       source       = excluded.source,
+       updated_at   = excluded.updated_at`,
+    "global",
+    personaJson,
+    fullGuide,
+    cheatsheet,
+    input.source,
+    now,
+  );
+  return getUserStyle();
+}
+
+export function appendToStyleGuide(
+  existingGuide: string,
+  section: string | undefined,
+  content: string,
+): string {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) return existingGuide;
+  if (existingGuide && existingGuide.includes(trimmedContent)) return existingGuide;
+  const bulletContent = /^[-*•]\s/.test(trimmedContent) ? trimmedContent : `- ${trimmedContent}`;
+  if (!existingGuide || existingGuide.trim() === "") {
+    if (section?.trim()) return `## ${section.trim()}\n${bulletContent}\n`;
+    return `${bulletContent}\n`;
+  }
+  if (!section || section.trim() === "") {
+    return `${existingGuide.trimEnd()}\n\n${bulletContent}\n`;
+  }
+  const sectionNorm = section.trim().toLowerCase();
+  const numMatch = sectionNorm.match(/^(\d+)\b/);
+  const targetNum = numMatch ? parseInt(numMatch[1], 10) : null;
+  const lines = existingGuide.split("\n");
+  const headingIndices: number[] = [];
+  const headingTexts: string[] = [];
+  lines.forEach((line, idx) => {
+    if (/^##\s+/.test(line)) {
+      headingIndices.push(idx);
+      headingTexts.push(line.replace(/^##\s+/, "").trim());
+    }
+  });
+  let targetIdx = -1;
+  if (targetNum !== null) {
+    targetIdx = headingIndices.findIndex((_, hi) => {
+      const txt = headingTexts[hi].toLowerCase();
+      return txt.startsWith(`${targetNum}.`) || txt.startsWith(`${targetNum} `);
+    });
+  }
+  if (targetIdx === -1) {
+    const lowerSection = sectionNorm.replace(/^\d+\.?\s*/, "").trim();
+    if (lowerSection) {
+      targetIdx = headingTexts.findIndex(
+        (t) => t.toLowerCase().includes(lowerSection) || lowerSection.includes(t.toLowerCase()),
+      );
+    }
+  }
+  if (targetIdx === -1) {
+    return `${existingGuide.trimEnd()}\n\n## ${section.trim()}\n${bulletContent}\n`;
+  }
+  const nextHeadingLineIdx =
+    targetIdx + 1 < headingIndices.length ? headingIndices[targetIdx + 1] : lines.length;
+  const before = lines.slice(0, nextHeadingLineIdx);
+  const after = lines.slice(nextHeadingLineIdx);
+  const beforeStr = before.join("\n").trimEnd();
+  const afterStr = after.join("\n");
+  return beforeStr + "\n\n" + bulletContent + (afterStr ? "\n\n" + afterStr.replace(/^\n+/, "") : "\n");
+}
+
+export function appendUserStyleObservation(
+  section: string | undefined,
+  content: string,
+): { row: UserStyleRow | null; updated: boolean; reason?: string } {
+  const trimmed = content.trim();
+  if (!trimmed) return { row: getUserStyle(), updated: false, reason: "Empty content — no change." };
+  const existing = getUserStyle();
+  const existingGuide = existing?.fullGuide ?? "";
+  const nextGuide = appendToStyleGuide(existingGuide, section, trimmed);
+  if (nextGuide === existingGuide) {
+    return { row: existing, updated: false, reason: "Observation already present — no change." };
+  }
+  const source = existing && existing.source !== "none" ? existing.source : "manual";
+  const row = saveUserStyle({ fullGuide: nextGuide, source });
+  return { row, updated: true };
+}

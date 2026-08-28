@@ -95,3 +95,107 @@ export function saveUserStyle(db: Database.Database, input: UserStyleSaveInput):
 export function clearUserStyle(db: Database.Database): void {
   db.prepare("DELETE FROM user_style WHERE id = ?").run(USER_STYLE_ID);
 }
+
+/**
+ * Append an observation to the full writing-style guide, section-aware.
+ *
+ * The guide follows a canonical 12-section `## N.` structure. When `section`
+ * is supplied we locate that section's heading (numeric or fuzzy text match)
+ * and insert the content at the end of that section (before the next heading).
+ * When no matching heading is found we create a new section at the end.
+ * When `section` is omitted we append to the end of the document.
+ *
+ * Content is inserted as a bullet (`- `) when not already bullet-like.
+ * Duplicate content (exact trimmed inclusion) is treated as a no-op.
+ *
+ * Returns the updated guide string (may equal the input when deduplicated).
+ */
+export function appendToStyleGuide(
+  existingGuide: string,
+  section: string | undefined,
+  content: string,
+): string {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) return existingGuide;
+  // De-dupe: exact trimmed inclusion (case-sensitive) already present
+  if (existingGuide && existingGuide.includes(trimmedContent)) return existingGuide;
+
+  const bulletContent = /^[-*•]\s/.test(trimmedContent) ? trimmedContent : `- ${trimmedContent}`;
+
+  if (!existingGuide || existingGuide.trim() === "") {
+    if (section?.trim()) {
+      return `## ${section.trim()}\n${bulletContent}\n`;
+    }
+    return `${bulletContent}\n`;
+  }
+
+  if (!section || section.trim() === "") {
+    return `${existingGuide.trimEnd()}\n\n${bulletContent}\n`;
+  }
+
+  const sectionNorm = section.trim().toLowerCase();
+  const numMatch = sectionNorm.match(/^(\d+)\b/);
+  const targetNum = numMatch ? parseInt(numMatch[1], 10) : null;
+
+  const lines = existingGuide.split("\n");
+  const headingIndices: number[] = [];
+  const headingTexts: string[] = [];
+  lines.forEach((line, idx) => {
+    if (/^##\s+/.test(line)) {
+      headingIndices.push(idx);
+      headingTexts.push(line.replace(/^##\s+/, "").trim());
+    }
+  });
+
+  let targetIdx = -1;
+  if (targetNum !== null) {
+    targetIdx = headingIndices.findIndex((_, hi) => {
+      const txt = headingTexts[hi].toLowerCase();
+      return txt.startsWith(`${targetNum}.`) || txt.startsWith(`${targetNum} `);
+    });
+  }
+  if (targetIdx === -1) {
+    const lowerSection = sectionNorm.replace(/^\d+\.?\s*/, "").trim();
+    if (lowerSection) {
+      targetIdx = headingTexts.findIndex(
+        (t) => t.toLowerCase().includes(lowerSection) || lowerSection.includes(t.toLowerCase()),
+      );
+    }
+  }
+
+  if (targetIdx === -1) {
+    return `${existingGuide.trimEnd()}\n\n## ${section.trim()}\n${bulletContent}\n`;
+  }
+
+  const nextHeadingLineIdx =
+    targetIdx + 1 < headingIndices.length ? headingIndices[targetIdx + 1] : lines.length;
+  const before = lines.slice(0, nextHeadingLineIdx);
+  const after = lines.slice(nextHeadingLineIdx);
+  const beforeStr = before.join("\n").trimEnd();
+  const afterStr = after.join("\n");
+  const newGuide = beforeStr + "\n\n" + bulletContent + (afterStr ? "\n\n" + afterStr.replace(/^\n+/, "") : "\n");
+  return newGuide;
+}
+
+/**
+ * Append an observation to the persisted user_style row.
+ * Preserves persona and cheatsheet, upserts via saveUserStyle (sync-captured).
+ * Returns the saved row, or null when no change was needed (duplicate).
+ */
+export function appendUserStyleObservation(
+  db: Database.Database,
+  section: string | undefined,
+  content: string,
+): { row: UserStyleRow | null; updated: boolean; reason?: string } {
+  const trimmed = content.trim();
+  if (!trimmed) return { row: getUserStyle(db), updated: false, reason: "Empty content — no change." };
+  const existing = getUserStyle(db);
+  const existingGuide = existing?.fullGuide ?? "";
+  const nextGuide = appendToStyleGuide(existingGuide, section, trimmed);
+  if (nextGuide === existingGuide) {
+    return { row: existing, updated: false, reason: "Observation already present — no change." };
+  }
+  const source: UserStyleSource = existing && existing.source !== "none" ? existing.source : "manual";
+  const row = saveUserStyle(db, { fullGuide: nextGuide, source });
+  return { row, updated: true };
+}

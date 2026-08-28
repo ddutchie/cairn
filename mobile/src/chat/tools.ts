@@ -310,6 +310,31 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "update_user_writing_style",
+    description:
+      "Append an observation to the user's writing style guide mid-session. Use when the user explicitly asks you to remember a style preference, or you notice a consistent correction worth preserving. Appends to the full guide (section-aware for the canonical 12-section ## N. format). Requires explicit user request or a clear pattern — do not hallucinate preferences.",
+    params: '{ "mode": "append", "section"?: string, "content": string }',
+    jsonSchema: obj(
+      {
+        mode: { type: "string", enum: ["append"] },
+        section: S,
+        content: S,
+      },
+      ["mode", "content"],
+    ),
+    run: (a) => {
+      const mode = str(a.mode);
+      const content = str(a.content);
+      const section = a.section !== undefined ? str(a.section) : undefined;
+      if (mode !== "append") return { error: `Unsupported mode "${mode}" — only "append" is supported.` };
+      if (!content.trim()) return { error: "content is required and must be non-empty." };
+      if (content.trim().length > 2000) return { error: "content is too long (max 2000 characters)." };
+      const { row, updated, reason } = q.appendUserStyleObservation(section, content);
+      if (!updated) return { ok: true, updated: false, message: reason ?? "No change.", style: row };
+      return { ok: true, updated: true, message: section ? `Appended to "${section}".` : "Appended to the guide.", style: row };
+    },
+  },
+  {
     name: "update_task",
     description:
       "Update a task card. Any provided field is changed; pass column_id to move it to another column. priority = low|medium|high|urgent. Set due_date to \"\" to clear it.",
@@ -411,6 +436,7 @@ export const WRITE_TOOL_NAMES = new Set<string>([
   "bulk_update_task_status",
   "tag_note",
   "tag_task",
+  "update_user_writing_style",
 ]);
 
 /**

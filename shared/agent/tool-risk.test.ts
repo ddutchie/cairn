@@ -29,6 +29,7 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "create_idea_flow_edge", "delete_idea_flow_edge", "delete_idea_flow_node",
   "layout_idea_flow", "codebase_reindex",
   "generate_prd", "suggest_connections",
+  "update_user_writing_style",
 ]);
 const EXEC_TOOLS = new Set<string>(["bash", "subagent"]);
 // dsh coding-stack tools are registered by mountCodingStack, not
