@@ -89,7 +89,8 @@ describe("tool-result-pruner replay tolerance (Cairn)", () => {
     const collapsed = collapseDerivedToMessages(derived);
     expect(collapsed.length).toBeGreaterThan(0);
     // The collapsed assistant should carry the pruned marker
-    const _prunedOut = collapsed.flatMap((m) => m.toolCalls ?? []).find((tc) => tc.tool === "bash");
+    const prunedOut = collapsed.flatMap((m) => m.toolCalls ?? []).find((tc) => tc.tool === "bash");
+    expect(prunedOut).toBeDefined();
     // toolCalls are attached via cross-step coalescing; at minimum the derived stream is well-formed
     expect(collapsed.some((m) => m.role === "assistant")).toBe(true);
 

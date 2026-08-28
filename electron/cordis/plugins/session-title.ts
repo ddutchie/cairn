@@ -52,25 +52,21 @@ export function mountSessionTitleBridge(ctx: Context): void {
           const snap = svc?.get(session as never);
           title = snap?.title ?? null;
         }
-        // Cache current value (null = before first title)
-        titleCache.set(id, title ?? null);
-
-        // Broadcast on session:projection for live thread-row updates.
-        // Use shared projection helper if available; fall back to raw broadcast.
-        if (title !== undefined) {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { broadcastEvent } = require("../../ipc/registry") as { broadcastEvent: (ch: string, payload: unknown) => void };
-            // Lazy import to avoid circular init order
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { makeSessionProjection } = require("../../../shared/agent/session-projection") as {
-              makeSessionProjection: (sid: string, kind: string, data: unknown) => unknown;
-            };
-            const proj = makeSessionProjection(id, "title" as unknown as string, { title: title ?? null } as unknown as never);
+        // Cache current value (null = before first title) but broadcast only when changed
+        const prev = titleCache.get(id);
+        const next = title ?? null;
+        titleCache.set(id, next);
+        if (title !== undefined && prev !== next) {
+          void (async () => {
+            try {
+              const { broadcastEvent } = await import("../../ipc/registry");
+              const { makeSessionProjection } = await import("../../../shared/agent/session-projection");
+              const proj = makeSessionProjection(id, "title" as unknown as never, { title: next } as unknown as never) as unknown as Record<string, unknown>;
             broadcastEvent("session:projection", proj);
-          } catch {
-            // bridge is decoration — never break the stream
-          }
+            } catch {
+              // bridge is decoration — never break the stream
+            }
+          })();
         }
       } catch {
         /* badge is decoration — never break the stream */
@@ -87,19 +83,19 @@ export function mountSessionTitleBridge(ctx: Context): void {
       const id = String((session as { id?: unknown }).id ?? "");
       if (!id || !id.startsWith("chat-")) return;
       const title = (value as string | null) ?? null;
+      const prev = titleCache.get(id);
       titleCache.set(id, title);
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { broadcastEvent } = require("../../ipc/registry") as { broadcastEvent: (ch: string, payload: unknown) => void };
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { makeSessionProjection } = require("../../../shared/agent/session-projection") as {
-          makeSessionProjection: (sid: string, kind: string, data: unknown) => unknown;
-        };
-        const proj = makeSessionProjection(id, "title" as unknown as string, { title } as unknown as never);
-        broadcastEvent("session:projection", proj);
-      } catch {
-        /* ignore */
-      }
+      if (prev === title) return;
+      void (async () => {
+        try {
+          const { broadcastEvent } = await import("../../ipc/registry");
+          const { makeSessionProjection } = await import("../../../shared/agent/session-projection");
+          const proj = makeSessionProjection(id, "title" as unknown as never, { title } as unknown as never) as unknown as Record<string, unknown>;
+          broadcastEvent("session:projection", proj);
+        } catch {
+          /* ignore */
+        }
+      })();
     });
   } catch {
     /* ignore */

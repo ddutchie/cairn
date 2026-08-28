@@ -127,8 +127,8 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
           const payload = unwrapSessionPayload(sessRes);
           const data: ChatMessage[] | null = payload.messages.length > 0 ? payload.messages as ChatMessage[] : null;
           const usage: unknown = payload.usage;
-          const title = (payload as { title?: string | null }).title ?? null;
-          if (title) titleByThreadId.set(t.id, title);
+          const maybeTitle = (payload as { title?: string | null }).title;
+          if (maybeTitle !== undefined) titleByThreadId.set(t.id, maybeTitle ?? null);
 
           if (usage) usageByThreadId.set(t.id, usage);
           if (data && data.length > 0) {
@@ -369,6 +369,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
 
   renameThread(threadId, title) {
     const trimmed = title.trim();
+    if (!trimmed) return;
     // Optimistic update — projected title wins immediately, and SQLite is
     // updated via the sessionTitle service (which pins kind:'user').
     set((s) => ({

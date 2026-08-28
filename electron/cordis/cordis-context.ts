@@ -141,12 +141,20 @@ export async function getContext(): Promise<Context> {
             const { getCachedConfig } = await import("../lib/config-cache");
             const { ensureAgentAiAdapter } = await import("./session-runtime");
             const cached = getCachedConfig();
-            const cfg = (cached as { agentConfig?: { baseUrl?: string; model?: string; apiKey?: string; activeProviderId?: string } }).agentConfig ?? {};
+            const cfg = (cached as { agentConfig?: { baseUrl?: string; model?: string; apiKey?: string; activeProviderId?: string; contextWindow?: number; maxTokens?: number; reasoning?: boolean; isReasoningModel?: boolean } }).agentConfig ?? {};
             const providers = (cached as { aiConfig?: { savedProviders?: Array<{ id: string; apiMode?: string }> } }).aiConfig?.savedProviders;
             const apiMode = providers?.find((p) => p.id === (cfg as { activeProviderId?: string }).activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
             const api = apiMode === "responses" ? "openai-responses" as const : apiMode === "anthropic-messages" ? "anthropic-messages" as const : "openai-completions" as const;
             if (cfg.baseUrl && cfg.model) {
-              await ensureAgentAiAdapter(ctx, { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: (cfg as { apiKey?: string }).apiKey ?? "", api });
+              await ensureAgentAiAdapter(ctx, {
+                baseUrl: cfg.baseUrl,
+                model: cfg.model,
+                apiKey: (cfg as { apiKey?: string }).apiKey ?? "",
+                api,
+                contextWindow: (cfg as { contextWindow?: number }).contextWindow,
+                maxTokens: (cfg as { maxTokens?: number }).maxTokens,
+                reasoning: (cfg as { reasoning?: boolean }).reasoning ?? (cfg as { isReasoningModel?: boolean }).isReasoningModel,
+              });
             }
           } catch { /* best-effort */ }
           return orig(...(args as [never, never, never]));

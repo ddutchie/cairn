@@ -984,15 +984,21 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const req = args[0] as { toolName?: string; callId?: string; reason?: string; signal?: AbortSignal } | undefined;
       const toolName = req?.toolName ?? "tool";
       const callId = req?.callId ?? `approve-${newId()}`;
-      if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
-      // Workspace-persistent grants also short-circuit the ask without emitting
-      // a card, so an "Always allow" covers future sessions silently.
-      if (workspaceId && db) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
-          if (isWorkspaceGranted(db, workspaceId, toolName)) return Promise.resolve("allowed-once");
-        } catch { /* DB not migrated — fall through to ask */ }
+      // Protected-file requests must be authorized by the exact secret path, not by a generic tool grant.
+      const pendingSecret = readPendingApprovalArgs(sessionId, callId)?.__secretPath as string | undefined;
+      if (pendingSecret) {
+        if (getSecretGrants(sessionId).has(pendingSecret)) return Promise.resolve("allowed-once");
+      } else {
+        if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
+        // Workspace-persistent grants also short-circuit the ask without emitting
+        // a card, so an "Always allow" covers future sessions silently.
+        if (workspaceId && db) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
+            if (isWorkspaceGranted(db, workspaceId, toolName)) return Promise.resolve("allowed-once");
+          } catch { /* DB not migrated — fall through to ask */ }
+        }
       }
        sendProjection(send, sessionId, "approval", { status: "required", name: toolName, label: toolName, callId });
       return new Promise<string>((resolve) => {

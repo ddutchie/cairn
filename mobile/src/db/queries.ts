@@ -12,6 +12,7 @@ import { queryTerms, ftsMatchQuery } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "@cairn/shared/notes/folder-tree";
 import { buildNoteMarkdown } from "@cairn/shared/notes/export";
+import { appendToStyleGuide } from "@cairn/shared/user-style";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import type {
   NoteRow,
@@ -1458,7 +1459,8 @@ export function saveUserStyle(input: {
        full_guide   = excluded.full_guide,
        cheatsheet   = excluded.cheatsheet,
        source       = excluded.source,
-       updated_at   = excluded.updated_at`,
+       updated_at   = excluded.updated_at,
+       deleted_at   = NULL`,
     "global",
     personaJson,
     fullGuide,
@@ -1469,60 +1471,7 @@ export function saveUserStyle(input: {
   return getUserStyle();
 }
 
-export function appendToStyleGuide(
-  existingGuide: string,
-  section: string | undefined,
-  content: string,
-): string {
-  const trimmedContent = content.trim();
-  if (!trimmedContent) return existingGuide;
-  if (existingGuide && existingGuide.includes(trimmedContent)) return existingGuide;
-  const bulletContent = /^[-*•]\s/.test(trimmedContent) ? trimmedContent : `- ${trimmedContent}`;
-  if (!existingGuide || existingGuide.trim() === "") {
-    if (section?.trim()) return `## ${section.trim()}\n${bulletContent}\n`;
-    return `${bulletContent}\n`;
-  }
-  if (!section || section.trim() === "") {
-    return `${existingGuide.trimEnd()}\n\n${bulletContent}\n`;
-  }
-  const sectionNorm = section.trim().toLowerCase();
-  const numMatch = sectionNorm.match(/^(\d+)\b/);
-  const targetNum = numMatch ? parseInt(numMatch[1], 10) : null;
-  const lines = existingGuide.split("\n");
-  const headingIndices: number[] = [];
-  const headingTexts: string[] = [];
-  lines.forEach((line, idx) => {
-    if (/^##\s+/.test(line)) {
-      headingIndices.push(idx);
-      headingTexts.push(line.replace(/^##\s+/, "").trim());
-    }
-  });
-  let targetIdx = -1;
-  if (targetNum !== null) {
-    targetIdx = headingIndices.findIndex((_, hi) => {
-      const txt = headingTexts[hi].toLowerCase();
-      return txt.startsWith(`${targetNum}.`) || txt.startsWith(`${targetNum} `);
-    });
-  }
-  if (targetIdx === -1) {
-    const lowerSection = sectionNorm.replace(/^\d+\.?\s*/, "").trim();
-    if (lowerSection) {
-      targetIdx = headingTexts.findIndex(
-        (t) => t.toLowerCase().includes(lowerSection) || lowerSection.includes(t.toLowerCase()),
-      );
-    }
-  }
-  if (targetIdx === -1) {
-    return `${existingGuide.trimEnd()}\n\n## ${section.trim()}\n${bulletContent}\n`;
-  }
-  const nextHeadingLineIdx =
-    targetIdx + 1 < headingIndices.length ? headingIndices[targetIdx + 1] : lines.length;
-  const before = lines.slice(0, nextHeadingLineIdx);
-  const after = lines.slice(nextHeadingLineIdx);
-  const beforeStr = before.join("\n").trimEnd();
-  const afterStr = after.join("\n");
-  return beforeStr + "\n\n" + bulletContent + (afterStr ? "\n\n" + afterStr.replace(/^\n+/, "") : "\n");
-}
+export { appendToStyleGuide };
 
 export function appendUserStyleObservation(
   section: string | undefined,

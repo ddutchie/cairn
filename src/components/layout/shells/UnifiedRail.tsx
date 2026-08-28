@@ -145,7 +145,7 @@ export function UnifiedRail() {
           <Search size={12} className="shrink-0" />
           <span className="truncate hidden lg:inline">Search notes, tasks, or ask…</span>
           <span className="truncate lg:hidden">Search…</span>
-          <span className="ml-auto hidden lg:inline-flex font-mono text-[0.643rem] px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--surface)]">{isMac ? "⌘K" : "Ctrl+K"}</span>
+          <span className="ml-auto hidden lg:inline-flex font-mono text-[0.643rem] px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--surface)]">{`${modKey(isMac)}K`}</span>
         </button>
       </div>
 
