@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2, MoreHorizontal } from "lucide-react";
+import { Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2, MoreHorizontal, ChevronRight } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -418,12 +418,13 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           </DropdownMenu>
         )}
 
-        <Tooltip content={`Close panel (${mod}/)`} side="bottom">
+        <Tooltip content={`Collapse panel (${mod}/)`} side="bottom">
           <button
             onClick={handleClosePanel}
+            aria-label="Collapse panel"
             className="w-7 h-7 rounded-md grid place-items-center border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] hover:border-[var(--muted)] transition-colors shrink-0"
           >
-            <X size={12} />
+            <ChevronRight size={12} />
           </button>
         </Tooltip>
       </div>
