@@ -126,11 +126,22 @@ const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * the "device needs updating" hint so the user knows to update the desktop
  * for writing-style sync to work.
  *
+ * Protocol 3 (v3.0.2/mobile 0.1.7): delete-wins now only preserves a
+ * divergent note body as a live "conflicted copy" when the losing put is
+ * *newer* (higher HLC) than the winning delete. An older stale snapshot
+ * (e.g. desktop's last state while it was closed, read by mobile after a
+ * mobile delete) is just the pre-delete state, not a concurrent edit after
+ * the delete — keeping it as a live recreation is the "mobile tried to
+ * recreate the desktop note after it was deleted" and "desktop showed a
+ * sync conflict instead of deleting the checklist note" bug. The old rule
+ * kept every divergent body, even when the put was older than the delete,
+ * which made every offline checkbox toggle look like a conflict.
+ *
  * The point of stamping it now, while only two historical shapes exist, is that
  * a peer can be *told* it is behind instead of us inferring capability from
  * which optional fields happen to be present.
  */
-export const SYNC_PROTOCOL_VERSION = 2;
+export const SYNC_PROTOCOL_VERSION = 3;
 
 /** sync_state key prefix for the highest protocol version seen from a peer. */
 const PEER_PROTOCOL_PREFIX = "peer_protocol:";
@@ -188,6 +199,24 @@ const ARRAY_MERGE_COLUMNS: Record<string, string[]> = {
 const BODY_COLUMN: Partial<Record<SyncableTable, string>> = {
   notes: "content",
 };
+
+/**
+ * Normalize a note body for sync comparison. Mirrors the import ledger's
+ * bodyHash trimming (trailing whitespace) plus CRLF normalization so a
+ * file round-trip (matter.stringify adds a trailing newline) or a Windows
+ * CRLF import doesn't look like a divergent edit and spawn a spurious
+ * conflict copy. Only used for equality checks — stored bodies stay raw.
+ */
+function normalizeForSyncBody(value: unknown): string {
+  const s = value == null ? "" : String(value);
+  // CRLF → LF for cross-platform parity (see merge3.ts splitLines)
+  // then trim trailing whitespace/newlines (matter.stringify adds one)
+  return s.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+}
+
+function syncBodiesEqual(a: unknown, b: unknown): boolean {
+  return normalizeForSyncBody(a) === normalizeForSyncBody(b);
+}
 
 function tableColumns(db: SyncDb, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
@@ -886,7 +915,17 @@ export class SyncEngine {
         && this.observesDelete(observed, entity, entity_id, rowBase.delete_hlc);
       if (!isAfterDelete) {
         this.recordForwardedOp(entry);
-        const conflictCopyId = this.preserveRejectedNotePut(entity, entity_id, entry.payload, origin, hlc);
+        // Only preserve a newer put as a conflict copy. An older stale put
+        // (e.g. desktop's last snapshot read while desktop was closed) is
+        // just the old state, not a concurrent edit after the delete — keeping
+        // it as a live "recreation" is what made mobile appear to resurrect a
+        // note the user had just deleted (the "bunch of checkboxes" report).
+        // A newer put (higher HLC) that still lost the causal check IS a
+        // concurrent edit after the delete and is worth preserving.
+        const shouldPreserve = compareHlc(hlc, rowBase.delete_hlc) > 0;
+        const conflictCopyId = shouldPreserve
+          ? this.preserveRejectedNotePut(entity, entity_id, entry.payload, origin, hlc)
+          : null;
         return { applied: false, conflictCopyId, outcome: "delete-won" };
       }
 
@@ -930,14 +969,23 @@ export class SyncEngine {
       }
 
       // The delete wins even when a stale peer's unobserved put has the higher
-      // raw HLC. Preserve its divergent note body before tombstoning the row.
-      const conflictCopyId = this.preserveRejectedNotePut(
-        entity,
-        entity_id,
-        local,
-        localHlc ? decodeHlc(localHlc).deviceId : this.deviceId,
-        localHlc ?? hlc,
-      );
+      // raw HLC. Preserve its divergent note body before tombstoning the row,
+      // but only when the local put is newer than the incoming delete — an
+      // older local snapshot (e.g. a note edited on desktop before it was
+      // closed, then deleted on mobile) is not a concurrent edit after the
+      // delete, so keeping it as a live recreation is the "mobile tried to
+      // recreate" bug. A newer local put that still lost the causal check IS
+      // worth preserving.
+      const shouldPreserveLocal = !localHlc || compareHlc(localHlc, hlc) > 0;
+      const conflictCopyId = shouldPreserveLocal
+        ? this.preserveRejectedNotePut(
+            entity,
+            entity_id,
+            local,
+            localHlc ? decodeHlc(localHlc).deviceId : this.deviceId,
+            localHlc ?? hlc,
+          )
+        : null;
       this.recordForwardedOp(entry);
       this.setDeleteVersion(entity, entity_id, hlc, origin);
       this.markObservedDelete(entity, entity_id, hlc);
@@ -955,7 +1003,7 @@ export class SyncEngine {
       const bodyCol = BODY_COLUMN[entity];
       if (bodyCol && op === "put" && local && entry.payload) {
         const remoteBody = entry.payload[bodyCol];
-        if (local[bodyCol] === remoteBody) {
+        if (syncBodiesEqual(local[bodyCol], remoteBody)) {
           this.setBaseBody(entity, entity_id, remoteBody);
         }
       }
@@ -999,13 +1047,13 @@ export class SyncEngine {
       const ancestor = this.getBaseBody(entity, entity_id); // undefined = unknown
       const localBody = local[bodyCol];
       const remoteBody = remote[bodyCol];
-      const localChanged = ancestor === undefined ? false : String(localBody ?? "") !== String(ancestor ?? "");
-      const remoteChanged = ancestor === undefined ? false : String(remoteBody ?? "") !== String(ancestor ?? "");
+      const localChanged = ancestor === undefined ? false : !syncBodiesEqual(localBody, ancestor);
+      const remoteChanged = ancestor === undefined ? false : !syncBodiesEqual(remoteBody, ancestor);
       if (
         !isConflictClone &&
         localChanged &&
         remoteChanged &&
-        localBody !== remoteBody &&
+        !syncBodiesEqual(localBody, remoteBody) &&
         remoteBody != null &&
         localBody != null
       ) {
@@ -1147,7 +1195,7 @@ export class SyncEngine {
     if (!bodyCol || !row || inspectConflict(entityId).isConflict) return null;
     const body = row[bodyCol];
     const ancestor = this.getBaseBody(entity, entityId);
-    if (ancestor !== undefined && body === ancestor) return null;
+    if (ancestor !== undefined && syncBodiesEqual(body, ancestor)) return null;
 
     const parts = decodeHlc(losingHlc);
     const suffix = parts.physical.toString(16) + parts.counter.toString(16).padStart(4, "0");
