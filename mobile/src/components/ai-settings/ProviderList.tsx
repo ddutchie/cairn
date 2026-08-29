@@ -91,7 +91,7 @@ export function ProviderList({
         The active provider fills the fields below.
       </Text>
 
-      <BottomSheet visible={open} onClose={() => setOpen(false)} maxHeight="70%">
+      <BottomSheet visible={open} onClose={() => setOpen(false)} maxHeight="70%" avoidKeyboard>
         <BottomSheetHeader
           title="Saved providers"
           onCancel={() => setOpen(false)}

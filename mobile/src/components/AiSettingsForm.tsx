@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import SegmentedControl from "@react-native-segmented-control/segmented-control";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, ChevronUp, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
@@ -734,10 +735,14 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               onChange={(e) => setTab(e.nativeEvent.selectedSegmentIndex)}
             />
           </View>
-          <ScrollView
+          <KeyboardAwareScrollView
             style={styles.body}
             contentContainerStyle={styles.bodyContent}
             keyboardShouldPersistTaps="handled"
+            bottomOffset={32}
+            extraKeyboardSpace={16}
+            keyboardDismissMode="interactive"
+            contentInsetAdjustmentBehavior="automatic"
           >
           {tab === 0 && (
             <>
@@ -1239,7 +1244,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               <UsageBody />
             </>
           )}
-          </ScrollView>
+          </KeyboardAwareScrollView>
           </>
         )}
 
@@ -1247,6 +1252,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           visible={personalityOpen}
           onClose={() => setPersonalityOpen(false)}
           maxHeight="80%"
+          avoidKeyboard
         >
           <BottomSheetHeader
             title="Chat personality"
