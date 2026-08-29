@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
+import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Activity, LayoutDashboard, Kanban } from "lucide-react-native";
 import { computeProjectMetrics } from "@cairn/shared/overview/metrics";
 import { COLUMN_COLORS, PRIORITY_COLOR, COLUMN_TYPE_ORDER } from "@cairn/shared/ui/constants";
@@ -296,10 +297,18 @@ export function OverviewTab({
             </View>
           </View>
 
-          {/* instrument — subtle accent wash like desktop: 520×180 at 85% -10%, 14% → transparent 60% */}
-          <View style={[styles.instrument, { backgroundColor: t.surface, borderColor: t.border, overflow: "hidden" } as StyleProp<ViewStyle>, elevation.md as StyleProp<ViewStyle>]}><View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: 14 }]}>
-              <View style={{ position: "absolute", top: -18, right: -24, width: 280, height: 110, borderRadius: 80, backgroundColor: withAlpha(t.accent, 0.10), opacity: 0.9 }} />
-              <View style={{ position: "absolute", top: -10, right: -10, width: 220, height: 90, borderRadius: 60, backgroundColor: withAlpha(t.accent, 0.06), opacity: 0.7 }} />
+          {/* instrument — true radial gradient like desktop: 520×180 at 85% -10%, 14% → transparent 60% */}
+          <View style={[styles.instrument, { backgroundColor: t.surface, borderColor: t.border, overflow: "hidden" } as StyleProp<ViewStyle>, elevation.md as StyleProp<ViewStyle>]}>
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: 14, overflow: "hidden" }]}>
+              <Svg width="100%" height="100%" viewBox="0 0 360 200" preserveAspectRatio="none">
+                <Defs>
+                  <RadialGradient id="instGrad" cx="85%" cy="-10%" rx="72%" ry="90%" gradientUnits="objectBoundingBox">
+                    <Stop offset="0%" stopColor={t.accent} stopOpacity={0.14} />
+                    <Stop offset="60%" stopColor={t.accent} stopOpacity={0} />
+                  </RadialGradient>
+                </Defs>
+                <Rect x={0} y={0} width={360} height={200} fill="url(#instGrad)" />
+              </Svg>
             </View>
             <View style={styles.instrumentHead}>
               <Text style={[typeScale.micro, { color: needsAttention > 0 ? t.warning : t.textTertiary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" }]}>{progressLabel}</Text>

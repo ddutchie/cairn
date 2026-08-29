@@ -7,13 +7,10 @@ export type RadarAxis = { key: string; label: string; short: string; value: numb
 export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: number }) {
   const t = useTheme();
   const n = axes.length;
-  const padX = 28;
-  const padY = 16;
-  const vbW = size + padX * 2;
-  const vbH = size + padY * 2;
-  const cx = vbW / 2;
-  const cy = vbH / 2;
-  const radius = size * 0.38;
+  const cx = size / 2;
+  const cy = size / 2;
+  // Slightly smaller radius to keep right labels (Mome/Focus) inside 260 viewBox without viewBox padding
+  const radius = size * 0.32;
   const levels = 4;
 
   const angleFor = (i: number) => (Math.PI * 2 * i) / n - Math.PI / 2;
@@ -47,8 +44,8 @@ export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: nu
       </View>
 
       <View style={styles.body}>
-        <View style={{ width: vbW, height: vbH, alignSelf: "center", marginHorizontal: -padX, overflow: "visible" }}>
-          <Svg width={vbW} height={vbH} viewBox={`0 0 ${vbW} ${vbH}`} style={{ overflow: "visible" }}>
+        <View style={{ width: size, height: size, alignSelf: "center", overflow: "visible" }}>
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ overflow: "visible" }}>
             {/* rings */}
             {rings.map((pts, i) => (
               <Polygon
