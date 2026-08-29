@@ -25,13 +25,13 @@ export function ProgressRing({
   variant?: "default" | "instrument";
 }) {
   const t = useTheme();
-  const radius = (size - stroke) / 2;
+  const instrument = variant === "instrument";
+  // Desktop instrument uses r=26 for 74px — keep that exact for the knurled look, not (size-stroke)/2
+  const radius = instrument ? 26 : (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.max(0, Math.min(100, percent));
   const offset = circumference - (clamped / 100) * circumference;
   const center = size / 2;
-
-  const instrument = variant === "instrument";
 
   return (
     <View style={styles.wrap}>
@@ -45,8 +45,30 @@ export function ProgressRing({
           backgroundColor: instrument ? t.surface2 : "transparent",
           alignItems: "center",
           justifyContent: "center",
+          // Desktop: radial-gradient(120px 80px at 30% 30%, var(--surface-3), var(--surface-2)) + inset highlight + drop shadow
+          shadowColor: instrument ? "#000" : "transparent",
+          shadowOffset: instrument ? { width: 0, height: 4 } : { width: 0, height: 0 },
+          shadowOpacity: instrument ? 0.22 : 0,
+          shadowRadius: instrument ? 10 : 0,
+          elevation: instrument ? 4 : 0,
+          overflow: instrument ? "hidden" : "visible",
         }}
       >
+        {instrument ? (
+          <View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                borderRadius: size / 2,
+                backgroundColor: t.surface3,
+                opacity: 0.35,
+                // Simulate radial highlight at 30% 30%
+                transform: [{ translateX: -size * 0.15 }, { translateY: -size * 0.15 }],
+              },
+            ]}
+          />
+        ) : null}
         <Svg width={size} height={size}>
           <Circle cx={center} cy={center} r={radius} stroke={t.surface3} strokeWidth={stroke} fill="none" />
           <Circle
@@ -59,8 +81,9 @@ export function ProgressRing({
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
-            // Start the arc at 12 o'clock (SVG 0° is 3 o'clock).
+            // Start the arc at 12 o'clock (SVG 0° is 3 o'clock). Add subtle glow via shadow on container, not SVG filter
             transform={`rotate(-90 ${center} ${center})`}
+            opacity={0.98}
           />
         </Svg>
         <View style={styles.label}>

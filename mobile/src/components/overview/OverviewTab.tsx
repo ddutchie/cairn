@@ -296,8 +296,10 @@ export function OverviewTab({
             </View>
           </View>
 
-          {/* instrument */}
-          <View style={[styles.instrument, { backgroundColor: t.surface, borderColor: t.border }, elevation.md as StyleProp<ViewStyle>]}>
+          {/* instrument — with accent radial fade like desktop */}
+          <View style={[styles.instrument, { backgroundColor: t.surface, borderColor: t.border, overflow: "hidden" } as StyleProp<ViewStyle>, elevation.md as StyleProp<ViewStyle>]}><View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: 14, opacity: 0.9 }]}>
+              <View style={{ position: "absolute", top: -30, right: -20, width: 320, height: 140, borderRadius: 100, backgroundColor: withAlpha(t.accent, 0.14) }} />
+            </View>
             <View style={styles.instrumentHead}>
               <Text style={[typeScale.micro, { color: needsAttention > 0 ? t.warning : t.textTertiary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" }]}>{progressLabel}</Text>
             </View>
@@ -369,9 +371,9 @@ export function OverviewTab({
         <Text style={[typeScale.micro, { color: t.textTertiary, fontFamily: "Menlo" }]}>{focus === "all" ? "Showing all" : `Filtered: ${focusLabel[focus]}`} · {filteredQueue.length || focusCounts[focus]} items</Text>
       </View>
 
-      {/* ── KPI strip ── */}
+      {/* ── KPI strip — hairline dividers, not double borders ── */}
       <View style={[styles.kpiStrip, { backgroundColor: t.surface, borderColor: t.border }]}>
-        <View style={[styles.kpiCell, { borderRightColor: t.border }]}>
+        <View style={[styles.kpiCell, { borderColor: t.border, borderRightWidth: 1, borderBottomWidth: 1 }]}>
           <View style={[styles.kpiAccent, { backgroundColor: t.danger }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Needs attention</Text>
           <View style={styles.kpiValueRow}>
@@ -382,7 +384,7 @@ export function OverviewTab({
             {needsAttention > 0 ? `${overdueCount} overdue · ${todayCount} today` : "All caught up"}
           </Text>
         </View>
-        <View style={[styles.kpiCell, { borderRightColor: t.border }]}>
+        <View style={[styles.kpiCell, { borderColor: t.border, borderBottomWidth: 1 }]}>
           <View style={[styles.kpiAccent, { backgroundColor: t.success }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Completion</Text>
           <View style={styles.kpiValueRow}>
@@ -393,7 +395,7 @@ export function OverviewTab({
             {instrumentTotal > 0 ? `${instrumentDone} done · ${openCards.length} open` : "No tasks yet"}
           </Text>
         </View>
-        <View style={[styles.kpiCell, styles.kpiCellTint, { backgroundColor: withAlpha(t.surface2, 0.6), borderRightColor: t.border }]}>
+        <View style={[styles.kpiCell, styles.kpiCellTint, { backgroundColor: withAlpha(t.surface2, 0.6), borderColor: t.border, borderRightWidth: 1 }]}>
           <View style={[styles.kpiAccent, { backgroundColor: t.info }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Knowledge</Text>
           <View style={styles.kpiValueRow}>
@@ -404,7 +406,7 @@ export function OverviewTab({
             {pinnedNotes.length} pinned{totalNotes > 0 && recentNotes[0] ? ` · ${formatRelative(recentNotes[0].updatedAt)}` : ""}
           </Text>
         </View>
-        <View style={[styles.kpiCell, styles.kpiCellTint, { backgroundColor: withAlpha(t.surface2, 0.6) }]}>
+        <View style={[styles.kpiCell, styles.kpiCellTint, { backgroundColor: withAlpha(t.surface2, 0.6), borderColor: t.border }]}>
           <View style={[styles.kpiAccent, { backgroundColor: t.warning }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Bottleneck</Text>
           <View style={styles.kpiValueRow}>
@@ -782,9 +784,9 @@ function makeStyles(t: Theme) {
     focusBar: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, flexWrap: "wrap" },
     focusPill: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1 },
     kpiStrip: { borderWidth: 1, borderRadius: 12, overflow: "hidden", flexDirection: "row", flexWrap: "wrap" },
-    kpiCell: { width: "50%", padding: 12, gap: 2, borderRightWidth: 1, borderBottomWidth: 1, position: "relative" },
+    kpiCell: { width: "50%", padding: 12, gap: 2, position: "relative" },
     kpiCellTint: {},
-    kpiAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 2 },
+    kpiAccent: { position: "absolute", top: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth },
     kpiLabel: { fontSize: 10, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
     kpiValueRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 4 },
     emptyQueue: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, borderWidth: 1, borderStyle: "dashed" },

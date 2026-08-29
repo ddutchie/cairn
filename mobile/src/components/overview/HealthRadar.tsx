@@ -11,6 +11,10 @@ export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: nu
   const cy = size / 2;
   const radius = size * 0.38;
   const levels = 4;
+  const padX = 28;
+  const padY = 16;
+  const vbW = size + padX * 2;
+  const vbH = size + padY * 2;
 
   const angleFor = (i: number) => (Math.PI * 2 * i) / n - Math.PI / 2;
   const pointFor = (value: number, i: number) => {
@@ -43,8 +47,8 @@ export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: nu
       </View>
 
       <View style={styles.body}>
-        <View style={{ width: size, height: size, alignSelf: "center" }}>
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <View style={{ width: size, height: size, alignSelf: "center", overflow: "visible" }}>
+          <Svg width={size} height={size} viewBox={`-${padX} -${padY} ${vbW} ${vbH}`} style={{ overflow: "visible" }}>
             {/* rings */}
             {rings.map((pts, i) => (
               <Polygon
