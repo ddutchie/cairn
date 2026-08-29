@@ -7,14 +7,14 @@ export type RadarAxis = { key: string; label: string; short: string; value: numb
 export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: number }) {
   const t = useTheme();
   const n = axes.length;
-  const cx = size / 2;
-  const cy = size / 2;
-  const radius = size * 0.38;
-  const levels = 4;
   const padX = 28;
   const padY = 16;
   const vbW = size + padX * 2;
   const vbH = size + padY * 2;
+  const cx = vbW / 2;
+  const cy = vbH / 2;
+  const radius = size * 0.38;
+  const levels = 4;
 
   const angleFor = (i: number) => (Math.PI * 2 * i) / n - Math.PI / 2;
   const pointFor = (value: number, i: number) => {
@@ -47,8 +47,8 @@ export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: nu
       </View>
 
       <View style={styles.body}>
-        <View style={{ width: size, height: size, alignSelf: "center", overflow: "visible" }}>
-          <Svg width={size} height={size} viewBox={`-${padX} -${padY} ${vbW} ${vbH}`} style={{ overflow: "visible" }}>
+        <View style={{ width: vbW, height: vbH, alignSelf: "center", marginHorizontal: -padX, overflow: "visible" }}>
+          <Svg width={vbW} height={vbH} viewBox={`0 0 ${vbW} ${vbH}`} style={{ overflow: "visible" }}>
             {/* rings */}
             {rings.map((pts, i) => (
               <Polygon
@@ -81,10 +81,10 @@ export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: nu
               const [x, y] = pointFor(ax.value, i);
               return <Circle key={ax.key} cx={x} cy={y} r={3.5} fill={t.accent} stroke={t.surface} strokeWidth={1.5} />;
             })}
-            {/* labels */}
+            {/* labels — single text to avoid nested tspan offset issues in RN SVG */}
             {axes.map((ax, i) => {
               const a = angleFor(i);
-              const r = radius + 18;
+              const r = radius + 16;
               const x = cx + Math.cos(a) * r;
               const y = cy + Math.sin(a) * r;
               const anchor = Math.cos(a) > 0.35 ? "start" : Math.cos(a) < -0.35 ? "end" : "middle";
@@ -99,10 +99,7 @@ export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: nu
                   fontWeight="600"
                   fill={t.textTertiary}
                 >
-                  {ax.short}
-                  <SvgText fontSize={8} fill={t.textTertiary} opacity={0.9} dx={3}>
-                    {Math.round(ax.value * 100)}
-                  </SvgText>
+                  {`${ax.short} ${Math.round(ax.value * 100)}`}
                 </SvgText>
               );
             })}

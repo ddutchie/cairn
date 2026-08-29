@@ -296,9 +296,10 @@ export function OverviewTab({
             </View>
           </View>
 
-          {/* instrument — with accent radial fade like desktop */}
-          <View style={[styles.instrument, { backgroundColor: t.surface, borderColor: t.border, overflow: "hidden" } as StyleProp<ViewStyle>, elevation.md as StyleProp<ViewStyle>]}><View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: 14, opacity: 0.9 }]}>
-              <View style={{ position: "absolute", top: -30, right: -20, width: 320, height: 140, borderRadius: 100, backgroundColor: withAlpha(t.accent, 0.14) }} />
+          {/* instrument — subtle accent wash like desktop: 520×180 at 85% -10%, 14% → transparent 60% */}
+          <View style={[styles.instrument, { backgroundColor: t.surface, borderColor: t.border, overflow: "hidden" } as StyleProp<ViewStyle>, elevation.md as StyleProp<ViewStyle>]}><View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: 14 }]}>
+              <View style={{ position: "absolute", top: -18, right: -24, width: 280, height: 110, borderRadius: 80, backgroundColor: withAlpha(t.accent, 0.10), opacity: 0.9 }} />
+              <View style={{ position: "absolute", top: -10, right: -10, width: 220, height: 90, borderRadius: 60, backgroundColor: withAlpha(t.accent, 0.06), opacity: 0.7 }} />
             </View>
             <View style={styles.instrumentHead}>
               <Text style={[typeScale.micro, { color: needsAttention > 0 ? t.warning : t.textTertiary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" }]}>{progressLabel}</Text>
