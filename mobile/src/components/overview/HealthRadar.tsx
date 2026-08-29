@@ -9,8 +9,8 @@ export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: nu
   const n = axes.length;
   const cx = size / 2;
   const cy = size / 2;
-  // Slightly smaller radius to keep right labels (Mome/Focus) inside 260 viewBox without viewBox padding
-  const radius = size * 0.32;
+  // 0.30 keeps right labels (Mome 49) inside 260 viewBox with 12px card padding — 0.38 clipped at 259+35=294
+  const radius = size * 0.30;
   const levels = 4;
 
   const angleFor = (i: number) => (Math.PI * 2 * i) / n - Math.PI / 2;
@@ -44,8 +44,8 @@ export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: nu
       </View>
 
       <View style={styles.body}>
-        <View style={{ width: size, height: size, alignSelf: "center", overflow: "visible" }}>
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ overflow: "visible" }}>
+        <View style={{ width: "100%", maxWidth: size, aspectRatio: 1, alignSelf: "center", overflow: "visible" }}>
+          <Svg width="100%" height="100%" viewBox={`0 0 ${size} ${size}`} style={{ overflow: "visible" }}>
             {/* rings */}
             {rings.map((pts, i) => (
               <Polygon
@@ -81,7 +81,7 @@ export function HealthRadar({ axes, size = 260 }: { axes: RadarAxis[]; size?: nu
             {/* labels — single text to avoid nested tspan offset issues in RN SVG */}
             {axes.map((ax, i) => {
               const a = angleFor(i);
-              const r = radius + 16;
+              const r = radius + 14;
               const x = cx + Math.cos(a) * r;
               const y = cy + Math.sin(a) * r;
               const anchor = Math.cos(a) > 0.35 ? "start" : Math.cos(a) < -0.35 ? "end" : "middle";
