@@ -28,7 +28,7 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
 function peerUpdateHint(peerVersions: number[]): string {
   const oldest = peerVersions.length ? Math.min(...peerVersions) : 0;
   // v1 → v2: the writing style became a synced entity (v1 peers can't publish it).
-  if (SYNC_PROTOCOL_VERSION === 2 && oldest === 1) {
+  if (oldest === 1) {
     return "Update Cairn there so your writing style syncs to this device.";
   }
   if (oldest < SYNC_PROTOCOL_VERSION) {
