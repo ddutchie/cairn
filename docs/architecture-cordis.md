@@ -204,11 +204,21 @@ names can be registered exactly once per context lifetime.
 ## 8. Keeping the stack up to date
 
 We deliberately track dsh closely: bump, then fix our fixtures/tests to match.
-This is the repeatable loop.
+This is the repeatable loop. The universal playbook (dist-tag choice, tarball
+diff recipe, deadlock recovery, testing matrix) lives in
+**`docs/dsh-upgrade-guide.md`** — this section is the Cairn-specific checklist
+with the current pin and the historical breakage index.
+
+**Current pin:** `@deepseek-ai/*@0.1.1-rc.2` (tag `next`) + `cordis@4.0.1`.  
+**Next candidate:** `0.1.2-alpha.3` + `cordis@4.0.2` — see
+`docs/plans/dsh-0.1.2-alpha.3-evaluation.md` for the full diff, wiring, and
+adopt/defer decisions (Schedule = opt-in, model selection = defer).
 
 ### Bump checklist
 1. Find the target line: `npm view @deepseek-ai/<pkg> dist-tags --json` (we use
-   the `next` tag; `latest` is often a placeholder `0.0.1-rc.1`).
+   the `next` tag; `latest` is often a placeholder `0.0.1-rc.1`). Published
+   `alpha` tags are real npm tarballs (e.g. `0.1.2-alpha.3`) — unpublished tags
+   like `0.1.2-alpha.1` are source-only; prefer the published one.
 2. Update all 39 `@deepseek-ai/dsh-*` deps in `package.json`
    (e.g. `^0.1.0-rc.8` → `^0.1.1-rc.2`) + add any package dsh-visualize-type
    plugins now need (`dsh-skill` case). Never touch the project version
@@ -216,13 +226,17 @@ This is the repeatable loop.
 3. **Pre-req**: peer-dep resolution deadlocks on a partial tree. Clear the
    stale lock entries first, then reinstall:
    `rm -rf node_modules/@deepseek-ai/dsh-*`, strip `@deepseek-ai/dsh-*` keys
-   from `package-lock.json` in a script, then `npm install`.
+   from `package-lock.json` in a script, then `npm install`. *(Full deadlock
+   recovery + singleton checks: `dsh-upgrade-guide.md` §5.)*
 4. Verify graph: single `cordis` copy (`find node_modules -path '*cordis/package.json' | wc -l`),
    no `0.1.0-rc.8` stragglers.
-5. `npm run compile` + `npm run type-check:all` (fix API breaks in our code).
-6. Live sweep `CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npx vitest run electron/cordis/*.live.test.ts`
+5. Diff the tarballs before touching Cairn code (`npm pack` + `diff -r` per
+   `dsh-upgrade-guide.md` §3) — read `peerDependencies`, branded-string renames
+   (`SessionId→brandString`), descriptor version bumps, and new `inject` seams.
+6. `npm run compile` + `npm run type-check:all` (fix API breaks in our code).
+7. Live sweep `CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npx vitest run electron/cordis/*.live.test.ts`
    (model bridge at `http://localhost:3042/v1`, `claude-sonnet-4-5`).
-7. Update fixtures whose assertions encode retired behavior (see §8.1), changelog
+8. Update fixtures whose assertions encode retired behavior (see §8.1), changelog
    (`v2.7.x`), docs §.
 
 ### 8.1 Known historical breakage points (each bump, check these)
@@ -230,11 +244,14 @@ This is the repeatable loop.
 |---|---|---|
 | `AttachmentStore.readImageRequest(ref, policy, signal)` | "cannot derive model-request images" | implement on `CairnAttachmentStore` (bytes passthrough + deterministic `variantId`, `depth/space/hasAlpha`) |
 | session jsonl compression/naming | replay empty or "not found" | `session.jsonl[.zstd]`, `<root>/<encodedCwd>/<id>/…` plaintext+flat fallbacks are handled in handlers |
-| `SessionId` stringification | replay path lookups fail | usually still a branded string — verify `String(SessionId(x))` |
+| `SessionId` stringification / `brandString` | replay path lookups fail / `subagent/CONTROL_*_UNAVAILABLE` | `0.1.2-alpha.3`: control-plane subagent paths use `brandString(x)` not `SessionId(x)`; keep `SessionId` for session construction, migrate `followup`/`interrupt`/`listChildren` auth paths |
+| `dsh-session-query` presence | `CONTINUATION_UNAVAILABLE` / `SUBAGENT_CONTROL_QUERY_UNAVAILABLE` on `followup`/`listChildren` | `0.1.2-alpha.3`: continuable cold-resume and listing now go through `sessionQuery`; mount `@deepseek-ai/dsh-session-query` on the shared ctx (`B["dsh:session-query"]`) or continuable subagents regress |
+| `SUBAGENT_DESCRIPTOR_VERSION 2→3` | cold resume ignores persisted reasoning effort / stale descriptor fold | `0.1.2-alpha.3`: v3 adds `agentReasoningEffort`; old logs fold with it `undefined` (no crash); new writes are v3 — no migration needed, but verify one cold-resume of a pre-bump session |
+| `code-mode → PTC mode` rename | literal `code-mode` filter / session-search misses | `0.1.2-alpha.3`: persisted vocabulary keeps alias; grep for literal `code-mode` strings before merging |
 | agent disposal | `cannot prepare session … while it is live` after clear | dispose via `Symbol.asyncDispose`/`Symbol.dispose` (not plain `.dispose`) |
 | tool `presentationMeta`/`meta` location | community toolview shows text not card | read `event.data.meta`, fall back to `resolvePresentationMeta` |
 | skill provider validators | "returned skill … with a non-string provider" | candidates/definitions must carry `provider === providerName`, `source`, `rank` |
-| `inject` gating | plugin backend never activates | ensure required services exist (`skills`, `fs`) before enrichment |
+| `inject` gating | plugin backend never activates | ensure required services exist (`skills`, `fs`, `sessionProjections`, `sessionQuery` in `0.1.2-alpha.3`) before enrichment |
 
 ### Fixtures that encode behavior (update together)
 - `electron/cordis/pi.live.test.ts` — JSONL persistence (not `chat_messages`),
