@@ -11,8 +11,9 @@ import { ProjectIcon } from "@/components/ProjectIcon";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
 import { ICON_SETTINGS } from "@/components/toolbar-icons";
-import { toolbarPress } from "@/haptics";
+import { haptics, toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
+import { requestSync } from "@/sync/controller";
 import { useTheme, elevation, type as typeScale } from "@/theme";
 
 export default function ProjectsScreen() {
@@ -34,6 +35,16 @@ export default function ProjectsScreen() {
     setLoaded(true);
   }, []);
   useRefreshOnFocus(load);
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    haptics.selection();
+    try {
+      await requestSync("pull-to-refresh");
+    } catch {}
+    load();
+    setTimeout(() => setRefreshing(false), 400);
+  }, [load]);
 
   const header = (
     <>
@@ -77,7 +88,7 @@ export default function ProjectsScreen() {
       <FlatList
         data={projects}
         keyExtractor={(p) => p.id}
-        refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={t.textTertiary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} />}
         contentContainerStyle={styles.list}
         contentInsetAdjustmentBehavior="automatic"
         renderItem={({ item }) => (

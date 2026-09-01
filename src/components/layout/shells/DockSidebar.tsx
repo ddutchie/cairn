@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useCallback } from "react";
-import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Bell, Activity, ChevronLeft } from "lucide-react";
+import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Bell, Activity, ChevronLeft, ChevronDown, ChevronRight, Check } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, getDueDateStatus } from "@/lib/utils";
@@ -12,6 +12,13 @@ import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import { ProjectCreateForm } from "../sidebar/ProjectCreateForm";
 import { useProjectMetrics } from "../project-overview/useProjectMetrics";
 import { useRadarAxes } from "../project-overview/radar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown";
 
 export function DockSidebar() {
   const {
@@ -35,6 +42,10 @@ export function DockSidebar() {
     notificationUnreadCount,
     notificationOpen,
     setNotificationOpen,
+    workspaceToolsCollapsed,
+    toggleWorkspaceToolsCollapsed,
+    conversationsCollapsed,
+    toggleConversationsCollapsed,
   } = useCairnStore(
     useShallow((s) => ({
       sidebarCollapsed: s.sidebarCollapsed,
@@ -57,12 +68,17 @@ export function DockSidebar() {
       notificationUnreadCount: s.notificationUnreadCount,
       notificationOpen: s.notificationOpen,
       setNotificationOpen: s.setNotificationOpen,
+      workspaceToolsCollapsed: s.workspaceToolsCollapsed,
+      toggleWorkspaceToolsCollapsed: s.toggleWorkspaceToolsCollapsed,
+      conversationsCollapsed: s.conversationsCollapsed,
+      toggleConversationsCollapsed: s.toggleConversationsCollapsed,
     }))
   );
 
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
   const projects = useMemo(() => (activeWorkspaceId ? allProjects.filter((p) => p.workspaceId === activeWorkspaceId) : []), [activeWorkspaceId, allProjects]);
   const openCounts = useMemo(() => countOpenCardsByProject(cards), [cards]);
+  const activeMetrics = useProjectMetrics(activeProjectId);
   const mod = useMemo(() => modKey(), []);
   const shortcutMap = useMemo(() => {
     const visible = [
@@ -111,13 +127,92 @@ export function DockSidebar() {
               <Layers size={16} />
             </button>
           </Tooltip>
-          {activeProjectId && (
-            <Tooltip content="Health" side="right">
-              <button aria-label="Project health" className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
-                <SidebarMiniRadar projectId={activeProjectId} size={20} bare />
-              </button>
-            </Tooltip>
-          )}
+          {(() => {
+            const activeProject = projects.find((p) => p.id === activeProjectId);
+            const label = activeProject?.name ?? "Switch project";
+            if (!activeProjectId && projects.length === 0) return null;
+            // Collapsed: radar doubles as project picker — hover shows project name, click opens switcher
+            if (!activeProjectId) {
+              return (
+                <DropdownMenu>
+                  <Tooltip content="Switch project" side="right">
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        aria-label="Switch project"
+                        className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                      >
+                        <Layers size={15} />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </Tooltip>
+                  <DropdownMenuContent side="right" align="start" className="w-56 max-h-64 overflow-y-auto">
+                    {projects.map((p) => (
+                      <DropdownMenuItem
+                        key={p.id}
+                        onSelect={() => { setActiveProject(p.id); setView("overview"); }}
+                        className={cn("flex items-center gap-2 text-xs", p.id === activeProjectId && "text-[var(--accent)]")}
+                      >
+                        <ProjectIcon name={p.icon} size={12} className="shrink-0" />
+                        <span className="truncate flex-1">{p.name}</span>
+                        <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
+                        {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        if (collapsed) toggleSidebar();
+                        setCreatingProject(true);
+                        setNewProjectName("");
+                      }}
+                      className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"
+                    >
+                      <Plus size={11} /> Create new project
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            }
+            return (
+              <DropdownMenu>
+                <Tooltip content={label} side="right">
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      aria-label={label}
+                      className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                    >
+                      <SidebarMiniRadar projectId={activeProjectId!} size={20} bare />
+                    </button>
+                  </DropdownMenuTrigger>
+                </Tooltip>
+                <DropdownMenuContent side="right" align="start" className="w-56 max-h-64 overflow-y-auto">
+                  {projects.map((p) => (
+                    <DropdownMenuItem
+                      key={p.id}
+                      onSelect={() => { setActiveProject(p.id); setView("overview"); }}
+                      className={cn("flex items-center gap-2 text-xs", p.id === activeProjectId && "text-[var(--accent)]")}
+                    >
+                      <ProjectIcon name={p.icon} size={12} className="shrink-0" />
+                      <span className="truncate flex-1">{p.name}</span>
+                      <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
+                      {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      if (collapsed) toggleSidebar();
+                      setCreatingProject(true);
+                      setNewProjectName("");
+                    }}
+                    className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"
+                  >
+                    <Plus size={11} /> Create new project
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          })()}
           <div className="w-5 h-px bg-[var(--border)] my-1" />
           <Tooltip content={`Search (${mod}K)`} side="right"><button aria-label="Search" onClick={toggleSearch} className={cn("p-2 rounded-md", searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Search size={15} /></button></Tooltip>
           {!hiddenViews.has("chat") && (
@@ -164,28 +259,143 @@ export function DockSidebar() {
             </Tooltip>
           </div>
 
-          {/* current project — title on its own row above open + radar to avoid compact crowding */}
+          {/* current project card — static overview (no dropdown) */}
           {(() => {
             const project = projects.find((p) => p.id === activeProjectId);
-            if (!project) return null;
+            if (!project) {
+              if (projects.length === 0) return null;
+              return (
+                <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-md bg-[var(--surface)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] shrink-0">
+                      <FolderOpen size={13} />
+                    </span>
+                    <span className="text-xs font-semibold truncate flex-1 text-[var(--text-secondary)]">No active project</span>
+                  </div>
+                  <div className="text-[0.688rem] leading-none text-[var(--text-tertiary)] mt-1.5 truncate">Select a project below</div>
+                </div>
+              );
+            }
             return (
-              <div className="mx-2 mt-2.5 p-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
-                <div className="flex items-center gap-1.5">
-                  <ProjectIcon name={project.icon} size={13} className="text-[var(--accent)] shrink-0" />
+              <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-sm">
+                <div className="flex items-center gap-2">
+                  <ProjectIcon name={project.icon} size={14} className="text-[var(--accent)] shrink-0" />
                   <span className="text-xs font-semibold leading-none truncate flex-1">{project.name}</span>
                 </div>
-                <div className="text-[0.688rem] leading-none text-[var(--text-tertiary)] mt-1 truncate">{project.description ?? "No description"}</div>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-[0.643rem] px-1.5 py-0.5 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] shrink-0 leading-none">{openCounts.get(project.id) ?? 0} open</span>
-                  <div className="ml-auto shrink-0">
-                    <SidebarMiniRadar projectId={project.id} size={52} bare />
-                  </div>
-                </div>
+                <div className="text-[0.688rem] leading-none text-[var(--text-tertiary)] mt-1.5 truncate">{project.description ?? "No description"}</div>
+                {(() => {
+                  const total = activeMetrics?.allCards.length ?? 0;
+                  const done = activeMetrics?.doneCards.length ?? 0;
+                  const pct = activeMetrics?.completionRate ?? 0;
+                  const open = activeMetrics?.openCards.length ?? openCounts.get(project.id) ?? 0;
+                  const bottleneck = (() => {
+                    if (!activeMetrics) return null;
+                    const doneId = activeMetrics.columns.find((c) => c.type === "done")?.id;
+                    let best: { name: string; count: number } | null = null;
+                    let max = -1;
+                    for (const col of activeMetrics.columns.filter((c) => c.id !== doneId)) {
+                      const cnt = activeMetrics.allCards.filter((c) => c.columnId === col.id).length;
+                      if (cnt > max) { max = cnt; best = { name: col.name, count: cnt }; }
+                    }
+                    return best && best.count > 0 ? best : null;
+                  })();
+                  if (total === 0) {
+                    return (
+                      <div className="flex items-center gap-3 mt-2">
+                        <div className="flex-1 min-w-0 text-[0.643rem] text-[var(--text-tertiary)]">No tasks yet</div>
+                        <div className="shrink-0">
+                          <SidebarMiniRadar projectId={project.id} size={44} bare />
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex items-center gap-3 mt-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
+                          <div className="h-full rounded-full bg-[var(--accent)] transition-all duration-500" style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="flex items-center gap-1 mt-1.5 text-[0.643rem] leading-none truncate">
+                          <span className="font-mono font-semibold text-[var(--text-primary)] tabular-nums">{done} / {total}</span>
+                          <span className="text-[var(--text-tertiary)] truncate">· {pct}% · {open} open</span>
+                        </div>
+                        {bottleneck && (
+                          <div className="mt-1 text-[0.643rem] leading-none italic truncate" style={{ fontFamily: "var(--font-display)", color: "var(--accent)" }}>
+                            {bottleneck.name.toLowerCase()} holds {bottleneck.count}
+                          </div>
+                        )}
+                      </div>
+                      <div className="shrink-0">
+                        <SidebarMiniRadar projectId={project.id} size={44} bare />
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}
 
-          {/* scrollable: Views + Conversations + Projects */}
+          {/* Project switcher — sidebar section like Views */}
+          {projects.length > 0 && (
+            <div className="px-2 mt-3">
+              <div className="text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Project</div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2 w-full rounded-lg px-2.5 py-2 bg-[var(--surface-2)] border border-[var(--border)] shadow-sm hover:border-[var(--muted)] hover:bg-[var(--surface-3)] transition-colors text-left group">
+                    {(() => {
+                      const active = projects.find((p) => p.id === activeProjectId);
+                      return (
+                        <>
+                          <ProjectIcon name={active?.icon} size={14} className="text-[var(--accent)] shrink-0" />
+                          <span className="text-xs font-medium truncate flex-1 text-[var(--text-primary)]">{active?.name ?? "Select project"}</span>
+                          <span className="w-6 h-6 rounded-md bg-[var(--surface)] border border-[var(--border)] grid place-items-center group-hover:bg-[var(--surface-2)] group-hover:border-[var(--muted)] transition-colors shrink-0">
+                            <ChevronDown size={12} className="text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)] transition-colors" />
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="bottom" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+                  {projects.map((p) => (
+                    <DropdownMenuItem
+                      key={p.id}
+                      onSelect={() => { setActiveProject(p.id); setView("overview"); }}
+                      className={cn("flex items-center gap-2 text-xs", p.id === activeProjectId && "text-[var(--accent)]")}
+                    >
+                      <ProjectIcon name={p.icon} size={12} className="shrink-0" />
+                      <span className="truncate flex-1">{p.name}</span>
+                      <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
+                      {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => { setCreatingProject(true); setNewProjectName(""); }}
+                    className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"
+                  >
+                    <Plus size={11} /> Create new project
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+
+          {/* Inline project creation — shown when triggered from Project switcher */}
+          {creatingProject && (
+            <div className="mx-2 mt-2 px-2">
+              <ProjectCreateForm value={newProjectName} onChange={setNewProjectName} onCommit={commitCreateProject} onCancel={cancelCreateProject} />
+            </div>
+          )}
+          {projects.length === 0 && !creatingProject && (
+            <div className="mx-2 mt-2 p-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] text-center">
+              <FolderOpen size={16} className="mx-auto mb-1.5 text-[var(--text-tertiary)]" />
+              <p className="text-xs text-[var(--text-tertiary)]">No projects yet</p>
+              <button onClick={() => setCreatingProject(true)} className="mt-2 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-dim)] px-2 py-1 rounded transition-colors">Create one</button>
+            </div>
+          )}
+
+          {/* scrollable: Views + Conversations */}
           <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 min-h-0">
             <div>
               <div className="text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Views</div>
@@ -199,69 +409,90 @@ export function DockSidebar() {
               </div>
             </div>
 
-            {/* Conversations — between Views and Workspace */}
+            {/* Conversations — collapsible, like Views (no double label) */}
             {activeProjectId && (
               <div>
-                <div className="text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Conversations</div>
-                <SessionBrowser projectId={activeProjectId} variant="project" activeSessionId={activeSessionId} />
+                <button
+                  onClick={toggleConversationsCollapsed}
+                  aria-expanded={!conversationsCollapsed}
+                  aria-controls="dock-conversations"
+                  className="flex items-center gap-1.5 w-full px-2 py-1 text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                >
+                  {conversationsCollapsed ? <ChevronRight size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />}
+                  <span>Conversations</span>
+                </button>
+                <div
+                  id="dock-conversations"
+                  className={cn(
+                    "grid transition-[grid-template-rows,opacity] duration-200 ease-in-out",
+                    conversationsCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
+                  )}
+                >
+                  <div className="overflow-hidden">
+                    <div className="pt-1 px-1">
+                      <SessionBrowser projectId={activeProjectId} variant="project" activeSessionId={activeSessionId} inline />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
-            <div>
-              <div className="flex items-center justify-between px-2 mb-1.5">
-                <span className="text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)]">Projects</span>
-                <Tooltip content="New project">
-                  <button onClick={() => { setCreatingProject(true); setNewProjectName(""); }} className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
-                    <Plus size={12} />
+          </nav>
+
+          {/* Workspace tools — collapsible pin (Automations → Notifications), Settings stays pinned */}
+          <div className="border-t border-[var(--border)] flex-shrink-0 bg-[var(--surface)]">
+            {/* Collapsible header */}
+            <button
+              onClick={toggleWorkspaceToolsCollapsed}
+              aria-expanded={!workspaceToolsCollapsed}
+              aria-controls="dock-workspace-tools"
+              className="flex items-center gap-1.5 w-full px-2.5 py-2 text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+            >
+              {workspaceToolsCollapsed ? <ChevronRight size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />}
+              <span>Workspace</span>
+              {workspaceToolsCollapsed && notificationUnreadCount > 0 && (
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" aria-hidden="true" />
+              )}
+              {/* hidden count for a11y when collapsed */}
+              {workspaceToolsCollapsed && notificationUnreadCount > 0 && (
+                <span className="sr-only">{notificationUnreadCount} unread notifications</span>
+              )}
+            </button>
+
+            {/* Collapsible body: Automations → Notifications */}
+            <div
+              id="dock-workspace-tools"
+              className={cn(
+                "grid transition-[grid-template-rows,opacity] duration-200 ease-in-out",
+                workspaceToolsCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
+              )}
+            >
+              <div className="overflow-hidden">
+                <div className="px-2 pb-2 space-y-0.5">
+                  {/* Automations — prominent, above workspace views */}
+                  <button onClick={() => setView("automations")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+                    <Zap size={13} /><span>Automations</span>
                   </button>
-                </Tooltip>
-              </div>
-              <div className="space-y-0.5">
-                {projects.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => { setActiveProject(p.id); setView("overview"); }}
-                    className={cn("flex items-center gap-2 w-full px-2.5 py-1 rounded-md text-xs", p.id === activeProjectId ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]")}
-                  >
-                    <ProjectIcon name={p.icon} size={12} className="text-[var(--text-tertiary)]" />
-                    <span className="truncate flex-1 text-left">{p.name}</span>
-                    <span className="text-[0.643rem] font-mono">{openCounts.get(p.id) ?? 0}</span>
+                  <div className="my-1.5 border-t border-[var(--border-subtle)]" />
+                  <button onClick={() => setView("calendar-all")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "calendar-all" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+                    <CalendarDays size={13} /><span>Calendar</span><span className="ml-auto text-[0.643rem] text-[var(--text-tertiary)]">all</span>
                   </button>
-                ))}
-                {creatingProject && (
-                  <ProjectCreateForm value={newProjectName} onChange={setNewProjectName} onCommit={commitCreateProject} onCancel={cancelCreateProject} />
-                )}
-                {projects.length === 0 && !creatingProject && (
-                  <div className="px-2 py-4 text-center">
-                    <FolderOpen size={16} className="mx-auto mb-1 text-[var(--text-tertiary)]" />
-                    <p className="text-xs text-[var(--text-tertiary)]">No projects yet</p>
-                    <button onClick={() => setCreatingProject(true)} className="mt-1 text-xs text-[var(--accent)] hover:bg-[var(--accent-dim)] px-2 py-0.5 rounded">Create one</button>
-                  </div>
-                )}
+                  {!hiddenViews.has("graph") && <button onClick={() => setView("graph")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "graph" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={13} /><span>Knowledge Graph</span></button>}
+                  {!hiddenViews.has("insights") && <button onClick={() => setView("insights")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "insights" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={13} /><span>Insights</span></button>}
+                  {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "usage" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}
+                  <button onClick={() => setNotificationOpen(!notificationOpen)} data-notification-toggle aria-expanded={notificationOpen} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+                    <Bell size={13} /><span>Notifications</span>
+                    {notificationUnreadCount > 0 && <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">{notificationUnreadCount}</span>}
+                  </button>
+                </div>
               </div>
             </div>
 
-          </nav>
-
-          {/* Workspace — pinned to bottom like original sidebar (border-t, not scrollable) */}
-          <div className="border-t border-[var(--border)] p-2 space-y-0.5 flex-shrink-0 bg-[var(--surface)]">
-            {/* Automations — prominent, above workspace views */}
-            <button onClick={() => setView("automations")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "automations" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-              <Zap size={13} /><span>Automations</span>
-            </button>
-            <div className="my-1.5 border-t border-[var(--border-subtle)]" />
-            <button onClick={() => setView("calendar-all")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "calendar-all" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-              <CalendarDays size={13} /><span>Calendar</span><span className="ml-auto text-[0.643rem] text-[var(--text-tertiary)]">all</span>
-            </button>
-            {!hiddenViews.has("graph") && <button onClick={() => setView("graph")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "graph" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={13} /><span>Knowledge Graph</span></button>}
-            {!hiddenViews.has("insights") && <button onClick={() => setView("insights")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "insights" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={13} /><span>Insights</span></button>}
-            {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors", activeView === "usage" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}
-            <button onClick={() => setNotificationOpen(!notificationOpen)} data-notification-toggle aria-expanded={notificationOpen} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-              <Bell size={13} /><span>Notifications</span>
-              {notificationUnreadCount > 0 && <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">{notificationUnreadCount}</span>}
-            </button>
-            <div className="my-1.5 border-t border-[var(--border-subtle)]" />
-            <button onClick={() => setView("settings")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "settings" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Settings size={13} /> Settings</button>
+            {/* Settings — always visible, outside collapsible */}
+            <div className="px-2 pb-2">
+              <div className="my-1.5 border-t border-[var(--border-subtle)]" />
+              <button onClick={() => setView("settings")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", activeView === "settings" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Settings size={13} /> Settings</button>
+            </div>
           </div>
         </div>
       </aside>

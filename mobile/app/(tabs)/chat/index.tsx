@@ -5,10 +5,8 @@ import {
   Pressable,
   StyleSheet,
   Alert,
-  ActionSheetIOS,
-  Platform,
-} from "react-native";
-import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea } from "react-native-keyboard-controller";
+ useWindowDimensions } from "react-native";
+import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Settings2 } from "lucide-react-native";
@@ -18,7 +16,6 @@ import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
-import { pickImages, takePhoto } from "@/chat/attachments";
 import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, recordChatUsage, type ToolCall } from "@/db/chat-store";
 import { redactValue } from "@cairn/shared/chat/redaction";
 import { hasProvider, resolveProvider } from "@/chat/providers";
@@ -34,10 +31,14 @@ import { extractExternalRef } from "@cairn/shared/chat/external-ref";
 import { loadInitialChat, type UiMessage } from "@/chat/history";
 import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
-import { Composer } from "@/components/chat/Composer";
+import { CairnMorphComposer } from "@/components/chat/CairnMorphComposer";
+import { CairnAttachmentHost, type CairnAttachmentHostHandle } from "@/components/chat/attachment-panel/CairnAttachmentHost";
 import { ChatPatternOverlay } from "@/components/chat/ChatPatternOverlay";
 import { safeToolOutput } from "@/chat/tool-output";
 import { fetchManifest } from "@/chat/registry";
+import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
@@ -103,19 +104,34 @@ export default function ChatScreen() {
   const [, setRegistryRevision] = useState(0);
 
   // All keyboard/scroll choreography (resume repaint, follow-end, composer
-  // height → transcript padding, attach-menu counter-transform).
+  // height → transcript padding).
   const {
     scrollRef,
     resumeKey,
     nearBottom,
     offset,
     extraContentPadding,
-    attachCounterStyle,
     closedLift,
     setComposerH,
     followEnd,
     scrollToEndSoon,
   } = useChatScroll(messages.length);
+
+  // Morph composer springs (strip + plusOut) + attachment host
+  const strip = useSharedValue(0);
+  const plusOut = useSharedValue(0);
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const keyboard = useReanimatedKeyboardAnimation();
+  const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap), [height, insets.bottom]);
+  const hostRef = useRef<CairnAttachmentHostHandle>(null);
+  const composerInputRef = useRef<import("react-native").TextInput>(null);
+  useEffect(() => {
+    strip.set(withSpring(attachments.length > 0 ? 1 : 0, SPRING.strip));
+  }, [attachments.length, strip]);
+  const onAddAttachments = useCallback((atts: Attachment[]) => {
+    setAttachments((prev) => [...prev, ...atts].slice(0, 8));
+  }, []);
 
   // Whether any AI provider is usable (built-in Rork or a configured OpenAI
   // key). Re-checked whenever the chat screen regains focus — e.g. after the
@@ -329,52 +345,11 @@ export default function ChatScreen() {
     setQueued((prev) => prev.filter((q) => q.id !== qid));
   }, []);
 
-  const addImages = useCallback(async () => {
-    try {
-      const picked = await pickImages();
-      if (picked.length === 0) return;
-      setAttachments((prev) => [...prev, ...picked].slice(0, 4));
-    } catch (e) {
-      Alert.alert("Couldn't add image", e instanceof Error ? e.message : String(e));
-    }
-  }, []);
-
-  const capturePhoto = useCallback(async () => {
-    try {
-      const shot = await takePhoto();
-      if (shot.length === 0) return;
-      setAttachments((prev) => [...prev, ...shot].slice(0, 4));
-    } catch (e) {
-      Alert.alert("Couldn't take photo", e instanceof Error ? e.message : String(e));
-    }
-  }, []);
-
-  // Opens the "add image" chooser. Uses the native iOS action sheet (matches the
-  // system look of the old SwiftUI glass menu) and falls back to an Alert
-  // elsewhere. Deliberately NOT a SwiftUI menu Host: the composer rides the
-  // keyboard via KeyboardStickyView's transform, and a native Host anchored in
-  // window coords jumps out of place once its menu re-measures — a plain RN
-  // Pressable trigger tracks the transform exactly like the send button does.
-  const onAttach = useCallback(() => {
-    haptics.selection();
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: ["Photo Library", "Take Photo", "Cancel"], cancelButtonIndex: 2, title: "Add image" },
-        (i) => {
-          if (i === 0) void addImages();
-          else if (i === 1) void capturePhoto();
-        },
-      );
-      return;
-    }
-    Alert.alert("Add image", undefined, [
-      { text: "Photo Library", onPress: addImages },
-      { text: "Take Photo", onPress: capturePhoto },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  }, [addImages, capturePhoto]);
-
   const removeAttachment = useCallback((idx: number) => setAttachments((prev) => prev.filter((_, i) => i !== idx)), []);
+  const onPlusPress = useCallback(() => {
+    haptics.selection();
+    hostRef.current?.toggle();
+  }, []);
 
   const onClear = useCallback(() => {
     if (messages.length === 0 || busy) return;
@@ -537,25 +512,32 @@ export default function ChatScreen() {
           </EmptyState>
         ) : null}
 
-        <Composer
+        <CairnMorphComposer
+          ref={composerInputRef}
           input={input}
           onChangeInput={setInput}
           attachments={attachments}
-          onRemoveAttachment={removeAttachment}
+          pendingIds={[]}
+          strip={strip}
+          plusOut={plusOut}
+          onPlusPress={onPlusPress}
+          onRemove={removeAttachment}
           busy={busy}
           canSend={canSend}
           onSend={send}
-          // Mark intent to follow the latest message; the actual lift above the
-          // keyboard is handled natively by KeyboardChatScrollView.
           onInputFocus={followEnd}
-          onAddImages={addImages}
-          onCapturePhoto={capturePhoto}
-          onAttachFallback={onAttach}
-          attachCounterStyle={attachCounterStyle}
           closedLift={closedLift}
           onLayoutHeight={setComposerH}
           allowImages={allowImages}
           queuedCount={queued.length}
+        />
+        <CairnAttachmentHost
+          ref={hostRef}
+          strip={strip}
+          plusOut={plusOut}
+          composerBottom={composerBottom}
+          existingCount={attachments.length}
+          onAddAttachments={onAddAttachments}
         />
       </View>
     </TabScreen>

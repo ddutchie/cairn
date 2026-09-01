@@ -100,10 +100,15 @@ export function switchSource(workspaceId: string): void {
 /**
  * Run one sync. Coalesces concurrent requests: if a sync is already running,
  * we flag a re-run so the latest local writes still get flushed afterwards.
+ * Callers that hit the in-flight window await the full chain (including any
+ * queued rerun) so a pull-to-refresh can reload only after the rerun lands.
  */
 export async function requestSync(_reason: string = "manual"): Promise<void> {
   if (inFlight) {
     pendingRerun = true;
+    while (inFlight || pendingRerun) {
+      await new Promise<void>((r) => setTimeout(r, 30));
+    }
     return;
   }
   inFlight = true;
@@ -131,7 +136,7 @@ export async function requestSync(_reason: string = "manual"): Promise<void> {
     // sync that finishes after stopAutoSync() would resurrect work post-teardown.
     if (pendingRerun && started) {
       pendingRerun = false;
-      void requestSync("rerun");
+      await requestSync("rerun");
     } else {
       pendingRerun = false;
     }

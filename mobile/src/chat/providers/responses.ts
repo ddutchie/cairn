@@ -140,7 +140,7 @@ function makeResponsesStreamer(config: OpenAIConfig) {
           const trimmed = line.trim();
           if (!trimmed.startsWith("data:")) continue;
           const payload = trimmed.slice(5).trim();
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           let evt: any;
           try {
             evt = JSON.parse(payload);
@@ -231,7 +231,7 @@ function makeResponsesStreamer(config: OpenAIConfig) {
                 cacheReadTokens = usage.input_tokens_details.cached_tokens;
               }
               // Capture reasoning items for round-trip before finishing.
-              const reasoningItems: Array<Record<string, unknown>> = [];
+              const reasoningItems: Record<string, unknown>[] = [];
               const output = resp.output;
               if (Array.isArray(output)) {
                 for (const item of output) {

@@ -1,17 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, AccessibilityInfo } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-  runOnJS,
-} from "react-native-reanimated";
-import { CheckCircle2, Info, AlertTriangle, XCircle, type LucideIcon } from "lucide-react-native";
-import { useTheme, withAlpha, elevation, type as typeScale, iconSize, TAB_BAR_BASE, type Theme } from "@/theme";
+import { AccessibilityInfo } from "react-native";
 import { haptics } from "@/haptics";
 import { ConfettiHost } from "@/components/Confetti";
+import { StackToast } from "./StackToast";
 
 /**
  * Lightweight toast / snackbar system — Cairn had none, so reward moments (task
@@ -37,10 +28,14 @@ export interface ToastOptions {
   variant?: ToastVariant;
   /** Optional smaller line under the message (e.g. a streak count). */
   detail?: string;
-  /** Auto-dismiss delay in ms. Default 2400. */
+  /** Auto-dismiss delay in ms. Default 3000. */
   durationMs?: number;
   /** Fire the variant's haptic. Default true. */
   haptic?: boolean;
+  /** Optional action label (e.g. "Undo"). Requires onActionPress. */
+  actionText?: string;
+  /** Handler for the optional action. */
+  onActionPress?: () => void;
 }
 
 interface ToastApi {
@@ -57,6 +52,9 @@ interface ToastState {
   variant: ToastVariant;
   detail?: string;
   durationMs: number;
+  exiting?: boolean;
+  actionText?: string;
+  onActionPress?: () => void;
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -82,13 +80,6 @@ export function useToast(): ToastApi {
   return ctx;
 }
 
-const VARIANT_ICON: Record<ToastVariant, LucideIcon> = {
-  success: CheckCircle2,
-  info: Info,
-  warning: AlertTriangle,
-  error: XCircle,
-};
-
 /** Which haptic fires per toast variant ("info" has no notification style → a
  *  subtle impact). */
 const VARIANT_HAPTIC: Record<ToastVariant, () => void> = {
@@ -98,35 +89,39 @@ const VARIANT_HAPTIC: Record<ToastVariant, () => void> = {
   error: haptics.error,
 };
 
-function variantColor(t: Theme, v: ToastVariant): string {
-  switch (v) {
-    case "success": return t.success;
-    case "warning": return t.warning;
-    case "error": return t.danger;
-    default: return t.info;
-  }
-}
-
-const DEFAULT_DURATION = 2400;
+const DEFAULT_DURATION = 3000;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<ToastState | null>(null);
+  const [toasts, setToasts] = useState<ToastState[]>([]);
   const seq = useRef(0);
 
   const show = useCallback((message: string, opts?: ToastOptions) => {
     const variant = opts?.variant ?? "info";
     if (opts?.haptic !== false) VARIANT_HAPTIC[variant]();
+    AccessibilityInfo.announceForAccessibility(opts?.detail ? `${message}. ${opts.detail}` : message);
     seq.current += 1;
-    setState({
-      id: seq.current,
-      message,
-      variant,
-      detail: opts?.detail,
-      durationMs: opts?.durationMs ?? DEFAULT_DURATION,
-    });
+    setToasts((prev) => [
+      ...prev,
+      {
+        id: seq.current,
+        message,
+        variant,
+        detail: opts?.detail,
+        durationMs: opts?.durationMs ?? DEFAULT_DURATION,
+        actionText: opts?.actionText,
+        onActionPress: opts?.onActionPress,
+      },
+    ]);
   }, []);
 
-  // `show` is stable (empty-dep useCallback), so the api object is built once.
+  const handleDismissStart = useCallback((id: number) => {
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
+  }, []);
+
+  const handleDismissed = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const api = useMemo<ToastApi>(
     () => ({
       show,
@@ -145,119 +140,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     };
   }, [show]);
 
-  const clear = useCallback(() => setState(null), []);
-
   return (
     <ToastContext.Provider value={api}>
       {children}
-      {state ? <ToastCard key={state.id} state={state} onDone={clear} /> : null}
+      {toasts.map((toastEntry) => (
+        <StackToast
+          key={toastEntry.id}
+          toast={toastEntry}
+          index={toasts.filter((t) => !t.exiting && t.id > toastEntry.id).length}
+          onDismissStart={handleDismissStart}
+          onDismissed={handleDismissed}
+        />
+      ))}
       <ConfettiHost />
     </ToastContext.Provider>
   );
 }
-
-/**
- * The animated toast surface. Springs up + fades in on mount, auto-dismisses
- * after `durationMs`, then fades/slides out and calls `onDone` to unmount. A
- * fresh toast remounts this (keyed on id), so replacing the current toast
- * restarts the animation cleanly.
- */
-function ToastCard({ state, onDone }: { state: ToastState; onDone: () => void }) {
-  const t = useTheme();
-  const insets = useSafeAreaInsets();
-  const opacity = useSharedValue(0);
-  const translateY = useSharedValue(24);
-
-  useEffect(() => {
-    opacity.value = withTiming(1, { duration: 180 });
-    translateY.value = withSpring(0, { damping: 16, stiffness: 240, mass: 0.5 });
-
-    // The toast is pointerEvents="none" and purely visual, so announce it to
-    // screen readers (VoiceOver / TalkBack) — otherwise its message is silent
-    // for assistive-tech users.
-    AccessibilityInfo.announceForAccessibility(
-      state.detail ? `${state.message}. ${state.detail}` : state.message,
-    );
-
-    const timer = setTimeout(() => {
-      opacity.value = withTiming(0, { duration: 200 });
-      translateY.value = withTiming(16, { duration: 200 }, (finished) => {
-        if (finished) runOnJS(onDone)();
-      });
-    }, state.durationMs);
-
-    return () => clearTimeout(timer);
-    // Animation is driven once per mount (component is keyed on toast id).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
-  }));
-
-  const color = variantColor(t, state.variant);
-  const Icon = VARIANT_ICON[state.variant];
-  // Rest above the native tab bar / home indicator (see theme.ts note: the
-  // reported bottom inset already includes the tab bar on tab screens).
-  const bottom = TAB_BAR_BASE + insets.bottom * 0.5 + 12;
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[styles.wrap, { bottom }, animStyle]}
-    >
-      <View
-        style={[
-          styles.card,
-          elevation.lg,
-          { backgroundColor: t.surface2, borderColor: withAlpha(color, 0.5) },
-        ]}
-      >
-        <View style={[styles.iconWrap, { backgroundColor: withAlpha(color, 0.16) }]}>
-          <Icon size={iconSize.control} color={color} />
-        </View>
-        <View style={styles.textCol}>
-          <Text style={[styles.message, { color: t.textPrimary }]} numberOfLines={2}>
-            {state.message}
-          </Text>
-          {state.detail ? (
-            <Text style={[styles.detail, { color: t.textSecondary }]} numberOfLines={1}>
-              {state.detail}
-            </Text>
-          ) : null}
-        </View>
-      </View>
-    </Animated.View>
-  );
-}
-
-const styles = StyleSheet.create({
-  wrap: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    alignItems: "center",
-    zIndex: 2000,
-  },
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    maxWidth: 420,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  iconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  textCol: { flexShrink: 1 },
-  message: { ...typeScale.control, fontWeight: "600" },
-  detail: { ...typeScale.caption, marginTop: 2 },
-});

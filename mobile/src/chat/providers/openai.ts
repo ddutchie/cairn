@@ -27,7 +27,7 @@ import { fetchProvidersManifest, getRegistryProviders } from "../providers-regis
 import { contextLimitForModel } from "../models-dev";
 import { estimatePromptTokens } from "../token-breakdown";
 import { countTextTokens } from "../tokens";
-import { buildChatCompletionsBody, mapMessage, mapTools } from "./openai-body";
+import { buildChatCompletionsBody } from "./openai-body";
 import {
   type AiTool,
   type ChatProvider,

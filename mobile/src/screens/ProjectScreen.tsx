@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps -- stable callbacks, intentional */
 import { useCallback, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
@@ -33,6 +34,7 @@ import { OverviewTab } from "@/components/overview/OverviewTab";
 import { EmptyState } from "@/components/EmptyState";
 import { celebrateTaskDone, isDoneColumn } from "@/gamification/rewards";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
+import { requestSync } from "@/sync/controller";
 import { useTheme, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 import { NoteRowItem } from "./project/NoteRowItem";
@@ -111,14 +113,19 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 
   useRefreshOnFocus(load);
 
-  // Pull-to-refresh on the Overview tab. load() is synchronous (local SQLite),
-  // so hold the spinner briefly for tactile feedback rather than flashing it off
-  // instantly. A short delay also lets any in-flight background sync settle.
-  const onRefresh = useCallback(() => {
+  // Pull-to-refresh on Overview — now forces an oplog sync (was local-only).
+  // We keep the spinner up until the sync settles, then reload from SQLite so
+  // inbound peer ops are visible. Short delay still gives haptic feedback.
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     haptics.selection();
+    try {
+      await requestSync("pull-to-refresh");
+    } catch {
+      /* offline — still reload local state */
+    }
     load();
-    setTimeout(() => setRefreshing(false), 500);
+    setTimeout(() => setRefreshing(false), 400);
   }, [load]);
 
   // A single stable note-open handler built from the (stable) href builder, so
