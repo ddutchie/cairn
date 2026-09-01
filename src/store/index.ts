@@ -19,7 +19,7 @@ import type {
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite, isAiNoteWrite } from "./ipc";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY } from "@/lib/constants";
 import { ipcAwaitResult } from "./ipc";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
@@ -283,6 +283,16 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   const savedOverviewSections = storage.get<Record<string, boolean>>(OVERVIEW_COLLAPSED_KEY);
   if (savedOverviewSections && typeof savedOverviewSections === "object") {
     set({ overviewCollapsedSections: savedOverviewSections });
+  }
+
+  const savedWorkspaceCollapsed = storage.get<boolean>(DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY);
+  if (typeof savedWorkspaceCollapsed === "boolean") {
+    set({ workspaceToolsCollapsed: savedWorkspaceCollapsed });
+  }
+
+  const savedConversationsCollapsed = storage.get<boolean>(DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY);
+  if (typeof savedConversationsCollapsed === "boolean") {
+    set({ conversationsCollapsed: savedConversationsCollapsed });
   }
 
   const isDev = typeof process !== "undefined" && (process.env as unknown as { NODE_ENV?: string })?.NODE_ENV === "development";

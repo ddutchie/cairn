@@ -7,7 +7,7 @@ import type { CairnStore } from "../index";
 import type { ContextPanel, ID, AppUIState, SessionPresentation, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
 import { id as genId } from "@/lib/utils";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY } from "@/lib/constants";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
 import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, manifestToChatThemes, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
@@ -788,6 +788,16 @@ export interface UISlice extends AppUIState {
   notificationOpen: boolean;
   setNotificationOpen: (open: boolean) => void;
 
+  /** Dock sidebar workspace tools collapsed (Automations → Notifications). Global, persisted, default expanded. */
+  workspaceToolsCollapsed: boolean;
+  toggleWorkspaceToolsCollapsed: () => void;
+  setWorkspaceToolsCollapsed: (collapsed: boolean) => void;
+
+  /** Dock sidebar conversations collapsed. Global, persisted, default expanded. */
+  conversationsCollapsed: boolean;
+  toggleConversationsCollapsed: () => void;
+  setConversationsCollapsed: (collapsed: boolean) => void;
+
   /** Shell chrome preview variant (persisted, dev preview). */
   shellVariant: ShellVariant;
   setShellVariant: (v: ShellVariant) => void;
@@ -816,6 +826,8 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   calendarProjectIds: [],
   seenFeatures: [],  tutorialActive: false,
   tutorialStepIndex: 0,
+  workspaceToolsCollapsed: false,
+  conversationsCollapsed: false,
   shellVariant: "A" as ShellVariant,
 
   aiConfig: DEFAULT_AI_CONFIG,
@@ -1292,6 +1304,30 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   setNotificationOpen(open) {
     set({ notificationOpen: open });
+  },
+
+  toggleWorkspaceToolsCollapsed() {
+    set((s) => {
+      const next = !s.workspaceToolsCollapsed;
+      storage.set(DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, next);
+      return { workspaceToolsCollapsed: next };
+    });
+  },
+  setWorkspaceToolsCollapsed(collapsed) {
+    set({ workspaceToolsCollapsed: collapsed });
+    storage.set(DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, collapsed);
+  },
+
+  toggleConversationsCollapsed() {
+    set((s) => {
+      const next = !s.conversationsCollapsed;
+      storage.set(DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, next);
+      return { conversationsCollapsed: next };
+    });
+  },
+  setConversationsCollapsed(collapsed) {
+    set({ conversationsCollapsed: collapsed });
+    storage.set(DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, collapsed);
   },
 
   setShellVariant(v) {

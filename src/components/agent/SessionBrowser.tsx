@@ -15,6 +15,8 @@ interface SessionBrowserProps {
   projectId?: string;
   variant?: "dropdown" | "preview" | "project";
   limit?: number;
+  /** When true, render only the list (no trigger pill) — used inside a parent collapsible section. */
+  inline?: boolean;
 }
 
 function matchesQuery(session: SessionSummary, query: string): boolean {
@@ -27,7 +29,7 @@ function sanitizeAriaId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
-export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown", limit = 5 }: SessionBrowserProps) {
+export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown", limit = 5, inline = false }: SessionBrowserProps) {
   const {
     chatThreads,
     chatMessages,
@@ -239,6 +241,70 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   const projectNav = variant === "project";
   const currentKind = projectNav ? "chat" : active?.kind;
   const sanitizedListboxId = sanitizeAriaId(listboxId);
+
+  // Inline mode — used when the parent already provides a collapsible header
+  // (e.g. DockSidebar Conversations). Render only the search + list, no trigger pill,
+  // so we don't get a double "Conversations" label.
+  if (inline) {
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1.5 rounded-md bg-[var(--surface-2)] px-2 py-1">
+          <Search size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && query.trim() !== "") {
+                e.preventDefault();
+                setQuery("");
+                return;
+              }
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
+                e.preventDefault();
+                const options = listboxRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
+                if (!options || options.length === 0) return;
+                if (e.key === "ArrowDown") options[0]?.focus();
+                else options[options.length - 1]?.focus();
+              }
+            }}
+            placeholder="Search conversations"
+            className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+          />
+          {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"><X size={11} /></button>}
+        </div>
+        <div
+          ref={listboxRef}
+          id={sanitizedListboxId}
+          role="listbox"
+          aria-label="Conversations"
+          aria-orientation="vertical"
+          tabIndex={-1}
+          onKeyDown={handleListboxKeyDown}
+          className="flex-1 min-h-0 overflow-y-auto pb-1 space-y-0.5"
+        >
+          {visibleSessions.length === 0 ? (
+            <p className="px-2 py-2 text-center text-[0.714rem] text-[var(--text-tertiary)]">No conversations yet</p>
+          ) : visibleSessions.map((session, index) => {
+            const selected = active?.id === session.id;
+            const hasActive = !!active;
+            return (
+              <SessionRow
+                key={session.id}
+                session={session}
+                selected={selected}
+                running={isRunning(session)}
+                tabIndex={selected ? 0 : !hasActive && index === 0 ? 0 : -1}
+                onSelect={() => void selectSession(session)}
+                onRemove={(event) => removeSession(event, session)}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={rootRef}

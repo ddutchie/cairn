@@ -160,3 +160,9 @@ export const NOTE_EDITOR_MODE_KEY = "noteEditorMode";
 
 /** localStorage key for whether Live Preview is on within Edit mode. */
 export const NOTE_LIVE_PREVIEW_KEY = "noteLivePreview";
+
+/** localStorage key for the dock sidebar workspace tools collapsed state (Automations → Notifications). */
+export const DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY = "dockSidebarWorkspaceCollapsed";
+
+/** localStorage key for the dock sidebar conversations collapsed state. */
+export const DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY = "dockSidebarConversationsCollapsed";

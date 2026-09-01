@@ -718,7 +718,7 @@ export function ProjectOverview() {
                 {instrumentTotal > 0 ? `${instrumentDone} done · ${openCards.length} open` : "No tasks yet"}
               </div>
             </div>
-            <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]/60">
+            <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--info)]" />
               <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">Knowledge</div>
               <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
@@ -729,7 +729,7 @@ export function ProjectOverview() {
                 {pinnedNotes.length} pinned{notes.length > 0 && recentNotes[0] && <span> · {formatRelative(recentNotes[0].updatedAt)}</span>}
               </div>
             </div>
-            <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]/60">
+            <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--warning)]" />
               <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">
                 Bottleneck
@@ -747,7 +747,7 @@ export function ProjectOverview() {
           {/* ── attention queue — filtered by Focus, honest empty states ── */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4" role="list" aria-label="Needs attention">
             {(focus === "pinned" ? [] : filteredQueue).length === 0 ? (
-              <div className="md:col-span-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-2)]/60 p-4 flex items-center gap-3">
+              <div className="md:col-span-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] shadow-sm p-4 flex items-center gap-3">
                 <span className="w-8 h-8 rounded-full grid place-items-center bg-[var(--success)]/15 text-[var(--success)] border border-[var(--success)]/20">
                   <Kanban size={14} />
                 </span>
