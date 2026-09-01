@@ -78,6 +78,7 @@ export function DockSidebar() {
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
   const projects = useMemo(() => (activeWorkspaceId ? allProjects.filter((p) => p.workspaceId === activeWorkspaceId) : []), [activeWorkspaceId, allProjects]);
   const openCounts = useMemo(() => countOpenCardsByProject(cards), [cards]);
+  const activeMetrics = useProjectMetrics(activeProjectId);
   const mod = useMemo(() => modKey(), []);
   const shortcutMap = useMemo(() => {
     const visible = [
@@ -126,13 +127,92 @@ export function DockSidebar() {
               <Layers size={16} />
             </button>
           </Tooltip>
-          {activeProjectId && (
-            <Tooltip content="Health" side="right">
-              <button aria-label="Project health" className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
-                <SidebarMiniRadar projectId={activeProjectId} size={20} bare />
-              </button>
-            </Tooltip>
-          )}
+          {(() => {
+            const activeProject = projects.find((p) => p.id === activeProjectId);
+            const label = activeProject?.name ?? "Switch project";
+            if (!activeProjectId && projects.length === 0) return null;
+            // Collapsed: radar doubles as project picker — hover shows project name, click opens switcher
+            if (!activeProjectId) {
+              return (
+                <DropdownMenu>
+                  <Tooltip content="Switch project" side="right">
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        aria-label="Switch project"
+                        className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                      >
+                        <Layers size={15} />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </Tooltip>
+                  <DropdownMenuContent side="right" align="start" className="w-56 max-h-64 overflow-y-auto">
+                    {projects.map((p) => (
+                      <DropdownMenuItem
+                        key={p.id}
+                        onSelect={() => { setActiveProject(p.id); setView("overview"); }}
+                        className={cn("flex items-center gap-2 text-xs", p.id === activeProjectId && "text-[var(--accent)]")}
+                      >
+                        <ProjectIcon name={p.icon} size={12} className="shrink-0" />
+                        <span className="truncate flex-1">{p.name}</span>
+                        <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
+                        {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        if (collapsed) toggleSidebar();
+                        setCreatingProject(true);
+                        setNewProjectName("");
+                      }}
+                      className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"
+                    >
+                      <Plus size={11} /> Create new project
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            }
+            return (
+              <DropdownMenu>
+                <Tooltip content={label} side="right">
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      aria-label={label}
+                      className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                    >
+                      <SidebarMiniRadar projectId={activeProjectId!} size={20} bare />
+                    </button>
+                  </DropdownMenuTrigger>
+                </Tooltip>
+                <DropdownMenuContent side="right" align="start" className="w-56 max-h-64 overflow-y-auto">
+                  {projects.map((p) => (
+                    <DropdownMenuItem
+                      key={p.id}
+                      onSelect={() => { setActiveProject(p.id); setView("overview"); }}
+                      className={cn("flex items-center gap-2 text-xs", p.id === activeProjectId && "text-[var(--accent)]")}
+                    >
+                      <ProjectIcon name={p.icon} size={12} className="shrink-0" />
+                      <span className="truncate flex-1">{p.name}</span>
+                      <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
+                      {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      if (collapsed) toggleSidebar();
+                      setCreatingProject(true);
+                      setNewProjectName("");
+                    }}
+                    className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"
+                  >
+                    <Plus size={11} /> Create new project
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          })()}
           <div className="w-5 h-px bg-[var(--border)] my-1" />
           <Tooltip content={`Search (${mod}K)`} side="right"><button aria-label="Search" onClick={toggleSearch} className={cn("p-2 rounded-md", searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Search size={15} /></button></Tooltip>
           {!hiddenViews.has("chat") && (
@@ -203,12 +283,54 @@ export function DockSidebar() {
                   <span className="text-xs font-semibold leading-none truncate flex-1">{project.name}</span>
                 </div>
                 <div className="text-[0.688rem] leading-none text-[var(--text-tertiary)] mt-1.5 truncate">{project.description ?? "No description"}</div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-[0.643rem] px-1.5 py-0.5 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] shrink-0 leading-none">{openCounts.get(project.id) ?? 0} open</span>
-                  <div className="ml-auto shrink-0">
-                    <SidebarMiniRadar projectId={project.id} size={52} bare />
-                  </div>
-                </div>
+                {(() => {
+                  const total = activeMetrics?.allCards.length ?? 0;
+                  const done = activeMetrics?.doneCards.length ?? 0;
+                  const pct = activeMetrics?.completionRate ?? 0;
+                  const open = activeMetrics?.openCards.length ?? openCounts.get(project.id) ?? 0;
+                  const bottleneck = (() => {
+                    if (!activeMetrics) return null;
+                    const doneId = activeMetrics.columns.find((c) => c.type === "done")?.id;
+                    let best: { name: string; count: number } | null = null;
+                    let max = -1;
+                    for (const col of activeMetrics.columns.filter((c) => c.id !== doneId)) {
+                      const cnt = activeMetrics.allCards.filter((c) => c.columnId === col.id).length;
+                      if (cnt > max) { max = cnt; best = { name: col.name, count: cnt }; }
+                    }
+                    return best && best.count > 0 ? best : null;
+                  })();
+                  if (total === 0) {
+                    return (
+                      <div className="flex items-center gap-3 mt-2">
+                        <div className="flex-1 min-w-0 text-[0.643rem] text-[var(--text-tertiary)]">No tasks yet</div>
+                        <div className="shrink-0">
+                          <SidebarMiniRadar projectId={project.id} size={44} bare />
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex items-center gap-3 mt-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
+                          <div className="h-full rounded-full bg-[var(--accent)] transition-all duration-500" style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="flex items-center gap-1 mt-1.5 text-[0.643rem] leading-none truncate">
+                          <span className="font-mono font-semibold text-[var(--text-primary)] tabular-nums">{done} / {total}</span>
+                          <span className="text-[var(--text-tertiary)] truncate">· {pct}% · {open} open</span>
+                        </div>
+                        {bottleneck && (
+                          <div className="mt-1 text-[0.643rem] leading-none italic truncate" style={{ fontFamily: "var(--font-display)", color: "var(--accent)" }}>
+                            {bottleneck.name.toLowerCase()} holds {bottleneck.count}
+                          </div>
+                        )}
+                      </div>
+                      <div className="shrink-0">
+                        <SidebarMiniRadar projectId={project.id} size={44} bare />
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}
