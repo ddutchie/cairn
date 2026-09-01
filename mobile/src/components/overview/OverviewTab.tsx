@@ -298,7 +298,8 @@ export function OverviewTab({
           </View>
 
           {/* instrument — true radial gradient like desktop: 520×180 at 85% -10%, 14% → transparent 60% */}
-          <View style={[styles.instrument, { backgroundColor: t.surface, borderColor: t.border, overflow: "hidden" } as StyleProp<ViewStyle>, elevation.md as StyleProp<ViewStyle>]}>
+            <View style={[{ borderRadius: 14 }, elevation.md as StyleProp<ViewStyle>]}>
+              <View style={[styles.instrument, { backgroundColor: t.surface, borderColor: t.border, overflow: "hidden" }]}>
             <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: 14, overflow: "hidden" }]}>
               <Svg width="100%" height="100%" viewBox="0 0 360 200" preserveAspectRatio="none">
                 <Defs>
@@ -350,6 +351,7 @@ export function OverviewTab({
             <Pressable onPress={nav.onViewBoard} style={[styles.viewBoardBtn, { backgroundColor: t.surface2, borderColor: t.border }]}>
               <Text style={[typeScale.caption, { color: t.textSecondary, fontWeight: "600" }]}>View board →</Text>
             </Pressable>
+            </View>
           </View>
         </View>
       ) : null}
@@ -383,7 +385,7 @@ export function OverviewTab({
 
       {/* ── KPI strip — hairline dividers, not double borders ── */}
       <View style={[styles.kpiStrip, { backgroundColor: t.surface, borderColor: t.border }]}>
-        <View style={[styles.kpiCell, { borderColor: t.border, borderRightWidth: 1, borderBottomWidth: 1 }]}>
+        <View style={[styles.kpiCell, { borderColor: t.border, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth }]}>
           <View style={[styles.kpiAccent, { backgroundColor: t.danger }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Needs attention</Text>
           <View style={styles.kpiValueRow}>
@@ -394,7 +396,7 @@ export function OverviewTab({
             {needsAttention > 0 ? `${overdueCount} overdue · ${todayCount} today` : "All caught up"}
           </Text>
         </View>
-        <View style={[styles.kpiCell, { borderColor: t.border, borderBottomWidth: 1 }]}>
+        <View style={[styles.kpiCell, { borderColor: t.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
           <View style={[styles.kpiAccent, { backgroundColor: t.success }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Completion</Text>
           <View style={styles.kpiValueRow}>
@@ -405,7 +407,7 @@ export function OverviewTab({
             {instrumentTotal > 0 ? `${instrumentDone} done · ${openCards.length} open` : "No tasks yet"}
           </Text>
         </View>
-        <View style={[styles.kpiCell, styles.kpiCellTint, { backgroundColor: withAlpha(t.surface2, 0.6), borderColor: t.border, borderRightWidth: 1 }]}>
+        <View style={[styles.kpiCell, styles.kpiCellTint, { backgroundColor: withAlpha(t.surface2, 0.6), borderColor: t.border, borderRightWidth: StyleSheet.hairlineWidth }]}>
           <View style={[styles.kpiAccent, { backgroundColor: t.info }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Knowledge</Text>
           <View style={styles.kpiValueRow}>
@@ -796,7 +798,7 @@ function makeStyles(t: Theme) {
     kpiStrip: { borderWidth: 1, borderRadius: 12, overflow: "hidden", flexDirection: "row", flexWrap: "wrap" },
     kpiCell: { width: "50%", padding: 12, gap: 2, position: "relative" },
     kpiCellTint: {},
-    kpiAccent: { position: "absolute", top: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth },
+    kpiAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
     kpiLabel: { fontSize: 10, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
     kpiValueRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 4 },
     emptyQueue: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, borderWidth: 1, borderStyle: "dashed" },

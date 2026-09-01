@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Camera, Images, Paperclip } from "lucide-react-native";
 import { MENU, MENU_HEIGHT } from "./constants";
-import { useTheme, withAlpha } from "@/theme";
+import { useTheme, withAlpha, useIsDark } from "@/theme";
 import { LIQUID_GLASS } from "./glass";
 
 export type MenuAction = "camera" | "photos" | "files";
@@ -20,12 +20,12 @@ const ITEMS: MenuItem[] = [
 
 export function AttachmentMenu({ onSelect }: { onSelect: (action: MenuAction) => void }) {
   const t = useTheme();
-  const isLight = t.background === "#f5f4f1";
+  const isLight = !useIsDark();
   // Panel is dark fallback when liquid glass unavailable, but light-translucent when available on iOS 26
   const useDarkText = isLight && LIQUID_GLASS;
   const iconColor = useDarkText ? t.textPrimary : "#FFFFFF";
   const labelColor = useDarkText ? t.textPrimary : "#FFFFFF";
-  const wellBg = useDarkText ? withAlpha(t.textPrimary, 0.08) : "rgba(255,255,255,0.09)";
+  const wellBg = useDarkText ? withAlpha(t.textPrimary, 0.08) : withAlpha("#FFFFFF", 0.09);
   return (
     <View style={styles.root}>
       {ITEMS.map((item) => (

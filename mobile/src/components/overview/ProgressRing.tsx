@@ -26,34 +26,32 @@ export function ProgressRing({
 }) {
   const t = useTheme();
   const instrument = variant === "instrument";
-  // Desktop instrument uses r=26 for 74px — keep that exact for the knurled look, not (size-stroke)/2
-  const radius = instrument ? 26 : (size - stroke) / 2;
+  const radius = instrument ? (size - stroke) / 2 - 8.5 : (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.max(0, Math.min(100, percent));
   const offset = circumference - (clamped / 100) * circumference;
   const center = size / 2;
 
+  const outerShadow = instrument
+    ? { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 4 }
+    : { shadowColor: "transparent", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0, shadowRadius: 0, elevation: 0 };
+
   return (
     <View style={styles.wrap}>
-      <View
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderWidth: instrument ? 1 : 0,
-          borderColor: instrument ? t.border : "transparent",
-          backgroundColor: instrument ? t.surface2 : "transparent",
-          alignItems: "center",
-          justifyContent: "center",
-          // Desktop: radial-gradient(120px 80px at 30% 30%, var(--surface-3), var(--surface-2)) + inset highlight + drop shadow
-          shadowColor: instrument ? "#000" : "transparent",
-          shadowOffset: instrument ? { width: 0, height: 4 } : { width: 0, height: 0 },
-          shadowOpacity: instrument ? 0.22 : 0,
-          shadowRadius: instrument ? 10 : 0,
-          elevation: instrument ? 4 : 0,
-          overflow: instrument ? "hidden" : "visible",
-        }}
-      >
+      <View style={{ width: size, height: size, borderRadius: size / 2, ...outerShadow }}>
+        <View
+          style={{
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderWidth: instrument ? 1 : 0,
+            borderColor: instrument ? t.border : "transparent",
+            backgroundColor: instrument ? t.surface2 : "transparent",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: instrument ? "hidden" : "visible",
+          }}
+        >
         {instrument ? (
           <View
             pointerEvents="none"
@@ -88,6 +86,7 @@ export function ProgressRing({
         </Svg>
         <View style={styles.label}>
           <Text style={[instrument ? typeScale.caption : typeScale.subtitle, { color: t.textPrimary, fontWeight: "700" }]}>{clamped}%</Text>
+        </View>
         </View>
       </View>
       {caption ? <Text style={[typeScale.micro, { color: t.textTertiary, marginTop: 4 }]}>{caption}</Text> : null}

@@ -140,6 +140,8 @@ export function StackToast({
     stackScale.set(reduced ? scale : withSpring(scale));
     if (index >= MAX_VISIBLE) {
       opacity.set(withTiming(0, { duration: FADE_IN_MS }));
+    } else {
+      opacity.set(withTiming(1, { duration: FADE_IN_MS }));
     }
   }, [index, opacity, reduced, stackScale, stackY]);
 
@@ -186,7 +188,7 @@ export function StackToast({
               <Text style={[styles.actionText, { color: t.textPrimary }]}>{toast.actionText}</Text>
             </Pressable>
           ) : null}
-          <Pressable onPress={() => dismiss("close")} hitSlop={8} style={styles.closeButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss notification" onPress={() => dismiss("close")} hitSlop={8} style={styles.closeButton}>
             <X size={16} color={t.textTertiary} />
           </Pressable>
         </View>

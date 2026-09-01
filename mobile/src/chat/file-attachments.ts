@@ -53,11 +53,14 @@ async function uriToAttachment(uri: string, fallbackName?: string, fallbackMime?
   }
 }
 
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+
 export async function pickFiles(): Promise<Attachment[]> {
   const res = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
   if (res.canceled) return [];
   const out: Attachment[] = [];
   for (const asset of res.assets) {
+    if (typeof asset.size === "number" && asset.size > MAX_ATTACHMENT_BYTES) continue;
     const mime = asset.mimeType ?? "application/octet-stream";
     try {
       const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
@@ -66,13 +69,13 @@ export async function pickFiles(): Promise<Attachment[]> {
       // Fallback: treat as file uri attachment without base64 (some providers accept uri)
       out.push({ mediaType: mime, url: asset.uri, name: asset.name });
     }
-    if (out.length >= 4) break;
+    if (out.length >= 8) break;
   }
   return out;
 }
 
 export async function libraryPhotoToAttachment(phId: string): Promise<Attachment | null> {
-  const att = await uriToAttachment(phId, undefined, "image/jpeg");
+  const att = await uriToAttachment(phId);
   if (att) return att;
   // Fallback: use ph:// directly for immediate preview; will be readable by expo-image
   // The agent can still receive it as a file URI if base64 fails (provider will handle)

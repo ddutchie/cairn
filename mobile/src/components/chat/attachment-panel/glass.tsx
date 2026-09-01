@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Platform, StyleSheet, View, type ViewProps, type ViewStyle } from "react-native";
 import Animated, { type AnimatedProps } from "react-native-reanimated";
 import { COLORS } from "./constants";
+import { useIsDark } from "@/theme";
 
 /** True on iOS 26+, where expo-glass-effect renders the real material. */
 export const LIQUID_GLASS = (() => {
@@ -52,17 +53,9 @@ export function Glass({
   ...rest
 }: GlassProps) {
   const glassEffectStyle = useGlassStyle(active ? "regular" : "none", duration);
+  const isLight = !useIsDark();
 
   if (!LIQUID_GLASS) {
-    const isLight = (() => {
-      if (!fallbackTint) return false;
-      const m = /^#?([0-9a-f]{6})$/i.exec(fallbackTint.trim());
-      if (!m) return false;
-      const n = parseInt(m[1], 16);
-      const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      return luma > 160;
-    })();
     // For the composer we want theme-aware glass: light surface -> light blur with subtle tint, dark -> dark
     // Don't add extra alpha — fallbackTint already comes from withAlpha or solid theme token
     return (

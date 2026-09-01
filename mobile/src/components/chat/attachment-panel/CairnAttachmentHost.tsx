@@ -177,6 +177,16 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
     blur.set(0);
   }, [attach, blur, closeSheet, gridOpacity, menuOpacity, morph, open]);
 
+  const startExit = useCallback(() => {
+    setClosing(true);
+    blur.set(withTiming(1, { duration: DURATION.panel, easing: EASE_FADE }));
+    gridOpacity.set(withTiming(0, { duration: DURATION.crossfade, easing: EASE_FADE }));
+    morph.set(withSpring(0, SPRING.panelOut));
+    open.set(withSpring(0, SPRING.panelOut));
+    plusOut.set(withDelay(DURATION.plusLead, withSpring(0, SPRING.panelOut)));
+    attach.set(withSpring(1, SPRING.attach, (finished) => { "worklet"; if (finished) scheduleOnRN(settleAttachment); }));
+  }, [attach, blur, gridOpacity, morph, open, plusOut, settleAttachment]);
+
   const attachAndLeave = useCallback(
     (leaving: Flight[]) => {
       setFlights(leaving);
@@ -184,15 +194,9 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
         const atts = arr.filter((a): a is Attachment => !!a);
         if (atts.length) onAddAttachments(atts);
       });
-      setClosing(true);
-      blur.set(withTiming(1, { duration: DURATION.panel, easing: EASE_FADE }));
-      gridOpacity.set(withTiming(0, { duration: DURATION.crossfade, easing: EASE_FADE }));
-      morph.set(withSpring(0, SPRING.panelOut));
-      open.set(withSpring(0, SPRING.panelOut));
-      plusOut.set(withDelay(DURATION.plusLead, withSpring(0, SPRING.panelOut)));
-      attach.set(withSpring(1, SPRING.attach, (finished) => { "worklet"; if (finished) scheduleOnRN(settleAttachment); }));
+      startExit();
     },
-    [attach, blur, gridOpacity, morph, onAddAttachments, open, plusOut, settleAttachment],
+    [onAddAttachments, startExit],
   );
 
   const confirmSelection = useCallback(() => {
@@ -223,19 +227,14 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
       const sheetTop = bottom - COMPOSER.rowHeight / 2 + MENU.centerOffset - MENU_HEIGHT / 2;
       const flight: Flight = { photo: { id: uri }, slot: existingCount, from: { x: GUTTER, y: sheetTop, w: gridWidth, h: gridHeight }, fromRadius: GRID.panelRadius };
       setFlights([flight]);
-      const att = await cameraUriToAttachment(uri);
-      if (att) onAddAttachments([att]);
-      setClosing(true);
-      blur.set(withTiming(1, { duration: DURATION.panel, easing: EASE_FADE }));
-      gridOpacity.set(withTiming(0, { duration: DURATION.crossfade, easing: EASE_FADE }));
-      morph.set(withSpring(0, SPRING.panelOut));
-      open.set(withSpring(0, SPRING.panelOut));
-      plusOut.set(withDelay(DURATION.plusLead, withSpring(0, SPRING.panelOut)));
-      attach.set(withSpring(1, SPRING.attach, (finished) => { "worklet"; if (finished) scheduleOnRN(settleAttachment); }));
+      cameraUriToAttachment(uri)
+        .then((att) => { if (att) onAddAttachments([att]); })
+        .catch(() => {});
+      startExit();
     } finally {
       capturing.current = false;
     }
-  }, [attach, blur, composerBottom, existingCount, gridHeight, gridWidth, gridOpacity, morph, onAddAttachments, open, plusOut, settleAttachment]);
+  }, [composerBottom, existingCount, gridHeight, gridWidth, onAddAttachments, startExit]);
 
   const toggle = useCallback(() => {
     if (mode === "closed" && leadTimer.current === null) openMenu();

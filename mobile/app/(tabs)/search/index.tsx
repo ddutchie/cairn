@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps -- intentional stable refs / static filters */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
@@ -19,6 +18,7 @@ import { stripMarkdown } from "@cairn/shared/notes/text";
 import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 type TypeFilter = "all" | "notes" | "tasks";
+const typeFilters: TypeFilter[] = ["all", "notes", "tasks"];
 
 // Approx height of the native iOS 26 tab-bar search field — the results list
 // clears it at the bottom so the last row isn't hidden behind it.
@@ -309,7 +309,6 @@ export default function SearchScreen() {
 
   const isListEmpty = (semanticMode ? hits.length : keywordResults.length) === 0;
 
-  const typeFilters: TypeFilter[] = ["all", "notes", "tasks"];
   const typeLabel = (f: TypeFilter) => (f === "all" ? "All" : f === "notes" ? "Notes" : "Tasks");
   const placeholder = semanticMode ? "Search by meaning…" : "Search notes and tasks";
 

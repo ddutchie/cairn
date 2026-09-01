@@ -6,7 +6,7 @@ import { Send, X, Plus } from "lucide-react-native";
 import Animated, { Extrapolation, FadeOut, interpolate, LinearTransition, useAnimatedReaction, useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { useTheme, withAlpha } from "@/theme";
+import { useTheme, withAlpha, useIsDark, KEYBOARD_OPEN_GAP } from "@/theme";
 import { Glass } from "./attachment-panel/glass";
 import { COMPOSER, COMPOSER_STRIP_HEIGHT, DURATION, GUTTER } from "./attachment-panel/constants";
 import type { Attachment } from "@/chat/agent";
@@ -68,11 +68,10 @@ export const CairnMorphComposer = forwardRef<TextInputType, CairnMorphComposerPr
   );
 
   const stripStyle = useAnimatedStyle(() => ({ height: strip.get() * COMPOSER_STRIP_HEIGHT }));
-  const KEYBOARD_OPEN_GAP = 8;
 
   // Theme-aware glass fallback — solid when liquid glass unavailable
   const fallbackBg = withAlpha(t.surface2, 0.92);
-  const isLight = t.background === "#f5f4f1" || t.textPrimary === "#1a1917";
+  const isLight = !useIsDark();
   return (
     <KeyboardStickyView offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }} style={styles.composerOverlay}>
       <View onLayout={(e) => onLayoutHeight(e.nativeEvent.layout.height)}>
@@ -86,7 +85,7 @@ export const CairnMorphComposer = forwardRef<TextInputType, CairnMorphComposerPr
               </ScrollView>
             </Animated.View>
             <View style={styles.row}>
-              <Pressable accessibilityRole="button" hitSlop={12} onPress={onPlusPress} style={styles.plus} disabled={busy && !allowImages}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Add attachment" hitSlop={12} onPress={onPlusPress} style={styles.plus} disabled={!allowImages}>
                 <Animated.View style={plusStyle}>
                   <Plus size={COMPOSER.plusSize} color={busy || !allowImages ? withAlpha(t.textTertiary, 0.5) : isLight ? t.textSecondary : t.textTertiary} />
                 </Animated.View>

@@ -28,10 +28,14 @@ export interface ToastOptions {
   variant?: ToastVariant;
   /** Optional smaller line under the message (e.g. a streak count). */
   detail?: string;
-  /** Auto-dismiss delay in ms. Default 2400. */
+  /** Auto-dismiss delay in ms. Default 3000. */
   durationMs?: number;
   /** Fire the variant's haptic. Default true. */
   haptic?: boolean;
+  /** Optional action label (e.g. "Undo"). Requires onActionPress. */
+  actionText?: string;
+  /** Handler for the optional action. */
+  onActionPress?: () => void;
 }
 
 interface ToastApi {
@@ -49,6 +53,8 @@ interface ToastState {
   detail?: string;
   durationMs: number;
   exiting?: boolean;
+  actionText?: string;
+  onActionPress?: () => void;
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -102,6 +108,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         variant,
         detail: opts?.detail,
         durationMs: opts?.durationMs ?? DEFAULT_DURATION,
+        actionText: opts?.actionText,
+        onActionPress: opts?.onActionPress,
       },
     ]);
   }, []);

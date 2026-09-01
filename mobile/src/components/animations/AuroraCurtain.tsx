@@ -210,7 +210,7 @@ half4 main(float2 fragCoord) {
   // grain past the light would end in a visible line.
   float g = (1.0 - smoothstep(0.11, 0.28, ys))
           * smoothstep(-TOP, -TOP + 0.12, ys);
-  a += (hash(floor(fragCoord / 0.5)) - 0.5) * 0.055 * (0.55 * g + 0.45 * v2);
+  a += (hash(floor(fragCoord / 2.0)) - 0.5) * 0.055 * (0.55 * g + 0.45 * v2);
   a = clamp(a, 0.0, 1.0);
 
   // The light is violet, and violet everywhere. Measured across the full width,

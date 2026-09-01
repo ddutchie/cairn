@@ -70,11 +70,10 @@ export function CameraBar({
   const unfold = useSharedValue(0);
   const toggleOptions = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setOpen((was) => {
-      unfold.set(withSpring(was ? 0 : 1, was ? SPRING.panelOut : SPRING.panel));
-      return !was;
-    });
-  }, [unfold]);
+    const next = !open;
+    setOpen(next);
+    unfold.set(withSpring(next ? 1 : 0, next ? SPRING.panel : SPRING.panelOut));
+  }, [open, unfold]);
   const contentStyle = useAnimatedStyle(() => ({ opacity: fade.get() }));
   const dotsStyle = useAnimatedStyle(() => ({
     opacity: interpolate(unfold.get(), [0, 0.5], [1, 0], Extrapolation.CLAMP) * fade.get(),
