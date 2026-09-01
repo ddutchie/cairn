@@ -8,6 +8,7 @@ import { recordLlmUsage, extractCost, extractCacheTokens } from "./usage-recorde
 import type { UsageSource } from "../db/usage-queries";
 import { buildResponsesBody, parseResponsesOutput } from "./responses";
 import { resolveTemperatureForModel } from "./model-pricing";
+import { CAIRN_USER_AGENT } from "./cairn-identity";
 
 /**
  * Normalise a user-supplied base URL by stripping trailing slashes.
@@ -268,7 +269,7 @@ export async function callLLM(
     return content;
   }
 
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/json", "User-Agent": CAIRN_USER_AGENT };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
   const stream = opts.stream ?? true;
   const messages: OpenAIMessage[] = [

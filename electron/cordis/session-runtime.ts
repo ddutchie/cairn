@@ -1,11 +1,25 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
+import { APP_IDENTITY } from "@deepseek-ai/dsh-llm";
+import { CAIRN_APP_IDENTITY } from "../lib/cairn-identity";
 import type { LLMConfig } from "../lib/llm";
 import { type ApiMode } from "../lib/llm-transport";
 import type { Database } from "better-sqlite3";
 import type { ChatRequest } from "../lib/tools";
 import type { UsageSource } from "../db/usage-queries";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnQuestionsPlugin } from "./cairn-plugins";
+
+// White-label the DSH harness attribution: every provider request via
+// dsh-llm-pi-ai merges `attributionHeaders()` (→ `User-Agent`) last.
+// Mutating the shared APP_IDENTITY object makes the harness send
+// `cairn/<version> (+https://github.com/ddutchie/cairn)` instead of
+// `deepseek-harness/<dsh-version>`. Works even after pi-ai is imported
+// because both imports share the same module instance (Node cache /
+// esbuild dedupe). See node_modules/@deepseek-ai/dsh-llm/lib/index.js:766
+// and node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js:1601.
+APP_IDENTITY.product = CAIRN_APP_IDENTITY.product;
+APP_IDENTITY.version = CAIRN_APP_IDENTITY.version;
+APP_IDENTITY.url = CAIRN_APP_IDENTITY.url;
 
 let piAiDisposer: (() => Promise<void>) | null = null;
 let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" | "anthropic-messages"; contextWindow?: number; maxTokens?: number; reasoning?: boolean } | null = null;
