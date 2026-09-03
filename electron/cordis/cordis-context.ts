@@ -29,6 +29,7 @@ import { apply as toolSkillApply, inject as toolSkillInject, name as toolSkillNa
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
 import { apply as commandCompactApply, inject as commandCompactInject, name as commandCompactName } from "@deepseek-ai/dsh-command-compact";
 import SessionTitleService from "@deepseek-ai/dsh-session-title";
+import PermissionPresetService from "@deepseek-ai/dsh-permission-presets";
 import { apply as firstPromptApply, inject as firstPromptInject, name as firstPromptName } from "@deepseek-ai/dsh-session-title-first-prompt-llm";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
 import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
@@ -203,8 +204,14 @@ export async function getContext(): Promise<Context> {
     } catch { /* best-effort */ }
     try { if (ctx.skills) ctx.skills.registerProvider(() => createCairnSkillProvider()); } catch (err) { console.error("[cordis] cairn skill provider registration failed:", err instanceof Error ? err.message : err); }
     try { const { defineTool } = await import("@deepseek-ai/dsh-tools"); ctx.cairn = { defineTool, confirm: async (sessionId, req, opts) => { const { getConfirmTransport } = await import("./approval-transports"); const transport = getConfirmTransport(sessionId); if (!transport) return "cancelled" as const; return transport.confirm({ ...req, signal: opts?.signal }); } }; } catch { /* best-effort */ }
-    try { const { PermissionPresetService } = await import("@deepseek-ai/dsh-permission-presets"); (ctx.plugin as (p: unknown, c?: unknown) => unknown)(PermissionPresetService, {}); } catch (err) { console.warn("[cordis] permission presets unavailable:", err instanceof Error ? err.message : err); }
     try { const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection"); (ctx.plugin as (p: unknown, c?: unknown) => unknown)(ProjectionRegistry, {}); } catch (err) { console.warn("[cordis] session projections unavailable:", err instanceof Error ? err.message : err); }
+    // Permission presets (workspace-write, danger-full-access + /permission).
+    // Mounted post-bootstrap, NOT an ENTRY_LIST entry: it injects `shell`,
+    // which is only mounted per-turn by the coding stack — as a loader entry
+    // it would stall `loader.await()` forever at bootstrap. Static import so a
+    // missing/broken package fails loudly at bundle time instead of degrading
+    // to a "permission presets unavailable" warning at runtime.
+    try { (ctx.plugin as (p: unknown, c?: unknown) => unknown)(PermissionPresetService, {}); } catch (err) { console.warn("[cordis] permission presets unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountContextRing } = await import("./plugins/context-ring"); mountContextRing(ctx); } catch (err) { console.warn("[cordis] context ring unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountWorkspaceContext } = await import("./plugins/workspace-context"); mountWorkspaceContext(ctx); } catch (err) { console.warn("[cordis] workspace context unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountSessionTitleBridge } = await import("./plugins/session-title"); mountSessionTitleBridge(ctx); } catch (err) { console.warn("[cordis] session-title bridge unavailable:", err instanceof Error ? err.message : err); }

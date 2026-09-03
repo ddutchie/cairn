@@ -88,16 +88,19 @@ Verified: `lib/` **byte-identical `alpha.5 → rc.1`** across all 20 packages ch
 
 ```
 session, llm, system-prompt, agent, tools, user-questions, approval,
-session-persistence (jsonl), agent-loop, attachment-store, token-meter,
-tool-result-pruner, compaction, llm-retry, subagent (+spawn), tool-subagent,
-skills, invariants, tool-skill, commands, plan-mode, session-title, projection-registry
+session-persistence (jsonl), session-query-sqlite, agent-loop, attachment-store,
+spill, spill-policy, token-meter, tool-result-pruner, compaction, llm-retry,
+subagent (+spawn), tool-subagent, tool-subagent-continuable, tool-subagent-control,
+tool-subagent-list-agents, jobs-local, tool-jobs, skills, invariants, tool-skill,
+commands, command-compact, plan-mode, session-title, session-title-first-prompt,
+projection-registry
 (+ per-turn coding stack: sandbox-local/policy, fs-sandbox, bash-sandbox, shell-env, tool-bash/fs/fs-search/str-replace/todo)
 ```
 
 ### What alpha.3 changes about that list
 
 * **Mandatory new transitive peers** (bump-time, even if no new capability mounted): `zod ^4.4.3`, `@deepseek-ai/dsh-brand`, `@deepseek-ai/dsh-util-values`, `@deepseek-ai/dsh-util-time`. Already peer-required by `dsh-subagent`/`dsh-agent-loop` — must be present in `package-lock` or `npm install` fails to dedupe singletons.
-* **Newly-required service for continuable subagents:** `@deepseek-ai/dsh-session-query`. Bump without adding it to the `B` map and `ENTRY_LIST` **regresses** continuable followups. Fix: add it (it's local persistence, not networked).
+* **Newly-required service for continuable subagents:** `@deepseek-ai/dsh-session-query-sqlite` (the backend — the abstract `dsh-session-query` is never mounted alone). Bump without adding it to the `B` map and `ENTRY_LIST` **regresses** continuable followups. Fix: add `B["dsh:session-query-sqlite"]` + the `session-query-sqlite` entry (node:sqlite only, no native binding; `:memory:` under vitest).
 * **Optional mounts (deferrable):** `dsh-schedule` (+ `dsh-time-context` for natural-language zone inference), `model-selection-settings` service (only if we enable subagent model choice).
 
 ---

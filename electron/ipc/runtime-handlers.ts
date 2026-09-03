@@ -4,7 +4,7 @@ import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
-import { foldPlanModeActive } from "../cordis/plan-fold";
+import { getPlanModeActive } from "../cordis/plan-fold";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 
 let progressForwarderSetUp = false;
@@ -82,7 +82,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
         const commandName = req.line.trim().replace(/^\//, "").split(/\s+/, 1)[0];
         if (commandName === "plan" && r?.kind === "success") {
           const agent = (handle as { agent: { session?: unknown } }).agent;
-          const mode = foldPlanModeActive(agent.session as never) ? "plan" : "execute";
+          const mode = getPlanModeActive(cordisCtx, agent.session) ? "plan" : "execute";
           try {
             q.updateCodingSession(ctx.db, req.sessionId, { mode, updatedAt: ts() });
           } catch { /* chat sessions do not have a Cairn coding-session row */ }
