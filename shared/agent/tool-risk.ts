@@ -128,11 +128,15 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
       ? args.text
       : name === "lsp"
         ? args.file_path
-        : name === "write"
-          ? args.content
-          : name.startsWith("mcp__") || name.startsWith("svc__")
-            ? JSON.stringify(args, null, 2)
-            : args.path ?? args.title ?? args.query ?? "";
+        : name === "web_search"
+          ? (Array.isArray(args.queries) ? args.queries.filter((q): q is string => typeof q === "string").join(", ") : "")
+          : name === "web_fetch"
+            ? args.url
+            : name === "write"
+              ? args.content
+              : name.startsWith("mcp__") || name.startsWith("svc__")
+                ? JSON.stringify(args, null, 2)
+                : args.path ?? args.title ?? args.query ?? "";
   const text = typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "");
   const lines = text.split("\n").slice(0, 5);
   const clamped = lines.join("\n").slice(0, 420);

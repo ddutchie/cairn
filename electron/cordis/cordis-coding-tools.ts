@@ -32,6 +32,8 @@ import { apply as toolFsApply, inject as toolFsInject, name as toolFsName } from
 import { apply as toolFsSearchApply, inject as toolFsSearchInject, name as toolFsSearchName } from "@deepseek-ai/dsh-tool-fs-search";
 import { apply as toolStrApply, inject as toolStrInject, name as toolStrName } from "@deepseek-ai/dsh-tool-str-replace-editor";
 import { apply as toolTodoApply, inject as toolTodoInject, name as toolTodoName } from "@deepseek-ai/dsh-tool-todo";
+import { apply as toolWorkflowApply, inject as toolWorkflowInject, name as toolWorkflowName } from "@deepseek-ai/dsh-tool-workflow";
+import { apply as toolRalphApply, inject as toolRalphInject, name as toolRalphName } from "@deepseek-ai/dsh-tool-ralph";
 import { apply as shellEnvApply, inject as shellEnvInject, name as shellEnvName } from "@deepseek-ai/dsh-shell-env";
 import { apply as agentInstApply, name as agentInstName } from "@deepseek-ai/dsh-agent-instructions";
 import subprocessLocalPlugin from "@deepseek-ai/dsh-subprocess-local";
@@ -244,6 +246,35 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
   );
   await plug({ apply: toolStrApply, inject: toolStrInject as never, name: toolStrName }, { maxOutputChars: 16000 });
   await plug({ apply: toolTodoApply, inject: toolTodoInject as never, name: toolTodoName }, { allowParallelInProgress: true });
+  // Workflow + Ralph model tools (dsh-workflow / dsh-tool-workflow /
+  // dsh-tool-ralph over the ENTRY_LIST-mounted worker-thread engine above).
+  // Coding turns only: both fan out `spawn`-provider children that inherit
+  // the coding tool stack, and both inject only global services
+  // (tools/workflowEngine/subagents/systemPrompt), so per-turn plug/dispose
+  // matches the bash/fs/todo lifecycle exactly.
+  //
+  // Heartbeat relationship (NOT a replacement — do not touch
+  // electron/lib/heartbeat-*): heartbeat is a single headless turn per
+  // automation tick (poll → act → settle); workflows/ralph are foreground
+  // fan-out orchestration INSIDE a live turn (one model call coordinating
+  // many subagents toward a bounded result). Complementary axes:
+  // automation cadence vs in-turn parallelism. An automation script COULD
+  // invoke them via the coding loop, but nothing here changes what heartbeat
+  // schedules or how it settles.
+  //
+  // Bounds (no double-runaway — pinned in workflow-ralph.test.ts): ralph
+  // caps rounds at maxRounds (default 256, model-requestable only downward);
+  // the engine caps total children at maxTotalAgents (default 1000, ditto).
+  // Explicit full configs: the B-map-style triplet carries no Config schema,
+  // so raw ctx.plugin cannot default them.
+  await plug(
+    { apply: toolWorkflowApply, inject: toolWorkflowInject as never, name: toolWorkflowName },
+    { toolName: "workflow", maxResultChars: 50_000 },
+  );
+  await plug(
+    { apply: toolRalphApply, inject: toolRalphInject as never, name: toolRalphName },
+    { subagentProvider: "spawn", maxRounds: 256, maxHandoffChars: 16_384, maxResultChars: 16_384 },
+  );
   await plug({ apply: agentInstApply, name: agentInstName }, { maxBytes: 65536, maxSourceBytes: 500000 });
 
   return async () => {

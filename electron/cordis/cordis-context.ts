@@ -54,6 +54,12 @@ import os from "os";
 import { createCairnSkillProvider } from "./cairn-skill-provider";
 import { peekChatAgentCache } from "./chat-agent-cache";
 import { SessionId } from "@deepseek-ai/dsh-session";
+import WebRuntime from "@deepseek-ai/dsh-web";
+import { apply as webFetchHttpApply, inject as webFetchHttpInject, name as webFetchHttpName } from "@deepseek-ai/dsh-web-fetch-http";
+import { apply as webSearchExaApply, inject as webSearchExaInject, name as webSearchExaName } from "@deepseek-ai/dsh-web-search-exa";
+import { apply as toolWebApply, inject as toolWebInject, name as toolWebName } from "@deepseek-ai/dsh-tool-web";
+import WorkerThreadWorkflowEngine from "@deepseek-ai/dsh-workflow-worker-thread";
+import { apply as sessionExportApply, inject as sessionExportInject, name as sessionExportName } from "./session-export";
 
 let sharedCtx: Context | null = null;
 let contextReady: Promise<Context> | null = null;
@@ -165,6 +171,22 @@ export async function getContext(): Promise<Context> {
     // entry. No dsh-time-context: time_zone is a model-supplied IANA string
     // validated inside the schedule domain (Intl), not a service.
     B["dsh:schedule"] = { apply: scheduleApply, inject: scheduleInject, name: scheduleName };
+    // Web research stack (dsh-web seam + providers + model tools). All three
+    // layers inject only ENTRY_LIST-resident services (tools/web/systemPrompt),
+    // so the whole stack composes as loader entries in dependency order.
+    B["dsh:web"] = WebRuntime;
+    B["dsh:web-fetch-http"] = { apply: webFetchHttpApply, inject: webFetchHttpInject, name: webFetchHttpName };
+    B["dsh:web-search-exa"] = { apply: webSearchExaApply, inject: webSearchExaInject, name: webSearchExaName };
+    B["dsh:tool-web"] = { apply: toolWebApply, inject: toolWebInject, name: toolWebName };
+    // Workflow seam: the worker-thread engine is a Service with
+    // `static inject = ['subagents']` (ENTRY_LIST-resident), so it composes as
+    // a loader entry like `dsh:terminal`. The model tools (tool-workflow /
+    // tool-ralph) mount per CODING turn instead — see mountCodingStack.
+    B["dsh:workflow-engine"] = WorkerThreadWorkflowEngine;
+    // Session-log export trigger. Cairn-owned shim (not the upstream plugin:
+    // that one injects the web shell's `connection` service, which Electron
+    // does not have — see session-export.ts). Injects only `commands`.
+    B["cairn:session-export"] = { apply: sessionExportApply, inject: sessionExportInject, name: sessionExportName };
     B["dsh:command-compact"] = { apply: commandCompactApply, inject: commandCompactInject, name: commandCompactName };
     B["dsh:session-title"] = SessionTitleService;
     B["dsh:session-title-first-prompt-llm"] = { apply: firstPromptApply, inject: firstPromptInject, name: firstPromptName };
@@ -269,6 +291,42 @@ export async function getContext(): Promise<Context> {
       // session sees the tools; when disabled, no session does. Gated by
       // isScheduleEnabled() (restart to apply).
       ...(isScheduleEnabled() ? [{ id: "schedule", name: "cordis:dsh:schedule" }] : []),
+      // Web research stack (dsh-product-decisions "Web research stack"):
+      // first-party cited answers in notes without a connector. Shared ctx
+      // (not coding-only): web research serves notes research in chat AND
+      // coding turns, and every inject is global — same precedent as the
+      // ENTRY_LIST-mounted tool-skill / tool-goal / tool-jobs model tools.
+      // Provider choice: anonymous local fetch (no key) + Exa search. Exa won
+      // v1 over DeepSeek/Perplexity because its auth is a plain API-key
+      // string (`apiKey` config, else `$EXA_API_KEY` from the launch
+      // environment) — no credentials seam, settings section, or second base
+      // URL to configure. Key UX: export EXA_API_KEY in the launching
+      // environment (or pass `apiKey` in the entry config); without a key the
+      // provider reports unavailable and search fails closed
+      // (WEB_PROVIDER_UNAVAILABLE/CONFIGURED_UNAVAILABLE — no hang). A
+      // Settings-keychain key UI is the follow-up, not this change.
+      // Approval: web_search/web_fetch are unlisted in shared/agent/tool-risk
+      // → WRITE_LOCAL default → ask every call. Correct for v1 (untrusted
+      // external content must stay an explicit decision); risk files untouched.
+      { id: "web", name: "cordis:dsh:web", config: { searchProvider: "exa", fetchProvider: "http" } },
+      // Explicit limits mirror the package defaults (the B-map triplet carries
+      // no Config schema, so the loader cannot default them — same reason the
+      // coding stack passes full configs per turn).
+      { id: "web-fetch-http", name: "cordis:dsh:web-fetch-http", config: { maxResponseBytes: 5_000_000, maxBodyChars: 100_000, timeoutMs: 30_000, maxRedirects: 5, userAgent: "deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)" } },
+      { id: "web-search-exa", name: "cordis:dsh:web-search-exa", config: {} },
+      { id: "tool-web", name: "cordis:dsh:tool-web", config: { search: true, fetch: true, searchMaxResults: 8, searchMaxQueries: 4, fetchTimeoutMs: 30_000, searchTimeoutMs: 30_000, fetchMaxOutputChars: 200_000 } },
+      // Workflow engine seam (dsh-product-decisions "Workflows + Ralph"): JS
+      // orchestration scripts fanning out subagents. Engine only — the
+      // workflow/ralph model tools mount per coding turn in mountCodingStack.
+      // Config mirrors the package defaults: `provider: "spawn"` is Cairn's
+      // in-process child route; maxTotalAgents 1000 is the runaway-loop
+      // backstop (pinned in workflow-ralph.test.ts).
+      { id: "workflow-engine", name: "cordis:dsh:workflow-engine", config: { provider: "spawn", maxConcurrentAgents: 0, maxTotalAgents: 1000, maxItemsPerCall: 4096, syncTimeoutMs: 5000, disposeGraceMs: 5000 } },
+      // Session-log export trigger (dsh-product-decisions "Session-log
+      // export"): the `/export` command writing a ZIP to disk. Surfaces via
+      // the existing cordis:listCommands merge (palette/command input) with
+      // no renderer changes. No config — the command takes none.
+      { id: "session-export", name: "cordis:cairn:session-export", config: {} },
     ];
     for (const entry of entries) await loader.create(entry);
     await loader.await();

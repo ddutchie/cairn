@@ -43,6 +43,7 @@ const DSH_TOOL_NAMES = new Set<string>([
   "terminal_open", "terminal_send", "terminal_signal", "terminal_close",
   "terminal_read", "terminal_list",
   "lsp",
+  "web_search", "web_fetch",
 ]);
 
 // Expected risk bucket + approval behaviour for each dsh coding-stack tool the
@@ -76,6 +77,9 @@ const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
   ["terminal_read", "READ", false, "none"],
   ["terminal_list", "READ", false, "none"],
   ["lsp", "READ", false, "none"],
+  // Untrusted external content stays an explicit per-call decision (v1).
+  ["web_search", "WRITE_LOCAL", true, "session"],
+  ["web_fetch", "WRITE_LOCAL", true, "session"],
 ];
 
 describe("tool-risk classifier — set membership", () => {

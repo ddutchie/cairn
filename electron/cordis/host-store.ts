@@ -55,6 +55,7 @@
 
 import type Database from "better-sqlite3";
 import type { Context } from "@deepseek-ai/cordis";
+import { app as electronApp } from "electron";
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -185,6 +186,17 @@ export function recordUsage(entry: RecordUsageArgs): void {
 }
 
 /**
+ * Root directory for session-log ZIP exports (see `./session-export.ts`).
+ * Production persists under userData next to the spill store; vitest uses a
+ * per-process tmp dir (parallel workers must not contend on one shared dir —
+ * same rationale as the `:memory:` session-query index in cordis-context).
+ */
+export function sessionExportRoot(): string {
+  if (process.env.VITEST) return path.join(os.tmpdir(), `cairn-session-exports-${process.pid}`);
+  return path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "session-exports");
+}
+
+/**
  * Ensure the on-device llama-server is running; resolves its port.
  * Dynamic import preserved (llama-server pulls `electron` at module scope).
  */
@@ -230,6 +242,10 @@ export interface HostStore {
   getMcpServers(workspaceId: string): ReturnType<typeof getMcpServersImpl>;
   // User-level hook config discovery (db-free; see resolveHooksConfig above).
   resolveHooksConfig(homeDir?: string): { claudeCode?: string; codex?: string };
+  // Session-log ZIP export sink (see ./session-export.ts): writes one archive
+  // under sessionExportRoot() and returns its absolute path. The filename is
+  // basenamed so a hostile session id can never escape the exports dir.
+  writeSessionExportFile(filename: string, data: Uint8Array): string;
   // Tool-executor services (db-bound; same queries the executor ran directly).
   getFullSnapshot(): ReturnType<typeof getFullSnapshotImpl>;
   findLiveNoteByTitle(projectId: string, title: string): ReturnType<typeof findLiveNoteByTitleImpl>;
@@ -371,6 +387,14 @@ export function createHostStore(db: Database.Database): HostStore {
 
     resolveHooksConfig(homeDir?: string): { claudeCode?: string; codex?: string } {
       return resolveHooksConfig(homeDir);
+    },
+
+    writeSessionExportFile(filename: string, data: Uint8Array): string {
+      const dir = sessionExportRoot();
+      fs.mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, path.basename(filename));
+      fs.writeFileSync(filePath, data);
+      return filePath;
     },
 
     getFullSnapshot(): ReturnType<typeof getFullSnapshotImpl> {

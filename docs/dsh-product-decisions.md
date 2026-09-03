@@ -61,12 +61,16 @@ remains the only route until a provider gap appears or title quality demands
 the all-messages variant. A second adapter is a second failure surface —
 needs a reason.
 
-### Web research stack — accepted (2026-09-03 decision log, round 3)
+### Web research stack — implemented (2026-09-03)
 `dsh-web` + `dsh-tool-web` (+ fetch/search providers) with untrusted-labeling.
 First-party cited answers in notes without requiring a connector. Untrusted-
 labeling policy is part of the work. To implement: publish-check, provider
 choice (DeepSeek/Exa/Perplexity — needs keys UX), mount, approval-class the
 tools.
+Outcome: shared-ctx mount (`dsh:web` pinned to `exa`/`http` providers +
+`web_search`/`web_fetch` tools); Exa chosen for plain-API-key auth
+(`$EXA_API_KEY`, fail-closed without it); tools ask every call by taxonomy
+default (WRITE_LOCAL); provider output carries the untrusted-content notice.
 
 ### LSP code navigation — accepted (2026-09-03 decision log, round 3)
 `dsh-lsp` + `dsh-lsp-stdio` + `dsh-tool-lsp` (definition/references/hover).
@@ -75,13 +79,16 @@ a while — dsh makes it possible. Language-server lifecycle (install? bundled?
 which servers first?) is part of the work, not a blocker. To implement:
 publish-check, lifecycle decision, mount, coding-stack integration.
 
-### Workflows + Ralph — accepted (2026-09-03 decision log, round 3)
+### Workflows + Ralph — implemented (2026-09-03)
 `dsh-workflow` + `dsh-tool-workflow` (JS orchestration fanning out subagents)
 and `dsh-tool-ralph` (fresh-agent loops toward an immutable objective).
 Ralph-style loops are the natural engine for long autonomous tasks; relationship
 to heartbeat single-turn automations to be clarified during implementation
 (fan-out vs single turn, not either/or). To implement: publish-check, mount,
 automation-comparison note.
+Outcome: worker-thread engine on shared ctx + `workflow`/`ralph` tools per
+coding turn (bounded: 256-round / 1000-agent ceilings pinned in tests);
+heartbeat stays the single-turn automation cadence — complementary, untouched.
 
 ### Cross-session references — accepted: design doc first (2026-09-03 decision log, round 3)
 `dsh-session-reference` (cross-session `@label` snapshot refs as untrusted
@@ -90,10 +97,14 @@ philosophically aligned with Cairn, but touches the notes data model and the
 context pipeline — design doc before code. Audit touchpoint map is the
 starting input.
 
-### Session-log export — accepted (2026-09-03 decision log, round 2)
+### Session-log export — implemented (2026-09-03)
 `dsh-session-log-export` (ZIP export, header action + `/export`). Notes export
 story; small and self-contained. To implement: publish-check, mount, wire the
 header action.
+Outcome: `/export` command on the shared ctx writes the session ZIP to disk
+(via existing command-palette merge, no new UI); web-shell header action +
+HTTP route not applicable to Electron — renderer download button is the
+follow-up.
 
 ### Loop hygiene — deferred (2026-09-03 decision log, final round confirmed)
 `dsh-repeat-tool-reminder` (nudge out of identical tool-call loops) and
