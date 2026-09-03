@@ -26,73 +26,86 @@ slash-command merge, and the MCP SDK wiring. dsh offers the native halves:
 | `dsh-skill-filesystem` (+ `dsh-skill-badge`) | Local skill-root discovery + file watching | Whether project/user skill dirs should be discovered by dsh rather than our provider. Lower risk; mostly additive. |
 | `dsh-hook-protocol` + `dsh-hooks-claude-code` / `dsh-hooks-codex` | Run Claude/Codex hooks on dsh interception seams | Whether community plugins should interoperate with those ecosystems. Defer until a plugin author asks. |
 
-**Status: proposed.** Recommended path when accepted: keep Cairn's provider/registry
-UX, adopt the dsh packages as *backends behind our seams* (same pattern as the
+**Status: accepted (2026-09-03 decision log, round 1).** MCP → parity-gated spike
+(EXEC/READ approval mapping, sampling, elicitation must prove out before
+merge); skill-filesystem → adopt as backend behind our provider; hooks →
+adopt (demand question overridden — compatibility with the existing hooks
+library wins). Recommended path stands: keep Cairn's provider/registry UX,
+adopt the dsh packages as *backends behind our seams* (same pattern as the
 sharp-free attachment store), so community plugins keep working unchanged.
 Do not expose dsh skill/MCP concepts directly in Settings until the bridge
 proves parity.
 
 ## Remaining surfaces
 
-### Persistent shell / PTY terminal — proposed
-`dsh-terminal` + `dsh-terminal-bash` + `dsh-tool-terminal` (+ `dsh-tool-bash-persistent`
-as the lighter alternative). Gives long-lived REPL/shell state and its UI.
-Needs: a PTY backend choice (node-pty is already wired directly today — decide
-whether dsh owns it), sandbox implications for persistent processes, and a
-terminal panel design. One-shot `bash` + background jobs cover short commands
-meanwhile.
+### Persistent shell / PTY terminal — accepted (2026-09-03 decision log, round 2)
+`dsh-terminal` + `dsh-terminal-bash` + `dsh-tool-terminal`. Reframed during
+review: the expensive halves already exist (`AgentBottomTerminal.tsx` =
+xterm tabs over node-pty `agent:spawnShell` sessions) — what remains is a
+`ctx.terminals` backend over the existing PTY sessions plus the model tools,
+giving persistent model shells (REPL state, long compiles) with jobs-backed
+background sends. Sandbox review for model-owned persistent processes is part
+of the work. To implement: publish-check, terminals backend, mount tools,
+wire output/progress into the jobs dock.
 
-### Feedback loop closure — proposed
+### Feedback loop closure — deferred (2026-09-03 decision log, round 2)
 Ratings/notes are stored (`message-feedback` sidecar) but nothing reads them:
 no aggregation, no export, no telemetry backend. Decide what feedback is *for*
 (model routing? prompt tuning? export for fine-tuning?) before building the
 read side. Pairs with `dsh-session-telemetry` (opt-in only — local-first default
 stays `disabled`).
 
-### Model routing — deferred
+### Model routing — deferred (2026-09-03 decision log, final round confirmed)
 Official `dsh-llm-deepseek` adapter + title-provider variants. The pi-ai twin
-remains the only route until there's a provider DeepSeek serves that pi-ai
-doesn't, or title quality demands the all-messages variant. Trigger: provider
-gap or measurable title-quality win.
+remains the only route until a provider gap appears or title quality demands
+the all-messages variant. A second adapter is a second failure surface —
+needs a reason.
 
-### Web research stack — deferred
+### Web research stack — accepted (2026-09-03 decision log, round 3)
 `dsh-web` + `dsh-tool-web` (+ fetch/search providers) with untrusted-labeling.
-Research-notes capability; overlaps MCP search connectors the community
-already provides. Trigger: a first-party research use case (e.g. cited
-answers in notes).
+First-party cited answers in notes without requiring a connector. Untrusted-
+labeling policy is part of the work. To implement: publish-check, provider
+choice (DeepSeek/Exa/Perplexity — needs keys UX), mount, approval-class the
+tools.
 
-### LSP code navigation — deferred
+### LSP code navigation — accepted (2026-09-03 decision log, round 3)
 `dsh-lsp` + `dsh-lsp-stdio` + `dsh-tool-lsp` (definition/references/hover).
-Valuable for the coding surface, but needs a language-server lifecycle story
-(install? bundled? which servers?). Trigger: coding-agent accuracy work that
-needs precise navigation.
+Rationale: the agent is code-oriented and first-party LSP has been wanted for
+a while — dsh makes it possible. Language-server lifecycle (install? bundled?
+which servers first?) is part of the work, not a blocker. To implement:
+publish-check, lifecycle decision, mount, coding-stack integration.
 
-### Workflows + Ralph — deferred
+### Workflows + Ralph — accepted (2026-09-03 decision log, round 3)
 `dsh-workflow` + `dsh-tool-workflow` (JS orchestration fanning out subagents)
 and `dsh-tool-ralph` (fresh-agent loops toward an immutable objective).
-Multi-agent automation; overlaps heartbeat automations conceptually. Trigger: an
-automation that needs fan-out rather than a single headless turn.
+Ralph-style loops are the natural engine for long autonomous tasks; relationship
+to heartbeat single-turn automations to be clarified during implementation
+(fan-out vs single turn, not either/or). To implement: publish-check, mount,
+automation-comparison note.
 
-### Cross-session references — deferred
+### Cross-session references — accepted: design doc first (2026-09-03 decision log, round 3)
 `dsh-session-reference` (cross-session `@label` snapshot refs as untrusted
-model context) and `dsh-file-reference` (+ `-local`, `@file` grammar). Core
-notes-app primitives and the most philosophically aligned with Cairn — but both
-touch the notes data model and the context pipeline. Worth a design doc before
-any code. Trigger: links-between-sessions or @-mention completion work.
+model context) and `dsh-file-reference` (+ `-local`, `@file` grammar). Most
+philosophically aligned with Cairn, but touches the notes data model and the
+context pipeline — design doc before code. Audit touchpoint map is the
+starting input.
 
-### Session-log export — deferred
+### Session-log export — accepted (2026-09-03 decision log, round 2)
 `dsh-session-log-export` (ZIP export, header action + `/export`). Notes export
-story; small. Trigger: user asks for portable transcripts.
+story; small and self-contained. To implement: publish-check, mount, wire the
+header action.
 
-### Loop hygiene — deferred
+### Loop hygiene — deferred (2026-09-03 decision log, final round confirmed)
 `dsh-repeat-tool-reminder` (nudge out of identical tool-call loops) and
 `dsh-tool-call-timeout-policy` (per-tool deadlines → structured TOOL_TIMEOUT).
-Cheap, but each adds a behavior users will notice (extra nudges, killed calls).
-Trigger: observed stuck-loop or hang reports.
+Each adds user-visible behavior — pay that cost on evidence (stuck-loop or
+hang reports), not as insurance.
 
-### Telemetry backend — wont-do (until asked)
-`dsh-session-telemetry` (+ `-otel`). Correct default for a local-first app is
-no telemetry pipeline. Revisit only with an explicit opt-in export feature.
+### Telemetry — planned: first-party system, later (2026-09-03 decision log, final round)
+dsh's `dsh-session-telemetry` (+ `-otel`) stays out — but the underlying need
+stands: knowing which features get used. Plan for a Cairn-owned telemetry
+system (feature-usage scope, local-first defaults, explicit opt-in story to be
+designed) as its own project. Not dsh OTel, not now.
 
 ### `dsh-attachment-local` — blocked
 Needs real sharp; sharp ships no Windows-arm64 prebuild (see stub rationale in
@@ -104,5 +117,9 @@ pure-JS decoder, a platform-gated optional dep, or dropping the platform.
 ## Changelog
 
 - 2026-09-03: created from the dsh deep-dive audit; skills/MCP framed as
-  bridge-behind-our-seams. No decisions taken yet — all entries proposed
-  except where marked.
+  bridge-behind-our-seams.
+- 2026-09-03: decision log rounds 1–3 + final. Accepted: MCP spike
+  (parity-gated), skill-filesystem, hooks, terminal bridge (over existing
+  PTY), session export, web research, LSP, workflows/Ralph, cross-session
+  refs design doc. Deferred: feedback read side, loop hygiene, model routing.
+  Planned-later: first-party telemetry system.
