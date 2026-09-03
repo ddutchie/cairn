@@ -137,7 +137,7 @@ export function buildCairnTool(
       // ask_questions routes through the dsh user-questions seam so the turn
       // BLOCKS until the human answers and the answers become this tool's result
       // (same-turn), instead of the shared executor's synchronous echo. The
-      // cairnQuestionsPlugin provider bridges ask() ⇄ the renderer form.
+      // cairnQuestionsPlugin's waterfall answerer bridges ask() ⇄ the renderer form.
       if (name === "ask_questions" && ctx) {
         const uq = ctx.userQuestions;
         const raw = (args as { questions?: unknown[] }).questions ?? [];

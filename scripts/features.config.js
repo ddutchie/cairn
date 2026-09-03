@@ -184,19 +184,6 @@ const FEATURES = [
     ],
   },
   {
-    id: "v3.0.3-subagents",
-    version: "v3.0.3",
-    title: "Durable Subagents",
-    category: "Agents",
-    description:
-      "Agents can now delegate to durable subagents that stick around: start one with delegate, message it mid-run, stop its turn, and browse every child from the session header — with background jobs to match.",
-    highlights: [
-      "Delegate: Start a background subagent that keeps its own conversation — message it later with send_message instead of starting over.",
-      "Subagent Catalog: The session header lists every child with live activity; message a running child or stop its turn in one click.",
-      "Background Jobs: Long delegations run as jobs with output collection and kill support, surfaced to the model.",
-    ],
-  },
-  {
     id: "v3.0.0-unified-runtime",
     version: "v3.0.0",
     title: "Unified Runtime & Shell",
@@ -208,6 +195,19 @@ const FEATURES = [
       "One Session Everywhere: Append-only JSONL history, a single session:* transport, and session-bound pop-outs with a project-aware browser and truthful running state.",
       "Steerable Conversations: Reasoning-effort pill, per-message throughput/latency, pinned provider protocol, and a context ring that reconciles live.",
       "Calmer Shell: Rail + dock as default, Instrument Overview with KPIs and horizon flow, 6-axis health radar, Settings 14→8, and a refined ⌘K palette.",
+    ],
+  },
+  {
+    id: "v3.0.3-subagents",
+    version: "v3.0.3",
+    title: "Durable Subagents",
+    category: "Agents",
+    description:
+      "Agents can now delegate to durable subagents that stick around: start one with delegate, message it mid-run, stop its turn, and browse every child from the session header — with background jobs to match.",
+    highlights: [
+      "Delegate: Start a background subagent that keeps its own conversation — message it later with send_message instead of starting over.",
+      "Subagent Catalog: The session header lists every child with live activity; message a running child or stop its turn in one click.",
+      "Background Jobs: Long delegations run as jobs with output collection and kill support, surfaced to the model.",
     ],
   },
 ];

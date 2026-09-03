@@ -112,6 +112,7 @@ export async function mountCordisSessionPlugins({
   if (sendSubagent) await mount(cairnSubagentPlugin, { send: sendSubagent, sessionId });
   if (questions) {
     await mount(cairnQuestionsPlugin, {
+      sessionId,
       send: questions.send,
       registerPending: questions.registerPending,
       signal,

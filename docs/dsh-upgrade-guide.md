@@ -39,9 +39,12 @@ No single source is sufficient. `npm view` tells you **what** shipped; tarball d
 ## 3  Tarball diff recipe (the only reliable drift detector)
 
 ```bash
-# 1. Pack old vs new for each package you mount (or at least the 9 we mount directly)
+# 1. Pack old vs new for each package you mount (or at least the 9 we mount directly).
+# NOTE: never put dead packages in this loop — e.g. dsh-tool-subagent-report
+# was unpublished past 0.1.2-alpha.3, so packing it aborts the loop (and its
+# tarball is missing for extraction). Check `npm view ... versions` first.
 for pkg in dsh-agent dsh-agent-loop dsh-session dsh-subagent dsh-tool-subagent \
-           dsh-tool-subagent-control dsh-tool-subagent-report dsh-schedule dsh-tools cordis; do
+           dsh-tool-subagent-control dsh-schedule dsh-tools cordis; do
   npm pack @deepseek-ai/$pkg@<OLD> --pack-destination /tmp/dsh-compare  # old
   npm pack @deepseek-ai/$pkg@<NEW> --pack-destination /tmp/dsh-compare  # new
 done

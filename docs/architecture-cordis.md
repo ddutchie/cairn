@@ -240,7 +240,8 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 7. Live sweep `CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npx vitest run electron/cordis/*.live.test.ts`
    (model bridge at `http://localhost:3042/v1`, `claude-sonnet-4-5`).
 8. Update fixtures whose assertions encode retired behavior (see §8.1), changelog
-   (`v2.7.x`), docs §.
+   (the pending `changelogs/vX.Y.Z.md` above the current package version —
+   see AGENTS.md changelog rule), docs §.
 
 ### 8.1 Known historical breakage points (each bump, check these)
 | Symbol | Symptom if stale | Fix |

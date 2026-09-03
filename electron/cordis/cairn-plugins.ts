@@ -269,11 +269,13 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
         const instruction = full || "subagent";
         const role = full ? full.slice(0, 60) : "subagent";
          sendProjection(send, sessionId, "subagent-trace", { trace: "status", status: "start", childId, parentSession, role, instruction });
-      } else if (src?.kind === "agent-message") {
-        // A follow-up between adjacent agents (parent→child via send_message,
-        // child→parent report, or host→child via the message action). Surface
-        // it in the trace brief so the transcript shows the conversation, not
-        // just the delegation endpoints.
+      } else {
+        // Any later non-snapshot user/message is a follow-up turn: model
+        // send_message (source kind "agent-message", either direction) or a
+        // host→child prompt via the message action (source kind "user").
+        // Surface it in the trace brief so the transcript shows the
+        // conversation, not just the delegation endpoints. The durable source
+        // is preserved on the logged event; only the text is projected.
         const text = eventText(event).trim();
         if (text) sendProjection(send, sessionId, "subagent-trace", { trace: "token", childId, parentSession, delta: `\n\n${text}` });
       }
@@ -348,6 +350,14 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
 
 // ── cairn-questions ───────────────────────────────────────────────────────────
 export interface CairnQuestionsConfig {
+  /**
+   * The dsh session id this mount serves. The waterfall dispatches every
+   * agent's requests to every root listener, so the answerer only answers
+   * requests whose asking agent belongs to this session and passes the rest
+   * down the chain — otherwise concurrent turns (chat + coding) would answer
+   * each other's questions.
+   */
+  sessionId: string;
   /** Emit a Cairn IPC event to the renderer (threadId tagged by the caller). */
   send: (channel: string, payload: Record<string, unknown>) => void;
   /**
@@ -416,7 +426,7 @@ interface UserQuestionsRequest {
  * no cross-turn holder needed.
  */
 export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig): (() => void) | void {
-  const { registerPending, emitQuestions, signal, questionsTimeoutMs } = config;
+  const { sessionId, registerPending, emitQuestions, signal, questionsTimeoutMs } = config;
   // ctx.userQuestions is provided by dsh-user-questions (see ctx-augment).
   // Presence-gate only — answering happens through the waterfall event below.
   if (!ctx.userQuestions) return;
@@ -425,6 +435,17 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
     "user-questions/request",
     (...args: unknown[]) => {
       const request = args[0] as UserQuestionsRequest;
+      const next = args[1] as (() => unknown) | undefined;
+      // Session scoping: the waterfall reaches every root listener, so only
+      // answer when the asking agent belongs to this mount's session.
+      // Anything else passes down the chain (another turn's answerer, or
+      // dsh's NO_PROVIDER rejection when nobody matches). Without this,
+      // concurrent chat + coding turns would answer each other's questions.
+      const asker = request.agent as { id?: unknown; session?: { id?: unknown } } | undefined;
+      const askerSessionId = asker ? String(asker.session?.id ?? asker.id ?? "") : "";
+      if (askerSessionId && askerSessionId !== sessionId) {
+        return typeof next === "function" ? next() : Promise.reject(new Error("no matching questions answerer"));
+      }
       return (async (): Promise<DshAnswer> => {
         const requestId = `q-${newId()}`;
         // Forward the raw question objects to the renderer unchanged. The

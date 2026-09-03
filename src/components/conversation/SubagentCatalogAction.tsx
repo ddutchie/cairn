@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { GitBranch, Loader2, SendHorizonal, Square } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -57,13 +57,19 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
   const [replies, setReplies] = useState<Record<string, string>>({});
   const [doneIds, setDoneIds] = useState<Record<string, boolean>>({});
 
+  // Monotonic request id: a slow list() that resolves after a parent switch
+  // (or a newer refresh) must not commit stale entries over the current view.
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
     const parent = parentSessionId;
     if (!parent || !window.electron) return;
+    const seq = loadSeq.current + 1;
+    loadSeq.current = seq;
     setLoading(true);
     setLoadError(null);
     try {
       const res = (await window.electron.session.listSubagents(parent)) as CatalogResult;
+      if (loadSeq.current !== seq || parentSessionId !== parent) return;
       if (res.ok) {
         setEntries(res.value.entries);
         setParentAvailable(res.value.parentAvailable);
@@ -71,9 +77,10 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
         setLoadError(errorHint(res.code));
       }
     } catch {
+      if (loadSeq.current !== seq || parentSessionId !== parent) return;
       setLoadError(errorHint("internal"));
     } finally {
-      setLoading(false);
+      if (loadSeq.current === seq && parentSessionId === parent) setLoading(false);
     }
   }, [parentSessionId]);
 
