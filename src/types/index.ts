@@ -201,6 +201,12 @@ export interface McpServerConfig {
    * fields and routes "Sign in" to them instead of failing on DCR.
    */
   oauthClientIdRequired?: boolean;
+  /**
+   * Dev-only: route this server through dsh-mcp-client (parity spike) instead
+   * of the hand bridge. Toggled from ToolsSettings on dev builds; the turn
+   * bootstrap verifies parity per turn and falls back on mismatch.
+   */
+  dshPath?: boolean;
   enabled: boolean;
   source: ToolSource;
   /** Set when installed from the community registry. */

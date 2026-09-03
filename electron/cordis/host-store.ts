@@ -216,6 +216,7 @@ export interface HostStore {
   addWorkspaceApprovalGrant(workspaceId: string, tool: string, target?: string | null): ApprovalGrant | null;
   // MCP connector rows (workspace-scoped; powers the dsh-mcp-client parity spike).
   getMcpServer(workspaceId: string, serverId: string): ReturnType<typeof getMcpServersImpl>[number] | undefined;
+  getMcpServers(workspaceId: string): ReturnType<typeof getMcpServersImpl>;
   // User-level hook config discovery (db-free; see resolveHooksConfig above).
   resolveHooksConfig(homeDir?: string): { claudeCode?: string; codex?: string };
   // Tool-executor services (db-bound; same queries the executor ran directly).
@@ -351,6 +352,10 @@ export function createHostStore(db: Database.Database): HostStore {
 
     getMcpServer(workspaceId: string, serverId: string): ReturnType<typeof getMcpServersImpl>[number] | undefined {
       return getMcpServersImpl(db, workspaceId).find((s) => s.id === serverId);
+    },
+
+    getMcpServers(workspaceId: string): ReturnType<typeof getMcpServersImpl> {
+      return getMcpServersImpl(db, workspaceId);
     },
 
     resolveHooksConfig(homeDir?: string): { claudeCode?: string; codex?: string } {

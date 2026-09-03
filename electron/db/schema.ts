@@ -1327,6 +1327,17 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_approval_grants_workspace ON approval_grants(workspace_id);
     `);
   },
+
+  // v55: Dev-only dsh-path routing flag for MCP servers (parity-spike
+  // dogfooding). Toggled from ToolsSettings (dev builds only); the turn
+  // bootstrap routes flagged servers through dsh-mcp-client behind the
+  // identical tool/approval surface, with automatic fallback on mismatch.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(mcp_servers)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "dsh_path")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN dsh_path INTEGER NOT NULL DEFAULT 0");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

@@ -506,6 +506,8 @@ const api = {
   selectWorkspaceFolder: () => invoke<string | null>("app:selectWorkspaceFolder"),
   getWorkspacePath: () => invoke<string | null>("app:getWorkspacePath"),
   needsWorkspaceSetup: () => invoke<boolean>("app:needsWorkspaceSetup"),
+  /** True when running unpackaged — gates dev-only UI (MCP dsh-path toggle). */
+  isDev: () => invoke<boolean>("app:isDev"),
   setTheme: (theme: string) => invoke("app:setTheme", theme),
   setAccent: (accent: string) => invoke("app:setAccent", accent),
   initWorkspace: (workspacePath: string, excludedFolders?: string[]) => invoke<{ ok: true }>("app:initWorkspace", { workspacePath, excludedFolders }),

@@ -9,12 +9,13 @@
  * approval gating. The merge bar is the parity proof
  * (`mcp-dsh-bridge.test.ts`), not just the mount.
  *
- * Opt-in, default OFF: `CAIRN_DSH_MCP_SPIKE=<serverId>` names the single server
- * to route via dsh. Env unset → this module mounts nothing and excludes nothing
- * (zero behavior change). When set, the named server is served EXCLUSIVELY by
- * the dsh path (the hand bridge skips it via `excludeServerIds`) and ONLY when
- * every parity precondition below holds — otherwise it fail-closes to the hand
- * bridge with a logged reason.
+ * Opt-in, default OFF — two equivalent gates: `CAIRN_DSH_MCP_SPIKE=<serverId>`
+ * names a single server (dogfooding without UI), or a workspace server row
+ * flagged `dshPath` (dev-only ToolsSettings toggle). No gate set → this module
+ * mounts nothing and excludes nothing (zero behavior change). A gated server
+ * is served EXCLUSIVELY by the dsh path (the hand bridge skips it via
+ * `excludeServerIds`) and ONLY when every parity precondition below holds —
+ * otherwise it fail-closes to the hand bridge with a logged reason.
  *
  * Parity preconditions (checked in `maybeMountDshMcpSpike`, in order):
  *   1. The server is enabled AND in scope for the project (it appears in the
@@ -94,6 +95,8 @@ export interface SpikeMcpServerRow {
   headers?: Record<string, string> | null;
   authMode?: string | null;
   enabled?: boolean;
+  /** Dev-only per-server opt-in (ToolsSettings toggle) — same effect as the env var. */
+  dshPath?: boolean;
 }
 
 export type DshMcpEligibility =
@@ -189,14 +192,15 @@ function sortDeep(value: unknown): unknown {
 }
 
 /**
- * Opt-in spike mount (default OFF). When `CAIRN_DSH_MCP_SPIKE` (or
- * `opts.serverId`) names an eligible, in-scope server, mounts dsh-mcp-client
- * for it on `ctx`, verifies name+schema parity against the hand bridge's own
- * def list, and returns the fiber disposer plus the hand-bridge exclusion.
- * EVERY failure mode — gate off, unknown/disabled/out-of-scope server,
- * ineligible transport/auth, empty def list, mount error, parity mismatch —
- * fail-closes to the hand bridge (empty mount, empty exclusion) with a logged
- * reason. Never throws into the turn.
+ * Opt-in spike mount (default OFF). Candidates are the `CAIRN_DSH_MCP_SPIKE`
+ * (or `opts.serverId`) server plus every workspace server flagged `dshPath`
+ * (dev-only ToolsSettings toggle). Each candidate mounts dsh-mcp-client on
+ * `ctx` and verifies name+schema parity against the hand bridge's own def
+ * list; results merge (disposers + exclusions). EVERY failure mode — gate
+ * off, unknown/disabled/out-of-scope server, ineligible transport/auth, empty
+ * def list, mount error, parity mismatch — fail-closes to the hand bridge
+ * (empty mount, empty exclusion) with a logged reason. Never throws into
+ * the turn.
  */
 export async function maybeMountDshMcpSpike(
   ctx: Context,
@@ -206,8 +210,34 @@ export async function maybeMountDshMcpSpike(
   opts: { serverId?: string; log?: (msg: string) => void } = {},
 ): Promise<DshSpikeMount> {
   const log = opts.log ?? ((msg: string) => console.warn(`[mcp-dsh-spike] ${msg}`));
-  const serverId = opts.serverId ?? process.env[DSH_MCP_SPIKE_ENV];
-  if (!serverId) return EMPTY_MOUNT;
+  const candidates = new Set<string>();
+  const envServer = opts.serverId ?? process.env[DSH_MCP_SPIKE_ENV];
+  if (envServer) candidates.add(envServer);
+  try {
+    const rows = (host.getMcpServers?.(workspaceId) ?? []) as SpikeMcpServerRow[];
+    for (const row of rows) if (row?.dshPath === true) candidates.add(row.id);
+  } catch (err) {
+    log(`server listing failed (${(err as Error)?.message ?? String(err)}) — env-only candidates`);
+  }
+  if (candidates.size === 0) return EMPTY_MOUNT;
+  const disposers: Array<() => unknown> = [];
+  const excludedServerIds = new Set<string>();
+  for (const serverId of candidates) {
+    const one = await mountOneServer(ctx, host, workspaceId, projectId, serverId, log);
+    one.disposers.forEach((d) => disposers.push(d));
+    one.excludedServerIds.forEach((id) => excludedServerIds.add(id));
+  }
+  return { disposers, excludedServerIds };
+}
+
+async function mountOneServer(
+  ctx: Context,
+  host: HostStore,
+  workspaceId: string,
+  projectId: string,
+  serverId: string,
+  log: (msg: string) => void,
+): Promise<DshSpikeMount> {
   const prefix = `mcp__${serverId}__`;
 
   try {

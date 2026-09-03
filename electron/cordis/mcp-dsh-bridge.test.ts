@@ -595,6 +595,29 @@ describe("fail-closed: spike never regresses the hand bridge", () => {
     }
   });
 
+  it("dshPath-flagged server mounts with no env var (dev toggle gate)", async () => {
+    const db = openDb();
+    try {
+      seedServer(db, "spikeA", fixA.url);
+      saveMcpServer(db, {
+        id: "spikeA", workspaceId: "ws-1", name: "Fixture spikeA", transport: "http",
+        baseUrl: fixA.url, enabled: true, source: "test", dshPath: true,
+      });
+      const host = createHostStore(db);
+      const ctx = await makeCtx();
+      delete process.env[DSH_MCP_SPIKE_ENV];
+      const mount = await maybeMountDshMcpSpike(ctx, host, "ws-1", "proj-1");
+      try {
+        expect(mount.excludedServerIds).toEqual(new Set(["spikeA"]));
+        expect(dshSchemas(ctx, "mcp__spikeA__").length).toBeGreaterThan(0);
+      } finally {
+        for (const dispose of mount.disposers) await dispose();
+      }
+    } finally {
+      db.close();
+    }
+  }, 30000);
+
   it("unknown server → empty mount", async () => {
     const db = openDb();
     try {
