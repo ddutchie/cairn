@@ -33,20 +33,29 @@ what is still open after the `feat/cordis-runtime` refactor.
 │        │                                                                                    │
 │  ════════════ Cordis Context (sharedCtx) ════════════                                       │
 │  Loader (cordis-plugin-loader) mounts the full ENTRY_LIST in                            │
-│  `electron/cordis/cordis-context.ts` (~32 entries: session, llm,                        │
+│  `electron/cordis/cordis-context.ts` (~40 entries: session, llm,                        │
 │  system-prompt, agent, tools, user-questions, approval, session-persistence,            │
 │  session-query-sqlite, agent-loop, attachment-store, spill, spill-policy,               │
 │  token-meter, tool-result-pruner, compaction, session-title (+first-prompt LLM          │
 │  provider), llm-retry, subagent, skills, invariants, tool-skill, commands,              │
 │  command-compact, plan-mode, subagent-spawn, tool-subagent (+continuable                │
-│  delegate, control, list-agents), jobs-local + tool-jobs). Post-bootstrap              │
-│  `ctx.plugin` mounts (NOT loader entries): session-projection registry,                │
-│  permission-presets (injects per-turn `shell` — a loader entry would stall             │
-│  `loader.await()`), context-ring, workspace-context, session-title bridge.             │
+│  delegate, control, list-agents), jobs-local + tool-jobs, storage (+json               │
+│  backend + domain), message-feedback + command-feedback, schedule (opt-in,              │
+│  gated by the `scheduleEnabled` setting). Post-bootstrap `ctx.plugin` mounts            │
+│  (NOT loader entries): session-projection registry, permission-presets and             │
+│  goal stack (service + tool-goal + command-goal + round-driver — both inject            │
+│  services that only exist post-bootstrap: per-turn `shell`, respectively               │
+│  `sessionProjections`; a loader entry would stall `loader.await()`),                   │
+│  context-ring, workspace-context, session-title bridge, jobs-bridge,                   │
+│  goal-bridge.                                                                          │
 │                                                                                             │
 │  ctx.services: tools · skills · sessions · agents · approval · userQuestions · cairn    │
 │  (`fs`/`sandbox`/`sandboxPolicy` mount lazily per turn via `mountFsChain`, §6)          │
 │  ctx.cairn = { defineTool, confirm }   (stable plugin API surface)                      │
+│  App I/O behind the HostStore seam (`electron/cordis/host-store.ts`:                   │
+│  workspace meta, notes, git branch, usage, session/todo/plan rows, grants) —            │
+│  no `../db/*`, `../lib/*`, or `node:child_process` value imports elsewhere             │
+│  in `electron/cordis/`.                                                                │
 │                                                                                             │
 │  ┌─ dsh agent-loop ─▶ dsh-llm-pi-ai adapter ─▶ provider bridge (responses | completions)    │
 │  └─ dsh session-persistence-jsonl ─▶ <userData>/sessions/**/session.jsonl[.zstd]  (THRUTH)  │
@@ -110,6 +119,10 @@ caches it in module-level `sharedCtx`.
 | subagent (+spawn +tool-subagent) | `cordis:cairn:*` wrappers | subagent capability (one-shot `subagent` + continuable `delegate`) |
 | tool-subagent-control + list-agents | `cordis:cairn:*` wrappers | `send_message` / `interrupt_agent` / `list_agents` (model side) |
 | jobs-local + tool-jobs | `cordis:dsh:jobs-local` + `cordis:cairn:tool-jobs` | background-job registry + `job_output`/`job_list`/`job_kill` (required by both background routes) |
+| storage (+json +domain) | dsh builtins | KV hub + JSON-file backend + domain facility (backs message-feedback) |
+| message-feedback + command-feedback | dsh builtins | durable per-message ratings/notes + log-only `/feedback` |
+| schedule (opt-in) | `cordis:dsh:schedule` | session-local reminders, gated by `scheduleEnabled` (restart to apply) |
+| goal stack (post-bootstrap) | dsh `goal` + `tool-goal` + `command-goal` + `goal-round-driver` | same-session objective + model tools + `/goal` + round driver |
 | skills / tool-skill | `cordis:dsh:skills` + `cordis:dsh:tool-skill` | `skills` registry + model skill tool |
 | commands / command-compact | `cordis:dsh:commands` + `cordis:dsh:command-compact` | slash-command registry + `/compact` |
 | plan-mode | `cordis:dsh:plan-mode` | plan mode + review/approve + `plan` projection |
@@ -143,9 +156,10 @@ caches it in module-level `sharedCtx`.
      `resolvePresentationMeta`), Cairn's per-tool `emitDone` enriches with
      `cairnRef`/`externalRef`.
 8. Streams: `session:event` (raw dsh events) + `session:projection` (typed UI
-   updates: approval / question / subagent-trace / todos / plan-note /
-   mode-change / …), folded in `useSessionConversation`. Chat has no
-   `chat:token/*` channels.
+   updates: approval / question / subagent-trace / todos / jobs / goal /
+   plan-note / mode-change / …), folded in `useSessionConversation`. Chat has no
+   `chat:token/*` channels. Tool chips prefer the tool-authored `presentCall`
+   title attached main-side (`withToolCallView`), humanizer fallback.
 
 ---
 
@@ -327,6 +341,9 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Toolview dispatch | `src/lib/dsh-toolview/{contract,adapter}.ts`, `src/components/conversation/ConversationMessageBubble.tsx` (+ `conversation-live.ts`) |
 | Attachment store | `electron/cordis/cairn-attachment-store.ts` |
 | Subagent messaging | `electron/cordis/subagent-control.ts` (host list/interrupt/message + `subagent:*` IPC), `src/components/conversation/SubagentCatalogAction.tsx` (header catalog) |
+| Background jobs UI | `electron/cordis/jobs-bridge.ts` (registry → `session:projection kind:"jobs"` + `session:job-kill` IPC), `src/components/agent/AgentJobsDock.tsx` |
+| Goals / feedback / schedule | `electron/cordis/goal-bridge.ts`, `message-feedback.ts`, `schedule-read.ts` + `session:goal|feedback|schedule-list` IPC; `AgentGoalChip.tsx`, `MessageFeedbackControl.tsx`, `SchedulePill.tsx` |
+| Host seam (app I/O) | `electron/cordis/host-store.ts` (sole `../db|../lib|child_process` importer in `cordis/`) |
 | Skill bridge | `electron/cordis/cairn-skill-provider.ts`, `src/lib/plugin-ui/` |
 | Artifacts hygiene | `electron/lib/artifact-hygiene.ts`, `codebase-index.ts` |
 | Plan history | `docs/plans/cordis-runtime.md` (§1–§23) |
