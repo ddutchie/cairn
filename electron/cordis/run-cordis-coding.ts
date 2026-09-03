@@ -31,7 +31,7 @@ import {
 } from "./cairn-plugins";
 import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
-import { TOOL_SCHEMAS } from "../lib/tool-schemas";
+import { TOOL_SCHEMAS, dlog, startPhaseTimer, createHostStore } from "./host-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
 import { runCordisSession } from "./session-runner";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
@@ -39,7 +39,6 @@ import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { describeTurnEndReason } from "../../shared/agent/turn-end-reason";
-import { dlog, startPhaseTimer } from "../lib/debug-log";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 
 export interface RunCordisCodingOptions {
@@ -189,14 +188,9 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     setup: async ({ llmConfig, resources, mount }) => {
       try {
         const { updateWorkspaceContext } = await import("./plugins/workspace-context");
-        const wsRow = req.workspaceId ? db.prepare("SELECT name FROM workspaces WHERE id = ?").get(req.workspaceId) as { name?: string } | undefined : undefined;
-        const projRow = req.projectId ? db.prepare("SELECT name, description FROM projects WHERE id = ?").get(req.projectId) as { name?: string; description?: string } | undefined : undefined;
-        let gitBranch: string | undefined;
-        try {
-          const { execSync } = await import("node:child_process");
-          gitBranch = execSync("git branch --show-current", { cwd, encoding: "utf8", timeout: 800 }).trim() || undefined;
-        } catch { /* not a git repo */ }
-        updateWorkspaceContext(sessionId, { workspaceName: wsRow?.name, workspaceId: req.workspaceId, projectName: projRow?.name, projectId: req.projectId, projectDescription: projRow?.description, cwd, gitBranch });
+        const host = createHostStore(db);
+        const meta = host.getWorkspaceMeta(req.workspaceId, req.projectId);
+        updateWorkspaceContext(sessionId, { workspaceName: meta.workspaceName, workspaceId: req.workspaceId, projectName: meta.projectName, projectId: req.projectId, projectDescription: meta.projectDescription, cwd, gitBranch: host.getGitBranch(cwd) });
       } catch (e) { console.warn("[cordis-coding] workspace context update failed:", e instanceof Error ? e.message : e); }
       timer.mark("workspace-context (incl. git branch execSync)");
       const toolDisposers = registerCairnTools(ctx, {

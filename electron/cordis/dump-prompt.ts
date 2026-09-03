@@ -23,7 +23,7 @@ import fs from "fs";
 import path from "path";
 import { getContext } from "./run-cordis-loop";
 import "./ctx-augment";
-import { buildSystemPrompt, TOOLS } from "../lib/tools";
+import { buildSystemPrompt, TOOLS } from "./host-store";
 import { renderPrompt } from "@deepseek-ai/dsh-system-prompt";
 
 async function main(): Promise<void> {

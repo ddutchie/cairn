@@ -12,7 +12,7 @@
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
 import "./ctx-augment";
 import z from "zod";
-import { TOOL_SCHEMAS } from "../lib/tool-schemas";
+import { TOOL_SCHEMAS, createHostStore } from "./host-store";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
 import { executeTool } from "./chat-executor";
 import type { ChatRequest } from "../lib/tools";
@@ -257,8 +257,7 @@ export async function registerExternalCairnTools(ctx: import("@deepseek-ai/cordi
   const disposers: Array<() => void> = [];
   let defs: Array<{ function: { name: string; description: string; parameters: Record<string, unknown> } }> = [];
   try {
-    const { getExternalToolDefs } = await import("../lib/external-tools");
-    defs = (await getExternalToolDefs(exec.db, exec.workspaceId, exec.projectId)) as typeof defs;
+    defs = (await createHostStore(exec.db).getExternalToolDefs(exec.workspaceId, exec.projectId)) as typeof defs;
   } catch (err) {
      
     console.error("[cordis] failed to resolve external tool defs:", err);
@@ -276,8 +275,7 @@ export async function registerExternalCairnTools(ctx: import("@deepseek-ai/cordi
           render: (_args, value) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
         },
         async execute(args) {
-          const { executeExternalTool } = await import("../lib/external-tools");
-          const out = await executeExternalTool(exec.db, exec.workspaceId, exec.projectId, name, args as Record<string, unknown>);
+          const out = await createHostStore(exec.db).executeExternalTool(exec.workspaceId, exec.projectId, name, args as Record<string, unknown>);
           return out as never;
         },
       });

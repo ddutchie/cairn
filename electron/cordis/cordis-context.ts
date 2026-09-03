@@ -40,7 +40,7 @@ import { apply as storageDomainApply, inject as storageDomainInject, name as sto
 import MessageFeedbackService from "@deepseek-ai/dsh-message-feedback";
 import { apply as commandFeedbackApply, inject as commandFeedbackInject, name as commandFeedbackName } from "@deepseek-ai/dsh-command-feedback";
 import { apply as scheduleApply, inject as scheduleInject, name as scheduleName } from "@deepseek-ai/dsh-schedule";
-import { getCachedConfig } from "../lib/config-cache";
+import { isScheduleEnabled as hostIsScheduleEnabled } from "./host-store";
 import { apply as firstPromptApply, inject as firstPromptInject, name as firstPromptName } from "@deepseek-ai/dsh-session-title-first-prompt-llm";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
 import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
@@ -87,11 +87,7 @@ function feedbackStorageRoot(): string {
  * restart — the Settings toggle says so. Exported for unit tests.
  */
 export function isScheduleEnabled(): boolean {
-  try {
-    return getCachedConfig().agentConfig?.scheduleEnabled === true;
-  } catch {
-    return false;
-  }
+  return hostIsScheduleEnabled();
 }
 
 export async function getContext(): Promise<Context> {
@@ -253,7 +249,7 @@ export async function getContext(): Promise<Context> {
         const orig = comp.compactNow.bind(comp);
         (comp as { compactNow: typeof orig }).compactNow = async (...args: unknown[]) => {
           try {
-            const { getCachedConfig } = await import("../lib/config-cache");
+            const { getCachedConfig } = await import("./host-store");
             const { ensureAgentAiAdapter } = await import("./session-runtime");
             const cached = getCachedConfig();
             const cfg = (cached as { agentConfig?: { baseUrl?: string; model?: string; apiKey?: string; activeProviderId?: string; contextWindow?: number; maxTokens?: number; reasoning?: boolean; isReasoningModel?: boolean } }).agentConfig ?? {};

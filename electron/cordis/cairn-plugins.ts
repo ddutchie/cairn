@@ -5,11 +5,12 @@
  * Cairn's existing persistence + usage surfaces, so Cairn's renderer, mobile
  * bridge, and Usage view work unchanged over the dsh agent loop.
  *
- *  - cairnDbPlugin   — owns the Database handle on the context (`ctx.cairnDb`).
- *                      The single ABI-safe way Cairn plugins touch SQLite.
+ *  - cairnDbPlugin   — owns the Database handle + HostStore on the context
+ *                      (`CAIRN_DB` / `CAIRN_HOST`). The single ABI-safe way
+ *                      Cairn plugins touch SQLite (see `./host-store.ts`).
  *  - cairnSessionPlugin — subscribe to `session/event` and persist messages to
  *                      `chat_threads` / `chat_messages`.
- *  - cairnUsagePlugin  — on usage chunks, call recordLlmUsage (Usage view).
+ *  - cairnUsagePlugin  — on usage chunks, record via the HostStore seam (Usage view).
  *
  * These are pure persistence plugins; live IPC streaming stays in the session
  * runner's drain so the renderer gets realtime
@@ -18,14 +19,23 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import type Database from "better-sqlite3";
-import { upsertChatThread } from "../db/queries";
 import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
 // See electron/cordis/ctx-augment.ts — same augmentation load.
 import "./ctx-augment";
-import { recordLlmUsage } from "../lib/usage-recorder";
 import type { UsageSource } from "../db/usage-queries";
-import { newId } from "../db/utils";
-import { saveSessionTodos, getSessionTodos, updateCodingSession } from "../db/queries";
+import {
+  CAIRN_DB,
+  CAIRN_HOST,
+  createHostStore,
+  getHostStore,
+  recordUsage,
+  newId,
+  isSecretFile,
+  bashReferencesSecretFile,
+  type HostStore,
+} from "./host-store";
+export { CAIRN_DB, CAIRN_HOST };
+export type { HostStore };
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, readPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { riskForTool as riskForToolShared } from "../../shared/agent/tool-risk";
 import type { RiskClass } from "../../shared/agent/tool-risk";
@@ -39,8 +49,6 @@ function toolCallTitle(name: string, argsRaw?: string): string {
     return resolveToolCallView(name, argsRaw)?.title as string ?? name;
   } catch { return name; }
 }
-import { isSecretFile, bashReferencesSecretFile } from "../lib/coding-tools/secrets";
-
 const secretGrantsBySession = new Map<string, Set<string>>();
 function getSecretGrants(sessionId: string): Set<string> {
   let s = secretGrantsBySession.get(sessionId);
@@ -67,9 +75,6 @@ function secretPathForCall(name: string, args: Record<string, unknown>): string 
 function sendProjection(send: (channel: string, payload: Record<string, unknown>) => void, sessionId: string, kind: SessionProjectionKind, data: Record<string, unknown>): void {
   send("session:projection", makeSessionProjection(sessionId, kind, data as never) as unknown as Record<string, unknown>);
 }
-
-/** Service key under which cairnDbPlugin provides the Database handle. */
-export const CAIRN_DB = "cairnDb";
 
 // ── cairn-system-prompt ───────────────────────────────────────────────────────
 export interface CairnSystemPromptConfig {
@@ -124,26 +129,52 @@ cairnSystemPromptPlugin.inject = ["systemPrompt"];
 // ── cairn-db ────────────────────────────────────────────────────────────────
 export interface CairnDbConfig {
   db: Database.Database;
+  /**
+   * Prebuilt store (e.g. a test double). Defaults to `createHostStore(db)`.
+   * Provided under `CAIRN_HOST` on the same plugin/channel as the raw handle.
+   */
+  host?: HostStore;
 }
 
 /**
- * Owns the Database handle on the Cordis context. Other Cairn plugins read it
- * via `ctx.get(CAIRN_DB)` (or declare it in `inject`). Constructing the
- * Database stays in electron/db/client.ts (ABI rules); this plugin just
- * carries the already-built handle.
+ * Owns the Database handle AND the HostStore on the Cordis context. Other
+ * Cairn plugins read the store via `getHostStore(ctx)` (or declare
+ * `CAIRN_HOST` in `inject`). Constructing the Database stays in
+ * electron/db/client.ts (ABI rules); this plugin just carries the
+ * already-built handle plus the store bound to it.
  */
 export function cairnDbPlugin(ctx: Context, config: CairnDbConfig): (() => void) | void {
   // Idempotent: the plugin is mounted per turn on the shared context, and its
   // disposer runs asynchronously — a back-to-back turn (or a test) can re-mount
   // before teardown settles. `provide` throws on a duplicate key, so skip when
-  // the handle is already present (it's the same singleton db either way).
-  const existing = ctx.get(CAIRN_DB);
-  if (existing) return;
-  return ctx.provide(CAIRN_DB, config.db);
+  // the value is already present (it's the same singleton db either way).
+  const disposers: Array<() => void> = [];
+  if (!ctx.get(CAIRN_DB)) {
+    const disposeDb = ctx.provide(CAIRN_DB, config.db);
+    if (typeof disposeDb === "function") disposers.push(disposeDb as () => void);
+  }
+  if (!ctx.get(CAIRN_HOST)) {
+    const disposeHost = ctx.provide(CAIRN_HOST, config.host ?? createHostStore(config.db));
+    if (typeof disposeHost === "function") disposers.push(disposeHost as () => void);
+  }
+  if (disposers.length === 0) return;
+  return () => {
+    for (const dispose of disposers) {
+      try { dispose(); } catch { /* noop */ }
+    }
+  };
 }
 
 function getDb(ctx: Context): Database.Database | undefined {
   return ctx.get(CAIRN_DB) as Database.Database | undefined;
+}
+
+function getHost(ctx: Context, fallbackDb?: Database.Database): HostStore | undefined {
+  if (fallbackDb) return getHostStore(ctx, fallbackDb);
+  // The usage/approval unit harnesses mount with `{ on }`-only fakes (no
+  // `get`); only touch ctx.get when it exists so those keep working.
+  if (typeof (ctx as unknown as { get?: unknown })?.get !== "function") return undefined;
+  return getHostStore(ctx, getDb(ctx));
 }
 
 // ── cairn-session ───────────────────────────────────────────────────────────
@@ -203,7 +234,7 @@ export function cairnSessionPlugin(ctx: Context, config: CairnSessionConfig): vo
     if (!db) return;
 
     try {
-      upsertChatThread(db, { id: threadId, scope: "workspace", workspaceId, projectId });
+      getHost(ctx, db)?.indexChatThread(threadId, workspaceId, projectId);
     } catch { /* non-fatal */ }
   });
 }
@@ -634,7 +665,10 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
       ? (source === "chat" ? "chat-subagent" : "coding-subagent")
       : source;
 
-    recordLlmUsage({
+    // Via the HostStore seam's standalone recorder (the store method delegates
+    // to the same global handle; this plugin never needed ctx beyond `.on`,
+    // so it stays untouched for `{ on }`-only harnesses).
+    recordUsage({
       source: resolvedSource,
       sessionId: threadId,
       projectId,
@@ -745,10 +779,10 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       // plan/mode flips off and execute-mode's next turn reads this cached
       // plan_content to keep the plan in its system prompt.
       if (d.name === "exit_plan_mode" && typeof args.plan === "string" && args.plan.trim().length > 0) {
-        const db = getDb(ctx);
-        if (db) {
+        const host = getHost(ctx);
+        if (host) {
           try {
-            updateCodingSession(db, sessionId, { planContent: args.plan });
+            host.updateCodingPlan(sessionId, args.plan);
              emit("plan-note", { noteId: undefined, planContent: args.plan });
           } catch (err) {
             console.warn("[cordis] failed to persist plan_content:", err);
@@ -769,13 +803,13 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       const ok = block?.isError !== true;
       // ── note-updated: after a note-write tool, push fresh note content so the
       // plan task list updates live (mirrors builtin NOTE_WRITE_TOOLS handling).
-      const db = getDb(ctx);
-      if (ok && db && ["ensure_note", "patch_note", "append_to_note"].includes(name)) {
+      const host = getHost(ctx);
+      if (ok && host && ["ensure_note", "patch_note", "append_to_note"].includes(name)) {
         try {
           const parsed = JSON.parse(output) as { id?: string };
           if (parsed?.id) {
-            const row = db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
-             if (row) emit("note-updated", { noteId: parsed.id, content: row.content ?? "" });
+            const content = host.readNoteContent(parsed.id);
+             if (content !== undefined) emit("note-updated", { noteId: parsed.id, content });
           }
         } catch { /* non-JSON output — ignore */ }
       }
@@ -790,7 +824,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 
       // ── todos: the dsh `todo_write` tool writes `todo/write` snapshots; map
       // the latest to Cairn's session_todos + emit session:todos.
-      if (name === "todo_write" && db) {
+      if (name === "todo_write" && host) {
         try {
           const parsed = JSON.parse(output) as DshTodoWrite;
           const list = Array.isArray(parsed.todos)
@@ -800,8 +834,8 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
                 priority: "medium" as const,
               }))
             : [];
-          saveSessionTodos(db, sessionId, list);
-          emit("todos", { todos: getSessionTodos(db, sessionId) });
+          host.saveSessionTodos(sessionId, list);
+          emit("todos", { todos: host.getSessionTodos(sessionId) });
         } catch { /* non-critical */ }
       }
       return;
@@ -885,8 +919,17 @@ export interface CairnApprovalConfig {
    * grants are consulted.
    */
   workspaceId?: string;
-  /** DB handle for persistent-grant lookups. Required when workspaceId is set. */
+  /**
+   * DB handle for persistent-grant lookups. Required when workspaceId is set.
+   * @deprecated — prefer `host` (the HostStore seam); kept so older callers
+   * and unit harnesses pass unchanged. When both are present, `host` wins.
+   */
   db?: import("better-sqlite3").Database;
+  /**
+   * Injected HostStore for persistent-grant lookups. Falls back to wrapping
+   * `db`, then to the store mounted by `cairnDbPlugin` (`CAIRN_HOST`).
+   */
+  host?: HostStore;
   /**
    * When set, only tools whose risk class is in the set gate through the
    * approval seam — everything else is implicitly allowed. Chat uses this to
@@ -923,6 +966,9 @@ export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
  */
 export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): (() => void) | void {
   const { sessionId, send, registerPending, signal, timeoutMs, workspaceId, db, askRiskClasses, askFilter } = config;
+  // HostStore seam: explicit host wins, then wrap the legacy db handle, then
+  // the per-turn store mounted by cairnDbPlugin. Same underlying db either way.
+  const host = config.host ?? (db ? createHostStore(db) : getHost(ctx));
   const effectiveMode: Mode = config.mode && isMode(config.mode)
     ? config.mode
     : modeFromAutoApprove(config.autoApprove);
@@ -949,14 +995,12 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
     // scoped to a workspace rather than to one automation; target-aware,
     // exec refuses wildcard). Consulted here so an "Always allow" survives
     // across sessions — not just the session:respond-tool fallback.
-    if (workspaceId && db) {
+    if (workspaceId && host) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
-        if (isWorkspaceGranted(db, workspaceId, name)) return true;
+        if (host.isWorkspaceGranted(workspaceId, name)) return true;
         if (name === "bash") {
           const cmd = canonicalBashCommand(argsObj.command);
-          if (cmd && isWorkspaceGranted(db, workspaceId, name, cmd)) return true;
+          if (cmd && host.isWorkspaceGranted(workspaceId, name, cmd)) return true;
         }
       } catch { /* DB not yet migrated or closed — fall through to no grant */ }
     }
@@ -1017,11 +1061,9 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
         if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
         // Workspace-persistent grants also short-circuit the ask without emitting
         // a card, so an "Always allow" covers future sessions silently.
-        if (workspaceId && db) {
+        if (workspaceId && host) {
           try {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { isWorkspaceGranted } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
-            if (isWorkspaceGranted(db, workspaceId, toolName)) return Promise.resolve("allowed-once");
+            if (host.isWorkspaceGranted(workspaceId, toolName)) return Promise.resolve("allowed-once");
           } catch { /* DB not migrated — fall through to ask */ }
         }
       }
@@ -1084,15 +1126,13 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           // workspace DB so future sessions auto-allow (the same handler also
           // persists it — this in-plugin path covers the headless/auto-allow
           // transports that settle without going through the IPC handler).
-          if (decision.approved && decision.grant === "workspace" && workspaceId && db) {
+          if (decision.approved && decision.grant === "workspace" && workspaceId && host) {
             try {
-              // eslint-disable-next-line @typescript-eslint/no-require-imports
-              const { addWorkspaceApprovalGrant } = require("../db/approval-grant-queries") as typeof import("../db/approval-grant-queries");
               const trusted = readPendingApprovalArgs(sessionId, callId);
               // For bash the workspace grant is command-scoped (like grant:command);
               // for everything else it is tool-scoped (target = null).
               const target = toolName === "bash" && trusted ? canonicalBashCommand(trusted.command) : null;
-              addWorkspaceApprovalGrant(db, workspaceId, toolName, target);
+              host.addWorkspaceApprovalGrant(workspaceId, toolName, target);
               // Also grant this session immediately so the current turn proceeds
               // without waiting for the DB read to take effect on the next ask.
               grants.tools.add(toolName);

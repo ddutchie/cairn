@@ -1,7 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
 import { APP_IDENTITY } from "@deepseek-ai/dsh-llm";
-import { CAIRN_APP_IDENTITY } from "../lib/cairn-identity";
+import { CAIRN_APP_IDENTITY, createHostStore, ensureLocalLlmPort } from "./host-store";
 import type { LLMConfig } from "../lib/llm";
 import { type ApiMode } from "../lib/llm-transport";
 import type { Database } from "better-sqlite3";
@@ -92,7 +92,7 @@ export interface MountCordisSessionPluginsOptions {
 export async function mountCordisSessionPlugins({
   mount, db, req, sessionId, llmConfig, signal, includeSessionIndex = false, sendSubagent, questions, usageSource,
 }: MountCordisSessionPluginsOptions): Promise<void> {
-  await mount(cairnDbPlugin, { db });
+  await mount(cairnDbPlugin, { db, host: createHostStore(db) });
   if (includeSessionIndex) {
     await mount(cairnSessionPlugin, {
       threadId: sessionId,
@@ -126,8 +126,7 @@ export async function prepareCordisRuntime(ctx: Context, input: LLMConfig): Prom
   const timing = process.env.CAIRN_TIMING === "1" || process.env.CAIRN_TIMING === "true";
   let llmConfig = input;
   if (llmConfig.provider === "localllm") {
-    const { ensureLlamaServerRunning } = await import("../lib/llama-server");
-    const port = await ensureLlamaServerRunning();
+    const port = await ensureLocalLlmPort();
     llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
   }
   // Explicit wire protocol — Cairn never auto-probes for the Cordis path. The

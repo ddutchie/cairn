@@ -9,12 +9,11 @@ import { extractCairnRef } from "./session-replay";
 import { openCordisSessionAgent } from "./session-agent";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import { runCordisSession } from "./session-runner";
-import { buildSystemPrompt, withPersonality } from "../lib/tools";
+import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore } from "./host-store";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta } from "./cordis-context";
 import { foldSessionUsage } from "./plugins/context-ring";
 import { foldSessionStats } from "./session-stats";
-import { startPhaseTimer } from "../lib/debug-log";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
@@ -168,10 +167,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     if (!g.__cairnArtifactHygieneAt || now - g.__cairnArtifactHygieneAt > 10 * 60 * 1000) {
       g.__cairnArtifactHygieneAt = now;
       try {
-        const h = await import("../lib/artifact-hygiene");
-        h.migrateLegacyVizDir(workspacePath);
-        h.ensureGitExcluded(workspacePath);
-        h.pruneChatArtifacts(workspacePath, "viz");
+        createHostStore(db).runWorkspaceHygiene(workspacePath);
       } catch { /* best-effort hygiene */ }
     }
   } catch (error) {
@@ -225,16 +221,11 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     setup: async ({ llmConfig: preparedConfig, resources, mount }) => {
       llmConfig = preparedConfig;
       try {
-        const project = req.projectId ? db.prepare("SELECT name, description, code_directory FROM projects WHERE id = ?").get(req.projectId) as { name?: string; description?: string; code_directory?: string } | undefined : undefined;
-        const workspace = req.workspaceId ? db.prepare("SELECT name FROM workspaces WHERE id = ?").get(req.workspaceId) as { name?: string } | undefined : undefined;
+        const host = createHostStore(db);
+        const meta = host.getWorkspaceMeta(req.workspaceId, req.projectId);
         const { updateWorkspaceContext } = await import("./plugins/workspace-context");
-        let gitBranch: string | undefined;
-        try {
-          const { execSync } = await import("node:child_process");
-          gitBranch = execSync("git branch --show-current", { cwd: workspacePath, encoding: "utf8", timeout: 800 }).trim() || undefined;
-        } catch { /* not a git repo */ }
         // Use the real workspacePath (the agent's sandbox root), not code_directory which may be stale.
-        updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: workspace?.name, workspaceId: req.workspaceId, projectName: project?.name, projectId: req.projectId, projectDescription: project?.description, cwd: workspacePath, gitBranch });
+        updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: meta.workspaceName, workspaceId: req.workspaceId, projectName: meta.projectName, projectId: req.projectId, projectDescription: meta.projectDescription, cwd: workspacePath, gitBranch: host.getGitBranch(workspacePath) });
       } catch (error) { console.warn("[cordis] workspace context update failed:", error instanceof Error ? error.message : error); }
       timer.mark("workspace-context (incl. git branch execSync, 800ms cap)");
       // Clarify the approval flow for the model. The dsh ASK_SENTENCE
@@ -321,7 +312,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
           registerPending: opts.approvals.registerPending,
           signal,
           workspaceId: req.workspaceId ?? undefined,
-          db,
+          host: createHostStore(db),
           askRiskClasses: new Set(["EXTERNAL", "EXEC"] as const),
           askFilter: (name: string) => name === "delete_note" || name === "delete_task" || name === "delete_project",
         });
