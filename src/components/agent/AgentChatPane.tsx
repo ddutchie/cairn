@@ -37,6 +37,7 @@ import { toConversationMessage } from "@/components/conversation/conversation-me
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
+import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
 import type { SessionProjection } from "../../../shared/agent/session-projection";
 import { useSessionConversation } from "@/hooks/useSessionConversation";
 
@@ -629,6 +630,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       transcriptFooter={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
       actions={(
         <>
+          <SubagentCatalogAction parentSessionId={session.sessionId} />
           {session.mode === "plan" && <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]"><MapIcon size={9} /> PLAN</span>}
           {session.planNoteId && <Tooltip content="Open plan note" side="left"><button onClick={() => revealNote(setView, session.planNoteId!)} className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"><FileText size={9} /> PRD</button></Tooltip>}
           <Tooltip content="Clear conversation" side="left"><button onClick={handleClear} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"><Trash2 size={12} /></button></Tooltip>

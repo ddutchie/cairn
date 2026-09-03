@@ -993,6 +993,12 @@ const api = {
     /** Approve or deny a pending tool call; grant:"command" echoes the exact bash command to standing-allow */
     respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command" | "workspace", command?: string, nonce?: string) =>
       ipcRenderer.send("session:respond-tool", { sessionId, callId, approved, grant, command, nonce }),
+    /** Continuable-child catalog for a parent session (durable + live activity) */
+    listSubagents: (parentSessionId: string) => invoke<{ ok: true; value: { entries: unknown[]; parentAvailable: boolean } } | { ok: false; code: string; message: string }>("subagent:list", { parentSessionId }),
+    /** Stop a live continuable child's current turn (fire-and-return; absent targets are a no-op) */
+    interruptSubagent: (parentSessionId: string, childId: string) => invoke<{ ok: true; value: { accepted: boolean } } | { ok: false; code: string; message: string }>("subagent:interrupt", { parentSessionId, childId }),
+    /** Deliver a human message to a continuable child (needs the live parent agent; parent-unavailable otherwise) */
+    messageSubagent: (parentSessionId: string, childId: string, text: string) => invoke<{ ok: true; value: { messageId: string } } | { ok: false; code: string; message: string }>("subagent:message", { parentSessionId, childId, text }),
     /** Workspace-persistent "Always allow" grants */
     listApprovalGrants: (workspaceId: string) => invoke("approval-grants:list", { workspaceId }),
     deleteApprovalGrant: (id: string) => invoke("approval-grants:delete", { id }),

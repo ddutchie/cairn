@@ -473,6 +473,33 @@ export function registerSessionRuntimeHandlers(
     return readContextRing(sessionId);
   }));
 
+  // ── subagent:* — human continuable-child controls ───────────────────────
+  // Model-side equivalents are send_message / interrupt_agent / list_agents;
+  // these are the renderer-driven host path (catalog popover, per-trace
+  // message/Stop). Errors surface as { ok:false, code } for toasts — the
+  // stable control vocabulary (parent-unavailable, not-resumable,
+  // unauthorized, delivery-unavailable, bad-request, cancelled, internal).
+  const subagentResult = async <T>(fn: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; code: string; message: string }> => {
+    try {
+      return { ok: true, value: await fn() };
+    } catch (err) {
+      const code = (err as { code?: string })?.code ?? "internal";
+      return { ok: false, code, message: err instanceof Error ? err.message : "subagent control failed" };
+    }
+  };
+  registerIpcHandle("subagent:list", (_event, { parentSessionId }: { parentSessionId: string }) => handle(async () => {
+    const { listSubagentChildren } = await import("../cordis/subagent-control");
+    return subagentResult(() => listSubagentChildren(parentSessionId));
+  }));
+  registerIpcHandle("subagent:interrupt", (_event, { parentSessionId, childId }: { parentSessionId: string; childId: string }) => handle(async () => {
+    const { interruptSubagentChild } = await import("../cordis/subagent-control");
+    return subagentResult(() => interruptSubagentChild(parentSessionId, childId));
+  }));
+  registerIpcHandle("subagent:message", (_event, { parentSessionId, childId, text }: { parentSessionId: string; childId: string; text: string }) => handle(async () => {
+    const { messageSubagentChild } = await import("../cordis/subagent-control");
+    return subagentResult(() => messageSubagentChild(parentSessionId, childId, text));
+  }));
+
   // ── session:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
     const profile = q.getSessionProfile(ctx.db, sessionId)?.profile;

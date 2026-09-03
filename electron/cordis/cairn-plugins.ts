@@ -245,6 +245,14 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     // decision in the operation that makes it.)
     if (parentSession !== undefined && parentSession !== sessionId) return;
 
+    // New turns stream fresh deltas — without this reset, a continuable
+    // child's second turn would be skipped as "already streamed".
+    if (event.type === "turn/start") {
+      streamedText.delete(childId);
+      streamedReasoning.delete(childId);
+      return;
+    }
+
     if (event.type === "user/message") {
       // The child's first non-snapshot user/message is the delegated prompt.
       // Skip the runtime-context snapshot (form:snapshot) so the instruction is
@@ -261,6 +269,13 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
         const instruction = full || "subagent";
         const role = full ? full.slice(0, 60) : "subagent";
          sendProjection(send, sessionId, "subagent-trace", { trace: "status", status: "start", childId, parentSession, role, instruction });
+      } else if (src?.kind === "agent-message") {
+        // A follow-up between adjacent agents (parent→child via send_message,
+        // child→parent report, or host→child via the message action). Surface
+        // it in the trace brief so the transcript shows the conversation, not
+        // just the delegation endpoints.
+        const text = eventText(event).trim();
+        if (text) sendProjection(send, sessionId, "subagent-trace", { trace: "token", childId, parentSession, delta: `\n\n${text}` });
       }
       return;
     }

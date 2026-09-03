@@ -30,6 +30,11 @@ export const APPROVAL_SAFE_TOOLS = new Set<string>([
   "codebase_search_symbols", "codebase_get_symbol_definition",
   "codebase_get_references", "codebase_get_file_symbols",
   "ask_questions", "skill",
+  // Read-only continuable-child discovery (dsh-tool-subagent-control/list-agents).
+  "list_agents",
+  // Background-job reads (dsh-tool-jobs): listing and collecting a job's
+  // output mutate nothing (collection is the job's own completion path).
+  "job_list", "job_output",
 ]);
 
 /** Mutating Cairn-data tools (notes/tasks/tags/boards/dashboards/idea flow). */
@@ -81,6 +86,18 @@ export function riskForTool(name: string): RiskClass {
   // so the real tool silently fell through to WRITE_LOCAL and was offered a
   // standing "session" grant (understating a shell-capable delegation).
   if (name === "subagent") return "EXEC";
+  // `delegate` (dsh-tool-subagent under toolName "delegate", backgroundMode
+  // continuable) spawns the same shell-capable in-process child — EXEC, and
+  // one-off (no standing grant: each delegation deserves its own decision).
+  if (name === "delegate") return "EXEC";
+  // `send_message` delivers a model-authored message to a live child (which
+  // then acts under its own approvals); `interrupt_agent` stops a child's
+  // current turn (idempotent, keeps inbox + descendants). Both are one-off
+  // decisions — a standing session grant would be overbroad.
+  if (name === "send_message" || name === "interrupt_agent") return "EXEC";
+  // `job_kill` stops a background job (terminal delivery is reported, so the
+  // model is never left believing it still runs). One-off like interrupt.
+  if (name === "job_kill") return "EXEC";
   if (CAIRN_WRITE_TOOLS.has(name) || DSH_WRITE_TOOLS.has(name)) return "WRITE_LOCAL";
   if (APPROVAL_SAFE_TOOLS.has(name)) return "READ";
   // Unknown tool — label conservatively. The classifier independently defaults

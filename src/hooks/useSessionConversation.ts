@@ -138,6 +138,16 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     const updateSubagent = (childId: string, update: (value: ChatSubagent) => ChatSubagent) => {
       setSubagents((current) => { const next = current.map((item) => item.childId === childId ? update(item) : item); subagentsRef.current = next; return next; });
     };
+    // Continuable children messaged from a cold pane never emitted `start`
+    // here — materialize a minimal item so their follow-up traffic (and the
+    // reply to a catalog message) renders instead of vanishing.
+    const ensureSubagent = (childId: string) => {
+      setSubagents((current) => {
+        if (current.some((item) => item.childId === childId)) return current;
+        const next = [...current, { childId, role: "subagent", instruction: "", content: "", toolCalls: [], running: true }];
+        subagentsRef.current = next; return next;
+      });
+    };
     const fold = createSessionEventFold({
       onTurnStart: () => { eventsRef.current = []; statsRef.current = undefined; setIsLoading(true); adapterRef.current.onTurnStart?.(); },
       onText: (delta) => { textRef.current += delta; setStreamingContent((current) => current + delta); adapterRef.current.onText?.(delta); },
@@ -256,11 +266,11 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
           const next = [...current, { childId, role: String(data.role ?? "subagent"), instruction: String(data.instruction ?? ""), content: "", toolCalls: [], running: true }]; subagentsRef.current = next; return next;
         });
         else if (data.trace === "status" && data.status === "done") updateSubagent(childId, (item) => ({ ...item, running: false, result: String(data.result ?? item.content) }));
-        else if (data.trace === "token") updateSubagent(childId, (item) => ({ ...item, content: item.content + String(data.delta ?? "") }));
-        else if (data.trace === "thought") updateSubagent(childId, (item) => ({ ...item, reasoning: (item.reasoning ?? "") + String(data.delta ?? "") }));
-        else if (data.trace === "tool-call") updateSubagent(childId, (item) => ({ ...item, toolCalls: [...(item.toolCalls ?? []), { tool: String(data.tool), label: String(data.label ?? data.tool), callId: typeof data.callId === "string" ? data.callId : undefined, args: data.args ? JSON.stringify(redactTranscriptValue(data.args)) : undefined }] }));
+        else if (data.trace === "token") { ensureSubagent(childId); updateSubagent(childId, (item) => ({ ...item, content: item.content + String(data.delta ?? "") })); }
+        else if (data.trace === "thought") { ensureSubagent(childId); updateSubagent(childId, (item) => ({ ...item, reasoning: (item.reasoning ?? "") + String(data.delta ?? "") })); }
+        else if (data.trace === "tool-call") { ensureSubagent(childId); updateSubagent(childId, (item) => ({ ...item, toolCalls: [...(item.toolCalls ?? []), { tool: String(data.tool), label: String(data.label ?? data.tool), callId: typeof data.callId === "string" ? data.callId : undefined, args: data.args ? JSON.stringify(redactTranscriptValue(data.args)) : undefined }] })); }
         else if (data.trace === "tool-done") updateSubagent(childId, (item) => ({ ...item, toolCalls: (item.toolCalls ?? []).map((tool) => tool.callId === data.callId ? { ...tool, output: redactToolOutput(typeof data.output === "string" ? data.output : undefined), ok: data.ok !== false, error: typeof data.error === "string" ? redactSensitiveText(data.error) : undefined } : tool) }));
-         else if (data.trace === "usage") updateSubagent(childId, (item) => ({ ...item, lastUsage: { promptTokens: Number(data.promptTokens ?? 0), completionTokens: Number(data.completionTokens ?? 0), reasoningTokens: Number(data.reasoningTokens ?? 0), costUsd: typeof data.costUsd === "number" ? data.costUsd : undefined, breakdown: data.breakdown as TokenBreakdown | undefined } }));
+         else if (data.trace === "usage") { ensureSubagent(childId); updateSubagent(childId, (item) => ({ ...item, lastUsage: { promptTokens: Number(data.promptTokens ?? 0), completionTokens: Number(data.completionTokens ?? 0), reasoningTokens: Number(data.reasoningTokens ?? 0), costUsd: typeof data.costUsd === "number" ? data.costUsd : undefined, breakdown: data.breakdown as TokenBreakdown | undefined } })); }
       } else if (projection.kind === "approval" && typeof data.callId === "string") {
         const next = toolsRef.current.map((item) => item.callId === data.callId
           ? { ...item, confirmRequired: data.status === "required", approvalNonce: typeof data.nonce === "string" ? data.nonce : undefined }

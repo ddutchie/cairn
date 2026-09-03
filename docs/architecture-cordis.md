@@ -36,6 +36,7 @@ what is still open after the `feat/cordis-runtime` refactor.
 │    session · llm · system-prompt · agent · tools · user-questions · approval ·             │
 │    session-persistence · agent-loop · attachment-store · token-meter ·                     │
 │    compaction · llm-retry · subagent · skills · subagent-spawn · tool-subagent             │
+│    (+delegate continuable, tool-subagent-control, list-agents, jobs)                         │
 │                                                                                             │
 │  ctx.services: tools · skills · fs · sessions · agents · approval · userQuestions · cairn   │
 │  ctx.cairn = { defineTool }        (stable plugin API surface)                              │
@@ -95,7 +96,9 @@ caches it in module-level `sharedCtx`.
 | agent-loop | `cordis:dsh:agent-loop` | `agentLoop` |
 | attachment-store | `cordis:cairn:attachment-store` | `attachments` |
 | token-meter / compaction / llm-retry | dsh builtins | pressure + auto-compact + retry |
-| subagent (+spawn +tool-subagent) | dsh/cairn | subagent capability |
+| subagent (+spawn +tool-subagent) | dsh/cairn | subagent capability (one-shot `subagent` + continuable `delegate`) |
+| tool-subagent-control + list-agents | dsh | `send_message` / `interrupt_agent` / `list_agents` (model side) |
+| jobs-local + tool-jobs | dsh | background-job registry + `job_output`/`job_list`/`job_kill` (required by both background routes) |
 | skills | `cordis:dsh:skills` | `skills` registry |
 | invariants | `cordis:dsh:invariants` | `invariants` registry (companion plugins) |
 
@@ -305,6 +308,7 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Plugin UI (renderer) | `src/lib/plugin-ui/{loader,platform-modules,dsh-client-ctx,dsh-slot-map,slot-matrix,registry}.ts`, `SlotOutlet.tsx` |
 | Toolview dispatch | `src/lib/dsh-toolview/{contract,adapter}.ts`, `ToolCallIndicator.tsx`, `ChatMessageBubble.tsx` |
 | Attachment store | `electron/cordis/cairn-attachment-store.ts` |
+| Subagent messaging | `electron/cordis/subagent-control.ts` (host list/interrupt/message + `subagent:*` IPC), `src/components/conversation/SubagentCatalogAction.tsx` (header catalog) |
 | Skill bridge | `electron/cordis/cairn-skill-provider.ts`, `src/lib/plugin-ui/` |
 | Artifacts hygiene | `electron/lib/artifact-hygiene.ts`, `codebase-index.ts` |
 | Plan history | `docs/plans/cordis-runtime.md` (§1–§23) |

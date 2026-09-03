@@ -1,6 +1,6 @@
 # dsh `0.1.2-rc.1` Evaluation — Upgrade Plan for Cairn v3.0.x
 
-> **Status:** landed on `ddutchie/dsh_012` at `0.1.2-rc.1` — compile + `type-check:all` + full Electron suite (1201 passed) green, **live sweep done** (see §5.1). This branch now tracks the `next` tag; PR-2 (Schedule opt-in) not started.  
+> **Status:** landed on `ddutchie/dsh_012` at `0.1.2-rc.1` — compile + `type-check:all` + full Electron suite green, **live sweep done** (see §5.1). **Continuable-subagent full slice implemented** (see §9); PR-2 (Schedule opt-in) not started.  
 > **Date:** 2026-09-03 · **Cairn pinned (this branch):** `0.1.2-rc.1` + `cordis@4.0.2` · **main:** `0.1.1-rc.2` + `cordis@4.0.1`  
 > **Upstream publishes:** every `@deepseek-ai/dsh-*` at `0.1.2-rc.1` is `npm publish`ed (tarball verified) **except** `dsh-tool-subagent-report`, which stops at `alpha.3` — removed upstream in `alpha.4` (see §1.6). `alpha.1` was tag-only, never published.  
 > **Generic bump playbook:** [`docs/dsh-upgrade-guide.md`](../dsh-upgrade-guide.md)
@@ -206,6 +206,50 @@ Done on `ddutchie/dsh_012`. Every capability below went green at least once; res
 * PR-2 (Schedule opt-in): **1–1.5 days** incl. projection read + Settings UI + live coverage.
 * Total to `alpha.5` equivalence: **≈ 2–3 days** wall-clock, plus eligibility for fast-follow to the next RC.
 * `alpha.5 → rc.1`: **~30 min** (sed + reinstall + verify) — the payoff for landing the alpha work first instead of waiting.
+
+---
+
+## 9  Continuable subagents — implemented on this branch
+
+Upstream's `send_message` headline (rc.1 notes) is implemented as a full
+slice: model tools, host controls, bridge, and renderer UI.
+
+**Mounts** (`cordis-context.ts`): `tool-subagent-control` (`send_message` +
+`interrupt_agent`), `tool-subagent-list-agents` (`list_agents`), a second
+`tool-subagent` instance (`toolName: "delegate"`, `backgroundMode:
+"continuable"` — `subagent` keeps its one-shot contract), and the background
+stack `dsh-jobs-local` + `dsh-tool-jobs` (`job_output`/`job_list`/`job_kill`
++ settlement notices; required by BOTH background routes — one-shot
+`run_in_background` was equally broken without a controller).
+
+**Approval mapping** (`shared/agent/tool-risk.ts`): `delegate` /
+`send_message` / `interrupt_agent` / `job_kill` → EXEC one-off (no standing
+grant — overbroad for messaging); `list_agents` / `job_list` / `job_output` →
+READ. Locked in `tool-risk.test.ts`.
+
+**Bridge** (`cairn-plugins.ts` `cairnSubagentPlugin`): `agent-message`
+follow-ups (either direction, incl. host→child) surface as trace tokens;
+`turn/start` resets the streamed-delta guards so later turns aren't skipped.
+
+**Host controls** (`cordis/subagent-control.ts` + `subagent:*` IPC +
+preload): `list` (durable catalog + live activity overlay, anytime),
+`interrupt` (durable human authority, anytime, absent = no-op), `message`
+(needs the exact live parent — chat retained agents qualify, coding only
+mid-turn; fails closed `parent-unavailable` with a human-readable hint).
+
+**Renderer**: `SubagentCatalogAction` in the shared `ConversationHeader`
+actions slot (Chat + Coding) — live-count badge, popover with mode/activity/
+label rows, per-row message box + Stop, local reply accumulation, stable
+error hints. Chat trace hook auto-materializes cold children.
+
+**Verified live** (`subagent-continuable.live.test.ts`): delegate → durable
+continuable child in catalog → host message accepted → interrupt accepted,
+plus unit tests (bridge, control validation, risk).
+
+Deliberately deferred: model-selected routes (`modelSelectionSettings`),
+per-child duration/usage in the catalog, `@`-style child references, job-list
+UI (upstream `ui-jobs` is read-only; no Cairn surface yet — see
+`docs/dsh-ui-checklist.md`).
 
 ---
 

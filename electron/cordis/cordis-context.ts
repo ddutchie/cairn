@@ -11,6 +11,10 @@ import subagentServicePlugin from "@deepseek-ai/dsh-subagent";
 import userQuestionsService from "@deepseek-ai/dsh-user-questions";
 import { apply as spawnProviderApply, inject as spawnProviderInject, name as spawnProviderName } from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolSubagentName } from "@deepseek-ai/dsh-tool-subagent";
+import { apply as toolSubagentControlApply, inject as toolSubagentControlInject, name as toolSubagentControlName } from "@deepseek-ai/dsh-tool-subagent-control";
+import { apply as toolSubagentListAgentsApply, inject as toolSubagentListAgentsInject, name as toolSubagentListAgentsName } from "@deepseek-ai/dsh-tool-subagent-control/list-agents";
+import JobsLocal from "@deepseek-ai/dsh-jobs-local";
+import { apply as toolJobsApply, inject as toolJobsInject, name as toolJobsName } from "@deepseek-ai/dsh-tool-jobs";
 import JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
 import SessionQuerySqlite from "@deepseek-ai/dsh-session-query-sqlite";
 import approvalService from "@deepseek-ai/dsh-user-approval";
@@ -89,6 +93,13 @@ export async function getContext(): Promise<Context> {
     B["cairn:llm-retry"] = { apply: llmRetryApply, inject: llmRetryInject, name: llmRetryName };
     B["cairn:subagent-spawn"] = { apply: spawnProviderApply, inject: spawnProviderInject, name: spawnProviderName };
     B["cairn:tool-subagent"] = { apply: toolSubagentApply, inject: toolSubagentInject, name: toolSubagentName };
+    // Second instance of the same delegation plugin for continuable children
+    // (separate builtin key so the loader composes it independently).
+    B["cairn:tool-subagent-continuable"] = { apply: toolSubagentApply, inject: toolSubagentInject, name: toolSubagentName };
+    B["cairn:tool-subagent-control"] = { apply: toolSubagentControlApply, inject: toolSubagentControlInject, name: toolSubagentControlName };
+    B["cairn:tool-subagent-list-agents"] = { apply: toolSubagentListAgentsApply, inject: toolSubagentListAgentsInject, name: toolSubagentListAgentsName };
+    B["dsh:jobs-local"] = JobsLocal;
+    B["cairn:tool-jobs"] = { apply: toolJobsApply, inject: toolJobsInject, name: toolJobsName };
     B["dsh:command-compact"] = { apply: commandCompactApply, inject: commandCompactInject, name: commandCompactName };
     B["dsh:session-title"] = SessionTitleService;
     B["dsh:session-title-first-prompt-llm"] = { apply: firstPromptApply, inject: firstPromptInject, name: firstPromptName };
@@ -137,6 +148,21 @@ export async function getContext(): Promise<Context> {
       { id: "plan-mode", name: "cordis:dsh:plan-mode", config: { section: "You are in plan mode. Stay in plan mode until the user switches the session mode. Explore and read first; do not edit files or run mutating commands." } },
       { id: "subagent-spawn", name: "cordis:cairn:subagent-spawn", config: { providerName: "spawn" } },
       { id: "tool-subagent", name: "cordis:cairn:tool-subagent", config: { provider: "spawn", toolName: "subagent", backgroundMode: "one-shot" } },
+      // Continuable delegation: background runs return a durable child id the
+      // model (send_message) or the user (subagent:message IPC) can message
+      // later. Kept as a separate tool so one-shot `subagent` keeps its
+      // wait-for-result contract. Requires the provider's prepareContinuable
+      // capability (spawn has it).
+      { id: "tool-subagent-continuable", name: "cordis:cairn:tool-subagent-continuable", config: { provider: "spawn", toolName: "delegate", backgroundMode: "continuable" } },
+      // Model-facing continuable-child controls over ctx.subagents.
+      { id: "tool-subagent-control", name: "cordis:cairn:tool-subagent-control", config: {} },
+      { id: "tool-subagent-list-agents", name: "cordis:cairn:tool-subagent-list-agents", config: {} },
+      // Background-job registry + model controls (job_output/job_list/job_kill
+      // + settlement notices). Required by BOTH background routes: one-shot
+      // run_in_background AND continuable delegate — without a controller,
+      // background starts fail with "background jobs unavailable".
+      { id: "jobs-local", name: "cordis:dsh:jobs-local", config: {} },
+      { id: "tool-jobs", name: "cordis:cairn:tool-jobs", config: {} },
     ];
     for (const entry of entries) await loader.create(entry);
     await loader.await();
