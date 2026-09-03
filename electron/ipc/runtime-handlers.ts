@@ -4,7 +4,7 @@ import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
-import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
+import { foldPlanModeActive } from "../cordis/plan-fold";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 
 let progressForwarderSetUp = false;
@@ -81,9 +81,8 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
         const r = out?.result ?? (out as { kind?: string; text?: string } | undefined);
         const commandName = req.line.trim().replace(/^\//, "").split(/\s+/, 1)[0];
         if (commandName === "plan" && r?.kind === "success") {
-          const agent = (handle as { agent: { session?: { id?: string; events?: readonly unknown[] } } }).agent;
-          const events = (agent.session?.events ?? []) as Parameters<typeof foldPlanMode>[0];
-          const mode = foldPlanMode(events) ? "plan" : "execute";
+          const agent = (handle as { agent: { session?: unknown } }).agent;
+          const mode = foldPlanModeActive(agent.session as never) ? "plan" : "execute";
           try {
             q.updateCodingSession(ctx.db, req.sessionId, { mode, updatedAt: ts() });
           } catch { /* chat sessions do not have a Cairn coding-session row */ }

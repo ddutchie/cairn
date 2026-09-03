@@ -12,6 +12,7 @@ import userQuestionsService from "@deepseek-ai/dsh-user-questions";
 import { apply as spawnProviderApply, inject as spawnProviderInject, name as spawnProviderName } from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import { apply as toolSubagentApply, inject as toolSubagentInject, name as toolSubagentName } from "@deepseek-ai/dsh-tool-subagent";
 import JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
+import SessionQuerySqlite from "@deepseek-ai/dsh-session-query-sqlite";
 import approvalService from "@deepseek-ai/dsh-user-approval";
 import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import ToolResultPruner from "@deepseek-ai/dsh-compaction-tool-result-pruner";
@@ -71,6 +72,7 @@ export async function getContext(): Promise<Context> {
     B["dsh:user-questions"] = userQuestionsService;
     B["dsh:approval"] = approvalService;
     B["dsh:session-persistence"] = JsonlSessionPersistence;
+    B["dsh:session-query-sqlite"] = SessionQuerySqlite;
     B["dsh:agent-loop"] = agentLoopPlugin;
     B["dsh:token-meter"] = TokenMeter;
     B["dsh:tool-result-pruner"] = ToolResultPruner;
@@ -101,6 +103,15 @@ export async function getContext(): Promise<Context> {
       { id: "user-questions", name: "cordis:dsh:user-questions" },
       { id: "approval", name: "cordis:dsh:approval", config: { policy: "ask" } },
       { id: "session-persistence", name: "cordis:dsh:session-persistence", config: { root: sessionRoot } },
+      // Session query backend (dsh 0.1.2-alpha.4+): continuable subagent
+      // cold-resume + listChildren go through `ctx.sessionQuery` — without a
+      // backend they fail closed (CONTINUATION_UNAVAILABLE). node:sqlite only,
+      // no native binding. Under vitest the index is `:memory:` (private per
+      // context — parallel workers would otherwise contend on one shared file
+      // → "database is locked"); exact reads/filters/traces are unaffected,
+      // only FTS persistence is lost, which no test needs. Production keeps a
+      // derived FTS index next to the session logs.
+      { id: "session-query-sqlite", name: "cordis:dsh:session-query-sqlite", config: { path: process.env.VITEST ? ":memory:" : path.join(path.dirname(sessionRoot), "session-search.db") } },
       { id: "agent-loop", name: "cordis:dsh:agent-loop", config: { agents: [] } },
       { id: "attachment-store", name: "cordis:cairn:attachment-store", config: { dshHome: path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "dsh") } },
       { id: "spill", name: "cordis:dsh:spill", config: { root: path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "spill") } },

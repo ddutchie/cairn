@@ -35,7 +35,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
 import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./approval-state";
-import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
+import { foldPlanModeActive } from "../cordis/plan-fold";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
@@ -951,8 +951,8 @@ export function registerSessionRuntimeHandlers(
           if (commandResult?.kind !== "success") {
             throw new Error(commandResult?.text ?? "plan mode command was not accepted");
           }
-          const events = ((handle as { agent: { session?: { events?: readonly SessionEvent[] } } }).agent.session?.events ?? []);
-          const committedMode = foldPlanMode(events) ? "plan" : "execute";
+          const session = (handle as { agent: { session?: unknown } }).agent.session;
+          const committedMode = foldPlanModeActive(session as never) ? "plan" : "execute";
           if (committedMode !== mode) {
             throw new Error(`plan mode command did not commit ${mode}`);
           }

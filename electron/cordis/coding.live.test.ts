@@ -55,7 +55,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cordis coding stack (gated on 
 
     let finalText = "";
     let bashCalled = false;
-    for (const e of agent.session.events) {
+    for (const e of agent.session.snapshotEvents()) {
       if (e.type === "assistant/message") {
         const t = e.data.message.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
         if (t) finalText = t;

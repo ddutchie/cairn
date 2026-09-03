@@ -22,7 +22,24 @@
  * per-assistant-message stats line, matching upstream `deriveTurnMetrics`.
  */
 
-import { isTokenDelta } from "@deepseek-ai/dsh-llm";
+/**
+ * Inlined `isTokenDelta` (was `import { isTokenDelta } from
+ * "@deepseek-ai/dsh-llm"` — removed upstream in `0.1.2-alpha.4`). Mirrors
+ * `shared/session-stats.ts`; keep the two in sync.
+ */
+function isTokenDelta(chunk: unknown): boolean {
+  if (!chunk || typeof chunk !== "object") return false;
+  const c = chunk as { type?: unknown; text?: unknown; argumentsDelta?: unknown; name?: unknown };
+  switch (c.type) {
+    case "text-delta":
+    case "reasoning-delta":
+      return typeof c.text === "string" && c.text !== "";
+    case "tool-call-delta":
+      return (typeof c.argumentsDelta === "string" && c.argumentsDelta !== "") || c.name !== undefined;
+    default:
+      return false;
+  }
+}
 
 /** Whole-session aggregate throughput/latency totals. */
 export interface SessionStatsTotals {

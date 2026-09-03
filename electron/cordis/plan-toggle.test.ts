@@ -24,18 +24,18 @@ describe("plan toggle via /plan command", () => {
       llmConfig: { baseUrl: "http://localhost:1/v1", model: "m", apiKey: "k", provider: "openai" },
       signal: undefined,
     });
-    const fold = (await import("@deepseek-ai/dsh-plan-mode")).foldPlanMode as (e: readonly unknown[]) => boolean;
-    const agent = (handle as { agent: { session: { events: readonly unknown[] } } }).agent;
+    const { foldPlanModeActive } = await import("./plan-fold");
+    const agent = (handle as { agent: { session: unknown } }).agent;
 
     try {
-      expect(fold(agent.session.events)).toBe(false); // starts inactive
+      expect(foldPlanModeActive(agent.session as never)).toBe(false); // starts inactive
       const on = await commands!.execute!(agent, "/plan", [], new AbortController().signal);
       console.log("/plan:", JSON.stringify(on?.result ?? on)?.slice(0, 120));
-      expect(fold(agent.session.events)).toBe(true);
+      expect(foldPlanModeActive(agent.session as never)).toBe(true);
 
       const off = await commands!.execute!(agent, "/plan off", [], new AbortController().signal);
       console.log("/plan off:", JSON.stringify(off?.result ?? off)?.slice(0, 120));
-      expect(fold(agent.session.events)).toBe(false);
+      expect(foldPlanModeActive(agent.session as never)).toBe(false);
     } finally {
       try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
     }
