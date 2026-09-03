@@ -210,9 +210,12 @@ diff recipe, deadlock recovery, testing matrix) lives in
 with the current pin and the historical breakage index.
 
 **Current pin:** `@deepseek-ai/*@0.1.1-rc.2` (tag `next`) + `cordis@4.0.1`.  
-**Next candidate:** `0.1.2-alpha.3` + `cordis@4.0.2` — see
+**Next candidate:** `0.1.2-alpha.5` + `cordis@4.0.2` — see
 `docs/plans/dsh-0.1.2-alpha.3-evaluation.md` for the full diff, wiring, and
 adopt/defer decisions (Schedule = opt-in, model selection = defer).
+`alpha.4` carries the breakage (bidirectional `send_message`, `SessionSeq`,
+`report` package removed); `alpha.5` is a bugfix republish with identical
+`lib/` — target `alpha.5` directly.
 
 ### Bump checklist
 1. Find the target line: `npm view @deepseek-ai/<pkg> dist-tags --json` (we use
@@ -244,7 +247,9 @@ adopt/defer decisions (Schedule = opt-in, model selection = defer).
 |---|---|---|
 | `AttachmentStore.readImageRequest(ref, policy, signal)` | "cannot derive model-request images" | implement on `CairnAttachmentStore` (bytes passthrough + deterministic `variantId`, `depth/space/hasAlpha`) |
 | session jsonl compression/naming | replay empty or "not found" | `session.jsonl[.zstd]`, `<root>/<encodedCwd>/<id>/…` plaintext+flat fallbacks are handled in handlers |
-| `SessionId` stringification / `brandString` | replay path lookups fail / `subagent/CONTROL_*_UNAVAILABLE` | `0.1.2-alpha.3`: control-plane subagent paths use `brandString(x)` not `SessionId(x)`; keep `SessionId` for session construction, migrate `followup`/`interrupt`/`listChildren` auth paths |
+| `SessionId` stringification / `brandString` | replay path lookups fail / `subagent/CONTROL_*_UNAVAILABLE` | `0.1.2-alpha.3`: control-plane subagent paths use `brandString(x)` not `SessionId(x)`; keep `SessionId` for session construction, migrate `sendMessage`/`interrupt`/`listChildren` auth paths |
+| `SessionSeq` branding / `Session.events` removal | `tsc` errors on `event.seq` arithmetic; `session.events` undefined at runtime | `0.1.2-alpha.4`: `seq` is branded `SessionSeq` (wrap with `SessionSeq()`), `session.events` → `seq`/`eventAt()`/`snapshotEvents()`/`ownEvents()`; header `seedLength` → `isSeeded` + `inheritedEventCount` (Cairn has zero `seedLength` refs — verified) |
+| `report` tool removal | `dsh-tool-subagent-report` fails to install past `alpha.3` | `0.1.2-alpha.4`: package unpublished (replaced by bidirectional `send_message`); drop from `package.json`, regen `licenses.json` |
 | `dsh-session-query` presence | `CONTINUATION_UNAVAILABLE` / `SUBAGENT_CONTROL_QUERY_UNAVAILABLE` on `followup`/`listChildren` | `0.1.2-alpha.3`: continuable cold-resume and listing now go through `sessionQuery`; mount `@deepseek-ai/dsh-session-query` on the shared ctx (`B["dsh:session-query"]`) or continuable subagents regress |
 | `SUBAGENT_DESCRIPTOR_VERSION 2→3` | cold resume ignores persisted reasoning effort / stale descriptor fold | `0.1.2-alpha.3`: v3 adds `agentReasoningEffort`; old logs fold with it `undefined` (no crash); new writes are v3 — no migration needed, but verify one cold-resume of a pre-bump session |
 | `code-mode → PTC mode` rename | literal `code-mode` filter / session-search misses | `0.1.2-alpha.3`: persisted vocabulary keeps alias; grep for literal `code-mode` strings before merging |

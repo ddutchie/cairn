@@ -75,6 +75,8 @@ What to read in the diff:
 | Bucket | Signal in diff | Cairn impact |
 |---|---|---|
 | **Branded strings** | `SessionId(x)` → `brandString(x)` | Every `SessionId()` call in `run-cordis-coding.ts`, `session-runtime.ts`, `cordis-context.ts` |
+| **Branded seq / event-read API** | `SessionEvent.seq: number` → `SessionSeq`; `session.events` removed in favour of `seq`/`eventAt()`/`snapshotEvents()`/`ownEvents()`; header `seedLength` → `isSeeded` + `inheritedEventCount` | `chat-session-runner.ts`, `cairn-plugins.ts`, `session-turn.ts` + replay tests — runtime-safe (still numbers) but `tsc` needs `SessionSeq()` wrapping |
+| **Removed packages** | e.g. `dsh-tool-subagent-report` unpublished past `alpha.3` (bidirectional `send_message` replaces one-way `report`) | Drop from `package.json`; check `src/generated/licenses.json` for stale refs; confirm no imports remain |
 | **Peer set change** | new `dsh-brand` / `dsh-util-values` / `dsh-session-query` / `zod` | `package.json` + `package-lock.json` must include them; missing peer → `Cannot find module` at mount |
 | **Descriptor/log version** | `SUBAGENT_DESCRIPTOR_VERSION 2 → 3` / `SESSION_FORMAT_VERSION` | Cold subagent resume, replay, and listing — old sessions still read (no migration) but new writes use v3 |
 | **Service rename / removal** | `dsh-client-runtime → dsh-client-modules`, `ApiProxy` deleted | `cordis-context.ts` `B` map and `builtin → service key` table |
