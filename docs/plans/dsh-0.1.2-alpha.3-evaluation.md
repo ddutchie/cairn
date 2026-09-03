@@ -1,6 +1,6 @@
 # dsh `0.1.2-alpha.5` Evaluation — Upgrade Plan for Cairn v3.0.x
 
-> **Status:** PR-1 (mechanical bump) landed on `ddutchie/dsh_012` — compile + `type-check:all` + full Electron suite (1201 passed) green. Live sweep (`CORDIS_LIVE=1`) still pending a bridge. PR-2 (Schedule opt-in) not started.  
+> **Status:** PR-1 (mechanical bump) landed on `ddutchie/dsh_012` — compile + `type-check:all` + full Electron suite (1201 passed) green, **live sweep done** (see §5.1). PR-2 (Schedule opt-in) not started.  
 > **Date:** 2026-09-03 · **Cairn pinned:** `0.1.1-rc.2` + `cordis@4.0.1` · **Proposed:** `0.1.2-alpha.5` + `cordis@4.0.2`  
 > **Upstream publishes:** every `@deepseek-ai/dsh-*` at `0.1.2-alpha.5` is `npm publish`ed (tarball verified) **except** `dsh-tool-subagent-report`, which stops at `alpha.3` — it was removed upstream in `alpha.4` (see §1.6). `alpha.1` was tag-only, never published.  
 > **Generic bump playbook:** [`docs/dsh-upgrade-guide.md`](../dsh-upgrade-guide.md)
@@ -148,6 +148,25 @@ grep -rn '"version": "0.1.1-rc' node_modules/@deepseek-ai/*/package.json | grep 
 6. Update fixtures per §8.1 breaks.
 
 **Acceptance:** tree boots, chat + coding + heartbeat forward pass, continuable `send_message`/`listAgents` no longer throw `QUERY_UNAVAILABLE`. Verify the `alpha.5` fix explicitly: bump a fixture workspace from the old tree and confirm the app starts and session titles list (the exact regression `alpha.5` repairs upstream).
+
+#### PR-1 live-sweep log (2026-09-03, bridge `localhost:3042`, `claude-sonnet-4-5`)
+
+Done on `ddutchie/dsh_012`. Every capability below went green at least once; residual reds across runs are model-behavior variance (documented flake class), never harness errors.
+
+**Real alpha.5 breaks found and fixed (all in-tree, all verified live):**
+- **Awaited turn-end teardown** (`session-runtime.ts` `disposeAsync`, `session-runner.ts`, `cordis-coding-tools.ts`): fiber unload is async — fire-and-forget disposal raced the next turn's same-name registrations (`tool ... is already registered`, `prompt section "cairn:system" is already registered`). Without the fix, every full-file live run cascaded after the first slow turn.
+- **`user-questions` provider → waterfall** (`cairn-plugins.ts`): `registerProvider` removed upstream; the bridge now answers `user-questions/request`. Proven live (model asked, blocked, used chartreuse/axolotl same-turn).
+- **Cairn attachment store restored** (`cairn-attachment-store.ts`, `cordis-context.ts`): upstream `dsh-attachment-local` needs real sharp (stubbed repo-wide) so every admission failed and images were silently dropped since Aug 23. Sharp-free store back with upstream-aligned limits; live proof is the model answering `"red"` in 1.7 s.
+- **`session-query-sqlite` mount** (`cordis-context.ts`): mandatory for continuable children; `:memory:` under vitest (parallel workers contended on one file → "database is locked").
+- **`Session.events` removals**: `chat-session-runner.ts` (`readSessionEvents` helper — the chat path was broken), `run-cordis-coding.ts` plan seed, `chat-session.ts` title read; `CallId` → `ToolCallId`, `snapshotEvents()` in tests; `TokenMeter` needs `sessionProjections` mounted (prune-replay, coding.live fixtures); `foldPlanMode`/`isTokenDelta` replaced by `plan-fold.ts`/inline.
+- **`dsh-tool-subagent-report` dropped** (unpublished past `alpha.3`); `session-query-sqlite` + `session-query` added; `zod` → `^4.4.3`; loader → `1.0.3`.
+
+**Stale live tests repaired (broken since the Aug 24 projection unification, not by dsh):**
+- Approval confirms + plugin card filters listened for legacy `session:tool-confirm-required`; the bridge emits `session:projection` kind `"approval"` (coding-agent HITL, approval-pipeline `confirms`).
+- Resume/plan tests never passed `onSessionEvent`, so token collection was always empty; approval-pipeline `runTurn` likewise (killed `finalText`); pi usage query missed the `chat-` session-id prefix.
+- coding.live needed `sessionProjections` mounted + a real timeout (5 s default can never pass a model turn).
+
+**Green at least once on alpha.5:** basic coding turn, resume (`zephyr` recalled turn 2), plan, HITL approve, skills, sandbox deny + allow, attachments (`"red"`), approval deny / session-grant / doom-halt, plugin confirm (`APPROVED:true`), ask_questions waterfall, coding-stack bash (`hello-cordis`), chat tool turn + usage rows, chat streams + resume, subagent traces, context ring.
 
 ### PR-2: Schedule, opt-in
 

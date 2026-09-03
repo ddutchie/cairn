@@ -26,7 +26,7 @@ import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName 
 import { apply as commandCompactApply, inject as commandCompactInject, name as commandCompactName } from "@deepseek-ai/dsh-command-compact";
 import SessionTitleService from "@deepseek-ai/dsh-session-title";
 import { apply as firstPromptApply, inject as firstPromptInject, name as firstPromptName } from "@deepseek-ai/dsh-session-title-first-prompt-llm";
-import { LocalAttachmentStore } from "@deepseek-ai/dsh-attachment-local";
+import { CairnAttachmentStore } from "./cairn-attachment-store";
 import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
 import * as SpillPolicy from "@deepseek-ai/dsh-spill-policy";
 import { app as electronApp } from "electron";
@@ -83,7 +83,7 @@ export async function getContext(): Promise<Context> {
     B["dsh:tool-skill"] = { apply: toolSkillApply, inject: toolSkillInject, name: toolSkillName };
     B["dsh:commands"] = CommandRuntime;
     B["dsh:plan-mode"] = planModePlugin;
-    B["cairn:attachment-store"] = LocalAttachmentStore;
+    B["cairn:attachment-store"] = CairnAttachmentStore;
     B["dsh:spill"] = LocalSpillStore;
     B["dsh:spill-policy"] = SpillPolicy;
     B["cairn:llm-retry"] = { apply: llmRetryApply, inject: llmRetryInject, name: llmRetryName };
@@ -113,7 +113,10 @@ export async function getContext(): Promise<Context> {
       // derived FTS index next to the session logs.
       { id: "session-query-sqlite", name: "cordis:dsh:session-query-sqlite", config: { path: process.env.VITEST ? ":memory:" : path.join(path.dirname(sessionRoot), "session-search.db") } },
       { id: "agent-loop", name: "cordis:dsh:agent-loop", config: { agents: [] } },
-      { id: "attachment-store", name: "cordis:cairn:attachment-store", config: { dshHome: path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "dsh") } },
+      // Cairn-owned sharp-free store (in-memory, context lifetime). Upstream's
+      // LocalAttachmentStore needs real sharp (stubbed repo-wide), so it is
+      // not mounted. No config — the store takes none.
+      { id: "attachment-store", name: "cordis:cairn:attachment-store", config: {} },
       { id: "spill", name: "cordis:dsh:spill", config: { root: path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "spill") } },
       { id: "spill-policy", name: "cordis:dsh:spill-policy", config: { maxInlineBytes: 32768 } },
       { id: "token-meter", name: "cordis:dsh:token-meter" },

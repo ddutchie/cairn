@@ -377,48 +377,40 @@ interface CairnQuestionItem {
   intent?: { kind?: string; approve?: string; [k: string]: unknown };
 }
 
-/** dsh AskUserQuestionAnswer shape returned by the provider. */
+/** dsh AskUserQuestionAnswer shape returned by the answerer. */
 interface DshAnswer { answers: Array<{ id: string; selected: string[]; custom?: string }> }
-/** The subset of ctx.userQuestions the provider registration needs. */
-interface UserQuestionsSeam {
-  registerProvider: (p: { ask: (req: { questions: CairnQuestionItem[]; signal?: AbortSignal }) => Promise<DshAnswer> }) => () => void;
+/** The waterfall request dsh-user-questions dispatches to answerers. */
+interface UserQuestionsRequest {
+  questions: CairnQuestionItem[];
+  agent?: unknown;
+  signal?: AbortSignal;
 }
 
 /**
  * Bridge the dsh user-questions seam (ctx.userQuestions) to Cairn's renderer
- * question form. Registers the single UI provider: ask() maps dsh questions to
- * the `ask_questions` IPC shape the renderer already renders, sends it, blocks
- * until the renderer answers (via registerPending), then maps the answer text
- * back to dsh's structured AskUserQuestionAnswer. This gives the coding agent
- * and chat a blocking, same-turn question flow without the unpublished
- * dsh-tool-ask-user package.
+ * question form. Answers the `user-questions/request` waterfall: maps dsh
+ * questions to the `ask_questions` IPC shape the renderer already renders,
+ * sends it, blocks until the renderer answers (via registerPending), then maps
+ * the answer text back to dsh's structured AskUserQuestionAnswer. This gives
+ * the coding agent and chat a blocking, same-turn question flow without the
+ * unpublished dsh-tool-ask-user package.
+ *
+ * dsh 0.1.2-alpha.4 removed registerProvider (and its DUPLICATE_PROVIDER
+ * failure mode) — answerers are plain waterfall listeners now, scoped to the
+ * asking agent when one is supplied. Unsubscribing at turn end is enough;
+ * no cross-turn holder needed.
  */
 export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig): (() => void) | void {
   const { registerPending, emitQuestions, signal, questionsTimeoutMs } = config;
   // ctx.userQuestions is provided by dsh-user-questions (see ctx-augment).
-  // Cast the value through UserQuestionsSeam so Cairn's own dispose-and-
-  // re-register helpers keep their local shape without leaking dsh's
-  // AskUserQuestionItem into every callsite.
-  const uq = ctx.userQuestions as unknown as UserQuestionsSeam | undefined;
-  if (!uq) return;
+  // Presence-gate only — answering happens through the waterfall event below.
+  if (!ctx.userQuestions) return;
 
-  // registerProvider throws DUPLICATE_PROVIDER if a prior turn's provider fiber
-  // hasn't been disposed yet (mount disposal is fire-and-forget, so a back-to-back
-  // turn can re-mount before teardown settles). A duplicate registration crashes
-  // the whole loop mid-turn (the "a user-questions provider is already registered"
-  // abort that left the subagent stuck "Working…"). Track the disposer on the
-  // shared context so we can dispose any stale provider before re-registering,
-  // making the mount idempotent.
-  const holder = ctx as unknown as { __cairnQuestionsDispose?: () => void };
-  if (typeof holder.__cairnQuestionsDispose === "function") {
-    try { holder.__cairnQuestionsDispose(); } catch { /* stale */ }
-    holder.__cairnQuestionsDispose = undefined;
-  }
-
-  let providerDispose: (() => void) | undefined;
-  try {
-    providerDispose = uq.registerProvider({
-      ask: async (request) => {
+  const unsub = (ctx.on as unknown as (ev: string, fn: (...args: unknown[]) => unknown) => () => void)(
+    "user-questions/request",
+    (...args: unknown[]) => {
+      const request = args[0] as UserQuestionsRequest;
+      return (async (): Promise<DshAnswer> => {
         const requestId = `q-${newId()}`;
         // Forward the raw question objects to the renderer unchanged. The
         // renderer's QuestionForm now understands BOTH the Cairn shape
@@ -503,21 +495,10 @@ export function cairnQuestionsPlugin(ctx: Context, config: CairnQuestionsConfig)
           if (err instanceof UserQuestionError) throw err;
         }
         return { answers: request.questions.map((q, i) => ({ id: q.id, selected: [], custom: i === 0 ? answersText : undefined })) };
-      },
-    }) as unknown as (() => void) | undefined;
-  } catch (err) {
-    // If a stale provider is still registered (dispose race), swallow the
-    // duplicate so the turn proceeds without ask_questions rather than aborting
-    // the whole loop (the DUPLICATE_PROVIDER crash).
-    if ((err as { code?: string })?.code !== "DUPLICATE_PROVIDER") throw err;
-    return;
-  }
-
-  holder.__cairnQuestionsDispose = () => {
-    try { providerDispose?.(); } catch { /* noop */ }
-    if (holder.__cairnQuestionsDispose) holder.__cairnQuestionsDispose = undefined;
-  };
-  return holder.__cairnQuestionsDispose;
+      })();
+    },
+  );
+  return unsub;
 }
 // Cordis gates ctx.userQuestions behind an explicit injection declaration.
 cairnQuestionsPlugin.inject = ["userQuestions"];

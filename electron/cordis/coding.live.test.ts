@@ -28,6 +28,11 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cordis coding stack (gated on 
     await ctx.plugin(systemPromptPlugin, { persona: "", includeHarnessIdentity: false });
     await ctx.plugin(agentPlugin);
     await ctx.plugin(toolsPlugin, { mode: "native" });
+    // sandbox-policy / tool-todo / agent-instructions inject
+    // ["sessionProjections"] since dsh 0.1.2-alpha.4 — mount the registry
+    // first or the fs/shell chain never activates (mirrors getContext()).
+    const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection");
+    await ctx.plugin(ProjectionRegistry as never, {} as never);
 
     // The extracted coding capability stack (step 2a).
     const disposeCoding = await mountCodingStack(ctx, { cwd: "/tmp" });
@@ -66,5 +71,5 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cordis coding stack (gated on 
     disposeCoding();
     expect(bashCalled).toBe(true);
     expect(finalText).toContain("hello-cordis");
-  });
+  }, 120000);
 });

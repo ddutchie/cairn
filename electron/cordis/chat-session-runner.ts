@@ -18,6 +18,20 @@ import { startPhaseTimer } from "../lib/debug-log";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
+/**
+ * Read a live session's events through the dsh 0.1.2-alpha.4+ on-demand API
+ * (`snapshotEvents()`). `session.events` was removed upstream — kept as a
+ * fallback for foreign session-likes in tests.
+ */
+function readSessionEvents(session: unknown): readonly SessionEvent[] {
+  const s = session as {
+    snapshotEvents?: () => readonly SessionEvent[];
+    events?: readonly SessionEvent[];
+  } | null | undefined;
+  if (typeof s?.snapshotEvents === "function") return s.snapshotEvents();
+  return s?.events ?? [];
+}
+
 // Opt-in turn-latency instrumentation. Set CAIRN_TIMING=1 to log per-phase
 // timings for chat turns: getContext, prepareCordisRuntime (transport + adapter),
 // plugin/tool setup, agent open (cache hit vs resume/replay), pre-followup idle
@@ -377,7 +391,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     run: async ({ agent }) => {
       const runStart = markNow();
       timer.mark("open agent (cache hit, or resume/replay JSONL)");
-      const typed = agent as unknown as CordisTurnAgent & { session: { events: readonly SessionEvent[] } };
+      const typed = agent as unknown as CordisTurnAgent & { session: unknown };
       currentAttemptSessionId = SessionId(`chat-${req.threadId}`);
       const content = await buildCordisUserContent(ctx, req.message, req.images);
       markLog("run: content built, dispatching followup", runStart);
@@ -393,8 +407,9 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         const { flushSession } = await import("./plugins/session-durability");
         await flushSession(ctx as never, (typed as unknown as { session?: unknown }).session);
       } catch { /* best-effort */ }
-      const result = collect(typed.session.events, firstSeq);
-      const end = typed.session.events.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
+      const sessionEvents = readSessionEvents(typed.session);
+      const result = collect(sessionEvents, firstSeq);
+      const end = sessionEvents.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
       const kind = (end?.data as { reason?: { kind?: string } } | undefined)?.reason?.kind;
       // The provider only streams {inputTokens, outputTokens} on its usage events,
       // so the renderer's live fold persists a breakdown-less lastUsage and the
@@ -403,8 +418,8 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // tools, tool/result outputs, etc.) — exactly what the reload path does via
       // foldSessionUsage. Emit one synthetic, breakdown-carrying usage event so the
       // live ring matches the reload ring (single source of truth, no divergence).
-      emitBreakdownUsage(typed.session.events, opts.onSessionEvent);
-      emitTurnStats(typed.session.events, opts.onSessionEvent);
+      emitBreakdownUsage(sessionEvents, opts.onSessionEvent);
+      emitTurnStats(sessionEvents, opts.onSessionEvent);
       if (TIMING && kind && kind !== "completed") console.log(`[timing] turn/end kind="${kind}" at ${Date.now() - turnStart}ms (attempt did not complete cleanly)`);
       return { ...result, failedKind: kind && kind !== "completed" ? kind : undefined };
     },

@@ -95,6 +95,9 @@ export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Pro
     if (!profile.retainAgent) {
       try { await handle?.dispose?.(); } catch { /* best-effort agent teardown */ }
     }
-    resources.dispose();
+    // Awaited: fiber unload is async and the next turn re-registers the same
+    // tool/prompt-section names — fire-and-forget disposal races the next
+    // mount ("already registered"). See CordisDisposerStack.disposeAsync.
+    await resources.disposeAsync();
   }
 }

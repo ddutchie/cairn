@@ -141,14 +141,17 @@ export function remapChatArtifactDirs(ctx: Context): void {
  * every mounted fiber in reverse order. Awaits each fiber so tool registration
  * is complete before returning.
  */
-export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): Promise<() => void> {
+export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): Promise<() => unknown> {
   const { cwd, sandboxMode = "workspace-write", role = "default" } = opts;
-  const disposers: Array<() => void> = [];
+  const disposers: Array<() => unknown> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
     const name = (plugin as { name?: string })?.name ?? (plugin as { apply?: { name?: string } })?.apply?.name ?? "unknown";
     try {
-      const fiber = ctx.plugin(plugin as never, config as never) as unknown as Promise<{ dispose: () => void }>;
-      disposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
+      const fiber = ctx.plugin(plugin as never, config as never) as unknown as Promise<{ dispose: () => unknown }>;
+      // Return the teardown chain so the turn-end disposeAsync awaits fiber
+      // unload — otherwise the next turn's same-name tool registrations race
+      // the previous turn's still-unloading fibers ("already registered").
+      disposers.push(() => fiber.then((f) => f.dispose(), () => {}));
       await fiber;
     } catch (e) {
       console.error(`[cordis-coding] plug ${String(name)} failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
@@ -209,5 +212,9 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
   await plug({ apply: toolTodoApply, inject: toolTodoInject as never, name: toolTodoName }, { allowParallelInProgress: true });
   await plug({ apply: agentInstApply, name: agentInstName }, { maxBytes: 65536, maxSourceBytes: 500000 });
 
-  return () => { for (const d of disposers.reverse()) { try { d(); } catch { /* noop */ } } };
+  return async () => {
+    for (const d of disposers.reverse()) {
+      try { await d(); } catch { /* noop */ }
+    }
+  };
 }

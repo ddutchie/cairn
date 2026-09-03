@@ -101,6 +101,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
       llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
       mode: "execute",
       send: (c, p) => { sent.push({ channel: c, payload: p }); },
+      onSessionEvent: (event) => sent.push({ channel: "session:event", payload: { sessionId, event } }),
     });
     expect(r1.ok).toBe(true);
     const t1 = collectTokens(sent, sessionId);
@@ -114,6 +115,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
       llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
       mode: "execute",
       send: (c, p) => { sent.push({ channel: c, payload: p }); },
+      onSessionEvent: (event) => sent.push({ channel: "session:event", payload: { sessionId, event } }),
     });
     console.log("2C R2:", JSON.stringify(r2));
     expect(r2.ok).toBe(true);
@@ -143,6 +145,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
       llmConfig: { baseUrl: BASE, model: MODEL, apiKey: "local", provider: "openai" },
       mode: "plan",
       send: (c, p) => { sent.push({ channel: c, payload: p }); },
+      onSessionEvent: (event) => sent.push({ channel: "session:event", payload: { sessionId, event } }),
     });
     expect(r.ok).toBe(true);
 
@@ -168,9 +171,15 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
 
     const send = (channel: string, payload: Record<string, unknown>) => {
       sent.push({ channel, payload });
-      // Simulate the renderer approving the confirm dialog.
-      if (channel === "session:tool-confirm-required") {
-        const callId = String(payload.callId);
+      // Simulate the renderer approving the confirm dialog. The approval
+      // bridge emits session:projection kind "approval" (the legacy
+      // session:tool-confirm-required channel is only produced by the
+      // production IPC wrapper, which live tests bypass).
+      const data = (payload as { kind?: string; data?: { status?: string; callId?: unknown } }).data;
+      if (channel === "session:projection"
+        && (payload as { kind?: string }).kind === "approval"
+        && data?.status === "required" && data.callId !== undefined) {
+        const callId = String(data.callId);
         setTimeout(() => pending.get(callId)?.({ approved: true }), 50);
       }
     };
@@ -191,8 +200,10 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisCodingLoop (gated on 
     expect(r.ok).toBe(true);
 
     // A confirm was requested for the write tool.
-    const confirms = sent.filter((s) => s.channel === "session:tool-confirm-required");
-    console.log("2E CONFIRMS:", JSON.stringify(confirms.map((c) => c.payload.name)));
+    const confirms = sent.filter((s) => s.channel === "session:projection"
+      && (s.payload as { kind?: string }).kind === "approval"
+      && (s.payload as { data?: { status?: string } }).data?.status === "required");
+    console.log("2E CONFIRMS:", JSON.stringify(confirms.map((c) => (c.payload as { data?: { name?: string } }).data?.name)));
     expect(confirms.length).toBeGreaterThanOrEqual(1);
     // The approved write actually ran → assert on the write tool's own success
     // signal (deterministic) and, when it names our target, that the file exists.

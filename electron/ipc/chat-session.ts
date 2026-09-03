@@ -76,10 +76,15 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
       const { getContext } = await import("../cordis/run-cordis-loop");
       const ctx = await getContext();
       // Prefer projection read when available (already folded), else service get.
-      const sess = (ctx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions?.get?.(sid as never) as { events?: readonly unknown[] } | undefined;
-      if (sess?.events) {
+      const sess = (ctx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions?.get?.(sid as never) as {
+        snapshotEvents?: () => readonly unknown[];
+        events?: readonly unknown[];
+      } | undefined;
+      // Live sessions expose snapshotEvents() (dsh 0.1.2-alpha.4+ removed .events).
+      const liveEvents = typeof sess?.snapshotEvents === "function" ? sess.snapshotEvents() : sess?.events;
+      if (liveEvents && liveEvents.length > 0) {
         const { foldSessionTitle } = await import("@deepseek-ai/dsh-session-title");
-        const snap = foldSessionTitle(sess.events as never);
+        const snap = foldSessionTitle(liveEvents as never);
         if (snap) return { title: snap.title as string };
       }
       // Fallback to projection stateOf

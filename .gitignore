@@ -96,6 +96,9 @@ scripts/runtime-baselines/
 /session-search.db
 /session-search.db-wal
 /session-search.db-shm
+# Runtime artifacts: debug log + spill files (live runs, dev)
+/logs/
+/spill/
 
 # Demo recording pass logs
 /ffmpeg2pass-0.log

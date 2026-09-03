@@ -26,25 +26,43 @@ let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "open
 
 export interface CordisDisposerStack {
   mount: (ctx: Context, plugin: unknown, config?: unknown) => Promise<void>;
-  add: (dispose: () => void) => void;
+  add: (dispose: () => unknown) => void;
   dispose: () => void;
+  /**
+   * Awaited teardown. Cordis fiber disposal is ASYNC (unload runs over
+   * microtasks); the fire-and-forget `dispose()` leaves the previous turn's
+   * tool/prompt-section registrations alive long enough for the next turn's
+   * mounts to throw "already registered" (dsh 0.1.2-alpha.4+ enforces unique
+   * names via NamedEntries). Always prefer this at turn end.
+   */
+  disposeAsync: () => Promise<void>;
 }
 
 /** Mount per-turn plugins and unwind their fibers in one place. */
 export function createCordisDisposerStack(): CordisDisposerStack {
-  const disposers: Array<() => void> = [];
+  const disposers: Array<() => unknown> = [];
+  const runOne = async (dispose: () => unknown): Promise<void> => {
+    try { await dispose(); } catch { /* noop */ }
+  };
   return {
     add(dispose) { disposers.push(dispose); },
     async mount(ctx, plugin, config) {
       const fiber = ctx.plugin(plugin as never, config as never);
-      disposers.push(() => {
-        fiber.then((mounted) => { try { mounted.dispose(); } catch { /* noop */ } }, () => {});
-      });
+      disposers.push(() => fiber.then(
+        (mounted) => mounted.dispose() as unknown,
+        () => {},
+      ));
       await fiber;
     },
     dispose() {
       for (const dispose of disposers.splice(0).reverse()) {
-        try { dispose(); } catch { /* noop */ }
+        try { void runOne(dispose); } catch { /* noop */ }
+      }
+    },
+    async disposeAsync() {
+      const pending = disposers.splice(0).reverse();
+      for (const dispose of pending) {
+        await runOne(dispose);
       }
     },
   };

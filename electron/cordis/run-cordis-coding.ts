@@ -342,7 +342,13 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // event, its session log is authoritative and must not be overwritten by
     // Cairn's legacy SQLite mode index on every resumed turn.
     try {
-      const events = (typedAgent.session.events ?? []) as Array<{ type?: string }>;
+      const session = typedAgent.session as {
+        snapshotEvents?: () => Array<{ type?: string }>;
+        events?: Array<{ type?: string }>;
+      };
+      const events = typeof session?.snapshotEvents === "function"
+        ? session.snapshotEvents()
+        : (session?.events ?? []);
       const hasLoggedMode = events.some((event) => event.type === "plan/mode");
       if (!hasLoggedMode && mode === "plan") ctx.planMode?.set(typedAgent as never, true);
     } catch { /* non-fatal: plan mode falls back to prompt-only guidance */ }
