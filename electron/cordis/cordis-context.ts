@@ -22,6 +22,7 @@ import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import ToolResultPruner from "@deepseek-ai/dsh-compaction-tool-result-pruner";
 import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
 import SkillRegistry from "@deepseek-ai/dsh-skill";
+import { apply as skillFilesystemApply, inject as skillFilesystemInject, name as skillFilesystemName } from "@deepseek-ai/dsh-skill-filesystem";
 import InvariantRegistry from "@deepseek-ai/dsh-invariants";
 import CommandRuntime from "@deepseek-ai/dsh-commands";
 import planModePlugin from "@deepseek-ai/dsh-plan-mode";
@@ -41,7 +42,7 @@ import { apply as storageDomainApply, inject as storageDomainInject, name as sto
 import MessageFeedbackService from "@deepseek-ai/dsh-message-feedback";
 import { apply as commandFeedbackApply, inject as commandFeedbackInject, name as commandFeedbackName } from "@deepseek-ai/dsh-command-feedback";
 import { apply as scheduleApply, inject as scheduleInject, name as scheduleName } from "@deepseek-ai/dsh-schedule";
-import { isScheduleEnabled as hostIsScheduleEnabled } from "./host-store";
+import { isScheduleEnabled as hostIsScheduleEnabled, resolveHooksConfig } from "./host-store";
 import { apply as firstPromptApply, inject as firstPromptInject, name as firstPromptName } from "@deepseek-ai/dsh-session-title-first-prompt-llm";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
 import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
@@ -119,6 +120,7 @@ export async function getContext(): Promise<Context> {
     B["dsh:compaction"] = BasicCompactionEngine;
     B["dsh:subagent"] = subagentServicePlugin;
     B["dsh:skills"] = SkillRegistry;
+    B["dsh:skill-filesystem"] = { apply: skillFilesystemApply, inject: skillFilesystemInject, name: skillFilesystemName };
     B["dsh:invariants"] = InvariantRegistry;
     B["dsh:tool-skill"] = { apply: toolSkillApply, inject: toolSkillInject, name: toolSkillName };
     B["dsh:commands"] = CommandRuntime;
@@ -196,6 +198,25 @@ export async function getContext(): Promise<Context> {
       { id: "llm-retry", name: "cordis:cairn:llm-retry", config: {} },
       { id: "subagent", name: "cordis:dsh:subagent" },
       { id: "skills", name: "cordis:dsh:skills" },
+      // Local-filesystem skill discovery (dsh-skill-filesystem) as an ADDITIVE
+      // backend behind the skill seam: it covers the dsh-conventional project
+      // roots (<project>/.dsh/skills, <project>/.agents/skills) + user roots
+      // (~/.dsh/skills, ~/.agents/skills) with chokidar watching +
+      // registry invalidation, alongside Cairn's own provider (registered
+      // below, which keeps serving .cairn/.opencode/.cline/.claude + globals
+      // unchanged). Overlap note: a name present in .agents/skills is listed
+      // by BOTH providers; the registry resolves duplicates by rank (lower
+      // wins), so the dsh entry (project-agents rank 200) wins over Cairn's
+      // (bundled rank 600) — same file, near-identical parse; pinned in
+      // skill-filesystem.test.ts. Watching is OFF under vitest (persistent
+      // chokidar handles would leak across the shared test context — same
+      // rationale as the :memory: session-query index above); production
+      // watches with the upstream defaults.
+      {
+        id: "skill-filesystem",
+        name: "cordis:dsh:skill-filesystem",
+        config: { providerName: "dsh-filesystem", includeDefaultRoots: true, watch: !process.env.VITEST },
+      },
       { id: "invariants", name: "cordis:dsh:invariants" },
       { id: "tool-skill", name: "cordis:dsh:tool-skill" },
       { id: "commands", name: "cordis:dsh:commands" },
@@ -325,6 +346,16 @@ export async function getContext(): Promise<Context> {
     // session:projection kind:"permissions" for the renderer preset switcher.
     // Mounted after the permission-presets service above (no-op without it).
     try { const { mountPermissionsBridge } = await import("./permissions-bridge"); mountPermissionsBridge(ctx); } catch (err) { console.warn("[cordis] permissions bridge unavailable:", err instanceof Error ? err.message : err); }
+    // Community hook interop (Claude Code / Codex command hooks on dsh
+    // interception seams — see hooks-bridge.ts for the config surface).
+    // Mounted post-bootstrap, NOT an ENTRY_LIST entry: both bridges inject
+    // `shell`, which is only mounted per-turn by the coding stack — as loader
+    // entries they would stall `loader.await()` forever at bootstrap (same
+    // reason as PermissionPresetService above). Disabled by default:
+    // mountCairnHooks mounts nothing unless the user has hook config files.
+    // Static dsh imports live in hooks-bridge.ts so a missing package fails
+    // loudly at bundle time instead of degrading to this warning.
+    try { const { mountCairnHooks } = await import("./hooks-bridge"); mountCairnHooks(ctx, resolveHooksConfig()); } catch (err) { console.warn("[cordis] hooks unavailable:", err instanceof Error ? err.message : err); }
     sharedCtx = ctx;
     return ctx;
   })();

@@ -56,6 +56,9 @@
 import type Database from "better-sqlite3";
 import type { Context } from "@deepseek-ai/cordis";
 import { execSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import {
   upsertChatThread as upsertChatThreadImpl,
@@ -69,6 +72,7 @@ import {
   updateNote as updateNoteImpl,
   getUserStyle as getUserStyleImpl,
   appendUserStyleObservation as appendUserStyleObservationImpl,
+  getMcpServers as getMcpServersImpl,
 } from "../db/queries";
 import {
   isWorkspaceGranted as isWorkspaceGrantedImpl,
@@ -144,6 +148,26 @@ export function isScheduleEnabled(): boolean {
   }
 }
 
+/**
+ * Resolved user-level hook config files for the dsh hook bridges
+ * (see `electron/cordis/hooks-bridge.ts` for the full config-surface contract).
+ * Returns the absolute path per dialect ONLY when the file exists — absent
+ * files mean that dialect stays unmounted (hooks are opt-in, disabled by
+ * default). `homeDir` is injectable so unit tests never touch the real home.
+ */
+export function resolveHooksConfig(homeDir: string = os.homedir()): { claudeCode?: string; codex?: string } {
+  const out: { claudeCode?: string; codex?: string } = {};
+  const claudeCode = path.join(homeDir, ".config", "cairn", "hooks", "claude-code.json");
+  const codex = path.join(homeDir, ".config", "cairn", "hooks", "codex.json");
+  try {
+    if (fs.statSync(claudeCode).isFile()) out.claudeCode = claudeCode;
+  } catch { /* absent — dialect stays disabled */ }
+  try {
+    if (fs.statSync(codex).isFile()) out.codex = codex;
+  } catch { /* absent — dialect stays disabled */ }
+  return out;
+}
+
 /** Record one usage row for the Usage view. Never throws (recorder guards). */
 export function recordUsage(entry: RecordUsageArgs): void {
   recordLlmUsageImpl(entry);
@@ -190,6 +214,10 @@ export interface HostStore {
   // Workspace-persistent approval grants.
   isWorkspaceGranted(workspaceId: string, tool: string, target?: string | null): boolean;
   addWorkspaceApprovalGrant(workspaceId: string, tool: string, target?: string | null): ApprovalGrant | null;
+  // MCP connector rows (workspace-scoped; powers the dsh-mcp-client parity spike).
+  getMcpServer(workspaceId: string, serverId: string): ReturnType<typeof getMcpServersImpl>[number] | undefined;
+  // User-level hook config discovery (db-free; see resolveHooksConfig above).
+  resolveHooksConfig(homeDir?: string): { claudeCode?: string; codex?: string };
   // Tool-executor services (db-bound; same queries the executor ran directly).
   getFullSnapshot(): ReturnType<typeof getFullSnapshotImpl>;
   findLiveNoteByTitle(projectId: string, title: string): ReturnType<typeof findLiveNoteByTitleImpl>;
@@ -319,6 +347,14 @@ export function createHostStore(db: Database.Database): HostStore {
       target?: string | null,
     ): ApprovalGrant | null {
       return addWorkspaceApprovalGrantImpl(db, workspaceId, tool, target);
+    },
+
+    getMcpServer(workspaceId: string, serverId: string): ReturnType<typeof getMcpServersImpl>[number] | undefined {
+      return getMcpServersImpl(db, workspaceId).find((s) => s.id === serverId);
+    },
+
+    resolveHooksConfig(homeDir?: string): { claudeCode?: string; codex?: string } {
+      return resolveHooksConfig(homeDir);
     },
 
     getFullSnapshot(): ReturnType<typeof getFullSnapshotImpl> {

@@ -327,7 +327,12 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // the approval seam. Gated, so an unknown connector can't mutate
       // externally without confirmation.
       try {
-        const extDisposers = await registerExternalCairnTools(ctx, { db, workspaceId: req.workspaceId ?? "", projectId: req.projectId ?? "" });
+        // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF) — see
+        // run-cordis-coding.ts. Unset → empty mount + empty exclusion.
+        const { maybeMountDshMcpSpike } = await import("./mcp-dsh-bridge");
+        const spike = await maybeMountDshMcpSpike(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
+        spike.disposers.forEach((d) => resources.add(d));
+        const extDisposers = await registerExternalCairnTools(ctx, { db, workspaceId: req.workspaceId ?? "", projectId: req.projectId ?? "" }, { excludeServerIds: spike.excludedServerIds });
         extDisposers.forEach((d) => resources.add(d));
       } catch (e) {
         console.warn("[cordis] registerExternalCairnTools (chat) failed:", (e as Error)?.message ?? e);

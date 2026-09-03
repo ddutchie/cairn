@@ -248,11 +248,17 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     timer.mark("mountCodingStack (13 dsh plugins)");
     let externalDisposers: Array<() => void> = [];
     try {
+      // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF): when it
+      // verifies, the named server is served by dsh-mcp-client and excluded
+      // from the hand bridge below. Unset → empty mount + empty exclusion.
+      const { maybeMountDshMcpSpike } = await import("./mcp-dsh-bridge");
+      const spike = await maybeMountDshMcpSpike(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
+      spike.disposers.forEach((dispose) => resources.add(dispose));
       externalDisposers = await registerExternalCairnTools(ctx, {
         db,
         workspaceId: req.workspaceId ?? "",
         projectId: req.projectId ?? "",
-      });
+      }, { excludeServerIds: spike.excludedServerIds });
     } catch (e) {
       console.error(`[cordis-coding] registerExternalCairnTools failed:`, (e as Error)?.message ?? e);
     }

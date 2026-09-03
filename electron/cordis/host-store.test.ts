@@ -12,6 +12,9 @@
 import { describe, expect, it } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { applySchema } from "../db/schema";
 import {
   createWorkspace,
@@ -23,6 +26,7 @@ import {
   getCodingSessionById,
   getSessionProfile,
   getSessionTodos,
+  saveMcpServer,
 } from "../db/queries";
 import {
   CAIRN_DB,
@@ -32,6 +36,7 @@ import {
   getGitBranch,
   runWorkspaceHygiene,
   isScheduleEnabled,
+  resolveHooksConfig,
   recordUsage,
   newId,
   buildSystemPrompt,
@@ -278,6 +283,40 @@ describe("host-store seam delegation", () => {
       expect(getHostStore(emptyCtx, db)).toBeDefined();
     } finally {
       db.close();
+    }
+  });
+
+  it("getMcpServer returns workspace-scoped rows (powers the dsh-mcp-client spike)", () => {
+    const db = openDb();
+    try {
+      seedWorkspace(db);
+      const host = createHostStore(db);
+      expect(host.getMcpServer("ws-1", "missing")).toBeUndefined();
+      saveMcpServer(db, {
+        id: "mcp-1", workspaceId: "ws-1", name: "MCP One", transport: "http",
+        baseUrl: "http://127.0.0.1:9/mcp", enabled: true, source: "test",
+      });
+      expect(host.getMcpServer("ws-1", "mcp-1")?.baseUrl).toBe("http://127.0.0.1:9/mcp");
+      // Other workspaces cannot see it (same scoping as loadScopedConfigs).
+      expect(host.getMcpServer("ws-other", "mcp-1")).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("resolveHooksConfig finds only existing files (db-free)", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-hooks-seam-"));
+    try {
+      const host = createHostStore(openDb());
+      expect(resolveHooksConfig(home)).toEqual({});
+      expect(host.resolveHooksConfig(home)).toEqual({});
+      fs.mkdirSync(path.join(home, ".config", "cairn", "hooks"), { recursive: true });
+      fs.writeFileSync(path.join(home, ".config", "cairn", "hooks", "codex.json"), "{}");
+      expect(resolveHooksConfig(home).codex).toContain("codex.json");
+      expect(resolveHooksConfig(home).claudeCode).toBeUndefined();
+      expect(host.resolveHooksConfig(home).codex).toContain("codex.json");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
     }
   });
 

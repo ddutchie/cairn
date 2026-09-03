@@ -252,12 +252,27 @@ export interface ExternalToolsExecCtx {
  * Register the user's external tools (MCP servers + custom services) onto a dsh
  * context. Resolves the in-scope defs once at registration time; each tool
  * dispatches to executeExternalTool at execution time. Returns disposers.
+ * `opts.excludeServerIds` skips one server's `mcp__<id>__*` defs — used by the
+ * dsh-mcp-client parity spike (`mcp-dsh-bridge.ts`), which serves the named
+ * server through the dsh path instead. Unset (the default) changes nothing.
  */
-export async function registerExternalCairnTools(ctx: import("@deepseek-ai/cordis").Context, exec: ExternalToolsExecCtx): Promise<Array<() => void>> {
+export async function registerExternalCairnTools(
+  ctx: import("@deepseek-ai/cordis").Context,
+  exec: ExternalToolsExecCtx,
+  opts: { excludeServerIds?: ReadonlySet<string> } = {},
+): Promise<Array<() => void>> {
   const disposers: Array<() => void> = [];
   let defs: Array<{ function: { name: string; description: string; parameters: Record<string, unknown> } }> = [];
   try {
-    defs = (await createHostStore(exec.db).getExternalToolDefs(exec.workspaceId, exec.projectId)) as typeof defs;
+    const all = (await createHostStore(exec.db).getExternalToolDefs(exec.workspaceId, exec.projectId)) as typeof defs;
+    defs = opts.excludeServerIds?.size
+      ? all.filter((d) => {
+          for (const id of opts.excludeServerIds!) {
+            if (d.function.name.startsWith(`mcp__${id}__`)) return false;
+          }
+          return true;
+        })
+      : all;
   } catch (err) {
      
     console.error("[cordis] failed to resolve external tool defs:", err);
