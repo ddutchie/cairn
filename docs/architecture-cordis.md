@@ -209,13 +209,10 @@ diff recipe, deadlock recovery, testing matrix) lives in
 **`docs/dsh-upgrade-guide.md`** — this section is the Cairn-specific checklist
 with the current pin and the historical breakage index.
 
-**Current pin:** `@deepseek-ai/*@0.1.1-rc.2` (tag `next`) + `cordis@4.0.1`.  
-**Next candidate:** `0.1.2-alpha.5` + `cordis@4.0.2` — see
-`docs/plans/dsh-0.1.2-alpha.3-evaluation.md` for the full diff, wiring, and
-adopt/defer decisions (Schedule = opt-in, model selection = defer).
-`alpha.4` carries the breakage (bidirectional `send_message`, `SessionSeq`,
-`report` package removed); `alpha.5` is a bugfix republish with identical
-`lib/` — target `alpha.5` directly.
+**Current pin (branch `ddutchie/dsh_012`):** `@deepseek-ai/*@0.1.2-rc.1` (tag `next`) + `cordis@4.0.2` — live-swept, see the eval doc §5.1 log.  
+**Next:** track `next` (`0.1.2-rc.x` follow-ups); release the Cairn update off this branch per the lockstep changelog rule.  
+Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection = defer):
+`docs/plans/dsh-0.1.2-alpha.3-evaluation.md`.
 
 ### Bump checklist
 1. Find the target line: `npm view @deepseek-ai/<pkg> dist-tags --json` (we use

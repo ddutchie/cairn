@@ -1,8 +1,8 @@
-# dsh `0.1.2-alpha.5` Evaluation — Upgrade Plan for Cairn v3.0.x
+# dsh `0.1.2-rc.1` Evaluation — Upgrade Plan for Cairn v3.0.x
 
-> **Status:** PR-1 (mechanical bump) landed on `ddutchie/dsh_012` — compile + `type-check:all` + full Electron suite (1201 passed) green, **live sweep done** (see §5.1). PR-2 (Schedule opt-in) not started.  
-> **Date:** 2026-09-03 · **Cairn pinned:** `0.1.1-rc.2` + `cordis@4.0.1` · **Proposed:** `0.1.2-alpha.5` + `cordis@4.0.2`  
-> **Upstream publishes:** every `@deepseek-ai/dsh-*` at `0.1.2-alpha.5` is `npm publish`ed (tarball verified) **except** `dsh-tool-subagent-report`, which stops at `alpha.3` — it was removed upstream in `alpha.4` (see §1.6). `alpha.1` was tag-only, never published.  
+> **Status:** landed on `ddutchie/dsh_012` at `0.1.2-rc.1` — compile + `type-check:all` + full Electron suite (1201 passed) green, **live sweep done** (see §5.1). This branch now tracks the `next` tag; PR-2 (Schedule opt-in) not started.  
+> **Date:** 2026-09-03 · **Cairn pinned (this branch):** `0.1.2-rc.1` + `cordis@4.0.2` · **main:** `0.1.1-rc.2` + `cordis@4.0.1`  
+> **Upstream publishes:** every `@deepseek-ai/dsh-*` at `0.1.2-rc.1` is `npm publish`ed (tarball verified) **except** `dsh-tool-subagent-report`, which stops at `alpha.3` — removed upstream in `alpha.4` (see §1.6). `alpha.1` was tag-only, never published.  
 > **Generic bump playbook:** [`docs/dsh-upgrade-guide.md`](../dsh-upgrade-guide.md)
 
 ---
@@ -12,6 +12,7 @@
 * **Scope:** 1079 commits vs `rc.2` (master `cd5ef8148`), 241 dsh-family packages (+9 vendor). The diff is not a patch — it's an **alpha train** with architecture-level changes.
 * **For Cairn, the win is real:** durable `schedule` reminders ("remind me in 10 min…"), subagent model routing (`provider/model/reasoning_effort` + `list_subagent_models`), image-capable subagent followups, a real tool-call scheduler, and a `sessionQuery` projection cache that makes cold subagent listing fast.
 * **Target `alpha.5`, not `alpha.3`.** `alpha.4` (Sep 1, `4e84901`) carries the breaking changes — bidirectional `send_message` replacing the one-way `report` tool, `Session.events` → `seq`/`eventAt()`/`snapshotEvents()`, `SessionSeq`/`SessionLogOffset` branding, `seedLength` → `isSeeded` + `inheritedEventCount`. `alpha.5` (Sep 2, `db6bdc3`) is a **single-bugfix republish** (upgrade from `rc.2`/`alpha.3` could prevent app start or lose session titles) with **byte-identical `lib/`** to `alpha.4` across all 16 packages checked — version + peer bumps only. Targeting `alpha.5` gets the fix for free.
+* **`0.1.2-rc.1` (Sep 3, `a66e470`) is the same story one step further.** `next` tag now points at it — the promotion this plan was waiting for. `lib/` **byte-identical `alpha.5 → rc.1`** across all 20 packages checked — version + peer bumps only. The release notes are a rollup of the alpha train (no new library surface; Inspector/Web Preview are app-bundled, not published packages). The branch tracks `0.1.2-rc.1` (see §1.8).
 * **Risk is contained if adopted in two phases:** mechanical bump (no new mounts) is low-risk; capability enablement is opt-in. Mandatory migrations: descriptor `2→3`, `SessionId()` → `brandString()` on control paths, `SessionSeq()` wrapping where Cairn compares `event.seq`, and dropping `dsh-tool-subagent-report` from the dep list.
 * **Recommendation:** land as **two PRs** — (PR-1) mechanical bump to `alpha.5` with zero capability mounts (prove the tree still boots), then (PR-2) enable **Schedule** as an opt-in Cairn Setting while deferring model-selected subagents. Flip `alpha → rc` when the upstream RC that pulls these changes forward ships, so we exit the alpha track quickly.
 * **Why the user saw "schedule messages to subagents":** upstream's `dsh-schedule` **is** "schedule a message to yourself later" — a durable follow-up delivered as an ordinary message in **the same session**, not an inter-agent scheduler. The subagent improvement in this train is **model-selected routing**, **image forwarding**, and (new in `alpha.4`) **bidirectional `send_message`**, not scheduled delivery. `dsh-schedule` and `ctx.subagents` are orthogonal seams.
@@ -73,6 +74,12 @@ Official notes ([releases](https://github.com/deepseek-ai/deepseek-harness/relea
 
 Official notes: *"Fix an issue where upgrading from `0.1.1-rc.2` or `0.1.2-alpha.3` could prevent the app from starting or make session titles disappear from the list"* (by @imccyu). Verified: `lib/` **byte-identical `alpha.4 → alpha.5`** across all 16 packages checked (`dsh-agent`, `dsh-agent-loop`, `dsh-session`, `dsh-subagent`, `dsh-tool-subagent`, `dsh-tool-subagent-control`, `dsh-schedule`, `dsh-tools`, `dsh-llm`, `dsh-session-query`, `dsh-session-persistence-jsonl`, `dsh-system-prompt`, `dsh-commands`, `dsh-compaction-basic`, `dsh-subagent-spawn-in-process`, `dsh-agent-loop-testkit`) — version + peer-range bumps only. **Target `alpha.5` directly; there is no reason to land on `alpha.3`/`alpha.4` first.** The fixed bug (startup failure / lost session titles on upgrade) is exactly the failure mode a Cairn bump would otherwise risk reproducing.
 
+### 1.8  `0.1.2-rc.1` (Sep 3, `a66e470`) — the RC promotion, no code delta
+
+Official notes ([releases](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-rc.1)): *"first release candidate for v0.1.2 ... summarizes the major user- and developer-facing changes since v0.1.1-rc.2"* — a rollup of the alpha train, matching this document's §§1.1–1.7 line for line. Two nominally-new items (experimental Inspector, experimental Web Preview) are app-bundled, not published packages (`@deepseek-ai/dsh-inspector` / `dsh-web-preview` 404 on npm) — nothing for Cairn to adopt. `next` tag now resolves to `0.1.2-rc.1`; `cordis` stays `4.0.2`.
+
+Verified: `lib/` **byte-identical `alpha.5 → rc.1`** across all 20 packages checked (the previous 16 plus `dsh-llm-pi-ai`, `dsh-user-approval`, `dsh-user-questions`, `dsh-plan-mode`) — version + peer-range bumps only. The `alpha.5 → rc.1` bump on this branch was therefore a pure `package.json` sed + lock reinstall: compile, `type-check:all`, and the 1201-test unit suite green with **zero code changes**, and the live sweep re-ran green (bridge `localhost:3042`, `claude-sonnet-4-5`; one model-flake retry on the questions test).
+
 ---
 
 ## 2  Impact on Cairn's mounted tree
@@ -118,7 +125,7 @@ skills, invariants, tool-skill, commands, plan-mode, session-title, projection-r
 
 | File | Change |
 |---|---|
-| `package.json` | Every `@deepseek-ai/dsh-*` `^0.1.1-rc.2 → ^0.1.2-alpha.5`, `cordis 4.0.1 → 4.0.2`, add `zod ^4.4.3` if not already present; add `@deepseek-ai/dsh-session-query` (and optionally `dsh-schedule`, `dsh-time-context`); **remove** `@deepseek-ai/dsh-tool-subagent-report` (dead past `alpha.3`) |
+| `package.json` | Every `@deepseek-ai/dsh-*` `^0.1.1-rc.2 → ^0.1.2-rc.1` (via `alpha.5`), `cordis 4.0.1 → 4.0.2`, add `zod ^4.4.3` if not already present; add `@deepseek-ai/dsh-session-query` + `-sqlite` (and optionally `dsh-schedule`, `dsh-time-context`); **remove** `@deepseek-ai/dsh-tool-subagent-report` (dead past `alpha.3`) and `dsh-attachment-local` (needs real sharp; restored Cairn store instead) |
 | `package-lock.json` | Strip `@deepseek-ai/dsh-*` + `cordis` keys, then `npm install` — peer deadlock fix per `dsh-upgrade-guide.md` §5.2 |
 | `electron/cordis/cordis-context.ts` | Add `import SessionQuery from "@deepseek-ai/dsh-session-query";` to `B["dsh:session-query"]`; add its `ENTRY_LIST` entry; conditionally add `dsh-schedule` + `dsh-time-context` if opted in. |
 | `electron/cordis/chat-session-runner.ts`, `cairn-plugins.ts`, `session-turn.ts`, tests | `event.seq` comparisons meet branded `SessionSeq` — runtime-safe (still numbers) but `tsc` needs `SessionSeq()` wrapping or loosened types (`chat-session-runner.ts:42,396-407`, `cairn-plugins.ts:190`, `session-turn.ts:31`, `context-ring-snapshot.test.ts:21`, `prune-replay.test.ts:58`). Prefer `session.eventAt()` / `snapshotEvents()` / `ownEvents()` where the code currently slices `session.events`. |
@@ -198,6 +205,7 @@ Done on `ddutchie/dsh_012`. Every capability below went green at least once; res
 * PR-1 (mechanical): **1–1.5 days** (up from 0.5–1 — the `SessionSeq` type migration touches the replay path and tests) + CI/bisect window.
 * PR-2 (Schedule opt-in): **1–1.5 days** incl. projection read + Settings UI + live coverage.
 * Total to `alpha.5` equivalence: **≈ 2–3 days** wall-clock, plus eligibility for fast-follow to the next RC.
+* `alpha.5 → rc.1`: **~30 min** (sed + reinstall + verify) — the payoff for landing the alpha work first instead of waiting.
 
 ---
 
@@ -205,7 +213,8 @@ Done on `ddutchie/dsh_012`. Every capability below went green at least once; res
 
 * `npm pack @deepseek-ai/<pkg>@0.1.1-rc.2` vs `@0.1.2-alpha.3` for: `dsh-agent`, `dsh-agent-loop`, `dsh-session`, `dsh-subagent`, `dsh-subagent-spawn-in-process`, `dsh-tool-subagent`, `dsh-tool-subagent-control`, `dsh-tool-subagent-report`, `dsh-schedule`, `dsh-tools`, `cordis`.
 * `npm pack @<pkg>@0.1.2-alpha.3` vs `@0.1.2-alpha.4` vs `@0.1.2-alpha.5` for: `dsh-agent`, `dsh-agent-loop`, `dsh-session`, `dsh-subagent`, `dsh-tool-subagent`, `dsh-tool-subagent-control`, `dsh-schedule`, `dsh-tools`, `dsh-llm`, `dsh-session-query`, `dsh-session-persistence-jsonl`, `dsh-system-prompt`, `dsh-commands`, `dsh-compaction-basic`, `dsh-subagent-spawn-in-process`, `dsh-agent-loop-testkit`. `alpha.4 → alpha.5` `lib/` byte-identical in all 16 — version + peer bumps only.
+* `npm pack @<pkg>@0.1.2-alpha.5` vs `@0.1.2-rc.1` for 20 packages (the 16 above + `dsh-llm-pi-ai`, `dsh-user-approval`, `dsh-user-questions`, `dsh-plan-mode`). `lib/` byte-identical in all 20 — version + peer bumps only.
 * `npm view … dist-tags / versions --json` for `dsh-agent`, `dsh-tool-subagent-report` (dead past `alpha.3`), `dsh-subagent-fork-in-process`, `cordis`, `dsh-schedule`, `dsh-session-query`.
-* Official release notes: `github.com/deepseek-ai/deepseek-harness/releases` (`alpha.4` bidirectional `send_message` + session-model chores; `alpha.5` upgrade-startup/session-title fix).
+* Official release notes: `github.com/deepseek-ai/deepseek-harness/releases` (`alpha.4` bidirectional `send_message` + session-model chores; `alpha.5` upgrade-startup/session-title fix; `rc.1` rollup + Inspector/Web Preview app features with no published packages).
 * `dsharness.org/changelog` + `deepseek-harness.github.io/.../subagent` for product framing.
 * `packages/README.md` `schedule/` + `subagent/` sections confirming Schedule as **stable product API**.
