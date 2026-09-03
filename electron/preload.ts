@@ -999,6 +999,8 @@ const api = {
     interruptSubagent: (parentSessionId: string, childId: string) => invoke<{ ok: true; value: { accepted: boolean } } | { ok: false; code: string; message: string }>("subagent:interrupt", { parentSessionId, childId }),
     /** Deliver a human message to a continuable child (needs the live parent agent; parent-unavailable otherwise) */
     messageSubagent: (parentSessionId: string, childId: string, text: string) => invoke<{ ok: true; value: { messageId: string } } | { ok: false; code: string; message: string }>("subagent:message", { parentSessionId, childId, text }),
+    /** Kill a dsh background job (jobs dock; owner-unavailable when the owner turn ended) */
+    killJob: (jobId: string) => invoke<{ ok: true; value: unknown } | { ok: false; code: string; message: string }>("session:job-kill", { jobId }),
     /** Workspace-persistent "Always allow" grants */
     listApprovalGrants: (workspaceId: string) => invoke("approval-grants:list", { workspaceId }),
     deleteApprovalGrant: (id: string) => invoke("approval-grants:delete", { id }),

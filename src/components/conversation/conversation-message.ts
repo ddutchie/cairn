@@ -22,6 +22,8 @@ export interface ConversationToolCall {
   callId?: string;
   name: string;
   label: string;
+  /** Tool-authored title from dsh `presentCall`; ToolCallBody prefers it over humanized text. */
+  viewTitle?: string;
   args?: Record<string, unknown>;
   running?: boolean;
   ok: boolean;
@@ -88,6 +90,7 @@ function chatToolCall(tool: ChatToolCallRecord): ConversationToolCall {
     callId: tool.callId,
     name: tool.tool,
     label: tool.label,
+    viewTitle: tool.viewTitle,
     args: parseArgs(tool.args),
     ok: tool.ok !== false,
     output: tool.output,

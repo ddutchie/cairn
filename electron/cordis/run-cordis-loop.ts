@@ -3,12 +3,12 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import type { Database } from "better-sqlite3";
 import { openCordisSessionAgent } from "./session-agent";
 import { peekChatAgentCache, getChatAgentCache } from "./chat-agent-cache";
-import { getContext, getSessionRoot, resolvePresentationMeta } from "./cordis-context";
+import { getContext, getSessionRoot, resolvePresentationMeta, resolveToolCallView, withToolCallView } from "./cordis-context";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 
-export { getContext, dropChatAgentForThread, resolvePresentationMeta, getSessionRoot, setSessionRoot, __resetContextForTest, __setToolDefForTest } from "./cordis-context";
+export { getContext, dropChatAgentForThread, resolvePresentationMeta, resolveToolCallView, withToolCallView, getSessionRoot, setSessionRoot, __resetContextForTest, __setToolDefForTest } from "./cordis-context";
 export { ensureAgentAiAdapter } from "./session-runtime";
 
 export interface RunCordisLoopResult {
@@ -40,8 +40,13 @@ export interface RunCordisLoopOptions {
   onSessionEvent?: (event: SessionEvent) => void;
 }
 
-export function enrichToolCallsWithMeta<T extends { toolCalls?: Array<{ tool: string; args?: string; output?: string; meta?: unknown }> }>(messages: T[]): T[] {
-  for (const message of messages) for (const call of message.toolCalls ?? []) if (call.meta === undefined) call.meta = resolvePresentationMeta(call.tool, call.args, call.output);
+export function enrichToolCallsWithMeta<T extends { toolCalls?: Array<{ tool: string; args?: string; output?: string; meta?: unknown; view?: unknown }> }>(messages: T[]): T[] {
+  for (const message of messages) for (const call of message.toolCalls ?? []) {
+    if (call.meta === undefined) call.meta = resolvePresentationMeta(call.tool, call.args, call.output);
+    // Replayed log events predate the live view attach — recompute so history
+    // chips get the same tool-authored titles as live ones.
+    if (call.view === undefined) call.view = resolveToolCallView(call.tool, call.args);
+  }
   return messages;
 }
 

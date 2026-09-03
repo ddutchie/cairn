@@ -33,7 +33,7 @@ import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordi
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
-import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
+import { getSessionRoot, getContext, withToolCallView } from "../cordis/run-cordis-loop";
 import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./approval-state";
 import { getPlanModeActive } from "../cordis/plan-fold";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
@@ -500,6 +500,15 @@ export function registerSessionRuntimeHandlers(
     return subagentResult(() => messageSubagentChild(parentSessionId, childId, text));
   }));
 
+  // ── session:job-kill ─────────────────────────────────────────────────────
+  // Renderer-driven Kill for a dsh background job (jobs dock). Same
+  // {ok:false, code} envelope as subagent:* (owner-unavailable when the owner
+  // turn ended, registry passthrough otherwise).
+  registerIpcHandle("session:job-kill", (_event, { jobId }: { jobId: string }) => handle(async () => {
+    const { killJob } = await import("../cordis/jobs-bridge");
+    return subagentResult(() => Promise.resolve(killJob(jobId)));
+  }));
+
   // ── session:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
     const profile = q.getSessionProfile(ctx.db, sessionId)?.profile;
@@ -717,7 +726,7 @@ export function registerSessionRuntimeHandlers(
       // still edit its scripts.
       sandboxMode: "workspace-write",
        role,
-       onSessionEvent: (sessionEvent: SessionEvent) => broadcastEvent("session:event", { sessionId, event: sessionEvent }),
+       onSessionEvent: (sessionEvent: SessionEvent) => broadcastEvent("session:event", { sessionId, event: withToolCallView(sessionEvent) }),
     });
   });
 

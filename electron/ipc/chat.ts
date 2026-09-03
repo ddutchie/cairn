@@ -229,7 +229,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
 
     // ── Cordis engine (only path — local models via llama-server at 127.0.0.1:<port>/v1 are also OpenAI-compatible) ──
     if (true) {
-      const { runCordisLoop } = await import("../cordis/run-cordis-loop");
+      const { runCordisLoop, withToolCallView } = await import("../cordis/run-cordis-loop");
       try {
          await runCordisLoop({
           db: ctx.db,
@@ -268,7 +268,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
                return registerPendingQuestion(sessionId, requestId, resolve);
               },
            },
-           onSessionEvent: (sessionEvent) => broadcastEvent("session:event", { sessionId, event: sessionEvent }),
+           onSessionEvent: (sessionEvent) => broadcastEvent("session:event", { sessionId, event: withToolCallView(sessionEvent) }),
          });
          if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
        } catch (err) {

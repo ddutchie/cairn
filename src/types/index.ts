@@ -601,6 +601,8 @@ export interface LinkedContextReference {
 export interface ChatToolCallRecord {
   tool: string;
   label: string;
+  /** Tool-authored title from dsh `presentCall` (main-attached on tool/call); renderer prefers it. */
+  viewTitle?: string;
   cairnRef?: { type: "note" | "task"; id: ID; title: string };
   /**
    * A linkable external artefact extracted from an MCP-server / custom-service
@@ -995,6 +997,8 @@ export interface AgentMessage {
     callId: string;
     name: string;
     label: string;
+    /** Tool-authored title from dsh `presentCall` (main-attached on tool/call). */
+    viewTitle?: string;
     args?: Record<string, unknown>;
     running: boolean;
     ok: boolean;

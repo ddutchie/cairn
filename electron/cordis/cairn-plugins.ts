@@ -31,6 +31,14 @@ import { riskForTool as riskForToolShared } from "../../shared/agent/tool-risk";
 import type { RiskClass } from "../../shared/agent/tool-risk";
 import { shouldAskForTool, modeFromAutoApprove, isMode, type Mode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
+import { resolveToolCallView } from "./cordis-context";
+
+/** Tool-authored chip title (dsh `presentCall`) with bare-name fallback. */
+function toolCallTitle(name: string, argsRaw?: string): string {
+  try {
+    return resolveToolCallView(name, argsRaw)?.title as string ?? name;
+  } catch { return name; }
+}
 import { isSecretFile, bashReferencesSecretFile } from "../lib/coding-tools/secrets";
 
 const secretGrantsBySession = new Map<string, Set<string>>();
@@ -295,7 +303,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       if (d.callId) callName.set(d.callId, d.name);
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(d.arguments ?? "{}") as Record<string, unknown>; } catch { /* keep {} */ }
-       sendProjection(send, sessionId, "subagent-trace", { trace: "tool-call", childId, parentSession, tool: d.name, label: d.name, callId: d.callId, args });
+       sendProjection(send, sessionId, "subagent-trace", { trace: "tool-call", childId, parentSession, tool: d.name, label: toolCallTitle(d.name, d.arguments), callId: d.callId, args });
       return;
     }
 

@@ -8,6 +8,8 @@ export interface FoldedToolCall {
   name: string;
   args?: Record<string, unknown>;
   meta?: Record<string, unknown>;
+  /** Tool-authored call view attached by main (`withToolCallView`) — title/card. */
+  view?: { title?: string; card?: string; [key: string]: unknown };
 }
 
 export interface FoldedToolResult extends FoldedToolCall {
@@ -169,11 +171,16 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
         toolNames.set(callId, name);
         toolArgs.set(callId, args);
       }
+      const rawView = data.view as { title?: unknown } | undefined;
+      const view = rawView && typeof rawView === "object" && typeof rawView.title === "string" && rawView.title
+        ? (rawView as FoldedToolCall["view"])
+        : undefined;
       handlers.onToolCall?.({
         callId,
         name,
         args,
         meta: record(data.meta),
+        ...(view ? { view } : {}),
       });
       return;
     }

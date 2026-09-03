@@ -18,6 +18,8 @@ export interface SessionConversationToolCall {
   ok?: boolean;
   error?: string;
   meta?: Record<string, unknown>;
+  /** Tool-authored title from dsh `presentCall` (main-attached); humanize fallback otherwise. */
+  viewTitle?: string;
   confirmRequired?: boolean;
   approvalNonce?: string;
 }
@@ -73,6 +75,7 @@ export function appendSessionToolCall(current: SessionConversationToolCall[], ca
   return [...current.map((item) => item.status === "running" ? { ...item, status: "done" as const } : item), {
     tool: call.name, label: call.name, status: "running" as const, callId: call.callId,
     args: call.args ? JSON.stringify(redactTranscriptValue(call.args)) : undefined, meta: call.meta,
+    ...(typeof call.view?.title === "string" && call.view.title ? { viewTitle: call.view.title } : {}),
   }];
 }
 

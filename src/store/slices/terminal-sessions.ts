@@ -63,6 +63,7 @@ import type {
   SessionLoadState,
   SessionPresentation,
 } from "../../types";
+import type { JobSummary } from "../../../shared/agent/session-projection";
 
 // Re-export for backwards compatibility (consumers may import from either location).
 export type { AgentMessage, AgentSubagentMessage, TerminalSession, CodingSessionSummary };
@@ -96,7 +97,7 @@ export interface TerminalSessionsSlice {
   /** Ensure a streaming assistant message exists — creates one if the last message is not streaming */
   ensureAgentStreamingMessage: (sessionId: string) => void;
   /** Append a tool call record to the last assistant message */
-  addAgentToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  addAgentToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; viewTitle?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update an existing tool call chip in-place (start → done) */
   updateAgentToolCall: (sessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Set confirmation requirement state for a tool chip */
@@ -129,10 +130,14 @@ export interface TerminalSessionsSlice {
   codingSessionHistory: CodingSessionSummary[];
   /** Per-session todo lists (todowrite tool) keyed by session id. */
   sessionTodos: Record<string, SessionTodo[]>;
+  /** Per-session background-job snapshots (dsh jobs bridge) keyed by session id. */
+  sessionJobs: Record<string, JobSummary[]>;
   /** Set the persistent coding session (switches what the pinned tab shows) */
   setActiveCodingSession: (sessionId: string | null) => void;
   /** Replace a session's todo list (from coding-session todos events / load). */
   setSessionTodos: (sessionId: string, todos: SessionTodo[]) => void;
+  /** Replace a session's background-job list (from jobs-bridge projections). */
+  setSessionJobs: (sessionId: string, jobs: JobSummary[]) => void;
   /** Fetch session history from SQLite for the given project */
   fetchCodingSessionHistory: (projectId: string) => Promise<void>;
   /** Fetch and merge session history for the projects visible in the sidebar. */
@@ -162,6 +167,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   activeCodingSessionId: null,
   codingSessionHistory: [],
   sessionTodos: {},
+  sessionJobs: {},
   sessionLoad: { status: "idle" },
 
   addTerminalSession(session) {
@@ -350,7 +356,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  addAgentToolCall(sessionId, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
+  addAgentToolCall(sessionId, toolCall: { callId: string; name: string; label: string; viewTitle?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
@@ -465,6 +471,12 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   setSessionTodos(sessionId, todos) {
     set((s) => ({
       sessionTodos: { ...s.sessionTodos, [sessionId]: todos },
+    }));
+  },
+
+  setSessionJobs(sessionId, jobs) {
+    set((s) => ({
+      sessionJobs: { ...s.sessionJobs, [sessionId]: jobs },
     }));
   },
 

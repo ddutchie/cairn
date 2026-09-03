@@ -24,6 +24,7 @@ import type { ConnectorMeta as AgentConnectorMeta } from "@/components/shared/Co
 import { type VirtuosoHandle } from "react-virtuoso";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
+import { AgentJobsDock } from "./AgentJobsDock";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { isBenignTurnEnd } from "../../../shared/agent/turn-end-reason";
@@ -111,6 +112,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const _setAgentAutoApprove         = useCairnStore((s) => s.setAgentAutoApprove);
   const setAgentToolConfirmRequired = useCairnStore((s) => s.setAgentToolConfirmRequired);
   const setSessionTodos          = useCairnStore((s) => s.setSessionTodos);
+  const setSessionJobs           = useCairnStore((s) => s.setSessionJobs);
   const setView                  = useCairnStore((s) => s.setView);
 
   // Reactive state — only values that actually drive re-renders
@@ -124,6 +126,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   })));
   const sessionPresentation = useCairnStore((s) => s.sessionPresentation);
   const sessionTodos = useCairnStore((s) => s.sessionTodos[session.sessionId]);
+  const sessionJobs = useCairnStore((s) => s.sessionJobs[session.sessionId]);
   const customCommands = useCairnStore((s) => s.customCommands);
   const registryCommands = useRegistryCommands();
   const agentCommands = useMemo(
@@ -180,7 +183,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       onText: (delta) => appendAgentToken(session.sessionId, delta),
       onReasoning: (delta) => appendAgentThought(session.sessionId, delta),
       onUsage: (usage) => updateAgentUsage(session.sessionId, usage.promptTokens, usage.completionTokens, usage.reasoningTokens, usage.breakdown as TokenBreakdown | undefined, usage.cacheReadTokens, usage.cacheCreationTokens),
-      onToolCall: (call) => addAgentToolCall(session.sessionId, { callId: call.callId ?? `${call.name}:${Date.now()}`, name: call.name, label: call.name, args: call.args, running: true, ok: true }),
+      onToolCall: (call) => addAgentToolCall(session.sessionId, { callId: call.callId ?? `${call.name}:${Date.now()}`, name: call.name, label: call.name, ...(typeof call.view?.title === "string" && call.view.title ? { viewTitle: call.view.title } : {}), args: call.args, running: true, ok: true }),
       onToolResult: (result) => {
         if (!result.callId) return;
         updateAgentToolCall(session.sessionId, result.callId, { label: result.name, args: result.args, running: false, ok: result.ok, output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output, cairnRef: extractCairnRef(result.name, result.output) });
@@ -355,6 +358,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         const planId = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.planNoteId;
         if (planId && e.noteId === planId) setPlanNoteContent(e.content);
       } else if (projection.kind === "todos") setSessionTodos(sessionId, e.todos as never);
+      else if (projection.kind === "jobs") {
+        // Bridge emits the owner's full visible set (owned + unowned); the
+        // dock filters to this session's jobs plus unowned ones.
+        const jobs = (e.jobs ?? []) as { ownerSession?: string }[];
+        setSessionJobs(sessionId, jobs.filter((j) => j.ownerSession == null || j.ownerSession === sessionId) as never);
+      }
       else if (projection.kind === "retry") { setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs }); setTimeout(() => setRetryInfo(null), e.delayMs + 500); }
       else if (projection.kind === "compact") { setIsCompacting(e.status === "start"); if (e.status === "end" && e.auto) addAgentMessage(sessionId, { id: id(), role: "system" as const, content: "----- Session Compacted -----", timestamp: new Date().toISOString() }); }
       else if (projection.kind === "compact-result") {
@@ -642,6 +651,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
           {session.mode === "execute" && planNoteContent && <PlanTaskList content={planNoteContent} />}
           {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && <AgentTodoDock todos={sessionTodos ?? []} live={false} />}
+          {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} live={false} />}
         </div>
       )}
       composerProps={{

@@ -218,6 +218,9 @@ export async function getContext(): Promise<Context> {
     try { const { mountPruneGuard } = await import("./prune-hook"); mountPruneGuard(ctx); } catch (err) { console.warn("[cordis] prune guard unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountSessionDurability } = await import("./plugins/session-durability"); mountSessionDurability(ctx); } catch (err) { console.warn("[cordis] session durability unavailable:", err instanceof Error ? err.message : err); }
     try { const { loadUserPlugins, watchUserPlugins } = await import("./plugin-loader"); await loadUserPlugins(ctx); watchUserPlugins(ctx); } catch (err) { console.error("[cairn-plugins] runtime plugin layer failed to init:", err instanceof Error ? err.message : err); }
+    // Background-job UI bridge: ctx.jobs change/completion → session:projection
+    // kind:"jobs" for the renderer dock. Singleton-subscribed (idempotent).
+    try { const { mountJobsBridge } = await import("./jobs-bridge"); mountJobsBridge(ctx); } catch (err) { console.warn("[cordis] jobs bridge unavailable:", err instanceof Error ? err.message : err); }
     sharedCtx = ctx;
     return ctx;
   })();
@@ -277,11 +280,60 @@ export function __setToolDefForTest(name: string, def: Record<string, unknown> |
   if (def) toolDefsByName.set(name, def);
   else toolDefsByName.delete(name);
 }
+function toolDefByName(tool: string): Record<string, unknown> | undefined {
+  return toolDefsByName.get(tool) ?? (() => { try { const def = sharedCtx?.tools?.get?.(tool) as Record<string, unknown> | undefined; if (def) toolDefsByName.set(tool, def); return def; } catch { return undefined; } })();
+}
+function parseToolArgs(argsRaw: string | undefined): unknown {
+  if (!argsRaw) return {};
+  try { return JSON.parse(argsRaw); } catch { return {}; }
+}
 export function resolvePresentationMeta(tool: string, argsRaw: string | undefined, outputRaw: string | undefined): unknown {
-  const def = toolDefsByName.get(tool) ?? (() => { try { const def = sharedCtx?.tools?.get?.(tool) as Record<string, unknown> | undefined; if (def) toolDefsByName.set(tool, def); return def; } catch { return undefined; } })();
+  const def = toolDefByName(tool);
   const hook = (def?.output as { presentationMeta?: (a: unknown, v: unknown) => unknown } | undefined)?.presentationMeta;
   if (typeof hook !== "function") return undefined;
-  let args: unknown = {}; if (argsRaw) { try { args = JSON.parse(argsRaw); } catch { /* best-effort */ } }
+  const args: unknown = parseToolArgs(argsRaw);
   let value: unknown; if (outputRaw) { try { value = JSON.parse(outputRaw); } catch { value = outputRaw; } }
   try { return hook(args, value) ?? undefined; } catch { return undefined; }
+}
+
+/** dsh tool-authored call view (`ToolDefinition.presentCall`) — title/card for chips. */
+export interface ToolCallViewLike {
+  card?: unknown;
+  title?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * Resolve a tool's self-described call view for chip labels. dsh tools set
+ * `presentCall` (bash → terminal card titled with the command, jobs →
+ * "Read output from background job X", todo → "Update todo list"); Cairn's
+ * own tools don't, so those fall back to `humanize-tool.ts` in the renderer.
+ * Version bumps improve dsh labels for free — no per-tool UI mapping.
+ */
+export function resolveToolCallView(tool: string, argsRaw: string | undefined): ToolCallViewLike | undefined {
+  const def = toolDefByName(tool);
+  const present = (def as { presentCall?: (args: unknown) => unknown } | undefined)?.presentCall;
+  if (typeof present !== "function") return undefined;
+  try {
+    const view = present(parseToolArgs(argsRaw)) as ToolCallViewLike | undefined;
+    if (!view || typeof view !== "object" || typeof view.title !== "string" || !view.title) return undefined;
+    return view;
+  } catch { return undefined; }
+}
+
+/**
+ * Attach the tool-authored call view to a live `tool/call` session event for
+ * the renderer (shallow-copies data; the persisted log event is untouched).
+ * Non-tool/call events pass through unchanged.
+ */
+export function withToolCallView<T extends { type?: unknown; data?: unknown }>(event: T): T {
+  if (!event || (event as { type?: unknown }).type !== "tool/call") return event;
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data || typeof data !== "object" || (data as { view?: unknown }).view !== undefined) return event;
+  const view = resolveToolCallView(
+    typeof data.name === "string" ? data.name : "tool",
+    typeof data.arguments === "string" ? data.arguments : undefined,
+  );
+  if (!view) return event;
+  return { ...event, data: { ...data, view } };
 }

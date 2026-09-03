@@ -68,7 +68,7 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
       <div className="flex items-start gap-2">
         {risk === "EXTERNAL" ? <Globe2 size={14} className="mt-0.5 text-[var(--warning)] shrink-0" /> : <ShieldAlert size={14} className="mt-0.5 text-[var(--warning)] shrink-0" />}
         <div className="min-w-0 flex-1">
-          <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">{humanizeTool(toolCall.name, toolCall.args).pre}</p>
+          <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">{toolCall.viewTitle ?? humanizeTool(toolCall.name, toolCall.args).pre}</p>
           <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">This {scope}.</p>
         </div>
         <span className="text-[0.607rem] font-semibold tracking-wide text-[var(--warning)]">{risk}</span>
@@ -98,7 +98,12 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
   const setActiveContextPanel = useCairnStore((state) => state.setActiveContextPanel);
   const setSessionPresentation = useCairnStore((state) => state.setSessionPresentation);
   const hasOutput = Boolean(toolCall.output);
-  const summary = humanizeTool(toolCall.name, toolCall.args);
+  // Tool-authored title (dsh `presentCall`, e.g. bash's command or
+  // "Read output from background job X") beats the hand-mapped humanizer;
+  // tools without one (Cairn's own, old logs) fall back to humanizeTool.
+  const summary = toolCall.viewTitle
+    ? { pre: toolCall.viewTitle }
+    : humanizeTool(toolCall.name, toolCall.args);
   const path = referencedPath(toolCall);
   const contextType = FILE_CONTEXT_TOOLS.has(toolCall.name) ? "file" : DIFF_CONTEXT_TOOLS.has(toolCall.name) ? "diff" : undefined;
   return (
