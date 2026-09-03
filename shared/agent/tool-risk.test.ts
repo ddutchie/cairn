@@ -40,6 +40,9 @@ const DSH_TOOL_NAMES = new Set<string>([
   "write", "edit", "str_replace_editor", "todo_write", "skill", "bash",
   "subagent", "delegate", "send_message", "interrupt_agent", "list_agents",
   "job_list", "job_output", "job_kill",
+  "terminal_open", "terminal_send", "terminal_signal", "terminal_close",
+  "terminal_read", "terminal_list",
+  "lsp",
 ]);
 
 // Expected risk bucket + approval behaviour for each dsh coding-stack tool the
@@ -66,6 +69,13 @@ const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
   ["job_list", "READ", false, "none"],
   ["job_output", "READ", false, "none"],
   ["job_kill", "EXEC", true, "none"],
+  ["terminal_open", "EXEC", true, "none"],
+  ["terminal_send", "EXEC", true, "none"],
+  ["terminal_signal", "EXEC", true, "none"],
+  ["terminal_close", "EXEC", true, "none"],
+  ["terminal_read", "READ", false, "none"],
+  ["terminal_list", "READ", false, "none"],
+  ["lsp", "READ", false, "none"],
 ];
 
 describe("tool-risk classifier — set membership", () => {

@@ -15,6 +15,7 @@ import { apply as toolSubagentControlApply, inject as toolSubagentControlInject,
 import { apply as toolSubagentListAgentsApply, inject as toolSubagentListAgentsInject, name as toolSubagentListAgentsName } from "@deepseek-ai/dsh-tool-subagent-control/list-agents";
 import JobsLocal from "@deepseek-ai/dsh-jobs-local";
 import { apply as toolJobsApply, inject as toolJobsInject, name as toolJobsName } from "@deepseek-ai/dsh-tool-jobs";
+import TerminalSessionService from "@deepseek-ai/dsh-terminal";
 import JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
 import SessionQuerySqlite from "@deepseek-ai/dsh-session-query-sqlite";
 import approvalService from "@deepseek-ai/dsh-user-approval";
@@ -138,6 +139,13 @@ export async function getContext(): Promise<Context> {
     B["cairn:tool-subagent-list-agents"] = { apply: toolSubagentListAgentsApply, inject: toolSubagentListAgentsInject, name: toolSubagentListAgentsName };
     B["dsh:jobs-local"] = JobsLocal;
     B["cairn:tool-jobs"] = { apply: toolJobsApply, inject: toolJobsInject, name: toolJobsName };
+    // Owner-scoped persistent PTY registry (`ctx.terminals`). A bare Service
+    // with no injected deps, so it composes as a loader entry like
+    // `dsh:session` (no per-turn service involved — backends register
+    // per coding turn, see `cordis-coding-tools.ts`). Owns ids,
+    // publication, authorization, and awaited cleanup; kill at turn/app end
+    // flows through it (see `terminal-backend.ts` header + sandbox review).
+    B["dsh:terminal"] = TerminalSessionService;
     // Per-message feedback sidecar chain (dsh-message-feedback injects
     // storageDomain + sessionPersistence + sessions — all ENTRY_LIST-resident,
     // so the whole chain composes as loader entries in dependency order;
@@ -239,6 +247,11 @@ export async function getContext(): Promise<Context> {
       // background starts fail with "background jobs unavailable".
       { id: "jobs-local", name: "cordis:dsh:jobs-local", config: {} },
       { id: "tool-jobs", name: "cordis:cairn:tool-jobs", config: {} },
+      // Persistent-shell registry for the coding stack's per-turn backend.
+      // ENTRY_LIST-resident (no injects) so `tool-terminal`'s per-turn
+      // `terminals` inject always resolves; the backend itself mounts per
+      // coding turn only (never chat) — see `mountCodingStack`.
+      { id: "terminals", name: "cordis:dsh:terminal", config: {} },
       // Per-message feedback sidecar (see B-map comment above). Order matters:
       // hub → backend → domain facility → feedback service → /feedback command.
       { id: "storage", name: "cordis:dsh:storage" },

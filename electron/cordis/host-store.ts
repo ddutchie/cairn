@@ -111,6 +111,17 @@ export { isSecretFile, bashReferencesSecretFile } from "../lib/coding-tools/secr
 export { discoverSkills, loadSkill } from "../lib/skills";
 export type { SkillMeta, SkillContent } from "../lib/skills";
 export { getCachedConfig } from "../lib/config-cache";
+// Shared node-pty session table (`electron/lib/pty-sessions.ts`, lazy native
+// load — safe to import from unit tests). The dsh terminal backend
+// (`./terminal-backend.ts`) reaches the manager ONLY through these
+// re-exports, never via `../lib/*` directly.
+export {
+  spawnShellPty,
+  getPtySession,
+  killPtySession,
+  onPtySessionData,
+  onPtySessionExit,
+} from "../lib/pty-sessions";
 
 // ── Db-free standalone operations (also exposed as HostStore methods) ─────────
 

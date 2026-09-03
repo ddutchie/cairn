@@ -240,12 +240,12 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // cwd-scoped. Order per dsh-base. Mounted before the agent so the tools are
     // registered when the model first requests them.
     try {
-      resources.add(await mountCodingStack(ctx, { cwd, sandboxMode, role: opts.role }));
+      resources.add(await mountCodingStack(ctx, { cwd, sandboxMode, role: opts.role, db }));
     } catch (e) {
       console.error(`[cordis-coding] mountCodingStack failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
       throw e;
     }
-    timer.mark("mountCodingStack (13 dsh plugins)");
+    timer.mark("mountCodingStack (15 dsh plugins)");
     let externalDisposers: Array<() => void> = [];
     try {
       // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF): when it

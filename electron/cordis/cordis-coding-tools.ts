@@ -37,6 +37,10 @@ import { apply as agentInstApply, name as agentInstName } from "@deepseek-ai/dsh
 import subprocessLocalPlugin from "@deepseek-ai/dsh-subprocess-local";
 import bashLocalPlugin from "@deepseek-ai/dsh-bash-local";
 import bashSandboxPlugin from "@deepseek-ai/dsh-bash-sandbox";
+import { apply as toolTerminalApply, inject as toolTerminalInject, name as toolTerminalName } from "@deepseek-ai/dsh-tool-terminal";
+import { cairnTerminalBackendPlugin } from "./terminal-backend";
+import type { Database } from "better-sqlite3";
+import { mountCodingLsp } from "./cordis-lsp";
 
 export interface CodingStackOptions {
   /** Working directory the coding tools are scoped to (the session cwd). */
@@ -56,6 +60,13 @@ export interface CodingStackOptions {
    * restriction — file tools only, no shell.
    */
   role?: "default" | "automation-dev";
+  /**
+   * Database handle for model-PTY cwd validation (project-boundary check in
+   * the shared PTY manager). Optional so db-free harnesses (live mount
+   * probes) can still mount the stack: without it the backend mounts but
+   * every `terminal_open` fails closed. Production always passes `db`.
+   */
+  db?: Database;
 }
 
 /**
@@ -142,7 +153,7 @@ export function remapChatArtifactDirs(ctx: Context): void {
  * is complete before returning.
  */
 export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): Promise<() => unknown> {
-  const { cwd, sandboxMode = "workspace-write", role = "default" } = opts;
+  const { cwd, sandboxMode = "workspace-write", role = "default", db } = opts;
   const disposers: Array<() => unknown> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
     const name = (plugin as { name?: string })?.name ?? (plugin as { apply?: { name?: string } })?.apply?.name ?? "unknown";
@@ -188,6 +199,21 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
     await plug(bashSandboxPlugin);
     await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
     await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
+    // Persistent model shells over the shared node-pty manager (same login
+    // shells + project-boundary validation as the bottom-terminal tabs — no
+    // second PTY implementation). Coding turns only: the automation-dev
+    // persona gets no shell of any kind (this whole block is skipped), and
+    // chat turns never mount this stack. Backend first (registers type
+    // "shell"), then the six model tools
+    // (terminal_open/send/read/signal/close/list). Background sends
+    // (`run_in_background`) register `pty-send` jobs on the global jobs
+    // registry, which the existing jobs bridge already projects to the dock
+    // as kind:"jobs" — zero new UI.
+    await plug(cairnTerminalBackendPlugin, { cwd, ...(db !== undefined ? { db } : {}) });
+    await plug(
+      { apply: toolTerminalApply, inject: toolTerminalInject as never, name: toolTerminalName },
+      { enableRunInBackground: true },
+    );
   } else {
     // Keep the reference so eslint no-unused-vars doesn't fire; the linter
     // can't see conditionally-skipped imports.
@@ -197,6 +223,14 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
     void shellEnvApply; void shellEnvInject; void shellEnvName;
     void toolBashApply; void toolBashInject; void toolBashName;
   }
+  // First-party LSP code navigation (dsh-lsp seam + stdio provider +
+  // model tool — READ-ONLY ops only). Fail-soft: without a language-server
+  // binary on PATH (or under the automation-dev persona, which has no
+  // subprocess service) this mounts nothing and the turn proceeds with
+  // grep/read as before. See cordis-lsp.ts for the lifecycle decision.
+  // mountCodingLsp never throws (it warns and reports { mounted: false }),
+  // so no try/catch is needed here — a coding turn must not depend on it.
+  await mountCodingLsp(ctx, plug);
   await plug(
     { apply: toolFsApply, inject: toolFsInject as never, name: toolFsName },
     { readLimit: 2000, readMaxLineLength: 2000, readMaxBytes: 51200, readStreamMinSize: 10485760 },
