@@ -110,6 +110,7 @@ caches it in module-level `sharedCtx`.
 | approval | `cordis:dsh:approval` | `approval` |
 | session-persistence | `cordis:dsh:session-persistence` | `sessionPersistence` |
 | session-query-sqlite | `cordis:dsh:session-query-sqlite` | `sessionQuery` (SQLite FTS5; abstract `dsh-session-query` is never mounted alone) |
+| session-stats (post-bootstrap) | dsh `session-stats` | `sessionStats` projection unit; read snapshot-first via `readSessionStats` (`session-stats.ts`), fold fallback + `byTurn` supplement |
 | agent-loop | `cordis:dsh:agent-loop` | `agentLoop` |
 | attachment-store | `cordis:cairn:attachment-store` | `attachments` |
 | spill / spill-policy | dsh builtins | oversized-tool-text spill store + inline policy |
@@ -159,7 +160,9 @@ caches it in module-level `sharedCtx`.
    updates: approval / question / subagent-trace / todos / jobs / goal /
    plan-note / mode-change / …), folded in `useSessionConversation`. Chat has no
    `chat:token/*` channels. Tool chips prefer the tool-authored `presentCall`
-   title attached main-side (`withToolCallView`), humanizer fallback.
+   title attached main-side (`withToolCallView`), humanizer fallback; done chips
+   render the `presentResult` view (`withToolResultView`: terminal output + exit
+   pill, generic content blocks), raw output fallback.
 
 ---
 
@@ -342,6 +345,7 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Attachment store | `electron/cordis/cairn-attachment-store.ts` |
 | Subagent messaging | `electron/cordis/subagent-control.ts` (host list/interrupt/message + `subagent:*` IPC), `src/components/conversation/SubagentCatalogAction.tsx` (header catalog) |
 | Background jobs UI | `electron/cordis/jobs-bridge.ts` (registry → `session:projection kind:"jobs"` + `session:job-kill` IPC), `src/components/agent/AgentJobsDock.tsx` |
+| Permissions UI | `electron/cordis/permissions-bridge.ts` (`permissions` projection → `session:permissions` IPC), `src/components/agent/AgentPermissionSelect.tsx` |
 | Goals / feedback / schedule | `electron/cordis/goal-bridge.ts`, `message-feedback.ts`, `schedule-read.ts` + `session:goal|feedback|schedule-list` IPC; `AgentGoalChip.tsx`, `MessageFeedbackControl.tsx`, `SchedulePill.tsx` |
 | Host seam (app I/O) | `electron/cordis/host-store.ts` (sole `../db|../lib|child_process` importer in `cordis/`) |
 | Skill bridge | `electron/cordis/cairn-skill-provider.ts`, `src/lib/plugin-ui/` |

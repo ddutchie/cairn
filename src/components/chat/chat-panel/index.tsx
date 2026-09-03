@@ -822,6 +822,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           connectors={connectorMap}
           onRetry={!isLoading ? handleRetry : undefined}
           projection={{ pendingQuestions }}
+          showSessionStatus={!!threadId}
           onAnswerQuestions={(answers) => { if (!answerQuestions(answers)) void handleSend(answers); }}
           emptyState={<ConversationEmptyState content={<SuggestedPrompts onSend={handleSend} disabled={isLoading || !threadId} prompts={activeView === "graph" ? graphPrompts : undefined} subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined} />} />}
           transcriptFooter={ChatTranscriptPadding}

@@ -20,6 +20,8 @@ export interface SessionConversationToolCall {
   meta?: Record<string, unknown>;
   /** Tool-authored title from dsh `presentCall` (main-attached); humanize fallback otherwise. */
   viewTitle?: string;
+  /** Tool-authored result view from dsh `presentResult` (main-attached); raw output fallback otherwise. */
+  resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
   confirmRequired?: boolean;
   approvalNonce?: string;
 }
@@ -89,6 +91,7 @@ export function resolveSessionToolResult(current: SessionConversationToolCall[],
     ...item, status: "done" as const, output: redactToolOutput(result.output), ok: result.ok,
     error: result.error ? redactSensitiveText(result.error) : undefined,
     confirmRequired: false, approvalNonce: undefined,
+    ...(result.resultView ? { resultView: result.resultView } : {}),
   } : item);
 }
 

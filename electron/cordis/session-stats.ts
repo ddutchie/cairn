@@ -12,10 +12,19 @@
  *   - `tool/call`→`tool/result` pairs by callId accumulate tool wall time
  *     (excluded from throughput).
  *
- * We fold once here (like foldSessionUsage) instead of mounting the upstream
- * projection unit, because Cairn reads stats on the replay/load path and the
- * event shape (`event.time`, `data.turn`, `data.step`, `data.usage.outputTokens`)
- * is identical to what upstream folds.
+ * The upstream `sessionStats` projection unit is mounted post-bootstrap in
+ * `cordis-context.ts` (it injects only `sessionProjections`, which itself
+ * mounts post-bootstrap). The mounted unit is the PRIMARY source for the
+ * whole-session totals: read paths use `readSessionStats` (snapshot-first via
+ * `sessionProjections.stateOf`, `foldSessionStats` fallback when the registry
+ * is absent) and derive the Cairn extras from the snapshot.
+ *
+ * Cairn extras the unit does NOT track (no per-turn state upstream):
+ * `byTurn` (per-turn TTFT/tok/s) stays a local supplement folded from the
+ * same events, and aggregate `tokensPerSecond` is derived from the snapshot's
+ * decode fields with the same formula as the fold. The local fold therefore
+ * survives in two roles only: registry-absent fallback, and `byTurn`
+ * supplement — never the totals source when a snapshot exists.
  *
  * Also derives PER-TURN metrics (TTFT of the turn's first step + throughput
  * over the turn's usage-reporting steps) so the renderer can show a compact
@@ -207,4 +216,110 @@ export function foldSessionStats(events: readonly Ev[]): SessionStats | undefine
 
   const tokensPerSecond = totals.decodeMs > 0 ? totals.decodeTokens / (totals.decodeMs / 1000) : undefined;
   return { totals, byTurn, tokensPerSecond };
+}
+
+/**
+ * Upstream `sessionStats` wire view: the 8 whole-log totals served through
+ * the session-projection seam. No per-turn state — see the module header.
+ */
+export interface SessionStatsSnapshot {
+  turns: number;
+  steps: number;
+  llmMs: number;
+  toolMs: number;
+  ttftMs: number;
+  ttftSteps: number;
+  decodeMs: number;
+  decodeTokens: number;
+}
+
+const SNAPSHOT_FIELDS = [
+  "turns", "steps", "llmMs", "toolMs", "ttftMs", "ttftSteps", "decodeMs", "decodeTokens",
+] as const;
+
+/** Structural guard for a `sessionStats` view of unknown provenance. */
+export function isSessionStatsSnapshot(value: unknown): value is SessionStatsSnapshot {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return SNAPSHOT_FIELDS.every((f) => typeof v[f] === "number" && Number.isFinite(v[f]) && (v[f] as number) >= 0);
+}
+
+/**
+ * Build the renderer-facing `SessionStats` from a mounted-unit snapshot.
+ * Totals come from the snapshot (never re-folded); the Cairn extras are
+ * computed from it: aggregate `tokensPerSecond` via the same decode formula
+ * as the fold, and `byTurn` via a local fold of the same events (the unit
+ * tracks no per-turn state, so the fold survives ONLY as this supplement —
+ * pass no events and `byTurn` is empty rather than wrong).
+ */
+export function sessionStatsFromSnapshot(
+  snapshot: SessionStatsSnapshot,
+  events?: readonly Ev[],
+): SessionStats {
+  const totals: SessionStatsTotals = {
+    turns: snapshot.turns,
+    steps: snapshot.steps,
+    llmMs: snapshot.llmMs,
+    toolMs: snapshot.toolMs,
+    ttftMs: snapshot.ttftMs,
+    ttftSteps: snapshot.ttftSteps,
+    decodeMs: snapshot.decodeMs,
+    decodeTokens: snapshot.decodeTokens,
+  };
+  const tokensPerSecond = totals.decodeMs > 0 ? totals.decodeTokens / (totals.decodeMs / 1000) : undefined;
+  const byTurn = events ? (foldSessionStats(events)?.byTurn ?? {}) : {};
+  return { totals, byTurn, tokensPerSecond };
+}
+
+/** Minimal structural type for the projection registry (avoids a cordis import). */
+export interface SessionStatsRegistryLike {
+  stateOf?: (session: unknown, key: string) => unknown;
+}
+
+/** Projection key of the upstream unit (mirrors `sessionStatsProjectionDefinition.key`). */
+export const SESSION_STATS_PROJECTION_KEY = "sessionStats";
+
+/**
+ * Best-effort snapshot read through the mounted unit. Returns undefined when
+ * the registry is absent, the session is not resident, the unit is not
+ * registered, or the view fails validation — every case falls back to
+ * `foldSessionStats` in `readSessionStats`. Never throws.
+ */
+export function readSessionStatsSnapshot(
+  registry: SessionStatsRegistryLike | undefined | null,
+  session: unknown,
+): SessionStatsSnapshot | undefined {
+  try {
+    if (!registry || typeof registry.stateOf !== "function" || !session) return undefined;
+    const view = registry.stateOf(session, SESSION_STATS_PROJECTION_KEY);
+    if (!isSessionStatsSnapshot(view)) return undefined;
+    return {
+      turns: view.turns,
+      steps: view.steps,
+      llmMs: view.llmMs,
+      toolMs: view.toolMs,
+      ttftMs: view.ttftMs,
+      ttftSteps: view.ttftSteps,
+      decodeMs: view.decodeMs,
+      decodeTokens: view.decodeTokens,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Snapshot-first session-stats read for the replay/load path: totals from the
+ * mounted `sessionStats` unit when available, `foldSessionStats` over the
+ * durable log otherwise. `byTurn`/aggregate `tokensPerSecond` are always
+ * computed from whichever totals source wins (see `sessionStatsFromSnapshot`).
+ */
+export function readSessionStats(opts: {
+  registry?: SessionStatsRegistryLike | undefined | null;
+  session?: unknown;
+  events: readonly Ev[];
+}): SessionStats | undefined {
+  const snapshot = readSessionStatsSnapshot(opts.registry, opts.session);
+  if (snapshot) return sessionStatsFromSnapshot(snapshot, opts.events);
+  return foldSessionStats(opts.events);
 }

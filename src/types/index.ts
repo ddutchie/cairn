@@ -603,6 +603,8 @@ export interface ChatToolCallRecord {
   label: string;
   /** Tool-authored title from dsh `presentCall` (main-attached on tool/call); renderer prefers it. */
   viewTitle?: string;
+  /** Tool-authored result view from dsh `presentResult` (main-attached on tool/result). */
+  resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
   cairnRef?: { type: "note" | "task"; id: ID; title: string };
   /**
    * A linkable external artefact extracted from an MCP-server / custom-service
@@ -999,6 +1001,8 @@ export interface AgentMessage {
     label: string;
     /** Tool-authored title from dsh `presentCall` (main-attached on tool/call). */
     viewTitle?: string;
+    /** Tool-authored result view from dsh `presentResult` (main-attached on tool/result). */
+    resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
     args?: Record<string, unknown>;
     running: boolean;
     ok: boolean;

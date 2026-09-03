@@ -48,9 +48,9 @@ the installed `@deepseek-ai/*` versions).
 | Service | Installable package | Notes |
 |---|---|---|
 | `scope` | `dsh-scope` | scoped context layering |
-| `shell` / `shellEnv` / `subprocess` | `dsh-shell` / `dsh-shell-env` / `dsh-subprocess` | `shellEnv`+`subprocess` already in coding stack; `shell` would unblock `permissionPresets` (`inject: ["shell"]`) which currently stalls silently |
+| `shell` / `shellEnv` / `subprocess` | `dsh-shell` / `dsh-shell-env` / `dsh-subprocess` | `shellEnv`+`subprocess` already in coding stack; `shell` arrives per-turn via the coding stack (bash-sandbox registers `ctx.shell`), which activates `permissionPresets` — no longer stalled |
 | `planMode` | `dsh-plan-mode` | already globally mounted |
-| `permissionPresets` | `dsh-permission-presets` | dep present and mounted via `ctx.plugin` but inject-gated on `shell` → stalls without `shell` |
+| `permissionPresets` | `dsh-permission-presets` | dep present, statically imported, mounted post-bootstrap via `ctx.plugin`; activates once per-turn `shell` appears. Surfaced in the coding header (`AgentPermissionSelect`) + `/permission` |
 | `sessionProjection*` | `dsh-session-projection` | `sessionProjections` mounted globally; `sessionProjectionCache` (needs `storageDomain`) would improve cold-list perf |
 | `codeRuntime` | `dsh-code-runtime` | code exec transport — not needed in `native` tools mode |
 | `spillStore` | `dsh-spill` + `dsh-spill-local` + `dsh-spill-policy` | **now mounted** — `LocalSpillStore` (`root: <userData>/spill`) + `spill-policy maxInlineBytes:32768` bounds oversized `tool-fs-search` output to preview+locator |

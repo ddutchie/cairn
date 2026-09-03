@@ -97,13 +97,35 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
   const [expanded, setExpanded] = useState(false);
   const setActiveContextPanel = useCairnStore((state) => state.setActiveContextPanel);
   const setSessionPresentation = useCairnStore((state) => state.setSessionPresentation);
-  const hasOutput = Boolean(toolCall.output);
+  const rv = toolCall.resultView;
   // Tool-authored title (dsh `presentCall`, e.g. bash's command or
   // "Read output from background job X") beats the hand-mapped humanizer;
   // tools without one (Cairn's own, old logs) fall back to humanizeTool.
-  const summary = toolCall.viewTitle
-    ? { pre: toolCall.viewTitle }
-    : humanizeTool(toolCall.name, toolCall.args);
+  // A completed-call replacement title (`presentResult`) wins over both.
+  const summary = typeof rv?.title === "string" && rv.title
+    ? { pre: rv.title }
+    : toolCall.viewTitle
+      ? { pre: toolCall.viewTitle }
+      : humanizeTool(toolCall.name, toolCall.args);
+  // Tool-authored result body (dsh `presentResult`): terminal cards carry the
+  // captured output + exit status, generic cards carry reformatted content
+  // blocks. Anything else (or nothing) falls back to the raw output text.
+  const resultBody = (() => {
+    if (!rv || typeof rv !== "object") return toolCall.output;
+    if (rv.card === "terminal" && typeof rv.output === "string") return rv.output;
+    if (rv.card === "generic" && Array.isArray(rv.content)) {
+      const text = (rv.content as Array<{ type?: unknown; text?: unknown }>)
+        .filter((b) => b?.type === "text" && typeof b.text === "string")
+        .map((b) => b.text as string)
+        .join("\n");
+      if (text) return text;
+    }
+    return toolCall.output;
+  })();
+  const exitPill = rv?.card === "terminal"
+    ? (typeof rv.exitCode === "number" ? `exit ${rv.exitCode}` : typeof rv.signal === "string" ? rv.signal : undefined)
+    : undefined;
+  const hasOutput = Boolean(resultBody);
   const path = referencedPath(toolCall);
   const contextType = FILE_CONTEXT_TOOLS.has(toolCall.name) ? "file" : DIFF_CONTEXT_TOOLS.has(toolCall.name) ? "diff" : undefined;
   return (
@@ -111,9 +133,10 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
       <button type="button" onClick={() => hasOutput && setExpanded((value) => !value)} className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit text-left", hasOutput && "hover:border-[var(--accent)] cursor-pointer", !hasOutput && "cursor-default")}>
         {toolCall.ok ? <CheckCircle size={9} className="shrink-0 text-[var(--accent)]" /> : <XCircle size={9} className="shrink-0 text-[var(--danger)]" />}
         <span className="text-[0.714rem] text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}{!toolCall.ok && " failed"}</span>
+        {exitPill && <span className="text-[0.607rem] font-mono text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1">{exitPill}</span>}
         {hasOutput && (expanded ? <ChevronDown size={9} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={9} className="text-[var(--text-tertiary)]" />)}
       </button>
-      {expanded && <pre className="mt-1 max-h-48 overflow-auto rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-all">{toolCall.output}</pre>}
+      {expanded && <pre className="mt-1 max-h-48 overflow-auto rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-all">{resultBody}</pre>}
       {path && contextType && (
         <button
           type="button"

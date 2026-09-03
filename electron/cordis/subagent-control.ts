@@ -8,8 +8,10 @@
  * in session-runtime-handlers.ts).
  *
  * Capability notes (mirror the web shell's `prompt()` contract):
- * - list: durable read via `ctx.subagents.listChildren()` (+ live activity
- *   sampled from the Agent registry, like upstream's catalogView). Works
+ * - list: durable read via `ctx.subagents.listChildren()` (`children` scope)
+ *   or `ctx.subagents.listDescendants()` (`descendants` scope, same breadth
+ *   as the model-side `list_agents` scope param) + live activity
+ *   sampled from the Agent registry, like upstream's catalogView. Works
  *   anytime — no live agent needed.
  * - interrupt: durable `{kind:"user", parentSessionId}` authority. Works
  *   anytime; an absent target is an accepted no-op.
@@ -27,6 +29,19 @@ import "./ctx-augment";
 export type SubagentChildMode = "one-shot" | "continuable";
 export type SubagentChildActivity = "running" | "inactive";
 
+/** Listing breadth for the human catalog. `children` = direct children only;
+ *  `descendants` = the full session-backed subtree (dsh `listDescendants`). */
+export type SubagentScope = "children" | "descendants";
+
+/**
+ * Lenient scope coercion for the IPC boundary — anything that is not exactly
+ * `"descendants"` falls back to direct children, so older renderers (which
+ * send no scope) keep working.
+ */
+export function normalizeSubagentScope(value: unknown): SubagentScope {
+  return value === "descendants" ? "descendants" : "children";
+}
+
 export interface SubagentChildView {
   id: string;
   mode: SubagentChildMode;
@@ -35,6 +50,10 @@ export interface SubagentChildView {
   /** Exact agent live in this process right now (running or idle). */
   live: boolean;
   hasChildren: boolean;
+  /** Descendants scope only: durable direct parent of this candidate. */
+  parentId?: string;
+  /** Descendants scope only: edge distance from the requested root (direct children are 1). */
+  depth?: number;
 }
 
 export interface SubagentDiagnosticView {
@@ -71,6 +90,7 @@ export class SubagentControlError extends Error {
 
 interface SubagentRuntime {
   listChildren: (parent: unknown, signal?: AbortSignal) => Promise<unknown[]>;
+  listDescendants: (root: unknown, signal?: AbortSignal) => Promise<unknown[]>;
   interrupt: (target: unknown, authority: unknown) => void;
 }
 
@@ -108,21 +128,37 @@ function controlCodeOf(err: unknown): SubagentControlCode {
 }
 
 /**
- * Durable direct-child catalog for one parent session, with live activity
+ * Durable subagent catalog for one parent session, with live activity
  * sampled from the Agent registry (mirrors upstream catalogView).
+ *
+ * Scope selects the breadth: `"children"` (default) lists direct children via
+ * `ctx.subagents.listChildren()`; `"descendants"` lists the full
+ * session-backed subtree via `ctx.subagents.listDescendants()` (same
+ * projection-backed runtime as the model-side `list_agents` scope param —
+ * ordinary sessions and one-shot children remain traversal nodes, each entry
+ * carries its durable `parentId` and root-relative `depth`). `parentAvailable`
+ * keeps the same meaning for both scopes: whether the exact parent agent is
+ * live in this process (host messaging possible).
  */
 export async function listSubagentChildren(
   parentSessionId: string,
+  scope: SubagentScope | AbortSignal = "children",
   signal?: AbortSignal,
 ): Promise<SubagentCatalogView> {
+  const resolvedScope = normalizeSubagentScope(typeof scope === "string" ? scope : "children");
+  // Backward-compatible overload: listSubagentChildren(parent, signal).
+  const resolvedSignal = (typeof scope === "string" ? signal : scope) as AbortSignal | undefined;
   const parent = SessionId(requireId(parentSessionId, "parentSessionId"));
   const ctx = await getContext();
   const subagents = subagentsOf(ctx);
   let entries: SubagentCatalogEntry[];
   try {
-    const rows = await subagents.listChildren(parent, signal) as Array<{
+    const rows = (resolvedScope === "descendants"
+      ? await subagents.listDescendants(parent, resolvedSignal)
+      : await subagents.listChildren(parent, resolvedSignal)) as Array<{
       kind?: string; id?: unknown; mode?: SubagentChildMode; label?: string;
       activity?: SubagentChildActivity; hasChildren?: boolean; reason?: SubagentDiagnosticView["reason"];
+      parentId?: unknown; depth?: unknown;
     }>;
     const agents = (ctx as unknown as { get?: (key: string) => AgentRegistry }).get?.("agents");
     entries = rows.map((row) => {
@@ -131,7 +167,7 @@ export async function listSubagentChildren(
       }
       const id = String(row.id ?? "");
       const liveStatus = agents?.get(SessionId(id))?.status;
-      return {
+      const view: SubagentChildView = {
         id,
         mode: row.mode ?? "one-shot",
         ...(row.label !== undefined ? { label: row.label } : {}),
@@ -139,7 +175,12 @@ export async function listSubagentChildren(
         activity: liveStatus === "running" ? "running" : "inactive",
         live: liveStatus !== undefined,
         hasChildren: row.hasChildren === true,
-      } satisfies SubagentChildView;
+      };
+      if (resolvedScope === "descendants") {
+        if (row.parentId != null) view.parentId = String(row.parentId);
+        if (typeof row.depth === "number") view.depth = row.depth;
+      }
+      return view;
     });
   } catch (err) {
     if (err instanceof SubagentControlError) throw err;

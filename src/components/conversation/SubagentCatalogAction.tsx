@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GitBranch, Loader2, SendHorizonal, Square } from "lucide-react";
+import { CornerDownRight, GitBranch, Loader2, SendHorizonal, Square } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { SessionProjection } from "@/../shared/agent/session-projection";
+
+type SubagentScope = "children" | "descendants";
 
 interface CatalogChild {
   kind?: string;
@@ -15,6 +17,9 @@ interface CatalogChild {
   live?: boolean;
   hasChildren?: boolean;
   reason?: string;
+  /** Descendants scope only: durable direct parent + root-relative depth. */
+  parentId?: string;
+  depth?: number;
 }
 
 type CatalogResult =
@@ -56,20 +61,22 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [replies, setReplies] = useState<Record<string, string>>({});
   const [doneIds, setDoneIds] = useState<Record<string, boolean>>({});
+  const [scope, setScope] = useState<SubagentScope>("children");
 
   // Monotonic request id: a slow list() that resolves after a parent switch
   // (or a newer refresh) must not commit stale entries over the current view.
   const loadSeq = useRef(0);
   const load = useCallback(async () => {
     const parent = parentSessionId;
+    const requestedScope = scope;
     if (!parent || !window.electron) return;
     const seq = loadSeq.current + 1;
     loadSeq.current = seq;
     setLoading(true);
     setLoadError(null);
     try {
-      const res = (await window.electron.session.listSubagents(parent)) as CatalogResult;
-      if (loadSeq.current !== seq || parentSessionId !== parent) return;
+      const res = (await window.electron.session.listSubagents(parent, requestedScope)) as CatalogResult;
+      if (loadSeq.current !== seq || parentSessionId !== parent || scope !== requestedScope) return;
       if (res.ok) {
         setEntries(res.value.entries);
         setParentAvailable(res.value.parentAvailable);
@@ -77,12 +84,12 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
         setLoadError(errorHint(res.code));
       }
     } catch {
-      if (loadSeq.current !== seq || parentSessionId !== parent) return;
+      if (loadSeq.current !== seq || parentSessionId !== parent || scope !== requestedScope) return;
       setLoadError(errorHint("internal"));
     } finally {
-      if (loadSeq.current === seq && parentSessionId === parent) setLoading(false);
+      if (loadSeq.current === seq && parentSessionId === parent && scope === requestedScope) setLoading(false);
     }
-  }, [parentSessionId]);
+  }, [parentSessionId, scope]);
 
   // Initial + parent-switch load (cheap local IPC; keeps the badge truthful).
   useEffect(() => {
@@ -180,19 +187,52 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
               {loading ? <Loader2 size={10} className="animate-spin" /> : "Refresh"}
             </button>
           </div>
+          <div className="flex items-center gap-1.5 px-1" role="group" aria-label="Subagent scope">
+            <div className="flex items-center gap-0.5 p-0.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)]">
+              {(["children", "descendants"] as const).map((option) => (
+                <button
+                  key={option}
+                  onClick={() => { if (option !== scope) setScope(option); }}
+                  aria-pressed={scope === option}
+                  title={option === "children" ? "Direct children only" : "Full descendant tree"}
+                  className={`px-2 py-0.5 rounded text-[0.643rem] font-medium transition-colors ${scope === option ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"}`}
+                >
+                  {option === "children" ? "Direct" : "Tree"}
+                </button>
+              ))}
+            </div>
+            {scope === "descendants" && (
+              <span className="text-[0.5625rem] text-[var(--text-tertiary)]">full tree</span>
+            )}
+          </div>
           {loadError && <p className="px-1 text-[0.643rem] text-[var(--danger)]">{loadError}</p>}
           {!parentAvailable && entries.length > 0 && (
             <p className="px-1 text-[0.643rem] text-[var(--text-tertiary)]">Parent session isn&apos;t live — messaging is unavailable until its next turn.</p>
           )}
-          {entries.map((entry) => entry.kind === "diagnostic" ? (
-            <div key={entry.id} className="px-2 py-1.5 rounded-md border border-[var(--border)] opacity-60">
-              <p className="text-[0.643rem] text-[var(--text-tertiary)]">Unreadable child ({entry.reason})</p>
-            </div>
-          ) : (
-            <div key={entry.id} className="px-2 py-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] space-y-1.5">
+          {entries.map((entry) => {
+            if (entry.kind === "diagnostic") {
+              return (
+                <div key={entry.id} className="px-2 py-1.5 rounded-md border border-[var(--border)] opacity-60">
+                  <p className="text-[0.643rem] text-[var(--text-tertiary)]">Unreadable child ({entry.reason})</p>
+                </div>
+              );
+            }
+            // Descendants scope: indent nested levels (depth 1 = direct child).
+            const depth = typeof entry.depth === "number" && entry.depth > 0 ? entry.depth : 1;
+            const nested = depth > 1;
+            return (
+            <div
+              key={entry.id}
+              style={nested ? { marginLeft: `${Math.min(depth - 1, 3) * 0.75}rem` } : undefined}
+              className="px-2 py-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] space-y-1.5"
+            >
               <div className="flex items-center gap-1.5 min-w-0">
+                {nested && <CornerDownRight size={10} className="text-[var(--text-tertiary)] shrink-0" />}
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${entry.activity === "running" ? "bg-[var(--success,#22c55e)] animate-pulse" : "bg-[var(--text-tertiary)]"}`} />
                 <span className="text-[0.714rem] font-medium text-[var(--text-primary)] truncate flex-1">{entry.label || `${entry.id.slice(0, 8)}…`}</span>
+                {nested && entry.parentId && (
+                  <span title={`Child of ${entry.parentId}`} className="text-[0.5625rem] text-[var(--text-tertiary)] shrink-0">↳ {entry.parentId.slice(0, 8)}…</span>
+                )}
                 <span className="text-[0.5625rem] uppercase tracking-wide text-[var(--text-tertiary)] shrink-0">{entry.mode}</span>
               </div>
               {entry.mode === "continuable" && (
@@ -233,7 +273,8 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
                 </p>
               )}
             </div>
-          ))}
+            );
+          })}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

@@ -24,7 +24,7 @@ import {
   type ContextRingState,
   type SessionTodoItem,
 } from "./plugins/context-ring";
-import { foldSessionStats, type SessionStats, type TurnStats } from "./session-stats";
+import { foldSessionStats, sessionStatsFromSnapshot, type SessionStats, type SessionStatsSnapshot, type TurnStats } from "./session-stats";
 
 
 /** A generic derived message block (post foldSurface + deriveEventMessage). */
@@ -352,6 +352,16 @@ export async function loadSessionMessages(
   },
   liveSessions: (() => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }>) | undefined,
   sessionId: string,
+  opts?: {
+    /**
+     * Mounted-unit `sessionStats` view for this session (read via
+     * `readSessionStatsSnapshot` by the IPC callers when the session is
+     * resident and the unit registered). When present the whole-session
+     * totals come from the snapshot and the local fold only supplements the
+     * Cairn-only `byTurn`; otherwise the full fold is the fallback.
+     */
+    statsSnapshot?: SessionStatsSnapshot;
+  },
 ): Promise<LoadSessionMessagesResult> {
   const inspection = await pers.inspect(sessionId);
   const events = (inspection?.events ?? []) as readonly SessionEvent[];
@@ -360,7 +370,9 @@ export async function loadSessionMessages(
   const usage = foldSessionUsage(events);
   const contextRing = foldContextRing(events);
   const todos = foldSessionTodos(events);
-  const stats = foldSessionStats(events);
+  const stats = opts?.statsSnapshot
+    ? sessionStatsFromSnapshot(opts.statsSnapshot, events as unknown as Parameters<typeof foldSessionStats>[0])
+    : foldSessionStats(events);
   // Session title — pure fold over the same log. Chat-only in phase 1 but
   // folding is cheap and the result is null for non-chat sessions anyway.
   let title: string | null | undefined;

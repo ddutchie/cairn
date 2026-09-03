@@ -29,6 +29,7 @@ import { apply as toolSkillApply, inject as toolSkillInject, name as toolSkillNa
 import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName } from "@deepseek-ai/dsh-llm-retry";
 import { apply as commandCompactApply, inject as commandCompactInject, name as commandCompactName } from "@deepseek-ai/dsh-command-compact";
 import SessionTitleService from "@deepseek-ai/dsh-session-title";
+import { apply as sessionStatsApply, inject as sessionStatsInject, name as sessionStatsName } from "@deepseek-ai/dsh-session-stats";
 import PermissionPresetService from "@deepseek-ai/dsh-permission-presets";
 import GoalService from "@deepseek-ai/dsh-goal";
 import { apply as toolGoalApply, inject as toolGoalInject, name as toolGoalName } from "@deepseek-ai/dsh-tool-goal";
@@ -275,6 +276,17 @@ export async function getContext(): Promise<Context> {
     try { if (ctx.skills) ctx.skills.registerProvider(() => createCairnSkillProvider()); } catch (err) { console.error("[cordis] cairn skill provider registration failed:", err instanceof Error ? err.message : err); }
     try { const { defineTool } = await import("@deepseek-ai/dsh-tools"); ctx.cairn = { defineTool, confirm: async (sessionId, req, opts) => { const { getConfirmTransport } = await import("./approval-transports"); const transport = getConfirmTransport(sessionId); if (!transport) return "cancelled" as const; return transport.confirm({ ...req, signal: opts?.signal }); } }; } catch { /* best-effort */ }
     try { const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection"); (ctx.plugin as (p: unknown, c?: unknown) => unknown)(ProjectionRegistry, {}); } catch (err) { console.warn("[cordis] session projections unavailable:", err instanceof Error ? err.message : err); }
+    // Whole-log turn/step counts + LLM/tool/first-token/decode wall times
+    // (`sessionStats` unit). Mounted post-bootstrap, NOT an ENTRY_LIST entry:
+    // it injects only `sessionProjections`, which mounts post-bootstrap on the
+    // line above — as a loader entry it would stall `loader.await()`. Awaited
+    // (like the goal stack below) so the unit is registered before the first
+    // session opens. Billing still reads SQLite `llm_usage` (token-meter stays
+    // mounted but unused for billing) — this unit only feeds the stats line.
+    try {
+      const plug = ctx.plugin as unknown as (p: unknown, c?: unknown) => Promise<unknown>;
+      await plug({ apply: sessionStatsApply, inject: sessionStatsInject, name: sessionStatsName }, {});
+    } catch (err) { console.warn("[cordis] session stats unavailable:", err instanceof Error ? err.message : err); }
     // Permission presets (workspace-write, danger-full-access + /permission).
     // Mounted post-bootstrap, NOT an ENTRY_LIST entry: it injects `shell`,
     // which is only mounted per-turn by the coding stack — as a loader entry
@@ -309,6 +321,10 @@ export async function getContext(): Promise<Context> {
     // Goal UI bridge: goal/changed → session:projection kind:"goal" for the
     // renderer goal chip. Mounted after the goal stack above (no-op without it).
     try { const { mountGoalBridge } = await import("./goal-bridge"); mountGoalBridge(ctx); } catch (err) { console.warn("[cordis] goal bridge unavailable:", err instanceof Error ? err.message : err); }
+    // Permissions UI bridge: `permissions` projection change feed →
+    // session:projection kind:"permissions" for the renderer preset switcher.
+    // Mounted after the permission-presets service above (no-op without it).
+    try { const { mountPermissionsBridge } = await import("./permissions-bridge"); mountPermissionsBridge(ctx); } catch (err) { console.warn("[cordis] permissions bridge unavailable:", err instanceof Error ? err.message : err); }
     sharedCtx = ctx;
     return ctx;
   })();
@@ -418,10 +434,78 @@ export function withToolCallView<T extends { type?: unknown; data?: unknown }>(e
   if (!event || (event as { type?: unknown }).type !== "tool/call") return event;
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data || typeof data !== "object" || (data as { view?: unknown }).view !== undefined) return event;
-  const view = resolveToolCallView(
-    typeof data.name === "string" ? data.name : "tool",
-    typeof data.arguments === "string" ? data.arguments : undefined,
-  );
+  const name = typeof data.name === "string" ? data.name : "tool";
+  const argsRaw = typeof data.arguments === "string" ? data.arguments : undefined;
+  if (typeof data.callId === "string") noteToolCall(data.callId, name, argsRaw);
+  const view = resolveToolCallView(name, argsRaw);
   if (!view) return event;
   return { ...event, data: { ...data, view } };
+}
+
+/** dsh tool-authored result view (`ToolDefinition.presentResult`) — title/card for done chips. */
+export interface ToolResultViewLike {
+  card?: unknown;
+  title?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * Resolve a tool's self-described result view. dsh calls
+ * `presentResult(args, result: ToolResult)`; hosts only have the rendered
+ * output text, so this synthesizes the `{content, isError}` shape presenters
+ * read (bash's only inspects the single text block + isError). At rc.1 only
+ * bash/pwsh define `presentResult` (terminal/exit-pill cards); fs/search/read
+ * tools will flow through unmodified when upstream adds theirs.
+ */
+export function resolveToolResultView(
+  tool: string,
+  argsRaw: string | undefined,
+  outputText: string | undefined,
+  isError?: boolean,
+): ToolResultViewLike | undefined {
+  const def = toolDefByName(tool);
+  const present = (def as { presentResult?: (args: unknown, result: unknown) => unknown } | undefined)?.presentResult;
+  if (typeof present !== "function") return undefined;
+  try {
+    const view = present(parseToolArgs(argsRaw), {
+      content: [{ type: "text", text: outputText ?? "" }],
+      isError: isError === true,
+    }) as ToolResultViewLike | undefined;
+    if (!view || typeof view !== "object" || typeof view.card !== "string") return undefined;
+    return view;
+  } catch { return undefined; }
+}
+
+// Pending-call registry bridging tool/call → tool/result at broadcast time:
+// the result event carries only a callId, so the call site stashes name + args
+// for the result attach. Bounded (stale ids from never-settling calls prune on
+// overflow); keyed per process, and callIds are unique per session.
+const pendingToolCalls = new Map<string, { tool: string; argsRaw?: string }>();
+function noteToolCall(callId: string, tool: string, argsRaw?: string): void {
+  if (pendingToolCalls.size > 500) pendingToolCalls.clear();
+  pendingToolCalls.set(callId, { tool, argsRaw });
+}
+
+/**
+ * Attach the tool-authored result view to a live `tool/result` event (see
+ * `resolveToolResultView`). Resolves the tool name via the tool/call stash;
+ * unknown callIds and view-less tools pass through unchanged.
+ */
+export function withToolResultView<T extends { type?: unknown; data?: unknown }>(event: T): T {
+  if (!event || (event as { type?: unknown }).type !== "tool/result") return event;
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data || typeof data !== "object" || (data as { resultView?: unknown }).resultView !== undefined) return event;
+  const message = data.message as { source?: { callId?: unknown }; content?: Array<{ isError?: unknown; content?: Array<{ type?: string; text?: string }> }> } | undefined;
+  const callId =
+    (typeof data.callId === "string" ? data.callId : undefined) ??
+    (typeof message?.source?.callId === "string" ? message.source.callId : undefined);
+  if (!callId) return event;
+  const pending = pendingToolCalls.get(callId);
+  pendingToolCalls.delete(callId);
+  if (!pending) return event;
+  const block = message?.content?.[0];
+  const output = block?.content?.filter((b) => b?.type === "text" && b.text).map((b) => b.text).join("");
+  const view = resolveToolResultView(pending.tool, pending.argsRaw, output, block?.isError === true);
+  if (!view) return event;
+  return { ...event, data: { ...data, resultView: view } };
 }

@@ -41,6 +41,7 @@ import { ConversationEmptyState } from "@/components/conversation/ConversationEm
 import { ConversationPane } from "@/components/conversation/ConversationPane";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
 import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
+import { AgentPermissionSelect } from "./AgentPermissionSelect";
 import type { SessionProjection } from "../../../shared/agent/session-projection";
 import { useSessionConversation } from "@/hooks/useSessionConversation";
 
@@ -191,7 +192,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       onToolCall: (call) => addAgentToolCall(session.sessionId, { callId: call.callId ?? `${call.name}:${Date.now()}`, name: call.name, label: call.name, ...(typeof call.view?.title === "string" && call.view.title ? { viewTitle: call.view.title } : {}), args: call.args, running: true, ok: true }),
       onToolResult: (result) => {
         if (!result.callId) return;
-        updateAgentToolCall(session.sessionId, result.callId, { label: result.name, args: result.args, running: false, ok: result.ok, output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output, cairnRef: extractCairnRef(result.name, result.output) });
+        updateAgentToolCall(session.sessionId, result.callId, { label: result.name, ...(result.resultView ? { resultView: result.resultView } : {}), args: result.args, running: false, ok: result.ok, output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output, cairnRef: extractCairnRef(result.name, result.output) });
       },
       onTurnEnd: (reason, _snapshot, detail) => {
         finaliseAgentMessage(session.sessionId); setIsLoading(false); setRetryInfo(null); setIsCompacting(false); sessionConversation.setQuestions(null);
@@ -655,6 +656,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       transcriptFooter={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
       actions={(
         <>
+          {/* Permission preset (dsh permission-presets select) — hidden until
+              the presets service is active. No approval-mode toggle exists in
+              this pane; this row (PLAN badge, PRD, clear) is the session-control
+              home, so the switcher lives here. Keyed by session so a switch
+              never flashes the previous session's preset. */}
+          <AgentPermissionSelect key={session.sessionId} sessionId={session.sessionId} />
           <SubagentCatalogAction parentSessionId={session.sessionId} />
           {session.mode === "plan" && <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]"><MapIcon size={9} /> PLAN</span>}
           {session.planNoteId && <Tooltip content="Open plan note" side="left"><button onClick={() => revealNote(setView, session.planNoteId!)} className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"><FileText size={9} /> PRD</button></Tooltip>}

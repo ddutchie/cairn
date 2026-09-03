@@ -993,8 +993,8 @@ const api = {
     /** Approve or deny a pending tool call; grant:"command" echoes the exact bash command to standing-allow */
     respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command" | "workspace", command?: string, nonce?: string) =>
       ipcRenderer.send("session:respond-tool", { sessionId, callId, approved, grant, command, nonce }),
-    /** Continuable-child catalog for a parent session (durable + live activity) */
-    listSubagents: (parentSessionId: string) => invoke<{ ok: true; value: { entries: unknown[]; parentAvailable: boolean } } | { ok: false; code: string; message: string }>("subagent:list", { parentSessionId }),
+    /** Continuable-child catalog for a parent session (durable + live activity). Scope defaults to direct children; "descendants" lists the full subtree. */
+    listSubagents: (parentSessionId: string, scope?: "children" | "descendants") => invoke<{ ok: true; value: { entries: unknown[]; parentAvailable: boolean } } | { ok: false; code: string; message: string }>("subagent:list", { parentSessionId, scope: scope ?? "children" }),
     /** Stop a live continuable child's current turn (fire-and-return; absent targets are a no-op) */
     interruptSubagent: (parentSessionId: string, childId: string) => invoke<{ ok: true; value: { accepted: boolean } } | { ok: false; code: string; message: string }>("subagent:interrupt", { parentSessionId, childId }),
     /** Deliver a human message to a continuable child (needs the live parent agent; parent-unavailable otherwise) */
@@ -1003,6 +1003,8 @@ const api = {
     killJob: (jobId: string) => invoke<{ ok: true; value: unknown } | { ok: false; code: string; message: string }>("session:job-kill", { jobId }),
     /** Current same-session goal snapshot (null when no goal); live changes arrive via onProjection kind:"goal" */
     goal: (sessionId: string) => invoke<{ ok: true; value: { id: string; revision: number; objective: string; phase: string; blockedReason?: { code: string; message: string }; roundsStarted: number; maxGoalRounds: number; createdAt: number; updatedAt: number } | null } | { ok: false; code: string; message: string }>("session:goal", { sessionId }),
+    /** Current permission-preset select ({options, currentValue}); live changes arrive via onProjection kind:"permissions". ok:false while the presets service is unavailable (switcher hides) */
+    permissions: (sessionId: string) => invoke<{ ok: true; value: { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } } | { ok: false; code: string; message: string }>("session:permissions", { sessionId }),
     /** Rate an assistant message (thumbs + optional note); preserves a stored note unless replaced */
     feedback: (req: { sessionId: string; messageId: string; rating: "positive" | "negative"; note?: string }) => invoke<{ ok: true; value: { messageId: string; rating: string; note?: string; version: string } } | { ok: false; code: string; message: string }>("session:feedback", req),
     /** Current rating for one message (null when unrated) */

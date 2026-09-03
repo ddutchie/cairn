@@ -24,6 +24,8 @@ export interface ConversationToolCall {
   label: string;
   /** Tool-authored title from dsh `presentCall`; ToolCallBody prefers it over humanized text. */
   viewTitle?: string;
+  /** Tool-authored result view from dsh `presentResult`; ToolCallBody renders terminal/generic cards. */
+  resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
   args?: Record<string, unknown>;
   running?: boolean;
   ok: boolean;
@@ -91,6 +93,7 @@ function chatToolCall(tool: ChatToolCallRecord): ConversationToolCall {
     name: tool.tool,
     label: tool.label,
     viewTitle: tool.viewTitle,
+    resultView: tool.resultView,
     args: parseArgs(tool.args),
     ok: tool.ok !== false,
     output: tool.output,

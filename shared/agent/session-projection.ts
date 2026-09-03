@@ -2,7 +2,7 @@
 
 export type SessionProjectionKind =
   | "approval" | "question" | "subagent-trace" | "todos" | "plan-note"
-  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result" | "title" | "error" | "jobs" | "goal";
+  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result" | "title" | "error" | "jobs" | "goal" | "permissions";
 
 /** Renderer-safe goal summary (durable `goal` projection view — no activation). */
 export interface GoalSummary {
@@ -64,6 +64,11 @@ export type SessionProjectionData = {
   error: { message: string; code?: SessionBusyReason | string };
   jobs: { ownerSession?: string; jobs: JobSummary[] };
   goal: { goal: GoalSummary | null; operation?: string };
+  /** dsh permission-presets `permissions` view: preset options + current value. */
+  permissions: {
+    options: Array<{ value: string; name: string; description?: string }>;
+    currentValue: string;
+  };
 };
 
 export type SessionProjection<K extends SessionProjectionKind = SessionProjectionKind> = {

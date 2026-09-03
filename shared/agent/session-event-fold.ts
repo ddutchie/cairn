@@ -16,6 +16,8 @@ export interface FoldedToolResult extends FoldedToolCall {
   output?: string;
   error?: string;
   ok: boolean;
+  /** Tool-authored result view attached by main (`withToolResultView`) — card/output/exit. */
+  resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown; [key: string]: unknown };
 }
 
 export interface FoldedUsage {
@@ -196,6 +198,10 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
         ? data.error
         : block.isError === true ? (output || "tool error") : undefined;
       const callId = typeof data.callId === "string" ? data.callId : typeof source.callId === "string" ? source.callId : undefined;
+      const rawResultView = data.resultView as { card?: unknown } | undefined;
+      const resultView = rawResultView && typeof rawResultView === "object" && typeof rawResultView.card === "string"
+        ? (rawResultView as FoldedToolResult["resultView"])
+        : undefined;
       handlers.onToolResult?.({
         callId,
         name: String(data.name ?? (callId ? toolNames.get(callId) : undefined) ?? "tool"),
@@ -204,6 +210,7 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
         error,
         ok: data.ok === false || block.isError === true || Boolean(error) ? false : true,
         meta: data.meta && typeof data.meta === "object" ? data.meta as Record<string, unknown> : undefined,
+        ...(resultView ? { resultView } : {}),
       });
       return;
     }

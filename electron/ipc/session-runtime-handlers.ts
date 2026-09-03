@@ -33,7 +33,7 @@ import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordi
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
-import { getSessionRoot, getContext, withToolCallView } from "../cordis/run-cordis-loop";
+import { getSessionRoot, getContext, withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
 import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./approval-state";
 import { getPlanModeActive } from "../cordis/plan-fold";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
@@ -487,9 +487,9 @@ export function registerSessionRuntimeHandlers(
       return { ok: false, code, message: err instanceof Error ? err.message : "subagent control failed" };
     }
   };
-  registerIpcHandle("subagent:list", (_event, { parentSessionId }: { parentSessionId: string }) => handle(async () => {
-    const { listSubagentChildren } = await import("../cordis/subagent-control");
-    return subagentResult(() => listSubagentChildren(parentSessionId));
+  registerIpcHandle("subagent:list", (_event, { parentSessionId, scope }: { parentSessionId: string; scope?: unknown }) => handle(async () => {
+    const { listSubagentChildren, normalizeSubagentScope } = await import("../cordis/subagent-control");
+    return subagentResult(() => listSubagentChildren(parentSessionId, normalizeSubagentScope(scope)));
   }));
   registerIpcHandle("subagent:interrupt", (_event, { parentSessionId, childId }: { parentSessionId: string; childId: string }) => handle(async () => {
     const { interruptSubagentChild } = await import("../cordis/subagent-control");
@@ -775,7 +775,7 @@ export function registerSessionRuntimeHandlers(
       // still edit its scripts.
       sandboxMode: "workspace-write",
        role,
-       onSessionEvent: (sessionEvent: SessionEvent) => broadcastEvent("session:event", { sessionId, event: withToolCallView(sessionEvent) }),
+       onSessionEvent: (sessionEvent: SessionEvent) => broadcastEvent("session:event", { sessionId, event: withToolResultView(withToolCallView(sessionEvent)) }),
     });
   });
 

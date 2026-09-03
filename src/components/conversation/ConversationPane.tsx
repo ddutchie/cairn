@@ -9,6 +9,7 @@ import { ConversationTranscript } from "./ConversationTranscript";
 import type { ConversationMessage } from "./conversation-message";
 import type { PendingQuestion } from "./conversation-message";
 import { QuestionForm } from "@/components/conversation/QuestionForm";
+import { ConversationSessionStatus } from "./ConversationSessionStatus";
 import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 import type { VirtuosoHandle } from "react-virtuoso";
 import type { ConversationUsage } from "./ConversationHeader";
@@ -48,6 +49,12 @@ export interface ConversationPaneProps {
   composerBefore?: React.ReactNode;
   composerProps?: Partial<Omit<ConversationComposerProps, "value" | "onChange" | "onSubmit" | "onStop" | "isLoading" | "placeholder">>;
   className?: string;
+  /**
+   * Opt-in jobs dock + goal chip above the composer (chat-pane parity with the
+   * coding pane's composerBefore docks). Off by default so the coding pane —
+   * which renders its own docks — is unaffected.
+   */
+  showSessionStatus?: boolean;
 }
 
 /** Shared session-bound transcript, blocking surfaces, and composer. */
@@ -55,7 +62,7 @@ export function ConversationPane({
   sessionId, profile, messages, input, onInputChange, onPrompt, onAbort, isLoading,
   historyLoader, onHistoryLoaded, projection, onAnswerQuestions, title, contextLimit,
   usage, actions, connectors, onRetry, centered = false, placeholder, emptyState, transcriptRef,
-  transcriptFooter, composerRef, composerBefore, composerProps, className,
+  transcriptFooter, composerRef, composerBefore, composerProps, className, showSessionStatus = false,
 }: ConversationPaneProps) {
   useEffect(() => {
     if (!historyLoader) return;
@@ -96,6 +103,11 @@ export function ConversationPane({
         </div>
       )}
       {composerBefore}
+      {showSessionStatus && (
+        <div className={cn("flex-shrink-0", centered && "max-w-3xl mx-auto w-full")}>
+          <ConversationSessionStatus sessionId={sessionId} />
+        </div>
+      )}
       <ConversationComposer
         {...composerProps}
         ref={composerRef}

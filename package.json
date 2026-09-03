@@ -97,6 +97,7 @@
     "@deepseek-ai/dsh-session-projection": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-session-query": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-session-query-sqlite": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-session-stats": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-session-title": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-session-title-first-prompt-llm": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-settings": "^0.1.2-rc.1",

@@ -97,9 +97,9 @@ export interface TerminalSessionsSlice {
   /** Ensure a streaming assistant message exists — creates one if the last message is not streaming */
   ensureAgentStreamingMessage: (sessionId: string) => void;
   /** Append a tool call record to the last assistant message */
-  addAgentToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; viewTitle?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  addAgentToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; viewTitle?: string; resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown }; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update an existing tool call chip in-place (start → done) */
-  updateAgentToolCall: (sessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  updateAgentToolCall: (sessionId: string, callId: string, patch: { label?: string; resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown }; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Set confirmation requirement state for a tool chip */
   setAgentToolConfirmRequired: (sessionId: string, callId: string, confirmRequired: boolean, approvalNonce?: string) => void;
   /** Clear message history for a coding session */
@@ -356,7 +356,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  addAgentToolCall(sessionId, toolCall: { callId: string; name: string; label: string; viewTitle?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
+  addAgentToolCall(sessionId, toolCall: { callId: string; name: string; label: string; viewTitle?: string; resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown }; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;

@@ -47,7 +47,20 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
       const stableId = String(SessionId(`chat-${threadId}`));
       await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, stableId);
       const liveSessions = (ctx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((ctx as unknown as { sessions: unknown }).sessions);
-      const { messages, usage, contextRing, todos, stats, title } = await loadSessionMessages(pers, liveSessions, stableId);
+      // Prefer the mounted `sessionStats` unit's totals for the composer
+      // stats line when the session is resident (stateOf pattern, mirroring
+      // the session:title handler below); the durable-log fold stays the
+      // fallback for cold sessions or an absent registry.
+      let statsSnapshot: import("../cordis/session-stats").SessionStatsSnapshot | undefined;
+      try {
+        const { readSessionStatsSnapshot } = await import("../cordis/session-stats");
+        const live = (ctx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions?.get?.(stableId as never);
+        statsSnapshot = readSessionStatsSnapshot(
+          (ctx as unknown as { sessionProjections?: import("../cordis/session-stats").SessionStatsRegistryLike }).sessionProjections,
+          live,
+        );
+      } catch { /* fold fallback */ }
+      const { messages, usage, contextRing, todos, stats, title } = await loadSessionMessages(pers, liveSessions, stableId, statsSnapshot ? { statsSnapshot } : undefined);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
       const chatMessages = toChatMessages(threadId, enrichToolCallsWithMeta(messages));
 
@@ -83,7 +96,7 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
       // Live sessions expose snapshotEvents() (dsh 0.1.2-alpha.4+ removed .events).
       const liveEvents = typeof sess?.snapshotEvents === "function" ? sess.snapshotEvents() : sess?.events;
       if (liveEvents && liveEvents.length > 0) {
-        const { foldSessionTitle } = await import("@deepseek-ai/dsh-session-title");
+        const { foldSessionTitle } = await import("../cordis/plugins/session-title");
         const snap = foldSessionTitle(liveEvents as never);
         if (snap) return { title: snap.title as string };
       }
@@ -98,7 +111,7 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
       if (pers) {
         try {
           const insp = await pers.inspect(sid);
-          const { foldSessionTitle } = await import("@deepseek-ai/dsh-session-title");
+          const { foldSessionTitle } = await import("../cordis/plugins/session-title");
           const snap = foldSessionTitle(insp.events as never);
           if (snap) return { title: snap.title as string };
         } catch { /* ignore */ }
@@ -120,22 +133,19 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
     // If session not yet live, open it (creates persistence header) then rename.
     let live = sess as { id: unknown } | undefined;
     if (!live) {
-      const { openCordisSessionAgent } = await import("../cordis/session-agent");
+      // Open via the canonical coding-loop opener (openCordisAgent →
+      // openCordisSessionAgent, which pins the adapter internally) — no turn
+      // baggage, no duplicated ensureAgentAiAdapter.
       // Use workspacePath from caller? The handler doesn't have workspace context;
       // fall back to sessionRoot parent. For rename, cwd doesn't matter.
       const { getSessionRoot } = await import("../cordis/cordis-context");
       const cwd = getSessionRoot().replace(/\/sessions\/?$/, "") || process.cwd();
-      // Ensure adapter is ready for the session (uses default model; title rename
-      // itself doesn't need an LLM adapter, but session creation does).
       try {
         const { getCachedConfig } = await import("../lib/config-cache");
         const cached = getCachedConfig();
         const cfg = cached.agentConfig ?? {};
-        const { ensureAgentAiAdapter } = await import("../cordis/session-runtime");
-        if (cfg.baseUrl && cfg.model) {
-          await ensureAgentAiAdapter(ctx, { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: (cfg as { apiKey?: string }).apiKey ?? "", api: "openai-completions" as const });
-        }
-        const handle = await openCordisSessionAgent(ctx, { sessionId: sid, cwd, llmConfig: { baseUrl: cfg.baseUrl ?? "", model: cfg.model ?? "gpt-5.6-luna", apiKey: (cfg as { apiKey?: string }).apiKey ?? "", provider: "openai" }, createIfMissing: true });
+        const { openCordisAgent } = await import("../cordis/run-cordis-coding");
+        const handle = await openCordisAgent(ctx, { sessionId: sid, cwd, llmConfig: { baseUrl: cfg.baseUrl ?? "", model: cfg.model ?? "gpt-5.6-luna", apiKey: (cfg as { apiKey?: string }).apiKey ?? "", provider: "openai" } });
         live = (handle as { agent?: { session?: unknown } }).agent?.session as { id: unknown } | undefined ?? ctx.sessions.get(sid as never) as { id: unknown } | undefined;
         // Dispose the temporary handle — we only needed the session, not a retained agent.
         try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* ignore */ }

@@ -11,7 +11,7 @@ import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import { runCordisSession } from "./session-runner";
 import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore } from "./host-store";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
-import { dropChatAgentForThread, getContext, resolvePresentationMeta } from "./cordis-context";
+import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
 import { foldSessionUsage } from "./plugins/context-ring";
 import { foldSessionStats } from "./session-stats";
 
@@ -122,6 +122,11 @@ function emitBreakdownUsage(events: readonly SessionEvent[], onSessionEvent?: (e
  * waiting for a reload. foldSessionStats over the turn's events yields per-turn
  * metrics; we take the highest (latest) turn's reading and hand it to the
  * renderer, which attaches it to the assistant bubble at turn end.
+ *
+ * NOTE: this keeps the local fold deliberately. The mounted `sessionStats`
+ * unit tracks whole-log totals only (no per-turn state), so it cannot supply
+ * the latest-turn slice this emission needs; the replay/load totals path
+ * (`loadSessionMessages`) is the one that reads snapshot-first.
  */
 function emitTurnStats(events: readonly SessionEvent[], onSessionEvent?: (event: SessionEvent) => void): void {
   if (!onSessionEvent) return;
@@ -284,7 +289,8 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
           const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
           const tool = toolNames.get(callId) ?? "tool";
           const meta = (d.meta as Record<string, unknown> | undefined) ?? (!error ? resolvePresentationMeta(tool, toolArgs.get(callId), output) as Record<string, unknown> | undefined : undefined);
-          opts.emitToolCallDone?.({ tool, callId, cairnRef: (meta?.cairnRef ?? extractCairnRef(tool, output)) as { type: "note" | "task"; id: string; title: string } | undefined, output: error ? undefined : output, ok: !error, error: error ? output || "tool error" : undefined, ...(meta ? { meta } : {}) });
+          const resultView = resolveToolResultView(tool, toolArgs.get(callId), output, error);
+          opts.emitToolCallDone?.({ tool, callId, cairnRef: (meta?.cairnRef ?? extractCairnRef(tool, output)) as { type: "note" | "task"; id: string; title: string } | undefined, output: error ? undefined : output, ok: !error, error: error ? output || "tool error" : undefined, ...(meta ? { meta } : {}), ...(resultView ? { resultView } : {}) });
         }
       });
       resources.add(streamDisposer);
