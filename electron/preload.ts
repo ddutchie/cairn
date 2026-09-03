@@ -1001,6 +1001,14 @@ const api = {
     messageSubagent: (parentSessionId: string, childId: string, text: string) => invoke<{ ok: true; value: { messageId: string } } | { ok: false; code: string; message: string }>("subagent:message", { parentSessionId, childId, text }),
     /** Kill a dsh background job (jobs dock; owner-unavailable when the owner turn ended) */
     killJob: (jobId: string) => invoke<{ ok: true; value: unknown } | { ok: false; code: string; message: string }>("session:job-kill", { jobId }),
+    /** Current same-session goal snapshot (null when no goal); live changes arrive via onProjection kind:"goal" */
+    goal: (sessionId: string) => invoke<{ ok: true; value: { id: string; revision: number; objective: string; phase: string; blockedReason?: { code: string; message: string }; roundsStarted: number; maxGoalRounds: number; createdAt: number; updatedAt: number } | null } | { ok: false; code: string; message: string }>("session:goal", { sessionId }),
+    /** Rate an assistant message (thumbs + optional note); preserves a stored note unless replaced */
+    feedback: (req: { sessionId: string; messageId: string; rating: "positive" | "negative"; note?: string }) => invoke<{ ok: true; value: { messageId: string; rating: string; note?: string; version: string } } | { ok: false; code: string; message: string }>("session:feedback", req),
+    /** Current rating for one message (null when unrated) */
+    feedbackGet: (sessionId: string, messageId: string) => invoke<{ ok: true; value: { messageId: string; rating: string; note?: string; version: string } | null } | { ok: false; code: string; message: string }>("session:feedback-get", { sessionId, messageId }),
+    /** Active session-local reminders (empty when the schedule overlay is off or none) */
+    scheduleList: (sessionId: string) => invoke<{ ok: true; value: Array<{ id: string; prompt: string; scheduledAt: string; kind: string; state: string }> } | { ok: false; code: string; message: string }>("session:schedule-list", { sessionId }),
     /** Workspace-persistent "Always allow" grants */
     listApprovalGrants: (workspaceId: string) => invoke("approval-grants:list", { workspaceId }),
     deleteApprovalGrant: (id: string) => invoke("approval-grants:delete", { id }),

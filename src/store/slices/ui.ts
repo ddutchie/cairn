@@ -412,6 +412,13 @@ export interface AgentConfig {
    * reasoning-capable models.
    */
   reasoningEffort?: ReasoningEffort;
+  /**
+   * Opt-in dsh session reminders (`schedule_create`/`schedule_list`/
+   * `schedule_delete` tools + header alarm pill). Read once at Cordis
+   * bootstrap to gate the schedule overlay mount — toggling needs an app
+   * restart. Default OFF. Explicitly NOT Cairn's own heartbeat.
+   */
+  scheduleEnabled?: boolean;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────

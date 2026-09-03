@@ -30,12 +30,24 @@ import { apply as llmRetryApply, inject as llmRetryInject, name as llmRetryName 
 import { apply as commandCompactApply, inject as commandCompactInject, name as commandCompactName } from "@deepseek-ai/dsh-command-compact";
 import SessionTitleService from "@deepseek-ai/dsh-session-title";
 import PermissionPresetService from "@deepseek-ai/dsh-permission-presets";
+import GoalService from "@deepseek-ai/dsh-goal";
+import { apply as toolGoalApply, inject as toolGoalInject, name as toolGoalName } from "@deepseek-ai/dsh-tool-goal";
+import { apply as commandGoalApply, inject as commandGoalInject, name as commandGoalName } from "@deepseek-ai/dsh-command-goal";
+import { apply as goalRoundDriverApply, inject as goalRoundDriverInject, name as goalRoundDriverName } from "@deepseek-ai/dsh-goal-round-driver";
+import StorageHub from "@deepseek-ai/dsh-storage";
+import { apply as storageJsonApply, inject as storageJsonInject, name as storageJsonName } from "@deepseek-ai/dsh-storage-json";
+import { apply as storageDomainApply, inject as storageDomainInject, name as storageDomainName } from "@deepseek-ai/dsh-storage-domain";
+import MessageFeedbackService from "@deepseek-ai/dsh-message-feedback";
+import { apply as commandFeedbackApply, inject as commandFeedbackInject, name as commandFeedbackName } from "@deepseek-ai/dsh-command-feedback";
+import { apply as scheduleApply, inject as scheduleInject, name as scheduleName } from "@deepseek-ai/dsh-schedule";
+import { getCachedConfig } from "../lib/config-cache";
 import { apply as firstPromptApply, inject as firstPromptInject, name as firstPromptName } from "@deepseek-ai/dsh-session-title-first-prompt-llm";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
 import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
 import * as SpillPolicy from "@deepseek-ai/dsh-spill-policy";
 import { app as electronApp } from "electron";
 import path from "path";
+import os from "os";
 import { createCairnSkillProvider } from "./cairn-skill-provider";
 import { peekChatAgentCache } from "./chat-agent-cache";
 import { SessionId } from "@deepseek-ai/dsh-session";
@@ -54,6 +66,32 @@ export function setSessionRoot(root: string): void {
 export function __resetContextForTest(): void {
   sharedCtx = null;
   contextReady = null;
+}
+
+/**
+ * Root directory for the message-feedback JSON storage backend (one
+ * `message_feedback` unit file). Production persists under userData next to
+ * the spill store; vitest uses a per-process tmp dir (parallel workers must
+ * not contend on one shared file — same rationale as the `:memory:`
+ * session-query index above).
+ */
+function feedbackStorageRoot(): string {
+  if (process.env.VITEST) return path.join(os.tmpdir(), `cairn-feedback-storage-${process.pid}`);
+  return path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "feedback-storage");
+}
+
+/**
+ * Whether the opt-in dsh schedule overlay (session-local reminders) mounts.
+ * Reads the persisted agent setting (`schedule.enabled`, default OFF). The
+ * context builds once per process, so toggling the setting needs an app
+ * restart — the Settings toggle says so. Exported for unit tests.
+ */
+export function isScheduleEnabled(): boolean {
+  try {
+    return getCachedConfig().agentConfig?.scheduleEnabled === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getContext(): Promise<Context> {
@@ -101,6 +139,25 @@ export async function getContext(): Promise<Context> {
     B["cairn:tool-subagent-list-agents"] = { apply: toolSubagentListAgentsApply, inject: toolSubagentListAgentsInject, name: toolSubagentListAgentsName };
     B["dsh:jobs-local"] = JobsLocal;
     B["cairn:tool-jobs"] = { apply: toolJobsApply, inject: toolJobsInject, name: toolJobsName };
+    // Per-message feedback sidecar chain (dsh-message-feedback injects
+    // storageDomain + sessionPersistence + sessions — all ENTRY_LIST-resident,
+    // so the whole chain composes as loader entries in dependency order;
+    // no per-turn service is involved). JSON backend (pure fs, no native
+    // binding) over the storage hub + domain facility, then the feedback
+    // service (maxNoteBytes 8192, matching the upstream Web bundle) and the
+    // log-only /feedback command (injects only `commands`).
+    B["dsh:storage"] = StorageHub;
+    B["dsh:storage-json"] = { apply: storageJsonApply, inject: storageJsonInject, name: storageJsonName };
+    B["dsh:storage-domain"] = { apply: storageDomainApply, inject: storageDomainInject, name: storageDomainName };
+    B["dsh:message-feedback"] = MessageFeedbackService;
+    B["dsh:command-feedback"] = { apply: commandFeedbackApply, inject: commandFeedbackInject, name: commandFeedbackName };
+    // Opt-in schedule overlay (always registered as a builtin so the entry
+    // below can reference it; whether it MOUNTS is gated by the setting).
+    // dsh-schedule injects only agents/sessions/tools/sessionPersistence —
+    // all ENTRY_LIST-resident, never per-turn — so it composes as a loader
+    // entry. No dsh-time-context: time_zone is a model-supplied IANA string
+    // validated inside the schedule domain (Intl), not a service.
+    B["dsh:schedule"] = { apply: scheduleApply, inject: scheduleInject, name: scheduleName };
     B["dsh:command-compact"] = { apply: commandCompactApply, inject: commandCompactInject, name: commandCompactName };
     B["dsh:session-title"] = SessionTitleService;
     B["dsh:session-title-first-prompt-llm"] = { apply: firstPromptApply, inject: firstPromptInject, name: firstPromptName };
@@ -164,6 +221,23 @@ export async function getContext(): Promise<Context> {
       // background starts fail with "background jobs unavailable".
       { id: "jobs-local", name: "cordis:dsh:jobs-local", config: {} },
       { id: "tool-jobs", name: "cordis:cairn:tool-jobs", config: {} },
+      // Per-message feedback sidecar (see B-map comment above). Order matters:
+      // hub → backend → domain facility → feedback service → /feedback command.
+      { id: "storage", name: "cordis:dsh:storage" },
+      { id: "storage-json", name: "cordis:dsh:storage-json", config: { root: feedbackStorageRoot() } },
+      { id: "storage-domain", name: "cordis:dsh:storage-domain", config: { backend: "json" } },
+      { id: "message-feedback", name: "cordis:dsh:message-feedback", config: { maxNoteBytes: 8192 } },
+      { id: "command-feedback", name: "cordis:dsh:command-feedback" },
+      // Opt-in schedule overlay (session-local reminders — explicitly NOT
+      // Cairn's own heartbeat in electron/lib/heartbeat-*, untouched).
+      // LOAD-ORDER RULE (upstream): schedule installs only for root agents
+      // published AFTER the plugin loads — sessions created before the
+      // overlay lack schedule_* tools. Position here is safe because EVERY
+      // entry (including this one) resolves before getContext() returns, and
+      // sessions only open per-turn afterwards — so when enabled, every
+      // session sees the tools; when disabled, no session does. Gated by
+      // isScheduleEnabled() (restart to apply).
+      ...(isScheduleEnabled() ? [{ id: "schedule", name: "cordis:dsh:schedule" }] : []),
     ];
     for (const entry of entries) await loader.create(entry);
     await loader.await();
@@ -212,6 +286,21 @@ export async function getContext(): Promise<Context> {
     // missing/broken package fails loudly at bundle time instead of degrading
     // to a "permission presets unavailable" warning at runtime.
     try { (ctx.plugin as (p: unknown, c?: unknown) => unknown)(PermissionPresetService, {}); } catch (err) { console.warn("[cordis] permission presets unavailable:", err instanceof Error ? err.message : err); }
+    // Same-session goals (dsh-goal service + get_goal/create_goal/update_goal
+    // tools + /goal command + automatic goal-round driver). Mounted
+    // post-bootstrap for the same reason: GoalService injects
+    // `sessionProjections`, which only exists after the ProjectionRegistry
+    // mount two lines above — as ENTRY_LIST entries the goal stack would
+    // stall `loader.await()`. Mounted in dependency order (service → tools →
+    // command → driver) and awaited so `ctx.goals` is live before the first
+    // session opens. Static imports so a missing package fails at bundle time.
+    try {
+      const plug = ctx.plugin as unknown as (p: unknown, c?: unknown) => Promise<unknown>;
+      await plug(GoalService, {});
+      await plug({ apply: toolGoalApply, inject: toolGoalInject, name: toolGoalName }, {});
+      await plug({ apply: commandGoalApply, inject: commandGoalInject, name: commandGoalName }, {});
+      await plug({ apply: goalRoundDriverApply, inject: goalRoundDriverInject, name: goalRoundDriverName }, {});
+    } catch (err) { console.warn("[cordis] goals unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountContextRing } = await import("./plugins/context-ring"); mountContextRing(ctx); } catch (err) { console.warn("[cordis] context ring unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountWorkspaceContext } = await import("./plugins/workspace-context"); mountWorkspaceContext(ctx); } catch (err) { console.warn("[cordis] workspace context unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountSessionTitleBridge } = await import("./plugins/session-title"); mountSessionTitleBridge(ctx); } catch (err) { console.warn("[cordis] session-title bridge unavailable:", err instanceof Error ? err.message : err); }
@@ -221,6 +310,9 @@ export async function getContext(): Promise<Context> {
     // Background-job UI bridge: ctx.jobs change/completion → session:projection
     // kind:"jobs" for the renderer dock. Singleton-subscribed (idempotent).
     try { const { mountJobsBridge } = await import("./jobs-bridge"); mountJobsBridge(ctx); } catch (err) { console.warn("[cordis] jobs bridge unavailable:", err instanceof Error ? err.message : err); }
+    // Goal UI bridge: goal/changed → session:projection kind:"goal" for the
+    // renderer goal chip. Mounted after the goal stack above (no-op without it).
+    try { const { mountGoalBridge } = await import("./goal-bridge"); mountGoalBridge(ctx); } catch (err) { console.warn("[cordis] goal bridge unavailable:", err instanceof Error ? err.message : err); }
     sharedCtx = ctx;
     return ctx;
   })();

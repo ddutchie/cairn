@@ -623,6 +623,20 @@ export function AgentSettings() {
             className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
           />
         </SettingsRow>
+
+        {/* Session reminders (dsh schedule overlay, opt-in) */}
+        <SettingsRow
+          label="Session reminders"
+          description="Let the agent set session-local reminders (schedule_create / schedule_list / schedule_delete) with an alarm pill in the chat header. Off by default; takes effect after an app restart. This is not Cairn's background heartbeat."
+        >
+          <input
+            id="scheduleEnabled"
+            type="checkbox"
+            checked={agentConfig.scheduleEnabled ?? false}
+            onChange={(e) => updateAgent({ scheduleEnabled: e.target.checked })}
+            className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
+          />
+        </SettingsRow>
       </SettingsGroup>
 
       {/* Agent list */}

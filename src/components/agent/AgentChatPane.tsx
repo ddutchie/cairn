@@ -25,6 +25,8 @@ import { type VirtuosoHandle } from "react-virtuoso";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
 import { AgentJobsDock } from "./AgentJobsDock";
+import { AgentGoalChip } from "./AgentGoalChip";
+import type { GoalSummary } from "../../../shared/agent/session-projection";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { isBenignTurnEnd } from "../../../shared/agent/turn-end-reason";
@@ -171,6 +173,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const [retryInfo, setRetryInfo]                 = useState<{ attempt: number; maxRetries: number; delayMs: number } | null>(null);
   // Compaction state — shown in status bar while an LLM summary call is in flight
   const [isCompacting, setIsCompacting]           = useState(false);
+  // Current same-session goal (dsh goal domain) — snapshot on mount, live via
+  // session:projection kind:"goal". Null = no current goal → chip hides.
+  const [sessionGoal, setSessionGoal]             = useState<GoalSummary | null>(null);
   const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
 
   // The shared controller owns canonical session:event folding and transport
@@ -338,6 +343,15 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const { sessionId } = session;
 
+    // Initial goal snapshot (durable log fold — works before any live agent).
+    let cancelled = false;
+    void electron.session.goal(sessionId).then((res) => {
+      if (cancelled) return;
+      if (res && typeof res === "object" && "ok" in res && res.ok) {
+        setSessionGoal((res as { value: GoalSummary | null }).value);
+      }
+    }).catch(() => undefined);
+
     const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
       if (projection.sessionId !== sessionId) return;
       const e = projection.data as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -364,6 +378,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         const jobs = (e.jobs ?? []) as { ownerSession?: string }[];
         setSessionJobs(sessionId, jobs.filter((j) => j.ownerSession == null || j.ownerSession === sessionId) as never);
       }
+      else if (projection.kind === "goal") setSessionGoal((e.goal ?? null) as GoalSummary | null);
       else if (projection.kind === "retry") { setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs }); setTimeout(() => setRetryInfo(null), e.delayMs + 500); }
       else if (projection.kind === "compact") { setIsCompacting(e.status === "start"); if (e.status === "end" && e.auto) addAgentMessage(sessionId, { id: id(), role: "system" as const, content: "----- Session Compacted -----", timestamp: new Date().toISOString() }); }
       else if (projection.kind === "compact-result") {
@@ -379,6 +394,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     return () => {
+      cancelled = true;
       unsubProjection();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -650,6 +666,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           {isLoading && !pendingQuestions && <ConversationWorkingStatus label="Agent is working — you can queue messages below" />}
           <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
           {session.mode === "execute" && planNoteContent && <PlanTaskList content={planNoteContent} />}
+          <AgentGoalChip goal={sessionGoal} />
           {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && <AgentTodoDock todos={sessionTodos ?? []} live={false} />}
           {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} live={false} />}
         </div>

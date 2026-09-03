@@ -6,6 +6,7 @@ import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/conversation/MarkdownContent";
 import { ThinkingPanel } from "@/components/conversation/ThinkingPanel";
+import { MessageFeedbackControl } from "@/components/conversation/MessageFeedbackControl";
 import { MessageAvatar, StreamingCursor } from "@/components/conversation/message-ui";
 import type { LinkedContextReference } from "@/types";
 import { toConversationSubagent } from "./conversation-message";
@@ -171,6 +172,12 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
               </button>
               {isUser && onRetry && <button onClick={() => onRetry(message.content)} title="Retry" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"><RotateCcw size={10} /></button>}
             </div>
+            {/* Thumbs rating lives outside the hover-only wrapper so an active
+                rating stays visible; the control hides itself for user bubbles
+                (isUser), streaming turns, and non-ratable messages. */}
+            {!isUser && !message.isStreaming && (
+              <MessageFeedbackControl sessionId={_sessionId} messageId={message.id} />
+            )}
           </div>
         )}
       </div>
