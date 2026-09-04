@@ -1,19 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
-  Plus, Trash2, Star, FolderOpen, Check, BookOpen, ChevronDown, ChevronUp, Copy, FileCode, CheckCircle, RefreshCw, Download, Wrench
+  Plus, Trash2, Star, FolderOpen, Check, BookOpen, RefreshCw, Download
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { id, cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
-import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
 import { ProviderManager } from "./ProviderManager";
 import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
+import { useAgentPreviews } from "./tools/useAgentPreviews";
+import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
 
 // ── Agent form ────────────────────────────────────────────────────────────────
 
@@ -140,160 +141,31 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
   );
 }
 
-// ── Skill row ─────────────────────────────────────────────────────────────────
+// ── Coding prompt + tools preview ────────────────────────────────────────────
+// Coding-agent prompt (board-tracking workflow) and the tools the coding
+// surfaces expose. Chat lives on the Chat tab, MCP on the MCP tab — this
+// section shows coding + automation-dev only, in the same card style.
 
-// ── System prompt preview ─────────────────────────────────────────────────────
+function CodingPreviewSection() {
+  const previews = useAgentPreviews();
+  const { workspacePath, codingPrompt, inventory, sections, skillNames, loading, error, reload } = previews;
+  const [activeSurface, setActiveSurface] = useState<"coding" | "automation-dev">("coding");
 
-interface PromptPreviewProps {
-  systemPrompt: string;
-}
-
-function PromptPreview({ systemPrompt }: PromptPreviewProps) {
-  const [expanded, setExpanded] = useState(false);
-  const { copied, copy: copyToClipboard } = useCopyToClipboard();
-
-  const lines = systemPrompt.split("\n");
-  const PREVIEW_LINES = 6;
-  const preview = lines.slice(0, PREVIEW_LINES).join("\n");
-  const hasMore = lines.length > PREVIEW_LINES;
-
-  function copy() {
-    copyToClipboard(systemPrompt);
-  }
-
-  return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]">
-        <div className="flex items-center gap-2">
-          <FileCode size={12} className="text-[var(--text-tertiary)]" />
-          <span className="text-xs font-medium text-[var(--text-secondary)]">System prompt</span>
-          <span className="text-[0.65rem] text-[var(--text-tertiary)]">({lines.length} lines)</span>
-        </div>
-        <button
-          onClick={copy}
-          className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded hover:bg-[var(--surface-3)]"
-        >
-          {copied
-            ? <><CheckCircle size={11} className="text-[var(--success)]" /> Copied</>
-            : <><Copy size={11} /> Copy</>
-          }
-        </button>
-      </div>
-
-      {/* Content */}
-      <div className="relative">
-        <pre className="text-[0.714rem] font-mono text-[var(--text-secondary)] leading-relaxed p-4 overflow-x-auto whitespace-pre-wrap break-words">
-          {expanded ? systemPrompt : preview}
-        </pre>
-        {!expanded && hasMore && (
-          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-[var(--surface)] to-transparent pointer-events-none" />
-        )}
-      </div>
-
-      {/* Expand toggle */}
-      {hasMore && (
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] border-t border-[var(--border)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] transition-colors"
-        >
-          {expanded
-            ? <><ChevronUp size={12} /> Collapse</>
-            : <><ChevronDown size={12} /> Show all ({lines.length} lines)</>
-          }
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Skills & prompt preview section ──────────────────────────────────────────
-
-/** One assembled prompt section, expandable to show its literal text. */
-function SectionPreview({ name, text, index }: { name: string; text: string; index: number }) {
-  const [expanded, setExpanded] = useState(false);
-  const preview = text && text.length > 90 ? `${text.slice(0, 90)}…` : text;
-  return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-[var(--surface-2)] transition-colors"
-        aria-expanded={expanded}
-      >
-        <span className="text-[0.65rem] font-mono text-[var(--text-tertiary)] w-5 shrink-0 text-right">{index + 1}</span>
-        <span className="text-[0.714rem] font-mono text-[var(--accent)] shrink-0">{name}</span>
-        {text && (
-          <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1">{expanded ? "" : preview}</span>
-        )}
-        <ChevronDown size={12} className={`text-[var(--text-tertiary)] shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
-      </button>
-      {expanded && (
-        <pre className="text-[0.714rem] font-mono text-[var(--text-secondary)] leading-relaxed px-3 py-2 border-t border-[var(--border)] overflow-x-auto whitespace-pre-wrap break-words">
-          {text || "(empty section)"}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-function SkillsPreviewSection() {
-  const { projects, activeProjectId } = useCairnStore(useShallow((s) => ({
-    projects: s.projects,
-    activeProjectId: s.activeProjectId,
-  })));
-
-  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
-  const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [sections, setSections] = useState<Array<{ name: string; text: string; index: number }> | null>(null);
-  const [skillNames, setSkillNames] = useState<Array<{ name: string; description: string }>>([]);
-  const [toolNames, setToolNames] = useState<Array<{ name: string; description?: string }>>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const _activeProject = projects.find((p) => p.id === activeProjectId) ?? projects[0];
-
-  useEffect(() => {
-    window.electron?.getWorkspacePath().then((p) => setWorkspacePath(p ?? null));
-  }, []);
-
-  const load = useCallback(async () => {
-    if (!workspacePath) return;
-    setLoading(true);
-    setError(null);
-    try {
-      // The REAL assembled prompt + skills/tools come from the Cordis engine
-      // (dsh SystemPrompt + SkillRegistry), not the legacy agent builder.
-      const promptRes = await window.electron?.runtime?.systemPromptPreview({ cwd: workspacePath });
-      if (promptRes) {
-        if (promptRes.error) setError(promptRes.error);
-        setSystemPrompt(promptRes.text || null);
-        setSections(promptRes.sections);
-        setSkillNames(promptRes.skills ?? []);
-        setToolNames(promptRes.tools ?? []);
-      }
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [workspacePath]);
-
-  // Auto-load on mount and when deps change
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(); }, [load]);
+  const codingTools = inventory?.coding ?? [];
+  const automationDevTools = inventory?.["automation-dev"] ?? [];
+  const shownTools = activeSurface === "coding" ? codingTools : automationDevTools;
 
   return (
     <SettingsGroup
-      title="Skills & System Prompt"
-      description="SKILL.md files discovered in your workspace are automatically loaded into the agent context. Preview the full system prompt the agent will receive."
+      title="Coding Prompt & Tools"
+      description="The coding agent prompt carries the Mandatory Cairn workflow — board tracking (In Progress → Review/Done), PRD checklist updates, and session summaries. Below are the tools the coding surfaces expose."
     >
       {/* Refresh */}
       <div className="flex items-center justify-end">
         <Button
           variant="ghost"
           size="sm"
-          onClick={load}
+          onClick={reload}
           disabled={loading}
           className={cn(loading && "opacity-50")}
         >
@@ -316,31 +188,16 @@ function SkillsPreviewSection() {
         </div>
       )}
 
-      {/* System prompt preview (live dsh assembly) */}
-      {systemPrompt !== null && (
+      {codingPrompt !== null ? (
         <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2">
-            Assembled System Prompt
-          </h3>
-          {/* Section breakdown */}
+          {/* Same shared global assembly as the Chat tab — only the identity
+              section below (the coding prompt) differs per surface. */}
           {sections && sections.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
-                  {sections.length} section{sections.length !== 1 ? "s" : ""}
-                </span>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
-                  {skillNames.length} skills
-                </span>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
-                  {toolNames.length} tools
-                </span>
-              </div>
-              {sections.map((s) => <SectionPreview key={`${s.index}-${s.name}`} name={s.name} text={s.text} index={s.index} />)}
-            </div>
+            <SharedSectionsList sections={sections} skillsCount={skillNames.length} toolsCount={codingTools.length} />
           )}
-          <PromptPreview systemPrompt={systemPrompt} />
-          {/* Skills list */}
+          <PromptPreview systemPrompt={codingPrompt} />
+          {/* Workspace skills load on the coding agent (chat neither resolves
+              the skill tool nor receives the catalog). */}
           {skillNames.length > 0 && (
             <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
               <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]">
@@ -357,23 +214,44 @@ function SkillsPreviewSection() {
               </div>
             </div>
           )}
-          {/* Tools list */}
-          {toolNames.length > 0 && (
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
-              <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]">
-                <Wrench size={12} className="text-[var(--text-tertiary)]" />
-                <span className="text-xs font-medium text-[var(--text-secondary)]">Tools ({toolNames.length})</span>
-              </div>
-              <div className="p-2 space-y-1">
-                {toolNames.map((t) => (
-                  <div key={t.name} className="px-2 py-1.5 rounded hover:bg-[var(--surface-2)]">
-                    <div className="text-[0.714rem] font-mono text-[var(--accent)]">{t.name}</div>
-                    {t.description && <div className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-1">{t.description}</div>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+        </div>
+      ) : (
+        !loading && (
+          <p className="text-[0.714rem] text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
+            Coding prompt unavailable — refresh to retry.
+          </p>
+        )
+      )}
+
+      {/* Surface tabs: coding vs automation-dev (file-tools only) */}
+      {inventory && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface-2)] p-0.5 w-fit">
+            {(["coding", "automation-dev"] as const).map((surface) => (
+              <button
+                key={surface}
+                type="button"
+                onClick={() => setActiveSurface(surface)}
+                className={cn(
+                  "px-2 py-0.5 text-[0.714rem] rounded",
+                  activeSurface === surface
+                    ? "bg-[var(--surface)] text-[var(--text-primary)] font-medium"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                )}
+              >
+                {surface === "coding" ? `Coding (${codingTools.length})` : `Automation-dev (${automationDevTools.length})`}
+              </button>
+            ))}
+          </div>
+          <SurfaceToolsPanel
+            tools={shownTools}
+            footnote={
+              activeSurface === "coding"
+                ? "Filesystem, shell, and orchestration tools mount per coding turn — chat never sees them."
+                : "Automation-dev authors scripts only: file tools, no shell, no Cairn data tools."
+            }
+          />
+          <ToolsLegend />
         </div>
       )}
 
@@ -726,8 +604,8 @@ export function AgentSettings() {
         )}
       </div>
 
-      {/* Skills & system prompt preview */}
-      <SkillsPreviewSection />
+      {/* Coding prompt & tools preview */}
+      <CodingPreviewSection />
 
       {browsingProviders && <BrowseProvidersModal onClose={() => setBrowsingProviders(false)} />}
     </div>

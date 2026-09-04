@@ -9,6 +9,15 @@ export interface OpenCordisSessionAgentOptions {
   llmConfig: LLMConfig;
   signal?: AbortSignal;
   createIfMissing?: boolean;
+  /**
+   * Global tool names to hide from this agent's scope via
+   * `tools.restrict({ deny })`. Restrictions intersect and persist for the
+   * agent's lifetime; scoped registrations stay visible. Chat passes
+   * `["skill"]` — its focus is the Cairn workspace, and upstream removes
+   * both the tool schema AND the per-step `<available_skills>` catalog
+   * injection when the agent no longer resolves the registration.
+   */
+  denyTools?: string[];
 }
 
 export interface CordisSessionAgentHandle {
@@ -37,7 +46,7 @@ export interface ModelSelectionRef {
 /** Open a stable DSH session by resuming its log or creating it when absent. */
 export async function openCordisSessionAgent(
   ctx: Context,
-  { sessionId, cwd, llmConfig, signal, createIfMissing = true }: OpenCordisSessionAgentOptions,
+  { sessionId, cwd, llmConfig, signal, createIfMissing = true, denyTools }: OpenCordisSessionAgentOptions,
 ): Promise<CordisSessionAgentHandle> {
   // Eagerly mount the pi-ai route for the summariser (compaction) before the
   // agent is created/resumed, so a `/compact` invocation that later calls
@@ -80,6 +89,19 @@ export async function openCordisSessionAgent(
     agentOptions: { provider: selection.provider, model: selection.model },
     setup: (agentCtx: unknown) => {
       installModelSelection(agentCtx as never, selectionRef as never);
+      // Per-agent tool restriction (chat denies `skill`). Runs inside setup
+      // so it applies on create AND resume, and re-applies whenever the
+      // caller drops + reopens the agent (e.g. chat model switches).
+      // Fail-open: if the scope API ever differs, the turn proceeds with the
+      // global toolset exactly as before.
+      if (denyTools && denyTools.length > 0) {
+        try {
+          const tools = (agentCtx as { tools?: { restrict?: (filter: { deny: string[] }) => unknown } }).tools;
+          tools?.restrict?.({ deny: [...denyTools] });
+        } catch (err) {
+          console.warn(`[cordis] denyTools restriction failed for "${sessionId}":`, err instanceof Error ? err.message : err);
+        }
+      }
     },
   };
 

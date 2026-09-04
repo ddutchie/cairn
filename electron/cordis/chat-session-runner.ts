@@ -378,14 +378,19 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         }
       }
       try {
-        const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal });
+        // Chat's focus is the Cairn workspace: deny the `skill` tool on the
+        // chat agent scope. Upstream removes both the schema and the per-step
+        // <available_skills> catalog injection when the agent no longer
+        // resolves the registration — no skill context spend on chat turns.
+        // Coding agents keep skills (frontend-design et al. are build tools).
+        const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal, denyTools: ["skill"] });
         chatAgents.set(req.threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown>, selectionRef: opened.selectionRef });
         markLog("open (cache MISS — resume/replay JSONL)", openStart);
         return opened;
       } catch (error) {
         if (!(error instanceof Error) || !error.message.includes("while it is live")) throw error;
         await dropChatAgentForThread(req.threadId);
-        const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal });
+        const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal, denyTools: ["skill"] });
         chatAgents.set(req.threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown>, selectionRef: opened.selectionRef });
         return opened;
       }

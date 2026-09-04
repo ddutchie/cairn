@@ -110,9 +110,11 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // ── System-prompt introspection (Cordis) ─────────────────────────────
   // Assemble the REAL dsh system prompt the Cordis engine sends, plus a
   // breakdown of its sections (name + order). Cairn's own identity section
-  // (cairn:system:*) is mounted per-turn inside the loop, so to reflect a real
-  // turn we temporarily mount it here, assemble, then remove it.
-  registerIpcHandle("runtime:systemPrompt:preview", (_e, req: { cwd?: string }) => handle(async () => {
+  // (cairn:system) is mounted per-turn inside the loop, so to reflect a real
+  // turn we temporarily mount it here, assemble, then remove it. The coding
+  // agent prompt (buildAgentSystemPrompt — the board-tracking workflow) is a
+  // plain string (no dsh sections), returned alongside so Settings shows both.
+  registerIpcHandle("runtime:systemPrompt:preview", (_e, req: { cwd?: string; projectName?: string }) => handle(async () => {
     try {
       const [{ getContext }, { buildSystemPrompt }] = await Promise.all([
         import("../cordis/run-cordis-loop"),
@@ -126,9 +128,17 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
         };
       }).systemPrompt;
       if (!sys) return { text: "", sections: [], skillCount: 0, error: "systemPrompt service unavailable" };
-      // Mount Cairn's identity section at order -100 (same as the chat loop) so
-      // the assembled text is what a real turn sends.
-      const disposeSection = sys.section({ name: "cairn:system:preview", order: -100, text: buildSystemPrompt({ message: "", threadId: "preview", projectId: "", workspaceId: "" } as never) });
+      // Mount Cairn's identity section under its REAL turn name/order so the
+      // assembled text is what a real turn sends. Guarded: a concurrent
+      // preview (or live turn holding the global layer) would throw on
+      // duplicate registration — then assemble without and flag it.
+      let disposeSection: (() => void) | undefined;
+      let cairnSystemLive = false;
+      try {
+        disposeSection = sys.section({ name: "cairn:system", order: -100, text: buildSystemPrompt({ message: "", threadId: "preview", projectId: "", workspaceId: "" } as never) });
+      } catch {
+        cairnSystemLive = true;
+      }
       try {
         const assembly = (await sys.assemble({ signal: undefined })) as {
           sections: Array<{ name: string; order: number; text: string | ((c: { scope?: unknown }) => string) }>;
@@ -165,12 +175,68 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
             tools.sort((a, b) => a.name.localeCompare(b.name));
           }
         } catch { /* informational */ }
-        return { text, sections, contexts, skills, tools, variables: assembly.variables ?? {} };
+        return { text, sections, contexts, skills, tools, variables: assembly.variables ?? {}, cairnSystemLive };
       } finally {
-        disposeSection();
+        try { disposeSection?.(); } catch { /* already torn down */ }
       }
     } catch (err) {
       return { text: "", sections: [], skillCount: 0, error: err instanceof Error ? err.message : String(err) };
+    }
+  }));
+
+  // ── Coding-agent prompt preview ──────────────────────────────────────
+  // The coding loop's system prompt is NOT a dsh section — it is the plain
+  // string built by buildAgentSystemPrompt (identity + Mandatory Cairn
+  // workflow: board tracking, PRD checklists, session summaries). The 3.0
+  // Cordis cutover moved it out of the assembled dsh prompt, so the preview
+  // above no longer shows it. Return it here so Settings can display it.
+  registerIpcHandle("runtime:codingPrompt:preview", (_e, req: { cwd?: string; projectName?: string; taskTitle?: string }) => handle(async () => {
+    try {
+      const { buildAgentSystemPrompt } = await import("../lib/coding-session-prompt");
+      const cwd = req?.cwd ?? ctx.workspacePath ?? process.cwd();
+      const text = buildAgentSystemPrompt({
+        projectName: req?.projectName ?? "Project",
+        cwd,
+        taskTitle: req?.taskTitle,
+        mode: "execute",
+        role: "default",
+      });
+      return { text };
+    } catch (err) {
+      return { text: "", error: err instanceof Error ? err.message : String(err) };
+    }
+  }));
+
+  // ── Tool inventory (per-surface, dynamic) ────────────────────────────
+  // What the model can actually call differs per surface (chat = Cairn data
+  // tools only; coding = + filesystem/exec stack; automation-dev = file
+  // tools only; MCP = minus chat-only). Static part comes from
+  // lib/tool-inventory (same sources the loops use); global dsh tools
+  // (subagent/delegate/jobs/skill/web_fetch/…) are read live from the
+  // registry and merged in.
+  registerIpcHandle("runtime:tools:inventory", () => handle(async () => {
+    try {
+      const [{ getContext }, { buildStaticInventory }] = await Promise.all([
+        import("../cordis/run-cordis-loop"),
+        import("../lib/tool-inventory"),
+      ]);
+      const c = await getContext();
+      const globalTools: Array<{ name: string; description: string; category: "read" | "write" | "delete" | "exec"; source: "global" }> = [];
+      try {
+        const toolsSvc = (c as unknown as { tools?: { view: (s?: unknown) => { visible: Map<string, unknown> } } }).tools;
+        const vis = toolsSvc?.view?.()?.visible;
+        if (vis) {
+          for (const [name, def] of vis) {
+            const d = def as { description?: string } | undefined;
+            globalTools.push({ name, description: d?.description ?? "", category: "exec", source: "global" });
+          }
+          globalTools.sort((a, b) => a.name.localeCompare(b.name));
+        }
+      } catch { /* informational — static inventory still answers */ }
+      const surfaces = buildStaticInventory(globalTools);
+      return { surfaces };
+    } catch (err) {
+      return { surfaces: null, error: err instanceof Error ? err.message : String(err) };
     }
   }));
 

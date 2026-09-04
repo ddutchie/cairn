@@ -24,6 +24,7 @@ import { ShortcutsSettings } from "./ShortcutsSettings";
 import { DataSettings } from "./DataSettings";
 import { AboutSection } from "./AboutSection";
 import { AgentSettings } from "./AgentSettings";
+import { McpSettingsTab } from "./MCPSettings";
 import { MobileSettings } from "./MobileSettings";
 import { SyncSettings } from "./SyncSettings";
 import { EmbeddingsSettings } from "./EmbeddingsSettings";
@@ -63,7 +64,7 @@ export function SettingsView() {
   const [section, setSection] = useState<SettingsSection>(
     () => mapLegacySection(settingsSection ?? "general"),
   );
-  const [aiSubtab, setAiSubtab] = useState<"chat" | "agents">(
+  const [aiSubtab, setAiSubtab] = useState<"chat" | "agents" | "mcp">(
     () => (settingsSection === "agents" ? "agents" : "chat"),
   );
   const [extensionsSubtab, setExtensionsSubtab] = useState<"tools" | "commands" | "plugins">(
@@ -150,8 +151,9 @@ export function SettingsView() {
               <div role="tablist" aria-label="AI subsections" className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
                 <button role="tab" aria-selected={aiSubtab === "chat"} onClick={() => setAiSubtab("chat")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "chat" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Chat</button>
                 <button role="tab" aria-selected={aiSubtab === "agents"} onClick={() => setAiSubtab("agents")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "agents" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Coding Agents</button>
+                <button role="tab" aria-selected={aiSubtab === "mcp"} onClick={() => setAiSubtab("mcp")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "mcp" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>MCP</button>
               </div>
-              {aiSubtab === "chat" ? <AISettings /> : <AgentSettings />}
+              {aiSubtab === "chat" ? <AISettings /> : aiSubtab === "agents" ? <AgentSettings /> : <McpSettingsTab />}
             </div>
           )}
           {section === "embeddings" && <EmbeddingsSettings />}

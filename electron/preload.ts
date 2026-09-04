@@ -1199,15 +1199,26 @@ const api = {
       "cordis:executeCommand", req
     ),
     /** Assemble the real dsh system prompt (Cordis engine) + breakdown. */
-    systemPromptPreview: (req: { cwd?: string }) => invoke<{
+    systemPromptPreview: (req: { cwd?: string; projectName?: string }) => invoke<{
       text: string;
       sections: Array<{ name: string; order: number; text: string; index: number }>;
       contexts: Array<{ name: string; order: number; text: string }>;
       skills: Array<{ name: string; description: string }>;
       tools: Array<{ name: string; description?: string }>;
       variables: Record<string, string | undefined>;
+      cairnSystemLive?: boolean;
       error?: string;
     }>("runtime:systemPrompt:preview", req),
+    /** The coding agent's plain-string system prompt (board-tracking workflow). */
+    codingPromptPreview: (req: { cwd?: string; projectName?: string; taskTitle?: string }) => invoke<{
+      text: string;
+      error?: string;
+    }>("runtime:codingPrompt:preview", req),
+    /** Per-surface tool inventory (chat/coding/automation-dev/mcp + live global tools). */
+    toolsInventory: () => invoke<{
+      surfaces: Record<string, Array<{ name: string; description: string; category: string; source: string; gated?: boolean }>> | null;
+      error?: string;
+    }>("runtime:tools:inventory"),
     onProgress: (cb: (e: {
       modelId: string;
       status: string;
