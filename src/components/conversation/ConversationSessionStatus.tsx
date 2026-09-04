@@ -37,9 +37,12 @@ export function ConversationSessionStatus({ sessionId }: { sessionId: string }) 
     if (!electron || !sessionId) return;
 
     // Initial goal snapshot (durable log fold — works before any live agent).
+    // A live projection is newer than this in-flight read: once one arrives,
+    // the pending snapshot must not clobber it when it settles.
     let cancelled = false;
+    let liveUpdate = false;
     void electron.session.goal(sessionId).then((res) => {
-      if (cancelled) return;
+      if (cancelled || liveUpdate) return;
       if (res && typeof res === "object" && "ok" in res && res.ok) {
         setSessionGoal((res as { value: GoalSummary | null }).value);
       }
@@ -53,6 +56,7 @@ export function ConversationSessionStatus({ sessionId }: { sessionId: string }) 
         const jobs = (projection.data as { jobs?: JobSummary[] }).jobs ?? [];
         setSessionJobs(sessionId, filterSessionJobs(jobs, sessionId));
       } else if (projection.kind === "goal") {
+        liveUpdate = true;
         setSessionGoal(((projection.data as { goal?: GoalSummary | null }).goal ?? null));
       }
     });
@@ -66,7 +70,7 @@ export function ConversationSessionStatus({ sessionId }: { sessionId: string }) 
   return (
     <>
       <AgentGoalChip goal={sessionGoal} />
-      {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} live={false} />}
+      {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} />}
     </>
   );
 }

@@ -46,17 +46,20 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
 
   useEffect(() => {
     let cancelled = false;
+    // A live projection is newer than the in-flight cold read — once one
+    // arrives, the pending snapshot must not clobber it when it settles.
+    let liveUpdate = false;
     const electron = window.electron;
     if (!electron) return;
     // Cold read — works before any live projection (fresh pane, no turn yet).
     void electron.session.permissions(sessionId).then((res: SnapshotResult) => {
-      if (cancelled || !res || typeof res !== "object" || !("ok" in res) || !res.ok) return;
+      if (cancelled || liveUpdate || !res || typeof res !== "object" || !("ok" in res) || !res.ok) return;
       if (isSelect(res.value)) setSelect(res.value);
     }).catch(() => undefined);
     // Live select — preset switches (this pane's or the model's) re-render.
     const unsub = electron.session.onProjection((projection: SessionProjection) => {
       if (cancelled || projection.sessionId !== sessionId || projection.kind !== "permissions") return;
-      if (isSelect(projection.data)) setSelect(projection.data);
+      if (isSelect(projection.data)) { liveUpdate = true; setSelect(projection.data); }
     });
     return () => { cancelled = true; unsub?.(); };
   }, [sessionId]);

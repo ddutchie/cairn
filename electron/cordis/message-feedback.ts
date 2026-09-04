@@ -90,7 +90,7 @@ export async function putMessageFeedback(ctx: Context, input: PutMessageFeedback
 
   // Upstream clears a stored note when `note` is omitted — re-attach the
   // observed one so a bare thumb click never destroys note text.
-  const note = input.note !== undefined ? input.note : existing?.note;
+  let note = input.note !== undefined ? input.note : existing?.note;
 
   const attempt = (ifVersion: string | null) =>
     put({
@@ -103,6 +103,10 @@ export async function putMessageFeedback(ctx: Context, input: PutMessageFeedback
 
   let result = await attempt(existing?.version ?? null);
   if (!result.ok && result.error.code === "version-conflict") {
+    // A concurrent writer changed the note after our list — refresh from
+    // their version so the retry doesn't clobber it with our stale copy.
+    // A caller-supplied replacement note still wins.
+    if (input.note === undefined) note = result.error.current?.note;
     result = await attempt(result.error.current?.version ?? null);
   }
   if (!result.ok) throw coded(result.error.code ?? "internal", failureMessage(result.error));

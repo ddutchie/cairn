@@ -345,9 +345,16 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     const { sessionId } = session;
 
     // Initial goal snapshot (durable log fold — works before any live agent).
+    // Clear the previous session's goal: this effect re-runs on session
+    // switch and the new snapshot may take a moment to arrive.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSessionGoal(null);
     let cancelled = false;
+    // A live goal projection is newer than the in-flight snapshot — once one
+    // arrives, the pending snapshot must not clobber it when it settles.
+    let liveUpdate = false;
     void electron.session.goal(sessionId).then((res) => {
-      if (cancelled) return;
+      if (cancelled || liveUpdate) return;
       if (res && typeof res === "object" && "ok" in res && res.ok) {
         setSessionGoal((res as { value: GoalSummary | null }).value);
       }
@@ -379,7 +386,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         const jobs = (e.jobs ?? []) as { ownerSession?: string }[];
         setSessionJobs(sessionId, jobs.filter((j) => j.ownerSession == null || j.ownerSession === sessionId) as never);
       }
-      else if (projection.kind === "goal") setSessionGoal((e.goal ?? null) as GoalSummary | null);
+      else if (projection.kind === "goal") { liveUpdate = true; setSessionGoal((e.goal ?? null) as GoalSummary | null); }
       else if (projection.kind === "retry") { setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs }); setTimeout(() => setRetryInfo(null), e.delayMs + 500); }
       else if (projection.kind === "compact") { setIsCompacting(e.status === "start"); if (e.status === "end" && e.auto) addAgentMessage(sessionId, { id: id(), role: "system" as const, content: "----- Session Compacted -----", timestamp: new Date().toISOString() }); }
       else if (projection.kind === "compact-result") {
@@ -675,7 +682,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           {session.mode === "execute" && planNoteContent && <PlanTaskList content={planNoteContent} />}
           <AgentGoalChip goal={sessionGoal} />
           {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && <AgentTodoDock todos={sessionTodos ?? []} live={false} />}
-          {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} live={false} />}
+          {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} />}
         </div>
       )}
       composerProps={{

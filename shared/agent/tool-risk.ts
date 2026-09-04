@@ -153,6 +153,9 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
 export function approvalGrantScope(name: string): GrantScope {
   const risk = riskForTool(name);
   if (risk === "EXEC" && name === "bash") return "command";
+  // Untrusted external content stays an explicit per-call decision (v1) —
+  // no standing session grant, even though the risk class is WRITE_LOCAL.
+  if (name === "web_search" || name === "web_fetch") return "none";
   if (risk !== "READ" && risk !== "EXEC") return "session";
   return "none";
 }

@@ -78,8 +78,8 @@ const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
   ["terminal_list", "READ", false, "none"],
   ["lsp", "READ", false, "none"],
   // Untrusted external content stays an explicit per-call decision (v1).
-  ["web_search", "WRITE_LOCAL", true, "session"],
-  ["web_fetch", "WRITE_LOCAL", true, "session"],
+  ["web_search", "WRITE_LOCAL", true, "none"],
+  ["web_fetch", "WRITE_LOCAL", true, "none"],
 ];
 
 describe("tool-risk classifier — set membership", () => {

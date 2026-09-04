@@ -29,6 +29,10 @@ export function SchedulePill({ sessionId, pollKey }: SchedulePillProps) {
   const [reminders, setReminders] = useState<ReminderWire[] | null>(null);
 
   useEffect(() => {
+    // Drop the previous session's reminders up front — if this lookup fails
+    // or scheduling is unavailable, the pill must hide, not show stale data.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReminders(null);
     let cancelled = false;
     void (async () => {
       try {
