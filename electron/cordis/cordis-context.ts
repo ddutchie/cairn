@@ -56,7 +56,6 @@ import { peekChatAgentCache } from "./chat-agent-cache";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import WebRuntime from "@deepseek-ai/dsh-web";
 import { apply as webFetchHttpApply, inject as webFetchHttpInject, name as webFetchHttpName } from "@deepseek-ai/dsh-web-fetch-http";
-import { apply as webSearchExaApply, inject as webSearchExaInject, name as webSearchExaName } from "@deepseek-ai/dsh-web-search-exa";
 import { apply as toolWebApply, inject as toolWebInject, name as toolWebName } from "@deepseek-ai/dsh-tool-web";
 import WorkerThreadWorkflowEngine from "@deepseek-ai/dsh-workflow-worker-thread";
 import { apply as sessionExportApply, inject as sessionExportInject, name as sessionExportName } from "./session-export";
@@ -176,7 +175,6 @@ export async function getContext(): Promise<Context> {
     // so the whole stack composes as loader entries in dependency order.
     B["dsh:web"] = WebRuntime;
     B["dsh:web-fetch-http"] = { apply: webFetchHttpApply, inject: webFetchHttpInject, name: webFetchHttpName };
-    B["dsh:web-search-exa"] = { apply: webSearchExaApply, inject: webSearchExaInject, name: webSearchExaName };
     B["dsh:tool-web"] = { apply: toolWebApply, inject: toolWebInject, name: toolWebName };
     // Workflow seam: the worker-thread engine is a Service with
     // `static inject = ['subagents']` (ENTRY_LIST-resident), so it composes as
@@ -296,25 +294,20 @@ export async function getContext(): Promise<Context> {
       // (not coding-only): web research serves notes research in chat AND
       // coding turns, and every inject is global — same precedent as the
       // ENTRY_LIST-mounted tool-skill / tool-goal / tool-jobs model tools.
-      // Provider choice: anonymous local fetch (no key) + Exa search. Exa won
-      // v1 over DeepSeek/Perplexity because its auth is a plain API-key
-      // string (`apiKey` config, else `$EXA_API_KEY` from the launch
-      // environment) — no credentials seam, settings section, or second base
-      // URL to configure. Key UX: export EXA_API_KEY in the launching
-      // environment (or pass `apiKey` in the entry config); without a key the
-      // provider reports unavailable and search fails closed
-      // (WEB_PROVIDER_UNAVAILABLE/CONFIGURED_UNAVAILABLE — no hang). A
-      // Settings-keychain key UI is the follow-up, not this change.
-      // Approval: web_search/web_fetch are unlisted in shared/agent/tool-risk
-      // → WRITE_LOCAL default → ask every call. Correct for v1 (untrusted
-      // external content must stay an explicit decision); risk files untouched.
-      { id: "web", name: "cordis:dsh:web", config: { searchProvider: "exa", fetchProvider: "http" } },
+      // Fetch-only by decision (no keyless search exists in dsh — every
+      // search provider bills an API key; connectors cover assembled search):
+      // anonymous local fetch needs no key and complements connectors for raw
+      // URL retrieval. `search: false` unregisters web_search entirely rather
+      // than leaving a cleanly-erroring dead tool in the model's list.
+      // Approval: web_fetch is locked WRITE_LOCAL in shared/agent/tool-risk
+      // → ask every call. Correct for v1 (untrusted external content must
+      // stay an explicit decision).
+      { id: "web", name: "cordis:dsh:web", config: { fetchProvider: "http" } },
       // Explicit limits mirror the package defaults (the B-map triplet carries
       // no Config schema, so the loader cannot default them — same reason the
       // coding stack passes full configs per turn).
       { id: "web-fetch-http", name: "cordis:dsh:web-fetch-http", config: { maxResponseBytes: 5_000_000, maxBodyChars: 100_000, timeoutMs: 30_000, maxRedirects: 5, userAgent: "deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)" } },
-      { id: "web-search-exa", name: "cordis:dsh:web-search-exa", config: {} },
-      { id: "tool-web", name: "cordis:dsh:tool-web", config: { search: true, fetch: true, searchMaxResults: 8, searchMaxQueries: 4, fetchTimeoutMs: 30_000, searchTimeoutMs: 30_000, fetchMaxOutputChars: 200_000 } },
+      { id: "tool-web", name: "cordis:dsh:tool-web", config: { search: false, fetch: true, searchMaxResults: 8, searchMaxQueries: 4, fetchTimeoutMs: 30_000, searchTimeoutMs: 30_000, fetchMaxOutputChars: 200_000 } },
       // Workflow engine seam (dsh-product-decisions "Workflows + Ralph"): JS
       // orchestration scripts fanning out subagents. Engine only — the
       // workflow/ralph model tools mount per coding turn in mountCodingStack.

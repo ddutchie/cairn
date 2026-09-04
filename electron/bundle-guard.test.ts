@@ -136,6 +136,13 @@ const NODE_BUILTINS = new Set([
   // Node 22 stream/util subpath builtins (used via the node: prefix).
   "node:stream/promises", "node:stream/web", "node:util/types",
   "node:timers/promises",
+  // node:dns/promises (undici, via dsh-web-fetch-http) — universal builtin.
+  "node:dns/promises",
+  // node:sqlite (dsh-session-query-sqlite, dynamic import; undici's guarded
+  // feature probe). Stable unflagged since Node 22.13 — Electron 43 bundles
+  // Node 24 (verified via ELECTRON_RUN_AS_NODE). Revisit if Electron ever
+  // downgrades Node below 22.13.
+  "node:sqlite",
 ]);
 
 /* ──────────────────────────────────────────────────────────────────────── *

@@ -347,6 +347,8 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Background jobs UI | `electron/cordis/jobs-bridge.ts` (registry → `session:projection kind:"jobs"` + `session:job-kill` IPC), `src/components/agent/AgentJobsDock.tsx` |
 | Permissions UI | `electron/cordis/permissions-bridge.ts` (`permissions` projection → `session:permissions` IPC), `src/components/agent/AgentPermissionSelect.tsx` |
 | Goals / feedback / schedule | `electron/cordis/goal-bridge.ts`, `message-feedback.ts`, `schedule-read.ts` + `session:goal|feedback|schedule-list` IPC; `AgentGoalChip.tsx`, `MessageFeedbackControl.tsx`, `SchedulePill.tsx` |
+| Terminal / LSP / web-fetch | `electron/cordis/terminal-backend.ts` (node-pty over shared `pty-sessions.ts`), `cordis-lsp.ts` (stdio, PATH detect), `dsh-web` seam + `web-fetch-http` (fetch-only, `search: false`) |
+| Export / workflows | `electron/cordis/session-export.ts` (Cairn shim, `/export`), worker-thread engine + coding-turn `workflow`/`ralph` tools |
 | Host seam (app I/O) | `electron/cordis/host-store.ts` (sole `../db|../lib|child_process` importer in `cordis/`) |
 | Skill bridge | `electron/cordis/cairn-skill-provider.ts`, `src/lib/plugin-ui/` |
 | Artifacts hygiene | `electron/lib/artifact-hygiene.ts`, `codebase-index.ts` |

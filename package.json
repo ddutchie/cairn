@@ -144,7 +144,6 @@
     "@deepseek-ai/dsh-user-questions": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-web": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-web-fetch-http": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-web-search-exa": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-workflow": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-workflow-worker-thread": "^0.1.2-rc.1",
     "@huggingface/transformers": "^4.2.0",

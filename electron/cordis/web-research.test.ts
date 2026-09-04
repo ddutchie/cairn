@@ -1,26 +1,28 @@
 /**
- * web-research tests — dsh-web seam + fetch/search providers + model tools
+ * web-research tests — dsh-web seam + anonymous fetch provider + web_fetch
  * mounted on the shared context (chat AND coding turns).
  *
+ * Fetch-only by decision (no keyless search exists in dsh — every search
+ * provider bills an API key; connectors cover assembled search): `search:
+ * false` unregisters web_search entirely rather than leaving a cleanly-
+ * erroring dead tool in the model's list.
+ *
  * Proves (no live network anywhere):
- *  - mount: the real WebRuntime + dsh-web-fetch-http + dsh-web-search-exa +
- *    dsh-tool-web compose on a shared-style context and register
- *    `web_search` / `web_fetch` (same ENTRY_LIST shape cordis-context uses);
- *  - untrusted-labeling: tool output prefixes provider-controlled text with
- *    the EXTERNAL notice (fake providers, canned results);
- *  - fail-closed: with no EXA_API_KEY the Exa provider is unavailable and a
- *    search fails with a structured WEB_PROVIDER_* error — no hang;
- *  - approval default: web_search/web_fetch ask every call (WRITE_LOCAL
- *    default in shared/agent/tool-risk — read here, never modified).
+ *  - mount: the real WebRuntime + dsh-web-fetch-http + dsh-tool-web compose
+ *    on a shared-style context and register `web_fetch` but NOT `web_search`
+ *    (same ENTRY_LIST shape cordis-context uses);
+ *  - untrusted-labeling: fetch output prefixes provider-controlled text with
+ *    the EXTERNAL notice (fake provider, canned result);
+ *  - approval default: web_fetch asks every call (WRITE_LOCAL default in
+ *    shared/agent/tool-risk — read here, never modified).
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { Context } from "@deepseek-ai/cordis";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import SystemPrompt from "@deepseek-ai/dsh-system-prompt";
 import ToolRuntime from "@deepseek-ai/dsh-tools";
-import WebRuntime, { WebError } from "@deepseek-ai/dsh-web";
+import WebRuntime from "@deepseek-ai/dsh-web";
 import * as WebFetchHttp from "@deepseek-ai/dsh-web-fetch-http";
-import * as WebSearchExa from "@deepseek-ai/dsh-web-search-exa";
 import * as ToolWeb from "@deepseek-ai/dsh-tool-web";
 import { needsApproval, riskForTool } from "../../shared/agent/tool-risk";
 
@@ -47,58 +49,44 @@ async function baseContext(): Promise<Context> {
   return ctx;
 }
 
-describe("web research stack mounting", () => {
-  it("registers the web seam + both providers + web_search/web_fetch", async () => {
+/** Production mount shape (mirrors the ENTRY_LIST entries in cordis-context). */
+async function mountFetchOnly(ctx: Context): Promise<void> {
+  await ctx.plugin(WebRuntime, { fetchProvider: "http" });
+  await ctx.plugin(WebFetchHttp, {
+    maxResponseBytes: 5_000_000,
+    maxBodyChars: 100_000,
+    timeoutMs: 30_000,
+    maxRedirects: 5,
+    userAgent: "deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)",
+  });
+  await ctx.plugin(ToolWeb, {
+    search: false,
+    fetch: true,
+    fetchTimeoutMs: 30_000,
+    fetchMaxOutputChars: 200_000,
+  });
+}
+
+describe("web research stack mounting (fetch-only)", () => {
+  it("registers the web seam + fetch provider + web_fetch, but no web_search", async () => {
     const ctx = await baseContext();
     try {
-      await ctx.plugin(WebRuntime, { searchProvider: "exa", fetchProvider: "http" });
-      await ctx.plugin(WebFetchHttp, {
-        maxResponseBytes: 5_000_000,
-        maxBodyChars: 100_000,
-        timeoutMs: 30_000,
-        maxRedirects: 5,
-        userAgent: "deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)",
-      });
-      // No key: the provider mounts but reports unavailable (fail-closed).
-      await ctx.plugin(WebSearchExa, {});
-      await ctx.plugin(ToolWeb, {
-        search: true,
-        fetch: true,
-        searchMaxResults: 8,
-        searchMaxQueries: 4,
-        fetchTimeoutMs: 30_000,
-        searchTimeoutMs: 30_000,
-        fetchMaxOutputChars: 200_000,
-      });
+      await mountFetchOnly(ctx);
       expect(ctx.web).toBeDefined();
       const names = toolNames(ctx);
-      expect(names).toContain("web_search");
       expect(names).toContain("web_fetch");
+      expect(names).not.toContain("web_search");
     } finally {
       await ctx.fiber.dispose();
     }
   });
 
-  it("labels search + fetch output as untrusted external content", async () => {
+  it("labels fetch output as untrusted external content", async () => {
     const ctx = await baseContext();
     try {
-      await ctx.plugin(WebRuntime, { searchProvider: "fake-search", fetchProvider: "fake-fetch" });
-      // Fake providers register inside plugin apply (fiber context), exactly
-      // like the real provider plugins — never called outside a fiber.
-      await ctx.plugin({
-        name: "fake-search-plugin",
-        inject: ["web"],
-        apply: (c: Context) => {
-          c.web.registerSearchProvider({
-            id: "fake-search",
-            available: () => true,
-            search: async () => ({
-              sources: [{ url: "https://example.com/a", title: "Example A", snippet: "snippet text" }],
-              truncated: false,
-            }),
-          });
-        },
-      });
+      await ctx.plugin(WebRuntime, { fetchProvider: "fake-fetch" });
+      // Fake provider registers inside plugin apply (fiber context), exactly
+      // like the real provider plugin — never called outside a fiber.
       await ctx.plugin({
         name: "fake-fetch-plugin",
         inject: ["web"],
@@ -116,28 +104,13 @@ describe("web research stack mounting", () => {
         },
       });
       await ctx.plugin(ToolWeb, {
-        search: true,
+        search: false,
         fetch: true,
-        searchMaxResults: 8,
-        searchMaxQueries: 4,
         fetchTimeoutMs: 30_000,
-        searchTimeoutMs: 30_000,
         fetchMaxOutputChars: 200_000,
       });
-      const signal = new AbortController().signal;
-      const searchOut = await ctx.tools.execute({
-        signal,
-        callId: callId(),
-        name: "web_search",
-        arguments: { queries: ["electron sqlite"] },
-      });
-      expect(searchOut.isError).toBe(false);
-      const searchText = searchOut.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-      expect(searchText).toContain(UNTRUSTED_MARKER);
-      expect(searchText).toContain("https://example.com/a");
-
       const fetchOut = await ctx.tools.execute({
-        signal,
+        signal: new AbortController().signal,
         callId: callId(),
         name: "web_fetch",
         arguments: { url: "https://example.com/a" },
@@ -150,47 +123,6 @@ describe("web research stack mounting", () => {
       await ctx.fiber.dispose();
     }
   });
-
-  it("fails closed without a search key (structured error, no hang)", async () => {
-    const saved = process.env.EXA_API_KEY;
-    delete process.env.EXA_API_KEY;
-    const ctx = await baseContext();
-    try {
-      await ctx.plugin(WebRuntime, { searchProvider: "exa", fetchProvider: "http" });
-      await ctx.plugin(WebFetchHttp, {
-        maxResponseBytes: 5_000_000,
-        maxBodyChars: 100_000,
-        timeoutMs: 30_000,
-        maxRedirects: 5,
-        userAgent: "deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)",
-      });
-      await ctx.plugin(WebSearchExa, {});
-      await ctx.plugin(ToolWeb, {
-        search: true,
-        fetch: true,
-        searchMaxResults: 8,
-        searchMaxQueries: 4,
-        fetchTimeoutMs: 30_000,
-        searchTimeoutMs: 30_000,
-        fetchMaxOutputChars: 200_000,
-      });
-      // Seam level: the configured provider is registered but unavailable.
-      const seamError = await ctx.web.search({ query: "x" }).catch((e: unknown) => e);
-      expect(seamError).toBeInstanceOf(WebError);
-      expect((seamError as { code?: string }).code).toBe("WEB_PROVIDER_CONFIGURED_UNAVAILABLE");
-      // Tool level: an isError result, never a hang or a success with content.
-      const out = await ctx.tools.execute({
-        signal: new AbortController().signal,
-        callId: callId(),
-        name: "web_search",
-        arguments: { queries: ["x"] },
-      });
-      expect(out.isError).toBe(true);
-    } finally {
-      if (saved !== undefined) process.env.EXA_API_KEY = saved;
-      await ctx.fiber.dispose();
-    }
-  });
 });
 
 describe("web tool approval default (taxonomy read-only — tool-risk untouched)", () => {
@@ -198,10 +130,6 @@ describe("web tool approval default (taxonomy read-only — tool-risk untouched)
     // Guard: this suite must never modify the taxonomy; names stay unlisted.
     expect(riskForTool("web_search")).toBe("WRITE_LOCAL");
     expect(riskForTool("web_fetch")).toBe("WRITE_LOCAL");
-  });
-
-  it("asks every call for web_search", () => {
-    expect(needsApproval("web_search")).toBe(true);
   });
 
   it("asks every call for web_fetch", () => {
