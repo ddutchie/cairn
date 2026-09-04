@@ -42,7 +42,7 @@ function makeRegistry() {
     changed,
     done,
     kills,
-    list: vi.fn((caller?: unknown) => snaps),
+    list: vi.fn((_caller?: unknown) => snaps),
     kill: vi.fn((id: string, caller?: unknown) => {
       kills.push({ id, caller });
       return "requested" as const;
@@ -51,8 +51,6 @@ function makeRegistry() {
     onJobDone: vi.fn((fn: (snap: FakeSnap, owner: unknown) => void) => { done.push(fn); return () => {}; }),
   };
 }
-
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /** Wait for exactly one new projection after `trigger` (emissions are async). */
 async function expectOneProjection(trigger: () => void) {

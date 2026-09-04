@@ -86,7 +86,7 @@ describe("resolveToolCallView", () => {
     __setToolDefForTest("boom", { presentCall: () => { throw new Error("x"); } });
     expect(resolveToolCallView("boom", "{}")).toBeUndefined();
     // Malformed args JSON degrades to {} rather than throwing.
-    __setToolDefForTest("bash", { presentCall: (args: unknown) => ({ card: "generic", title: "t" }) });
+    __setToolDefForTest("bash", { presentCall: (_args: unknown) => ({ card: "generic", title: "t" }) });
     expect(resolveToolCallView("bash", "{oops")).toEqual({ card: "generic", title: "t" });
   });
 });

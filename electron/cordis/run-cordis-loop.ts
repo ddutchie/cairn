@@ -3,7 +3,7 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import type { Database } from "better-sqlite3";
 import { openCordisSessionAgent } from "./session-agent";
 import { peekChatAgentCache, getChatAgentCache } from "./chat-agent-cache";
-import { getContext, getSessionRoot, resolvePresentationMeta, resolveToolCallView, resolveToolResultView, withToolCallView, withToolResultView } from "./cordis-context";
+import { getContext, getSessionRoot, resolvePresentationMeta, resolveToolCallView, resolveToolResultView } from "./cordis-context";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
