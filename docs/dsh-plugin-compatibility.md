@@ -1,5 +1,7 @@
 # DSH Plugin Compatibility Matrix
 
+> **Last derived at dsh 0.1.1-rc.2; installed is 0.1.2-rc.1.** The packaging contract and core-services section still hold, but the service matrix predates the terminal/LSP/workflow/jobs/schedule/message-feedback adoptions — re-derive per bump with the commands in the derivation section before citing availability.
+
 At dsh `0.1.1-rc.2` — which Cordis services a plugin can `inject`/`get`, which
 Cairn provides, and whether a "most plugins work" claim holds. This is the
 cross-check against `scratch/dsh-repo` (checked out at `dsh-v0.1.1-rc.2`, matching

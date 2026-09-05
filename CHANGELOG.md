@@ -1,5 +1,7 @@
 # Changelog
 
+> **Frozen at 2.0.1** — per-release notes now live in [`changelogs/`](file:///Users/gerard/Documents/GitHub/cairn/changelogs) (one file per version, written ahead of each release per the changelog rule in AGENTS.md). This file is kept for history only; do not add new entries here.
+
 All notable changes to Cairn are documented in this file. This changelog is condensed to focus on major release cycles, combining minor features leading up to each version milestone. Detailed release histories can be found in the [changelogs/](file:///Users/gerard/Documents/GitHub/cairn/changelogs) directory.
 
 ## [2.0.1] — 2026-06-15

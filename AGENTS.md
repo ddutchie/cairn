@@ -9,6 +9,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## Stack summary
 
 - **Electron + Next.js 16** (App Router, static export) — desktop app
+- **Cordis agent runtime** (DeepSeek harness: `@deepseek-ai/cordis` + `dsh-*`) — one shared context drives chat + coding turns: model loop, sessions, tools, approvals, subagents, jobs, compaction. Never reach past the HostStore seam (`electron/cordis/host-store.ts`) from engine code. Full reference: `docs/architecture-cordis.md`
 - **Tailwind CSS v4** — all colours via CSS custom properties (`var(--token)`), never raw Tailwind colour names
 - **Zustand** — domain slices in `src/store/slices/`; composed in `src/store/index.ts`
 - **better-sqlite3** — v13+ N-API (single binary for Electron + pkg/Node 24 + Node), arch-separated (arm64 + x64); all DB access goes through IPC from the renderer
@@ -69,13 +70,10 @@ The What's New modal (`src/components/layout/NewFeatureModal.tsx`) is generated 
 |------|-----|-----------|
 | Overview | `⌘1` | `ProjectOverview` |
 | Notes | `⌘2` | `NotesView` |
-| Board | `⌘3` | `KanbanBoard` |
-| Idea Flow | `⌘4` | `IdeaFlowView` |
-| Knowledge Graph | `⌘5` | `KnowledgeGraphView` — Force + Radial only |
-| Insights | `⌘6` | `InsightsView` — all analytics canvases |
+| Extra views | `⌘3`–`⌘9` | Sidebar order over visible views (default: Board `KanbanBoard`, Calendar, Idea Flow `IdeaFlowView`, Agent, Calendar-all, Knowledge Graph `KnowledgeGraphView` — Force + Radial only, Insights `InsightsView` — all analytics canvases, Automations, Usage). Hide views in General settings to compress |
 | Settings | — | `SettingsView` |
 
-`activeView` union: `"overview" | "notes" | "board" | "flow" | "graph" | "insights" | "chat" | "search" | "settings"`
+`activeView` union: `"overview" | "notes" | "board" | "flow" | "graph" | "insights" | "chat" | "search" | "settings"` (plus `"calendar"`, `"calendar-all"`, `"automations"`, `"usage"` — see `ToggleableView`)
 
 ## Knowledge Graph vs Insights split
 
@@ -112,6 +110,7 @@ Shared modules:
 | Notes | `slices/notes.ts` | `notes`, `createNote`, `updateNote`, `deleteNote` |
 | Tags | `slices/tags.ts` | `tags`, `createTag`, `updateTag` |
 | Chat | `slices/chat.ts` | `threads`, `messages`, `sendMessage` |
+| Tools | `slices/tools.ts` | Workspace MCP servers + custom services (CRUD/cache only; execution is main-process) |
 | Graph | `slices/graph.ts` | `graphData`, `graphLoading`, `graphFilters`, `graphLayout`, `loadGraph`, `setGraphLayout`, `setGraphFilters` |
 | Selectors | `slices/selectors.ts` | `getWorkspaceProjects`, `getProjectNotes`, `search` |
 
@@ -147,6 +146,11 @@ Notes write to both `.md` files and SQLite simultaneously. Dashboards write to S
 
 ## Key constraints
 
+## Agent tools & surfaces
+
+- **Source of truth**: `TOOL_SCHEMAS` in `electron/lib/tool-schemas.ts` (minus `CHAT_ONLY_TOOLS` on MCP, minus nothing on chat/coding — chat gates deletes via approval instead of exclusion)
+- **Per-surface inventory**: `electron/lib/tool-inventory.ts` computes what each surface actually registers (chat = Cairn tools only, no `read`/`edit`/`bash`, no `skill`; coding = + filesystem/exec stack; automation-dev = file tools only; MCP = minus chat-only) merged with live global dsh tools — served by `runtime:tools:inventory`, displayed in Settings → AI tabs
+- **Coding prompt**: `electron/lib/coding-session-prompt.ts` carries the board-tracking workflow (In Progress → Review/Done, PRD checklists, session summaries); chat prompt is `buildSystemPrompt` in `electron/lib/tools.ts`
 - Never construct a `Database` instance outside `electron/db/client.ts` (Electron) and `mcp-server.ts` (MCP runtime) — those are the only two ABI bootstrap sites (see "better-sqlite3 ABI" above)
 - All DB writes from renderer go through `ipc()` / `ipcAwait()` to the Electron main process
 - `graphData` is lazy — only populated when `loadGraph(activeWorkspaceId)` is called. Both `KnowledgeGraphView` and `InsightsView` call it on mount.

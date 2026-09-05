@@ -1,5 +1,7 @@
 # Building a DSH / Cordis plugin (field guide)
 
+> **Concepts current, pins stale.** Written against dsh 0.1.1-rc.2 (installed: 0.1.2-rc.1) — the host/client model, inject gating, and packaging rules hold, but re-pin package names/paths before citing them.
+
 Everything learned building two real community plugins — **`dsh-context-ring`**
 (the context/usage ring) and **`dsh-usage-tracker`** (durable usage history) —
 against DeepSeek Harness `dsh-v0.1.1-rc.2`. This is the "what actually works /

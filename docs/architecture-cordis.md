@@ -351,5 +351,16 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Export / workflows | `electron/cordis/session-export.ts` (Cairn shim, `/export`), worker-thread engine + coding-turn `workflow`/`ralph` tools |
 | Host seam (app I/O) | `electron/cordis/host-store.ts` (sole `../db|../lib|child_process` importer in `cordis/`) |
 | Skill bridge | `electron/cordis/cairn-skill-provider.ts`, `src/lib/plugin-ui/` |
+| Per-surface tool inventory | `electron/lib/tool-inventory.ts` (static manifests + `CHAT_DENIED_GLOBAL_TOOLS`) → `runtime:tools:inventory` — chat/coding/automation-dev/mcp + live global tools; Settings → AI tabs render it |
+| Prompt previews | `runtime:systemPrompt:preview` (global dsh assembly, `cairn:system` under its real name) + `runtime:codingPrompt:preview` (board-tracking prompt); shared sections shown on both tabs, empty ones hidden |
 | Artifacts hygiene | `electron/lib/artifact-hygiene.ts`, `codebase-index.ts` |
 | Plan history | `docs/plans/cordis-runtime.md` (§1–§23) |
+
+---
+
+## 11. Review-hardening notes (PR #139 follow-ups)
+
+- **Chat denies `skill`** (`denyTools` in `session-agent.ts`, passed from `chat-session-runner.ts`): chat's focus is the Cairn workspace — upstream removes both the schema and the per-step catalog injection. Coding keeps skills.
+- **Job kill is session-bound**: `session:job-kill` requires the caller session id; the bridge only stops jobs the dock would show (unowned, or own), else `not-owner`.
+- **Export streams**: `/export` pipelines ZIP chunks to disk (no memory retention); partials unlinked on failure. Attachment store has a 512 MiB LRU budget + turn-scoped pinning (released via turn resources).
+- **E2E mock parity**: `tests/fixtures/ipc-mock.ts` must expose every `electron.session.*` method the renderer calls, or boot-phase components throw under Playwright. Diff preload's `session:` block against the mock when adding IPC.

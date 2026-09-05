@@ -1,5 +1,7 @@
 # dsh UI Checklist — Per-Bump Web-Shell Review
 
+> **Last verified at 0.1.2-rc.1.** Re-check per bump per the rule at the bottom — component/slot names drift with the web shell Cairn doesn't ship.
+
 > Cairn ships its own renderer, not the dsh web shell — never adopt a
 > `dsh-client-*` package. This checklist exists so each dsh bump still
 > surfaces the UI behavior worth mirroring (or deliberately skipping).

@@ -36,7 +36,7 @@ This guide covers everything you need to go from zero to a working dev environme
 
 ### Prerequisites
 
-- **Node.js 20+** — check with `node --version`
+- **Node.js 22+** — check with `node --version` (esbuild targets Node 24; `@types/node` is v22)
 - **macOS** — the dev workflow is macOS-first. Windows and Linux are untested but may work.
 - **Python 3** — required by some native build tooling (usually pre-installed on macOS)
 - **Xcode Command Line Tools** — `xcode-select --install` if you haven't already
@@ -52,7 +52,7 @@ npm run compile   # bundles the Electron main process + MCP server
 npm run dev       # starts Next.js + Electron together
 ```
 
-> **Why `npm run rebuild`?** Cairn uses `better-sqlite3`, a native Node addon. It needs to be compiled separately for three runtime contexts: the Electron ABI, the Node 22 ABI used by the self-contained MCP binary, and the system Node ABI used by vitest. `npm run rebuild` handles all three in the correct order. You need to re-run it if you update the Electron version.
+> **Why `npm run rebuild`?** Cairn uses `better-sqlite3`, a native Node addon. It needs to be fanned out for three runtime contexts: the Electron ABI, the Node ABI used by the self-contained MCP binary, and the system Node ABI used by vitest (arch-separated arm64 + x64, re-signed on macOS — see AGENTS.md). `npm run rebuild` handles all three in the correct order. You need to re-run it if you update the Electron version.
 
 The app opens automatically once Next.js is ready (usually ~10s on first run).
 
@@ -68,11 +68,11 @@ That's it — `compile:watch` runs in parallel and rebuilds the Electron main pr
 
 ```bash
 npm run type-check:all    # tsc --noEmit for renderer + electron — run this before every commit
-npm test                  # run all unit tests (vitest)
+npm test                  # full gate (licenses + features + compile + vitest) — run this before every commit
 npm run test:watch        # watch mode
 npm run test:e2e          # E2E smoke tests (headless Chromium) — run before any UI PR
 npm run compile           # one-shot rebuild of dist-electron/ + dist-mcp/
-npm run lint              # eslint
+npm run lint              # eslint (CI uses --max-warnings 0 — keep it clean)
 ```
 
 ### Getting help
@@ -120,8 +120,8 @@ cairn/
 │   │   ├── migration-handlers.ts # app:*igration* channels
 │   │   ├── settings-handlers.ts # app:{get,save}* settings channels
 │   │   ├── agent.ts        # agent:* IPC channels — PTY spawn, file I/O, git diff
-│   │   ├── chat.ts         # AI chat: runToolLoop + IPC handler
-│   │   ├── chat-executor.ts# executeTool — all AI tool implementations
+│   │   ├── chat.ts         # AI chat turn runner (Cordis) + compact-thread helper
+│   │   ├── chat-session.ts # db:chat:sessionMessages replay reads (session-as-truth)
 │   │   └── registry.ts     # registerIpcHandle/registerIpcOn, isWriteChannel whitelist
 │   ├── lib/
 │   │   ├── llm.ts          # callLLM, streamCompletion
@@ -185,12 +185,13 @@ cairn/
 |------|-----|-------|-------------|
 | Overview | `⌘1` | Project | Project summary — metrics, pinned notes, recent activity |
 | Notes | `⌘2` | Project | Split-pane markdown editor + dashboard renderer |
-| Board | `⌘3` | Project | Kanban with drag-and-drop |
-| Idea Flow | `⌘4` | Project | Freeform node canvas |
-| Agent | `⌘5` | Project | Coding agent workspace — Cairn native agent (chat UI) or external PTY agent (Claude Code, OpenCode, Aider); file tree, CM6 editor, xterm.js terminal, git diff viewer |
-| Knowledge Graph | `⌘6` | Workspace | Force-directed and Radial tree of notes/cards/tags (`GraphLayoutMode = "force" \| "radial"`) |
-| Insights | `⌘7` | Workspace | Analytics canvases: Ridgeline, Beeswarm, Bullet, Sankey, Timeline, Matrix, Table |
-| Settings | — | App | General, AI & Chat, Coding Agents, Tags, Shortcuts, Data, About |
+| Extra views | `⌘3`–`⌘9` | Mixed | Walk the visible views in sidebar order (default: Board, Calendar, Idea Flow, Agent, Calendar-all, Knowledge Graph, Insights, Automations, Usage). Hide views in General → Views to compress the range |
+| Board | _(dynamic)_ | Project | Kanban with drag-and-drop |
+| Idea Flow | _(dynamic)_ | Project | Freeform node canvas |
+| Agent | _(dynamic)_ | Project | Coding agent workspace — Cairn native agent (chat UI) or external PTY agent (Claude Code, OpenCode, Aider); file tree, CM6 editor, xterm.js terminal, git diff viewer |
+| Knowledge Graph | _(dynamic)_ | Workspace | Force-directed and Radial tree of notes/cards/tags (`GraphLayoutMode = "force" \| "radial"`) |
+| Insights | _(dynamic)_ | Workspace | Analytics canvases: Ridgeline, Beeswarm, Bullet, Sankey, Timeline, Matrix, Table |
+| Settings | — | App | General, AI (Chat / Coding Agents / MCP tabs), Extensions, Embeddings, Writing Style, Mobile Access, Device Sync, System |
 
 ### Process model
 
@@ -204,7 +205,7 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 
 **Cairn coding agent** — a stateful multi-turn dsh/Cordis agent running entirely in the main process. No external binary required. Session type `"coding"` in the terminal sessions store; rendered by `AgentChatPane` instead of xterm. Key files:
 
-- `electron/ipc/session-runtime-handlers.ts` — IPC handler; abort/persona lifecycle and `pi-agent:*` compatibility channels
+- `electron/ipc/session-runtime-handlers.ts` — IPC handler; abort/persona lifecycle and `session:*` channels
 - `electron/cordis/run-cordis-coding.ts` — mounts the dsh coding stack, creates/resumes agents, and bridges coding turns
 - `electron/cordis/cairn-plugins.ts` — Cairn adapters for persistence, usage, questions, approvals, and renderer events
 - `electron/cordis/cordis-coding-tools.ts` — dsh filesystem, search, shell, todo, sandbox, and instruction plugins
@@ -379,19 +380,18 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `electron/ipc/handlers.ts` | Orchestrator — calls per-domain registrars (`db-handlers`, `flow-handlers`, `ai-handlers`, `llama-handlers`, `graph-handlers`, `chat-db-handlers`, `session-handlers`, `pdf-export`, `url-metadata`, `mobile-handlers`, `migration-handlers`, `settings-handlers`); all wrapped in `handle()` returning `IpcResult<T>` |
 | `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
 | `electron/ipc/chat.ts` | AI chat IPC handler and Cordis chat-loop adapter |
-| `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
-| `electron/ipc/session-runtime-handlers.ts` | Coding-session IPC adapter — abort/persona lifecycle and `pi-agent:*` compatibility channels |
+| `electron/cordis/chat-executor.ts` | `executeTool` — all AI tool implementations |
+| `electron/ipc/session-runtime-handlers.ts` | Coding-session IPC adapter — abort/persona lifecycle and `session:*` channels |
 | `electron/cordis/run-cordis-loop.ts` | Shared Cordis context, plugin composition, chat agent lifecycle, and session replay helpers |
 | `electron/cordis/run-cordis-coding.ts` | Coding-agent lifecycle, dsh stack mounting, and live-turn bridge |
 | `electron/cordis/cairn-plugins.ts` | Cairn persistence, usage, questions, approval, and renderer-event adapters |
 | `electron/cordis/cordis-coding-tools.ts` | dsh sandbox, filesystem, search, shell, todo, and instruction plugins |
-| `electron/lib/compaction.ts` | Legacy compaction helper retained only for compatibility paths |
-| `electron/lib/truncation.ts` | `truncateOutput(text, opts)` — unified byte+line cap for all coding tool outputs; exports `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_LINES`, `TruncationResult` |
 | `electron/lib/coding-session-prompt.ts` | Stable Cairn coding-session context; plan guidance comes from dsh |
+| `electron/lib/truncation.ts` | `truncateOutput(text, opts)` — unified byte+line cap for all coding tool outputs; exports `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_LINES`, `TruncationResult` |
 | `electron/cordis/plugins/` | Cairn-owned Cordis plugins, including workspace context and context-ring projections |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint`, `normaliseBaseUrl` |
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
-| `electron/lib/context.ts` | `buildContextResponse` — canonical `get_cairn_context` response |
+| `electron/cordis/chat-executor.ts` | `executeTool` — canonical tool implementations (incl. `get_cairn_context`) |
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
 | `electron/db/queries.ts` | Single source of truth for all SQL query helpers (CRUD, search, snapshot, `getProjectById`, `getNoteById`, `getCardById`). Imported by both the Electron main process and the MCP server (`electron/mcp/tools/*`) — the only ABI-sensitive operation is `new Database(...)` which happens once in `mcp-server.ts` |
 | `electron/shared/text-utils.ts` | Pure text helpers shared across the process boundary: `toSlug`, `stripMarkdown` |
@@ -556,7 +556,7 @@ The Agent workspace has its own IPC namespace (`agent:*`) entirely separate from
 
 ### Working on the Cairn Agent
 
-The Cairn coding agent (`sessionType: "coding"`) runs in the Electron main process. Its IPC namespace is `pi-agent:*`, entirely separate from `agent:*` (PTY) and `db:*` (data).
+The Cairn coding agent (`sessionType: "coding"`) runs in the Electron main process. Its IPC namespace is `session:*`, entirely separate from `agent:*` (PTY) and `db:*` (data).
 
 **Adding a new coding tool**
 
@@ -576,31 +576,29 @@ The coding agent exposes Cairn tools through the dsh tool registry. To expose a 
 
 **IPC event flow for a single agent turn**
 
+The dsh engine runs the model↔tool loop internally — Cairn only translates
+what it emits. The renderer gets two streams (see `runSession` in
+`electron/ipc/session-runtime-handlers.ts` and `cairnCodingPlugin` in
+`electron/cordis/cairn-plugins.ts`):
+
 ```
 renderer                         main process
    │                                  │
-   ├─ pi-agent:prompt ──────────────► runCordisCodingLoop()
-   │                                  │  POST /v1/chat/completions (stream)
-   │ ◄── pi-agent:token (×N) ─────────┤  token deltas arrive
-   │                                  │  ← tool name first seen in stream:
-   │ ◄── pi-agent:tools-ready ────────┤    ensure streaming message exists (once)
-   │ ◄── pi-agent:tool (pending) ─────┤    chip appears immediately (tool name label)
-   │ ◄── pi-agent:token (×N) ─────────┤  remaining tokens / more tool calls
-   │                                  │  [DONE] received — args fully buffered
-   │                                  │  for each tool call:
-   │ ◄── pi-agent:tool (start) ───────┤    onToolStart → update chip label, execute
-   │                                  │    execute tool (may take seconds)
-   │ ◄── pi-agent:tool (end) ─────────┤    onToolEnd → chip shows result + output
-   │                                  │  if more turns:
-   │ ◄── pi-agent:step ───────────────┤    seal message, start next
-   │ ◄── pi-agent:usage ──────────────┤    token counts → context ring
-   │ ◄── pi-agent:retry ──────────────┤    (on transient error) countdown badge
-   │ ◄── pi-agent:compact ────────────┤    (when compaction fires) "Compacting…" indicator
-   │ ◄── pi-agent:compact-result ─────┤    (/compact slash command result)
-   │ ◄── pi-agent:done ───────────────┤  turn complete
+   ├─ session:prompt ───────────────► runCordisCodingLoop()
+   │                                  │  dsh agent loop runs model↔tool steps
+   │ ◄── session:event ───────────────┤  raw DSH events (no flattening)
+   │ ◄── session:projection ──────────┤  typed UI updates: token, thought,
+   │                                  │  tool-call, tool-done, todos, usage,
+   │                                  │  retry, compact, plan-note, mode-change
+   ├─ session:abort ───────────────► agent.cancel({ kind: "user" })
+   ├─ session:respond-tool ────────► pending approval resolver
+   ├─ session:respond-questions ───► pending question resolver
+   ├─ session:approve-plan ────────► execute mode with PRD context
 ```
 
-The `pending` status fires during streaming as soon as a tool name is seen in the SSE delta — this is what makes the chip appear immediately rather than waiting for the full response. The `start` event reuses the same `callId` to update the chip's label to the resolved human-readable version once argument parsing is complete.
+Live token/thought deltas stream via `session:event`; chips, todos, usage,
+and status lines arrive as `session:projection`. The session log (JSONL) is
+the source of truth for interrupted prefixes and reloads.
 
 **Parallel tool execution** — dsh owns tool scheduling and session event ordering. Cairn tools must be safe to execute through the dsh tool registry; per-domain persistence and file guards remain in their respective adapters.
 
@@ -616,11 +614,11 @@ The `pending` status fires during streaming as soon as a tool name is seen in th
 
 **Subagents**
 
-`spawn_subagent` is supplied by the dsh subagent stack. Cairn's bridge forwards child events through the shared subagent channel and keeps parent and child session state separate.
+`subagent` (one-shot) and `delegate` (continuable) are supplied by the dsh subagent stack. Cairn's bridge forwards child events through the shared subagent channel and keeps parent and child session state separate.
 
 **Plan Mode**
 
-Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is logged by dsh as `plan/mode`, adds the configured plan policy, and keeps the stable `exit_plan_mode` tool available. The renderer presents the plan-review card supplied by dsh; approval unblocks the current tool call and dsh applies the exit at the next step boundary. Cairn's base system prompt remains unchanged between modes. Implemented in `@deepseek-ai/dsh-plan-mode`, `electron/cordis/run-cordis-coding.ts`, and `src/components/chat/chat-panel/QuestionForm.tsx`.
+Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is logged by dsh as `plan/mode`, adds the configured plan policy, and keeps the stable `exit_plan_mode` tool available. The renderer presents the plan-review card supplied by dsh; approval unblocks the current tool call and dsh applies the exit at the next step boundary. Cairn's base system prompt remains unchanged between modes. Implemented in `@deepseek-ai/dsh-plan-mode`, `electron/cordis/run-cordis-coding.ts`, and `src/components/conversation/QuestionForm.tsx`.
 
 **System prompt**
 
@@ -636,7 +634,7 @@ Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is 
 
 1. Add the Zod schema to `electron/lib/tool-schemas.ts` — `TOOL_SCHEMAS`, and `CHAT_ONLY_TOOLS` if it should be agent/chat only
 2. Add a human-readable `TOOL_LABELS` entry in `electron/lib/tools.ts` (the `TOOLS` array is auto-derived from `TOOL_SCHEMAS`)
-3. Add the executor case to `electron/ipc/chat-executor.ts`
+3. Add the executor case to `electron/cordis/chat-executor.ts`
 4. Add the MCP executor case to `electron/mcp/tools/` (the appropriate tool file: `notes.ts`, `tasks.ts`, `flow.ts`, etc. — delegate to `q.*` helpers from `db/queries.ts`)
 5. Add a corresponding query helper to `electron/db/queries.ts` if needed
 
@@ -659,14 +657,14 @@ Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is 
 Tests live next to the code they cover, under both `electron/` (store/lib/MCP logic) and `src/` (store slices, pure libs, and React components):
 
 ```bash
-npm test                  # run all tests
+npm test                  # full gate: licenses + features + compile + all unit tests
 npm run test:watch        # watch mode — great for TDD
-npm run test:coverage     # coverage report
-npm run test:unit         # node project only (store/lib/electron logic)
-npm run test:component    # component project only (React + jsdom)
+npm run test:coverage    # coverage report
+npm run test:unit        # node project only (store/lib/electron logic)
+npm run test:component   # component project only (React + jsdom)
 ```
 
-vitest runs **two projects** (see `vitest.config.ts`):
+vitest runs **three projects** (see `vitest.config.ts`):
 
 - **`node`** — the default fast suite for store slices, pure libs, and the
   electron/MCP layer. Runs in the `node` environment with the native SQLite
@@ -677,6 +675,8 @@ vitest runs **two projects** (see `vitest.config.ts`):
   `vitest.setup.components.ts` (jest-dom matchers + auto-cleanup). Use these for
   presentational behavior (disabled states, ARIA attributes, click handlers).
   Store-connected components can mock `@/store` with `vi.mock`.
+- **`mobile`** — the mobile app's standalone suite (`mobile/**/*.test.ts`,
+  separate tsconfig).
 
 | Test file | What it covers |
 |-----------|---------------|
