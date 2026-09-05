@@ -3,16 +3,93 @@
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
-import { Cpu, Globe, Download, Plus, Trash2, Sparkles, X } from "lucide-react";
+import { Cpu, Globe, Download, Plus, Trash2, Sparkles, X, FolderOpen, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
-import { MCPServerSettings } from "./MCPSettings";
 import { LlamaServerConsole } from "./LlamaServerConsole";
 import { ProviderManager } from "./ProviderManager";
 import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
 import { BrowsePersonalitiesModal } from "@/components/chat/BrowsePersonalitiesModal";
 import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-schema";
+import { Button } from "@/components/ui/button";
+import { useAgentPreviews } from "./tools/useAgentPreviews";
+import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
+
+// ── Chat prompt + tools preview ─────────────────────────────────────────────
+// Chat system prompt (assembled dsh sections + skills) and the tools the chat
+// surface exposes. Same card style as the Coding Agents and MCP tabs.
+
+function ChatPreviewSection() {
+  const previews = useAgentPreviews();
+  const { workspacePath, systemPrompt, sections, inventory, loading, error, reload } = previews;
+  const chatTools = inventory?.chat ?? [];
+
+  return (
+    <SettingsGroup
+      title="Chat Prompt & Tools"
+      description="SKILL.md files discovered in your workspace are automatically loaded into the chat context. The section assembly below is the shared global context both chat and coding turns send — only the identity section carries the chat prompt. Chat tools have no filesystem access by design."
+    >
+      {/* Refresh */}
+      <div className="flex items-center justify-end">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={reload}
+          disabled={loading}
+          className={cn(loading && "opacity-50")}
+        >
+          <RefreshCw size={11} className={cn(loading && "animate-spin")} />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Workspace path context */}
+      {workspacePath && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
+          <FolderOpen size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
+          <span className="text-[0.714rem] font-mono text-[var(--text-tertiary)] truncate">{workspacePath}</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] px-4 py-3">
+          <p className="text-xs text-[var(--danger)]">{error}</p>
+        </div>
+      )}
+
+      {systemPrompt !== null && (
+        <div className="space-y-3">
+          {sections && sections.length > 0 && (
+            <SharedSectionsList sections={sections} toolsCount={chatTools.length} />
+          )}
+          <PromptPreview systemPrompt={systemPrompt} />
+          {/* Skills are a coding-agent capability — chat neither resolves the
+              skill tool nor receives the catalog. Listed on Coding Agents. */}
+          <p className="text-[0.65rem] text-[var(--text-tertiary)]">
+            Workspace skills load on the coding agent only — see the Coding Agents tab.
+          </p>
+        </div>
+      )}
+
+      {inventory && (
+        <div className="space-y-3">
+          <SurfaceToolsPanel
+            tools={chatTools}
+            footnote="Deletes are approval-gated on chat. Filesystem tools (read/edit/bash) live on the coding agent."
+          />
+          <ToolsLegend />
+        </div>
+      )}
+
+      {loading && (
+        <div className="py-8 text-center">
+          <RefreshCw size={16} className="mx-auto animate-spin text-[var(--text-tertiary)] opacity-50" />
+        </div>
+      )}
+    </SettingsGroup>
+  );
+}
 
 export function AISettings() {
   const { aiConfig, setAIConfig, setPersonality, removePersonality, createCustomPersonality } = useCairnStore(useShallow((s) => ({
@@ -465,8 +542,8 @@ export function AISettings() {
         )}
       </SettingsGroup>
 
-      {/* ── MCP Server ── */}
-      <MCPServerSettings />
+      {/* ── Chat prompt & tools ── */}
+      <ChatPreviewSection />
 
       {browsingProviders && <BrowseProvidersModal onClose={() => setBrowsingProviders(false)} />}
       {browsingPersonalities && <BrowsePersonalitiesModal onClose={() => setBrowsingPersonalities(false)} />}

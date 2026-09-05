@@ -5,8 +5,7 @@ import type { LLMConfig } from "../lib/llm";
 import { createCordisDisposerStack, mountCordisSessionPlugins, prepareCordisRuntime, type CordisDisposerStack, type CordisQuestionAdapter } from "./session-runtime";
 import type { CordisSessionAgentHandle } from "./session-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import { upsertSessionProfile } from "../db/queries";
-import { dlog } from "../lib/debug-log";
+import { createHostStore, dlog } from "./host-store";
 import type { SessionProfileId } from "../../shared/agent/session-profile";
 import type { UsageSource } from "../db/usage-queries";
 
@@ -45,9 +44,7 @@ export interface CordisSessionProfile<T> {
  * same for every session kind.
  */
 export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Promise<T> {
-  upsertSessionProfile(profile.db, {
-    sessionId: profile.sessionId,
-    profile: profile.profileId,
+  createHostStore(profile.db).upsertSessionProfile(profile.sessionId, profile.profileId, {
     cwd: profile.cwd,
     workspaceId: profile.workspaceId,
     projectId: profile.projectId,
@@ -95,6 +92,9 @@ export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Pro
     if (!profile.retainAgent) {
       try { await handle?.dispose?.(); } catch { /* best-effort agent teardown */ }
     }
-    resources.dispose();
+    // Awaited: fiber unload is async and the next turn re-registers the same
+    // tool/prompt-section names — fire-and-forget disposal races the next
+    // mount ("already registered"). See CordisDisposerStack.disposeAsync.
+    await resources.disposeAsync();
   }
 }

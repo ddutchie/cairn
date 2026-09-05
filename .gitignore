@@ -92,6 +92,13 @@ scripts/runtime-baselines/
 # scratch experiments (Needle finetune spike, venvs, checkpoints)
 /scratch
 .cairn-sessions/
+# dsh session-query derived FTS index (sibling of the session root; dev/test fallback)
+/session-search.db
+/session-search.db-wal
+/session-search.db-shm
+# Runtime artifacts: debug log + spill files (live runs, dev)
+/logs/
+/spill/
 
 # Demo recording pass logs
 /ffmpeg2pass-0.log

@@ -71,6 +71,8 @@ export function toLiveConversationMessage(
       callId: tool.callId,
       name: tool.tool,
       label: tool.label,
+      viewTitle: tool.viewTitle,
+      resultView: tool.resultView,
       args: parseArgs(tool.args),
       running: tool.status === "running",
       ok: tool.ok !== false,

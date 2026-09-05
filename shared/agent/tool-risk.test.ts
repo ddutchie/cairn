@@ -38,7 +38,12 @@ const EXEC_TOOLS = new Set<string>(["bash", "subagent"]);
 const DSH_TOOL_NAMES = new Set<string>([
   "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
   "write", "edit", "str_replace_editor", "todo_write", "skill", "bash",
-  "subagent",
+  "subagent", "delegate", "send_message", "interrupt_agent", "list_agents",
+  "job_list", "job_output", "job_kill",
+  "terminal_open", "terminal_send", "terminal_signal", "terminal_close",
+  "terminal_read", "terminal_list",
+  "lsp",
+  "web_search", "web_fetch",
 ]);
 
 // Expected risk bucket + approval behaviour for each dsh coding-stack tool the
@@ -58,6 +63,23 @@ const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
   ["todo_write", "WRITE_LOCAL", true, "session"],
   ["bash", "EXEC", true, "command"],
   ["subagent", "EXEC", true, "none"],
+  ["delegate", "EXEC", true, "none"],
+  ["send_message", "EXEC", true, "none"],
+  ["interrupt_agent", "EXEC", true, "none"],
+  ["list_agents", "READ", false, "none"],
+  ["job_list", "READ", false, "none"],
+  ["job_output", "READ", false, "none"],
+  ["job_kill", "EXEC", true, "none"],
+  ["terminal_open", "EXEC", true, "none"],
+  ["terminal_send", "EXEC", true, "none"],
+  ["terminal_signal", "EXEC", true, "none"],
+  ["terminal_close", "EXEC", true, "none"],
+  ["terminal_read", "READ", false, "none"],
+  ["terminal_list", "READ", false, "none"],
+  ["lsp", "READ", false, "none"],
+  // Untrusted external content stays an explicit per-call decision (v1).
+  ["web_search", "WRITE_LOCAL", true, "none"],
+  ["web_fetch", "WRITE_LOCAL", true, "none"],
 ];
 
 describe("tool-risk classifier — set membership", () => {
@@ -121,6 +143,18 @@ describe("tool-risk classifier — set membership", () => {
     // `spawn_subagent` was the old phantom name — it must NOT be treated as the
     // real tool. It falls through to the conservative WRITE_LOCAL default.
     expect(riskForTool("spawn_subagent")).toBe("WRITE_LOCAL");
+  });
+
+  it("continuable-control tools: delegate/send_message/interrupt_agent are one-off EXEC, list_agents is READ", () => {
+    for (const name of ["delegate", "send_message", "interrupt_agent"]) {
+      expect(riskForTool(name)).toBe("EXEC");
+      expect(needsApproval(name)).toBe(true);
+      // One-off decisions — a standing session grant would be overbroad.
+      expect(approvalGrantScope(name)).toBe("none");
+    }
+    expect(riskForTool("list_agents")).toBe("READ");
+    expect(needsApproval("list_agents")).toBe(false);
+    expect(approvalGrantScope("list_agents")).toBe("none");
   });
 
   it("every registered dsh coding-stack tool maps to its expected risk bucket", () => {

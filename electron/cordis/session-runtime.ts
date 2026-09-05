@@ -1,5 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
+import { APP_IDENTITY } from "@deepseek-ai/dsh-llm";
+import { CAIRN_APP_IDENTITY, createHostStore, ensureLocalLlmPort } from "./host-store";
 import type { LLMConfig } from "../lib/llm";
 import { type ApiMode } from "../lib/llm-transport";
 import type { Database } from "better-sqlite3";
@@ -7,30 +9,60 @@ import type { ChatRequest } from "../lib/tools";
 import type { UsageSource } from "../db/usage-queries";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnQuestionsPlugin } from "./cairn-plugins";
 
+// White-label the DSH harness attribution: every provider request via
+// dsh-llm-pi-ai merges `attributionHeaders()` (→ `User-Agent`) last.
+// Mutating the shared APP_IDENTITY object makes the harness send
+// `cairn/<version> (+https://github.com/ddutchie/cairn)` instead of
+// `deepseek-harness/<dsh-version>`. Works even after pi-ai is imported
+// because both imports share the same module instance (Node cache /
+// esbuild dedupe). See node_modules/@deepseek-ai/dsh-llm/lib/index.js:766
+// and node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js:1601.
+APP_IDENTITY.product = CAIRN_APP_IDENTITY.product;
+APP_IDENTITY.version = CAIRN_APP_IDENTITY.version;
+APP_IDENTITY.url = CAIRN_APP_IDENTITY.url;
+
 let piAiDisposer: (() => Promise<void>) | null = null;
 let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" | "anthropic-messages"; contextWindow?: number; maxTokens?: number; reasoning?: boolean } | null = null;
 
 export interface CordisDisposerStack {
   mount: (ctx: Context, plugin: unknown, config?: unknown) => Promise<void>;
-  add: (dispose: () => void) => void;
+  add: (dispose: () => unknown) => void;
   dispose: () => void;
+  /**
+   * Awaited teardown. Cordis fiber disposal is ASYNC (unload runs over
+   * microtasks); the fire-and-forget `dispose()` leaves the previous turn's
+   * tool/prompt-section registrations alive long enough for the next turn's
+   * mounts to throw "already registered" (dsh 0.1.2-alpha.4+ enforces unique
+   * names via NamedEntries). Always prefer this at turn end.
+   */
+  disposeAsync: () => Promise<void>;
 }
 
 /** Mount per-turn plugins and unwind their fibers in one place. */
 export function createCordisDisposerStack(): CordisDisposerStack {
-  const disposers: Array<() => void> = [];
+  const disposers: Array<() => unknown> = [];
+  const runOne = async (dispose: () => unknown): Promise<void> => {
+    try { await dispose(); } catch { /* noop */ }
+  };
   return {
     add(dispose) { disposers.push(dispose); },
     async mount(ctx, plugin, config) {
       const fiber = ctx.plugin(plugin as never, config as never);
-      disposers.push(() => {
-        fiber.then((mounted) => { try { mounted.dispose(); } catch { /* noop */ } }, () => {});
-      });
+      disposers.push(() => fiber.then(
+        (mounted) => mounted.dispose() as unknown,
+        () => {},
+      ));
       await fiber;
     },
     dispose() {
       for (const dispose of disposers.splice(0).reverse()) {
-        try { dispose(); } catch { /* noop */ }
+        try { void runOne(dispose); } catch { /* noop */ }
+      }
+    },
+    async disposeAsync() {
+      const pending = disposers.splice(0).reverse();
+      for (const dispose of pending) {
+        await runOne(dispose);
       }
     },
   };
@@ -60,7 +92,7 @@ export interface MountCordisSessionPluginsOptions {
 export async function mountCordisSessionPlugins({
   mount, db, req, sessionId, llmConfig, signal, includeSessionIndex = false, sendSubagent, questions, usageSource,
 }: MountCordisSessionPluginsOptions): Promise<void> {
-  await mount(cairnDbPlugin, { db });
+  await mount(cairnDbPlugin, { db, host: createHostStore(db) });
   if (includeSessionIndex) {
     await mount(cairnSessionPlugin, {
       threadId: sessionId,
@@ -80,6 +112,7 @@ export async function mountCordisSessionPlugins({
   if (sendSubagent) await mount(cairnSubagentPlugin, { send: sendSubagent, sessionId });
   if (questions) {
     await mount(cairnQuestionsPlugin, {
+      sessionId,
       send: questions.send,
       registerPending: questions.registerPending,
       signal,
@@ -93,8 +126,7 @@ export async function prepareCordisRuntime(ctx: Context, input: LLMConfig): Prom
   const timing = process.env.CAIRN_TIMING === "1" || process.env.CAIRN_TIMING === "true";
   let llmConfig = input;
   if (llmConfig.provider === "localllm") {
-    const { ensureLlamaServerRunning } = await import("../lib/llama-server");
-    const port = await ensureLlamaServerRunning();
+    const port = await ensureLocalLlmPort();
     llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
   }
   // Explicit wire protocol — Cairn never auto-probes for the Cordis path. The

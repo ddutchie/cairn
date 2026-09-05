@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Context } from "@deepseek-ai/cordis";
-import { CallId, createMessage, createToolResultMessage } from "@deepseek-ai/dsh-llm";
+import { ToolCallId, createMessage, createToolResultMessage } from "@deepseek-ai/dsh-llm";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import { Session, SessionId } from "@deepseek-ai/dsh-session";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
@@ -11,7 +11,7 @@ import { foldSessionStats } from "./session-stats";
 import { foldSessionUsage } from "./plugins/context-ring";
 
 function appendToolStep(session: Session, turn: number, call: string, content: ContentBlock[]): number {
-  const callId = CallId(call);
+  const callId = ToolCallId(call);
   session.append("turn/start", { turn } as never);
   session.append("step/start", { turn, step: 1 } as never);
   session.append(
@@ -61,6 +61,10 @@ function appendToolStep(session: Session, turn: number, call: string, content: C
 describe("tool-result-pruner replay tolerance (Cairn)", () => {
   it("deriveMessages/collapse + foldSessionStats tolerate compaction/prune + replacement", async () => {
     const ctx = new Context();
+    // TokenMeter injects ["sessionProjections"] since dsh 0.1.2-alpha.4 —
+    // mount the registry first (mirrors cordis-context.ts).
+    const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection");
+    await ctx.plugin(ProjectionRegistry as never, {} as never);
     void new TokenMeter(ctx);
     const pruner = new ToolResultPruner(ctx, { thresholdChars: 50, headChars: 4, tailChars: 3 });
 
@@ -77,7 +81,7 @@ describe("tool-result-pruner replay tolerance (Cairn)", () => {
     session.append("turn/end", { turn: 2, reason: { kind: "completed" } } as never);
 
     // The log now contains: original tool/result, compaction/prune, replacement tool/result
-    const events = [...session.events] as unknown as SessionEvent[];
+    const events = [...session.snapshotEvents()] as unknown as SessionEvent[];
     const pruneEvents = events.filter((e) => (e as { type: string }).type === "compaction/prune");
     expect(pruneEvents).toHaveLength(1);
     expect(pruneEvents[0]).toMatchObject({ type: "compaction/prune" });
@@ -103,12 +107,14 @@ describe("tool-result-pruner replay tolerance (Cairn)", () => {
     expect(usage === undefined || typeof usage.promptTokens === "number").toBe(true);
 
     // Replay via fresh Session instance must derive identical messages (prune is durable)
-    const replay = Session.create(session.id, [...session.events]);
+    const replay = Session.create(session.id, [...session.snapshotEvents()]);
     expect(replay.deriveMessages()).toEqual(session.deriveMessages());
   });
 
   it("multiple pruned results still replay identically", async () => {
     const ctx = new Context();
+    const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection");
+    await ctx.plugin(ProjectionRegistry as never, {} as never);
     void new TokenMeter(ctx);
     const pruner = new ToolResultPruner(ctx, { thresholdChars: 50, headChars: 4, tailChars: 3 });
     const session = Session.create(SessionId("prune-multi"));
@@ -118,16 +124,16 @@ describe("tool-result-pruner replay tolerance (Cairn)", () => {
     session.append("turn/start", { turn: 4 } as never);
     const first = pruner.pruneSession(session);
     const second = pruner.pruneSession(session);
-    expect(first.pruned.map((e) => String(e.callId))).toEqual([String(CallId("a")), String(CallId("c"))]);
+    expect(first.pruned.map((e) => String(e.callId))).toEqual([String(ToolCallId("a")), String(ToolCallId("c"))]);
     expect(second.pruned).toHaveLength(0);
     session.append("turn/end", { turn: 4, reason: { kind: "completed" } } as never);
 
-    const events = [...session.events] as unknown as SessionEvent[];
+    const events = [...session.snapshotEvents()] as unknown as SessionEvent[];
     const derived = deriveMessagesFromEvents(events);
     const collapsed = collapseDerivedToMessages(derived);
     expect(collapsed.length).toBeGreaterThan(0);
     expect(() => foldSessionStats(events as unknown as Parameters<typeof foldSessionStats>[0])).not.toThrow();
-    const replay = Session.create(session.id, [...session.events]);
+    const replay = Session.create(session.id, [...session.snapshotEvents()]);
     expect(replay.deriveMessages()).toEqual(session.deriveMessages());
   });
 });

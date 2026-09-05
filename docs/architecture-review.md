@@ -1,5 +1,7 @@
 # Cairn Architecture Review — Shared Components & Cleanup Opportunities
 
+> **Waves landed; findings consumed.** The progress log's COMPLETE items are done — do not quote its file:line sizes, duplication lists, or test counts as current. Value remaining: the sequencing rationale and the intentionally-not-changed list.
+
 > Scope: whole-app deep dive across `src/components/`, `src/lib/`, `src/store/`, `src/hooks/`.
 > Goal: surface duplicated logic, missing shared primitives, oversized modules, and cleanup targets.
 > Line numbers reflect the state of the tree at time of writing and may drift.

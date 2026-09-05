@@ -32,11 +32,17 @@ import { apply as toolFsApply, inject as toolFsInject, name as toolFsName } from
 import { apply as toolFsSearchApply, inject as toolFsSearchInject, name as toolFsSearchName } from "@deepseek-ai/dsh-tool-fs-search";
 import { apply as toolStrApply, inject as toolStrInject, name as toolStrName } from "@deepseek-ai/dsh-tool-str-replace-editor";
 import { apply as toolTodoApply, inject as toolTodoInject, name as toolTodoName } from "@deepseek-ai/dsh-tool-todo";
+import { apply as toolWorkflowApply, inject as toolWorkflowInject, name as toolWorkflowName } from "@deepseek-ai/dsh-tool-workflow";
+import { apply as toolRalphApply, inject as toolRalphInject, name as toolRalphName } from "@deepseek-ai/dsh-tool-ralph";
 import { apply as shellEnvApply, inject as shellEnvInject, name as shellEnvName } from "@deepseek-ai/dsh-shell-env";
 import { apply as agentInstApply, name as agentInstName } from "@deepseek-ai/dsh-agent-instructions";
 import subprocessLocalPlugin from "@deepseek-ai/dsh-subprocess-local";
 import bashLocalPlugin from "@deepseek-ai/dsh-bash-local";
 import bashSandboxPlugin from "@deepseek-ai/dsh-bash-sandbox";
+import { apply as toolTerminalApply, inject as toolTerminalInject, name as toolTerminalName } from "@deepseek-ai/dsh-tool-terminal";
+import { cairnTerminalBackendPlugin } from "./terminal-backend";
+import type { Database } from "better-sqlite3";
+import { mountCodingLsp } from "./cordis-lsp";
 
 export interface CodingStackOptions {
   /** Working directory the coding tools are scoped to (the session cwd). */
@@ -56,6 +62,13 @@ export interface CodingStackOptions {
    * restriction — file tools only, no shell.
    */
   role?: "default" | "automation-dev";
+  /**
+   * Database handle for model-PTY cwd validation (project-boundary check in
+   * the shared PTY manager). Optional so db-free harnesses (live mount
+   * probes) can still mount the stack: without it the backend mounts but
+   * every `terminal_open` fails closed. Production always passes `db`.
+   */
+  db?: Database;
 }
 
 /**
@@ -141,14 +154,17 @@ export function remapChatArtifactDirs(ctx: Context): void {
  * every mounted fiber in reverse order. Awaits each fiber so tool registration
  * is complete before returning.
  */
-export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): Promise<() => void> {
-  const { cwd, sandboxMode = "workspace-write", role = "default" } = opts;
-  const disposers: Array<() => void> = [];
+export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): Promise<() => unknown> {
+  const { cwd, sandboxMode = "workspace-write", role = "default", db } = opts;
+  const disposers: Array<() => unknown> = [];
   const plug = async (plugin: unknown, config?: unknown): Promise<void> => {
     const name = (plugin as { name?: string })?.name ?? (plugin as { apply?: { name?: string } })?.apply?.name ?? "unknown";
     try {
-      const fiber = ctx.plugin(plugin as never, config as never) as unknown as Promise<{ dispose: () => void }>;
-      disposers.push(() => { fiber.then((f) => { try { f.dispose(); } catch { /* noop */ } }, () => {}); });
+      const fiber = ctx.plugin(plugin as never, config as never) as unknown as Promise<{ dispose: () => unknown }>;
+      // Return the teardown chain so the turn-end disposeAsync awaits fiber
+      // unload — otherwise the next turn's same-name tool registrations race
+      // the previous turn's still-unloading fibers ("already registered").
+      disposers.push(() => fiber.then((f) => f.dispose(), () => {}));
       await fiber;
     } catch (e) {
       console.error(`[cordis-coding] plug ${String(name)} failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
@@ -185,6 +201,21 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
     await plug(bashSandboxPlugin);
     await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
     await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
+    // Persistent model shells over the shared node-pty manager (same login
+    // shells + project-boundary validation as the bottom-terminal tabs — no
+    // second PTY implementation). Coding turns only: the automation-dev
+    // persona gets no shell of any kind (this whole block is skipped), and
+    // chat turns never mount this stack. Backend first (registers type
+    // "shell"), then the six model tools
+    // (terminal_open/send/read/signal/close/list). Background sends
+    // (`run_in_background`) register `pty-send` jobs on the global jobs
+    // registry, which the existing jobs bridge already projects to the dock
+    // as kind:"jobs" — zero new UI.
+    await plug(cairnTerminalBackendPlugin, { cwd, ...(db !== undefined ? { db } : {}) });
+    await plug(
+      { apply: toolTerminalApply, inject: toolTerminalInject as never, name: toolTerminalName },
+      { enableRunInBackground: true },
+    );
   } else {
     // Keep the reference so eslint no-unused-vars doesn't fire; the linter
     // can't see conditionally-skipped imports.
@@ -194,6 +225,14 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
     void shellEnvApply; void shellEnvInject; void shellEnvName;
     void toolBashApply; void toolBashInject; void toolBashName;
   }
+  // First-party LSP code navigation (dsh-lsp seam + stdio provider +
+  // model tool — READ-ONLY ops only). Fail-soft: without a language-server
+  // binary on PATH (or under the automation-dev persona, which has no
+  // subprocess service) this mounts nothing and the turn proceeds with
+  // grep/read as before. See cordis-lsp.ts for the lifecycle decision.
+  // mountCodingLsp never throws (it warns and reports { mounted: false }),
+  // so no try/catch is needed here — a coding turn must not depend on it.
+  await mountCodingLsp(ctx, plug);
   await plug(
     { apply: toolFsApply, inject: toolFsInject as never, name: toolFsName },
     { readLimit: 2000, readMaxLineLength: 2000, readMaxBytes: 51200, readStreamMinSize: 10485760 },
@@ -207,7 +246,40 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
   );
   await plug({ apply: toolStrApply, inject: toolStrInject as never, name: toolStrName }, { maxOutputChars: 16000 });
   await plug({ apply: toolTodoApply, inject: toolTodoInject as never, name: toolTodoName }, { allowParallelInProgress: true });
+  // Workflow + Ralph model tools (dsh-workflow / dsh-tool-workflow /
+  // dsh-tool-ralph over the ENTRY_LIST-mounted worker-thread engine above).
+  // Coding turns only: both fan out `spawn`-provider children that inherit
+  // the coding tool stack, and both inject only global services
+  // (tools/workflowEngine/subagents/systemPrompt), so per-turn plug/dispose
+  // matches the bash/fs/todo lifecycle exactly.
+  //
+  // Heartbeat relationship (NOT a replacement — do not touch
+  // electron/lib/heartbeat-*): heartbeat is a single headless turn per
+  // automation tick (poll → act → settle); workflows/ralph are foreground
+  // fan-out orchestration INSIDE a live turn (one model call coordinating
+  // many subagents toward a bounded result). Complementary axes:
+  // automation cadence vs in-turn parallelism. An automation script COULD
+  // invoke them via the coding loop, but nothing here changes what heartbeat
+  // schedules or how it settles.
+  //
+  // Bounds (no double-runaway — pinned in workflow-ralph.test.ts): ralph
+  // caps rounds at maxRounds (default 256, model-requestable only downward);
+  // the engine caps total children at maxTotalAgents (default 1000, ditto).
+  // Explicit full configs: the B-map-style triplet carries no Config schema,
+  // so raw ctx.plugin cannot default them.
+  await plug(
+    { apply: toolWorkflowApply, inject: toolWorkflowInject as never, name: toolWorkflowName },
+    { toolName: "workflow", maxResultChars: 50_000 },
+  );
+  await plug(
+    { apply: toolRalphApply, inject: toolRalphInject as never, name: toolRalphName },
+    { subagentProvider: "spawn", maxRounds: 256, maxHandoffChars: 16_384, maxResultChars: 16_384 },
+  );
   await plug({ apply: agentInstApply, name: agentInstName }, { maxBytes: 65536, maxSourceBytes: 500000 });
 
-  return () => { for (const d of disposers.reverse()) { try { d(); } catch { /* noop */ } } };
+  return async () => {
+    for (const d of disposers.reverse()) {
+      try { await d(); } catch { /* noop */ }
+    }
+  };
 }

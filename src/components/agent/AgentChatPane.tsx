@@ -24,6 +24,9 @@ import type { ConnectorMeta as AgentConnectorMeta } from "@/components/shared/Co
 import { type VirtuosoHandle } from "react-virtuoso";
 import { PlanTaskList } from "./PlanTaskList";
 import { AgentTodoDock } from "./AgentTodoDock";
+import { AgentJobsDock } from "./AgentJobsDock";
+import { AgentGoalChip } from "./AgentGoalChip";
+import type { GoalSummary } from "../../../shared/agent/session-projection";
 import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { isBenignTurnEnd } from "../../../shared/agent/turn-end-reason";
@@ -37,6 +40,8 @@ import { toConversationMessage } from "@/components/conversation/conversation-me
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
+import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
+import { AgentPermissionSelect } from "./AgentPermissionSelect";
 import type { SessionProjection } from "../../../shared/agent/session-projection";
 import { useSessionConversation } from "@/hooks/useSessionConversation";
 
@@ -110,6 +115,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const _setAgentAutoApprove         = useCairnStore((s) => s.setAgentAutoApprove);
   const setAgentToolConfirmRequired = useCairnStore((s) => s.setAgentToolConfirmRequired);
   const setSessionTodos          = useCairnStore((s) => s.setSessionTodos);
+  const setSessionJobs           = useCairnStore((s) => s.setSessionJobs);
   const setView                  = useCairnStore((s) => s.setView);
 
   // Reactive state — only values that actually drive re-renders
@@ -123,6 +129,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   })));
   const sessionPresentation = useCairnStore((s) => s.sessionPresentation);
   const sessionTodos = useCairnStore((s) => s.sessionTodos[session.sessionId]);
+  const sessionJobs = useCairnStore((s) => s.sessionJobs[session.sessionId]);
   const customCommands = useCairnStore((s) => s.customCommands);
   const registryCommands = useRegistryCommands();
   const agentCommands = useMemo(
@@ -167,6 +174,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const [retryInfo, setRetryInfo]                 = useState<{ attempt: number; maxRetries: number; delayMs: number } | null>(null);
   // Compaction state — shown in status bar while an LLM summary call is in flight
   const [isCompacting, setIsCompacting]           = useState(false);
+  // Current same-session goal (dsh goal domain) — snapshot on mount, live via
+  // session:projection kind:"goal". Null = no current goal → chip hides.
+  const [sessionGoal, setSessionGoal]             = useState<GoalSummary | null>(null);
   const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
 
   // The shared controller owns canonical session:event folding and transport
@@ -179,10 +189,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       onText: (delta) => appendAgentToken(session.sessionId, delta),
       onReasoning: (delta) => appendAgentThought(session.sessionId, delta),
       onUsage: (usage) => updateAgentUsage(session.sessionId, usage.promptTokens, usage.completionTokens, usage.reasoningTokens, usage.breakdown as TokenBreakdown | undefined, usage.cacheReadTokens, usage.cacheCreationTokens),
-      onToolCall: (call) => addAgentToolCall(session.sessionId, { callId: call.callId ?? `${call.name}:${Date.now()}`, name: call.name, label: call.name, args: call.args, running: true, ok: true }),
+      onToolCall: (call) => addAgentToolCall(session.sessionId, { callId: call.callId ?? `${call.name}:${Date.now()}`, name: call.name, label: call.name, ...(typeof call.view?.title === "string" && call.view.title ? { viewTitle: call.view.title } : {}), args: call.args, running: true, ok: true }),
       onToolResult: (result) => {
         if (!result.callId) return;
-        updateAgentToolCall(session.sessionId, result.callId, { label: result.name, args: result.args, running: false, ok: result.ok, output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output, cairnRef: extractCairnRef(result.name, result.output) });
+        updateAgentToolCall(session.sessionId, result.callId, { label: result.name, ...(result.resultView ? { resultView: result.resultView } : {}), args: result.args, running: false, ok: result.ok, output: READ_ONLY_TOOLS.has(result.name) ? undefined : redactAgentToolCall({ output: result.output }).output, cairnRef: extractCairnRef(result.name, result.output) });
       },
       onTurnEnd: (reason, _snapshot, detail) => {
         finaliseAgentMessage(session.sessionId); setIsLoading(false); setRetryInfo(null); setIsCompacting(false); sessionConversation.setQuestions(null);
@@ -334,6 +344,22 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     const { sessionId } = session;
 
+    // Initial goal snapshot (durable log fold — works before any live agent).
+    // Clear the previous session's goal: this effect re-runs on session
+    // switch and the new snapshot may take a moment to arrive.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSessionGoal(null);
+    let cancelled = false;
+    // A live goal projection is newer than the in-flight snapshot — once one
+    // arrives, the pending snapshot must not clobber it when it settles.
+    let liveUpdate = false;
+    void electron.session.goal(sessionId).then((res) => {
+      if (cancelled || liveUpdate) return;
+      if (res && typeof res === "object" && "ok" in res && res.ok) {
+        setSessionGoal((res as { value: GoalSummary | null }).value);
+      }
+    }).catch(() => undefined);
+
     const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
       if (projection.sessionId !== sessionId) return;
       const e = projection.data as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -354,6 +380,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         const planId = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.planNoteId;
         if (planId && e.noteId === planId) setPlanNoteContent(e.content);
       } else if (projection.kind === "todos") setSessionTodos(sessionId, e.todos as never);
+      else if (projection.kind === "jobs") {
+        // Bridge emits the owner's full visible set (owned + unowned); the
+        // dock filters to this session's jobs plus unowned ones.
+        const jobs = (e.jobs ?? []) as { ownerSession?: string }[];
+        setSessionJobs(sessionId, jobs.filter((j) => j.ownerSession == null || j.ownerSession === sessionId) as never);
+      }
+      else if (projection.kind === "goal") { liveUpdate = true; setSessionGoal((e.goal ?? null) as GoalSummary | null); }
       else if (projection.kind === "retry") { setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs }); setTimeout(() => setRetryInfo(null), e.delayMs + 500); }
       else if (projection.kind === "compact") { setIsCompacting(e.status === "start"); if (e.status === "end" && e.auto) addAgentMessage(sessionId, { id: id(), role: "system" as const, content: "----- Session Compacted -----", timestamp: new Date().toISOString() }); }
       else if (projection.kind === "compact-result") {
@@ -369,6 +402,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     });
 
     return () => {
+      cancelled = true;
       unsubProjection();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -629,6 +663,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       transcriptFooter={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
       actions={(
         <>
+          {/* Permission preset (dsh permission-presets select) — hidden until
+              the presets service is active. No approval-mode toggle exists in
+              this pane; this row (PLAN badge, PRD, clear) is the session-control
+              home, so the switcher lives here. Keyed by session so a switch
+              never flashes the previous session's preset. */}
+          <AgentPermissionSelect key={session.sessionId} sessionId={session.sessionId} />
+          <SubagentCatalogAction parentSessionId={session.sessionId} />
           {session.mode === "plan" && <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]"><MapIcon size={9} /> PLAN</span>}
           {session.planNoteId && <Tooltip content="Open plan note" side="left"><button onClick={() => revealNote(setView, session.planNoteId!)} className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"><FileText size={9} /> PRD</button></Tooltip>}
           <Tooltip content="Clear conversation" side="left"><button onClick={handleClear} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"><Trash2 size={12} /></button></Tooltip>
@@ -639,7 +680,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           {isLoading && !pendingQuestions && <ConversationWorkingStatus label="Agent is working — you can queue messages below" />}
           <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
           {session.mode === "execute" && planNoteContent && <PlanTaskList content={planNoteContent} />}
+          <AgentGoalChip goal={sessionGoal} />
           {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && <AgentTodoDock todos={sessionTodos ?? []} live={false} />}
+          {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} sessionId={session.sessionId} />}
         </div>
       )}
       composerProps={{

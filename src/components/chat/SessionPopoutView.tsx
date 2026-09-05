@@ -452,6 +452,7 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
     )}
     projection={{ pendingQuestions, questionCallId: pendingQuestionCallId }}
     onAnswerQuestions={sessionConversation.answerQuestions}
+    showSessionStatus
     placeholder={profile === "coding" ? "Ask about your code…" : "Ask about your project…"}
     composerProps={{ statusText: "Shift+Enter for new line · Enter to send" }}
   />;

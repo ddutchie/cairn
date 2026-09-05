@@ -31,7 +31,7 @@ import {
 } from "./cairn-plugins";
 import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
-import { TOOL_SCHEMAS } from "../lib/tool-schemas";
+import { TOOL_SCHEMAS, dlog, startPhaseTimer, createHostStore } from "./host-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
 import { runCordisSession } from "./session-runner";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
@@ -39,7 +39,6 @@ import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { describeTurnEndReason } from "../../shared/agent/turn-end-reason";
-import { dlog, startPhaseTimer } from "../lib/debug-log";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 
 export interface RunCordisCodingOptions {
@@ -189,14 +188,9 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     setup: async ({ llmConfig, resources, mount }) => {
       try {
         const { updateWorkspaceContext } = await import("./plugins/workspace-context");
-        const wsRow = req.workspaceId ? db.prepare("SELECT name FROM workspaces WHERE id = ?").get(req.workspaceId) as { name?: string } | undefined : undefined;
-        const projRow = req.projectId ? db.prepare("SELECT name, description FROM projects WHERE id = ?").get(req.projectId) as { name?: string; description?: string } | undefined : undefined;
-        let gitBranch: string | undefined;
-        try {
-          const { execSync } = await import("node:child_process");
-          gitBranch = execSync("git branch --show-current", { cwd, encoding: "utf8", timeout: 800 }).trim() || undefined;
-        } catch { /* not a git repo */ }
-        updateWorkspaceContext(sessionId, { workspaceName: wsRow?.name, workspaceId: req.workspaceId, projectName: projRow?.name, projectId: req.projectId, projectDescription: projRow?.description, cwd, gitBranch });
+        const host = createHostStore(db);
+        const meta = host.getWorkspaceMeta(req.workspaceId, req.projectId);
+        updateWorkspaceContext(sessionId, { workspaceName: meta.workspaceName, workspaceId: req.workspaceId, projectName: meta.projectName, projectId: req.projectId, projectDescription: meta.projectDescription, cwd, gitBranch: host.getGitBranch(cwd) });
       } catch (e) { console.warn("[cordis-coding] workspace context update failed:", e instanceof Error ? e.message : e); }
       timer.mark("workspace-context (incl. git branch execSync)");
       const toolDisposers = registerCairnTools(ctx, {
@@ -246,19 +240,25 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // cwd-scoped. Order per dsh-base. Mounted before the agent so the tools are
     // registered when the model first requests them.
     try {
-      resources.add(await mountCodingStack(ctx, { cwd, sandboxMode, role: opts.role }));
+      resources.add(await mountCodingStack(ctx, { cwd, sandboxMode, role: opts.role, db }));
     } catch (e) {
       console.error(`[cordis-coding] mountCodingStack failed:`, (e as Error)?.message ?? e, (e as Error)?.stack ?? "");
       throw e;
     }
-    timer.mark("mountCodingStack (13 dsh plugins)");
+    timer.mark("mountCodingStack (15 dsh plugins)");
     let externalDisposers: Array<() => void> = [];
     try {
+      // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF): when it
+      // verifies, the named server is served by dsh-mcp-client and excluded
+      // from the hand bridge below. Unset → empty mount + empty exclusion.
+      const { maybeMountDshMcpSpike } = await import("./mcp-dsh-bridge");
+      const spike = await maybeMountDshMcpSpike(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
+      spike.disposers.forEach((dispose) => resources.add(dispose));
       externalDisposers = await registerExternalCairnTools(ctx, {
         db,
         workspaceId: req.workspaceId ?? "",
         projectId: req.projectId ?? "",
-      });
+      }, { excludeServerIds: spike.excludedServerIds });
     } catch (e) {
       console.error(`[cordis-coding] registerExternalCairnTools failed:`, (e as Error)?.message ?? e);
     }
@@ -307,7 +307,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       timer.mark("open agent (inspect + resume JSONL)");
       return opened;
     },
-    run: async ({ agent, mount }) => {
+    run: async ({ agent, mount, resources }) => {
       const typedAgent = agent as CordisTurnAgent & { session: { events: unknown[] } };
     try {
       // ctx.tools is dsh-tools; `schemas` returns the registered set. The
@@ -342,7 +342,13 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // event, its session log is authoritative and must not be overwritten by
     // Cairn's legacy SQLite mode index on every resumed turn.
     try {
-      const events = (typedAgent.session.events ?? []) as Array<{ type?: string }>;
+      const session = typedAgent.session as {
+        snapshotEvents?: () => Array<{ type?: string }>;
+        events?: Array<{ type?: string }>;
+      };
+      const events = typeof session?.snapshotEvents === "function"
+        ? session.snapshotEvents()
+        : (session?.events ?? []);
       const hasLoggedMode = events.some((event) => event.type === "plan/mode");
       if (!hasLoggedMode && mode === "plan") ctx.planMode?.set(typedAgent as never, true);
     } catch { /* non-fatal: plan mode falls back to prompt-only guidance */ }
@@ -366,6 +372,13 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // are admitted through the mounted attachment store and become ImageBlocks
     // (step 2l); without this, req.images would be silently dropped.
     const content = await buildCordisUserContent(ctx, req.message, req.images);
+    // Pin this turn's image refs against cross-turn eviction (same shared
+    // store as chat). Released with the turn's resources (finally-disposed).
+    try {
+      const { pinTurnAttachments } = await import("./cairn-attachment-store");
+      const store = ctx.get("attachments") as Parameters<typeof pinTurnAttachments>[0];
+      resources.add(pinTurnAttachments(store, content as never));
+    } catch { /* pinning is best-effort; eviction still fail-closes */ }
     timer.mark("build user content (pre-turn setup total)");
     const turn = await runCordisTurn({ agent: typedAgent, content, signal, completion: terminal });
     timer.mark("model turn (followup → idle)");

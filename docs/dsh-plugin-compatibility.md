@@ -1,5 +1,7 @@
 # DSH Plugin Compatibility Matrix
 
+> **Last derived at dsh 0.1.1-rc.2; installed is 0.1.2-rc.1.** The packaging contract and core-services section still hold, but the service matrix predates the terminal/LSP/workflow/jobs/schedule/message-feedback adoptions — re-derive per bump with the commands in the derivation section before citing availability.
+
 At dsh `0.1.1-rc.2` — which Cordis services a plugin can `inject`/`get`, which
 Cairn provides, and whether a "most plugins work" claim holds. This is the
 cross-check against `scratch/dsh-repo` (checked out at `dsh-v0.1.1-rc.2`, matching
@@ -48,9 +50,9 @@ the installed `@deepseek-ai/*` versions).
 | Service | Installable package | Notes |
 |---|---|---|
 | `scope` | `dsh-scope` | scoped context layering |
-| `shell` / `shellEnv` / `subprocess` | `dsh-shell` / `dsh-shell-env` / `dsh-subprocess` | `shellEnv`+`subprocess` already in coding stack; `shell` would unblock `permissionPresets` (`inject: ["shell"]`) which currently stalls silently |
+| `shell` / `shellEnv` / `subprocess` | `dsh-shell` / `dsh-shell-env` / `dsh-subprocess` | `shellEnv`+`subprocess` already in coding stack; `shell` arrives per-turn via the coding stack (bash-sandbox registers `ctx.shell`), which activates `permissionPresets` — no longer stalled |
 | `planMode` | `dsh-plan-mode` | already globally mounted |
-| `permissionPresets` | `dsh-permission-presets` | dep present and mounted via `ctx.plugin` but inject-gated on `shell` → stalls without `shell` |
+| `permissionPresets` | `dsh-permission-presets` | dep present, statically imported, mounted post-bootstrap via `ctx.plugin`; activates once per-turn `shell` appears. Surfaced in the coding header (`AgentPermissionSelect`) + `/permission` |
 | `sessionProjection*` | `dsh-session-projection` | `sessionProjections` mounted globally; `sessionProjectionCache` (needs `storageDomain`) would improve cold-list perf |
 | `codeRuntime` | `dsh-code-runtime` | code exec transport — not needed in `native` tools mode |
 | `spillStore` | `dsh-spill` + `dsh-spill-local` + `dsh-spill-policy` | **now mounted** — `LocalSpillStore` (`root: <userData>/spill`) + `spill-policy maxInlineBytes:32768` bounds oversized `tool-fs-search` output to preview+locator |

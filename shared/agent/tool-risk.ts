@@ -30,6 +30,18 @@ export const APPROVAL_SAFE_TOOLS = new Set<string>([
   "codebase_search_symbols", "codebase_get_symbol_definition",
   "codebase_get_references", "codebase_get_file_symbols",
   "ask_questions", "skill",
+  // Read-only continuable-child discovery (dsh-tool-subagent-control/list-agents).
+  "list_agents",
+  // Background-job reads (dsh-tool-jobs): listing and collecting a job's
+  // output mutate nothing (collection is the job's own completion path).
+  "job_list", "job_output",
+  // Read-only terminal session inspection (dsh-tool-terminal): listing sessions
+  // and reading a session's own output mutate nothing. open/send/signal/close
+  // are EXEC below (shell-capable).
+  "terminal_list", "terminal_read",
+  // Read-only LSP navigation (dsh-tool-lsp): transient open → query → close,
+  // no workspace mutation possible through the 4-op union.
+  "lsp",
 ]);
 
 /** Mutating Cairn-data tools (notes/tasks/tags/boards/dashboards/idea flow). */
@@ -81,6 +93,27 @@ export function riskForTool(name: string): RiskClass {
   // so the real tool silently fell through to WRITE_LOCAL and was offered a
   // standing "session" grant (understating a shell-capable delegation).
   if (name === "subagent") return "EXEC";
+  // `delegate` (dsh-tool-subagent under toolName "delegate", backgroundMode
+  // continuable) spawns the same shell-capable in-process child — EXEC, and
+  // one-off (no standing grant: each delegation deserves its own decision).
+  if (name === "delegate") return "EXEC";
+  // `send_message` delivers a model-authored message to a live child (which
+  // then acts under its own approvals); `interrupt_agent` stops a child's
+  // current turn (idempotent, keeps inbox + descendants). Both are one-off
+  // decisions — a standing session grant would be overbroad.
+  if (name === "send_message" || name === "interrupt_agent") return "EXEC";
+  // `job_kill` stops a background job (terminal delivery is reported, so the
+  // model is never left believing it still runs). One-off like interrupt.
+  if (name === "job_kill") return "EXEC";
+  // Persistent-terminal process control (dsh-tool-terminal): open/send/signal
+  // reach a login shell with ambient authority (no Seatbelt/Landlock sandbox,
+  // unlike one-shot bash-sandbox) — EXEC-class like bash, one-off with no
+  // standing grant. read/list are READ above; close kills the session (own or
+  // not — the id space is owner-fenced, but process control stays EXEC).
+  if (
+    name === "terminal_open" || name === "terminal_send" || name === "terminal_signal" ||
+    name === "terminal_close"
+  ) return "EXEC";
   if (CAIRN_WRITE_TOOLS.has(name) || DSH_WRITE_TOOLS.has(name)) return "WRITE_LOCAL";
   if (APPROVAL_SAFE_TOOLS.has(name)) return "READ";
   // Unknown tool — label conservatively. The classifier independently defaults
@@ -91,11 +124,19 @@ export function riskForTool(name: string): RiskClass {
 export function approvalPreview(name: string, args: Record<string, unknown> = {}): string {
   const value = name === "bash"
     ? args.command
-    : name === "write"
-      ? args.content
-      : name.startsWith("mcp__") || name.startsWith("svc__")
-        ? JSON.stringify(args, null, 2)
-        : args.path ?? args.title ?? args.query ?? "";
+    : name === "terminal_send"
+      ? args.text
+      : name === "lsp"
+        ? args.file_path
+        : name === "web_search"
+          ? (Array.isArray(args.queries) ? args.queries.filter((q): q is string => typeof q === "string").join(", ") : "")
+          : name === "web_fetch"
+            ? args.url
+            : name === "write"
+              ? args.content
+              : name.startsWith("mcp__") || name.startsWith("svc__")
+                ? JSON.stringify(args, null, 2)
+                : args.path ?? args.title ?? args.query ?? "";
   const text = typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "");
   const lines = text.split("\n").slice(0, 5);
   const clamped = lines.join("\n").slice(0, 420);
@@ -112,6 +153,9 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
 export function approvalGrantScope(name: string): GrantScope {
   const risk = riskForTool(name);
   if (risk === "EXEC" && name === "bash") return "command";
+  // Untrusted external content stays an explicit per-call decision (v1) —
+  // no standing session grant, even though the risk class is WRITE_LOCAL.
+  if (name === "web_search" || name === "web_fetch") return "none";
   if (risk !== "READ" && risk !== "EXEC") return "session";
   return "none";
 }

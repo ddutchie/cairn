@@ -3,12 +3,12 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import type { Database } from "better-sqlite3";
 import { openCordisSessionAgent } from "./session-agent";
 import { peekChatAgentCache, getChatAgentCache } from "./chat-agent-cache";
-import { getContext, getSessionRoot, resolvePresentationMeta } from "./cordis-context";
+import { getContext, getSessionRoot, resolvePresentationMeta, resolveToolCallView, resolveToolResultView } from "./cordis-context";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 
-export { getContext, dropChatAgentForThread, resolvePresentationMeta, getSessionRoot, setSessionRoot, __resetContextForTest, __setToolDefForTest } from "./cordis-context";
+export { getContext, dropChatAgentForThread, resolvePresentationMeta, resolveToolCallView, resolveToolResultView, withToolCallView, withToolResultView, getSessionRoot, setSessionRoot, __resetContextForTest, __setToolDefForTest } from "./cordis-context";
 export { ensureAgentAiAdapter } from "./session-runtime";
 
 export interface RunCordisLoopResult {
@@ -30,7 +30,7 @@ export interface RunCordisLoopOptions {
   onThought?: (delta: string) => void;
   onUsage?: (pt: number, ct: number, rt?: number, costUsd?: number, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
   emitToolCall?: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void;
-  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string; meta?: unknown }) => void;
+  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string; meta?: unknown; resultView?: unknown }) => void;
   sendSubagent?: (channel: string, payload: Record<string, unknown>) => void;
   questions?: { send: (channel: string, payload: Record<string, unknown>) => void; emitQuestions?: (requestId: string, questions: unknown[]) => void; registerPending: (requestId: string, resolve: (answersText: string) => void) => () => void };
   /** Interactive HITL approvals (chat+coding). When present the loop mounts cairnApprovalPlugin+doomLoop. */
@@ -40,8 +40,14 @@ export interface RunCordisLoopOptions {
   onSessionEvent?: (event: SessionEvent) => void;
 }
 
-export function enrichToolCallsWithMeta<T extends { toolCalls?: Array<{ tool: string; args?: string; output?: string; meta?: unknown }> }>(messages: T[]): T[] {
-  for (const message of messages) for (const call of message.toolCalls ?? []) if (call.meta === undefined) call.meta = resolvePresentationMeta(call.tool, call.args, call.output);
+export function enrichToolCallsWithMeta<T extends { toolCalls?: Array<{ tool: string; args?: string; output?: string; meta?: unknown; view?: unknown; resultView?: unknown }> }>(messages: T[]): T[] {
+  for (const message of messages) for (const call of message.toolCalls ?? []) {
+    if (call.meta === undefined) call.meta = resolvePresentationMeta(call.tool, call.args, call.output);
+    // Replayed log events predate the live view attach — recompute so history
+    // chips get the same tool-authored titles as live ones.
+    if (call.view === undefined) call.view = resolveToolCallView(call.tool, call.args);
+    if (call.resultView === undefined) call.resultView = resolveToolResultView(call.tool, call.args, call.output);
+  }
   return messages;
 }
 

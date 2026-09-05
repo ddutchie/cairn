@@ -9,14 +9,27 @@ import { extractCairnRef } from "./session-replay";
 import { openCordisSessionAgent } from "./session-agent";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import { runCordisSession } from "./session-runner";
-import { buildSystemPrompt, withPersonality } from "../lib/tools";
+import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore } from "./host-store";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
-import { dropChatAgentForThread, getContext, resolvePresentationMeta } from "./cordis-context";
+import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
 import { foldSessionUsage } from "./plugins/context-ring";
 import { foldSessionStats } from "./session-stats";
-import { startPhaseTimer } from "../lib/debug-log";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
+
+/**
+ * Read a live session's events through the dsh 0.1.2-alpha.4+ on-demand API
+ * (`snapshotEvents()`). `session.events` was removed upstream — kept as a
+ * fallback for foreign session-likes in tests.
+ */
+function readSessionEvents(session: unknown): readonly SessionEvent[] {
+  const s = session as {
+    snapshotEvents?: () => readonly SessionEvent[];
+    events?: readonly SessionEvent[];
+  } | null | undefined;
+  if (typeof s?.snapshotEvents === "function") return s.snapshotEvents();
+  return s?.events ?? [];
+}
 
 // Opt-in turn-latency instrumentation. Set CAIRN_TIMING=1 to log per-phase
 // timings for chat turns: getContext, prepareCordisRuntime (transport + adapter),
@@ -109,6 +122,11 @@ function emitBreakdownUsage(events: readonly SessionEvent[], onSessionEvent?: (e
  * waiting for a reload. foldSessionStats over the turn's events yields per-turn
  * metrics; we take the highest (latest) turn's reading and hand it to the
  * renderer, which attaches it to the assistant bubble at turn end.
+ *
+ * NOTE: this keeps the local fold deliberately. The mounted `sessionStats`
+ * unit tracks whole-log totals only (no per-turn state), so it cannot supply
+ * the latest-turn slice this emission needs; the replay/load totals path
+ * (`loadSessionMessages`) is the one that reads snapshot-first.
  */
 function emitTurnStats(events: readonly SessionEvent[], onSessionEvent?: (event: SessionEvent) => void): void {
   if (!onSessionEvent) return;
@@ -154,10 +172,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     if (!g.__cairnArtifactHygieneAt || now - g.__cairnArtifactHygieneAt > 10 * 60 * 1000) {
       g.__cairnArtifactHygieneAt = now;
       try {
-        const h = await import("../lib/artifact-hygiene");
-        h.migrateLegacyVizDir(workspacePath);
-        h.ensureGitExcluded(workspacePath);
-        h.pruneChatArtifacts(workspacePath, "viz");
+        createHostStore(db).runWorkspaceHygiene(workspacePath);
       } catch { /* best-effort hygiene */ }
     }
   } catch (error) {
@@ -211,16 +226,11 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     setup: async ({ llmConfig: preparedConfig, resources, mount }) => {
       llmConfig = preparedConfig;
       try {
-        const project = req.projectId ? db.prepare("SELECT name, description, code_directory FROM projects WHERE id = ?").get(req.projectId) as { name?: string; description?: string; code_directory?: string } | undefined : undefined;
-        const workspace = req.workspaceId ? db.prepare("SELECT name FROM workspaces WHERE id = ?").get(req.workspaceId) as { name?: string } | undefined : undefined;
+        const host = createHostStore(db);
+        const meta = host.getWorkspaceMeta(req.workspaceId, req.projectId);
         const { updateWorkspaceContext } = await import("./plugins/workspace-context");
-        let gitBranch: string | undefined;
-        try {
-          const { execSync } = await import("node:child_process");
-          gitBranch = execSync("git branch --show-current", { cwd: workspacePath, encoding: "utf8", timeout: 800 }).trim() || undefined;
-        } catch { /* not a git repo */ }
         // Use the real workspacePath (the agent's sandbox root), not code_directory which may be stale.
-        updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: workspace?.name, workspaceId: req.workspaceId, projectName: project?.name, projectId: req.projectId, projectDescription: project?.description, cwd: workspacePath, gitBranch });
+        updateWorkspaceContext(`chat-${req.threadId}`, { workspaceName: meta.workspaceName, workspaceId: req.workspaceId, projectName: meta.projectName, projectId: req.projectId, projectDescription: meta.projectDescription, cwd: workspacePath, gitBranch: host.getGitBranch(workspacePath) });
       } catch (error) { console.warn("[cordis] workspace context update failed:", error instanceof Error ? error.message : error); }
       timer.mark("workspace-context (incl. git branch execSync, 800ms cap)");
       // Clarify the approval flow for the model. The dsh ASK_SENTENCE
@@ -279,7 +289,8 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
           const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
           const tool = toolNames.get(callId) ?? "tool";
           const meta = (d.meta as Record<string, unknown> | undefined) ?? (!error ? resolvePresentationMeta(tool, toolArgs.get(callId), output) as Record<string, unknown> | undefined : undefined);
-          opts.emitToolCallDone?.({ tool, callId, cairnRef: (meta?.cairnRef ?? extractCairnRef(tool, output)) as { type: "note" | "task"; id: string; title: string } | undefined, output: error ? undefined : output, ok: !error, error: error ? output || "tool error" : undefined, ...(meta ? { meta } : {}) });
+          const resultView = resolveToolResultView(tool, toolArgs.get(callId), output, error);
+          opts.emitToolCallDone?.({ tool, callId, cairnRef: (meta?.cairnRef ?? extractCairnRef(tool, output)) as { type: "note" | "task"; id: string; title: string } | undefined, output: error ? undefined : output, ok: !error, error: error ? output || "tool error" : undefined, ...(meta ? { meta } : {}), ...(resultView ? { resultView } : {}) });
         }
       });
       resources.add(streamDisposer);
@@ -307,7 +318,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
           registerPending: opts.approvals.registerPending,
           signal,
           workspaceId: req.workspaceId ?? undefined,
-          db,
+          host: createHostStore(db),
           askRiskClasses: new Set(["EXTERNAL", "EXEC"] as const),
           askFilter: (name: string) => name === "delete_note" || name === "delete_task" || name === "delete_project",
         });
@@ -316,7 +327,12 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // the approval seam. Gated, so an unknown connector can't mutate
       // externally without confirmation.
       try {
-        const extDisposers = await registerExternalCairnTools(ctx, { db, workspaceId: req.workspaceId ?? "", projectId: req.projectId ?? "" });
+        // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF) — see
+        // run-cordis-coding.ts. Unset → empty mount + empty exclusion.
+        const { maybeMountDshMcpSpike } = await import("./mcp-dsh-bridge");
+        const spike = await maybeMountDshMcpSpike(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
+        spike.disposers.forEach((d) => resources.add(d));
+        const extDisposers = await registerExternalCairnTools(ctx, { db, workspaceId: req.workspaceId ?? "", projectId: req.projectId ?? "" }, { excludeServerIds: spike.excludedServerIds });
         extDisposers.forEach((d) => resources.add(d));
       } catch (e) {
         console.warn("[cordis] registerExternalCairnTools (chat) failed:", (e as Error)?.message ?? e);
@@ -362,24 +378,37 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         }
       }
       try {
-        const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal });
+        // Chat's focus is the Cairn workspace: deny the `skill` tool on the
+        // chat agent scope. Upstream removes both the schema and the per-step
+        // <available_skills> catalog injection when the agent no longer
+        // resolves the registration — no skill context spend on chat turns.
+        // Coding agents keep skills (frontend-design et al. are build tools).
+        const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal, denyTools: ["skill"] });
         chatAgents.set(req.threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown>, selectionRef: opened.selectionRef });
         markLog("open (cache MISS — resume/replay JSONL)", openStart);
         return opened;
       } catch (error) {
         if (!(error instanceof Error) || !error.message.includes("while it is live")) throw error;
         await dropChatAgentForThread(req.threadId);
-        const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal });
+        const opened = await openCordisSessionAgent(ctx, { sessionId: `chat-${req.threadId}`, cwd: workspacePath, llmConfig: preparedConfig, signal, denyTools: ["skill"] });
         chatAgents.set(req.threadId, { handle: opened as unknown as Record<PropertyKey, unknown>, agent: opened.agent as Record<PropertyKey, unknown>, selectionRef: opened.selectionRef });
         return opened;
       }
     },
-    run: async ({ agent }) => {
+    run: async ({ agent, resources }) => {
       const runStart = markNow();
       timer.mark("open agent (cache hit, or resume/replay JSONL)");
-      const typed = agent as unknown as CordisTurnAgent & { session: { events: readonly SessionEvent[] } };
+      const typed = agent as unknown as CordisTurnAgent & { session: unknown };
       currentAttemptSessionId = SessionId(`chat-${req.threadId}`);
       const content = await buildCordisUserContent(ctx, req.message, req.images);
+      // Pin this turn's image refs against cross-turn eviction (another
+      // session's heavy intake must not evict them mid-turn). Released with
+      // the turn's resources (finally-disposed) — pins can't leak.
+      try {
+        const { pinTurnAttachments } = await import("./cairn-attachment-store");
+        const store = ctx.get("attachments") as Parameters<typeof pinTurnAttachments>[0];
+        resources.add(pinTurnAttachments(store, content as never));
+      } catch { /* pinning is best-effort; eviction still fail-closes */ }
       markLog("run: content built, dispatching followup", runStart);
       timer.mark("build user content (pre-turn setup total)");
       const { firstSeq } = await runCordisTurn({ agent: typed, content, signal });
@@ -393,8 +422,9 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         const { flushSession } = await import("./plugins/session-durability");
         await flushSession(ctx as never, (typed as unknown as { session?: unknown }).session);
       } catch { /* best-effort */ }
-      const result = collect(typed.session.events, firstSeq);
-      const end = typed.session.events.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
+      const sessionEvents = readSessionEvents(typed.session);
+      const result = collect(sessionEvents, firstSeq);
+      const end = sessionEvents.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
       const kind = (end?.data as { reason?: { kind?: string } } | undefined)?.reason?.kind;
       // The provider only streams {inputTokens, outputTokens} on its usage events,
       // so the renderer's live fold persists a breakdown-less lastUsage and the
@@ -403,8 +433,8 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // tools, tool/result outputs, etc.) — exactly what the reload path does via
       // foldSessionUsage. Emit one synthetic, breakdown-carrying usage event so the
       // live ring matches the reload ring (single source of truth, no divergence).
-      emitBreakdownUsage(typed.session.events, opts.onSessionEvent);
-      emitTurnStats(typed.session.events, opts.onSessionEvent);
+      emitBreakdownUsage(sessionEvents, opts.onSessionEvent);
+      emitTurnStats(sessionEvents, opts.onSessionEvent);
       if (TIMING && kind && kind !== "completed") console.log(`[timing] turn/end kind="${kind}" at ${Date.now() - turnStart}ms (attempt did not complete cleanly)`);
       return { ...result, failedKind: kind && kind !== "completed" ? kind : undefined };
     },

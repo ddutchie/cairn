@@ -32,13 +32,30 @@ what is still open after the `feat/cordis-runtime` refactor.
 │        │  buildCordisUserContent → db (better-sqlite3, MCP/tool data only)                  │
 │        │                                                                                    │
 │  ════════════ Cordis Context (sharedCtx) ════════════                                       │
-│  Loader (cordis-plugin-loader) mounts ENTRY_LIST declaratively:                             │
-│    session · llm · system-prompt · agent · tools · user-questions · approval ·             │
-│    session-persistence · agent-loop · attachment-store · token-meter ·                     │
-│    compaction · llm-retry · subagent · skills · subagent-spawn · tool-subagent             │
+│  Loader (cordis-plugin-loader) mounts the full ENTRY_LIST in                            │
+│  `electron/cordis/cordis-context.ts` (~40 entries: session, llm,                        │
+│  system-prompt, agent, tools, user-questions, approval, session-persistence,            │
+│  session-query-sqlite, agent-loop, attachment-store, spill, spill-policy,               │
+│  token-meter, tool-result-pruner, compaction, session-title (+first-prompt LLM          │
+│  provider), llm-retry, subagent, skills, invariants, tool-skill, commands,              │
+│  command-compact, plan-mode, subagent-spawn, tool-subagent (+continuable                │
+│  delegate, control, list-agents), jobs-local + tool-jobs, storage (+json               │
+│  backend + domain), message-feedback + command-feedback, schedule (opt-in,              │
+│  gated by the `scheduleEnabled` setting). Post-bootstrap `ctx.plugin` mounts            │
+│  (NOT loader entries): session-projection registry, permission-presets and             │
+│  goal stack (service + tool-goal + command-goal + round-driver — both inject            │
+│  services that only exist post-bootstrap: per-turn `shell`, respectively               │
+│  `sessionProjections`; a loader entry would stall `loader.await()`),                   │
+│  context-ring, workspace-context, session-title bridge, jobs-bridge,                   │
+│  goal-bridge.                                                                          │
 │                                                                                             │
-│  ctx.services: tools · skills · fs · sessions · agents · approval · userQuestions · cairn   │
-│  ctx.cairn = { defineTool }        (stable plugin API surface)                              │
+│  ctx.services: tools · skills · sessions · agents · approval · userQuestions · cairn    │
+│  (`fs`/`sandbox`/`sandboxPolicy` mount lazily per turn via `mountFsChain`, §6)          │
+│  ctx.cairn = { defineTool, confirm }   (stable plugin API surface)                      │
+│  App I/O behind the HostStore seam (`electron/cordis/host-store.ts`:                   │
+│  workspace meta, notes, git branch, usage, session/todo/plan rows, grants) —            │
+│  no `../db/*`, `../lib/*`, or `node:child_process` value imports elsewhere             │
+│  in `electron/cordis/`.                                                                │
 │                                                                                             │
 │  ┌─ dsh agent-loop ─▶ dsh-llm-pi-ai adapter ─▶ provider bridge (responses | completions)    │
 │  └─ dsh session-persistence-jsonl ─▶ <userData>/sessions/**/session.jsonl[.zstd]  (THRUTH)  │
@@ -53,11 +70,11 @@ what is still open after the `feat/cordis-runtime` refactor.
 **Session-as-truth.** Chat + coding transcripts live ONLY in dsh's JSONL session
 log (`.jsonl.zstd` via zstd, under `<userData>/sessions/`). SQLite `chat_messages`
 / `pi_agent_messages` / `pi_agent_llm_history` / `approval_items` were the pre-
-Cordis transcript tables; they are **archived to
-`<workspacePath>/.cairn/archive/2.7.7/<table>-<timestamp>.ndjson` and then
-DROPped by migration v49** on every DB (runs once per DB via `PRAGMA
-user_version`; workspace switching cannot defeat it). Replay reads the session
-log (`electron/ipc/chat-session.ts`, `session-replay.ts`).
+Cordis transcript tables; migration v49 **discards** `chat_messages` /
+`pi_agent_messages` / `pi_agent_llm_history` / `approval_items` with no archive
+(`db/schema.ts` — "intentionally discarded; no archive recovery"; runs once per
+DB via `PRAGMA user_version`). The JSONL session log is the only transcript.
+Replay reads the session log (`electron/ipc/chat-session.ts`, `session-replay.ts`).
 
 ---
 
@@ -77,7 +94,7 @@ caches it in module-level `sharedCtx`.
   not row order.
 - `ctx.loader.create(entry)` in a loop, then `ctx.loader.await()` settles.
 - After settle, Cairn registers its **own** surfaced things onto the shared ctx:
-  `ctx.cairn = { defineTool }`, the **cairn SKILL.md provider** on
+  `ctx.cairn = { defineTool, confirm }`, the **cairn SKILL.md provider** on
   `ctx.skills`, and lazy `ctx.fs` chain.
 
 ### Builtins → service keys
@@ -92,11 +109,24 @@ caches it in module-level `sharedCtx`.
 | user-questions | `cordis:dsh:user-questions` | `userQuestions` |
 | approval | `cordis:dsh:approval` | `approval` |
 | session-persistence | `cordis:dsh:session-persistence` | `sessionPersistence` |
+| session-query-sqlite | `cordis:dsh:session-query-sqlite` | `sessionQuery` (SQLite FTS5; abstract `dsh-session-query` is never mounted alone) |
+| session-stats (post-bootstrap) | dsh `session-stats` | `sessionStats` projection unit; read snapshot-first via `readSessionStats` (`session-stats.ts`), fold fallback + `byTurn` supplement |
 | agent-loop | `cordis:dsh:agent-loop` | `agentLoop` |
 | attachment-store | `cordis:cairn:attachment-store` | `attachments` |
+| spill / spill-policy | dsh builtins | oversized-tool-text spill store + inline policy |
 | token-meter / compaction / llm-retry | dsh builtins | pressure + auto-compact + retry |
-| subagent (+spawn +tool-subagent) | dsh/cairn | subagent capability |
-| skills | `cordis:dsh:skills` | `skills` registry |
+| tool-result-pruner | `cordis:dsh:tool-result-pruner` | replay-safe tool-result pruning |
+| session-title (+first-prompt LLM) | `cordis:dsh:session-title` (+ `cordis:dsh:session-title-first-prompt-llm`) | log-backed titles, chat model titles |
+| subagent (+spawn +tool-subagent) | `cordis:cairn:*` wrappers | subagent capability (one-shot `subagent` + continuable `delegate`) |
+| tool-subagent-control + list-agents | `cordis:cairn:*` wrappers | `send_message` / `interrupt_agent` / `list_agents` (model side) |
+| jobs-local + tool-jobs | `cordis:dsh:jobs-local` + `cordis:cairn:tool-jobs` | background-job registry + `job_output`/`job_list`/`job_kill` (required by both background routes) |
+| storage (+json +domain) | dsh builtins | KV hub + JSON-file backend + domain facility (backs message-feedback) |
+| message-feedback + command-feedback | dsh builtins | durable per-message ratings/notes + log-only `/feedback` |
+| schedule (opt-in) | `cordis:dsh:schedule` | session-local reminders, gated by `scheduleEnabled` (restart to apply) |
+| goal stack (post-bootstrap) | dsh `goal` + `tool-goal` + `command-goal` + `goal-round-driver` | same-session objective + model tools + `/goal` + round driver |
+| skills / tool-skill | `cordis:dsh:skills` + `cordis:dsh:tool-skill` | `skills` registry + model skill tool |
+| commands / command-compact | `cordis:dsh:commands` + `cordis:dsh:command-compact` | slash-command registry + `/compact` |
+| plan-mode | `cordis:dsh:plan-mode` | plan mode + review/approve + `plan` projection |
 | invariants | `cordis:dsh:invariants` | `invariants` registry (companion plugins) |
 
 ---
@@ -108,8 +138,10 @@ caches it in module-level `sharedCtx`.
 1. `getContext()` → `ctx`.
 2. **Plugin fs chain** (dev-gated): if plugins enabled and `ctx.get("fs")`
    absent → `mountFsChain({cwd})` (see §6). Runs artifact hygiene (`.chat`).
-3. `resolveTransport` probes `/responses` vs `/chat/completions`, caches by
-   base URL → `ensurePiAiAdapter({api})` sets the wire mode.
+3. `prepareCordisRuntime()` pins the wire protocol from the provider's
+   `apiMode` (`responses` → `openai-responses`, else `openai-completions` /
+   `anthropic-messages`) → `ensureAgentAiAdapter({api})` sets the wire mode.
+   Cairn never auto-probes endpoints.
 4. **Sees the live agent per thread** — `globalThis.__cairnChatAgents`
    keyed by `threadId`; reuse if live, else `agents.resume(stableId)` →
    fall back `agentLoop.createAgent` → "already exists" → resume again →
@@ -124,8 +156,13 @@ caches it in module-level `sharedCtx`.
    - `tool/result` → done chip + `meta` (reads `event.data.meta`, falls back to
      `resolvePresentationMeta`), Cairn's per-tool `emitDone` enriches with
      `cairnRef`/`externalRef`.
-8. Streams: `chat:token`, `chat:thought` (reasoning deltas), `chat:usage`,
-   `chat:done` (content + reasoning + reasoningItems).
+8. Streams: `session:event` (raw dsh events) + `session:projection` (typed UI
+   updates: approval / question / subagent-trace / todos / jobs / goal /
+   plan-note / mode-change / …), folded in `useSessionConversation`. Chat has no
+   `chat:token/*` channels. Tool chips prefer the tool-authored `presentCall`
+   title attached main-side (`withToolCallView`), humanizer fallback; done chips
+   render the `presentResult` view (`withToolResultView`: terminal output + exit
+   pill, generic content blocks), raw output fallback.
 
 ---
 
@@ -204,37 +241,57 @@ names can be registered exactly once per context lifetime.
 ## 8. Keeping the stack up to date
 
 We deliberately track dsh closely: bump, then fix our fixtures/tests to match.
-This is the repeatable loop.
+This is the repeatable loop. The universal playbook (dist-tag choice, tarball
+diff recipe, deadlock recovery, testing matrix) lives in
+**`docs/dsh-upgrade-guide.md`** — this section is the Cairn-specific checklist
+with the current pin and the historical breakage index.
+
+**Current pin (branch `ddutchie/dsh_012`):** `@deepseek-ai/*@0.1.2-rc.1` (tag `next`) + `cordis@4.0.2` — live-swept, see the eval doc §5.1 log.  
+**Next:** track `next` (`0.1.2-rc.x` follow-ups); release the Cairn update off this branch per the lockstep changelog rule.  
+Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection = defer):
+`docs/plans/dsh-0.1.2-alpha.3-evaluation.md`.
 
 ### Bump checklist
 1. Find the target line: `npm view @deepseek-ai/<pkg> dist-tags --json` (we use
-   the `next` tag; `latest` is often a placeholder `0.0.1-rc.1`).
-2. Update all 39 `@deepseek-ai/dsh-*` deps in `package.json`
-   (e.g. `^0.1.0-rc.8` → `^0.1.1-rc.2`) + add any package dsh-visualize-type
-   plugins now need (`dsh-skill` case). Never touch the project version
+   the `next` tag; `latest` is often a placeholder `0.0.1-rc.1`). Published
+   `alpha` tags are real npm tarballs (e.g. `0.1.2-alpha.3`) — unpublished tags
+   like `0.1.2-alpha.1` are source-only; prefer the published one.
+2. Update all 61 `@deepseek-ai/dsh-*` deps in `package.json` together
+   (e.g. `^0.1.1-rc.2` → `^0.1.2-rc.1`) + add any package newly required
+   (`dsh-session-query-sqlite` case). Never touch the project version
    (release scripts own it).
 3. **Pre-req**: peer-dep resolution deadlocks on a partial tree. Clear the
    stale lock entries first, then reinstall:
    `rm -rf node_modules/@deepseek-ai/dsh-*`, strip `@deepseek-ai/dsh-*` keys
-   from `package-lock.json` in a script, then `npm install`.
+   from `package-lock.json` in a script, then `npm install`. *(Full deadlock
+   recovery + singleton checks: `dsh-upgrade-guide.md` §5.)*
 4. Verify graph: single `cordis` copy (`find node_modules -path '*cordis/package.json' | wc -l`),
    no `0.1.0-rc.8` stragglers.
-5. `npm run compile` + `npm run type-check:all` (fix API breaks in our code).
-6. Live sweep `CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npx vitest run electron/cordis/*.live.test.ts`
+5. Diff the tarballs before touching Cairn code (`npm pack` + `diff -r` per
+   `dsh-upgrade-guide.md` §3) — read `peerDependencies`, branded-string renames
+   (`SessionId→brandString`), descriptor version bumps, and new `inject` seams.
+6. `npm run compile` + `npm run type-check:all` (fix API breaks in our code).
+7. Live sweep `CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npx vitest run electron/cordis/*.live.test.ts`
    (model bridge at `http://localhost:3042/v1`, `claude-sonnet-4-5`).
-7. Update fixtures whose assertions encode retired behavior (see §8.1), changelog
-   (`v2.7.x`), docs §.
+8. Update fixtures whose assertions encode retired behavior (see §8.1), changelog
+   (the pending `changelogs/vX.Y.Z.md` above the current package version —
+   see AGENTS.md changelog rule), docs §.
 
 ### 8.1 Known historical breakage points (each bump, check these)
 | Symbol | Symptom if stale | Fix |
 |---|---|---|
 | `AttachmentStore.readImageRequest(ref, policy, signal)` | "cannot derive model-request images" | implement on `CairnAttachmentStore` (bytes passthrough + deterministic `variantId`, `depth/space/hasAlpha`) |
 | session jsonl compression/naming | replay empty or "not found" | `session.jsonl[.zstd]`, `<root>/<encodedCwd>/<id>/…` plaintext+flat fallbacks are handled in handlers |
-| `SessionId` stringification | replay path lookups fail | usually still a branded string — verify `String(SessionId(x))` |
+| `SessionId` stringification / `brandString` | replay path lookups fail / `subagent/CONTROL_*_UNAVAILABLE` | `0.1.2-alpha.3`: control-plane subagent paths use `brandString(x)` not `SessionId(x)`; keep `SessionId` for session construction, migrate `sendMessage`/`interrupt`/`listChildren` auth paths |
+| `SessionSeq` branding / `Session.events` removal | `tsc` errors on `event.seq` arithmetic; `session.events` undefined at runtime | `0.1.2-alpha.4`: `seq` is branded `SessionSeq` (wrap with `SessionSeq()`), `session.events` → `seq`/`eventAt()`/`snapshotEvents()`/`ownEvents()`; header `seedLength` → `isSeeded` + `inheritedEventCount` (Cairn has zero `seedLength` refs — verified) |
+| `report` tool removal | `dsh-tool-subagent-report` fails to install past `alpha.3` | `0.1.2-alpha.4`: package unpublished (replaced by bidirectional `send_message`); drop from `package.json`, regen `licenses.json` |
+| `dsh-session-query` presence | `CONTINUATION_UNAVAILABLE` / `SUBAGENT_CONTROL_QUERY_UNAVAILABLE` on `followup`/`listChildren` | `0.1.2-alpha.3`: continuable cold-resume and listing now go through `sessionQuery`; mount the backend `B["dsh:session-query-sqlite"]` + `session-query-sqlite` entry on the shared ctx (the abstract `dsh-session-query` is never mounted alone) or continuable subagents regress |
+| `SUBAGENT_DESCRIPTOR_VERSION 2→3` | cold resume ignores persisted reasoning effort / stale descriptor fold | `0.1.2-alpha.3`: v3 adds `agentReasoningEffort`; old logs fold with it `undefined` (no crash); new writes are v3 — no migration needed, but verify one cold-resume of a pre-bump session |
+| `code-mode → PTC mode` rename | literal `code-mode` filter / session-search misses | `0.1.2-alpha.3`: persisted vocabulary keeps alias; grep for literal `code-mode` strings before merging |
 | agent disposal | `cannot prepare session … while it is live` after clear | dispose via `Symbol.asyncDispose`/`Symbol.dispose` (not plain `.dispose`) |
 | tool `presentationMeta`/`meta` location | community toolview shows text not card | read `event.data.meta`, fall back to `resolvePresentationMeta` |
 | skill provider validators | "returned skill … with a non-string provider" | candidates/definitions must carry `provider === providerName`, `source`, `rank` |
-| `inject` gating | plugin backend never activates | ensure required services exist (`skills`, `fs`) before enrichment |
+| `inject` gating | plugin backend never activates | ensure required services exist (`skills`, `fs`, `sessionProjections`, `sessionQuery` in `0.1.2-alpha.3`) before enrichment |
 
 ### Fixtures that encode behavior (update together)
 - `electron/cordis/pi.live.test.ts` — JSONL persistence (not `chat_messages`),
@@ -277,15 +334,33 @@ This is the repeatable loop.
 
 | Concern | Files |
 |---|---|
-| Runtime bootstrap + ENTRY_LIST + shared ctx | `electron/cordis/run-cordis-loop.ts` |
+| Runtime bootstrap + ENTRY_LIST + shared ctx | `electron/cordis/cordis-context.ts` (`run-cordis-loop.ts` re-exports `getContext`) |
 | Coding loop + fs/sandbox stack | `electron/cordis/run-cordis-coding.ts`, `cordis-coding-tools.ts` |
 | Replay / session-as-truth | `electron/ipc/chat-session.ts`, `session-handlers.ts`, `cordis/session-replay.ts` |
 | Tools bridge | `electron/cordis/cairn-tools.ts` |
 | Plugin runtime (backend) | `electron/cordis/plugin-loader.ts`, `plugin-installer.ts` |
 | Plugin IPC + service | `electron/ipc/ui-plugin-handlers.ts`, `electron/preload.ts` |
 | Plugin UI (renderer) | `src/lib/plugin-ui/{loader,platform-modules,dsh-client-ctx,dsh-slot-map,slot-matrix,registry}.ts`, `SlotOutlet.tsx` |
-| Toolview dispatch | `src/lib/dsh-toolview/{contract,adapter}.ts`, `ToolCallIndicator.tsx`, `ChatMessageBubble.tsx` |
+| Toolview dispatch | `src/lib/dsh-toolview/{contract,adapter}.ts`, `src/components/conversation/ConversationMessageBubble.tsx` (+ `conversation-live.ts`) |
 | Attachment store | `electron/cordis/cairn-attachment-store.ts` |
+| Subagent messaging | `electron/cordis/subagent-control.ts` (host list/interrupt/message + `subagent:*` IPC), `src/components/conversation/SubagentCatalogAction.tsx` (header catalog) |
+| Background jobs UI | `electron/cordis/jobs-bridge.ts` (registry → `session:projection kind:"jobs"` + `session:job-kill` IPC), `src/components/agent/AgentJobsDock.tsx` |
+| Permissions UI | `electron/cordis/permissions-bridge.ts` (`permissions` projection → `session:permissions` IPC), `src/components/agent/AgentPermissionSelect.tsx` |
+| Goals / feedback / schedule | `electron/cordis/goal-bridge.ts`, `message-feedback.ts`, `schedule-read.ts` + `session:goal|feedback|schedule-list` IPC; `AgentGoalChip.tsx`, `MessageFeedbackControl.tsx`, `SchedulePill.tsx` |
+| Terminal / LSP / web-fetch | `electron/cordis/terminal-backend.ts` (node-pty over shared `pty-sessions.ts`), `cordis-lsp.ts` (stdio, PATH detect), `dsh-web` seam + `web-fetch-http` (fetch-only, `search: false`) |
+| Export / workflows | `electron/cordis/session-export.ts` (Cairn shim, `/export`), worker-thread engine + coding-turn `workflow`/`ralph` tools |
+| Host seam (app I/O) | `electron/cordis/host-store.ts` (sole `../db|../lib|child_process` importer in `cordis/`) |
 | Skill bridge | `electron/cordis/cairn-skill-provider.ts`, `src/lib/plugin-ui/` |
+| Per-surface tool inventory | `electron/lib/tool-inventory.ts` (static manifests + `CHAT_DENIED_GLOBAL_TOOLS`) → `runtime:tools:inventory` — chat/coding/automation-dev/mcp + live global tools; Settings → AI tabs render it |
+| Prompt previews | `runtime:systemPrompt:preview` (global dsh assembly, `cairn:system` under its real name) + `runtime:codingPrompt:preview` (board-tracking prompt); shared sections shown on both tabs, empty ones hidden |
 | Artifacts hygiene | `electron/lib/artifact-hygiene.ts`, `codebase-index.ts` |
 | Plan history | `docs/plans/cordis-runtime.md` (§1–§23) |
+
+---
+
+## 11. Review-hardening notes (PR #139 follow-ups)
+
+- **Chat denies `skill`** (`denyTools` in `session-agent.ts`, passed from `chat-session-runner.ts`): chat's focus is the Cairn workspace — upstream removes both the schema and the per-step catalog injection. Coding keeps skills.
+- **Job kill is session-bound**: `session:job-kill` requires the caller session id; the bridge only stops jobs the dock would show (unowned, or own), else `not-owner`.
+- **Export streams**: `/export` pipelines ZIP chunks to disk (no memory retention); partials unlinked on failure. Attachment store has a 512 MiB LRU budget + turn-scoped pinning (released via turn resources).
+- **E2E mock parity**: `tests/fixtures/ipc-mock.ts` must expose every `electron.session.*` method the renderer calls, or boot-phase components throw under Playwright. Diff preload's `session:` block against the mock when adding IPC.

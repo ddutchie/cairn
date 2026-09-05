@@ -49,6 +49,7 @@ import {
   isEndpointNotFound,
   classifyResponsesProbe,
 } from "./responses";
+import { CAIRN_USER_AGENT } from "./cairn-identity";
 export { isEndpointNotFound };
 
 export type ApiMode = "responses" | "completions";
@@ -155,6 +156,7 @@ export async function probeResponses(baseUrl: string, apiKey = ""): Promise<bool
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "User-Agent": CAIRN_USER_AGENT,
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify({}),

@@ -2,7 +2,33 @@
 
 export type SessionProjectionKind =
   | "approval" | "question" | "subagent-trace" | "todos" | "plan-note"
-  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result" | "title" | "error";
+  | "mode-change" | "note-updated" | "retry" | "compact" | "compact-result" | "title" | "error" | "jobs" | "goal" | "permissions";
+
+/** Renderer-safe goal summary (durable `goal` projection view — no activation). */
+export interface GoalSummary {
+  id: string;
+  revision: number;
+  objective: string;
+  phase: "active" | "paused" | "blocked" | "complete";
+  blockedReason?: { code: string; message: string };
+  roundsStarted: number;
+  maxGoalRounds: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Renderer-safe summary of one dsh background job (`JobSnapshot` subset). */
+export interface JobSummary {
+  id: string;
+  kind: string;
+  label: string;
+  status: "running" | "stopping" | "completed" | "killed" | "failed";
+  detail?: string;
+  startedAt: number;
+  finishedAt?: number;
+  /** Owning session id; absent for unowned (globally visible) jobs. */
+  ownerSession?: string;
+}
 
 /**
  * Shared busy/error envelope for session:* channels.
@@ -36,6 +62,13 @@ export type SessionProjectionData = {
   "compact-result": { messageCount: number; summary: string };
   title: { title: string | null };
   error: { message: string; code?: SessionBusyReason | string };
+  jobs: { ownerSession?: string; jobs: JobSummary[] };
+  goal: { goal: GoalSummary | null; operation?: string };
+  /** dsh permission-presets `permissions` view: preset options + current value. */
+  permissions: {
+    options: Array<{ value: string; name: string; description?: string }>;
+    currentValue: string;
+  };
 };
 
 export type SessionProjection<K extends SessionProjectionKind = SessionProjectionKind> = {
