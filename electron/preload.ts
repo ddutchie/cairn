@@ -1002,7 +1002,7 @@ const api = {
     /** Deliver a human message to a continuable child (needs the live parent agent; parent-unavailable otherwise) */
     messageSubagent: (parentSessionId: string, childId: string, text: string) => invoke<{ ok: true; value: { messageId: string } } | { ok: false; code: string; message: string }>("subagent:message", { parentSessionId, childId, text }),
     /** Kill a dsh background job (jobs dock; owner-unavailable when the owner turn ended) */
-    killJob: (jobId: string) => invoke<{ ok: true; value: unknown } | { ok: false; code: string; message: string }>("session:job-kill", { jobId }),
+    killJob: (jobId: string, sessionId: string) => invoke<{ ok: true; value: unknown } | { ok: false; code: string; message: string }>("session:job-kill", { jobId, sessionId }),
     /** Current same-session goal snapshot (null when no goal); live changes arrive via onProjection kind:"goal" */
     goal: (sessionId: string) => invoke<{ ok: true; value: { id: string; revision: number; objective: string; phase: string; blockedReason?: { code: string; message: string }; roundsStarted: number; maxGoalRounds: number; createdAt: number; updatedAt: number } | null } | { ok: false; code: string; message: string }>("session:goal", { sessionId }),
     /** Current permission-preset select ({options, currentValue}); live changes arrive via onProjection kind:"permissions". ok:false while the presets service is unavailable (switcher hides) */

@@ -21,6 +21,8 @@ import type { JobSummary } from "@/../shared/agent/session-projection";
 interface AgentJobsDockProps {
   jobs: JobSummary[];
   live?: boolean;
+  /** Owning session — passed to session:job-kill so a pane can only stop jobs its dock shows. */
+  sessionId: string;
 }
 
 const TERMINAL = new Set(["completed", "killed", "failed"]);
@@ -34,7 +36,7 @@ function formatElapsed(startedAt: number, finishedAt?: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-export function AgentJobsDock({ jobs, live = true }: AgentJobsDockProps) {
+export function AgentJobsDock({ jobs, live = true, sessionId }: AgentJobsDockProps) {
   const [expanded, setExpanded] = useState(false);
   const [killError, setKillError] = useState<string | null>(null);
 
@@ -51,7 +53,7 @@ export function AgentJobsDock({ jobs, live = true }: AgentJobsDockProps) {
   const onKill = async (jobId: string) => {
     setKillError(null);
     try {
-      const res = await window.electron?.session.killJob(jobId);
+      const res = await window.electron?.session.killJob(jobId, sessionId);
       if (res && typeof res === "object" && "ok" in res && !(res as { ok: boolean }).ok) {
         const { code, message } = res as { ok: false; code: string; message: string };
         setKillError(code === "owner-unavailable" ? "Can't stop: owning turn ended" : `Can't stop: ${message}`);

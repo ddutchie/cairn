@@ -60,9 +60,9 @@ async function expectOneProjection(trigger: () => void) {
   return projections()[0]!;
 }
 
-function killCode(jobId: string): string {
+function killCode(jobId: string, sessionId = "session-a"): string {
   try {
-    killJob(jobId);
+    killJob(jobId, sessionId);
     return "no-throw";
   } catch (err) {
     return (err as { code?: string }).code ?? "no-code";
@@ -117,13 +117,38 @@ describe("mountJobsBridge", () => {
     mountJobsBridge({ jobs: reg } as never);
     await expectOneProjection(() => { reg.changed[0]?.(owner); });
 
-    killJob("subagent-1");
+    killJob("subagent-1", "session-a");
     expect(reg.kills).toEqual([{ id: "subagent-1", caller: owner }]);
 
     // Settle → re-emit prunes the stash → kill now fails owner-unavailable.
     reg.setSnaps([{ id: "subagent-1", kind: "subagent", label: "r", status: "completed", startedAt: 1, finishedAt: 2, ownerSession: "session-a" }]);
     await expectOneProjection(() => { reg.done[0]?.({ id: "subagent-1", status: "completed" } as FakeSnap, owner); });
     expect(killCode("subagent-1")).toBe("owner-unavailable");
+  });
+
+  it("kill from another session fails not-owner and never reaches the registry", async () => {
+    const reg = makeRegistry();
+    const owner = { id: "agent-1", session: { id: "session-a" } };
+    reg.setSnaps([{ id: "subagent-1", kind: "subagent", label: "r", status: "running", startedAt: 1, ownerSession: "session-a" }]);
+    mountJobsBridge({ jobs: reg } as never);
+    await expectOneProjection(() => { reg.changed[0]?.(owner); });
+
+    expect(killCode("subagent-1", "session-b")).toBe("not-owner");
+    expect(reg.kills).toEqual([]);
+    // Owner session still kills fine.
+    expect(killCode("subagent-1", "session-a")).toBe("no-throw");
+    expect(reg.kills).toEqual([{ id: "subagent-1", caller: owner }]);
+  });
+
+  it("kill of a snapshot without ownerSession stays allowed (dock-visible everywhere)", async () => {
+    const reg = makeRegistry();
+    const owner = { id: "agent-1", session: { id: "session-a" } };
+    reg.setSnaps([{ id: "bash-1", kind: "bash", label: "ls", status: "running", startedAt: 1 }]);
+    mountJobsBridge({ jobs: reg } as never);
+    await expectOneProjection(() => { reg.changed[0]?.(owner); });
+
+    expect(killCode("bash-1", "session-b")).toBe("no-throw");
+    expect(reg.kills).toEqual([{ id: "bash-1", caller: owner }]);
   });
 
   it("kill of an unknown job fails owner-unavailable", () => {

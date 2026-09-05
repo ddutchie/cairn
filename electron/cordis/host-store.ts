@@ -242,10 +242,11 @@ export interface HostStore {
   getMcpServers(workspaceId: string): ReturnType<typeof getMcpServersImpl>;
   // User-level hook config discovery (db-free; see resolveHooksConfig above).
   resolveHooksConfig(homeDir?: string): { claudeCode?: string; codex?: string };
-  // Session-log ZIP export sink (see ./session-export.ts): writes one archive
-  // under sessionExportRoot() and returns its absolute path. The filename is
+  // Session-log ZIP export sink (see ./session-export.ts): resolves the
+  // absolute path for one archive under sessionExportRoot(). The filename is
   // basenamed so a hostile session id can never escape the exports dir.
-  writeSessionExportFile(filename: string, data: Uint8Array): string;
+  // The exporter streams bytes to the path itself (never retained in memory).
+  resolveSessionExportPath(filename: string): string;
   // Tool-executor services (db-bound; same queries the executor ran directly).
   getFullSnapshot(): ReturnType<typeof getFullSnapshotImpl>;
   findLiveNoteByTitle(projectId: string, title: string): ReturnType<typeof findLiveNoteByTitleImpl>;
@@ -389,12 +390,10 @@ export function createHostStore(db: Database.Database): HostStore {
       return resolveHooksConfig(homeDir);
     },
 
-    writeSessionExportFile(filename: string, data: Uint8Array): string {
+    resolveSessionExportPath(filename: string): string {
       const dir = sessionExportRoot();
       fs.mkdirSync(dir, { recursive: true });
-      const filePath = path.join(dir, path.basename(filename));
-      fs.writeFileSync(filePath, data);
-      return filePath;
+      return path.join(dir, path.basename(filename));
     },
 
     getFullSnapshot(): ReturnType<typeof getFullSnapshotImpl> {

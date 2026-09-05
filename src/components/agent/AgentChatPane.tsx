@@ -682,7 +682,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           {session.mode === "execute" && planNoteContent && <PlanTaskList content={planNoteContent} />}
           <AgentGoalChip goal={sessionGoal} />
           {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && <AgentTodoDock todos={sessionTodos ?? []} live={false} />}
-          {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} />}
+          {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} sessionId={session.sessionId} />}
         </div>
       )}
       composerProps={{

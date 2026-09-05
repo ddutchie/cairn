@@ -10,8 +10,9 @@
  * text-first ordering, PDF degradation, no-store fallback), not the
  * upstream store's image round-trip.
  */
-import { describe, it, expect, vi } from "vitest";
-import { buildCordisUserContent } from "./cairn-attachment-store";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { Context } from "@deepseek-ai/cordis";
+import { buildCordisUserContent, CairnAttachmentStore, __setBlobsBudgetForTest } from "./cairn-attachment-store";
 
 const PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 const PDF_DATA_URL = "data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOfCg==";
@@ -136,5 +137,46 @@ describe("buildCordisUserContent", () => {
     const blocks = await buildCordisUserContent(ctxWith(store), "big", imgs);
     expect(blocks.filter((b) => b.type === "image")).toHaveLength(1);
     expect(store.saveImage).toHaveBeenCalledOnce();
+  });
+});
+
+describe("CairnAttachmentStore retention budget", () => {
+  afterEach(() => { __setBlobsBudgetForTest(undefined); });
+
+  /** Distinct 1px PNG payloads (trailing byte differs; header dims identical). */
+  function pngVariant(tag: number): Uint8Array {
+    const base = Buffer.from(PNG_DATA_URL.split(",", 2)[1], "base64");
+    return new Uint8Array([...base, tag]);
+  }
+
+  it("evicts least-recently-used entries past the budget, failing closed", async () => {
+    // ~71 bytes each; a 150-byte budget holds two, not three.
+    __setBlobsBudgetForTest(150);
+    const ctx = new Context();
+    try {
+      const store = new CairnAttachmentStore(ctx);
+      const a = await store.saveImage({ data: pngVariant(1), mediaType: "image/png" });
+      const b = await store.saveImage({ data: pngVariant(2), mediaType: "image/png" });
+      await store.saveImage({ data: pngVariant(3), mediaType: "image/png" });
+      await expect(store.readImage(a)).rejects.toThrow(/not found/i);
+      await expect(store.readImage(b)).resolves.toBeDefined();
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("refreshes recency on read, so hot entries survive", async () => {
+    __setBlobsBudgetForTest(150);
+    const ctx = new Context();
+    try {
+      const store = new CairnAttachmentStore(ctx);
+      const a = await store.saveImage({ data: pngVariant(1), mediaType: "image/png" });
+      await store.saveImage({ data: pngVariant(2), mediaType: "image/png" });
+      await store.readImage(a);
+      await store.saveImage({ data: pngVariant(3), mediaType: "image/png" });
+      await expect(store.readImage(a)).resolves.toBeDefined();
+    } finally {
+      await ctx.fiber.dispose();
+    }
   });
 });

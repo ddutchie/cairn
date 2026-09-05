@@ -43,6 +43,8 @@ import {
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { getHostStore } from "./host-store";
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -75,18 +77,20 @@ function readInvocationSessionId(invocation: ExportInvocationLike): string | und
 }
 
 /**
- * Stream one session-log ZIP to memory. The host never holds the whole
- * archive plus the whole log: entries stream through fflate incrementally
- * and only the collected chunks accumulate (bounded by the session size —
- * an export is an explicit user action, not a background task).
+ * Stream one session-log ZIP straight to disk. Chunks flow from fflate to
+ * the file with backpressure via pipeline — the host never retains the
+ * archive in memory, so media-heavy sessions can't exhaust Electron memory.
+ * On any failure (including abort) the partial file is unlinked:
+ * fail-closed, never a partial archive.
  */
-export async function exportSessionLogBytes(
+export async function streamSessionLogToFile(
   ready: SessionLogExportReady,
   root: SessionRawArtifact,
   sessionId: ReturnType<typeof SessionId>,
   includeDescendants: boolean,
+  filePath: string,
   signal: AbortSignal,
-): Promise<Uint8Array> {
+): Promise<number> {
   const stream = streamSessionLogZip(
     ready,
     root,
@@ -95,27 +99,32 @@ export async function exportSessionLogBytes(
     DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
     signal,
   );
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    total += value.byteLength;
+  const file = fs.createWriteStream(filePath);
+  let bytes = 0;
+  const counter = new Transform({
+    transform(chunk: Uint8Array, _encoding, callback) {
+      bytes += chunk.byteLength;
+      callback(null, chunk);
+    },
+  });
+  try {
+    await pipeline(
+      Readable.fromWeb(stream as never),
+      counter,
+      file,
+      { signal },
+    );
+    return bytes;
+  } catch (err) {
+    try { fs.unlinkSync(filePath); } catch { /* best-effort cleanup */ }
+    throw err;
   }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
 }
 
 /**
  * Export one session's log to a ZIP file: flush the live session, read the
- * canonical JSONL, stream the archive, write it via `writeFile`.
+ * canonical JSONL, stream the archive straight to `destDir` (never retained
+ * in memory — see streamSessionLogToFile).
  *
  * Fail-closed: unknown session rejects (`Session not found.`), missing
  * services reject (`unavailable`) — never an empty or partial file, never a
@@ -124,7 +133,7 @@ export async function exportSessionLogBytes(
 export async function exportSessionLog(
   deps: SessionLogExportDeps,
   sessionIdValue: string,
-  writeFile: (filename: string, data: Uint8Array) => string,
+  destDir: string,
   opts?: { includeDescendants?: boolean; signal?: AbortSignal },
 ): Promise<{ path: string; bytes: number }> {
   const sessionId = SessionId(sessionIdValue);
@@ -152,37 +161,37 @@ export async function exportSessionLog(
   // backend failure — both reject, never an empty file.
   const root = await deps.sessionPersistence.readRaw(sessionId, signal);
   if (root === undefined) throw new Error(`Session not found: "${sessionIdValue}"`);
-  const bytes = await exportSessionLogBytes(
+  fs.mkdirSync(destDir, { recursive: true });
+  const filePath = path.join(destDir, path.basename(sessionLogZipFilename(sessionIdValue)));
+  const bytes = await streamSessionLogToFile(
     ready,
     root,
     sessionId,
     opts?.includeDescendants ?? false,
+    filePath,
     signal,
   );
-  const filePath = writeFile(sessionLogZipFilename(sessionIdValue), bytes);
-  return { path: filePath, bytes: bytes.byteLength };
+  return { path: filePath, bytes };
 }
 
 /**
- * Resolve the export-file writer: the per-turn HostStore when one is
+ * Resolve the export destination dir: the per-turn HostStore when one is
  * provided (agent ctx first, then the shared ctx — `cairnDbPlugin` mounts
  * per session/turn), otherwise a tmpdir fallback so the command still
  * fail-softs outside a session turn instead of erroring.
  */
-function resolveWriter(
+function resolveExportDir(
   ctx: Context,
   invocation: ExportInvocationLike,
-): (filename: string, data: Uint8Array) => string {
+): string {
   const agentCtx = invocation.agent?.ctx;
   const host = (agentCtx ? getHostStore(agentCtx) : undefined) ?? getHostStore(ctx);
-  if (host) return (filename, data) => host.writeSessionExportFile(filename, data);
-  return (filename, data) => {
-    const dir = path.join(os.tmpdir(), "cairn-session-exports");
-    fs.mkdirSync(dir, { recursive: true });
-    const filePath = path.join(dir, path.basename(filename));
-    fs.writeFileSync(filePath, data);
-    return filePath;
-  };
+  // The store resolves per-file paths (basename protection lives there), so
+  // derive the dir from a constant probe name — never from session input.
+  if (host) return path.dirname(host.resolveSessionExportPath("export.zip"));
+  const dir = path.join(os.tmpdir(), "cairn-session-exports");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 /** `/export` handler: root-session ZIP to disk, path back as command text. */
@@ -201,7 +210,7 @@ async function handleExportCommand(ctx: Context, invocation: {
     const { path: filePath, bytes } = await exportSessionLog(
       sessionLogExportDeps(ctx),
       sessionIdValue,
-      resolveWriter(ctx, invocation),
+      resolveExportDir(ctx, invocation),
     );
     return { kind: "success", text: `Session log exported to ${filePath} (${bytes} bytes).` };
   } catch (err) {

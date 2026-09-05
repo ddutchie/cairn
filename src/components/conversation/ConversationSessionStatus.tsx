@@ -70,7 +70,7 @@ export function ConversationSessionStatus({ sessionId }: { sessionId: string }) 
   return (
     <>
       <AgentGoalChip goal={sessionGoal} />
-      {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} />}
+      {(sessionJobs?.length ?? 0) > 0 && <AgentJobsDock jobs={sessionJobs ?? []} sessionId={sessionId} />}
     </>
   );
 }

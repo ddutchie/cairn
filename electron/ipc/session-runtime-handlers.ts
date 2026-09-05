@@ -503,10 +503,12 @@ export function registerSessionRuntimeHandlers(
   // ── session:job-kill ─────────────────────────────────────────────────────
   // Renderer-driven Kill for a dsh background job (jobs dock). Same
   // {ok:false, code} envelope as subagent:* (owner-unavailable when the owner
-  // turn ended, registry passthrough otherwise).
-  registerIpcHandle("session:job-kill", (_event, { jobId }: { jobId: string }) => handle(async () => {
+  // turn ended, not-owner on a cross-session stop, registry passthrough
+  // otherwise). The requesting session id is mandatory — the bridge only
+  // stops jobs the caller's dock would show (unowned, or its own).
+  registerIpcHandle("session:job-kill", (_event, { jobId, sessionId }: { jobId: string; sessionId: string }) => handle(async () => {
     const { killJob } = await import("../cordis/jobs-bridge");
-    return subagentResult(() => Promise.resolve(killJob(jobId)));
+    return subagentResult(() => Promise.resolve(killJob(jobId, sessionId)));
   }));
 
   // ── session:goal ─────────────────────────────────────────────────────────

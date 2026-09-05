@@ -94,17 +94,13 @@ describe("session-export command registration", () => {
 });
 
 describe("exportSessionLog with a fixture session", () => {
-  it("writes a real ZIP to the sink dir", async () => {
+  it("streams a real ZIP to the sink dir (nothing retained in memory)", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-export-test-"));
     try {
       const { path: filePath, bytes } = await exportSessionLog(
         stubDeps() as never,
         SESSION_ID,
-        (filename, data) => {
-          const target = path.join(dir, path.basename(filename));
-          fs.writeFileSync(target, data);
-          return target;
-        },
+        dir,
       );
       expect(path.basename(filePath)).toBe(`dsh-session-${SESSION_ID}.zip`);
       expect(bytes).toBeGreaterThan(0);
@@ -122,12 +118,8 @@ describe("exportSessionLog with a fixture session", () => {
   it("rejects cleanly for an unknown session (no file written)", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-export-test-"));
     try {
-      let wrote = false;
-      await expect(exportSessionLog(stubDeps() as never, "missing-session", () => {
-        wrote = true;
-        return path.join(dir, "must-not-exist.zip");
-      })).rejects.toThrow(/not found/i);
-      expect(wrote).toBe(false);
+      await expect(exportSessionLog(stubDeps() as never, "missing-session", dir)).rejects.toThrow(/not found/i);
+      expect(fs.readdirSync(dir)).toEqual([]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -137,7 +129,7 @@ describe("exportSessionLog with a fixture session", () => {
     await expect(exportSessionLog(
       { sessionQuery: undefined, sessionPersistence: undefined, attachments: undefined, sessions: undefined },
       SESSION_ID,
-      () => "/tmp/must-not-exist.zip",
+      "/tmp/must-not-exist-cairn-export",
     )).rejects.toThrow(/unavailable/i);
   });
 });

@@ -50,6 +50,24 @@ const DEFAULT_LIMITS: ImageAttachmentLimits = {
 interface Dims { width: number; height: number }
 
 /**
+ * Process-wide retention budget for accepted image bytes. Per-message caps
+ * bound one turn's intake, but accepted images otherwise live in `blobs`
+ * for the process lifetime — distinct images accumulate without bound
+ * (20 MiB each). When an insert would exceed the budget, the
+ * least-recently-used entries are evicted first (Map insertion order;
+ * recency refreshes on save-hit and on read). An evicted id fails closed
+ * with ATTACHMENT_NOT_FOUND — the same error as an unknown id, which
+ * callers already handle. 512 MiB ≈ 25 max-size images: generous for real
+ * sessions, fatal never.
+ */
+const MAX_BLOBS_BYTES = 512 * 1024 * 1024;
+let blobsBudgetBytes = MAX_BLOBS_BYTES;
+/** Test seam: shrink the retention budget so eviction is exercisable. */
+export function __setBlobsBudgetForTest(bytes: number | undefined): void {
+  blobsBudgetBytes = bytes ?? MAX_BLOBS_BYTES;
+}
+
+/**
  * Read the intrinsic pixel dimensions from a raster header. Supports the four
  * media types dsh accepts. Throws AttachmentError("IMAGE_TYPE_MISMATCH") when
  * the declared media type does not match the actual bytes.
@@ -118,6 +136,25 @@ function decodeDimensions(bytes: Uint8Array, declared: ImageMediaType): Dims {
 export class CairnAttachmentStore extends AttachmentStore {
   readonly imageLimits: ImageAttachmentLimits = DEFAULT_LIMITS;
   private readonly blobs = new Map<string, { data: Uint8Array; ref: ImageAttachmentRef }>();
+  /** Live sum of blobs values' byteLengths — avoids re-walking the map. */
+  private blobsBytes = 0;
+
+  /** Refresh LRU recency for a retained entry (Map insertion order = age). */
+  private touch(id: string, entry: { data: Uint8Array; ref: ImageAttachmentRef }): void {
+    this.blobs.delete(id);
+    this.blobs.set(id, entry);
+  }
+
+  /** Evict least-recently-used entries until `bytes` more fit the budget. */
+  private evictFor(bytes: number): void {
+    while (this.blobsBytes + bytes > blobsBudgetBytes) {
+      const oldest = this.blobs.keys().next();
+      if (oldest.done) break;
+      const entry = this.blobs.get(oldest.value);
+      this.blobs.delete(oldest.value);
+      this.blobsBytes -= entry?.data.byteLength ?? 0;
+    }
+  }
 
   constructor(ctx: Context) {
     super(ctx);
@@ -131,7 +168,10 @@ export class CairnAttachmentStore extends AttachmentStore {
     const { dims } = this.assertAndMeasure(input);
     const id = crypto.createHash("sha256").update(input.data).digest("hex");
     const existing = this.blobs.get(id);
-    if (existing) return existing.ref;
+    if (existing) {
+      this.touch(id, existing);
+      return existing.ref;
+    }
     const ref: ImageAttachmentRef = {
       attachmentId: AttachmentId(id),
       mediaType: input.mediaType,
@@ -140,7 +180,9 @@ export class CairnAttachmentStore extends AttachmentStore {
       height: dims.height,
       ...(input.name === undefined ? {} : { name: input.name }),
     };
+    this.evictFor(input.data.byteLength);
     this.blobs.set(id, { data: input.data, ref });
+    this.blobsBytes += input.data.byteLength;
     return ref;
   }
 
@@ -148,6 +190,7 @@ export class CairnAttachmentStore extends AttachmentStore {
     if (signal?.aborted) throw signal.reason ?? new Error("aborted");
     const hit = this.blobs.get(String(ref.attachmentId));
     if (!hit) throw new AttachmentError(`attachment ${String(ref.attachmentId)} not found`, "ATTACHMENT_NOT_FOUND");
+    this.touch(String(ref.attachmentId), hit);
     return { ref: hit.ref, data: hit.data };
   }
 
@@ -169,6 +212,7 @@ export class CairnAttachmentStore extends AttachmentStore {
     if (signal?.aborted) throw signal.reason ?? new Error("aborted");
     const hit = this.blobs.get(String(ref.attachmentId));
     if (!hit) throw new AttachmentError(`attachment ${String(ref.attachmentId)} not found`, "ATTACHMENT_NOT_FOUND");
+    this.touch(String(ref.attachmentId), hit);
     const variantId = ImageVariantId(
       crypto
         .createHash("sha256")
