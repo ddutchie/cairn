@@ -395,12 +395,20 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         return opened;
       }
     },
-    run: async ({ agent }) => {
+    run: async ({ agent, resources }) => {
       const runStart = markNow();
       timer.mark("open agent (cache hit, or resume/replay JSONL)");
       const typed = agent as unknown as CordisTurnAgent & { session: unknown };
       currentAttemptSessionId = SessionId(`chat-${req.threadId}`);
       const content = await buildCordisUserContent(ctx, req.message, req.images);
+      // Pin this turn's image refs against cross-turn eviction (another
+      // session's heavy intake must not evict them mid-turn). Released with
+      // the turn's resources (finally-disposed) — pins can't leak.
+      try {
+        const { pinTurnAttachments } = await import("./cairn-attachment-store");
+        const store = ctx.get("attachments") as Parameters<typeof pinTurnAttachments>[0];
+        resources.add(pinTurnAttachments(store, content as never));
+      } catch { /* pinning is best-effort; eviction still fail-closes */ }
       markLog("run: content built, dispatching followup", runStart);
       timer.mark("build user content (pre-turn setup total)");
       const { firstSeq } = await runCordisTurn({ agent: typed, content, signal });

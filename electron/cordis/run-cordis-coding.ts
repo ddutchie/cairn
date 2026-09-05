@@ -307,7 +307,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       timer.mark("open agent (inspect + resume JSONL)");
       return opened;
     },
-    run: async ({ agent, mount }) => {
+    run: async ({ agent, mount, resources }) => {
       const typedAgent = agent as CordisTurnAgent & { session: { events: unknown[] } };
     try {
       // ctx.tools is dsh-tools; `schemas` returns the registered set. The
@@ -372,6 +372,13 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // are admitted through the mounted attachment store and become ImageBlocks
     // (step 2l); without this, req.images would be silently dropped.
     const content = await buildCordisUserContent(ctx, req.message, req.images);
+    // Pin this turn's image refs against cross-turn eviction (same shared
+    // store as chat). Released with the turn's resources (finally-disposed).
+    try {
+      const { pinTurnAttachments } = await import("./cairn-attachment-store");
+      const store = ctx.get("attachments") as Parameters<typeof pinTurnAttachments>[0];
+      resources.add(pinTurnAttachments(store, content as never));
+    } catch { /* pinning is best-effort; eviction still fail-closes */ }
     timer.mark("build user content (pre-turn setup total)");
     const turn = await runCordisTurn({ agent: typedAgent, content, signal, completion: terminal });
     timer.mark("model turn (followup → idle)");

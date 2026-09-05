@@ -68,6 +68,34 @@ export function __setBlobsBudgetForTest(bytes: number | undefined): void {
 }
 
 /**
+ * Pin every image attachment referenced by freshly built content blocks for
+ * the active turn. Returns an unpin-all disposer for the turn's resource
+ * stack (finally-disposed, so pins can't leak). Fail-open: unknown block
+ * shapes are skipped, never thrown — eviction still fail-closes reads.
+ */
+export function pinTurnAttachments(
+  store: Pick<CairnAttachmentStore, "pin" | "unpin"> | undefined,
+  blocks: readonly unknown[],
+): () => void {
+  if (!store) return () => {};
+  const ids: string[] = [];
+  for (const b of blocks) {
+    const id = (b as { attachment?: { attachmentId?: unknown } } | null | undefined)?.attachment?.attachmentId;
+    if (typeof id === "string" && id.length > 0) {
+      try {
+        store.pin(id);
+        ids.push(id);
+      } catch { /* pinning is best-effort */ }
+    }
+  }
+  return () => {
+    for (const id of ids) {
+      try { store.unpin(id); } catch { /* noop */ }
+    }
+  };
+}
+
+/**
  * Read the intrinsic pixel dimensions from a raster header. Supports the four
  * media types dsh accepts. Throws AttachmentError("IMAGE_TYPE_MISMATCH") when
  * the declared media type does not match the actual bytes.
@@ -138,6 +166,15 @@ export class CairnAttachmentStore extends AttachmentStore {
   private readonly blobs = new Map<string, { data: Uint8Array; ref: ImageAttachmentRef }>();
   /** Live sum of blobs values' byteLengths — avoids re-walking the map. */
   private blobsBytes = 0;
+  /**
+   * Ids pinned by active turns. Eviction skips these: without pinning, one
+   * session's heavy intake could evict another session's in-flight image
+   * between its save and read (same shared store, concurrent turns). Pins
+   * are turn-scoped — runners register the unpin-all disposer on their
+   * turn resources, which dispose in a finally, so pins can't leak. If
+   * everything is pinned, the budget goes soft rather than hanging the save.
+   */
+  private readonly pinned = new Set<string>();
 
   /** Refresh LRU recency for a retained entry (Map insertion order = age). */
   private touch(id: string, entry: { data: Uint8Array; ref: ImageAttachmentRef }): void {
@@ -147,13 +184,24 @@ export class CairnAttachmentStore extends AttachmentStore {
 
   /** Evict least-recently-used entries until `bytes` more fit the budget. */
   private evictFor(bytes: number): void {
-    while (this.blobsBytes + bytes > blobsBudgetBytes) {
-      const oldest = this.blobs.keys().next();
-      if (oldest.done) break;
-      const entry = this.blobs.get(oldest.value);
-      this.blobs.delete(oldest.value);
+    if (this.blobsBytes + bytes <= blobsBudgetBytes) return;
+    for (const id of [...this.blobs.keys()]) {
+      if (this.blobsBytes + bytes <= blobsBudgetBytes) break;
+      if (this.pinned.has(id)) continue;
+      const entry = this.blobs.get(id);
+      this.blobs.delete(id);
       this.blobsBytes -= entry?.data.byteLength ?? 0;
     }
+  }
+
+  /** Pin one retained id against eviction (turn-scoped; must be unpinned). */
+  pin(id: string): void {
+    if (this.blobs.has(id)) this.pinned.add(id);
+  }
+
+  /** Release one pin; no-op when absent. */
+  unpin(id: string): void {
+    this.pinned.delete(id);
   }
 
   constructor(ctx: Context) {
