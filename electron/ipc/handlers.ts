@@ -119,6 +119,10 @@ export function registerAppHandlers(
     readWorkspaceConfig(userDataPath) === null
   ));
 
+  // Dev-mode flag for dev-gated UI (MCP dsh-path spike toggle). True when
+  // running unpackaged (local dev / dev build); always false in the release.
+  registerIpcHandle("app:isDev", () => handle(() => !app.isPackaged));
+
   // Merge a partial update into theme.json without clobbering the other keys.
   // theme.json holds BOTH `theme` and `accent` so the boot splash can restore
   // them; writing one setting must preserve the other (see app:setTheme /

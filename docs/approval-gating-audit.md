@@ -1,5 +1,7 @@
 # Approval-Gating Audit — dsh ↔ Cairn
 
+> **Fixes landed; pointers rotted.** The gating design and Phase A–C fixes described here match the code, but all file:line refs predate the refactor — verify against `electron/cordis/cairn-plugins.ts`, `approval-grants.ts`, `approval-transports.ts`, and `shared/agent/tool-risk.ts`, not the cited lines.
+
 How approval requests travel from the dsh loop through Cordis to the Cairn UI
 and back, what the native dsh contract provides, where our bridge deviates or
 breaks, and the phased fix plan. Sources: parallel audits of (1) the main-process

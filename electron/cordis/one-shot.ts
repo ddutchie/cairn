@@ -18,7 +18,7 @@
 import { getContext, ensureAgentAiAdapter } from "./run-cordis-loop";
 import "./ctx-augment";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import { recordLlmUsage } from "../lib/usage-recorder";
+import { recordUsage, ensureLocalLlmPort } from "./host-store";
 import type { LLMConfig } from "../lib/llm";
 
 export interface OneShotOptions {
@@ -47,8 +47,7 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
   // Ensure the llama-server is running and use its OpenAI-compatible endpoint.
   let effectiveConfig = config;
   if (config.provider === "localllm") {
-    const { ensureLlamaServerRunning } = await import("../lib/llama-server");
-    const port = await ensureLlamaServerRunning();
+    const port = await ensureLocalLlmPort();
     effectiveConfig = { ...config, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
   }
 
@@ -103,7 +102,7 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
 
   // Record usage for the Usage view — same shape as callLLM's recordLlmUsage.
   try {
-    recordLlmUsage({
+    recordUsage({
       source: source as never,
       sessionId: sessionId ?? "one-shot",
       projectId, workspaceId,

@@ -1465,6 +1465,8 @@ interface McpServerInput {
   enabled: boolean; source: string; communityId?: string; version?: string;
   /** Raw (un-namespaced) tool names disabled for this server, workspace-wide. */
   disabledTools?: string[];
+  /** Dev-only: route this server through dsh-mcp-client (parity spike). */
+  dshPath?: boolean;
 }
 
 export function getMcpServers(db: Database.Database, workspaceId: string) {
@@ -1480,8 +1482,8 @@ export function getMcpServerById(db: Database.Database, id: string) {
 export function saveMcpServer(db: Database.Database, s: McpServerInput) {
   const now = ts();
   db.prepare(`
-    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, oauth_client_id, oauth_redirect_uri, oauth_client_id_required, enabled, source, community_id, version, disabled_tools, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, oauth_client_id, oauth_redirect_uri, oauth_client_id_required, enabled, source, community_id, version, disabled_tools, dsh_path, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name        = excluded.name,
       description = excluded.description,
@@ -1498,13 +1500,14 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
       community_id= excluded.community_id,
       version     = excluded.version,
       disabled_tools = excluded.disabled_tools,
+      dsh_path    = excluded.dsh_path,
       updated_at  = excluded.updated_at
   `).run(
     s.id, s.workspaceId, s.name, s.description ?? null, s.transport, s.baseUrl,
     j(s.headers ?? {}), s.authMode ?? "none", s.oauthScope ?? null,
     s.oauthClientId ?? null, s.oauthRedirectUri ?? null, s.oauthClientIdRequired ? 1 : 0,
     s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
-    j(s.disabledTools ?? []), now, now,
+    j(s.disabledTools ?? []), s.dshPath ? 1 : 0, now, now,
   );
   return getMcpServerById(db, s.id)!;
 }

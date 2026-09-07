@@ -127,6 +127,8 @@ export function toMcpServer(row: any) {
     oauthClientId: (row.oauth_client_id ?? undefined) as string | undefined,
     oauthRedirectUri: (row.oauth_redirect_uri ?? undefined) as string | undefined,
     oauthClientIdRequired: row.oauth_client_id_required === 1,
+    /** Dev-only: route this server through dsh-mcp-client (parity spike). */
+    dshPath: row.dsh_path === 1,
     enabled: row.enabled === 1,
     source: (row.source ?? "manual") as "manual" | "community" | "ai-builder",
     communityId: (row.community_id ?? undefined) as string | undefined,

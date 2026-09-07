@@ -51,18 +51,22 @@ const THEMES: Theme[] =
 type Shot = {
   file: string; // relative to SITE_DIR (light goes to root/<file>, dark to dark/<file>)
   view: string; // AppUIState["activeView"]
+  collapsed?: boolean; // when true, the app dock sidebar is collapsed (64px rail) for full-bleed canvases
   setup?: (page: Page) => Promise<void>;
   // Optional pre-capture hook: open modals, set tabs, etc.
 };
 
+// Sidebar collapse plan (selective — dense canvases benefit from width, nav views benefit from context):
+// - collapsed: hero (overview), idea-flow, knowledge-graph, insights → full-bleed marketing shots
+// - expanded: notes, kanban, agent, automations, usage, ai-chat, dashboard → showcase navigation chrome
 const SHOTS: Shot[] = [
-  { file: "hero.png", view: "overview" }, // hero uses the overview/landing; captured as full window
+  { file: "hero.png", view: "overview", collapsed: true }, // full-bleed landing
   { file: "notes.png", view: "notes" },
   { file: "kanban.png", view: "board" },
   { file: "docs/calendar-month.png", view: "calendar" },
-  { file: "idea-flow.png", view: "flow" },
-  { file: "knowledge-graph.png", view: "graph" },
-  { file: "insights.png", view: "insights", setup: async (p) => {
+  { file: "idea-flow.png", view: "flow", collapsed: true },
+  { file: "knowledge-graph.png", view: "graph", collapsed: true },
+  { file: "insights.png", view: "insights", collapsed: true, setup: async (p) => {
     // Let ridgeline/beeswarm settle — InsightsView mounts D3 canvases on first paint
     await p.waitForTimeout(800);
   }},
@@ -192,6 +196,19 @@ async function setTheme(page: Page, theme: Theme): Promise<void> {
   await page.waitForTimeout(250);
 }
 
+async function setSidebarCollapsed(page: Page, collapsed: boolean): Promise<void> {
+  await page.evaluate(
+    (want) => {
+      const s = (window as unknown as { __cairnStoreRef?: { getState: () => { sidebarCollapsed: boolean; toggleSidebar: () => void } } }).__cairnStoreRef?.getState?.();
+      if (!s) return;
+      if (s.sidebarCollapsed !== want) s.toggleSidebar();
+    },
+    collapsed,
+  );
+  // Sidebar transition is 300ms (DockSidebar) — wait for layout + D3 resize
+  await page.waitForTimeout(320);
+}
+
 async function goToView(page: Page, view: string): Promise<void> {
   await page.evaluate(
     ({ view: v, projId }) => {
@@ -255,6 +272,7 @@ test.describe("screenshots", () => {
         fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
         await goToView(page, shot.view);
+        await setSidebarCollapsed(page, !!shot.collapsed);
         if (shot.setup) await shot.setup(page);
         await prepareForScreenshots(page);
         // Let fonts + D3 settle (Geist from Google Fonts, canvas layout)

@@ -1,5 +1,7 @@
 # Pre-Cordis Leftovers Audit & Cleanup Plan
 
+> **Historical — cleanup complete.** Phases 1–2 landed (builtin loops deleted, `chat-executor` moved to `electron/cordis/`). Keep as archaeology; do not use the file:line refs or the §2 removal list as a map — the tree has moved on.
+
 Audit of everything the pre-Cordis engines left behind, now that Cordis/dsh is
 the **only** engine (all turn loops route through `runCordisLoop` /
 `runCordisCodingLoop`; verified unconditional). Companion to

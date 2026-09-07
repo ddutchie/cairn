@@ -20,6 +20,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
 import { ChatQuickSettings } from "./ChatQuickSettings";
+import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
 import { SuggestedPrompts } from "./SuggestedPrompts";
 import { useCommunityConnectorMap } from "./connector-context";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
@@ -809,6 +810,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           contextLimit={aiConfig.contextLimit ?? 128000}
           actions={(
             <>
+              {threadId && <SubagentCatalogAction parentSessionId={chatSessionId(threadId)} />}
               {threadId && <ChatQuickSettings disabled={isLoading} />}
               <Tooltip content={timelineOpen ? "Hide timeline scrubber" : "Show timeline scrubber"} side="left">
                 <button onClick={() => setTimelineOpen((v) => !v)} className={cn("p-1 rounded transition-colors", timelineOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]")} aria-pressed={timelineOpen}><History size={11} /></button>
@@ -820,6 +822,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           connectors={connectorMap}
           onRetry={!isLoading ? handleRetry : undefined}
           projection={{ pendingQuestions }}
+          showSessionStatus={!!threadId}
           onAnswerQuestions={(answers) => { if (!answerQuestions(answers)) void handleSend(answers); }}
           emptyState={<ConversationEmptyState content={<SuggestedPrompts onSend={handleSend} disabled={isLoading || !threadId} prompts={activeView === "graph" ? graphPrompts : undefined} subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined} />} />}
           transcriptFooter={ChatTranscriptPadding}

@@ -33,9 +33,9 @@ import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordi
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
-import { getSessionRoot, getContext } from "../cordis/run-cordis-loop";
+import { getSessionRoot, getContext, withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
 import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./approval-state";
-import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
+import { getPlanModeActive } from "../cordis/plan-fold";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
@@ -473,6 +473,93 @@ export function registerSessionRuntimeHandlers(
     return readContextRing(sessionId);
   }));
 
+  // ── subagent:* — human continuable-child controls ───────────────────────
+  // Model-side equivalents are send_message / interrupt_agent / list_agents;
+  // these are the renderer-driven host path (catalog popover, per-trace
+  // message/Stop). Errors surface as { ok:false, code } for toasts — the
+  // stable control vocabulary (parent-unavailable, not-resumable,
+  // unauthorized, delivery-unavailable, bad-request, cancelled, internal).
+  const subagentResult = async <T>(fn: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; code: string; message: string }> => {
+    try {
+      return { ok: true, value: await fn() };
+    } catch (err) {
+      const code = (err as { code?: string })?.code ?? "internal";
+      return { ok: false, code, message: err instanceof Error ? err.message : "subagent control failed" };
+    }
+  };
+  registerIpcHandle("subagent:list", (_event, { parentSessionId, scope }: { parentSessionId: string; scope?: unknown }) => handle(async () => {
+    const { listSubagentChildren, normalizeSubagentScope } = await import("../cordis/subagent-control");
+    return subagentResult(() => listSubagentChildren(parentSessionId, normalizeSubagentScope(scope)));
+  }));
+  registerIpcHandle("subagent:interrupt", (_event, { parentSessionId, childId }: { parentSessionId: string; childId: string }) => handle(async () => {
+    const { interruptSubagentChild } = await import("../cordis/subagent-control");
+    return subagentResult(() => interruptSubagentChild(parentSessionId, childId));
+  }));
+  registerIpcHandle("subagent:message", (_event, { parentSessionId, childId, text }: { parentSessionId: string; childId: string; text: string }) => handle(async () => {
+    const { messageSubagentChild } = await import("../cordis/subagent-control");
+    return subagentResult(() => messageSubagentChild(parentSessionId, childId, text));
+  }));
+
+  // ── session:job-kill ─────────────────────────────────────────────────────
+  // Renderer-driven Kill for a dsh background job (jobs dock). Same
+  // {ok:false, code} envelope as subagent:* (owner-unavailable when the owner
+  // turn ended, not-owner on a cross-session stop, registry passthrough
+  // otherwise). The requesting session id is mandatory — the bridge only
+  // stops jobs the caller's dock would show (unowned, or its own).
+  registerIpcHandle("session:job-kill", (_event, { jobId, sessionId }: { jobId: string; sessionId: string }) => handle(async () => {
+    const { killJob } = await import("../cordis/jobs-bridge");
+    return subagentResult(() => Promise.resolve(killJob(jobId, sessionId)));
+  }));
+
+  // ── session:goal ─────────────────────────────────────────────────────────
+  // On-demand current-goal snapshot for the renderer goal chip (initial mount;
+  // live changes arrive via session:projection kind:"goal" from goal-bridge).
+  // Null goal = no current goal (pre-create / cleared) → chip hides. Same
+  // {ok:true,value}|{ok:false,code,message} envelope as subagent:*.
+  registerIpcHandle("session:goal", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
+    const [{ getContext }, { readGoalSnapshot }] = await Promise.all([
+      import("../cordis/run-cordis-loop"),
+      import("../cordis/goal-bridge"),
+    ]);
+    const ctx = await getContext();
+    return subagentResult(() => readGoalSnapshot(ctx as never, sessionId));
+  }));
+
+  // ── session:feedback{,-get} ─────────────────────────────────────────────
+  // Per-message thumbs ratings + notes on assistant bubbles (dsh
+  // message-feedback sidecar). Same {ok:true,value}|{ok:false,code,message}
+  // envelope as subagent:*. The /feedback command needs no handler — it is an
+  // ENTRY_LIST-mounted command and surfaces via cordis:listCommands.
+  registerIpcHandle("session:feedback", (_event, req: { sessionId: string; messageId: string; rating: "positive" | "negative"; note?: string }) => handle(async () => {
+    const [{ getContext }, { putMessageFeedback }] = await Promise.all([
+      import("../cordis/run-cordis-loop"),
+      import("../cordis/message-feedback"),
+    ]);
+    const ctx = await getContext();
+    return subagentResult(() => putMessageFeedback(ctx as never, req));
+  }));
+  registerIpcHandle("session:feedback-get", (_event, req: { sessionId: string; messageId: string }) => handle(async () => {
+    const [{ getContext }, { getMessageFeedback }] = await Promise.all([
+      import("../cordis/run-cordis-loop"),
+      import("../cordis/message-feedback"),
+    ]);
+    const ctx = await getContext();
+    return subagentResult(() => getMessageFeedback(ctx as never, req.sessionId, req.messageId));
+  }));
+
+  // ── session:schedule-list ────────────────────────────────────────────────
+  // On-demand active-reminder snapshot for the header alarm pill (polled on
+  // header mount + turn end — no standing subscription). Empty list = overlay
+  // off or no reminders → pill hides. Same envelope as subagent:*.
+  registerIpcHandle("session:schedule-list", (_event, req: { sessionId: string }) => handle(async () => {
+    const [{ getContext }, { listSchedules }] = await Promise.all([
+      import("../cordis/run-cordis-loop"),
+      import("../cordis/schedule-read"),
+    ]);
+    const ctx = await getContext();
+    return subagentResult(() => listSchedules(ctx as never, req.sessionId));
+  }));
+
   // ── session:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
     const profile = q.getSessionProfile(ctx.db, sessionId)?.profile;
@@ -690,7 +777,7 @@ export function registerSessionRuntimeHandlers(
       // still edit its scripts.
       sandboxMode: "workspace-write",
        role,
-       onSessionEvent: (sessionEvent: SessionEvent) => broadcastEvent("session:event", { sessionId, event: sessionEvent }),
+       onSessionEvent: (sessionEvent: SessionEvent) => broadcastEvent("session:event", { sessionId, event: withToolResultView(withToolCallView(sessionEvent)) }),
     });
   });
 
@@ -951,8 +1038,8 @@ export function registerSessionRuntimeHandlers(
           if (commandResult?.kind !== "success") {
             throw new Error(commandResult?.text ?? "plan mode command was not accepted");
           }
-          const events = ((handle as { agent: { session?: { events?: readonly SessionEvent[] } } }).agent.session?.events ?? []);
-          const committedMode = foldPlanMode(events) ? "plan" : "execute";
+          const session = (handle as { agent: { session?: unknown } }).agent.session;
+          const committedMode = getPlanModeActive(cordisCtx, session) ? "plan" : "execute";
           if (committedMode !== mode) {
             throw new Error(`plan mode command did not commit ${mode}`);
           }

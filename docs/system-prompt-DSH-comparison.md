@@ -1,5 +1,7 @@
 # System Prompt & Session Build — Cairn vs DSH
 
+> **Version-behind snapshot (dsh 0.1.1-rc.2 era).** The three-part dsh model (sections/contexts/variables) still holds, but the skills paragraphs contradict each other (§1c is current — skills are dsh-owned via the registry) and all file:line refs have drifted. For the live picture see Settings → AI tabs (prompt previews) and `electron/cordis/cairn-plugins.ts`.
+
 How each side assembles the model's system prompt and the session it runs in,
 what's shared, and what the `includeRuntimeContext` ("include context")
 parameter actually does.

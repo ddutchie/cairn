@@ -54,6 +54,25 @@ export function registerSessionHandlers(ctx: DbContext): void {
   registerIpcHandle("db:session:delete", (_e, { id }) => handle(() => q.deleteCodingSession(ctx.db, id)));
   registerIpcHandle("db:session:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 
+  // ── session:permissions ──────────────────────────────────────────────
+  // On-demand permission-preset select for the renderer switcher (initial
+  // mount; live changes arrive via session:projection kind:"permissions" from
+  // permissions-bridge). Same {ok:true,value}|{ok:false,code,message} envelope
+  // as subagent:* — unavailable while the presets service is inject-gated on
+  // per-turn `shell` (the switcher hides until then). Writes go through the
+  // existing cordis:executeCommand path (`/permission <preset>`), not here.
+  registerIpcHandle("session:permissions", (_e, { sessionId }: { sessionId: string }) => handle(async () => {
+    const { getContext } = await import("../cordis/run-cordis-loop");
+    const { readPermissionsSnapshot } = await import("../cordis/permissions-bridge");
+    const cordisCtx = await getContext();
+    try {
+      return { ok: true as const, value: await readPermissionsSnapshot(cordisCtx as never, sessionId) };
+    } catch (err) {
+      const code = (err as { code?: string })?.code ?? "internal";
+      return { ok: false as const, code, message: err instanceof Error ? err.message : "permissions snapshot failed" };
+    }
+  }));
+
   // Session-as-truth load: rebuild the coding session's transcript from the dsh
   // JSONL session log (same source the agent resumes from) via the shared
   // session-replay helpers, matching the chat path. The coding agent's dsh session id
@@ -78,7 +97,17 @@ export function registerSessionHandlers(ctx: DbContext): void {
       // registered before presentationMeta recomputation (see chat-session).
       await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, sessionId);
       const liveSessions = (cordisCtx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((cordisCtx as unknown as { sessions: unknown }).sessions);
-      const { messages, usage, contextRing, todos, stats } = await loadSessionMessages(pers, liveSessions, sessionId);
+      // Mounted-unit `sessionStats` totals first (see chat-session.ts), fold fallback.
+      let statsSnapshot: import("../cordis/session-stats").SessionStatsSnapshot | undefined;
+      try {
+        const { readSessionStatsSnapshot } = await import("../cordis/session-stats");
+        const live = (cordisCtx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions?.get?.(sessionId as never);
+        statsSnapshot = readSessionStatsSnapshot(
+          (cordisCtx as unknown as { sessionProjections?: import("../cordis/session-stats").SessionStatsRegistryLike }).sessionProjections,
+          live,
+        );
+      } catch { /* fold fallback */ }
+      const { messages, usage, contextRing, todos, stats } = await loadSessionMessages(pers, liveSessions, sessionId, statsSnapshot ? { statsSnapshot } : undefined);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
       const agentMessages = toAgentMessages(enrichToolCallsWithMeta(messages));
       return { messages: agentMessages, usage, contextRing, todos, stats };

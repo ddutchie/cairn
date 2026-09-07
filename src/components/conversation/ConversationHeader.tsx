@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ContextRing } from "@/components/agent/ContextRing";
+import { SchedulePill } from "@/components/conversation/SchedulePill";
 import type { TokenBreakdown } from "@/types";
 import { MoreHorizontal } from "lucide-react";
 import {
@@ -25,10 +26,12 @@ interface ConversationHeaderProps {
   usage?: ConversationUsage;
   contextLimit: number;
   actions?: ReactNode;
+  /** Opt-in session-reminder pill (dsh schedule overlay). Self-hiding when off. */
+  schedule?: { sessionId: string; pollKey?: unknown };
 }
 
 /** Shared session header shell; Chat and Coding provide only title/actions. */
-export function ConversationHeader({ title, usage, contextLimit, actions }: ConversationHeaderProps) {
+export function ConversationHeader({ title, usage, contextLimit, actions, schedule }: ConversationHeaderProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [overflows, setOverflows] = useState(false);
   useEffect(() => {
@@ -44,6 +47,7 @@ export function ConversationHeader({ title, usage, contextLimit, actions }: Conv
     <div ref={ref} className="flex items-center gap-1.5 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0 overflow-hidden min-w-0">
       <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] truncate flex-1 min-w-0">{title}</span>
       {usage && <span className="shrink-0 flex items-center"><ContextRing {...usage} contextLimit={contextLimit} /></span>}
+      {schedule && <SchedulePill sessionId={schedule.sessionId} pollKey={schedule.pollKey} />}
       <span className={`items-center gap-1 shrink-0 flex-nowrap ${overflows ? "hidden" : "flex"}`}>{actions}</span>
       {overflows && actions && (
         <DropdownMenu>

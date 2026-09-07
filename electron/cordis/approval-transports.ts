@@ -19,7 +19,7 @@
  *    no dsh tool runs for a plugin confirm, so nothing else would retire it.
  */
 
-import { newId } from "../db/utils";
+import { newId } from "./host-store";
 import { APPROVAL_TIMEOUT_MS } from "./cairn-plugins";
 import { getSessionGrants } from "./approval-grants";
 import { makeSessionProjection } from "../../shared/agent/session-projection";

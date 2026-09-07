@@ -1,9 +1,11 @@
 /**
  * Agent IPC — coding agent PTY session management.
  *
- * Registers all agent:* registerIpcHandle channels and manages node-pty
- * child processes via AgentSessionManager. Streams PTY data to the
- * renderer via webContents.send.
+ * Registers all agent:* registerIpcHandle channels. PTY child processes are
+ * owned by the shared manager in `electron/lib/pty-sessions.ts` (one spawn /
+ * validation / kill implementation and one live session table for UI shells,
+ * agent runs, and model-owned PTYs) — this file only wires the UI-facing IPC
+ * around it. Streams PTY data to the renderer via webContents.send.
  *
  * All handlers use the existing handle() wrapper from handlers.ts for
  * consistent { data } | { error } responses.
@@ -21,96 +23,27 @@ import { registerIpcHandle } from "./registry";
 
 import fs from "fs";
 import path from "path";
-import os from "os";
 import { execFile } from "child_process";
-import type { Database } from "better-sqlite3";
 import type { DbContext } from "./result-helpers";
-import * as nodePty from "node-pty";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
 import { indexCodebase, reindexFile } from "../lib/codebase-index";
+import {
+  assertWithinCodeDirectory,
+  getPtySession,
+  isSafePath,
+  killPtySession,
+  registerPtySession,
+  resizePtySession,
+  spawnRawPty,
+  spawnShellPty,
+  unregisterPtySession,
+  writePtySession,
+} from "../lib/pty-sessions";
 
-type IPty = nodePty.IPty;
-
-// ── Security ──────────────────────────────────────────────────────────────────
-
-/** Absolute path with no shell metacharacters */
-const SAFE_PATH_RE = /^\/[^;&|`$<>'"\\*?[\]{}!]+$/;
-const SAFE_PATH_WIN_RE = /^[A-Za-z]:\\[^;&|`$<>'"*?[\]{}!]+$/;
-
-export function isSafePath(p: string): boolean {
-  return SAFE_PATH_RE.test(p) || SAFE_PATH_WIN_RE.test(p);
-}
-
-async function getRealPath(p: string, isWrite = false): Promise<string> {
-  // If the path exists:
-  try {
-    const stat = await fs.promises.lstat(p);
-    if (isWrite && stat.isSymbolicLink()) {
-      throw new Error(`Symlinks are not allowed for write paths: ${p}`);
-    }
-    return await fs.promises.realpath(p);
-  } catch (err: unknown) {
-    if ((err as { code?: string }).code !== "ENOENT") {
-      throw err;
-    }
-  }
-  // If it doesn't exist:
-  const parent = path.dirname(p);
-  try {
-    const parentStat = await fs.promises.lstat(parent);
-    if (isWrite && parentStat.isSymbolicLink()) {
-      throw new Error(`Parent directory cannot be a symlink for write paths: ${parent}`);
-    }
-    const realParent = await fs.promises.realpath(parent);
-    return path.join(realParent, path.basename(p));
-  } catch (err: unknown) {
-    if ((err as { code?: string }).code !== "ENOENT") {
-      throw err;
-    }
-  }
-  return path.resolve(p);
-}
-
-/**
- * Assert that `filePath` is safe and confined to one of the registered project
- * code directories. Throws if either check fails, which causes handle() to
- * return { error: "..." } to the renderer without crashing the main process.
- */
-async function assertWithinCodeDirectory(db: Database, filePath: string, isWrite = false): Promise<string> {
-  if (!isSafePath(filePath)) {
-    throw new Error(`Unsafe path: ${filePath}`);
-  }
-  const normalised = await getRealPath(filePath, isWrite);
-  const codeDirs = db
-    .prepare("SELECT code_directory FROM projects WHERE code_directory IS NOT NULL")
-    .all() as { code_directory: string }[];
-  const checkAllowed = await Promise.all(
-    codeDirs.map(async ({ code_directory }) => {
-      try {
-        const dir = await fs.promises.realpath(code_directory);
-        return normalised === dir || normalised.startsWith(dir + path.sep);
-      } catch {
-        return false;
-      }
-    })
-  );
-  const allowed = checkAllowed.some((val) => val === true);
-  if (!allowed) {
-    throw new Error(`Path is outside any registered code directory: ${filePath}`);
-  }
-  return normalised;
-}
-
-// ── Session map ───────────────────────────────────────────────────────────────
-
-interface PtySession {
-  pty: IPty;
-  agentId: string;
-  taskId: string;
-}
-
-const sessions = new Map<string, PtySession>();
+// Kept as a re-export: unit tests (and any external caller) import the guard
+// from here; the implementation lives in the shared PTY manager.
+export { isSafePath };
 
 // ── IPC result wrapper (matches handlers.ts pattern) ─────────────────────────
 
@@ -549,7 +482,7 @@ export function registerAgentHandlers(ctx: DbContext): void {
         }
       }
 
-      const pty = nodePty.spawn(spawnBin, spawnArgs, {
+      const pty = spawnRawPty(spawnBin, spawnArgs, {
         name: "xterm-256color",
         cols: 120,
         rows: 30,
@@ -558,7 +491,7 @@ export function registerAgentHandlers(ctx: DbContext): void {
       });
 
       const sessionId = newId();
-      sessions.set(sessionId, { pty, agentId: payload.agentId, taskId: payload.taskId });
+      registerPtySession(sessionId, { pty, agentId: payload.agentId, taskId: payload.taskId, kind: "agent", cwd: realCwd });
 
       const webContents = event.sender;
 
@@ -569,7 +502,7 @@ export function registerAgentHandlers(ctx: DbContext): void {
       });
 
       pty.onExit(({ exitCode }: { exitCode: number }) => {
-        sessions.delete(sessionId);
+        unregisterPtySession(sessionId);
         if (!webContents.isDestroyed()) {
           webContents.send("agent:exit", { sessionId, exitCode });
         }
@@ -578,8 +511,7 @@ export function registerAgentHandlers(ctx: DbContext): void {
       // Kill this session if the renderer that spawned it is destroyed
       // (e.g. window reload) so we never orphan live PTY processes.
       webContents.once("destroyed", () => {
-        const s = sessions.get(sessionId);
-        if (s) { try { s.pty.kill(); } catch { /* already dead */ } sessions.delete(sessionId); }
+        killPtySession(sessionId);
       });
 
       return { sessionId };
@@ -589,104 +521,16 @@ export function registerAgentHandlers(ctx: DbContext): void {
   // ── Shell spawn (bottom terminal pane — no agent binary required) ────────
   //
   // Spawns the user's login shell ($SHELL / cmd.exe) directly in a given cwd.
-  // Uses the same PTY session map so agent:input / agent:resize / agent:kill
-  // / agent:data / agent:exit all work identically.
+  // Shared implementation in `electron/lib/pty-sessions.ts` (same session map
+  // as agent runs, so agent:input / agent:resize / agent:kill / agent:data /
+  // agent:exit all work identically).
 
   registerIpcHandle("agent:spawnShell", async (event, payload: { cwd: string }) => {
     return handle(async () => {
-      const realCwd = await assertWithinCodeDirectory(ctx.db, payload.cwd);
-      try {
-        const stat = await fs.promises.stat(realCwd);
-        if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
-      } catch {
-        throw new Error(`cwd is not a directory: ${payload.cwd}`);
-      }
-
-      const defaultShell = process.platform === "win32"
-        ? (process.env.COMSPEC || "cmd.exe")
-        : (process.env.SHELL  || "/bin/zsh");
-
-      interface SpawnAttempt {
-        shell: string;
-        cwd: string;
-        label: string;
-      }
-
-      const homeDir = os.homedir();
-      const attempts: SpawnAttempt[] = [];
-
-      if (process.platform === "win32") {
-        attempts.push({ shell: defaultShell, cwd: realCwd, label: `default shell in cwd (${payload.cwd})` });
-        attempts.push({ shell: defaultShell, cwd: homeDir, label: `default shell in homedir (${homeDir})` });
-        if (defaultShell !== "cmd.exe") {
-          attempts.push({ shell: "cmd.exe", cwd: realCwd, label: `cmd.exe in cwd (${payload.cwd})` });
-          attempts.push({ shell: "cmd.exe", cwd: homeDir, label: `cmd.exe in homedir (${homeDir})` });
-        }
-        attempts.push({ shell: "powershell.exe", cwd: realCwd, label: `powershell.exe in cwd (${payload.cwd})` });
-        attempts.push({ shell: "powershell.exe", cwd: homeDir, label: `powershell.exe in homedir (${homeDir})` });
-      } else {
-        attempts.push({ shell: defaultShell, cwd: realCwd, label: `default shell in cwd (${payload.cwd})` });
-        attempts.push({ shell: defaultShell, cwd: homeDir, label: `default shell in homedir (${homeDir})` });
-        if (defaultShell !== "/bin/zsh") {
-          attempts.push({ shell: "/bin/zsh", cwd: realCwd, label: `/bin/zsh in cwd (${payload.cwd})` });
-          attempts.push({ shell: "/bin/zsh", cwd: homeDir, label: `/bin/zsh in homedir (${homeDir})` });
-        }
-        if (defaultShell !== "/bin/bash") {
-          attempts.push({ shell: "/bin/bash", cwd: realCwd, label: `/bin/bash in cwd (${payload.cwd})` });
-          attempts.push({ shell: "/bin/bash", cwd: homeDir, label: `/bin/bash in homedir (${homeDir})` });
-        }
-        if (defaultShell !== "/bin/sh") {
-          attempts.push({ shell: "/bin/sh", cwd: realCwd, label: `/bin/sh in cwd (${payload.cwd})` });
-          attempts.push({ shell: "/bin/sh", cwd: homeDir, label: `/bin/sh in homedir (${homeDir})` });
-        }
-      }
-
-      // Filter out any attempt whose cwd is outside the project boundaries
-      const filterChecks = await Promise.all(
-        attempts.map(async (attempt) => {
-          try {
-            await assertWithinCodeDirectory(ctx.db, attempt.cwd);
-            return true;
-          } catch {
-            return false;
-          }
-        })
-      );
-      const filteredAttempts = attempts.filter((_, idx) => filterChecks[idx]);
-
-      if (filteredAttempts.length === 0) {
-        throw new Error("No allowed shell spawn directory found within project boundaries.");
-      }
-
-      let pty;
-      let lastError: Error | null = null;
-
-      for (const attempt of filteredAttempts) {
-        try {
-          const resolvedAttemptCwd = await getRealPath(attempt.cwd);
-          pty = nodePty.spawn(attempt.shell, [], {
-            name: "xterm-256color",
-            cols: 120,
-            rows: 30,
-            cwd:  resolvedAttemptCwd,
-            env:  process.env as Record<string, string>,
-          });
-          console.log(`[agent] Successfully spawned ${attempt.label}`);
-          break;
-        } catch (e) {
-          lastError = e instanceof Error ? e : new Error(String(e));
-          console.warn(`[agent] Failed to spawn ${attempt.label}. Error:`, e);
-        }
-      }
-
-      if (!pty) {
-        console.error(`[agent] All spawning attempts failed. Last error:`, lastError);
-        throw lastError || new Error("Failed to spawn terminal shell (all fallback paths exhausted).");
-      }
-
-      const sessionId = newId();
-      // agentId / taskId not meaningful for shell sessions — use sentinel values
-      sessions.set(sessionId, { pty, agentId: "__shell__", taskId: "__shell__" });
+      const { sessionId } = await spawnShellPty(ctx.db, payload.cwd, { kind: "shell" });
+      const session = getPtySession(sessionId);
+      if (!session) throw new Error("Shell session vanished immediately after spawn");
+      const pty = session.pty;
 
       const webContents = event.sender;
 
@@ -695,13 +539,12 @@ export function registerAgentHandlers(ctx: DbContext): void {
       });
 
       pty.onExit(({ exitCode }: { exitCode: number }) => {
-        sessions.delete(sessionId);
+        unregisterPtySession(sessionId);
         if (!webContents.isDestroyed()) webContents.send("agent:exit", { sessionId, exitCode });
       });
 
       webContents.once("destroyed", () => {
-        const s = sessions.get(sessionId);
-        if (s) { try { s.pty.kill(); } catch { /* already dead */ } sessions.delete(sessionId); }
+        killPtySession(sessionId);
       });
 
       return { sessionId };
@@ -712,25 +555,19 @@ export function registerAgentHandlers(ctx: DbContext): void {
 
   registerIpcHandle("agent:input", (_e, { sessionId, data }: { sessionId: string; data: string }) =>
     handle(() => {
-      const session = sessions.get(sessionId);
-      if (session) session.pty.write(data);
+      writePtySession(sessionId, data);
     })
   );
 
   registerIpcHandle("agent:resize", (_e, { sessionId, cols, rows }: { sessionId: string; cols: number; rows: number }) =>
     handle(() => {
-      const session = sessions.get(sessionId);
-      if (session) session.pty.resize(cols, rows);
+      resizePtySession(sessionId, cols, rows);
     })
   );
 
   registerIpcHandle("agent:kill", (_e, { sessionId }: { sessionId: string }) =>
     handle(() => {
-      const session = sessions.get(sessionId);
-      if (session) {
-        session.pty.kill();
-        sessions.delete(sessionId);
-      }
+      killPtySession(sessionId);
     })
   );
 }

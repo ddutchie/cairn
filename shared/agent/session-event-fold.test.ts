@@ -39,4 +39,28 @@ describe("renderer session event fold", () => {
     fold(event("assistant/message", { message: { content: [{ type: "text", text: "live" }] } }));
     expect(text).toEqual(["live"]);
   });
+
+  it("passes validated tool views through calls and results", () => {
+    const seen: Record<string, unknown[]> = { calls: [], results: [] };
+    const fold = createSessionEventFold({
+      onToolCall: (value) => seen.calls.push(value),
+      onToolResult: (value) => seen.results.push(value),
+    });
+    fold(event("tool/call", { callId: "c1", name: "bash", arguments: "{}", view: { card: "terminal", title: "ls" } }));
+    fold(event("tool/result", {
+      message: { source: { callId: "c1" }, content: [{ content: [{ type: "text", text: "x" }] }] },
+      resultView: { card: "terminal", title: "ls", output: "x", exitCode: 0 },
+    }));
+    expect(seen.calls[0]).toMatchObject({ view: { card: "terminal", title: "ls" } });
+    expect(seen.results[0]).toMatchObject({ resultView: { card: "terminal", output: "x", exitCode: 0 } });
+    // Malformed views are dropped, not crashed on.
+    const fold2 = createSessionEventFold({
+      onToolCall: (value) => seen.calls.push(value),
+      onToolResult: (value) => seen.results.push(value),
+    });
+    fold2(event("tool/call", { callId: "c2", name: "bash", arguments: "{}", view: { card: "terminal" } }));
+    fold2(event("tool/result", { message: { source: { callId: "c2" }, content: [{ content: [{ type: "text", text: "y" }] }] }, resultView: "nope" }));
+    expect(seen.calls[1]).not.toHaveProperty("view");
+    expect(seen.results[1]).not.toHaveProperty("resultView");
+  });
 });

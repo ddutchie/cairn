@@ -1,5 +1,7 @@
 # Investigation: `dsh-context-ring` plugin fails to load in dsh
 
+> **Resolved record (2026-08-23).** The diagnosis and resolution stand, but branch names, version pins (`dsh-v0.1.1-rc.2`, Cordis 4.0.1), and file refs predate the current tree — read for rationale, not coordinates.
+
 Investigation of the `feat/cordis-runtime` branch's most recent effort — extracting
 the Context Ring into a standalone `dsh-context-ring` package and consuming it as a
 first-class dsh community plugin. It loads and renders in **Cairn**, but does **not**

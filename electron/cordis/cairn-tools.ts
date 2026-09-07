@@ -12,7 +12,7 @@
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
 import "./ctx-augment";
 import z from "zod";
-import { TOOL_SCHEMAS } from "../lib/tool-schemas";
+import { TOOL_SCHEMAS, createHostStore } from "./host-store";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
 import { executeTool } from "./chat-executor";
 import type { ChatRequest } from "../lib/tools";
@@ -137,7 +137,7 @@ export function buildCairnTool(
       // ask_questions routes through the dsh user-questions seam so the turn
       // BLOCKS until the human answers and the answers become this tool's result
       // (same-turn), instead of the shared executor's synchronous echo. The
-      // cairnQuestionsPlugin provider bridges ask() ⇄ the renderer form.
+      // cairnQuestionsPlugin's waterfall answerer bridges ask() ⇄ the renderer form.
       if (name === "ask_questions" && ctx) {
         const uq = ctx.userQuestions;
         const raw = (args as { questions?: unknown[] }).questions ?? [];
@@ -252,13 +252,27 @@ export interface ExternalToolsExecCtx {
  * Register the user's external tools (MCP servers + custom services) onto a dsh
  * context. Resolves the in-scope defs once at registration time; each tool
  * dispatches to executeExternalTool at execution time. Returns disposers.
+ * `opts.excludeServerIds` skips one server's `mcp__<id>__*` defs — used by the
+ * dsh-mcp-client parity spike (`mcp-dsh-bridge.ts`), which serves the named
+ * server through the dsh path instead. Unset (the default) changes nothing.
  */
-export async function registerExternalCairnTools(ctx: import("@deepseek-ai/cordis").Context, exec: ExternalToolsExecCtx): Promise<Array<() => void>> {
+export async function registerExternalCairnTools(
+  ctx: import("@deepseek-ai/cordis").Context,
+  exec: ExternalToolsExecCtx,
+  opts: { excludeServerIds?: ReadonlySet<string> } = {},
+): Promise<Array<() => void>> {
   const disposers: Array<() => void> = [];
   let defs: Array<{ function: { name: string; description: string; parameters: Record<string, unknown> } }> = [];
   try {
-    const { getExternalToolDefs } = await import("../lib/external-tools");
-    defs = (await getExternalToolDefs(exec.db, exec.workspaceId, exec.projectId)) as typeof defs;
+    const all = (await createHostStore(exec.db).getExternalToolDefs(exec.workspaceId, exec.projectId)) as typeof defs;
+    defs = opts.excludeServerIds?.size
+      ? all.filter((d) => {
+          for (const id of opts.excludeServerIds!) {
+            if (d.function.name.startsWith(`mcp__${id}__`)) return false;
+          }
+          return true;
+        })
+      : all;
   } catch (err) {
      
     console.error("[cordis] failed to resolve external tool defs:", err);
@@ -276,8 +290,7 @@ export async function registerExternalCairnTools(ctx: import("@deepseek-ai/cordi
           render: (_args, value) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
         },
         async execute(args) {
-          const { executeExternalTool } = await import("../lib/external-tools");
-          const out = await executeExternalTool(exec.db, exec.workspaceId, exec.projectId, name, args as Record<string, unknown>);
+          const out = await createHostStore(exec.db).executeExternalTool(exec.workspaceId, exec.projectId, name, args as Record<string, unknown>);
           return out as never;
         },
       });

@@ -506,6 +506,8 @@ const api = {
   selectWorkspaceFolder: () => invoke<string | null>("app:selectWorkspaceFolder"),
   getWorkspacePath: () => invoke<string | null>("app:getWorkspacePath"),
   needsWorkspaceSetup: () => invoke<boolean>("app:needsWorkspaceSetup"),
+  /** True when running unpackaged — gates dev-only UI (MCP dsh-path toggle). */
+  isDev: () => invoke<boolean>("app:isDev"),
   setTheme: (theme: string) => invoke("app:setTheme", theme),
   setAccent: (accent: string) => invoke("app:setAccent", accent),
   initWorkspace: (workspacePath: string, excludedFolders?: string[]) => invoke<{ ok: true }>("app:initWorkspace", { workspacePath, excludedFolders }),
@@ -993,6 +995,24 @@ const api = {
     /** Approve or deny a pending tool call; grant:"command" echoes the exact bash command to standing-allow */
     respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command" | "workspace", command?: string, nonce?: string) =>
       ipcRenderer.send("session:respond-tool", { sessionId, callId, approved, grant, command, nonce }),
+    /** Continuable-child catalog for a parent session (durable + live activity). Scope defaults to direct children; "descendants" lists the full subtree. */
+    listSubagents: (parentSessionId: string, scope?: "children" | "descendants") => invoke<{ ok: true; value: { entries: unknown[]; parentAvailable: boolean } } | { ok: false; code: string; message: string }>("subagent:list", { parentSessionId, scope: scope ?? "children" }),
+    /** Stop a live continuable child's current turn (fire-and-return; absent targets are a no-op) */
+    interruptSubagent: (parentSessionId: string, childId: string) => invoke<{ ok: true; value: { accepted: boolean } } | { ok: false; code: string; message: string }>("subagent:interrupt", { parentSessionId, childId }),
+    /** Deliver a human message to a continuable child (needs the live parent agent; parent-unavailable otherwise) */
+    messageSubagent: (parentSessionId: string, childId: string, text: string) => invoke<{ ok: true; value: { messageId: string } } | { ok: false; code: string; message: string }>("subagent:message", { parentSessionId, childId, text }),
+    /** Kill a dsh background job (jobs dock; owner-unavailable when the owner turn ended) */
+    killJob: (jobId: string, sessionId: string) => invoke<{ ok: true; value: unknown } | { ok: false; code: string; message: string }>("session:job-kill", { jobId, sessionId }),
+    /** Current same-session goal snapshot (null when no goal); live changes arrive via onProjection kind:"goal" */
+    goal: (sessionId: string) => invoke<{ ok: true; value: { id: string; revision: number; objective: string; phase: string; blockedReason?: { code: string; message: string }; roundsStarted: number; maxGoalRounds: number; createdAt: number; updatedAt: number } | null } | { ok: false; code: string; message: string }>("session:goal", { sessionId }),
+    /** Current permission-preset select ({options, currentValue}); live changes arrive via onProjection kind:"permissions". ok:false while the presets service is unavailable (switcher hides) */
+    permissions: (sessionId: string) => invoke<{ ok: true; value: { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } } | { ok: false; code: string; message: string }>("session:permissions", { sessionId }),
+    /** Rate an assistant message (thumbs + optional note); preserves a stored note unless replaced */
+    feedback: (req: { sessionId: string; messageId: string; rating: "positive" | "negative"; note?: string }) => invoke<{ ok: true; value: { messageId: string; rating: string; note?: string; version: string } } | { ok: false; code: string; message: string }>("session:feedback", req),
+    /** Current rating for one message (null when unrated) */
+    feedbackGet: (sessionId: string, messageId: string) => invoke<{ ok: true; value: { messageId: string; rating: string; note?: string; version: string } | null } | { ok: false; code: string; message: string }>("session:feedback-get", { sessionId, messageId }),
+    /** Active session-local reminders (empty when the schedule overlay is off or none) */
+    scheduleList: (sessionId: string) => invoke<{ ok: true; value: Array<{ id: string; prompt: string; scheduledAt: string; kind: string; state: string }> } | { ok: false; code: string; message: string }>("session:schedule-list", { sessionId }),
     /** Workspace-persistent "Always allow" grants */
     listApprovalGrants: (workspaceId: string) => invoke("approval-grants:list", { workspaceId }),
     deleteApprovalGrant: (id: string) => invoke("approval-grants:delete", { id }),
@@ -1179,15 +1199,26 @@ const api = {
       "cordis:executeCommand", req
     ),
     /** Assemble the real dsh system prompt (Cordis engine) + breakdown. */
-    systemPromptPreview: (req: { cwd?: string }) => invoke<{
+    systemPromptPreview: (req: { cwd?: string; projectName?: string }) => invoke<{
       text: string;
       sections: Array<{ name: string; order: number; text: string; index: number }>;
       contexts: Array<{ name: string; order: number; text: string }>;
       skills: Array<{ name: string; description: string }>;
       tools: Array<{ name: string; description?: string }>;
       variables: Record<string, string | undefined>;
+      cairnSystemLive?: boolean;
       error?: string;
     }>("runtime:systemPrompt:preview", req),
+    /** The coding agent's plain-string system prompt (board-tracking workflow). */
+    codingPromptPreview: (req: { cwd?: string; projectName?: string; taskTitle?: string }) => invoke<{
+      text: string;
+      error?: string;
+    }>("runtime:codingPrompt:preview", req),
+    /** Per-surface tool inventory (chat/coding/automation-dev/mcp + live global tools). */
+    toolsInventory: () => invoke<{
+      surfaces: Record<string, Array<{ name: string; description: string; category: string; source: string; gated?: boolean }>> | null;
+      error?: string;
+    }>("runtime:tools:inventory"),
     onProgress: (cb: (e: {
       modelId: string;
       status: string;

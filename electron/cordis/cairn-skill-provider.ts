@@ -18,10 +18,17 @@
  * optional resourceBase; definitions add `content`.
  */
 import { BUNDLED_SKILL_RANK, type SkillProvider, type SkillCandidate, type SkillDefinition, type SkillLookupOptions } from "@deepseek-ai/dsh-skill";
-import { discoverSkills, loadSkill, type SkillMeta } from "../lib/skills";
+import { discoverSkills as defaultDiscoverSkills, loadSkill as defaultLoadSkill } from "./host-store";
+import type { SkillContent, SkillMeta } from "../lib/skills";
 
 /** The provider we export — dsh's SkillProvider contract, exactly. */
 export type CairnSkillProvider = SkillProvider;
+
+export interface CairnSkillProviderDeps {
+  /** Defaults to the host fs discovery (same behaviour; injectable for tests). */
+  discoverSkills?: (cwd: string) => SkillMeta[];
+  loadSkill?: (name: string, skills: SkillMeta[]) => SkillContent | null;
+}
 
 /**
  * Create the Cairn SKILL.md provider. Registered ONCE on the shared
@@ -29,7 +36,9 @@ export type CairnSkillProvider = SkillProvider;
  * (`options.cwd` — the registry forwards the caller's cwd into list/get), so
  * per-turn cwd works without re-registering.
  */
-export function createCairnSkillProvider(): CairnSkillProvider {
+export function createCairnSkillProvider(deps: CairnSkillProviderDeps = {}): CairnSkillProvider {
+  const discoverSkills = deps.discoverSkills ?? defaultDiscoverSkills;
+  const loadSkill = deps.loadSkill ?? defaultLoadSkill;
   const metas = (cwd?: string): SkillMeta[] => {
     if (!cwd) return [];
     try {

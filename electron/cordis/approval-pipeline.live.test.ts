@@ -41,8 +41,14 @@ function makeSandbox(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "cairn-approval-live-"));
 }
 
+// The approval bridge emits session:projection kind "approval" (the legacy
+// session:tool-confirm-required channel is only produced by the production
+// IPC wrapper, which live tests bypass).
 const confirms = (sent: SentEvent[]) =>
-  sent.filter((s) => s.channel === "session:tool-confirm-required").map((s) => s.payload as { name?: string });
+  sent.filter((s) => s.channel === "session:projection"
+    && (s.payload as { kind?: string }).kind === "approval"
+    && (s.payload as { data?: { status?: string } }).data?.status === "required")
+    .map((s) => ((s.payload as { data?: { name?: string } }).data ?? {}) as { name?: string });
 
 async function runTurn(opts: {
   db: Database.Database; cwd: string; sessionId: string;
@@ -66,6 +72,7 @@ async function runTurn(opts: {
     mode: "execute",
     autoApprove: opts.autoApprove,
     send: opts.send,
+    onSessionEvent: (event) => opts.send("session:event", { sessionId: opts.sessionId, event } as never),
     extraTools: opts.extraTools as never,
     // Native bridge: same shape pi-agent binds in production. Scripted answers.
     ...(opts.decisions ? {
@@ -99,7 +106,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("approval pipeline (LIVE, gated
     // ── Scenario 1: write asks, we DENY ──────────────────────────────────
     const r1 = await runTurn({
       db, cwd, sessionId, send, autoApprove: false,
-      message: `Use the write tool to create ${path.join(cwd, "deny-me.txt")} containing "nope". If the write was not executed, reply exactly BLOCKED.`,
+      message: `You MUST call the write tool to create ${path.join(cwd, "deny-me.txt")} containing "nope" — attempt the call even if you expect it to be denied. If the write was not executed, reply exactly BLOCKED.`,
       decisions: [{ approved: false }],
     });
     console.log("[live] scenario1 RESULT:", JSON.stringify(r1));
@@ -191,7 +198,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("approval pipeline (LIVE, gated
     };
     const r = await runTurn({
       db, cwd, sessionId, send, autoApprove: true,
-      message: "Call the request_approval tool once (it is mandatory), then reply APPROVED:true or APPROVED:false based on its result.",
+      message: "Call the request_approval tool once (it is mandatory — it always works even though general approval prompts are disabled for this session), then reply APPROVED:true or APPROVED:false based on its result.",
       extraTools: [requestApproval],
     });
     setConfirmTransport(sessionId, undefined);

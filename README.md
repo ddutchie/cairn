@@ -38,10 +38,10 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Idea Flow** — Freeform node canvas per project (`⌘4`): ideas, note/task refs, groups, URLs, AI summaries — connected with labelled edges
 - **Live dashboards** — AI-generated interactive HTML dashboards with a live `window.cairn.query()` data bridge; inline "Fix with AI" on runtime errors; editable via built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
-- **Cairn Agent** — Native coding agent (`⌘5`) with board and notes integration: moves tasks, writes session notes, captures discovered work; supports subagents for deep sub-tasks; Plan / Execute mode toggle; interactive tool confirmations with mobile-desktop sync; automatic retry on transient API errors; LLM-based context compaction for long sessions; context usage ring; works with any OpenAI-compatible endpoint
-- **Agent workspace** — Three-pane view (`⌘5`) for running external AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
-- **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
-- **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
+- **Cairn Agent** — Native coding agent (Agent view) with board and notes integration: moves tasks, writes session notes, captures discovered work; delegates to subagents for deep sub-tasks; Plan / Execute mode toggle; interactive tool confirmations with mobile-desktop sync; automatic retry on transient API errors; automatic context compaction for long sessions (`/compact` on demand); context usage ring; works with any OpenAI-compatible endpoint. Runs on the Cordis agent runtime (DeepSeek harness) — see [Architecture](#architecture).
+- **Agent workspace** — Three-pane view for running external AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
+- **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships
+- **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table
 - **Font scaling** — Five-step UI font size preference (XS–XL, default M) in Settings → General
 - **Mobile Companion** — Access your workspace on any device (phone, tablet) over the local network via QR code or display PIN; features responsive layouts (slide-over drawers, fullscreen chat, wrapped note headers), Kanban touch drag-and-drop, full Idea Flow touch gestures (long-press canvas, single-tap node), and native PDF sharing sheets
 - **Obsidian Vault Compatibility** — Works side-by-side with Obsidian vaults; renders standard double-bracket embeds (`![[image.png]]`), uploads files to custom attachment folders, resolves local media via sequential-fallback protocol, and merges YAML frontmatter non-destructively
@@ -102,7 +102,7 @@ Output goes to `dist-app/`.
 
 ## AI chat setup
 
-Configure the AI endpoint in **Settings → AI & Chat** (no restart needed):
+Configure the AI endpoint in **Settings → AI** (tabs: Chat, Coding Agents, MCP; no restart needed):
 
 | Setting | Default | Notes |
 |---------|---------|-------|
@@ -119,7 +119,7 @@ Configure the AI endpoint in **Settings → AI & Chat** (no restart needed):
 
 Cairn includes a native coding agent that runs directly inside the app — no external CLI binary required. It is accessible from the Agent view (`⌘5`) by choosing **Cairn Agent** in the spawn modal.
 
-The agent is inspired by [pi](https://github.com/earendil-works/pi), an open-source agentic coding framework. The tool implementations (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) are ported directly into the Electron main process and adapted for Cairn's architecture — same semantics, no npm dependency.
+The agent runs on the Cordis agent runtime (DeepSeek harness): a shared engine drives the model↔tool loop, session persistence, approvals, subagents, background jobs, and context compaction — Cairn contributes its workspace tools, board-aware system prompt, and renderer bridges. See [Architecture](#architecture).
 
 ### What makes it Cairn-specific
 
@@ -136,13 +136,13 @@ Launch the agent in **Plan Mode** to produce a spec before writing any code. The
 
 ### Subagents
 
-The agent can delegate contained sub-tasks to a fresh sub-agent via `spawn_subagent`. The sub-agent runs a full tool-call loop with its own message history — only its final answer is returned to the parent. This keeps the parent context lean for long multi-step tasks. The sub-agent trace is rendered inline and collapsible in the chat UI, with its own context usage ring.
+The agent can delegate contained sub-tasks to a fresh subagent via the `subagent` tool (one-shot) or `delegate` (continuable background conversations you can message later). A delegated agent runs with its own session history — only its final answer returns to the parent, keeping the parent context lean for long multi-step tasks. The subagent trace renders inline and collapsible in the chat UI.
 
 ### Context usage ring
 
-A small ring in the agent pane header shows how full the model's context window is after each step. Configure the limit for your model in **Settings → AI & Chat → Context window** (presets: 8k / 32k / 128k / 200k).
+A small ring in the agent pane header shows how full the model's context window is after each step. Configure the limit for your model in **Settings → AI → Coding Agents → Context window** (presets: 8k / 32k / 128k / 200k).
 
-When usage reaches 80% the agent automatically summarises older context with a background LLM call — the status bar shows `"Compacting context…"` while this is in flight. Type `/compact` in the chat input to trigger compaction on demand at any time. If a transient API error occurs, the status bar shows a countdown (`"Transient error — retrying (1/3) in 8s…"`) and the agent retries automatically.
+When usage reaches 80% the agent automatically compacts older context — the status bar shows `"Compacting context…"` while this is in flight. Type `/compact` in the chat input to trigger compaction on demand at any time. If a transient API error occurs, the status bar shows a countdown (`"Transient error — retrying (1/3) in 8s…"`) and the agent retries automatically.
 
 ## MCP server
 
@@ -178,96 +178,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-> The exact paths above are generated automatically in **Settings → AI & Chat → MCP Server** — copy them from there.
+> The exact paths above are generated automatically in **Settings → AI → MCP** — copy them from there.
 
 ### Available MCP tools
 
-<details>
-<summary>View all 37 tools</summary>
-
-**Context**
-
-| Tool | Category | Description |
-|------|----------|-------------|
-| `get_cairn_context` | read | Full orientation: workspaces, projects, column IDs, tool list, conventions |
-| `get_project_context_pack` | read | Single-call bundle: project metadata + pinned notes + open tasks + recent activity |
-
-**Notes**
-
-| Tool | Category | Description |
-|------|----------|-------------|
-| `get_note` | read | Full markdown content, linked IDs, metadata, and `version` counter of a note by ID |
-| `search_notes` | read | Full-text search across notes. Empty query returns all notes |
-| `ensure_note` | write | Idempotent create-or-update by title — prevents duplicate notes on re-run |
-| `append_to_note` | write | Append content to a note without re-sending the full body. Accepts optional `expectedVersion` for conflict detection |
-| `patch_note` | write | Surgically replace a string inside a note — no need to re-send the full content. Accepts optional `expectedVersion` for conflict detection |
-| `delete_note` | delete | Permanently delete a note |
-
-**Tasks**
-
-| Tool | Category | Description |
-|------|----------|-------------|
-| `get_task` | read | Full task detail by ID — includes `blockedByIds` and `version` counter |
-| `list_ready_tasks` | read | Only unblocked, active tasks — use this to find work that can start now |
-| `search_tasks` | read | Full-text search across task cards. Empty query returns all tasks |
-| `create_task` | write | Create a task card in a column |
-| `update_task` | write | Update a task's fields. Use `archived: true/false` to archive or restore. Use `blockedBy` to add a blocker, `unblockFrom` to remove one. Accepts optional `expectedVersion` for conflict detection |
-| `bulk_update_task_status` | write | Move multiple tasks to the same column in one call |
-| `link_note_to_task` | write | Bidirectionally link a note and a task |
-| `delete_task` | delete | Permanently delete a task card |
-
-**Projects**
-
-| Tool | Category | Description |
-|------|----------|-------------|
-| `upsert_project` | write | Create or update a project. Omit `projectId` to create (auto-creates 5 default columns); provide `projectId` to update existing fields |
-| `delete_project` | delete | Permanently delete a project and all its contents |
-
-**Dashboards**
-
-| Tool | Category | Description |
-|------|----------|-------------|
-| `create_dashboard` | write | Create a live HTML dashboard in a project |
-| `update_dashboard` | write | Update an existing dashboard's title or HTML |
-| `get_dashboard_constants` | read | Returns the `window.cairn` query API reference for building dashboards |
-
-**Idea Flow**
-
-| Tool | Category | Description |
-|------|----------|-------------|
-| `get_idea_flow` | read | Full Idea Flow graph: nodes (with resolved note/task content) + edges |
-| `get_idea_flow_rules` | read | Returns node type conventions, data shapes, group rules, and positioning tips |
-| `create_idea_flow_node` | write | Add a node to the canvas (idea, note_ref, task_ref, group, url, ai_summary) |
-| `update_idea_flow_node` | write | Update a node's data and/or position (data fields are merged) |
-| `layout_idea_flow` | write | Auto-arrange all nodes with Dagre. Call after bulk-creating nodes |
-| `create_idea_flow_edge` | write | Connect two nodes with an optional label |
-| `delete_idea_flow_node` | delete | Remove a node and its connected edges |
-| `delete_idea_flow_edge` | delete | Remove a connection |
-
-**Knowledge Graph**
-
-| Tool | Category | Description |
-|------|----------|-------------|
-| `get_knowledge_graph` | read | Full workspace graph: projects, notes, cards, tags as nodes + edges |
-| `get_neighbors` | read | N-hop neighbourhood around a single node |
-
-**Tags**
-
-| Tool | Category | Description |
-|------|----------|-------------|
-| `create_tag` | write | Create a workspace tag with a name and hex colour |
-
-**Codebase**
-
-| Tool | Category | Description |
-|------|----------|-------------|
-| `codebase_reindex` | write | Scan and semantic-index a codebase folder. Updates the SQLite cache of file paths, classes, functions, methods, docstrings, and call dependencies |
-| `codebase_search_symbols` | read | Search for classes, functions, methods, interfaces, or structs by name or docstring query. Optional `folder` and `limit` parameters |
-| `codebase_get_symbol_definition` | read | Lookup the definition signature, line numbers, and docstring of a symbol by its exact name |
-| `codebase_get_references` | read | Find incoming references and outgoing dependencies (call graph) for a given symbol name |
-| `codebase_get_file_symbols` | read | List all classes, functions, methods, interfaces, or structs defined in a specific file path |
-
-</details>
+The MCP surface is derived from the same schemas the in-app agents use (`electron/lib/tool-schemas.ts` — everything except chat-only tools such as `ask_questions` and `suggest_connections`), across notes, tasks, projects, dashboards, Idea Flow, knowledge graph, tags, and codebase search. The authoritative live list is always in the app under **Settings → AI → MCP**, which shows every tool with its read/write/delete category — this file does not duplicate that list so it can't rot.
 
 > **Agent tip:** call `get_cairn_context` at the start of a session for all workspace/project/column IDs. Use `list_ready_tasks` instead of `search_tasks` when you want to know what work can actually start — it filters out anything blocked by an unresolved dependency. Use `update_task` with `blockedBy`/`unblockFrom` to manage task dependencies.
 
@@ -284,13 +199,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `⌘N` | New note (switches to Notes view) |
 | `⌘/` | Toggle AI chat |
 | `⌘\` | Toggle sidebar |
-| `⌘1` | Project overview |
-| `⌘2` | Notes view |
-| `⌘3` | Board view |
-| `⌘4` | Idea Flow canvas |
-| `⌘5` | Agent workspace |
-| `⌘6` | Knowledge Graph |
-| `⌘7` | Insights |
+| `⌘1` / `⌘2` | Overview / Notes (always) |
+| `⌘3`–`⌘9` | Walk the visible views in sidebar order (default: Board, Calendar, Flow, Agent, Calendar-all, Graph, Insights, …) — hide views in General settings to compress the range |
 | `⌘S` | Save file (Agent editor) |
 | `⌘Z` | Undo |
 | `⌘⇧Z` / `⌘Y` | Redo |
@@ -303,7 +213,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 Two processes share a single SQLite database (WAL mode):
 
 - **Renderer** (`src/`) — React/Next.js. All data flows through IPC via `window.electron.*`; never touches the DB or filesystem directly.
-- **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, AI chat loop, and PTY sessions for coding agents. IPC handlers are split into per-domain registrars (`db-handlers.ts`, `flow-handlers.ts`, `ai-handlers.ts`, etc.) orchestrated by `handlers.ts`.
+- **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, the Cordis agent runtime, and PTY sessions for coding agents. IPC handlers are split into per-domain registrars (`db-handlers.ts`, `flow-handlers.ts`, `chat.ts`, `session-runtime-handlers.ts`, `runtime-handlers.ts`, etc.) orchestrated by `handlers.ts`.
+- **Agent runtime** (`electron/cordis/`) — one shared Cordis context drives chat turns (`runChatCordisSession`) and coding turns (`runCordisCodingLoop`): model↔tool loop, session persistence (JSONL), approvals, subagents, background jobs, skills, and auto-compaction via DeepSeek harness plugins. Cairn contributes its workspace tools (`cairn-tools.ts`), the board-aware coding prompt (`lib/coding-session-prompt.ts`), and renderer bridges (`cairn-plugins.ts`). App I/O crosses into the engine only through the HostStore seam (`host-store.ts`). See `docs/architecture-cordis.md`.
 - **MCP server** (`electron/mcp-server.ts`) — self-contained binary; connects external agents to the same DB via WAL polling. SQL query helpers are shared with the Electron main process via `electron/db/queries.ts` (single source of truth).
 
 Notes are plain `.md` files (YAML frontmatter); SQLite is the read/search cache. Writes are atomic (`.tmp` rename). A chokidar watcher syncs external edits at runtime. `notes` and `task_cards` carry a `version` integer; MCP write tools accept `expectedVersion` for conflict detection.
@@ -313,7 +224,7 @@ For the full architecture reference see [CONTRIBUTING.md](CONTRIBUTING.md#archit
 ## Testing
 
 ```bash
-npm test                 # unit & integration (Vitest)
+npm test                 # full gate: licenses + features + compile + unit & integration (Vitest)
 npm run test:watch       # watch mode
 npm run test:coverage    # coverage report
 npm run test:e2e         # E2E smoke tests — headless Chromium, no Electron required
@@ -345,10 +256,11 @@ Unit/integration tests (`electron/**/*.test.ts`) cover SQLite queries, file I/O,
 
 | Tool | Role |
 |------|------|
-| better-sqlite3 | SQLite (dual ABI: Electron + pkg/Node 22) |
+| better-sqlite3 | SQLite (arch-separated native bindings for Electron + MCP + vitest) |
 | gray-matter | YAML frontmatter parsing for note files |
 | chokidar | File watcher for external `.md` edits |
-| Vercel AI SDK | AI streaming utilities |
+| @deepseek-ai/cordis + dsh-* | Agent runtime: model loop, sessions, tools, approvals, subagents, jobs, compaction |
+| onnxruntime-node + @huggingface/transformers | Local embeddings for semantic search |
 | @modelcontextprotocol/sdk | MCP server |
 | Zod | Schema validation |
 | nanoid | ID generation |

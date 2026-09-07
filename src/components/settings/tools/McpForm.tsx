@@ -13,10 +13,13 @@ export function McpForm({
   initial,
   onSave,
   onCancel,
+  dev = false,
 }: {
   initial?: McpServerConfig;
   onSave: (s: Partial<McpServerConfig>, headerRows: HeaderRow[]) => void;
   onCancel: () => void;
+  /** Dev builds only: show the dsh-path spike toggle. */
+  dev?: boolean;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -28,6 +31,7 @@ export function McpForm({
   const [oauthRedirectUri, setOauthRedirectUri] = useState(initial?.oauthRedirectUri ?? "");
   const [oauthClientIdRequired, setOauthClientIdRequired] = useState(initial?.oauthClientIdRequired ?? false);
   const [rows, setRows] = useState<HeaderRow[]>(headersToRows(initial?.headers));
+  const [dshPath, setDshPath] = useState(initial?.dshPath ?? false);
 
   const valid = name.trim().length > 0 && /^https?:\/\//.test(baseUrl.trim());
 
@@ -123,9 +127,20 @@ export function McpForm({
       ) : (
         <HeaderEditor rows={rows} onChange={setRows} />
       )}
+      {dev && (
+        <label className="flex items-start gap-2 text-xs text-[var(--text-secondary)] cursor-pointer rounded border border-dashed border-[var(--border)] px-2 py-1.5" title="Dev-only: route this server through dsh-mcp-client instead of the hand bridge. Parity is verified per turn with automatic fallback.">
+          <input
+            type="checkbox"
+            checked={dshPath}
+            onChange={(e) => setDshPath(e.target.checked)}
+            className="accent-[var(--accent)] mt-0.5"
+          />
+          <span>Route via dsh <span className="text-[var(--text-tertiary)]">(dev spike — parity-checked per turn, falls back automatically)</span></span>
+        </label>
+      )}
       <div className="flex justify-end gap-2 pt-1">
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" disabled={!valid} onClick={() => onSave({ id: initial?.id, name: name.trim(), description: description.trim() || undefined, baseUrl: baseUrl.trim(), transport, authMode, oauthScope: authMode === "oauth" ? (oauthScope.trim() || undefined) : undefined, oauthClientId: authMode === "oauth" ? (oauthClientId.trim() || undefined) : undefined, oauthRedirectUri: authMode === "oauth" ? (oauthRedirectUri.trim() || undefined) : undefined, oauthClientIdRequired: authMode === "oauth" ? oauthClientIdRequired : undefined, enabled: initial?.enabled ?? false, source: initial?.source ?? "manual" }, authMode === "oauth" ? [] : rows)}>
+        <Button size="sm" disabled={!valid} onClick={() => onSave({ id: initial?.id, name: name.trim(), description: description.trim() || undefined, baseUrl: baseUrl.trim(), transport, authMode, oauthScope: authMode === "oauth" ? (oauthScope.trim() || undefined) : undefined, oauthClientId: authMode === "oauth" ? (oauthClientId.trim() || undefined) : undefined, oauthRedirectUri: authMode === "oauth" ? (oauthRedirectUri.trim() || undefined) : undefined, oauthClientIdRequired: authMode === "oauth" ? oauthClientIdRequired : undefined, dshPath: dev ? dshPath : initial?.dshPath, enabled: initial?.enabled ?? false, source: initial?.source ?? "manual" }, authMode === "oauth" ? [] : rows)}>
           <Check size={12} /> Save server
         </Button>
       </div>

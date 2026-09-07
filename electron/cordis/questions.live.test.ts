@@ -28,7 +28,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cairn-questions (gated on CORD
     const pending = new Map<string, (t: string) => void>();
 
     const req: ChatRequest = {
-      message: "testing the question tool — please ask me a couple of questions about my favorite color and animal, then tell me both back to me.",
+      message: "You MUST call the ask_questions tool (ask about my favorite color and my favorite animal in a single call) before replying anything else. Do not answer from your own knowledge — ask first, wait for my answers, then tell me both back to me.",
       threadId: "thr-q-1",
       projectId: "pj",
       workspaceId: "ws",

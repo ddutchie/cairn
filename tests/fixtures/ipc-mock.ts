@@ -380,6 +380,21 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       deleteSession:  noop,
       getSessionMessages: () => Promise.resolve([]),
       getTodos:       () => Promise.resolve([]),
+      // Goal / permissions / feedback / schedule snapshots — added with those
+      // features; the mock must expose every session method the renderer
+      // calls or boot-phase components throw (e.g. session.goal on mount).
+      goal:           () => Promise.resolve({ ok: true, value: null }),
+      permissions:    () => Promise.resolve({ ok: false, code: "unavailable", message: "mock" }),
+      feedback:       () => Promise.resolve({ ok: true, value: { messageId: "mock", rating: "positive", version: "1" } }),
+      feedbackGet:    () => Promise.resolve({ ok: true, value: null }),
+      scheduleList:   () => Promise.resolve({ ok: true, value: [] }),
+      listSubagents:  () => Promise.resolve({ ok: true, value: { entries: [], parentAvailable: false } }),
+      messageSubagent: () => Promise.resolve({ ok: true, value: { messageId: "mock" } }),
+      interruptSubagent: () => Promise.resolve({ ok: true, value: { accepted: false } }),
+      killJob:        () => Promise.resolve({ ok: true, value: null }),
+      listApprovalGrants: () => Promise.resolve([]),
+      deleteApprovalGrant: noop,
+      clearApprovalGrants: noop,
     },
 
     // ── External tools (MCP servers + custom HTTP services) ───

@@ -75,7 +75,8 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("runCordisLoop (gated on CORDIS
     expect(sessionLogWritten(getSessionRoot())).toBe(true);
     // cairn-usage wrote an llm_usage row for this session (usage IS tracked in
     // the DB — this proves the usage-recorder plugin wiring against session events).
-    const usageRows = db.prepare("SELECT COUNT(*) AS n FROM llm_usage WHERE session_id = 'thr-live-2'").get() as { n: number };
+    // Rows are booked under the dsh session id (`chat-<threadId>`), not the raw thread id.
+    const usageRows = db.prepare("SELECT COUNT(*) AS n FROM llm_usage WHERE session_id = 'chat-thr-live-2'").get() as { n: number };
     console.log("PERSISTED session log:", sessionLogWritten(getSessionRoot()), "usage rows:", usageRows.n);
     expect(usageRows.n).toBeGreaterThan(0);
   }, 120000);

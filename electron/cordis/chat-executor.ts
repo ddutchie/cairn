@@ -7,16 +7,18 @@
 
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
-import * as q from "../db/queries";
 import { writeNoteFile } from "../notes-files";
-import { generatePrd } from "../lib/prd";
-import { executeReadTool, type CairnSnapshot } from "../lib/read-tools";
-import { newId } from "../db/utils";
+import type { CairnSnapshot } from "../lib/read-tools";
 import { type LLMConfig } from "../lib/llm";
-import { TOOL_LABELS, type ChatRequest, type ToolArgs } from "../lib/tools";
-import { aiWriteLock } from "../lib/ai-write-lock";
+import type { ChatRequest, ToolArgs } from "../lib/tools";
+import {
+  createHostStore,
+  newId,
+  TOOL_LABELS,
+  aiWriteLock,
+  toolResultError,
+} from "./host-store";
 import { executeTool as executeMcpTool } from "../mcp/tools";
-import { toolResultError } from "../lib/tool-result";
 
 // ── Static reference constants (returned by get_dashboard_constants / get_idea_flow_rules) ──
 
@@ -33,12 +35,13 @@ export async function executeTool(
   callId?: string,
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args, callId });
-  const snap = q.getFullSnapshot(db) as CairnSnapshot;
+  const host = createHostStore(db);
+  const snap = host.getFullSnapshot() as CairnSnapshot;
 
   const result = await (async () => {
     // ── Shared read tools (also used by db:mcpQuery and MCP server) ──────────
     {
-      const res = executeReadTool(db, snap, name, args);
+      const res = host.executeReadTool(snap, name, args);
       if (res.handled) return res.result;
     }
 
@@ -155,7 +158,7 @@ export async function executeTool(
     case "ensure_note": {
       // Use the same authoritative live-DB lookup ensure_note uses, so the
       // aiWriteLock id can't diverge from the id the tool actually writes.
-      const existing = q.findLiveNoteByTitle(db, args.projectId as string, args.title as string);
+      const existing = host.findLiveNoteByTitle(args.projectId as string, args.title as string);
       const ensureNoteId = existing?.id ?? newId();
       const win = getWin?.() ?? null;
       aiWriteLock.lock(ensureNoteId, win);
@@ -229,7 +232,7 @@ export async function executeTool(
       return { ok: true, count: (args.actions as unknown[])?.length ?? 0 };
     }
     case "generate_prd": {
-      return generatePrd(db, workspacePath, {
+      return host.generatePrd(workspacePath, {
         projectId: args.projectId as string,
         title: args.title as string,
         requirements: args.requirements as string,
@@ -284,14 +287,14 @@ export async function executeTool(
         }) as { id: string; title: string; priority: string };
         
         // Link card → note
-        q.updateCard(db, card.id, { linkedNoteIds: [args.noteId as string] });
+        host.updateCard(card.id, { linkedNoteIds: [args.noteId as string] });
         createdCards.push({ id: card.id, title: card.title, priority: card.priority });
       }
 
       // Link note → all created cards
       const existingCardIds = note.linkedCardIds ?? [];
       const newCardIds = createdCards.map((c) => c.id);
-      const updatedNote = q.updateNote(db, args.noteId as string, {
+      const updatedNote = host.updateNote(args.noteId as string, {
         linkedCardIds: [...existingCardIds, ...newCardIds],
       });
       writeNoteFile(workspacePath, { ...updatedNote, projectName: project?.name ?? col.projectId });
@@ -301,7 +304,7 @@ export async function executeTool(
 
     case "get_user_writing_style": {
       const mode = (args.mode as "cheatsheet" | "full" | undefined) ?? "cheatsheet";
-      const style = q.getUserStyle(db);
+      const style = host.getUserStyle();
       const configured = !!style && style.source !== "none" && !!(style.fullGuide || style.cheatsheet);
       if (!configured) {
         return {
@@ -338,7 +341,7 @@ export async function executeTool(
       if (content.trim().length > 2000) {
         return { error: "content is too long (max 2000 characters)." };
       }
-      const { row, updated, reason } = q.appendUserStyleObservation(db, section, content);
+      const { row, updated, reason } = host.appendUserStyleObservation(section, content);
       if (!updated) {
         return { ok: true, updated: false, message: reason ?? "No change.", style: row };
       }

@@ -201,6 +201,12 @@ export interface McpServerConfig {
    * fields and routes "Sign in" to them instead of failing on DCR.
    */
   oauthClientIdRequired?: boolean;
+  /**
+   * Dev-only: route this server through dsh-mcp-client (parity spike) instead
+   * of the hand bridge. Toggled from ToolsSettings on dev builds; the turn
+   * bootstrap verifies parity per turn and falls back on mismatch.
+   */
+  dshPath?: boolean;
   enabled: boolean;
   source: ToolSource;
   /** Set when installed from the community registry. */
@@ -601,6 +607,10 @@ export interface LinkedContextReference {
 export interface ChatToolCallRecord {
   tool: string;
   label: string;
+  /** Tool-authored title from dsh `presentCall` (main-attached on tool/call); renderer prefers it. */
+  viewTitle?: string;
+  /** Tool-authored result view from dsh `presentResult` (main-attached on tool/result). */
+  resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
   cairnRef?: { type: "note" | "task"; id: ID; title: string };
   /**
    * A linkable external artefact extracted from an MCP-server / custom-service
@@ -995,6 +1005,10 @@ export interface AgentMessage {
     callId: string;
     name: string;
     label: string;
+    /** Tool-authored title from dsh `presentCall` (main-attached on tool/call). */
+    viewTitle?: string;
+    /** Tool-authored result view from dsh `presentResult` (main-attached on tool/result). */
+    resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
     args?: Record<string, unknown>;
     running: boolean;
     ok: boolean;

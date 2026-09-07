@@ -7,7 +7,43 @@ import { useShallow } from "zustand/react/shallow";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
-import { MCP_TOOLS } from "../../../electron/lib/tool-schemas";
+import { useAgentPreviews } from "./tools/useAgentPreviews";
+import { SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
+
+// ── MCP tab (AI section) ────────────────────────────────────────────────────
+// Server config + sync status + the tools external agents see, in the same
+// card style as the Chat and Coding Agents tabs.
+
+export function McpSettingsTab() {
+  const previews = useAgentPreviews();
+  const mcpTools = previews.inventory?.mcp ?? [];
+
+  return (
+    <div className="space-y-8">
+      <MCPServerSettings />
+      <SettingsGroup
+        title="MCP Tools"
+        description="The tools external AI agents (OpenCode, Claude Desktop, etc.) can call through the local MCP server. Chat-only tools are not advertised here."
+      >
+        {previews.inventory ? (
+          <div className="space-y-3">
+            <SurfaceToolsPanel
+              tools={mcpTools}
+              footnote="External clients get the broader surface — including get_cairn_context for fresh sessions."
+            />
+            <ToolsLegend />
+          </div>
+        ) : (
+          !previews.loading && (
+            <p className="text-[0.714rem] text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
+              Tools unavailable — the engine may still be starting.
+            </p>
+          )
+        )}
+      </SettingsGroup>
+    </div>
+  );
+}
 
 // ── MCP Server Settings ───────────────────────
 
@@ -68,27 +104,6 @@ export function MCPServerSettings() {
           copied={copiedKey}
           onCopy={copy}
         />
-      </div>
-
-      {/* Tools list — derived from MCP_TOOLS, no manual maintenance needed */}
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3.5">
-        <div className="text-xs font-medium text-[var(--text-secondary)] mb-2">Available tools</div>
-        <div className="grid grid-cols-2 gap-1.5">
-          {MCP_TOOLS.map(({ name, category }) => (
-            <div key={name} className="flex items-center gap-1.5">
-              <span className={cn(
-                "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                category === "write" ? "bg-[var(--warning)]" : category === "delete" ? "bg-[var(--danger)]" : "bg-[var(--accent)]"
-              )} />
-              <span className="text-[0.786rem] font-mono text-[var(--text-tertiary)]">{name}</span>
-            </div>
-          ))}
-        </div>
-        <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-2">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)] mr-1" />read &nbsp;
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--warning)] mr-1" />write &nbsp;
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--danger)] mr-1" />delete
-        </p>
       </div>
     </SettingsGroup>
   );

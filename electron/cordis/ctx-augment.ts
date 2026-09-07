@@ -42,6 +42,16 @@ import "@deepseek-ai/dsh-attachment";
 import "@deepseek-ai/dsh-tools";
 import "@deepseek-ai/dsh-system-prompt";
 import "@deepseek-ai/dsh-session-persistence";
+import "@deepseek-ai/dsh-terminal";
+import "@deepseek-ai/dsh-goal";
+import "@deepseek-ai/dsh-tool-goal";
+import "@deepseek-ai/dsh-command-goal";
+import "@deepseek-ai/dsh-goal-round-driver";
+import "@deepseek-ai/dsh-message-feedback";
+import "@deepseek-ai/dsh-command-feedback";
+import "@deepseek-ai/dsh-lsp";
+import "@deepseek-ai/dsh-web";
+import "@deepseek-ai/dsh-workflow";
 import "@deepseek-ai/cordis-plugin-loader";
 
 // Ensure the augmentation-only imports aren't tree-shaken. TypeScript's
