@@ -23,7 +23,7 @@ function getCairnVersion(): string {
 
 const version = getCairnVersion();
 
-export const CAIRN_USER_AGENT = `cairn/${version} (+https://github.com/ddutchie/cairn)`;
+export const CAIRN_USER_AGENT = `cairn/${version}`;
 
 export const CAIRN_APP_IDENTITY = {
   product: "cairn",
