@@ -97,6 +97,7 @@ export function opencodeHeaders(baseUrl: string, sessionId?: string | null): Rec
 if (!(globalThis as unknown as { __cairnFetchPatched?: boolean }).__cairnFetchPatched) {
   (globalThis as unknown as { __cairnFetchPatched?: boolean }).__cairnFetchPatched = true;
   const originalFetch = (globalThis.fetch as unknown as typeof fetch).bind(globalThis);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   globalThis.fetch = (async (input: any, init?: any): Promise<any> => {
     try {
       const url = typeof input === "string"

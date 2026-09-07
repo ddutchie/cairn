@@ -11,6 +11,7 @@ import { getMeta, setMeta, getDb } from "./index";
 
 import type { ChatUsage } from "@/chat/providers/types";
 import { estimateChatCostUsd } from "@/chat/cost-estimate";
+import { resetOpencodeSessionId } from "@/chat/opencode-session";
 
 export interface StoredMessage {
   role: "user" | "assistant";
@@ -128,9 +129,6 @@ export function clearChatHistory(): void {
   // Rotate the opencode session so the next conversation gets a fresh
   // routing/caching bucket (same as desktop's per-thread `chat-<id>`).
   try {
-    const { resetOpencodeSessionId } = require("@/chat/opencode-session") as {
-      resetOpencodeSessionId: () => void;
-    };
     resetOpencodeSessionId();
   } catch {
     // best-effort
