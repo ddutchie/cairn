@@ -40,6 +40,7 @@ import type { LLMConfig } from "../lib/llm";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { describeTurnEndReason } from "../../shared/agent/turn-end-reason";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
+import { setCurrentOpencodeSessionId } from "../lib/cairn-identity";
 
 export interface RunCordisCodingOptions {
   db: Database;
@@ -121,6 +122,9 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   const ctx = await getContext();
   timer.mark("getContext");
   const { db, req, workspacePath, sessionId, cwd, systemPrompt, mode, send, questions, approvals, getWin, signal } = opts;
+  // Opencode session: same pattern as chat — the DSH sessionId is stable per
+  // coding conversation; the fetch wrapper will attach it for opencode.ai.
+  setCurrentOpencodeSessionId(sessionId);
   // Sandbox: confine fs/bash mutations to cwd by default (workspace-write).
   const sandboxMode = opts.sandboxMode ?? "workspace-write";
   // Approval mode: prefer explicit `approvalMode`, then map legacy `autoApprove`
@@ -397,7 +401,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       timer.end("coding turn threw", { error: error.message, stack: error.stack });
       return { ok: false, error: error.message };
     },
-  );
+  ).finally(() => setCurrentOpencodeSessionId(null));
 }
 
 /**

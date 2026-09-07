@@ -14,6 +14,7 @@ import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loo
 import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
 import { foldSessionUsage } from "./plugins/context-ring";
 import { foldSessionStats } from "./session-stats";
+import { setCurrentOpencodeSessionId } from "../lib/cairn-identity";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
@@ -159,6 +160,12 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   timer.mark("getContext (cold: builds 26 Cordis plugins sequentially)");
   const { db, req, workspacePath, signal } = opts;
   let llmConfig = opts.llmConfig;
+  // Opencode Zen requires a stable per-conversation session id for routing +
+  // prompt caching. Use the DSH sessionId (`chat-<threadId>`) which is stable
+  // per thread; the global fetch wrapper will attach it as
+  // `x-opencode-session` for any opencode.ai request in this turn.
+  const opencodeSessionId = `chat-${req.threadId}`;
+  setCurrentOpencodeSessionId(opencodeSessionId);
 
   // Runtime-loaded development plugins need one process-level fs chain.
   try {
@@ -449,6 +456,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       await dropChatAgentForThread(req.threadId);
       attempt = await runAttempt();
     } else {
+      setCurrentOpencodeSessionId(null);
       throw err;
     }
   }
@@ -479,5 +487,6 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     reasoningTokens: attempt.rt,
     ...(attempt.failedKind ? { failedKind: attempt.failedKind } : {}),
   });
+  setCurrentOpencodeSessionId(null);
   return { exhausted: signal?.aborted === true, content, reasoning };
 }

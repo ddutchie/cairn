@@ -36,6 +36,8 @@ import {
   type StreamOptions,
   type UIMessage,
 } from "./types";
+import { CAIRN_USER_AGENT, isOpencodeEndpoint } from "../cairn-identity";
+import { getOpencodeSessionId } from "../opencode-session";
 
 // ── stream translation ──────────────────────────────────────────────────────
 
@@ -55,6 +57,10 @@ function makeStreamer(config: OpenAIConfig) {
     const body = buildChatCompletionsBody(config, messages, tools, options);
 
     const url = new URL("chat/completions", config.baseUrl.replace(/\/?$/, "/")).toString();
+    const isOpencode = isOpencodeEndpoint(config.baseUrl);
+    const opencodeHeaders: Record<string, string> = isOpencode
+      ? { "User-Agent": CAIRN_USER_AGENT, "x-opencode-session": getOpencodeSessionId() }
+      : { "User-Agent": CAIRN_USER_AGENT };
     const send = (payload: Record<string, unknown>) =>
       expoFetch(url, {
         method: "POST",
@@ -62,6 +68,7 @@ function makeStreamer(config: OpenAIConfig) {
           "Content-Type": "application/json",
           Accept: "text/event-stream",
           Authorization: `Bearer ${config.apiKey}`,
+          ...opencodeHeaders,
         },
         body: JSON.stringify(payload),
         signal,

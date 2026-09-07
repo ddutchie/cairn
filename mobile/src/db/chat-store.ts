@@ -125,6 +125,16 @@ export function hasChatHistory(): boolean {
 export function clearChatHistory(): void {
   getDb().runSync(`DELETE FROM chat_local`);
   clearLastChatUsage();
+  // Rotate the opencode session so the next conversation gets a fresh
+  // routing/caching bucket (same as desktop's per-thread `chat-<id>`).
+  try {
+    const { resetOpencodeSessionId } = require("@/chat/opencode-session") as {
+      resetOpencodeSessionId: () => void;
+    };
+    resetOpencodeSessionId();
+  } catch {
+    // best-effort
+  }
 }
 
 // ── Last context-window usage ────────────────────────────────────────────────

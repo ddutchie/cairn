@@ -28,6 +28,8 @@ import { countTextTokens } from "../tokens";
 import { mapMessage, mapTools } from "./openai-body";
 import { makeOpenAIProvider } from "./openai";
 import type { AiTool, ChatProvider, ChatUsage, StreamEvent, StreamOptions, UIMessage } from "./types";
+import { CAIRN_USER_AGENT, isOpencodeEndpoint } from "../cairn-identity";
+import { getOpencodeSessionId } from "../opencode-session";
 
 interface ToolAccum {
   id: string;
@@ -52,12 +54,17 @@ function makeResponsesStreamer(config: OpenAIConfig) {
     });
 
     const url = new URL("responses", config.baseUrl.replace(/\/?$/, "/")).toString();
+    const isOpencode = isOpencodeEndpoint(config.baseUrl);
+    const opencodeHeaders: Record<string, string> = isOpencode
+      ? { "User-Agent": CAIRN_USER_AGENT, "x-opencode-session": getOpencodeSessionId() }
+      : { "User-Agent": CAIRN_USER_AGENT };
     const res = await expoFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
         Authorization: `Bearer ${config.apiKey}`,
+        ...opencodeHeaders,
       },
       body: JSON.stringify(body),
       signal,
@@ -284,9 +291,13 @@ export async function supportsResponses(baseUrl: string, apiKey: string): Promis
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
+      const isOpencode = isOpencodeEndpoint(key);
+      const opencodeHeaders: Record<string, string> = isOpencode
+        ? { "User-Agent": CAIRN_USER_AGENT, "x-opencode-session": getOpencodeSessionId() }
+        : { "User-Agent": CAIRN_USER_AGENT };
       const res = await expoFetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, ...opencodeHeaders },
         body: JSON.stringify({}),
         signal: controller.signal,
       });
