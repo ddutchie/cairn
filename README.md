@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/ddutchie-cairn-badge.png)](https://mseep.ai/app/ddutchie-cairn)
+
 # Cairn
 
 <p align="center">
