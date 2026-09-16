@@ -148,7 +148,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     const abortCtrl = new AbortController();
      abortControllers.set(sessionId, abortCtrl);
     
-    const { provider, baseUrl, model, apiKey } = resolveAIConfig(req.config);
+    const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
     const isLocalEndpointUrl = isLocalEndpoint(baseUrl);
 
     const send = (ch: string, payload: unknown) => {
