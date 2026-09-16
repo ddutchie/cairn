@@ -41,6 +41,56 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
   const panelRef = useRef<HTMLElement>(null);
   const dividerRef = useRef<HTMLDivElement>(null);
 
+  const isCenterMode = sessionPresentation === "center";
+
+  // ── Drawer ↔ center slide ───────────────────────────────────────────────
+  // Both modes pin explicit left+width (drawer: right-anchored via
+  // left:100vw-panelWidth; center: sidebarWidth…100vw), so a mode switch
+  // interpolates one continuous slide instead of snapping. Duration/easing
+  // match the content margin transition in page.tsx (300ms ease-in-out) so
+  // panel and background travel together as a single motion. SessionPane
+  // stays mounted throughout, preserving IPC, scroll, and chat state; the
+  // centered transcript/composer are max-w-3xl mx-auto, i.e. fluid below
+  // 768px, so content reflows smoothly into place mid-slide.
+  // left/width only transition while the store's chatSliding flag is set —
+  // it is committed atomically WITH the geometry change (a component-state
+  // flag would land a frame late via effects, after the snap already
+  // happened). The sidebar's own collapse/expand animation never sets the
+  // flag, so live measurement tracking stays per-frame with no chasing lag.
+  const chatSliding = useCairnStore((s) => s.chatSliding);
+  const setChatSliding = useCairnStore((s) => s.setChatSliding);
+  useEffect(() => {
+    if (!chatSliding) return;
+    const t = setTimeout(() => setChatSliding(false), 320);
+    return () => clearTimeout(t);
+  }, [chatSliding, setChatSliding]);
+
+  // ── Live sidebar measurement ────────────────────────────────────────────
+  // Center mode offsets from the sidebar's REAL rendered width instead of
+  // trusting the hardcoded per-shell fallback below (those drift — the
+  // collapsed dock was guessed as 4rem when it renders w-12/3rem, and the
+  // rem guesses for px-based sidebars only hold at a 16px root while the app
+  // runs 14px × font-scale). ResizeObserver also fires per-frame through the
+  // sidebar's own 300ms collapse/expand animation, so the panel edge stays
+  // glued while it moves. Re-runs on every mode switch: React's style prop
+  // would otherwise clobber the measured value with the fallback on re-entry
+  // (ResizeObserver alone won't refire without a size change). Runs in every
+  // mode so the value is already correct the moment a switch starts; mobile
+  // ignores it (panel is left-0 below md).
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const sidebar = document.querySelector<HTMLElement>("[data-sidebar]");
+    if (!sidebar) return;
+    const sync = () => {
+      panel.style.setProperty("--sidebar-width", `${sidebar.getBoundingClientRect().width}px`);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(sidebar);
+    return () => ro.disconnect();
+  }, [shellVariant, isCenterMode]);
+
   useEffect(() => {
     const divider = dividerRef.current;
     const panel = panelRef.current;
@@ -105,34 +155,42 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     };
   }, [setChatPanelWidth, setChatPanelResizing, activeView]);
 
-  const isCenterMode = sessionPresentation === "center";
+  // Determine positioning coordinates. Both modes pin explicit left+width so
+  // mode switches slide (see above); drawer open/close stays a slide+fade via
+  // transform/opacity. No viewport scrollbar exists (app is overflow-hidden by
+  // construction), so 100vw-anchoring the drawer is exact.
+  //
+  // The --sidebar-width fallback below is per-shell and only a first-paint
+  // stand-in (rem guesses can't match px-based sidebars under font scaling);
+  // the live measurement effect above overwrites it with real pixels. It is
+  // set in BOTH modes so React never drops the property (which would wipe
+  // the measured value on every drawer visit).
+  let sidebarWidth: string;
+  if (shellVariant === "A") sidebarWidth = sidebarCollapsed ? "3rem" : "15.25rem";
+  else if (shellVariant === "B") sidebarWidth = "16.25rem";
+  else if (shellVariant === "C") sidebarWidth = "3.25rem";
+  else sidebarWidth = sidebarCollapsed ? "3rem" : "14rem";
+  const widthStyle = {
+    "--sidebar-width": sidebarWidth,
+  } as React.CSSProperties;
 
-  // Determine positioning coordinates
   let positioningClasses = "";
-  let widthStyle: React.CSSProperties = {};
 
   if (isCenterMode) {
     // Center mode: spans from the right of the sidebar to the right screen edge.
-    // Shell-aware: Dock rail is 4rem/15.25rem (w-16 / w-[244px]), Studio is 16.25rem, Calm is 3.25rem.
     // top overlaps the header's border-b by 1px so the two 1px lines occupy the
     // same pixel row (y=43-44, or banner-adjusted chromeTop). Result is a single
     // 1px continuous line, not two adjacent 1px lines (2px).
-    let sidebarWidth: string;
-    if (shellVariant === "A") sidebarWidth = sidebarCollapsed ? "4rem" : "15.25rem";
-    else if (shellVariant === "B") sidebarWidth = "16.25rem";
-    else if (shellVariant === "C") sidebarWidth = "3.25rem";
-    else sidebarWidth = sidebarCollapsed ? "3rem" : "14rem";
-    positioningClasses = "top-[calc(var(--chrome-top)-1px)] left-0 md:left-[var(--sidebar-width)] right-0 w-auto border-t border-[var(--border)] bg-[var(--background)]";
-    widthStyle = {
-      "--sidebar-width": sidebarWidth,
-    } as React.CSSProperties;
+    positioningClasses = "top-[calc(var(--chrome-top)-1px)] left-0 md:left-[var(--sidebar-width)] right-0 w-[100vw] md:w-[calc(100vw_-_var(--sidebar-width))] border-t border-[var(--border)] bg-[var(--background)]";
   } else {
-    // Sidebar mode. Width comes from the :root `--chat-panel-width` variable
-    // (shared with the centered content margin) so the drag reflows both live.
+    // Drawer mode. Right-anchored via explicit left (100vw − panel width) so
+    // left+width interpolate with center mode. Width comes from the :root
+    // `--chat-panel-width` variable (shared with the content margin) so the
+    // drag reflows both live.
     // top -1px overlaps header's border-b (both 1px at y=43-44) -> single 1px
     // line continuous across the window. border-t + border-l meet at a clean
     // 90° corner (same element, same color, overlapping pixel, no step).
-    positioningClasses = "top-[calc(var(--chrome-top)-1px)] right-0 w-[var(--chat-panel-width,320px)] border-t border-l border-[var(--border)] bg-[var(--surface)] shadow-[-12px_0_32px_rgba(0,0,0,.28)]";
+    positioningClasses = "top-[calc(var(--chrome-top)-1px)] left-[calc(100vw_-_var(--chat-panel-width,320px))] w-[var(--chat-panel-width,320px)] border-t border-l border-[var(--border)] bg-[var(--surface)] shadow-[-12px_0_32px_rgba(0,0,0,.28)]";
     if (chatOpen) {
       positioningClasses += " opacity-100 translate-x-0";
     } else {
@@ -145,7 +203,11 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
       ref={panelRef}
       className={cn(
         "fixed bottom-0 z-30 flex overflow-hidden",
-        !chatPanelResizing && "transition-all duration-300 ease-in-out",
+        // Drawer open/close always slides+fades; left/width join the transition
+        // only during a drawer↔center switch (see `chatSliding` above).
+        !chatPanelResizing && (chatSliding
+          ? "transition-[transform,opacity,left,width] duration-300 ease-in-out"
+          : "transition-[transform,opacity] duration-300 ease-in-out"),
         positioningClasses
       )}
       style={widthStyle}

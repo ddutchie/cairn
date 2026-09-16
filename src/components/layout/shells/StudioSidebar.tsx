@@ -32,7 +32,7 @@ export function StudioSidebar() {
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   return (
-    <aside className="w-[260px] flex-shrink-0 flex flex-col border-r border-[var(--border)] bg-[linear-gradient(180deg,#141414,#111)] overflow-hidden">
+    <aside data-sidebar className="w-[260px] flex-shrink-0 flex flex-col border-r border-[var(--border)] bg-[linear-gradient(180deg,#141414,#111)] overflow-hidden">
       {/* tray */}
       <div className="m-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] relative overflow-hidden" style={{ boxShadow: "0 8px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)" }}>
         <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(300px 120px at 80% 0%, color-mix(in srgb,var(--accent) 10%, transparent), transparent 60%)" }} />

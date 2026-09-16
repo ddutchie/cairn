@@ -242,17 +242,16 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   const handleClosePanel = useCallback(() => {
     if (!isRightPanel) {
-      // Center mode is visible independently of chatOpen. Return to drawer
-      // presentation first, then close the drawer only when it is open; this
-      // prevents "Close panel" from leaving the centered session on screen or
-      // opening a drawer that was never open.
-      setSessionPresentation("drawer");
+      // Center mode is visible independently of chatOpen. setView() restores
+      // the drawer presentation (see the ui slice), then close the drawer only
+      // when it is open; this prevents "Close panel" from leaving the centered
+      // session on screen or opening a drawer that was never open.
       setView(lastContentView);
       if (chatOpen) toggleChat();
       return;
     }
     toggleChat();
-  }, [chatOpen, isRightPanel, lastContentView, setSessionPresentation, setView, toggleChat]);
+  }, [chatOpen, isRightPanel, lastContentView, setView, toggleChat]);
 
   // Listen for pop-in final state from the main process
   useEffect(() => {
@@ -374,7 +373,9 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           {isRightPanel ? (
             <Tooltip content="Expand to central view" side="bottom">
               <button
-                onClick={() => { setSessionPresentation("center"); setView("chat"); }}
+                // setView("chat") also flips the presentation to center (single
+                // store update — no intermediate drawer/center flash).
+                onClick={() => setView("chat")}
                 className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
               >
                 <Maximize2 size={11} />
@@ -383,7 +384,9 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           ) : (
             <Tooltip content={`Collapse to sidebar (${mod}/)`} side="bottom">
               <button
-                onClick={() => { setSessionPresentation("drawer"); setView(lastContentView); }}
+                // setView() back to the content view also restores the drawer
+                // presentation — one update, no stuck-overlay state.
+                onClick={() => setView(lastContentView)}
                 className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
               >
                 <Minimize2 size={11} />
@@ -406,11 +409,11 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
                 </DropdownMenuItem>
               )}
               {isRightPanel ? (
-                <DropdownMenuItem onClick={() => { setSessionPresentation("center"); setView("chat"); }} className="flex items-center gap-2 text-xs">
+                <DropdownMenuItem onClick={() => setView("chat")} className="flex items-center gap-2 text-xs">
                   <Maximize2 size={12} /> Expand to center
                 </DropdownMenuItem>
               ) : (
-                <DropdownMenuItem onClick={() => { setSessionPresentation("drawer"); setView(lastContentView); }} className="flex items-center gap-2 text-xs">
+                <DropdownMenuItem onClick={() => setView(lastContentView)} className="flex items-center gap-2 text-xs">
                   <Minimize2 size={12} /> Collapse to sidebar
                 </DropdownMenuItem>
               )}

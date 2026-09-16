@@ -173,6 +173,7 @@ export function Sidebar() {
         />
       )}
       <aside
+        data-sidebar
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-hidden md:static md:translate-x-0 transition-all duration-300 ease-in-out relative",
           sidebarCollapsed ? "w-12 py-3 gap-1" : "w-56"

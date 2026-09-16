@@ -764,6 +764,14 @@ export interface UISlice extends AppUIState {
   sessionPresentation: SessionPresentation;
   setSessionPresentation: (presentation: SessionPresentation) => void;
 
+  /** True for ~320ms after a drawer↔center switch. Committed atomically with
+   *  the geometry change (unlike component-state flags, which land a frame
+   *  late and make the slide snap instead of run). The panel includes
+   *  left/width in its transition only while this is true, so sidebar
+   *  collapse/expand tracking stays per-frame with no chasing lag. */
+  chatSliding: boolean;
+  setChatSliding: (sliding: boolean) => void;
+
   /** Optional target section for the Settings view (consumed once on open). */
   settingsSection: SettingsSection | null;
   setSettingsSection: (section: SettingsSection | null) => void;
@@ -828,6 +836,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   chatPanelResizing: false,
   lastContentView: "overview",
   sessionPresentation: "drawer",
+  chatSliding: false,
   settingsSection: null,
   notificationOpen: false,
   calendarProjectIds: [],
@@ -1258,18 +1267,36 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   setView(view) {
     if (view !== "chat" && view !== "search") {
+      const leavingCenter = get().sessionPresentation !== "drawer";
       set({
         activeView: view,
         lastContentView: view as AppUIState["lastContentView"],
-        ...(view === "agent" ? { sessionPresentation: "drawer" as const } : {}),
+        // The center presentation is a fullscreen overlay that only makes sense
+        // for the chat view. Navigating anywhere else (sidebar, shortcuts,
+        // topbar Chat toggle, ⌘/) must drop back to the drawer, otherwise the
+        // overlay keeps covering the content it just navigated to.
+        sessionPresentation: "drawer" as const,
+        // Flag the geometry switch in the SAME commit so the panel's
+        // left/width transition is armed before the values change.
+        ...(leavingCenter ? { chatSliding: true } : {}),
       });
     } else {
-      set({ activeView: view, ...(view === "chat" ? { sessionPresentation: "center" as const } : {}) });
+      const enteringCenter = view === "chat" && get().sessionPresentation !== "center";
+      set({
+        activeView: view,
+        ...(view === "chat" ? { sessionPresentation: "center" as const } : {}),
+        ...(enteringCenter ? { chatSliding: true } : {}),
+      });
     }
   },
 
   setSessionPresentation(presentation) {
-    set({ sessionPresentation: presentation });
+    if (get().sessionPresentation === presentation) return;
+    set({ sessionPresentation: presentation, chatSliding: true });
+  },
+
+  setChatSliding(sliding) {
+    set({ chatSliding: sliding });
   },
 
   setSettingsSection(section) {
@@ -1301,7 +1328,12 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       chatOpen: !s.chatOpen,
       // The global Chat affordance opens the drawer. The center view has its
       // own explicit setView("chat") transition.
-      ...(s.chatOpen ? {} : { sessionPresentation: "drawer" as const }),
+      ...(s.chatOpen
+        ? {}
+        : {
+            sessionPresentation: "drawer" as const,
+            ...(s.sessionPresentation !== "drawer" ? { chatSliding: true } : {}),
+          }),
     }));
   },
 

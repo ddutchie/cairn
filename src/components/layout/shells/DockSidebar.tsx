@@ -105,7 +105,7 @@ export function DockSidebar() {
 
   const cancelCreateProject = useCallback(() => { setCreatingProject(false); setNewProjectName(""); }, []);
 
-  // collapsed = dock icons only (64px). expanded = 244px with labels.
+  // collapsed = dock icons only (48px / w-12). expanded = 244px with labels.
   const collapsed = sidebarCollapsed;
 
   return (
@@ -114,6 +114,7 @@ export function DockSidebar() {
         <div className="fixed inset-0 bg-[color-mix(in_srgb,var(--background)_40%,transparent)] z-30 md:hidden" onClick={toggleSidebar} />
       )}
       <aside
+        data-sidebar
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-hidden md:static md:translate-x-0 transition-[width,transform,opacity] duration-300 ease-in-out",
           collapsed ? "w-12 py-3 gap-1" : "w-[244px]"

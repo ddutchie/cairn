@@ -23,7 +23,7 @@ export function CalmRail() {
   );
   const mod = useMemo(() => modKey(), []);
   return (
-    <nav className="w-[52px] flex-shrink-0 flex flex-col items-center py-3 gap-1.5 border-r border-[var(--border-subtle)] bg-[var(--background)]">
+    <nav data-sidebar className="w-[52px] flex-shrink-0 flex flex-col items-center py-3 gap-1.5 border-r border-[var(--border-subtle)] bg-[var(--background)]">
       <div className="w-8 h-8 rounded-lg bg-[var(--surface)] border border-[var(--border)] grid place-items-center text-[var(--accent)]">◆</div>
       <div className="w-4 h-px bg-[var(--border)] my-1" />
       {NAV.filter((n) => !(n.id !== "overview" && n.id !== "notes" && hiddenViews.has(n.id as never))).map((n) => {

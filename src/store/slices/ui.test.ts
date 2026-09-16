@@ -78,6 +78,21 @@ describe("createUISlice", () => {
     state.setView("chat");
     expect(state.activeView).toBe("chat");
     expect(state.lastContentView).toBe("board"); // remains "board"
+    expect(state.sessionPresentation).toBe("center");
+    // Entering center flags the slide in the same commit so the panel's
+    // left/width transition is armed before the values change.
+    expect(state.chatSliding).toBe(true);
+
+    // Plain content navigation never flags a slide — but leaving center for
+    // a content view does (the panel slides back to the drawer).
+    state.setChatSliding(false);
+    state.setView("notes");
+    expect(state.sessionPresentation).toBe("drawer");
+    expect(state.chatSliding).toBe(true);
+
+    state.setChatSliding(false);
+    state.setView("board");
+    expect(state.chatSliding).toBe(false);
 
     // Switch to search
     state.setView("search");
@@ -104,6 +119,30 @@ describe("createUISlice", () => {
     expect(state.sessionPresentation).toBe("drawer");
 
     state.setView("agent");
+    expect(state.sessionPresentation).toBe("drawer");
+  });
+
+  it("resets to the drawer when leaving the chat view", () => {
+    let state: any = {};
+
+    const mockSet = (updater: any) => {
+      const next = typeof updater === "function" ? updater(state) : updater;
+      state = { ...state, ...next };
+    };
+    const mockGet = () => state;
+    const slice = createUISlice(mockSet, mockGet, {} as any);
+    state = { ...state, ...slice };
+
+    state.setView("board");
+    state.setView("chat");
+    expect(state.activeView).toBe("chat");
+    expect(state.sessionPresentation).toBe("center");
+
+    // Topbar Chat toggle, ⌘/, or sidebar navigation away from chat must not
+    // leave the fullscreen center overlay covering the content view.
+    state.setView("board");
+    expect(state.activeView).toBe("board");
+    expect(state.lastContentView).toBe("board");
     expect(state.sessionPresentation).toBe("drawer");
   });
 
