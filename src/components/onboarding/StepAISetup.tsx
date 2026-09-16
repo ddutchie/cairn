@@ -7,12 +7,10 @@ import type { RegistryProviderEntry } from "@/types";
 
 interface Props {
   aiEnabled: boolean;
-  provider?: string;
   baseUrl: string;
   apiKey: string;
   model: string;
   onAiEnabledChange: (v: boolean) => void;
-  onProviderChange: (v: string) => void;
   onBaseUrlChange: (v: string) => void;
   onApiKeyChange: (v: string) => void;
   onModelChange: (v: string) => void;
@@ -21,8 +19,8 @@ interface Props {
 }
 
 export function StepAISetup({
-  aiEnabled, provider = "openai", baseUrl, apiKey, model,
-  onAiEnabledChange, onProviderChange, onBaseUrlChange, onApiKeyChange, onModelChange,
+  aiEnabled, baseUrl, apiKey, model,
+  onAiEnabledChange, onBaseUrlChange, onApiKeyChange, onModelChange,
   onBack, onNext,
 }: Props) {
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -41,7 +39,6 @@ export function StepAISetup({
    *  (the raw key never leaves the keychain). */
   function handleProviderPick({ entry, apiKeyRef }: { entry: RegistryProviderEntry; id: string; apiKeyRef: string }) {
     const def = entry.definition;
-    onProviderChange("openai");
     onBaseUrlChange(def.baseUrl);
     if (def.defaultModel) onModelChange(def.defaultModel);
     if (apiKeyRef) onApiKeyChange(apiKeyRef);

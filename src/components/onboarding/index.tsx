@@ -70,7 +70,6 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
 
   // ── AI ───────────────────────────────────────────────────────────────────────
   const [aiEnabled, setAiEnabled] = useState(aiConfig.aiEnabled ?? true);
-  const [provider, setProvider]   = useState<string>(aiConfig.provider ?? "openai");
   const [baseUrl, setBaseUrl]     = useState(aiConfig.baseUrl || "https://api.openai.com");
   const [apiKey, setApiKey]       = useState(aiConfig.apiKey || "");
   const [model, setModel]         = useState(aiConfig.model || "gpt-5.6-luna");
@@ -181,7 +180,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   }
 
   function handleSaveAI() {
-    setAIConfig({ aiEnabled, provider: provider as "openai", baseUrl, apiKey, model });
+    setAIConfig({ aiEnabled, provider: "openai", baseUrl, apiKey, model });
     setAgentConfig({ baseUrl, apiKey, model });
     // If the vault scan already created projects, show a summary of them instead
     // of prompting the user to create their first project.
@@ -244,12 +243,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     return (
       <StepAISetup
         aiEnabled={aiEnabled}
-        provider={provider}
         baseUrl={baseUrl}
         apiKey={apiKey}
         model={model}
         onAiEnabledChange={setAiEnabled}
-        onProviderChange={setProvider}
         onBaseUrlChange={setBaseUrl}
         onApiKeyChange={setApiKey}
         onModelChange={setModel}

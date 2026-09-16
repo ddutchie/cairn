@@ -77,12 +77,10 @@ type Props = React.ComponentProps<typeof StepAISetup>;
 function renderStep(overrides: Partial<Props> = {}) {
   const props: Props = {
     aiEnabled: true,
-    provider: "openai",
     baseUrl: "https://api.openai.com",
     apiKey: "",
     model: "gpt-4o",
     onAiEnabledChange: vi.fn(),
-    onProviderChange: vi.fn(),
     onBaseUrlChange: vi.fn(),
     onApiKeyChange: vi.fn(),
     onModelChange: vi.fn(),
@@ -140,8 +138,7 @@ describe("StepAISetup merged provider gallery", () => {
     await userEvent.click(ollamaAdd!);
 
     await waitFor(() => expect(installCommunityProvider).toHaveBeenCalledWith(PROVIDERS[1], undefined));
-    // onPick → provider flips to cloud + baseUrl/model prefilled from the preset.
-    expect(props.onProviderChange).toHaveBeenCalledWith("openai");
+    // onPick → baseUrl/model prefilled from the preset.
     expect(props.onBaseUrlChange).toHaveBeenCalledWith("http://localhost:11434");
     // Ollama has no defaultModel and is keyless → model/key untouched.
     expect(props.onModelChange).not.toHaveBeenCalled();
@@ -162,7 +159,6 @@ describe("StepAISetup merged provider gallery", () => {
     await userEvent.keyboard("{Enter}");
 
     await waitFor(() => expect(installCommunityProvider).toHaveBeenCalledWith(PROVIDERS[0], "sk-test"));
-    expect(props.onProviderChange).toHaveBeenCalledWith("openai");
     expect(props.onBaseUrlChange).toHaveBeenCalledWith("https://openrouter.ai/api/v1");
     expect(props.onModelChange).toHaveBeenCalledWith("deepseek");
     // The keychain ref (not the raw key) is mirrored so handleSaveAI persists it.
