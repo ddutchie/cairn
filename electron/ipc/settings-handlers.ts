@@ -84,10 +84,19 @@ export function registerSettingsHandlers(): void {
     const files: Array<{ name: string; bytes: number }> = [];
     let bytes = 0;
     for (const dir of llmLeftoverDirs()) bytes += walkSize(dir, files);
+    // rmSync(force) already ignores missing paths, so any throw here is a
+    // real failure (permissions, locked files) — surface it instead of
+    // reporting a full reclaim. The row stays visible for retry.
+    const failures: string[] = [];
     for (const dir of llmLeftoverDirs()) {
       try {
         fs.rmSync(dir, { recursive: true, force: true });
-      } catch { /* ignore */ }
+      } catch (e) {
+        failures.push(`${dir}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    if (failures.length > 0) {
+      throw new Error(`Could not remove some model files: ${failures.join("; ")}`);
     }
     return { reclaimedBytes: bytes };
   }));

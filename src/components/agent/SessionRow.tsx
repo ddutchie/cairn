@@ -66,7 +66,7 @@ export function SessionRow({ session, selected, running, onSelect, onRemove, tab
             selected
               ? "bg-[var(--accent-dim)] text-[var(--accent)]"
               : running
-                ? "bg-[var(--accent-dim)]/30 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                ? "bg-[color-mix(in_srgb,var(--accent-dim)_30%,transparent)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
                 : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
           )}
         >
@@ -80,7 +80,7 @@ export function SessionRow({ session, selected, running, onSelect, onRemove, tab
           {session.mode === "plan" && <span className="flex-shrink-0 text-[0.643rem] text-[var(--warning)]">plan</span>}
           {running && (
             <>
-              <span className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--border)]/60" aria-hidden />
+              <span className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] bg-[color-mix(in_srgb,var(--border)_60%,transparent)]" aria-hidden />
               <span className="pointer-events-none absolute bottom-0 left-0 h-[2px] w-[42%] bg-[var(--accent)] animate-cairn-indeterminate" aria-hidden />
               <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">running</span>
             </>
@@ -137,7 +137,7 @@ export function SessionRow({ session, selected, running, onSelect, onRemove, tab
           </div>
           {running && (
             <>
-              <span className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--border)]/60" aria-hidden />
+              <span className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] bg-[color-mix(in_srgb,var(--border)_60%,transparent)]" aria-hidden />
               <span className="pointer-events-none absolute bottom-0 left-0 h-[2px] w-[42%] bg-[var(--accent)] animate-cairn-indeterminate" aria-hidden />
               <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">running</span>
             </>

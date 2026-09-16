@@ -323,6 +323,7 @@ export const useCairnStore = create<CairnStore>()(
       restorePersistedTheme(a[0]);
 
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
+      let migratedSlug = false;
       if (savedConfig) {
         if (savedConfig.provider === ("apple-fm" as unknown as "openai") || (savedConfig.provider as unknown as string) === "localllm") {
           // Retired provider slugs → plain OpenAI-compatible. The built-in
@@ -332,6 +333,7 @@ export const useCairnStore = create<CairnStore>()(
           // working untouched.
           savedConfig.provider = "openai";
           storage.set(AI_CONFIG_KEY, savedConfig);
+          migratedSlug = true;
         }
         a[0]({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
       }
@@ -351,6 +353,24 @@ export const useCairnStore = create<CairnStore>()(
         };
         a[0]({ agentConfig: migrated });
         storage.set(AGENT_CONFIG_KEY, migrated);
+      }
+
+      // After a retired-slug migration, file the connection as a shared
+      // saved-provider row selected for both surfaces — otherwise the picker
+      // shows "Not configured" despite a working connection.
+      if (migratedSlug && savedConfig?.baseUrl) {
+        try {
+          get().ensureSavedProviderForConnection(
+            {
+              baseUrl: savedConfig.baseUrl,
+              model: savedConfig.model ?? "",
+              apiKey: savedConfig.apiKey ?? "",
+            },
+            "both",
+          );
+        } catch (e) {
+          console.warn("Failed to migrate connection into saved providers:", e);
+        }
       }
 
       restorePersistedUiPrefs(a[0]);
@@ -403,10 +423,12 @@ export const useCairnStore = create<CairnStore>()(
               ...(localAiConfig?.reasoningEffort !== undefined ? { reasoningEffort: localAiConfig.reasoningEffort } : {}),
             }
           : localAiConfig;
+        let migratedSlug = false;
         if (savedConfig) {
           if (savedConfig.provider === ("apple-fm" as unknown as "openai") || (savedConfig.provider as unknown as string) === "localllm") {
             // Retired provider slugs → plain OpenAI-compatible (see hydrate()).
             savedConfig.provider = "openai";
+            migratedSlug = true;
           }
           const mergedAiConfig = { ...DEFAULT_AI_CONFIG, ...savedConfig };
           set({ aiConfig: mergedAiConfig });
@@ -446,6 +468,25 @@ export const useCairnStore = create<CairnStore>()(
           storage.set(AGENT_CONFIG_KEY, migrated);
         } else {
           set({ agentConfig: DEFAULT_AGENT_CONFIG });
+        }
+
+        // After a retired-slug migration, file the connection as a shared
+        // saved-provider row selected for both surfaces — otherwise the
+        // picker shows "Not configured" despite a working connection.
+        // Idempotent (dedupes by baseUrl), so refresh hydrates are safe.
+        if (migratedSlug && savedConfig?.baseUrl) {
+          try {
+            get().ensureSavedProviderForConnection(
+              {
+                baseUrl: savedConfig.baseUrl,
+                model: savedConfig.model ?? "",
+                apiKey: savedConfig.apiKey ?? "",
+              },
+              "both",
+            );
+          } catch (e) {
+            console.warn("Failed to migrate connection into saved providers:", e);
+          }
         }
 
         // One-time: relocate any raw LLM API keys (legacy top-level or per-provider)

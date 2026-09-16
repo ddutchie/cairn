@@ -27,7 +27,7 @@ interface Props {
 // ── Onboarding wizard ─────────────────────────────────────────────────────────
 
 export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props) {
-  const { createWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, fontFamily, setFontFamily, aiConfig, setAIConfig, setAgentConfig, createProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, fontFamily: s.fontFamily, setFontFamily: s.setFontFamily, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, createProject: s.createProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
+  const { createWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, fontFamily, setFontFamily, aiConfig, setAIConfig, setAgentConfig, ensureSavedProviderForConnection, createProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, fontFamily: s.fontFamily, setFontFamily: s.setFontFamily, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, ensureSavedProviderForConnection: s.ensureSavedProviderForConnection, createProject: s.createProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
 
   // ── Wizard step ──────────────────────────────────────────────────────────────
   const [step, setStep] = useState<OnboardingStep>(initialStep);
@@ -182,6 +182,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   function handleSaveAI() {
     setAIConfig({ aiEnabled, provider: "openai", baseUrl, apiKey, model });
     setAgentConfig({ baseUrl, apiKey, model });
+    // File the connection as a saved provider so the picker shows it by name.
+    if (aiEnabled && baseUrl.trim()) {
+      ensureSavedProviderForConnection({ baseUrl, model, apiKey }, "ai");
+    }
     // If the vault scan already created projects, show a summary of them instead
     // of prompting the user to create their first project.
     setStep(importedProjects.length > 0 ? "imported-projects" : "create-project");

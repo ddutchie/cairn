@@ -19,9 +19,9 @@ import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } fro
 // Cairn no longer ships an inference engine. Run Ollama, LM Studio, or
 // llama.cpp yourself and add it here as a saved provider — chat, agent, and
 // automations treat it like any other OpenAI-compatible endpoint (no API key
-// needed for localhost). Detection is a best-effort direct fetch from the
-// renderer; a server that blocks browser access can still be added manually
-// in ProviderManager below.
+// needed for localhost). Detection goes through the established
+// window.electron.ai.fetchModels IPC (main-process fetch: no renderer CORS
+// issues, 12s abort) instead of renderer fetch.
 
 interface DetectedServer {
   key: string;
@@ -36,19 +36,13 @@ const LOCAL_SERVER_CANDIDATES = [
   { key: "llamacpp", name: "llama.cpp server", baseUrl: "http://127.0.0.1:8080/v1" },
 ];
 
-async function probeLocalServer(baseUrl: string, timeoutMs = 4000): Promise<{ ok: boolean; models: string[] }> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+async function probeLocalServer(baseUrl: string): Promise<{ ok: boolean; models: string[] }> {
   try {
-    const res = await fetch(`${baseUrl}/models`, { signal: ac.signal });
-    if (!res.ok) return { ok: false, models: [] };
-    const data = await res.json() as { data?: Array<{ id?: string }> };
-    const ids = (data?.data ?? []).map((m) => m?.id).filter((id): id is string => !!id);
-    return { ok: true, models: ids.slice(0, 12) };
+    if (typeof window === "undefined" || !window.electron?.ai?.fetchModels) return { ok: false, models: [] };
+    const models = await window.electron.ai.fetchModels({ baseUrl });
+    return { ok: true, models: (models ?? []).slice(0, 12) };
   } catch {
     return { ok: false, models: [] };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

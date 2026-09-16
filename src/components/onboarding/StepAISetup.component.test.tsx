@@ -140,9 +140,10 @@ describe("StepAISetup merged provider gallery", () => {
     await waitFor(() => expect(installCommunityProvider).toHaveBeenCalledWith(PROVIDERS[1], undefined));
     // onPick → baseUrl/model prefilled from the preset.
     expect(props.onBaseUrlChange).toHaveBeenCalledWith("http://localhost:11434");
-    // Ollama has no defaultModel and is keyless → model/key untouched.
+    // Ollama has no defaultModel → model untouched; keyless pick mirrors an
+    // empty key so no stale key survives.
     expect(props.onModelChange).not.toHaveBeenCalled();
-    expect(props.onApiKeyChange).not.toHaveBeenCalled();
+    expect(props.onApiKeyChange).toHaveBeenCalledWith("");
   });
 
   it("prefills the default model and mirrors the keychain ref when the picked preset declares one", async () => {
@@ -171,6 +172,30 @@ describe("StepAISetup merged provider gallery", () => {
 
     await userEvent.click(screen.getAllByRole("button", { name: "Add · key" })[0]);
     expect(screen.getByPlaceholderText("sk-…")).toBeInTheDocument();
+  });
+
+  it("clears a previously selected key when switching to a keyless provider", async () => {
+    installCommunityProvider.mockImplementation(async (entry: RegistryProviderEntry, _apiKey?: string) => {
+      if (entry.id === "openrouter") {
+        savedProviders = [{ id: "id-openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", communityId: "openrouter", apiKey: "secret://llm:id-openrouter/apiKey", model: "deepseek" }];
+        return "id-openrouter";
+      }
+      return "id-ollama";
+    });
+    const props = renderStep();
+    await waitFor(() => expect(screen.getByText("OpenRouter")).toBeInTheDocument());
+
+    // Keyed first: keychain ref mirrored.
+    await userEvent.click(screen.getAllByRole("button", { name: "Add · key" })[0]);
+    await userEvent.type(screen.getByPlaceholderText("sk-…"), "sk-test");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(props.onApiKeyChange).toHaveBeenCalledWith("secret://llm:id-openrouter/apiKey"));
+
+    // Then keyless: the stale key must be cleared so handleSaveAI can't
+    // persist it against the keyless endpoint.
+    const ollamaAdd = screen.getAllByRole("button", { name: "Add" }).find((b) => b.textContent === "Add");
+    await userEvent.click(ollamaAdd!);
+    await waitFor(() => expect(props.onApiKeyChange).toHaveBeenCalledWith(""));
   });
 
   it("shows the manual endpoint section under an advanced toggle", async () => {

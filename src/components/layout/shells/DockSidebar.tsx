@@ -119,7 +119,7 @@ export function DockSidebar() {
           "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-hidden md:static md:translate-x-0 transition-[width,transform,opacity] duration-300 ease-in-out",
           collapsed ? "w-12 py-3 gap-1" : "w-[244px]"
         )}
-        style={{ top: 44 }}
+        style={{ top: "var(--chrome-top)" }}
       >
         {/* collapsed dock */}
         <div aria-hidden={!collapsed} inert={!collapsed ? true : undefined} className={cn("flex flex-col items-center gap-1 w-full flex-1 min-h-0 transition-opacity duration-300", collapsed ? "opacity-100" : "opacity-0 pointer-events-none absolute inset-x-0 top-3")}>

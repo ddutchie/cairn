@@ -41,7 +41,9 @@ export function StepAISetup({
     const def = entry.definition;
     onBaseUrlChange(def.baseUrl);
     if (def.defaultModel) onModelChange(def.defaultModel);
-    if (apiKeyRef) onApiKeyChange(apiKeyRef);
+    // Always mirror — even empty. A keyless pick must CLEAR a previously
+    // selected key, or handleSaveAI would persist it against the wrong endpoint.
+    onApiKeyChange(apiKeyRef);
   }
 
   return (

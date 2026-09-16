@@ -61,7 +61,10 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     if (!chatSliding) return;
     const t = setTimeout(() => setChatSliding(false), 320);
     return () => clearTimeout(t);
-  }, [chatSliding, setChatSliding]);
+    // isCenterMode restarts the window on every presentation change: without
+    // it, a second switch while the flag is still set would reuse the first
+    // switch's timeout and drop the transition mid-slide.
+  }, [chatSliding, setChatSliding, isCenterMode]);
 
   // ── Live sidebar measurement ────────────────────────────────────────────
   // Center mode offsets from the sidebar's REAL rendered width instead of
@@ -184,7 +187,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     // top -1px overlaps header's border-b (both 1px at y=43-44) -> single 1px
     // line continuous across the window. border-t + border-l meet at a clean
     // 90° corner (same element, same color, overlapping pixel, no step).
-    positioningClasses = "top-[calc(var(--chrome-top)-1px)] left-[calc(100vw_-_var(--chat-panel-width,320px))] w-[var(--chat-panel-width,320px)] border-t border-l border-[var(--border)] bg-[var(--surface)] shadow-[-12px_0_32px_rgba(0,0,0,.28)]";
+    positioningClasses = "top-[calc(var(--chrome-top)-1px)] left-[calc(100vw_-_var(--chat-panel-width,320px))] w-[var(--chat-panel-width,320px)] border-t border-l border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]";
     if (chatOpen) {
       positioningClasses += " opacity-100 translate-x-0";
     } else {

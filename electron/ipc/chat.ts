@@ -72,7 +72,14 @@ function resolveAIConfig(config?: {
   const isLocal = config?.baseUrl ? isLocalEndpoint(normaliseBaseUrl(config.baseUrl)) : false;
   if (!reqConfig?.apiKey && !isLocal) {
     const cached = getCachedConfig().aiConfig;
-    if (cached?.apiKey) {
+    // Only reuse the cached key when it belongs to the SAME endpoint: a
+    // keyless request at a different baseUrl must never inherit another
+    // endpoint's key. An empty request baseUrl inherits the cached endpoint
+    // (and its key) whole, as before.
+    const reqUrl = (reqConfig?.baseUrl ?? "").trim();
+    const cachedUrl = (cached?.baseUrl ?? "").trim();
+    const sameEndpoint = !reqUrl || !cachedUrl || normaliseBaseUrl(cachedUrl) === normaliseBaseUrl(reqUrl);
+    if (cached?.apiKey && sameEndpoint) {
       reqConfig = {
         ...reqConfig,
         provider: reqConfig?.provider || cached.provider,

@@ -645,6 +645,19 @@ export interface UISlice extends AppUIState {
   selectSavedProvider: (id: string) => void;
   selectAgentProvider: (id: string) => void;
   /**
+   * Ensure the shared saved-provider list contains a row for a raw
+   * connection (baseUrl/model/apiKey) and select it. Reuses the existing
+   * row when the normalized baseUrl already matches (patching an empty row
+   * model from the connection first, so selecting never clobbers the
+   * surface's current model with a stale default). Used by the retired-slug
+   * migration and onboarding so the picker shows a real provider instead of
+   * "Not configured". Returns the provider id. Skipped when baseUrl is blank.
+   */
+  ensureSavedProviderForConnection: (
+    conn: { baseUrl: string; model: string; apiKey: string },
+    selectFor?: "ai" | "agent" | "both",
+  ) => string | null;
+  /**
    * Install (or update) a community provider preset into the shared list and
    * store its API key in the OS keychain. Dedups by communityId (or name) so a
    * re-install reuses the existing row and its keychain secret. Does NOT auto-
@@ -938,6 +951,31 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       persistAgent(nextAgent);
       return { agentConfig: nextAgent };
     });
+  },
+
+  ensureSavedProviderForConnection(conn, selectFor = "ai") {
+    if (!conn.baseUrl.trim()) return null;
+    const norm = (u: string) => u.trim().replace(/\/+$/, "").toLowerCase();
+    const list = get().aiConfig.savedProviders ?? [];
+    const existing = list.find((p) => norm(p.baseUrl) === norm(conn.baseUrl));
+    if (existing) {
+      if (!existing.model && conn.model) get().updateSavedProvider(existing.id, { model: conn.model });
+      if (selectFor === "ai" || selectFor === "both") get().selectSavedProvider(existing.id);
+      if (selectFor === "agent" || selectFor === "both") get().selectAgentProvider(existing.id);
+      return existing.id;
+    }
+    let name = "Custom endpoint";
+    try {
+      const u = new URL(conn.baseUrl);
+      const host = u.hostname.toLowerCase();
+      name = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1"
+        ? `Local server (${u.port || "default port"})`
+        : host;
+    } catch { /* keep fallback */ }
+    return get().addSavedProvider(
+      { name, baseUrl: conn.baseUrl, model: conn.model, apiKey: conn.apiKey },
+      selectFor,
+    );
   },
 
   async installCommunityProvider(entry, apiKey) {

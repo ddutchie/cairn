@@ -109,6 +109,23 @@ function getCachePath(): string {
 }
 
 /**
+ * Retired provider slugs map to plain OpenAI-compatible. The backend cache
+ * can still hold `localllm` (or older `apple-fm`) from previous builds and is
+ * read directly by headless paths (automations, heartbeat) that never pass
+ * through the renderer's hydration migration — normalize at this boundary,
+ * on both write and read, so the slug can never leak downstream.
+ */
+const RETIRED_PROVIDER_SLUGS: Record<string, string> = {
+  localllm: "openai",
+  "apple-fm": "openai",
+};
+
+function normalizeProviderSlug(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return RETIRED_PROVIDER_SLUGS[value] ?? value;
+}
+
+/**
  * Persist only max-output-token values the consumers would actually honour.
  * `resolveMaxOutputTokens` floors fractional caps and rejects <1 (which would
  * floor to a broken `max_tokens: 0`); any candidate it rejects falls back to
@@ -155,7 +172,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
     if (type === "ai" && configRecord) {
       current.aiConfig = {
         ...current.aiConfig,
-        provider: typeof configRecord.provider === "string" ? configRecord.provider : current.aiConfig?.provider,
+        provider: normalizeProviderSlug(configRecord.provider) ?? normalizeProviderSlug(current.aiConfig?.provider),
         baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.aiConfig?.baseUrl,
         model: typeof configRecord.model === "string" ? configRecord.model : current.aiConfig?.model,
         apiKey: resolveCachedKey(configRecord.apiKey, current.aiConfig?.apiKey),
@@ -252,7 +269,16 @@ export function getCachedConfig(): CachedConfig {
   try {
     const filePath = getCachePath();
     if (filePath && fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8")) as CachedConfig;
+      // Normalize on read too: files written by older builds may still carry
+      // a retired slug, and headless readers never trigger a re-save.
+      if (parsed.aiConfig && typeof parsed.aiConfig.provider === "string") {
+        const normalized = normalizeProviderSlug(parsed.aiConfig.provider);
+        if (normalized !== parsed.aiConfig.provider) {
+          parsed.aiConfig = { ...parsed.aiConfig, provider: normalized };
+        }
+      }
+      return parsed;
     }
   } catch (err) {
     console.error("[config-cache] Failed to read config:", err);
