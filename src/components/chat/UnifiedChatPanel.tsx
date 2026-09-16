@@ -24,7 +24,6 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     activeContextPanel,
     chatPanelResizing,
     setChatPanelResizing,
-    shellVariant,
   } = useCairnStore(useShallow((s) => ({
     activeView: s.activeView,
     sessionPresentation: s.sessionPresentation,
@@ -35,7 +34,6 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     activeContextPanel: s.activeContextPanel,
     chatPanelResizing: s.chatPanelResizing,
     setChatPanelResizing: s.setChatPanelResizing,
-    shellVariant: s.shellVariant,
   })));
 
   const panelRef = useRef<HTMLElement>(null);
@@ -89,7 +87,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     const ro = new ResizeObserver(sync);
     ro.observe(sidebar);
     return () => ro.disconnect();
-  }, [shellVariant, isCenterMode]);
+  }, [isCenterMode]);
 
   useEffect(() => {
     const divider = dividerRef.current;
@@ -160,18 +158,14 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
   // transform/opacity. No viewport scrollbar exists (app is overflow-hidden by
   // construction), so 100vw-anchoring the drawer is exact.
   //
-  // The --sidebar-width fallback below is per-shell and only a first-paint
-  // stand-in (rem guesses can't match px-based sidebars under font scaling);
-  // the live measurement effect above overwrites it with real pixels. It is
-  // set in BOTH modes so React never drops the property (which would wipe
-  // the measured value on every drawer visit).
-  let sidebarWidth: string;
-  if (shellVariant === "A") sidebarWidth = sidebarCollapsed ? "3rem" : "15.25rem";
-  else if (shellVariant === "B") sidebarWidth = "16.25rem";
-  else if (shellVariant === "C") sidebarWidth = "3.25rem";
-  else sidebarWidth = sidebarCollapsed ? "3rem" : "14rem";
+  // The --sidebar-width fallback below is the dock sidebar's width and only
+  // a first-paint stand-in (rem guesses can't match px-based sidebars under
+  // font scaling); the live measurement effect above overwrites it with real
+  // pixels. It is set in BOTH modes so React never drops the property (which
+  // would wipe the measured value on every drawer visit).
+  // DockSidebar: collapsed w-12 (3rem), expanded w-[244px] (15.25rem at 16px root).
   const widthStyle = {
-    "--sidebar-width": sidebarWidth,
+    "--sidebar-width": sidebarCollapsed ? "3rem" : "15.25rem",
   } as React.CSSProperties;
 
   let positioningClasses = "";

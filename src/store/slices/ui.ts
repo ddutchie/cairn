@@ -12,11 +12,6 @@ import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accen
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
 import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, manifestToChatThemes, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
 
-// ── Shell preview variant ───────────────────────────────────────────────────
-/** In-app shell chrome preview — lets the user toggle between the current shell and the A/B/C proposals with live tokens + data. */
-export type ShellVariant = "current" | "A" | "B" | "C";
-export const SHELL_VARIANT_KEY = "shellVariant";
-
 // ── View visibility ───────────────────────────────────────────────────────────
 
 /** Views that can be hidden. Overview and Notes are always visible. */
@@ -812,10 +807,6 @@ export interface UISlice extends AppUIState {
   conversationsCollapsed: boolean;
   toggleConversationsCollapsed: () => void;
   setConversationsCollapsed: (collapsed: boolean) => void;
-
-  /** Shell chrome preview variant (persisted, dev preview). */
-  shellVariant: ShellVariant;
-  setShellVariant: (v: ShellVariant) => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -844,7 +835,6 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   tutorialStepIndex: 0,
   workspaceToolsCollapsed: false,
   conversationsCollapsed: false,
-  shellVariant: "A" as ShellVariant,
 
   aiConfig: DEFAULT_AI_CONFIG,
   agentConfig: DEFAULT_AGENT_CONFIG,
@@ -1367,11 +1357,6 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   setConversationsCollapsed(collapsed) {
     set({ conversationsCollapsed: collapsed });
     storage.set(DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, collapsed);
-  },
-
-  setShellVariant(v) {
-    set({ shellVariant: v });
-    storage.set(SHELL_VARIANT_KEY, v);
   },
 
   markFeatureAsSeen(id) {
