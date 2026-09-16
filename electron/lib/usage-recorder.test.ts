@@ -25,9 +25,9 @@ describe("resolveProviderName", () => {
   });
 
   it("keeps local endpoints as Local", () => {
-    expect(resolveProviderName("http://127.0.0.1:8080/v1", "localllm")).toBe("Local");
+    expect(resolveProviderName("http://127.0.0.1:8080/v1", "openai")).toBe("Local");
     expect(resolveProviderName("http://localhost:1234/v1", "openai")).toBe("Local");
-    expect(resolveProviderName("http://192.168.1.50:11434/v1", "localllm")).toBe("Local");
+    expect(resolveProviderName("http://192.168.1.50:11434/v1", "openai")).toBe("Local");
   });
 
   it("defaults to OpenAI when nothing identifiable", () => {

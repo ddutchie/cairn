@@ -445,7 +445,6 @@ const api = {
       invoke<{ title: string; description: string }>("ai:generatePrDescription", args),
     explainArchitecture: (args: { summary: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
       invoke<{ overview: string; modules: string }>("ai:explainArchitecture", args),
-    localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
     fetchModels: (args: { baseUrl?: string; apiKey?: string }) =>
       invoke<string[]>("ai:fetchModels", args),
     fetchKeyInfo: (args: { baseUrl?: string; apiKey?: string }) =>
@@ -501,6 +500,9 @@ const api = {
   uploadAsset: (filename: string, data: ArrayBuffer) =>
     invoke<{ assetUrl: string }>("app:uploadAsset", { filename, data }),
   revealAssets: () => invoke("app:revealAssets"),
+  /** Orphaned GGUFs/binaries from the retired built-in engine (Settings → Data). */
+  llmLeftovers: () => invoke<{ bytes: number; files: Array<{ name: string; bytes: number }> }>("app:llmLeftovers"),
+  clearLlmLeftovers: () => invoke<{ reclaimedBytes: number }>("app:clearLlmLeftovers"),
 
   // ── Workspace folder ──────────────────────────
   selectWorkspaceFolder: () => invoke<string | null>("app:selectWorkspaceFolder"),
@@ -1062,49 +1064,6 @@ const api = {
     },
   },
 
-  // ── On-Device Llama Server ───────────────
-  llama: {
-    models: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      list: () => invoke<any[]>("llama:models:list"),
-      install: (modelId: string, useMirror?: boolean) => invoke<void>("llama:models:install", { modelId, useMirror }),
-      remove: (modelId: string) => invoke<void>("llama:models:remove", { modelId }),
-      clearInactive: () => invoke<void>("llama:models:clearInactive"),
-      onProgress: (cb: (e: { modelId: string; progress: number; speed?: string; bytesReceived: number; bytesTotal: number; status: string; error?: string }) => void) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const handler = (_: any, e: any) => cb(e);
-        ipcRenderer.on("llama:download-progress", handler);
-        return () => {
-          ipcRenderer.off("llama:download-progress", handler);
-        };
-      }
-    },
-    binary: {
-      install: () => invoke<void>("llama:binary:install"),
-      checkForUpdates: () => invoke<{ updateAvailable: boolean; currentVersion: string | null; latestVersion: string | null }>("llama:binary:check-update"),
-      onProgress: (cb: (e: { progress: number; speed?: string; status: string; error?: string }) => void) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const handler = (_: any, e: any) => cb(e);
-        ipcRenderer.on("llama:binary-progress", handler);
-        return () => {
-          ipcRenderer.off("llama:binary-progress", handler);
-        };
-      }
-    },
-    server: {
-      start: (modelId: string, contextLimit?: number) => invoke<{ port: number }>("llama:server:start", { modelId, contextLimit }),
-      stop: () => invoke<void>("llama:server:stop"),
-      status: () => invoke<{
-        running: boolean;
-        port: number | null;
-        activeModelId: string | null;
-        defaultModelId: string | null;
-        installed: boolean;
-        error: string | null;
-      }>("llama:server:status"),
-      setDefault: (modelId: string) => invoke<{ success: boolean }>("llama:server:setDefault", { modelId }),
-    }
-  },
   // ── Embeddings (local semantic search + knowledge graph) ────
   embeddings: {
     status: () => invoke<{
@@ -1185,11 +1144,12 @@ const api = {
       { config },
     ),
   },
-  // ── Unified Runtime (embeddings + LLM) ───────────
+  // ── Unified Runtime (local embeddings for semantic search) ───────────
+  // LLM inference is user-provided: point a saved provider at Ollama,
+  // LM Studio, or any OpenAI-compatible local server.
   runtime: {
     status: () => invoke<{
       embeddings: { healthy: boolean; model: string | null; loaded: boolean };
-      llm: { healthy: boolean; model: string | null; loaded: boolean; port: number | null };
     }>("runtime:status"),
     stop: () => invoke<{ ok: boolean }>("runtime:stop"),
     /** List dsh registry commands (name + description) — palette source. */
@@ -1269,52 +1229,6 @@ const api = {
         return () => {
           ipcRenderer.off("runtime:download-progress", handler);
         };
-      },
-    },
-    llm: {
-      models: () => invoke<{ models: Array<Record<string, unknown>> }>("runtime:llm:models"),
-      install: (modelId: string, useMirror?: boolean) => invoke<{ ok: boolean }>("runtime:llm:install", { modelId, useMirror }),
-      remove: (modelId: string) => invoke<{ ok: boolean }>("runtime:llm:remove", { modelId }),
-      clearInactive: () => invoke<{ ok: boolean }>("runtime:llm:clearInactive"),
-      onProgress: (cb: (e: {
-        modelId: string;
-        progress: number;
-        speed?: string;
-        loaded: number;
-        total: number;
-        status: string;
-        error?: string;
-      }) => void) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const handler = (_: any, e: any) => cb(e);
-        ipcRenderer.on("runtime:download-progress", handler);
-        return () => {
-          ipcRenderer.off("runtime:download-progress", handler);
-        };
-      },
-      binary: {
-        install: () => invoke<{ ok: boolean }>("runtime:llm:binary:install"),
-        checkForUpdates: () => invoke<{ updateAvailable: boolean; currentVersion: string | null; latestVersion: string | null }>("runtime:llm:checkUpdate"),
-        onProgress: (cb: (e: { progress: number; speed?: string; status: string; error?: string }) => void) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const handler = (_: any, e: any) => cb(e);
-          ipcRenderer.on("runtime:binary-progress", handler);
-          return () => {
-            ipcRenderer.off("runtime:binary-progress", handler);
-          };
-        },
-      },
-      server: {
-        start: (modelId: string, contextLimit?: number) => invoke<{ port: number }>("runtime:llm:start", { modelId, contextLimit }),
-        stop: () => invoke<{ ok: boolean }>("runtime:llm:stop"),
-        status: () => invoke<{
-          running: boolean;
-          port: number | null;
-          activeModelId: string | null;
-          defaultModelId: string | null;
-          binaryInstalled: boolean;
-        }>("runtime:llm:status"),
-        setDefault: (modelId: string) => invoke<{ ok: boolean }>("runtime:llm:server:setDefault", { modelId }),
       },
     },
   },

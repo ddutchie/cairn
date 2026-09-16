@@ -93,7 +93,7 @@ export const STATUS_COLORS: Record<string, string> = {
 
 /** Default AI/LLM config values. */
 export const DEFAULT_AI_CONFIG: AIConfig = {
-  provider:     "localllm",
+  provider:     "openai",
   baseUrl:      "https://api.openai.com",
   model:        "gpt-5.6-luna",
   apiKey:       "",

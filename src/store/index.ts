@@ -324,8 +324,13 @@ export const useCairnStore = create<CairnStore>()(
 
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
-        if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
-          savedConfig.provider = "localllm";
+        if (savedConfig.provider === ("apple-fm" as unknown as "openai") || (savedConfig.provider as unknown as string) === "localllm") {
+          // Retired provider slugs → plain OpenAI-compatible. The built-in
+          // on-device engine is gone; point a saved provider at Ollama,
+          // LM Studio, or any OpenAI-compatible endpoint instead (local or
+          // cloud). Connection fields are preserved so cloud setups keep
+          // working untouched.
+          savedConfig.provider = "openai";
           storage.set(AI_CONFIG_KEY, savedConfig);
         }
         a[0]({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
@@ -334,7 +339,7 @@ export const useCairnStore = create<CairnStore>()(
       const savedAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
       if (savedAgentConfig) {
         a[0]({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
-      } else if (savedConfig && savedConfig.provider !== "localllm") {
+      } else if (savedConfig) {
         const migrated = {
           baseUrl: savedConfig.baseUrl || DEFAULT_AGENT_CONFIG.baseUrl,
           model: savedConfig.model || DEFAULT_AGENT_CONFIG.model,
@@ -399,26 +404,15 @@ export const useCairnStore = create<CairnStore>()(
             }
           : localAiConfig;
         if (savedConfig) {
-          if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
-            savedConfig.provider = "localllm";
+          if (savedConfig.provider === ("apple-fm" as unknown as "openai") || (savedConfig.provider as unknown as string) === "localllm") {
+            // Retired provider slugs → plain OpenAI-compatible (see hydrate()).
+            savedConfig.provider = "openai";
           }
           const mergedAiConfig = { ...DEFAULT_AI_CONFIG, ...savedConfig };
           set({ aiConfig: mergedAiConfig });
           storage.set(AI_CONFIG_KEY, mergedAiConfig);
           if (window.electron && window.electron.saveAiSettings) {
             window.electron.saveAiSettings(mergedAiConfig as unknown as Record<string, unknown>).catch(() => {});
-          }
-        } else if (window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
-          try {
-            const status = await window.electron.ai.localLLMStatus();
-            if (status.available) {
-              set({ aiConfig: { ...DEFAULT_AI_CONFIG, provider: "localllm" } });
-            } else {
-              set({ aiConfig: DEFAULT_AI_CONFIG });
-            }
-          } catch (e) {
-            console.warn("Failed to check localLLM availability on startup:", e);
-            set({ aiConfig: DEFAULT_AI_CONFIG });
           }
         } else {
           set({ aiConfig: DEFAULT_AI_CONFIG });
@@ -437,7 +431,7 @@ export const useCairnStore = create<CairnStore>()(
           if (!backendAgentConfig && window.electron && window.electron.saveAgentSettings) {
             window.electron.saveAgentSettings(savedAgentConfig as unknown as Record<string, unknown>).catch(() => {});
           }
-        } else if (savedConfig && savedConfig.provider !== "localllm") {
+        } else if (savedConfig) {
           const configRecord = savedConfig as unknown as Record<string, string | number | undefined>;
           const migrated: AgentConfig = {
             baseUrl: (configRecord.baseUrl as string) || DEFAULT_AGENT_CONFIG.baseUrl,

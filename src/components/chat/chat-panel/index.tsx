@@ -672,8 +672,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       personality: activePersonality ? { name: activePersonality.name, prompt: activePersonality.prompt } : undefined,
       images: attachmentsToSend?.map((a) => ({ name: a.name, dataUrl: a.dataUrl, kind: a.kind })),
       // Subagents is now a GLOBAL AI setting (aiConfig.subagentsEnabled), not a
-      // per-thread flag. Ignored server-side / here for the localllm provider.
-      useSubagents: aiConfig.provider !== "localllm" && (aiConfig.subagentsEnabled ?? false),
+      // per-thread flag.
+      useSubagents: (aiConfig.subagentsEnabled ?? false),
     });
   }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, enqueue, registryCommands, setActiveChatThreadId]);
 
@@ -835,7 +835,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           )}
           composerRef={inputRef}
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
-          composerProps={{ centered: activeView === "chat", commands: chatCommands, suggestions: mentionSuggestions, allowImages, allowPdf, providerModelTarget: "ai", variant: activeView === "chat" ? "overview" : "default", showSparkles: activeView === "chat", statusText: isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send", queueWhileBusy: isLoading, queuedCount: queued.length, footerTrailing: aiConfig.provider === "localllm" ? <span className="text-[0.625rem] font-bold text-[var(--accent-fg)] bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_srgb,var(--accent)_60%,var(--background))] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">{chatPanelWidth < 360 ? "Local" : "On-Device Llama"}</span> : undefined }}
+          composerProps={{ centered: activeView === "chat", commands: chatCommands, suggestions: mentionSuggestions, allowImages, allowPdf, providerModelTarget: "ai", variant: activeView === "chat" ? "overview" : "default", showSparkles: activeView === "chat", statusText: isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send", queueWhileBusy: isLoading, queuedCount: queued.length }}
         />
 
     </div>

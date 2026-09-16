@@ -50,9 +50,8 @@ export async function runCordisSession<T>(profile: CordisSessionProfile<T>): Pro
     projectId: profile.projectId,
   });
   // Remounts the pi-ai adapter whenever the model route changes (see
-  // ensureAgentAiAdapter) and starts the local llama server for provider
-  // "localllm" — both are multi-second costs paid before the turn starts, so
-  // they get their own log line rather than hiding inside the caller's total.
+  // ensureAgentAiAdapter) — a multi-second cost paid before the turn starts, so
+  // it gets its own log line rather than hiding inside the caller's total.
   const runtimeStart = Date.now();
   const prepared = await prepareCordisRuntime(profile.ctx, profile.llmConfig);
   const runtimeMs = Date.now() - runtimeStart;

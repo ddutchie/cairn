@@ -66,7 +66,6 @@ function setupWindow() {
       fetchProviders: fetchProviders as never,
     },
     ai: {
-      localLLMStatus: vi.fn().mockResolvedValue({ available: false }),
     },
   };
 }

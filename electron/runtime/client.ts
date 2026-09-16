@@ -11,8 +11,6 @@ import type { AdapterModelEntry } from "./adapters/types";
 
 const USER_DATA = app.getPath("userData");
 const EMBEDDING_MODELS_DIR = path.join(USER_DATA, "embedding-models");
-const LLM_MODELS_DIR = path.join(USER_DATA, "llama-models");
-const LLM_BIN_DIR = path.join(USER_DATA, "llama-bin");
 const LOCAL_BIN_DIR = path.join(USER_DATA, "runtime-bin");
 const LOCAL_BIN_PATH = path.join(
   LOCAL_BIN_DIR,
@@ -222,8 +220,6 @@ async function spawnRuntime(): Promise<number> {
   args.push(
     `--port=${port}`,
     `--embedding-models-dir=${EMBEDDING_MODELS_DIR}`,
-    `--llama-models-dir=${LLM_MODELS_DIR}`,
-    `--llama-bin-dir=${LLM_BIN_DIR}`,
     `--data-dir=${USER_DATA}`,
   );
 
@@ -416,78 +412,10 @@ export async function setDefaultEmbeddingModel(modelId: string): Promise<void> {
   await runtimeFetch("/v1/embeddings/models/setDefault", { method: "POST", body: { modelId } });
 }
 
-// ── LLM API ───────────────────────────────────────────────────
-
-export async function listLLMModels(): Promise<AdapterModelEntry[]> {
-  const res = await runtimeFetch<{ models: AdapterModelEntry[] }>("/v1/llm/models");
-  return res.models;
-}
-
-export async function installLLMModel(modelId: string, useMirror?: boolean): Promise<void> {
-  await runtimeFetch("/v1/llm/models/install", { method: "POST", body: { modelId, useMirror } });
-}
-
-export async function removeLLMModel(modelId: string): Promise<void> {
-  await runtimeFetch("/v1/llm/models/remove", { method: "POST", body: { modelId } });
-}
-
-export async function startLLMServer(modelId: string, contextLimit?: number): Promise<number> {
-  const res = await runtimeFetch<{ port: number }>("/v1/llm/server/start", {
-    method: "POST",
-    body: { modelId, contextLimit },
-    timeout: 120_000,
-  });
-  return res.port;
-}
-
-export async function stopLLMServer(): Promise<void> {
-  await runtimeFetch("/v1/llm/server/stop", { method: "POST" });
-}
-
-export async function getLLMStatus(): Promise<{
-  running: boolean;
-  port: number | null;
-  activeModelId: string | null;
-  defaultModelId: string | null;
-  binaryInstalled: boolean;
-}> {
-  const res = await runtimeFetch<{ kind: string; running: boolean; port: number | null; model: string | null; error: string | null; defaultModelId: string | null; binaryInstalled: boolean }>(
-    "/v1/llm/server/status",
-  );
-  return {
-    running: res.running,
-    port: res.port,
-    activeModelId: res.model,
-    defaultModelId: res.defaultModelId ?? null,
-    binaryInstalled: res.binaryInstalled ?? false,
-  };
-}
-
-export async function checkLLMBinaryUpdate(): Promise<{
-  updateAvailable: boolean;
-  currentVersion: string | null;
-  latestVersion: string | null;
-}> {
-  return runtimeFetch("/v1/llm/binary/check-update", { method: "POST" });
-}
-
-export async function installLLMBinary(): Promise<void> {
-  await runtimeFetch("/v1/llm/binary/install", { method: "POST", timeout: 600_000 });
-}
-
-export async function clearInactiveLLMModels(): Promise<void> {
-  await runtimeFetch("/v1/llm/models/clearInactive", { method: "POST" });
-}
-
-export async function setDefaultLLMModel(modelId: string): Promise<void> {
-  await runtimeFetch("/v1/llm/server/setDefault", { method: "POST", body: { modelId } });
-}
-
 // ── Unified status ────────────────────────────────────────────
 
 export async function getRuntimeStatus(): Promise<{
   embeddings: { healthy: boolean; model: string | null; loaded: boolean };
-  llm: { healthy: boolean; model: string | null; loaded: boolean; port: number | null };
 }> {
   return runtimeFetch("/health");
 }

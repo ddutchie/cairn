@@ -75,7 +75,7 @@ export function isLocalEndpoint(baseUrl: string): boolean {
 }
 
 export interface LLMConfig {
-  provider?: "openai" | "localllm";
+  provider?: "openai";
   baseUrl: string;
   model: string;
   apiKey: string;
@@ -235,39 +235,6 @@ export async function callLLM(
     });
   };
 
-  if (config.provider === "localllm") {
-    const { callLocalLLMChat } = await import("./local-llm");
-    const { ensureLlamaServerRunning } = await import("./llama-server");
-    const messages: OpenAIMessage[] = [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ];
-    // On-device requests always hit the llama-server's gemma-4 — record the
-    // real endpoint/model rather than the (possibly empty) remote config.
-    const localMeta = {
-      provider: "localllm",
-      model: "gemma-4",
-      baseUrl: `http://127.0.0.1:${await ensureLlamaServerRunning()}/v1`,
-    };
-    const res = await callLocalLLMChat(messages);
-    const content = res.choices?.[0]?.message?.content ?? "";
-    const usage = res?.usage;
-    if (usage) {
-      const cache = extractCacheTokens(usage);
-      record(
-        usage.prompt_tokens ?? 0,
-        usage.completion_tokens ?? 0,
-        usage.completion_tokens_details?.reasoning_tokens ?? 0,
-        extractCost(res?.cost, usage),
-        localMeta,
-        cache.cacheReadTokens,
-        cache.cacheCreationTokens,
-      );
-    } else {
-      record(tok(systemPrompt) + tok(userPrompt), tok(content), 0, undefined, localMeta);
-    }
-    return content;
-  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

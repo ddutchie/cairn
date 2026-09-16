@@ -282,8 +282,9 @@ export async function migrateLlmKeysToKeychain(
 export type ReasoningEffort = "auto" | "off" | "low" | "medium" | "high";
 
 export interface AIConfig {
-  /** The AI provider ('openai' or 'localllm') */
-  provider?: "openai" | "localllm";
+  /** The AI provider shape. All providers (cloud or user-run local servers
+   *  like Ollama / LM Studio) are plain OpenAI-compatible connections. */
+  provider?: "openai";
   /** Base URL for the OpenAI-compatible chat completions endpoint */
   baseUrl: string;
   /** Model name — any string accepted by the endpoint */

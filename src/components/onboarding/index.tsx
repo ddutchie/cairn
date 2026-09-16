@@ -181,10 +181,8 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   }
 
   function handleSaveAI() {
-    setAIConfig({ aiEnabled, provider: provider as "openai" | "localllm", baseUrl, apiKey, model });
-    if (provider !== "localllm") {
-      setAgentConfig({ baseUrl, apiKey, model });
-    }
+    setAIConfig({ aiEnabled, provider: provider as "openai", baseUrl, apiKey, model });
+    setAgentConfig({ baseUrl, apiKey, model });
     // If the vault scan already created projects, show a summary of them instead
     // of prompting the user to create their first project.
     setStep(importedProjects.length > 0 ? "imported-projects" : "create-project");

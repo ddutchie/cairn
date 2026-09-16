@@ -154,7 +154,7 @@ export function resolveProviderName(baseUrl?: string, providerSlug?: string): st
       if (isLocalHost(host)) return "Local";
       // A meaningful (non-generic, non-local) slug beats a bare hostname for
       // unknown gateways — e.g. a community provider whose slug is "openrouter".
-      if (providerSlug && providerSlug !== "openai" && providerSlug !== "localllm") {
+      if (providerSlug && providerSlug !== "openai") {
         return humanizeSlug(providerSlug);
       }
       const slug = endpointLogoSlug(baseUrl);
@@ -163,7 +163,6 @@ export function resolveProviderName(baseUrl?: string, providerSlug?: string): st
     }
   }
   if (providerSlug) {
-    if (providerSlug === "localllm") return "Local";
     if (providerSlug !== "openai") return humanizeSlug(providerSlug);
   }
   return "OpenAI";

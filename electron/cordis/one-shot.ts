@@ -10,15 +10,14 @@
  * `ensureAgentAiAdapter` at `run-cordis-loop.ts:158`) and `ctx.llm.stream`
  * (`dsh-llm` at `node_modules/@deepseek-ai/dsh-llm/lib/types/index.d.ts:32`).
  * `provider:"cairn"` is the internal route key — its `baseURL` is the user's
- * selected endpoint (OpenAI, Rork, etc. via `run-cordis-loop.ts:188`), not a
- * vendor lock-in. Local models (`localllm`) are handled here too: the
- * llama-server is started and its OpenAI-compatible endpoint is used.
+ * selected endpoint (OpenAI, a local server, etc. via
+ * `run-cordis-loop.ts:188`), not a vendor lock-in.
  */
 
 import { getContext, ensureAgentAiAdapter } from "./run-cordis-loop";
 import "./ctx-augment";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import { recordUsage, ensureLocalLlmPort } from "./host-store";
+import { recordUsage } from "./host-store";
 import type { LLMConfig } from "../lib/llm";
 
 export interface OneShotOptions {
@@ -37,19 +36,14 @@ export interface OneShotOptions {
 
 /**
  * Run a single-turn LLM call via the Cordis pi-ai route and return the
- * accumulated text. For `localllm` it starts the on-device llama-server and
- * uses its OpenAI-compatible endpoint.
+ * accumulated text.
  */
 export async function runOneShot(opts: OneShotOptions): Promise<string> {
   const { systemPrompt, userPrompt, config, source, projectId, workspaceId, sessionId, maxTokens, temperature, signal } = opts;
 
-  // On-device local LLM — also goes through the Cordis pi-ai route.
-  // Ensure the llama-server is running and use its OpenAI-compatible endpoint.
-  let effectiveConfig = config;
-  if (config.provider === "localllm") {
-    const port = await ensureLocalLlmPort();
-    effectiveConfig = { ...config, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
-  }
+  // All providers (cloud or user-run local servers) go through the Cordis
+  // pi-ai route unchanged.
+  const effectiveConfig = config;
 
   const ctx = await getContext();
   // Pin the wire protocol from the saved provider's apiMode — never probe.

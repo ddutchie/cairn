@@ -42,7 +42,6 @@ import { startMcpNotificationPoller } from "./lib/mcp-poller";
 import { readThemeSurface } from "./lib/theme-surface";
 import { HeartbeatScheduler } from "./lib/heartbeat-scheduler";
 import { runAutomation } from "./lib/heartbeat-runner";
-import { stopServerSync } from "./lib/llama-server";
 import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
 import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
@@ -752,8 +751,6 @@ app.on("before-quit", () => {
 
   // Kill any bash child processes that are still running so they don't linger
   killTrackedBashProcesses();
-  // Terminate the local llama-server background child process so it doesn't linger
-  stopServerSync();
   // Terminate the embeddings worker child process (HTTP server) so it doesn't linger
   void disposeEmbeddingsWorker();
   // Terminate the unified runtime process (embeddings + LLM proxy)

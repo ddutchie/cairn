@@ -96,12 +96,10 @@ async function trySpawnRuntime(): Promise<number | null> {
   if (!nodeBin || !fs.existsSync(nodeBin)) return null;
 
   const embeddingModelsDir = path.join(userData, "embedding-models");
-  const llamaModelsDir = path.join(userData, "llama-models");
-  const llamaBinDir = path.join(userData, "llama-bin");
 
   spawnedRuntime = spawn(
     nodeBin,
-    [bundle, `--data-dir=${userData}`, `--embedding-models-dir=${embeddingModelsDir}`, `--llama-models-dir=${llamaModelsDir}`, `--llama-bin-dir=${llamaBinDir}`],
+    [bundle, `--data-dir=${userData}`, `--embedding-models-dir=${embeddingModelsDir}`],
     { stdio: ["ignore", "pipe", "pipe"], detached: false, env: { ...process.env, TRANSFORMERS_CACHE: embeddingModelsDir, ELECTRON_RUN_AS_NODE: "1" } },
   );
 

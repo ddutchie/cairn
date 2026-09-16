@@ -2,17 +2,15 @@ import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { Readable } from "stream";
 
 import { EmbeddingsAdapter, SUPPORTED_EMBEDDING_MODELS } from "./adapters/embeddings";
-import { LlamaAdapter, SUPPORTED_LLM_MODELS } from "./adapters/llama";
 import { migrateManifest } from "./model-manager";
 import { EmbedRequest, EMBED_DIM } from "../embeddings/types";
 import type { EmbedTask } from "../embeddings/types";
 
 interface StdoutEvent {
   kind: "listening" | "ready" | "progress" | "error" | "log" |
-    "llm:list" | "llm:status" | "embed:list" | "embed:status" |
+    "embed:list" | "embed:status" |
     "binary-progress";
   port?: number;
   model?: string | null;
@@ -34,15 +32,11 @@ function parseArgs(argv: string[]): {
   port?: number;
   modelsDir: string;
   embeddingModelsDir: string;
-  llamaModelsDir: string;
-  llamaBinDir: string;
   dataDir: string;
 } {
   let port: number | undefined;
   let modelsDir = path.join(os.homedir(), ".cache", "huggingface");
   let embeddingModelsDir = "";
-  let llamaModelsDir = "";
-  let llamaBinDir = "";
   let dataDir = "";
   for (const arg of argv.slice(2)) {
     if (arg.startsWith("--port=")) {
@@ -52,18 +46,12 @@ function parseArgs(argv: string[]): {
       modelsDir = arg.slice("--models-dir=".length);
     } else if (arg.startsWith("--embedding-models-dir=")) {
       embeddingModelsDir = arg.slice("--embedding-models-dir=".length);
-    } else if (arg.startsWith("--llama-models-dir=")) {
-      llamaModelsDir = arg.slice("--llama-models-dir=".length);
-    } else if (arg.startsWith("--llama-bin-dir=")) {
-      llamaBinDir = arg.slice("--llama-bin-dir=".length);
     } else if (arg.startsWith("--data-dir=")) {
       dataDir = arg.slice("--data-dir=".length);
     }
   }
   if (!embeddingModelsDir) embeddingModelsDir = path.join(modelsDir, "embedding-models");
-  if (!llamaModelsDir) llamaModelsDir = path.join(modelsDir, "llama-models");
-  if (!llamaBinDir) llamaBinDir = path.join(modelsDir, "llama-bin");
-  return { port, modelsDir, embeddingModelsDir, llamaModelsDir, llamaBinDir, dataDir };
+  return { port, modelsDir, embeddingModelsDir, dataDir };
 }
 
 const MAX_BODY_BYTES = 10_000_000;
@@ -125,23 +113,7 @@ async function run(): Promise<void> {
     },
   });
 
-  const llamaAdapter = new LlamaAdapter({
-    modelsDir: args.llamaModelsDir,
-    binDir: args.llamaBinDir,
-    defaultModelId: null,
-    onProgress: (ev) => {
-      if (ev.type === "download") {
-        emit({
-          kind: "progress",
-          model: ev.modelId,
-          status: ev.status,
-          progress: ev.progress,
-        });
-      }
-    },
-  });
-
-  // Migrate legacy manifest entries — adds verifiedAt timestamps and verifies existing files.
+  // Migrate legacy embedding manifest entries — adds verifiedAt timestamps and verifies existing files.
   migrateManifest(
     path.join(args.embeddingModelsDir, "manifest.json"),
     Object.values(SUPPORTED_EMBEDDING_MODELS).map((m) => ({
@@ -150,28 +122,17 @@ async function run(): Promise<void> {
       sha256: m.meta.sha256,
     })),
   );
-  migrateManifest(
-    path.join(args.llamaModelsDir, "manifest.json"),
-    Object.values(SUPPORTED_LLM_MODELS).map((m) => ({
-      id: m.id,
-      filePath: path.join(args.llamaModelsDir, m.meta.filename),
-      sha256: m.meta.sha256,
-    })),
-  );
 
   const server = http.createServer(async (req, res) => {
     if (!req.url) { sendJson(res, 400, { error: "no url" }); return; }
 
-    // ── Unified health ──
+    // ── Health (embeddings runtime; LLM inference is user-provided — see
+    // Settings → AI & Chat → local servers) ──
     if (req.method === "GET" && req.url === "/health") {
-      const [embedHealth, llmHealth] = await Promise.all([
-        embeddingsAdapter.health(),
-        llamaAdapter.health(),
-      ]);
+      const embedHealth = await embeddingsAdapter.health();
       sendJson(res, 200, {
         status: "ok",
         embeddings: { healthy: embedHealth.healthy, model: embedHealth.model, loaded: embedHealth.loaded },
-        llm: { healthy: llmHealth.healthy, model: llmHealth.model, loaded: llmHealth.loaded, port: llamaAdapter.status().port },
       });
       return;
     }
@@ -240,131 +201,6 @@ async function run(): Promise<void> {
       return;
     }
 
-    // ── LLM model management ──
-    if (req.method === "GET" && req.url === "/v1/llm/models") {
-      sendJson(res, 200, { models: llamaAdapter.listModels() });
-      return;
-    }
-    if (req.method === "POST" && req.url === "/v1/llm/models/install") {
-      try {
-        const body = await readBody(req);
-        const { modelId, useMirror } = JSON.parse(body) as { modelId: string; useMirror?: boolean };
-        if (!modelId) { sendJson(res, 400, { error: "modelId is required" }); return; }
-        await llamaAdapter.installModel(modelId, useMirror);
-        sendJson(res, 200, { success: true });
-      } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
-      }
-      return;
-    }
-    if (req.method === "POST" && req.url === "/v1/llm/models/remove") {
-      try {
-        const body = await readBody(req);
-        const { modelId } = JSON.parse(body) as { modelId: string };
-        if (!modelId) { sendJson(res, 400, { error: "modelId is required" }); return; }
-        llamaAdapter.removeModel(modelId);
-        sendJson(res, 200, { success: true });
-      } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
-      }
-      return;
-    }
-    if (req.method === "POST" && req.url === "/v1/llm/server/start") {
-      try {
-        const body = await readBody(req);
-        const { modelId, contextLimit } = JSON.parse(body) as { modelId: string; contextLimit?: number };
-        const { port } = await llamaAdapter.start(modelId, { contextLimit });
-        sendJson(res, 200, { port });
-      } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
-      }
-      return;
-    }
-    if (req.method === "POST" && req.url === "/v1/llm/server/stop") {
-      try {
-        await llamaAdapter.stop();
-        sendJson(res, 200, { success: true });
-      } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
-      }
-      return;
-    }
-    if (req.method === "GET" && req.url === "/v1/llm/server/status") {
-      sendJson(res, 200, {
-        ...llamaAdapter.status(),
-        defaultModelId: llamaAdapter.getDefaultModelId(),
-        binaryInstalled: llamaAdapter.isBinaryInstalled(),
-      });
-      return;
-    }
-    if (req.method === "POST" && req.url === "/v1/llm/binary/check-update") {
-      try {
-        const result = await llamaAdapter.checkBinaryUpdate();
-        sendJson(res, 200, result);
-      } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
-      }
-      return;
-    }
-    if (req.method === "POST" && req.url === "/v1/llm/binary/install") {
-      try {
-        await llamaAdapter.installBinary((progress, speed, status, error) => {
-          emit({ kind: "binary-progress", progress, speed, status, msg: error });
-        });
-        sendJson(res, 200, { success: true });
-      } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
-      }
-      return;
-    }
-    if (req.method === "POST" && req.url === "/v1/llm/models/clearInactive") {
-      try {
-        llamaAdapter.clearInactiveModels();
-        sendJson(res, 200, { success: true });
-      } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
-      }
-      return;
-    }
-    if (req.method === "POST" && req.url === "/v1/llm/server/setDefault") {
-      try {
-        const body = await readBody(req);
-        const { modelId } = JSON.parse(body) as { modelId: string };
-        llamaAdapter.setDefaultModelId(modelId);
-        sendJson(res, 200, { success: true });
-      } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
-      }
-      return;
-    }
-
-    // ── LLM chat completions proxy ──
-    if (req.method === "POST" && req.url === "/v1/llm/chat/completions") {
-      try {
-        const body = await readBody(req);
-        const llmPort = llamaAdapter.status().port;
-        if (!llmPort) throw new HttpError(503, "LLM server is not running");
-        // Proxy to llama-server's OpenAI-compatible endpoint
-        const proxyRes = await fetch(`http://127.0.0.1:${llmPort}/v1/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-        });
-        // Pipe the response directly to support streaming (stream: true)
-        const contentType = proxyRes.headers.get("content-type") ?? "application/json";
-        res.writeHead(proxyRes.status, { "Content-Type": contentType });
-        if (proxyRes.body) {
-          Readable.fromWeb(proxyRes.body).pipe(res);
-        } else {
-          res.end();
-        }
-      } catch (e) {
-        const status = e instanceof HttpError ? e.status : 500;
-        sendJson(res, status, { error: e instanceof Error ? e.message : String(e) });
-      }
-      return;
-    }
-
     sendJson(res, 404, { error: "not found" });
   });
 
@@ -389,7 +225,7 @@ async function run(): Promise<void> {
       const portFile = path.join(args.dataDir, "runtime-port.json");
       try { fs.unlinkSync(portFile); } catch { /* ignore */ }
     }
-    Promise.allSettled([embeddingsAdapter.dispose(), llamaAdapter.dispose()])
+    embeddingsAdapter.dispose()
       .finally(() => {
         server.close(() => process.exit(0));
         setTimeout(() => process.exit(0), 1500).unref();

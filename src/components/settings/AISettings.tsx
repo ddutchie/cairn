@@ -3,11 +3,10 @@
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
-import { Cpu, Globe, Download, Plus, Trash2, Sparkles, X, FolderOpen, RefreshCw } from "lucide-react";
+import { Download, Plus, Trash2, Sparkles, X, FolderOpen, RefreshCw, Server } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
-import { LlamaServerConsole } from "./LlamaServerConsole";
 import { ProviderManager } from "./ProviderManager";
 import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
 import { BrowsePersonalitiesModal } from "@/components/chat/BrowsePersonalitiesModal";
@@ -15,6 +14,138 @@ import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-sche
 import { Button } from "@/components/ui/button";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
 import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
+
+// ── Local servers (BYO inference) ───────────────────────────────────────────
+// Cairn no longer ships an inference engine. Run Ollama, LM Studio, or
+// llama.cpp yourself and add it here as a saved provider — chat, agent, and
+// automations treat it like any other OpenAI-compatible endpoint (no API key
+// needed for localhost). Detection is a best-effort direct fetch from the
+// renderer; a server that blocks browser access can still be added manually
+// in ProviderManager below.
+
+interface DetectedServer {
+  key: string;
+  name: string;
+  baseUrl: string;
+  models: string[];
+}
+
+const LOCAL_SERVER_CANDIDATES = [
+  { key: "ollama", name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1" },
+  { key: "lmstudio", name: "LM Studio", baseUrl: "http://127.0.0.1:1234/v1" },
+  { key: "llamacpp", name: "llama.cpp server", baseUrl: "http://127.0.0.1:8080/v1" },
+];
+
+async function probeLocalServer(baseUrl: string, timeoutMs = 4000): Promise<{ ok: boolean; models: string[] }> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl}/models`, { signal: ac.signal });
+    if (!res.ok) return { ok: false, models: [] };
+    const data = await res.json() as { data?: Array<{ id?: string }> };
+    const ids = (data?.data ?? []).map((m) => m?.id).filter((id): id is string => !!id);
+    return { ok: true, models: ids.slice(0, 12) };
+  } catch {
+    return { ok: false, models: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function LocalServersCard() {
+  const addSavedProvider = useCairnStore((s) => s.addSavedProvider);
+  const savedProviders = useCairnStore((s) => s.aiConfig.savedProviders ?? []);
+  const [scanning, setScanning] = useState(false);
+  const [scanned, setScanned] = useState(false);
+  const [found, setFound] = useState<DetectedServer[]>([]);
+
+  async function handleScan() {
+    setScanning(true);
+    try {
+      const results = await Promise.all(
+        LOCAL_SERVER_CANDIDATES.map(async (c) => {
+          const probe = await probeLocalServer(c.baseUrl);
+          // A server counts as detected when /v1/models answers — even with
+          // an empty list (llama.cpp serves an empty list until a model is
+          // loaded). Empty-list servers are shown but can't prefill a model.
+          return probe.ok || probe.models.length > 0
+            ? { ...c, models: probe.models }
+            : null;
+        }),
+      );
+      setFound(results.filter((r): r is DetectedServer => r !== null));
+      setScanned(true);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function handleAdd(server: DetectedServer) {
+    addSavedProvider(
+      {
+        name: `${server.name} (local)`,
+        baseUrl: server.baseUrl,
+        model: server.models[0] ?? "",
+        apiKey: "",
+        apiMode: "completions",
+      },
+      "ai",
+    );
+  }
+
+  const addedUrls = new Set(savedProviders.map((p) => p.baseUrl.replace(/\/$/, "")));
+
+  return (
+    <SettingsRow
+      label="Local servers"
+      description="Cairn doesn't bundle an inference engine — run Ollama, LM Studio, or llama.cpp yourself, then add it as a provider. No API key needed for localhost."
+      controlClassName="min-w-0 @sm:self-auto @sm:max-w-[62%]"
+    >
+      <div className="flex flex-col gap-2 min-w-0 w-full">
+        <button
+          onClick={handleScan}
+          disabled={scanning}
+          className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 self-start"
+        >
+          <Server size={12} />
+          {scanning ? "Scanning localhost…" : scanned ? "Scan again" : "Detect local servers"}
+        </button>
+        {scanned && found.length === 0 && (
+          <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+            Nothing answering on the usual ports. Start Ollama (`ollama serve`), LM Studio (server tab), or
+            `llama-server`, then scan again — or add the endpoint manually below.
+          </p>
+        )}
+        {found.map((server) => {
+          const already = addedUrls.has(server.baseUrl.replace(/\/$/, ""));
+          return (
+            <div
+              key={server.key}
+              className="flex items-center justify-between gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-2"
+            >
+              <div className="min-w-0">
+                <p className="text-[0.714rem] font-semibold text-[var(--text-primary)]">
+                  {server.name}
+                  <span className="ml-1.5 font-mono font-normal text-[var(--text-tertiary)] break-all">{server.baseUrl}</span>
+                </p>
+                <p className="text-[0.65rem] text-[var(--text-tertiary)] truncate">
+                  {server.models.length > 0 ? server.models.join(", ") : "reachable — no models listed yet"}
+                </p>
+              </div>
+              <button
+                onClick={() => handleAdd(server)}
+                disabled={already}
+                className="shrink-0 px-2.5 py-1 text-[0.714rem] rounded-md border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors cursor-pointer disabled:opacity-40"
+              >
+                {already ? "Added" : "Add"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </SettingsRow>
+  );
+}
 
 // ── Chat prompt + tools preview ─────────────────────────────────────────────
 // Chat system prompt (assembled dsh sections + skills) and the tools the chat
@@ -102,9 +233,8 @@ export function AISettings() {
 
   // General config destructuring. Connection fields (baseUrl/apiKey/model) are
   // now managed entirely by the ProviderManager switcher below; here we only
-  // need `provider` (which backend), `model` (for the context lookup), and the
-  // behavioural fields.
-  const { provider = "openai", model, aiEnabled } = aiConfig;
+  // need `model` (for the context lookup) and the behavioural fields.
+  const { model, aiEnabled } = aiConfig;
 
   function updateAIConfig(patch: Partial<typeof aiConfig>) {
     setAIConfig(patch);
@@ -114,7 +244,6 @@ export function AISettings() {
   // Auto is enabled, the detected value is applied to contextLimit automatically
   // as the model changes; the user can still override with a manual value or
   // preset (which turns Auto off). Best-effort — null when not in the catalog.
-  // Cloud provider only.
   const contextAuto = aiConfig.contextAuto ?? true;
   const [detectedContext, setDetectedContext] = useState<number | null>(null);
   const [autoState, setAutoState] = useState<"idle" | "loading" | "detected" | "not_found">("idle");
@@ -125,7 +254,6 @@ export function AISettings() {
   const [personaDescription, setPersonaDescription] = useState("");
   const [personaPrompt, setPersonaPrompt] = useState("");
   useEffect(() => {
-    if (provider === "localllm") return;
     let cancelled = false;
     const id = (model ?? "").trim();
     if (!id) { setDetectedContext(null); setAutoState("idle"); return; } // eslint-disable-line react-hooks/set-state-in-effect
@@ -147,7 +275,7 @@ export function AISettings() {
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, provider, contextAuto]);
+  }, [model, contextAuto]);
 
   // Max output tokens. Auto (default) sends a generous 32K cap (bounded by the
   // model's advertised limit.output) so the model finishes naturally without
@@ -156,7 +284,6 @@ export function AISettings() {
   const maxOutputAuto = aiConfig.maxOutputAuto ?? true;
   const [advertisedMaxOutput, setAdvertisedMaxOutput] = useState<number | null>(null);
   useEffect(() => {
-    if (provider === "localllm") return;
     let cancelled = false;
     const id = (model ?? "").trim();
     if (!id) { setAdvertisedMaxOutput(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
@@ -165,26 +292,24 @@ export function AISettings() {
       setAdvertisedMaxOutput(info?.maxOutput ?? null);
     });
     return () => { cancelled = true; };
-  }, [model, provider]);
+  }, [model]);
 
   // Whether the selected model supports temperature control (models.dev
   // `temperature`). false = the vendor manages sampling internally, so a
   // client-forced value is ignored and nothing is sent. null/undefined = unknown.
   const [temperatureCapability, setTemperatureCapability] = useState<boolean | null>(null);
   useEffect(() => {
-    if (provider === "localllm") { setTemperatureCapability(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
     let cancelled = false;
     const id = (model ?? "").trim();
-    if (!id) { setTemperatureCapability(null); return; }
+    if (!id) { setTemperatureCapability(null); return; } // eslint-disable-line react-hooks/set-state-in-effect
     modelInfoForModel(id).then((info) => {
       if (cancelled) return;
       setTemperatureCapability(info?.temperature ?? null);
     });
     return () => { cancelled = true; };
-  }, [model, provider]);
+  }, [model]);
 
-  // Shared Max-steps control — rendered after the provider-specific block for
-  // both providers (passed into the Llama console so its position is unchanged).
+  // Shared Max-steps control — rendered after the provider blocks.
   const maxStepsRow = (
     <StepperSettingsRow
       label="Max steps"
@@ -221,48 +346,10 @@ export function AISettings() {
       {/* ── General Chat & Inline AI Feature Config ── */}
       <SettingsGroup
         title="General Chat & Inline AI"
-        description="Configure endpoints for the main AI Chat panel, in-editor inline text actions, PRD writer, and summaries. Supports offline private models."
+        description="Configure endpoints for the main AI Chat panel, in-editor inline text actions, PRD writer, and summaries. Works with cloud APIs and user-run local servers (Ollama, LM Studio)."
       >
-        {/* Provider Switcher */}
-        <SettingsRow
-          label="AI Provider"
-          description="Choose between a fully offline on-device model or an OpenAI-compatible cloud / local API connection."
-        >
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => updateAIConfig({ provider: "openai" })}
-              className={cn(
-                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap",
-                provider === "openai"
-                  ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--accent-dim)] font-medium"
-                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              <Globe size={12} />
-              OpenAI
-            </button>
-            <button
-              onClick={() => updateAIConfig({ provider: "localllm" })}
-              className={cn(
-                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 relative cursor-pointer whitespace-nowrap",
-                provider === "localllm"
-                  ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--accent-dim)] font-medium"
-                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              <Cpu size={12} className={provider === "localllm" ? "text-[var(--accent)] animate-pulse" : ""} />
-              On-Device
-            </button>
-          </div>
-        </SettingsRow>
+        <LocalServersCard />
 
-        {provider === "localllm" ? (
-          <LlamaServerConsole
-            contextLimit={aiConfig.contextLimit}
-            onContextLimitChange={(n) => updateAIConfig({ contextLimit: n })}
-            maxStepsRow={maxStepsRow}
-          />
-        ) : (
           <>
             {/* Install a preset provider from the cairn-community catalog. */}
             <SettingsRow
@@ -369,9 +456,7 @@ export function AISettings() {
               onAuto={() => updateAIConfig({ maxOutputAuto: true })}
             />
 
-            {/* Subagents — dispatch → research/write architecture. Cloud only
-                (small on-device models are unreliable with the multi-hop split),
-                mirroring the chat toolbar's original provider !== "localllm" guard. */}
+            {/* Subagents — dispatch → research/write architecture. */}
             <SettingsRow
               label="Subagents"
               description="Route chat through a dispatcher that delegates research and writing to focused sub-agents. Cheaper on long, tool-heavy tasks; adds overhead on quick questions."
@@ -383,7 +468,6 @@ export function AISettings() {
               />
             </SettingsRow>
           </>
-        )}
       </SettingsGroup>
 
       {/* ── Chat personalities ── */}

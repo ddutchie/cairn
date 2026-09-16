@@ -210,6 +210,19 @@ const FEATURES = [
       "Background Jobs: Long delegations run as jobs with output collection and kill support, surfaced to the model.",
     ],
   },
+  {
+    id: "v3.0.4-local-inference",
+    version: "v3.0.4",
+    title: "Bring-Your-Own Local Inference",
+    category: "On-Device AI",
+    description:
+      "Cairn no longer ships an inference engine — run Ollama, LM Studio, or llama.cpp yourself and connect it in one click. Local servers behave like any other provider, with no API key needed.",
+    highlights: [
+      "Local Servers: New Settings card detects Ollama, LM Studio, and llama.cpp on their usual ports and registers them as saved providers.",
+      "No Engine To Maintain: No downloads, no GPU backend matrix, no per-model template quirks — that footprint leaves the installer.",
+      "Local Stays Local: Chat, agent turns, and automations all work against your server; localhost traffic is still labelled Local in Usage.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

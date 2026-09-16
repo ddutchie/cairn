@@ -211,7 +211,7 @@ async function runSession(
   send: (channel: string, payload: unknown) => void,
   cordis: CordisTurnPayload,
 ): Promise<void> {
-  // ── Cordis engine (only path — local models via llama-server are also OpenAI-compatible) ──
+  // ── Cordis engine (only path — user-run local servers are plain OpenAI-compatible endpoints) ──
   return runCordisCodingSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send, cordis);
 }
 
@@ -273,7 +273,7 @@ async function runCordisCodingSession(
     history: [],
     personality: payload.personality ?? "helpful",
     images: payload.images,
-    config: { provider: llmConfig.provider === "localllm" ? "localllm" : "openai", baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
+    config: { provider: "openai", baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
   };
 
   // Bind the plugin confirmation seam for this session's turn: ctx.cairn.confirm
@@ -297,7 +297,7 @@ async function runCordisCodingSession(
       sessionId,
       cwd: toolCtx.cwd,
       systemPrompt,
-      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: llmConfig.provider === "localllm" ? "localllm" : "openai", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens, isReasoningModel: llmConfig.isReasoningModel, reasoningEffort: llmConfig.reasoningEffort, apiMode: llmConfig.apiMode, mode: payload.mode, autoApprove: payload.autoApprove },
+      llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: "openai", contextWindow: llmConfig.contextWindow, maxTokens: llmConfig.maxTokens, isReasoningModel: llmConfig.isReasoningModel, reasoningEffort: llmConfig.reasoningEffort, apiMode: llmConfig.apiMode, mode: payload.mode, autoApprove: payload.autoApprove },
       mode,
       autoApprove: payload.autoApprove,
       approvalMode: payload.mode,
@@ -709,11 +709,8 @@ export function registerSessionRuntimeHandlers(
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : _cachedModeValid ? _cachedModeValid === "auto" : cached?.autoApprove !== undefined ? cached.autoApprove : false,
       mode: resolvedMode,
       isReasoningModel: reqConfig?.isReasoningModel,
-      // No isLocalEndpoint→"localllm" coercion: a custom local endpoint
-      // (Ollama, LM Studio, user-run llama.cpp) must keep its own baseUrl —
-      // tagging it "localllm" would reroute requests into the app-managed
-      // on-device llama-server in run-cordis-coding.ts. "localllm" only ever
-      // arrives explicitly from the chat surface.
+      // No provider coercion: a custom local endpoint (Ollama, LM Studio,
+      // user-run llama.cpp) keeps its own baseUrl and plain "openai" shape.
       provider: reqConfig?.provider,
       contextWindow: reqConfig?.contextWindow,
       reasoningEffort: reqConfig?.reasoningEffort,

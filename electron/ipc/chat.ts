@@ -70,7 +70,7 @@ function resolveAIConfig(config?: {
 
   let reqConfig = config;
   const isLocal = config?.baseUrl ? isLocalEndpoint(normaliseBaseUrl(config.baseUrl)) : false;
-  if (!reqConfig?.apiKey && reqConfig?.provider !== "localllm" && !isLocal) {
+  if (!reqConfig?.apiKey && !isLocal) {
     const cached = getCachedConfig().aiConfig;
     if (cached?.apiKey) {
       reqConfig = {
@@ -201,7 +201,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     });
     setConfirmTransport(sessionId, chatConfirmTransport);
 
-    if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {
+    if (!apiKey && !isLocalEndpointUrl) {
        abortControllers.delete(sessionId);
       if (req.threadId) runningThreads.delete(req.threadId);
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Missing API key — configure provider in Settings.", code: "missing-api-key" }));
@@ -227,7 +227,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     // (the dsh subagent tool, run-cordis-loop.ts:144) which emits chat:subagent*
     // events. So `req.useSubagents` is covered by the Cordis loop below.
 
-    // ── Cordis engine (only path — local models via llama-server at 127.0.0.1:<port>/v1 are also OpenAI-compatible) ──
+    // ── Cordis engine (only path — user-run local servers are plain OpenAI-compatible endpoints) ──
     if (true) {
       const { runCordisLoop, withToolCallView, withToolResultView } = await import("../cordis/run-cordis-loop");
       try {
@@ -239,7 +239,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
             baseUrl,
             model,
             apiKey,
-            provider: (provider === "openai" || provider === "localllm" ? provider : "openai"),
+            provider: "openai",
             contextWindow: req.config?.contextLimit ?? req.config?.contextWindow,
             maxTokens: req.config?.maxTokens,
             reasoningEffort: req.config?.reasoningEffort,

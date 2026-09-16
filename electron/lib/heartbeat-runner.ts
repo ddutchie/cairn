@@ -271,7 +271,7 @@ export async function runAutomation(
   }
 
   const apiKey = resolveLlmApiKey(cached.apiKey);
-  const provider = (cached.provider ?? (isLocal(cached.baseUrl) ? "localllm" : "openai")) as "openai" | "localllm";
+  const provider = (cached.provider ?? "openai") as "openai";
   const abortCtrl = new AbortController();
 
   // ── Folder plumbing (phase 1/2) ───────────────────────────────────────────
@@ -576,7 +576,7 @@ export async function runAutomation(
     sessionId: run.id,
     cwd: runDirForAgent,
     systemPrompt: recipe,
-    llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
+    llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" },
     mode: "execute",
     sandboxMode: "workspace-write",
     // Automation runs on the coding profile but is its own Usage-view source.
