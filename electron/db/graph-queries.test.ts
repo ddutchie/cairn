@@ -8,6 +8,8 @@ import {
   createNote,
   createColumn,
   createCard,
+  deleteNote,
+  deleteCard,
   upsertNoteEmbedding,
   upsertTaskEmbedding,
 } from "./queries";
@@ -557,5 +559,35 @@ describe("getKnowledgeGraph — client-side threshold filter", () => {
     const allSem = graph.edges.filter((e) => e.type === "semantic");
     const semBelow = allSem.filter((e) => (e.weight ?? 1) < threshold);
     expect(visible.filter((e) => e.type === "semantic").length + semBelow.length).toBe(allSem.length);
+  });
+});
+
+describe("getKnowledgeGraph — soft-deleted entities (issue #141)", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seed(db);
+    createNote(db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "Keep", content: "keep me" });
+    createNote(db, { id: "n2", projectId: "p1", workspaceId: "ws1", title: "Delete me", content: "bye" });
+  });
+
+  it("excludes soft-deleted (tombstoned) notes and their edges", () => {
+    expect(getKnowledgeGraph(db, "ws1").nodes.map((n) => n.id)).toContain("n2");
+    deleteNote(db, "n2");
+    const graph = getKnowledgeGraph(db, "ws1");
+    expect(graph.nodes.map((n) => n.id)).toContain("n1");
+    expect(graph.nodes.map((n) => n.id)).not.toContain("n2");
+    expect(graph.edges.filter((e) => e.source === "n2" || e.target === "n2")).toHaveLength(0);
+  });
+
+  it("excludes deleted cards", () => {
+    createColumn(db, { id: "col1", projectId: "p1", workspaceId: "ws1", name: "Todo", type: "todo", order: 0 });
+    createCard(db, { id: "c1", columnId: "col1", projectId: "p1", workspaceId: "ws1", title: "Card" });
+    expect(getKnowledgeGraph(db, "ws1").nodes.map((n) => n.id)).toContain("c1");
+    deleteCard(db, "c1");
+    const graph = getKnowledgeGraph(db, "ws1");
+    expect(graph.nodes.map((n) => n.id)).not.toContain("c1");
+    expect(graph.edges.filter((e) => e.source === "c1" || e.target === "c1")).toHaveLength(0);
   });
 });

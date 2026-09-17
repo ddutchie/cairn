@@ -30,7 +30,6 @@ import {
   getAutomationRunById,
   listAutomations,
   updateAutomation,
-  deleteAutomation,
   listAutomationRuns,
   listRecentAutomationRuns,
   countRunningAutomationRuns,
@@ -40,9 +39,10 @@ import {
 import { runAutomationNow, resolveAutomationApproval } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
-import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog, removeAutomationDir } from "../lib/automation-folder";
+import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog } from "../lib/automation-folder";
+import { deleteAutomationWithCleanup } from "../lib/automation-delete";
 import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
-import { hasSecret, setSecret, deleteSecret, deleteToolSecrets } from "../lib/secure-store";
+import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
 
@@ -460,6 +460,15 @@ export function registerDbHandlers(ctx: DbContext): void {
     } else {
       q.deleteNote(ctx.db, id);
     }
+    // A tombstoned note must leave the knowledge graph immediately — the
+    // graph loader only renders live nodes, but stale relationship_cache rows
+    // and embeddings for the deleted id would otherwise linger.
+    invalidateRelationshipCache(ctx.db, id);
+    try {
+      q.deleteNoteEmbedding(ctx.db, id);
+    } catch (err) {
+      console.warn(`[note:delete] failed to purge embeddings for ${id}:`, err);
+    }
   }));
 
   // ── Open URL in default system browser ───────────
@@ -729,34 +738,19 @@ export function registerDbHandlers(ctx: DbContext): void {
     return updateAutomation(ctx.db, id, patch);
   }));
   registerIpcHandle("db:automation:delete", (_e, { id }) => handle(() => {
-    // Resolve the automation's folder on disk BEFORE deleting the row so we can
-    // remove it too — the folder (<project>/.automations/<id>/) holds scripts/,
-    // out/, .env, manifest.json, and every run's transcript + scratch, so an
-    // orphaned folder would otherwise linger on disk after the automation is gone.
-    const a = getAutomationById(ctx.db, id);
-    if (!a) return { ok: false, deleted: false };
-    const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
-    const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
-    const deleted = deleteAutomation(ctx.db, id);
-    if (deleted) {
-      // Also purge the automation's keychain secrets (env secrets live in the OS
-      // keychain, not the DB — deleting the row alone would orphan them).
-      try {
-        deleteToolSecrets("automation", id);
-      } catch (err) {
-        console.warn(`[automation] failed to purge secrets for deleted automation ${id}:`, err);
-      }
-      // Best-effort: an unremovable folder (permissions, open handle) must not
-      // fail the delete — the DB row is already gone, so just warn.
-      try {
-        if (!removeAutomationDir(folder)) {
-          console.warn(`[automation] failed to remove folder for deleted automation ${id}: ${folder}`);
+    // Retry-safe ordering (issue #133): the DB row is the only handle back to
+    // the automation's folder + keychain secrets, so both cleanups must succeed
+    // BEFORE the row is removed. A cleanup failure throws (surfaced as
+    // { error } by handle()), the row is kept, and a later delete retries.
+    return deleteAutomationWithCleanup(ctx.db, ctx.workspacePath, id, {
+      projectNameFor: (projectId) => {
+        try {
+          return getProjectName(ctx.db, projectId);
+        } catch {
+          return null;
         }
-      } catch (err) {
-        console.warn(`[automation] failed to remove folder for deleted automation ${id}:`, err);
-      }
-    }
-    return { ok: true, deleted };
+      },
+    });
   }));
   registerIpcHandle("db:automation:runs", (_e, { automationId, limit }: { automationId: string; limit?: number }) => handle(() => listAutomationRuns(ctx.db, automationId, limit)));
   registerIpcHandle("db:automation:recentRuns", (_e, { workspaceId, projectId, limit }: { workspaceId: string; projectId?: string | null; limit?: number }) => handle(() => listRecentAutomationRuns(ctx.db, workspaceId, projectId ?? null, limit ?? 10)));
