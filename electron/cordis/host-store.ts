@@ -34,10 +34,7 @@
  *     are outside the stated `../db|../lib|child_process` rule and are left
  *     direct; they take the already-injected `db`/`workspacePath` and add no
  *     new boundary surface.
- *   - llama-server lifecycle is WRAPPED (`ensureLocalLlmPort`, dynamic import
- *     preserved) not relocated: adapter pinning stays in session-runtime.ts /
- *     one-shot.ts, which now call the wrapper instead of `../lib/*`.
- *   - usage-recorder's call shape (`RecordUsageArgs`) is a clean passthrough,
+  *   - usage-recorder's call shape (`RecordUsageArgs`) is a clean passthrough,
  *     so `recordUsage` is a real seam method (plus a db-free standalone for
  *     one-shot callers, which share the recorder's global handle).
  *   - There is no `getCairnSkillContext()` anywhere in the codebase, so no
@@ -196,15 +193,6 @@ export function sessionExportRoot(): string {
   return path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "session-exports");
 }
 
-/**
- * Ensure the on-device llama-server is running; resolves its port.
- * Dynamic import preserved (llama-server pulls `electron` at module scope).
- */
-export async function ensureLocalLlmPort(): Promise<number> {
-  const { ensureLlamaServerRunning } = await import("../lib/llama-server");
-  return ensureLlamaServerRunning();
-}
-
 // ── HostStore ────────────────────────────────────────────────────────────────
 
 export interface WorkspaceMeta {
@@ -221,9 +209,8 @@ export interface HostStore {
   getGitBranch(cwd: string): string | undefined;
   runWorkspaceHygiene(workspacePath: string): void;
   isScheduleEnabled(): boolean;
-  // Usage + local LLM.
+  // Usage.
   recordUsage(entry: RecordUsageArgs): void;
-  ensureLocalLlmPort(): Promise<number>;
   // Threads / sessions / todos / coding plans.
   indexChatThread(threadId: string, workspaceId: string, projectId?: string): void;
   upsertSessionProfile(
@@ -330,10 +317,6 @@ export function createHostStore(db: Database.Database): HostStore {
 
     recordUsage(entry: RecordUsageArgs): void {
       recordUsage(entry);
-    },
-
-    ensureLocalLlmPort(): Promise<number> {
-      return ensureLocalLlmPort();
     },
 
     indexChatThread(threadId: string, workspaceId: string, projectId?: string): void {

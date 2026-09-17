@@ -54,17 +54,15 @@ export function ProviderModelPicker({
   const config = target === "ai" ? aiConfig : agentConfig;
   const savedProviders = aiConfig.savedProviders ?? [];
   const activeProvider = savedProviders.find((p) => p.id === config.activeProviderId);
-  // On-device (Llama) is a chat-only target; the agent always uses a saved provider.
-  const isLocal = target === "ai" && aiConfig.provider === "localllm";
 
-  const providerLabel = isLocal
-    ? "On-device"
-    : activeProvider?.name ?? config.activeProviderId ?? "Not configured";
+  // Inference is always a saved provider now — cloud or a user-run local
+  // server (Ollama, LM Studio, …). No app-managed engine remains.
+  const providerLabel = activeProvider?.name ?? config.activeProviderId ?? "Not configured";
   const modelLabel = config.model || "—";
 
   const [open, setOpen] = useState(false);
 
-  // Fetch the active provider's models when the popover opens (cloud only).
+  // Fetch the active provider's models when the popover opens.
   useEffect(() => {
     if (open && activeProvider && !isLocalBaseUrl(activeProvider.baseUrl)) {
       ensureModels(activeProvider.baseUrl, activeProvider.apiKey);
@@ -76,10 +74,6 @@ export function ProviderModelPicker({
   const selectProvider = (id: string) => {
     if (target === "ai") selectSavedProvider(id);
     else selectAgentProvider(id);
-  };
-  const selectLocal = () => {
-    if (target !== "ai") return;
-    setAIConfig({ provider: "localllm", activeProviderId: undefined, baseUrl: undefined, apiKey: undefined });
   };
   const setModel = (model: string) => {
     if (target === "ai") setAIConfig({ model });
@@ -135,22 +129,15 @@ export function ProviderModelPicker({
           <div className="space-y-1">
             <span className="text-[0.714rem] text-[var(--text-secondary)]">Provider</span>
             <div className="flex flex-col gap-0.5 max-h-56 overflow-y-auto pr-0.5">
-              {target === "ai" && (
-                <ProviderRow
-                  label="On-device (Llama)"
-                  active={isLocal}
-                  onClick={selectLocal}
-                />
-              )}
               {savedProviders.map((p) => (
                 <ProviderRow
                   key={p.id}
                   label={p.name || p.id}
-                  active={!isLocal && p.id === config.activeProviderId}
+                  active={p.id === config.activeProviderId}
                   onClick={() => selectProvider(p.id)}
                 />
               ))}
-              {savedProviders.length === 0 && !isLocal && (
+              {savedProviders.length === 0 && (
                 <p className="text-[0.643rem] text-[var(--text-tertiary)] px-1">
                   No providers yet — add one in Settings → AI &amp; Chat.
                 </p>
@@ -162,7 +149,7 @@ export function ProviderModelPicker({
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[0.714rem] text-[var(--text-secondary)]">Model</span>
-              {activeProvider && !isLocal && (
+              {activeProvider && (
                 <button
                   type="button"
                   onClick={refreshModels}
@@ -174,9 +161,9 @@ export function ProviderModelPicker({
                 </button>
               )}
             </div>
-            {isLocal || !activeProvider ? (
+            {!activeProvider ? (
               <p className="text-[0.643rem] text-[var(--text-tertiary)] px-1">
-                {isLocal ? "Local on-device model." : "Select a provider above to load its models."}
+                Select a provider above to load its models.
               </p>
             ) : (
               <ModelPicker

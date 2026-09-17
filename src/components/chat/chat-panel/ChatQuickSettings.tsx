@@ -41,8 +41,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
   // out of the way.
   const [themesOpen, setThemesOpen] = useState(true);
 
-  const provider = aiConfig.provider ?? "openai";
-  const subagentsSupported = provider !== "localllm";
+  const subagentsSupported = true;
 
   const openFullSettings = useCallback(() => {
     setSettingsSection("ai");

@@ -297,6 +297,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
                 tabIndex={selected ? 0 : !hasActive && index === 0 ? 0 : -1}
                 onSelect={() => void selectSession(session)}
                 onRemove={(event) => removeSession(event, session)}
+                compact
               />
             );
           })}

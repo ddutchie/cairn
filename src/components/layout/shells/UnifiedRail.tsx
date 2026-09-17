@@ -14,7 +14,6 @@ import {
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
-import { ShellSwitcher } from "./ShellSwitcher";
 import { SyncStatusIndicator } from "../sync-status-indicator";
 import { QuickSettings } from "../QuickSettings";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -158,15 +157,8 @@ export function UnifiedRail() {
         <SlotOutlet name="view.header.actions" props={{ view: activeView }} />
       </div>
 
-      {/* Right zone: chat, quicksettings, running, sync, bell, new, shell switcher */}
+      {/* Right zone: chat, quicksettings, running, sync, bell, new */}
       <div className="flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        {/* Shell preview — dev only */}
-        {process.env.NODE_ENV === "development" && (
-          <div className="hidden lg:flex mr-1">
-            <ShellSwitcher compact />
-          </div>
-        )}
-
         <button onClick={toggleSearch} className="sm:hidden p-1.5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]" aria-label="Search">
           <Search size={14} />
         </button>

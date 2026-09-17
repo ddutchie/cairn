@@ -58,6 +58,19 @@ describe("config-cache AI settings round-trip", () => {
     expect(ai?.model).toBe("gpt-4o");
   });
 
+  it("normalizes retired provider slugs to openai on save and read", async () => {
+    const { saveCachedConfig, getCachedConfig } = await import("./config-cache");
+    saveCachedConfig("ai", { provider: "localllm", baseUrl: "https://api.openai.com", model: "x" });
+    expect(getCachedConfig().aiConfig?.provider).toBe("openai");
+    // A stale file written by an older build normalizes on read too, so
+    // headless readers (automations, heartbeat) never see the retired slug.
+    const cachePath = path.join(tmpDir, "ai-settings-cache.json");
+    const raw = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+    raw.aiConfig.provider = "localllm";
+    fs.writeFileSync(cachePath, JSON.stringify(raw));
+    expect(getCachedConfig().aiConfig?.provider).toBe("openai");
+  });
+
   it("persists subagentsEnabled (global subagents preference)", async () => {
     const { saveCachedConfig, getCachedConfig } = await import("./config-cache");
     saveCachedConfig("ai", { subagentsEnabled: true });

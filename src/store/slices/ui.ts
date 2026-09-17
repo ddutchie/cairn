@@ -12,11 +12,6 @@ import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accen
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
 import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, manifestToChatThemes, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
 
-// ── Shell preview variant ───────────────────────────────────────────────────
-/** In-app shell chrome preview — lets the user toggle between the current shell and the A/B/C proposals with live tokens + data. */
-export type ShellVariant = "current" | "A" | "B" | "C";
-export const SHELL_VARIANT_KEY = "shellVariant";
-
 // ── View visibility ───────────────────────────────────────────────────────────
 
 /** Views that can be hidden. Overview and Notes are always visible. */
@@ -287,8 +282,9 @@ export async function migrateLlmKeysToKeychain(
 export type ReasoningEffort = "auto" | "off" | "low" | "medium" | "high";
 
 export interface AIConfig {
-  /** The AI provider ('openai' or 'localllm') */
-  provider?: "openai" | "localllm";
+  /** The AI provider shape. All providers (cloud or user-run local servers
+   *  like Ollama / LM Studio) are plain OpenAI-compatible connections. */
+  provider?: "openai";
   /** Base URL for the OpenAI-compatible chat completions endpoint */
   baseUrl: string;
   /** Model name — any string accepted by the endpoint */
@@ -649,6 +645,19 @@ export interface UISlice extends AppUIState {
   selectSavedProvider: (id: string) => void;
   selectAgentProvider: (id: string) => void;
   /**
+   * Ensure the shared saved-provider list contains a row for a raw
+   * connection (baseUrl/model/apiKey) and select it. Reuses the existing
+   * row when the normalized baseUrl already matches (patching an empty row
+   * model from the connection first, so selecting never clobbers the
+   * surface's current model with a stale default). Used by the retired-slug
+   * migration and onboarding so the picker shows a real provider instead of
+   * "Not configured". Returns the provider id. Skipped when baseUrl is blank.
+   */
+  ensureSavedProviderForConnection: (
+    conn: { baseUrl: string; model: string; apiKey: string },
+    selectFor?: "ai" | "agent" | "both",
+  ) => string | null;
+  /**
    * Install (or update) a community provider preset into the shared list and
    * store its API key in the OS keychain. Dedups by communityId (or name) so a
    * re-install reuses the existing row and its keychain secret. Does NOT auto-
@@ -764,6 +773,14 @@ export interface UISlice extends AppUIState {
   sessionPresentation: SessionPresentation;
   setSessionPresentation: (presentation: SessionPresentation) => void;
 
+  /** True for ~320ms after a drawer↔center switch. Committed atomically with
+   *  the geometry change (unlike component-state flags, which land a frame
+   *  late and make the slide snap instead of run). The panel includes
+   *  left/width in its transition only while this is true, so sidebar
+   *  collapse/expand tracking stays per-frame with no chasing lag. */
+  chatSliding: boolean;
+  setChatSliding: (sliding: boolean) => void;
+
   /** Optional target section for the Settings view (consumed once on open). */
   settingsSection: SettingsSection | null;
   setSettingsSection: (section: SettingsSection | null) => void;
@@ -804,10 +821,6 @@ export interface UISlice extends AppUIState {
   conversationsCollapsed: boolean;
   toggleConversationsCollapsed: () => void;
   setConversationsCollapsed: (collapsed: boolean) => void;
-
-  /** Shell chrome preview variant (persisted, dev preview). */
-  shellVariant: ShellVariant;
-  setShellVariant: (v: ShellVariant) => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -828,6 +841,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   chatPanelResizing: false,
   lastContentView: "overview",
   sessionPresentation: "drawer",
+  chatSliding: false,
   settingsSection: null,
   notificationOpen: false,
   calendarProjectIds: [],
@@ -835,7 +849,6 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   tutorialStepIndex: 0,
   workspaceToolsCollapsed: false,
   conversationsCollapsed: false,
-  shellVariant: "A" as ShellVariant,
 
   aiConfig: DEFAULT_AI_CONFIG,
   agentConfig: DEFAULT_AGENT_CONFIG,
@@ -938,6 +951,31 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       persistAgent(nextAgent);
       return { agentConfig: nextAgent };
     });
+  },
+
+  ensureSavedProviderForConnection(conn, selectFor = "ai") {
+    if (!conn.baseUrl.trim()) return null;
+    const norm = (u: string) => u.trim().replace(/\/+$/, "").toLowerCase();
+    const list = get().aiConfig.savedProviders ?? [];
+    const existing = list.find((p) => norm(p.baseUrl) === norm(conn.baseUrl));
+    if (existing) {
+      if (!existing.model && conn.model) get().updateSavedProvider(existing.id, { model: conn.model });
+      if (selectFor === "ai" || selectFor === "both") get().selectSavedProvider(existing.id);
+      if (selectFor === "agent" || selectFor === "both") get().selectAgentProvider(existing.id);
+      return existing.id;
+    }
+    let name = "Custom endpoint";
+    try {
+      const u = new URL(conn.baseUrl);
+      const host = u.hostname.toLowerCase();
+      name = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1"
+        ? `Local server (${u.port || "default port"})`
+        : host;
+    } catch { /* keep fallback */ }
+    return get().addSavedProvider(
+      { name, baseUrl: conn.baseUrl, model: conn.model, apiKey: conn.apiKey },
+      selectFor,
+    );
   },
 
   async installCommunityProvider(entry, apiKey) {
@@ -1258,18 +1296,36 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   setView(view) {
     if (view !== "chat" && view !== "search") {
+      const leavingCenter = get().sessionPresentation !== "drawer";
       set({
         activeView: view,
         lastContentView: view as AppUIState["lastContentView"],
-        ...(view === "agent" ? { sessionPresentation: "drawer" as const } : {}),
+        // The center presentation is a fullscreen overlay that only makes sense
+        // for the chat view. Navigating anywhere else (sidebar, shortcuts,
+        // topbar Chat toggle, ⌘/) must drop back to the drawer, otherwise the
+        // overlay keeps covering the content it just navigated to.
+        sessionPresentation: "drawer" as const,
+        // Flag the geometry switch in the SAME commit so the panel's
+        // left/width transition is armed before the values change.
+        ...(leavingCenter ? { chatSliding: true } : {}),
       });
     } else {
-      set({ activeView: view, ...(view === "chat" ? { sessionPresentation: "center" as const } : {}) });
+      const enteringCenter = view === "chat" && get().sessionPresentation !== "center";
+      set({
+        activeView: view,
+        ...(view === "chat" ? { sessionPresentation: "center" as const } : {}),
+        ...(enteringCenter ? { chatSliding: true } : {}),
+      });
     }
   },
 
   setSessionPresentation(presentation) {
-    set({ sessionPresentation: presentation });
+    if (get().sessionPresentation === presentation) return;
+    set({ sessionPresentation: presentation, chatSliding: true });
+  },
+
+  setChatSliding(sliding) {
+    set({ chatSliding: sliding });
   },
 
   setSettingsSection(section) {
@@ -1301,7 +1357,12 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       chatOpen: !s.chatOpen,
       // The global Chat affordance opens the drawer. The center view has its
       // own explicit setView("chat") transition.
-      ...(s.chatOpen ? {} : { sessionPresentation: "drawer" as const }),
+      ...(s.chatOpen
+        ? {}
+        : {
+            sessionPresentation: "drawer" as const,
+            ...(s.sessionPresentation !== "drawer" ? { chatSliding: true } : {}),
+          }),
     }));
   },
 
@@ -1335,11 +1396,6 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   setConversationsCollapsed(collapsed) {
     set({ conversationsCollapsed: collapsed });
     storage.set(DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, collapsed);
-  },
-
-  setShellVariant(v) {
-    set({ shellVariant: v });
-    storage.set(SHELL_VARIANT_KEY, v);
   },
 
   markFeatureAsSeen(id) {

@@ -1,8 +1,11 @@
 /**
  * Cairn — IPC handlers for AI features (`ai:*` channels).
  *
- * - `ai:localLLMStatus` — probe whether a local llama.cpp binary is installed.
  * - `ai:generatePrd`    — one-shot PRD generation (no chat loop, returns text).
+ *
+ * LLM inference is user-provided (Ollama, LM Studio, or any
+ * OpenAI-compatible server, local or cloud). Only embeddings still run
+ * inside the app.
  *
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
@@ -101,13 +104,6 @@ function parseLLMResponse(
 }
 
 export function registerAiHandlers(ctx: DbContext): void {
-  registerIpcHandle("ai:localLLMStatus", async () => {
-    return handle(async () => {
-      const { isLocalLLMAvailable } = await import("../lib/local-llm");
-      return await isLocalLLMAvailable();
-    });
-  });
-
   // ── Model discovery (GET {baseUrl}/v1/models) ─────
   // Runs in the main process so the API key (a keychain ref) is resolved here
   // and the raw key never lives in the renderer or crosses the CSP boundary.

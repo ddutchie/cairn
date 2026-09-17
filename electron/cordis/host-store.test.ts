@@ -4,8 +4,6 @@
  * in-memory SQLite db + applySchema. No live model, no network.
  *
  * Not covered here (deliberately):
- *  - ensureLocalLlmPort — spawns / probes the on-device llama-server process;
- *    covered by electron/lib/llama-server.test.ts.
  *  - Pure re-exports (TOOL_SCHEMAS, buildSystemPrompt, …) — asserted defined
  *    only; their behaviour is owned by their home modules' tests.
  */

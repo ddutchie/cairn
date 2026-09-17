@@ -41,7 +41,7 @@ export interface AgentLLMConfig {
    *  anthropic-messages→anthropic-messages. Absent = completions. Pinned per
    *  saved provider so resumed sessions stay on a stable protocol. */
   apiMode?: "responses" | "completions" | "anthropic-messages";
-  /** Provider slug (e.g. "openai", "localllm"). */
+  /** Provider slug ("openai" — all endpoints, cloud or user-run local servers). */
   provider?: string;
 }
 

@@ -436,8 +436,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       window.electron?.session.compactNow({
         sessionId: session.sessionId,
         config: {
-          // Never coerce localhost URLs to "localllm" — that slug means the
-          // built-in on-device llama-server (chat-only). Saved providers like
+          // Never coerce localhost URLs to a special local slug — a user-run
+          // server (Ollama, LM Studio, llama.cpp) is a plain OpenAI-compatible
+          // provider. Saved providers like
           // Ollama / LM Studio on localhost are plain OpenAI-compatible
           // endpoints and must reach the loop with their real baseUrl intact.
           provider: "openai",

@@ -34,7 +34,6 @@ import { registerChatSessionHandlers } from "./chat-session";
 import { registerSessionHandlers } from "./session-handlers";
 import { registerFlowHandlers } from "./flow-handlers";
 import { registerAiHandlers } from "./ai-handlers";
-import { registerLlamaHandlers } from "./llama-handlers";
 import { registerGraphHandlers } from "./graph-handlers";
 import { registerEmbeddingsHandlers } from "./embeddings-handlers";
 import { registerRuntimeHandlers } from "./runtime-handlers";
@@ -73,7 +72,6 @@ export function registerIpcHandlers(ctx: DbContext): void {
   registerSessionHandlers(ctx);
   registerFlowHandlers(ctx);
   registerAiHandlers(ctx);
-  registerLlamaHandlers(ctx);
   registerGraphHandlers(ctx);
   registerEmbeddingsHandlers(ctx);
   registerRuntimeHandlers(ctx);

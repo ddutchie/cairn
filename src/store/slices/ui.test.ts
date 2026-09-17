@@ -78,6 +78,21 @@ describe("createUISlice", () => {
     state.setView("chat");
     expect(state.activeView).toBe("chat");
     expect(state.lastContentView).toBe("board"); // remains "board"
+    expect(state.sessionPresentation).toBe("center");
+    // Entering center flags the slide in the same commit so the panel's
+    // left/width transition is armed before the values change.
+    expect(state.chatSliding).toBe(true);
+
+    // Plain content navigation never flags a slide — but leaving center for
+    // a content view does (the panel slides back to the drawer).
+    state.setChatSliding(false);
+    state.setView("notes");
+    expect(state.sessionPresentation).toBe("drawer");
+    expect(state.chatSliding).toBe(true);
+
+    state.setChatSliding(false);
+    state.setView("board");
+    expect(state.chatSliding).toBe(false);
 
     // Switch to search
     state.setView("search");
@@ -104,6 +119,30 @@ describe("createUISlice", () => {
     expect(state.sessionPresentation).toBe("drawer");
 
     state.setView("agent");
+    expect(state.sessionPresentation).toBe("drawer");
+  });
+
+  it("resets to the drawer when leaving the chat view", () => {
+    let state: any = {};
+
+    const mockSet = (updater: any) => {
+      const next = typeof updater === "function" ? updater(state) : updater;
+      state = { ...state, ...next };
+    };
+    const mockGet = () => state;
+    const slice = createUISlice(mockSet, mockGet, {} as any);
+    state = { ...state, ...slice };
+
+    state.setView("board");
+    state.setView("chat");
+    expect(state.activeView).toBe("chat");
+    expect(state.sessionPresentation).toBe("center");
+
+    // Topbar Chat toggle, ⌘/, or sidebar navigation away from chat must not
+    // leave the fullscreen center overlay covering the content view.
+    state.setView("board");
+    expect(state.activeView).toBe("board");
+    expect(state.lastContentView).toBe("board");
     expect(state.sessionPresentation).toBe("drawer");
   });
 
@@ -267,6 +306,72 @@ describe("dedupeProviders", () => {
 
   it("handles an empty list", () => {
     expect(dedupeProviders([])).toEqual([]);
+  });
+});
+
+describe("ensureSavedProviderForConnection", () => {
+  const setup = () => {
+    let state: any = {};
+    const mockSet = (updater: any) => {
+      const next = typeof updater === "function" ? updater(state) : updater;
+      state = { ...state, ...next };
+    };
+    const mockGet = () => state;
+    const slice = createUISlice(mockSet, mockGet, {} as any);
+    state = { ...state, ...slice };
+    state.aiConfig = { baseUrl: "", apiKey: "", model: "", savedProviders: [] };
+    state.agentConfig = { baseUrl: "", apiKey: "", model: "" };
+    return { get: () => state };
+  };
+
+  it("creates, names, and selects a local server row", () => {
+    const { get } = setup();
+    const id = get().ensureSavedProviderForConnection(
+      { baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b", apiKey: "" },
+      "ai",
+    );
+    expect(id).toBeTruthy();
+    const list = get().aiConfig.savedProviders;
+    expect(list).toHaveLength(1);
+    expect(list[0].baseUrl).toBe("http://127.0.0.1:11434/v1");
+    expect(list[0].name).toContain("11434");
+    expect(get().aiConfig.activeProviderId).toBe(id);
+    expect(get().aiConfig.model).toBe("qwen3:8b");
+  });
+
+  it("reuses the existing row on normalized baseUrl instead of duplicating", () => {
+    const { get } = setup();
+    const first = get().ensureSavedProviderForConnection(
+      { baseUrl: "http://127.0.0.1:11434/v1/", model: "", apiKey: "" },
+      "ai",
+    );
+    const second = get().ensureSavedProviderForConnection(
+      { baseUrl: "http://127.0.0.1:11434/v1", model: "llama3.1", apiKey: "" },
+      "ai",
+    );
+    expect(second).toBe(first);
+    expect(get().aiConfig.savedProviders).toHaveLength(1);
+    // Empty row model patched from the connection; the surface keeps its own
+    // model (re-select syncs connection, never clobbers it).
+    expect(get().aiConfig.savedProviders[0].model).toBe("llama3.1");
+    expect(get().aiConfig.model).toBe("");
+  });
+
+  it("returns null and changes nothing for a blank baseUrl", () => {
+    const { get } = setup();
+    expect(get().ensureSavedProviderForConnection({ baseUrl: "  ", model: "m", apiKey: "" })).toBeNull();
+    expect(get().aiConfig.savedProviders).toHaveLength(0);
+    expect(get().aiConfig.activeProviderId).toBeUndefined();
+  });
+
+  it("selects for both surfaces with selectFor both", () => {
+    const { get } = setup();
+    const id = get().ensureSavedProviderForConnection(
+      { baseUrl: "https://api.openai.com", model: "gpt-4o", apiKey: "" },
+      "both",
+    );
+    expect(get().aiConfig.activeProviderId).toBe(id);
+    expect(get().agentConfig.activeProviderId).toBe(id);
   });
 });
 

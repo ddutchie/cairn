@@ -19,6 +19,39 @@ export function DataSettings({
   const [exportError, setExportError] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetConfirm, setResetConfirm] = useState("");
+  const [leftovers, setLeftovers] = useState<{ bytes: number; files: Array<{ name: string; bytes: number }> } | null>(null);
+  const [clearArmed, setClearArmed] = useState(false);
+  const [clearedBytes, setClearedBytes] = useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !window.electron?.llmLeftovers) return;
+    window.electron.llmLeftovers()
+      .then((info) => setLeftovers(info))
+      .catch(() => {});
+  }, []);
+
+  function formatBytes(n: number): string {
+    if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
+    if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
+    return `${Math.round(n / 1e3)} KB`;
+  }
+
+  async function handleClearLeftovers() {
+    if (!window.electron?.clearLlmLeftovers) return;
+    if (!clearArmed) {
+      setClearArmed(true);
+      return;
+    }
+    try {
+      const res = await window.electron.clearLlmLeftovers();
+      setClearedBytes(res.reclaimedBytes);
+      setLeftovers({ bytes: 0, files: [] });
+    } catch {
+      // keep the row so the user can retry
+    } finally {
+      setClearArmed(false);
+    }
+  }
 
   function handleExport() {
     try {
@@ -86,6 +119,24 @@ export function DataSettings({
           <Trash2 size={12} /> Reset
         </Button>
       </SettingsRow>
+
+      {leftovers && leftovers.bytes > 1024 * 1024 && clearedBytes == null && (
+        <SettingsRow
+          label={`Retired engine downloads (${formatBytes(leftovers.bytes)})`}
+          description="Model files downloaded by Cairn's removed built-in engine. They're reusable as-is in Ollama (`ollama create`) or LM Studio — move them before deleting if you want to keep them."
+        >
+          <Button variant={clearArmed ? "danger" : "default"} size="sm" onClick={handleClearLeftovers}>
+            <Trash2 size={12} /> {clearArmed ? "Click again to delete" : `Remove ${formatBytes(leftovers.bytes)}`}
+          </Button>
+        </SettingsRow>
+      )}
+      {clearedBytes != null && (
+        <SettingsRow label="Retired engine downloads" description="Cleanup complete.">
+          <span className="text-xs text-[var(--success)] flex items-center gap-1">
+            <CheckCircle size={12} /> Reclaimed {formatBytes(clearedBytes)}
+          </span>
+        </SettingsRow>
+      )}
 
       <Dialog open={resetOpen} onOpenChange={(v) => { setResetOpen(v); if (!v) setResetConfirm(""); }}>
         <DialogContent size="sm">

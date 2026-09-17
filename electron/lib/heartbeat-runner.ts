@@ -271,7 +271,7 @@ export async function runAutomation(
   }
 
   const apiKey = resolveLlmApiKey(cached.apiKey);
-  const provider = (cached.provider ?? (isLocal(cached.baseUrl) ? "localllm" : "openai")) as "openai" | "localllm";
+  const provider = (cached.provider ?? "openai") as "openai";
   const abortCtrl = new AbortController();
 
   // ── Folder plumbing (phase 1/2) ───────────────────────────────────────────
@@ -576,7 +576,7 @@ export async function runAutomation(
     sessionId: run.id,
     cwd: runDirForAgent,
     systemPrompt: recipe,
-    llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" | "localllm" },
+    llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" },
     mode: "execute",
     sandboxMode: "workspace-write",
     // Automation runs on the coding profile but is its own Usage-view source.
@@ -638,25 +638,6 @@ export async function runAutomation(
   finaliseLog("done");
   insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content), completionTarget());
   cleanupRuns();
-}
-
-/**
- * True for loopback and private-network hosts (localhost, 127.x, 10.x,
- * 172.16–31.x, 192.168.x, 0.0.0.0) — the only endpoints treated as a local
- * model runtime. A remote http(s) endpoint resolves as non-local.
- */
-function isLocal(baseUrl: string): boolean {
-  const url = baseUrl.trim();
-  const m = url.match(/^(https?:\/\/)?([^/:]+)(?::\d+)?(\/.*)?$/i);
-  if (!m) return false;
-  const host = m[2].toLowerCase();
-  if (host === "localhost") return true;
-  if (!/^\d+\.\d+\.\d+\.\d+$/.test(host)) return false;
-  const [a, b, c] = host.split(".").map(Number);
-  if (a === 127 || a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  return a === 0 && b === 0 && c === 0;
 }
 
 function summarize(automation: Automation, content: string, suffix = "completed"): string {

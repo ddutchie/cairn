@@ -122,7 +122,7 @@ export async function generateUserStyleMarkdown(
   }
   const { systemPrompt, userPrompt } = buildUserStylePromptPair(step, input);
 
-  // One-shot via Cordis (single-turn, no tools) — falls back to callLLM for localllm.
+  // One-shot via Cordis (single-turn, no tools) on the configured provider.
   const { runOneShot } = await import("../cordis/one-shot");
   let markdown = await runOneShot({
     systemPrompt, userPrompt,

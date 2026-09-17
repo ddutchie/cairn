@@ -1,7 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
 import { APP_IDENTITY } from "@deepseek-ai/dsh-llm";
-import { CAIRN_APP_IDENTITY, createHostStore, ensureLocalLlmPort } from "./host-store";
+import { CAIRN_APP_IDENTITY, createHostStore } from "./host-store";
 import type { LLMConfig } from "../lib/llm";
 import { type ApiMode } from "../lib/llm-transport";
 import type { Database } from "better-sqlite3";
@@ -124,11 +124,7 @@ export async function mountCordisSessionPlugins({
 /** Prepare the shared model route used by every Cairn session kind. */
 export async function prepareCordisRuntime(ctx: Context, input: LLMConfig): Promise<{ llmConfig: LLMConfig; transport: ApiMode }> {
   const timing = process.env.CAIRN_TIMING === "1" || process.env.CAIRN_TIMING === "true";
-  let llmConfig = input;
-  if (llmConfig.provider === "localllm") {
-    const port = await ensureLocalLlmPort();
-    llmConfig = { ...llmConfig, baseUrl: `http://127.0.0.1:${port}/v1`, provider: "openai" as const };
-  }
+  const llmConfig = input;
   // Explicit wire protocol — Cairn never auto-probes for the Cordis path. The
   // provider pins apiMode (default "completions"); mapping it directly keeps the
   // api STABLE across restarts so the resumed session log's replay state (tagged

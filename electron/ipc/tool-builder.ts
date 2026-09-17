@@ -315,7 +315,7 @@ async function runBuilderLoop(
   send: (channel: string, payload: unknown) => void
 ): Promise<void> {
   const config = resolveConfig();
-  if (!config.apiKey && config.provider !== "localllm" && !isLocalEndpoint(config.baseUrl)) {
+  if (!config.apiKey && !isLocalEndpoint(config.baseUrl)) {
     send("tool-builder:done", { sessionId: session.id, error: "No API key configured. Set one in Settings → AI & Chat." });
     return;
   }

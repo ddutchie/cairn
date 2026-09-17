@@ -112,7 +112,7 @@ describe("resolveSystemRole (pi parity)", () => {
       .toBe("system");
     expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "https://api.together.ai/v1" }))
       .toBe("system");
-    expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "http://127.0.0.1:8080/v1", provider: "localllm" }))
+    expect(resolveSystemRole({ isReasoningModel: true, baseUrl: "http://127.0.0.1:8080/v1", provider: "openai" }))
       .toBe("system");
   });
 

@@ -26,8 +26,8 @@ import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY, applyChatTheme, CHAT_THEME_KEY, SHELL_VARIANT_KEY } from "./slices/ui";
-import type { FontScale, FontFamilyId, ShellVariant } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY, applyChatTheme, CHAT_THEME_KEY } from "./slices/ui";
+import type { FontScale, FontFamilyId } from "./slices/ui";
 import { DEFAULT_ACCENT_ID } from "../../shared/ui/accents";
 import { DEFAULT_FONT_ID } from "../../shared/ui/fonts";
 import { DEFAULT_CHAT_THEME_ID } from "../../shared/ui/chat-themes";
@@ -294,16 +294,6 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   if (typeof savedConversationsCollapsed === "boolean") {
     set({ conversationsCollapsed: savedConversationsCollapsed });
   }
-
-  const isDev = typeof process !== "undefined" && (process.env as unknown as { NODE_ENV?: string })?.NODE_ENV === "development";
-  const savedShell = storage.get<ShellVariant>(SHELL_VARIANT_KEY);
-  if (!isDev) {
-    // Production: Rail (A) is the only shipped shell; B/C/current are dev previews
-    set({ shellVariant: "A" });
-    if (savedShell && savedShell !== "A") storage.set(SHELL_VARIANT_KEY, "A");
-  } else if (savedShell && ["current","A","B","C"].includes(savedShell)) {
-    set({ shellVariant: savedShell });
-  }
 }
 
 // ── Store creation ────────────────────────────────────────────────────────────
@@ -333,10 +323,17 @@ export const useCairnStore = create<CairnStore>()(
       restorePersistedTheme(a[0]);
 
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
+      let migratedSlug = false;
       if (savedConfig) {
-        if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
-          savedConfig.provider = "localllm";
+        if (savedConfig.provider === ("apple-fm" as unknown as "openai") || (savedConfig.provider as unknown as string) === "localllm") {
+          // Retired provider slugs → plain OpenAI-compatible. The built-in
+          // on-device engine is gone; point a saved provider at Ollama,
+          // LM Studio, or any OpenAI-compatible endpoint instead (local or
+          // cloud). Connection fields are preserved so cloud setups keep
+          // working untouched.
+          savedConfig.provider = "openai";
           storage.set(AI_CONFIG_KEY, savedConfig);
+          migratedSlug = true;
         }
         a[0]({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
       }
@@ -344,7 +341,7 @@ export const useCairnStore = create<CairnStore>()(
       const savedAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
       if (savedAgentConfig) {
         a[0]({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
-      } else if (savedConfig && savedConfig.provider !== "localllm") {
+      } else if (savedConfig) {
         const migrated = {
           baseUrl: savedConfig.baseUrl || DEFAULT_AGENT_CONFIG.baseUrl,
           model: savedConfig.model || DEFAULT_AGENT_CONFIG.model,
@@ -356,6 +353,24 @@ export const useCairnStore = create<CairnStore>()(
         };
         a[0]({ agentConfig: migrated });
         storage.set(AGENT_CONFIG_KEY, migrated);
+      }
+
+      // After a retired-slug migration, file the connection as a shared
+      // saved-provider row selected for both surfaces — otherwise the picker
+      // shows "Not configured" despite a working connection.
+      if (migratedSlug && savedConfig?.baseUrl) {
+        try {
+          get().ensureSavedProviderForConnection(
+            {
+              baseUrl: savedConfig.baseUrl,
+              model: savedConfig.model ?? "",
+              apiKey: savedConfig.apiKey ?? "",
+            },
+            "both",
+          );
+        } catch (e) {
+          console.warn("Failed to migrate connection into saved providers:", e);
+        }
       }
 
       restorePersistedUiPrefs(a[0]);
@@ -408,27 +423,18 @@ export const useCairnStore = create<CairnStore>()(
               ...(localAiConfig?.reasoningEffort !== undefined ? { reasoningEffort: localAiConfig.reasoningEffort } : {}),
             }
           : localAiConfig;
+        let migratedSlug = false;
         if (savedConfig) {
-          if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
-            savedConfig.provider = "localllm";
+          if (savedConfig.provider === ("apple-fm" as unknown as "openai") || (savedConfig.provider as unknown as string) === "localllm") {
+            // Retired provider slugs → plain OpenAI-compatible (see hydrate()).
+            savedConfig.provider = "openai";
+            migratedSlug = true;
           }
           const mergedAiConfig = { ...DEFAULT_AI_CONFIG, ...savedConfig };
           set({ aiConfig: mergedAiConfig });
           storage.set(AI_CONFIG_KEY, mergedAiConfig);
           if (window.electron && window.electron.saveAiSettings) {
             window.electron.saveAiSettings(mergedAiConfig as unknown as Record<string, unknown>).catch(() => {});
-          }
-        } else if (window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
-          try {
-            const status = await window.electron.ai.localLLMStatus();
-            if (status.available) {
-              set({ aiConfig: { ...DEFAULT_AI_CONFIG, provider: "localllm" } });
-            } else {
-              set({ aiConfig: DEFAULT_AI_CONFIG });
-            }
-          } catch (e) {
-            console.warn("Failed to check localLLM availability on startup:", e);
-            set({ aiConfig: DEFAULT_AI_CONFIG });
           }
         } else {
           set({ aiConfig: DEFAULT_AI_CONFIG });
@@ -447,7 +453,7 @@ export const useCairnStore = create<CairnStore>()(
           if (!backendAgentConfig && window.electron && window.electron.saveAgentSettings) {
             window.electron.saveAgentSettings(savedAgentConfig as unknown as Record<string, unknown>).catch(() => {});
           }
-        } else if (savedConfig && savedConfig.provider !== "localllm") {
+        } else if (savedConfig) {
           const configRecord = savedConfig as unknown as Record<string, string | number | undefined>;
           const migrated: AgentConfig = {
             baseUrl: (configRecord.baseUrl as string) || DEFAULT_AGENT_CONFIG.baseUrl,
@@ -462,6 +468,25 @@ export const useCairnStore = create<CairnStore>()(
           storage.set(AGENT_CONFIG_KEY, migrated);
         } else {
           set({ agentConfig: DEFAULT_AGENT_CONFIG });
+        }
+
+        // After a retired-slug migration, file the connection as a shared
+        // saved-provider row selected for both surfaces — otherwise the
+        // picker shows "Not configured" despite a working connection.
+        // Idempotent (dedupes by baseUrl), so refresh hydrates are safe.
+        if (migratedSlug && savedConfig?.baseUrl) {
+          try {
+            get().ensureSavedProviderForConnection(
+              {
+                baseUrl: savedConfig.baseUrl,
+                model: savedConfig.model ?? "",
+                apiKey: savedConfig.apiKey ?? "",
+              },
+              "both",
+            );
+          } catch (e) {
+            console.warn("Failed to migrate connection into saved providers:", e);
+          }
         }
 
         // One-time: relocate any raw LLM API keys (legacy top-level or per-provider)
