@@ -11,6 +11,10 @@
 
 // ── Fixture data ──────────────────────────────────────────────────────────────
 
+// Build-time only: the session factory's SOURCE is embedded into the page
+// script (the page itself stays import-free). See src/test-utils/session-mock.
+import { buildSessionMock } from "../../src/test-utils/session-mock";
+
 export const WS_ID = "ws-1";
 export const PROJ_ID = "proj-1";
 export const COL_BACKLOG = "col-backlog";
@@ -357,47 +361,9 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     },
 
     // ── Cairn native agent (pi) — Cordis/dsh unified session ─────────────────
-    session: {
-      prompt:         noop,
-      onEvent:        makeListener("session:onEvent"),
-      onProjection:   makeListener("session:onProjection"),
-      contextRing:    () => Promise.resolve({ available: false }),
-      title:          () => Promise.resolve({ title: null }),
-      renameTitle:    () => Promise.resolve({ title: "Mock Title" }),
-      isRunning:      () => Promise.resolve({ running: false, pendingQuestions: [], pendingAsks: [] }),
-      runningIds:     () => Promise.resolve({ ids: [] }),
-      abort:          noop,
-      clear:          noop,
-      destroy:        noop,
-      compactNow:     noop,
-      setMode:        noop,
-      respondTool:    noop,
-      respondQuestions: noop,
-      approvePlan:    noop,
-      restoreContext: noop,
-      listSessions:   () => Promise.resolve([]),
-      createSession:  noop,
-      deleteSession:  noop,
-      getSessionMessages: () => Promise.resolve([]),
-      getTodos:       () => Promise.resolve([]),
-      // Goal / permissions / feedback / schedule snapshots — added with those
-      // features; the mock must expose every session method the renderer
-      // calls or boot-phase components throw (e.g. session.goal on mount).
-      goal:           () => Promise.resolve({ ok: true, value: null }),
-      permissions:    () => Promise.resolve({ ok: false, code: "unavailable", message: "mock" }),
-      feedback:       () => Promise.resolve({ ok: true, value: { messageId: "mock", rating: "positive", version: "1" } }),
-      feedbackGet:    () => Promise.resolve({ ok: true, value: null }),
-      scheduleList:   () => Promise.resolve({ ok: true, value: [] }),
-      listSubagents:  () => Promise.resolve({ ok: true, value: { entries: [], parentAvailable: false } }),
-      messageSubagent: () => Promise.resolve({ ok: true, value: { messageId: "mock" } }),
-      interruptSubagent: () => Promise.resolve({ ok: true, value: { accepted: false } }),
-      killJob:        () => Promise.resolve({ ok: true, value: null }),
-      listApprovalGrants: () => Promise.resolve([]),
-      deleteApprovalGrant: noop,
-      clearApprovalGrants: noop,
-    },
-
-    // ── External tools (MCP servers + custom HTTP services) ───
+    // Single source of truth: src/test-utils/session-mock.ts (embedded by
+    // source so the page script stays import-free).
+    session: (${buildSessionMock.toString()})({ noop, makeListener }),
     tools: {
       listMcpServers:  () => Promise.resolve([]),
       saveMcpServer:   noop,

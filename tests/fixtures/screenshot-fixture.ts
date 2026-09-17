@@ -2,6 +2,11 @@
  * Cairn — Rich screenshot fixture (shared by Route A + B)
  * Deterministic, marketing-grade workspace: Cairn HQ with 3 projects, 38 notes, 65 cards, 27 tags — 133 graph nodes.
  */
+
+// Build-time only: the session factory's SOURCE is embedded into the page
+// script (the page itself stays import-free). See src/test-utils/session-mock.
+import { buildSessionMock } from "../../src/test-utils/session-mock";
+
 export const WS_ID = "ws-cairn-hq";
 export const PROJ_A = "proj-cairn-core";
 export const PROJ_B = "proj-mobile";
@@ -957,7 +962,7 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
     onAiWriteStarted: makeListener("onAiWriteStarted"), onAiWriteEnded: makeListener("onAiWriteEnded"),
     mcpQuery: (_tool, _args) => Promise.resolve(null),
     agent: { getCodingAgents: () => Promise.resolve([]), saveCodingAgent: noop, deleteCodingAgent: noop, setDefaultAgent: noop, readDir: () => Promise.resolve([]), readFile: () => Promise.resolve(""), readFileBase64: () => Promise.resolve(""), writeFile: noop, validateDirectory: () => Promise.resolve(true), gitDiff: () => Promise.resolve(""), pickDirectory: () => Promise.resolve(null), pickFile: () => Promise.resolve(null), spawn: () => Promise.resolve({ sessionId: "mock-session" }), input: noop, resize: noop, spawnShell: () => Promise.resolve({ sessionId: "mock-shell-session" }), kill: () => Promise.resolve(), onData: makeListener("agent.onData"), onExit: makeListener("agent.onExit") },
-    session: { prompt: noop, onEvent: makeListener("session:onEvent"), onProjection: makeListener("session:onProjection"), contextRing: () => Promise.resolve({ available: false }), runningIds: () => Promise.resolve({ ids: [] }), setMode: noop, respondTool: noop, compactNow: noop, isRunning: () => Promise.resolve(false), abort: noop, clear: noop, destroy: noop, approvePlan: noop, restoreContext: noop, listSessions: () => Promise.resolve([]), createSession: noop, deleteSession: noop, getSessionMessages: () => Promise.resolve([]), getTodos: () => Promise.resolve([]), respondQuestions: noop },
+    session: (${buildSessionMock.toString()})({ noop, makeListener }),
     tools: { listMcpServers: () => Promise.resolve([]), saveMcpServer: noop, deleteMcpServer: noop, testMcp: () => Promise.resolve({ ok: true, toolCount: 0, toolNames: [] }), listMcpTools: () => Promise.resolve({ ok: true, tools: [] }), listServices: () => Promise.resolve([]), saveService: noop, deleteService: noop, testService: () => Promise.resolve({ ok: true }), listAttachments: () => Promise.resolve([]), setAttachment: noop, clearAttachment: noop, startMcpAuth: () => Promise.resolve({ status: "already_authorized" }), mcpAuthStatus: () => Promise.resolve({ connected: false }), signOutMcp: noop, cancelMcpAuth: () => Promise.resolve({ cancelled: false }), startServiceAuth: () => Promise.resolve({ status: "already_authorized" }), serviceAuthStatus: () => Promise.resolve({ connected: false }), signOutService: noop, cancelServiceAuth: () => Promise.resolve({ cancelled: false }), onOauthCallback: makeListener("tools.onOauthCallback") },
     secrets: { available: () => Promise.resolve(false), set: () => Promise.resolve(""), has: () => Promise.resolve(false), delete: noop },
     toolBuilder: { prompt: () => {}, abort: () => {}, end: () => {}, onToken: makeListener("toolBuilder.onToken"), onStep: makeListener("toolBuilder.onStep"), onProbeHost: makeListener("toolBuilder.onProbeHost"), onProposal: makeListener("toolBuilder.onProposal"), onDone: makeListener("toolBuilder.onDone") },
