@@ -158,14 +158,21 @@ export function getKnowledgeGraph(
   const projIdArgs = [...scopedProjectIds];
 
   // ── 2. Notes ───────────────────────────────────────────────────────────────
+  // Exclude soft-deleted notes (deleted_at tombstone) — otherwise a deleted
+  // note keeps showing up in the Knowledge Graph until a full recompute.
   const notes = db.prepare(
     `SELECT id, project_id, workspace_id, title, content, tag_ids,
             linked_note_ids, linked_card_ids, is_pinned
      FROM notes
-     WHERE project_id IN (${projPlaceholders}) AND archived_at IS NULL`
+     WHERE project_id IN (${projPlaceholders}) AND archived_at IS NULL AND deleted_at IS NULL`
   ).all(...projIdArgs) as Row[];
 
   const noteMap = new Map<string, Row>();
+  // Live-note id set, built up front: explicit links are only emitted when
+  // BOTH endpoints are live, so a surviving note can't drag a soft-deleted
+  // (tombstoned) note back into the graph as an edge endpoint. (noteMap is
+  // still populated incrementally below; the set covers forward references.)
+  const liveNoteIds = new Set(notes.map((n) => n.id as string));
   for (const n of notes) {
     noteMap.set(n.id as string, n);
     if (wantsType("note")) {
@@ -197,8 +204,10 @@ export function getKnowledgeGraph(
     // note-note links
     if (wantsEdge("note-note") && wantsType("note")) {
       for (const linkedId of parseJson(n.linked_note_ids)) {
-        // Only add once (lower id is source to avoid duplicates)
-        if ((n.id as string) < linkedId) {
+        // Only add once (lower id is source to avoid duplicates), and only
+        // when the referenced note is live — a link to a tombstoned note
+        // must not resurrect it as an edge endpoint.
+        if ((n.id as string) < linkedId && liveNoteIds.has(linkedId)) {
           edges.push({
             id: edgeId("note-note", n.id, linkedId),
             source: n.id as string,
@@ -212,11 +221,13 @@ export function getKnowledgeGraph(
   }
 
   // ── 3. Cards ───────────────────────────────────────────────────────────────
+  // Exclude soft-deleted cards (deleted_at tombstone). Archived cards stay
+  // visible (flagged via meta.isArchived) — matching the board behaviour.
   const cards = db.prepare(
     `SELECT id, project_id, workspace_id, title, description, tag_ids,
             linked_note_ids, priority, assignee, archived_at
      FROM task_cards
-     WHERE project_id IN (${projPlaceholders})`
+     WHERE project_id IN (${projPlaceholders}) AND deleted_at IS NULL`
   ).all(...projIdArgs) as Row[];
 
   const cardMap = new Map<string, Row>();
@@ -250,9 +261,11 @@ export function getKnowledgeGraph(
       });
     }
 
-    // note-card links
+    // note-card links (only when the referenced note is live — a card
+    // linking a tombstoned note must not resurrect it as an edge endpoint)
     if (wantsEdge("note-card") && wantsType("note") && wantsType("card")) {
       for (const noteId of parseJson(c.linked_note_ids)) {
+        if (!noteMap.has(noteId)) continue;
         edges.push({
           id: edgeId("note-card", noteId, c.id),
           source: noteId,
@@ -438,19 +451,19 @@ export function getNeighbours(
   if (isProject) {
     projectIds = [nodeId];
   } else {
-    const noteRow = db.prepare("SELECT project_id FROM notes WHERE id = ? AND archived_at IS NULL").get(nodeId) as { project_id: string } | undefined;
+    const noteRow = db.prepare("SELECT project_id FROM notes WHERE id = ? AND archived_at IS NULL AND deleted_at IS NULL").get(nodeId) as { project_id: string } | undefined;
     if (noteRow) {
       projectIds = [noteRow.project_id];
     } else {
-      const cardRow = db.prepare("SELECT project_id FROM task_cards WHERE id = ? AND archived_at IS NULL").get(nodeId) as { project_id: string } | undefined;
+      const cardRow = db.prepare("SELECT project_id FROM task_cards WHERE id = ? AND archived_at IS NULL AND deleted_at IS NULL").get(nodeId) as { project_id: string } | undefined;
       if (cardRow) {
         projectIds = [cardRow.project_id];
       } else {
         // Tag ID: find projects containing notes or cards tagged with it
         const tagProj = new Set<string>();
-        const taggedNotes = db.prepare("SELECT DISTINCT project_id FROM notes WHERE tag_ids LIKE ? AND archived_at IS NULL").all(`%"${nodeId}"%`) as { project_id: string }[];
+        const taggedNotes = db.prepare("SELECT DISTINCT project_id FROM notes WHERE tag_ids LIKE ? AND archived_at IS NULL AND deleted_at IS NULL").all(`%"${nodeId}"%`) as { project_id: string }[];
         for (const n of taggedNotes) tagProj.add(n.project_id);
-        const taggedCards = db.prepare("SELECT DISTINCT project_id FROM task_cards WHERE tag_ids LIKE ? AND archived_at IS NULL").all(`%"${nodeId}"%`) as { project_id: string }[];
+        const taggedCards = db.prepare("SELECT DISTINCT project_id FROM task_cards WHERE tag_ids LIKE ? AND archived_at IS NULL AND deleted_at IS NULL").all(`%"${nodeId}"%`) as { project_id: string }[];
         for (const c of taggedCards) tagProj.add(c.project_id);
         if (tagProj.size > 0) {
           projectIds = Array.from(tagProj);
@@ -551,15 +564,15 @@ export function computeAutoRelationships(
 ): void {
   const now = Math.floor(Date.now() / 1000);
 
-  // Load all non-archived notes + cards for this workspace
+  // Load all live (non-archived, non-deleted) notes + cards for this workspace
   const allNotes = db.prepare(
     `SELECT id, title, content FROM notes
-     WHERE workspace_id = ? AND archived_at IS NULL`
+     WHERE workspace_id = ? AND archived_at IS NULL AND deleted_at IS NULL`
   ).all(workspaceId) as Row[];
 
   const allCards = db.prepare(
     `SELECT id, title, description, assignee FROM task_cards
-     WHERE workspace_id = ? AND archived_at IS NULL`
+     WHERE workspace_id = ? AND archived_at IS NULL AND deleted_at IS NULL`
   ).all(workspaceId) as Row[];
 
   const upsert = db.prepare(`
@@ -880,7 +893,7 @@ export function getSemanticNeighbors(
   const ids = rows.map((r) => r.other_id);
   const placeholders = ids.map(() => "?").join(",");
   const titleRows = db.prepare(
-    `SELECT n.id, n.title FROM notes n WHERE n.id IN (${placeholders}) ${wsClause}`,
+    `SELECT n.id, n.title FROM notes n WHERE n.id IN (${placeholders}) AND n.deleted_at IS NULL AND n.archived_at IS NULL ${wsClause}`,
   ).all(...ids, ...wsParams) as Array<{ id: string; title: string }>;
   const titleMap = new Map(titleRows.map((r) => [r.id, r.title] as const));
 

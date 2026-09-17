@@ -379,6 +379,13 @@ export function delete_note(db: Database.Database, snap: Snapshot, workspacePath
   const delProj = snap.projects.find((pr) => pr.id === note.projectId);
   q.deleteNote(db, args.noteId as string);
   deleteNoteFile(workspacePath, delProj?.name ?? note.projectId as string, args.noteId as string);
+  // Keep the knowledge graph + embeddings clean (mirrors db:note:delete IPC).
+  try {
+    db.prepare("DELETE FROM relationship_cache WHERE source_id = ? OR target_id = ?").run(args.noteId, args.noteId);
+  } catch { /* best-effort */ }
+  try {
+    q.deleteNoteEmbedding(db, args.noteId as string);
+  } catch { /* best-effort */ }
   insertNotification(db, "delete_note", "Note deleted", `"${note.title}" was deleted`);
   return { deleted: true, id: args.noteId, title: note.title };
 }

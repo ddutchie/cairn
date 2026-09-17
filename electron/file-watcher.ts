@@ -332,6 +332,12 @@ function handleFileDelete(filePath: string, db: Database.Database, onChanged: ()
 
   try {
     q.deleteNote(db, noteId);
+    try {
+      db.prepare("DELETE FROM relationship_cache WHERE source_id = ? OR target_id = ?").run(noteId, noteId);
+    } catch { /* best-effort */ }
+    try {
+      q.deleteNoteEmbedding(db, noteId);
+    } catch { /* best-effort */ }
     onChanged();
   } catch {
     // Note may not exist in DB — ignore
