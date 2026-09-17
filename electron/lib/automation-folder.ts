@@ -33,7 +33,15 @@ export const KEEP_RUN_DIRS = 10;
 
 /** `<workspace>/<slug(projectName)>/` — the project's notes root on disk. */
 export function projectRootDir(workspacePath: string, projectName: string): string {
-  return path.join(workspacePath, toSlug(projectName));
+  // Containment: a hostile project name (e.g. "..") must never resolve outside
+  // the workspace — callers recursively remove `<root>/.automations/<id>`, so
+  // an escaped root would put another directory's subtree at risk.
+  const root = path.resolve(workspacePath);
+  const projectRoot = path.resolve(root, toSlug(projectName));
+  if (projectRoot !== root && !projectRoot.startsWith(root + path.sep)) {
+    throw new Error("Project name resolves outside workspace");
+  }
+  return projectRoot;
 }
 
 /**

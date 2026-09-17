@@ -123,4 +123,34 @@ describe("deleteAutomationWithCleanup", () => {
     ).toThrow("failed to remove automation folder");
     expect(getAutomationById(db, a.id)).not.toBeNull();
   });
+
+  it("keeps the row when the owning project is unresolvable", () => {
+    const a = createAutomation(db, makeInput());
+    expect(() =>
+      deleteAutomationWithCleanup(db, workspacePath, a.id, {
+        purgeSecrets: () => { throw new Error("must not purge before resolving"); },
+        projectNameFor: () => { throw new Error("project proj-1 was not found"); },
+      }),
+    ).toThrow("was not found");
+    expect(getAutomationById(db, a.id)).not.toBeNull();
+  });
+
+  it("default resolver throws for a dangling project_id instead of falling back", () => {
+    const a = createAutomation(db, makeInput());
+    // Point at a nonexistent project. FK enforcement is lifted just for this
+    // fixture write (a dangling project_id can't arise through the enforced
+    // FK, but can from older builds / manual repair — the resolver must still
+    // refuse to guess a folder).
+    db.pragma("foreign_keys = OFF");
+    db.prepare("UPDATE automations SET project_id = ? WHERE id = ?").run("dangling-project", a.id);
+    db.pragma("foreign_keys = ON");
+    let purged = false;
+    expect(() =>
+      deleteAutomationWithCleanup(db, workspacePath, a.id, {
+        purgeSecrets: () => { purged = true; },
+      }),
+    ).toThrow("was not found");
+    expect(purged).toBe(false); // resolution happens before any cleanup
+    expect(getAutomationById(db, a.id)).not.toBeNull();
+  });
 });

@@ -168,6 +168,11 @@ export function getKnowledgeGraph(
   ).all(...projIdArgs) as Row[];
 
   const noteMap = new Map<string, Row>();
+  // Live-note id set, built up front: explicit links are only emitted when
+  // BOTH endpoints are live, so a surviving note can't drag a soft-deleted
+  // (tombstoned) note back into the graph as an edge endpoint. (noteMap is
+  // still populated incrementally below; the set covers forward references.)
+  const liveNoteIds = new Set(notes.map((n) => n.id as string));
   for (const n of notes) {
     noteMap.set(n.id as string, n);
     if (wantsType("note")) {
@@ -199,8 +204,10 @@ export function getKnowledgeGraph(
     // note-note links
     if (wantsEdge("note-note") && wantsType("note")) {
       for (const linkedId of parseJson(n.linked_note_ids)) {
-        // Only add once (lower id is source to avoid duplicates)
-        if ((n.id as string) < linkedId) {
+        // Only add once (lower id is source to avoid duplicates), and only
+        // when the referenced note is live — a link to a tombstoned note
+        // must not resurrect it as an edge endpoint.
+        if ((n.id as string) < linkedId && liveNoteIds.has(linkedId)) {
           edges.push({
             id: edgeId("note-note", n.id, linkedId),
             source: n.id as string,
@@ -254,9 +261,11 @@ export function getKnowledgeGraph(
       });
     }
 
-    // note-card links
+    // note-card links (only when the referenced note is live — a card
+    // linking a tombstoned note must not resurrect it as an edge endpoint)
     if (wantsEdge("note-card") && wantsType("note") && wantsType("card")) {
       for (const noteId of parseJson(c.linked_note_ids)) {
+        if (!noteMap.has(noteId)) continue;
         edges.push({
           id: edgeId("note-card", noteId, c.id),
           source: noteId,

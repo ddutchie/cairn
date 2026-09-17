@@ -8,6 +8,8 @@ import {
   createNote,
   createColumn,
   createCard,
+  updateNote,
+  updateCard,
   deleteNote,
   deleteCard,
   upsertNoteEmbedding,
@@ -589,5 +591,19 @@ describe("getKnowledgeGraph — soft-deleted entities (issue #141)", () => {
     const graph = getKnowledgeGraph(db, "ws1");
     expect(graph.nodes.map((n) => n.id)).not.toContain("c1");
     expect(graph.edges.filter((e) => e.source === "c1" || e.target === "c1")).toHaveLength(0);
+  });
+
+  it("drops explicit edges from surviving notes/cards to a deleted note", () => {
+    // n1 links n2 (ordering: "n1" < "n2" emits); c1 links n2 as well.
+    updateNote(db, "n1", { linkedNoteIds: ["n2"] });
+    createColumn(db, { id: "col1", projectId: "p1", workspaceId: "ws1", name: "Todo", type: "todo", order: 0 });
+    createCard(db, { id: "c1", columnId: "col1", projectId: "p1", workspaceId: "ws1", title: "Card" });
+    updateCard(db, "c1", { linkedNoteIds: ["n2"] });
+    const before = getKnowledgeGraph(db, "ws1");
+    expect(before.edges.filter((e) => e.source === "n2" || e.target === "n2").length).toBeGreaterThan(0);
+
+    deleteNote(db, "n2");
+    const graph = getKnowledgeGraph(db, "ws1");
+    expect(graph.edges.filter((e) => e.source === "n2" || e.target === "n2")).toHaveLength(0);
   });
 });

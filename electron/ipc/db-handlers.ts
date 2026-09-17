@@ -742,13 +742,16 @@ export function registerDbHandlers(ctx: DbContext): void {
     // the automation's folder + keychain secrets, so both cleanups must succeed
     // BEFORE the row is removed. A cleanup failure throws (surfaced as
     // { error } by handle()), the row is kept, and a later delete retries.
+    // The resolver is strict: an unresolvable project throws rather than
+    // falling back to the workspace folder (which would delete the row while
+    // the real project folder remains).
     return deleteAutomationWithCleanup(ctx.db, ctx.workspacePath, id, {
       projectNameFor: (projectId) => {
-        try {
-          return getProjectName(ctx.db, projectId);
-        } catch {
-          return null;
+        const project = q.getProjectById(ctx.db, projectId);
+        if (!project) {
+          throw new Error(`project ${projectId} was not found`);
         }
+        return project.name;
       },
     });
   }));

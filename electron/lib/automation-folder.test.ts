@@ -43,6 +43,11 @@ describe("automation folder paths", () => {
     expect(dir).toBe(path.join("/ws", ".automations", "aut-1"));
   });
 
+  it("rejects project names that resolve outside the workspace", () => {
+    expect(() => projectRootDir("/ws", "..")).toThrow("outside workspace");
+    expect(() => automationFolderDir("/ws", "aut-1", "..")).toThrow("outside workspace");
+  });
+
   it("resolves the scripts and per-run folders inside the automation folder", () => {
     const auto = "/ws/P/.automations/aut-1";
     expect(automationScriptsDir(auto)).toBe(path.join(auto, "scripts"));

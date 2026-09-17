@@ -30,15 +30,20 @@ export interface AutomationDeleteDeps {
   projectNameFor?: (projectId: string) => string | null;
 }
 
-function defaultProjectNameFor(db: Database.Database, projectId: string): string | null {
-  try {
-    const row = db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as
-      | { name: string }
-      | undefined;
-    return row?.name ?? null;
-  } catch {
-    return null;
+function defaultProjectNameFor(db: Database.Database, projectId: string): string {
+  // Strict: a non-null project_id must resolve to a real project. Falling back
+  // to null here would target the workspace-level folder (usually absent, so
+  // removal reports success) and delete the row while the real project folder
+  // remains — exactly the orphan this helper exists to prevent. DB errors
+  // propagate for the same reason. project_id = NULL stays the intentional
+  // workspace-scoped case (handled by the caller, never reaching this fn).
+  const row = db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as
+    | { name: string }
+    | undefined;
+  if (!row) {
+    throw new Error(`project ${projectId} was not found`);
   }
+  return row.name;
 }
 
 export function deleteAutomationWithCleanup(
