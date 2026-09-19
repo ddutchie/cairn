@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronLeft, ChevronRight, X, Sparkles } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { isView } from "@/lib/views";
 
 interface TutorialStep {
   selector: string;
@@ -175,7 +176,7 @@ export function AppTutorial() {
   useEffect(() => {
     if (!tutorialActive || !currentStep) return;
 
-    if (activeView !== currentStep.view) {
+    if (!isView(activeView, currentStep.view)) {
       setView(currentStep.view);
     }
   }, [tutorialActive, tutorialStepIndex, activeView, setView, currentStep]);

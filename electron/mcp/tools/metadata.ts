@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
 import { Snapshot } from "../db";
-import { executeGetProjectContextPack } from "../../shared/read-tools-pure";
+import { executeGetProjectContextPack } from "../../host-shared/read-tools-pure";
 
 export const DASHBOARD_CONSTANTS = {
   description: "window.cairn API for Cairn dashboards (rendered in a sandboxed iframe).",

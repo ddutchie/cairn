@@ -12,7 +12,7 @@
 
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
-import { toCodingAgent, toMcpServer, toCustomService, toToolAttachment, j, type DbRow } from "../shared/db-mappers";
+import { toCodingAgent, toMcpServer, toCustomService, toToolAttachment, j, type DbRow } from "../host-shared/db-mappers";
 
 // ── Coding Agents ─────────────────────────────────────────────────────────────
 

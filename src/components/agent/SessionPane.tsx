@@ -16,6 +16,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2, MoreHorizontal, ChevronRight } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
+import { isView } from "@/lib/views";
 import { Tooltip } from "@/components/ui/tooltip";
 import { modKey } from "@/components/layout/sidebar-utils";
 import {
@@ -196,7 +197,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     // NOT reset the session when merely navigating AWAY from the agent view —
     // that would yank the user off a live agent conversation every time they hop
     // into Settings or another view; the agent tab is restored on return.
-    const chatOpenedOutsideAgent = !prevChatOpenRef.current && chatOpen && activeView !== "agent";
+    const chatOpenedOutsideAgent = !prevChatOpenRef.current && chatOpen && !isView(activeView, "agent");
 
     if (chatOpenedOutsideAgent) {
       setActiveSession("chat");

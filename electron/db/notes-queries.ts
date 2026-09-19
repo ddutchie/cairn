@@ -11,8 +11,8 @@
 
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
-import { toNote, j, type DbRow } from "../shared/db-mappers";
-import { normalizeNoteTitle } from "../shared/text-utils";
+import { toNote, j, type DbRow } from "../host-shared/db-mappers";
+import { normalizeNoteTitle } from "../host-shared/text-utils";
 
 // ── Notes ─────────────────────────────────────
 

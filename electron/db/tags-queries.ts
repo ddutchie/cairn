@@ -11,7 +11,7 @@
 
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
-import { toTag, toSlashCommand, type DbRow } from "../shared/db-mappers";
+import { toTag, toSlashCommand, type DbRow } from "../host-shared/db-mappers";
 
 // ── Tags ──────────────────────────────────────
 

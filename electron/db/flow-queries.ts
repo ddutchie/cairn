@@ -11,8 +11,8 @@
 
 import type Database from "better-sqlite3";
 import { ts, newId } from "./utils";
-import { toIdeaFlow, toIdeaFlowNode, toIdeaFlowEdge, type DbRow } from "../shared/db-mappers";
-import { stripMarkdown } from "../shared/text-utils";
+import { toIdeaFlow, toIdeaFlowNode, toIdeaFlowEdge, type DbRow } from "../host-shared/db-mappers";
+import { stripMarkdown } from "../host-shared/text-utils";
 
 // ── Idea Flow ─────────────────────────────────
 

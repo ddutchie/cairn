@@ -2,8 +2,8 @@ import path from "path";
 import os from "os";
 import fs from "fs";
 import Database from "better-sqlite3";
-import { toWorkspace, toProject, toNote, toColumn, toCard, toTag, j, j2, p, b } from "../shared/db-mappers";
-import { projectNotesDir, findNoteFilePath, resolveNoteFilePath, writeNoteFile, deleteNoteFile } from "../shared/notes-io";
+import { toWorkspace, toProject, toNote, toColumn, toCard, toTag, j, j2, p, b } from "../host-shared/db-mappers";
+import { projectNotesDir, findNoteFilePath, resolveNoteFilePath, writeNoteFile, deleteNoteFile } from "../host-shared/notes-io";
 import { newId, ts } from "../db/utils";
 import * as q from "../db/queries";
 

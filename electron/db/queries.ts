@@ -42,7 +42,7 @@
 
 import type Database from "better-sqlite3";
 import { newId } from "./utils";
-import { toNote, toCard, type DbRow } from "../shared/db-mappers";
+import { toNote, toCard, type DbRow } from "../host-shared/db-mappers";
 import { ftsMatchQuery } from "../../shared/notes/text";
 import { getAllWorkspaces, getProjects } from "./workspace-queries";
 import { getNotes } from "./notes-queries";

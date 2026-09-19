@@ -27,7 +27,7 @@ import {
   toProject,
   getSnapshot
 } from "./mcp/db";
-import type { DbRow } from "./shared/db-mappers";
+import type { DbRow } from "./host-shared/db-mappers";
 import { executeTool } from "./mcp/tools";
 
 export { executeTool };

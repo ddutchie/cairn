@@ -11,7 +11,7 @@
 
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
-import { toChatThread, toMcpNotification, type McpNotification, type DbRow } from "../shared/db-mappers";
+import { toChatThread, toMcpNotification, type McpNotification, type DbRow } from "../host-shared/db-mappers";
 
 // ── Chat ──────────────────────────────────────
 

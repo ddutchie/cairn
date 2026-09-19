@@ -14,6 +14,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
+import { isView } from "@/lib/views";
 import { SyncStatusIndicator } from "../sync-status-indicator";
 import { QuickSettings } from "../QuickSettings";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -168,8 +169,8 @@ export function UnifiedRail() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={activeView === "chat" ? () => setView(lastContentView) : toggleChat}
-              className={cn((chatOpen || activeView === "chat") && "text-[var(--accent)] bg-[var(--accent-dim)]")}
+              onClick={isView(activeView, "chat") ? () => setView(lastContentView) : toggleChat}
+              className={cn((chatOpen || isView(activeView, "chat")) && "text-[var(--accent)] bg-[var(--accent-dim)]")}
               aria-label="Chat"
             >
               <MessageSquare size={13} />

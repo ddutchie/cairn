@@ -21,7 +21,7 @@ import { toFloat32 } from "./cosine";
 import { splitIntoSections, type NoteSection } from "./sections";
 import { EMBED_MODEL_ID, EMBED_DIM } from "./types";
 import type { EmbedTask } from "./types";
-import { stripMarkdown } from "../shared/text-utils";
+import { stripMarkdown } from "../host-shared/text-utils";
 
 export type EmbedFn = (texts: string[], task: EmbedTask, model?: string) => Promise<number[][]>;
 

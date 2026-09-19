@@ -11,7 +11,7 @@
 
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
-import { toColumn, toCard, j, p, type DbRow } from "../shared/db-mappers";
+import { toColumn, toCard, j, p, type DbRow } from "../host-shared/db-mappers";
 
 // ── Board Columns ─────────────────────────────
 

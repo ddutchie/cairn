@@ -13,7 +13,7 @@ import fs from "fs";
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { getSnapshot } from "../mcp/db";
-import { serializeNoteMarkdown, serializeProjectMarkdown } from "../shared/read-tools-pure";
+import { serializeNoteMarkdown, serializeProjectMarkdown } from "../host-shared/read-tools-pure";
 
 /** Strip characters that are invalid in filenames on macOS/Windows. */
 function sanitizeFilename(name: string): string {

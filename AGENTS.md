@@ -79,7 +79,7 @@ The What's New modal (`src/components/layout/NewFeatureModal.tsx`) is generated 
 
 **KnowledgeGraphView** (`src/components/graph/KnowledgeGraphView.tsx`) — Force-directed and Radial tree layouts only. Reads from `graphData` store slice (populated by `loadGraph()`). `GraphLayoutMode = "force" | "radial"`.
 
-**InsightsView** (`src/components/insights/InsightsView.tsx`) — hosts all seven analytics canvases (which live in `src/components/graph/` alongside the KnowledgeGraph canvases and the shared scaffold). Also calls `loadGraph()` on mount (same as KGV) because canvases scope data via `useScopedData(nodes)` which needs `graphData.nodes` populated. Local `InsightsLayout` type — not stored in the global store.
+**InsightsView** (`src/components/graph/InsightsView.tsx`) — hosts all seven analytics canvases (which live alongside it in `src/components/graph/`, next to the KnowledgeGraph canvases and the shared scaffold). Also calls `loadGraph()` on mount (same as KGV) because canvases scope data via `useScopedData(nodes)` which needs `graphData.nodes` populated. Local `InsightsLayout` type — not stored in the global store.
 
 ## Analytics canvas architecture
 

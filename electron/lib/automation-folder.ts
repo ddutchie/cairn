@@ -21,7 +21,7 @@
 
 import fs from "fs";
 import path from "path";
-import { toSlug } from "../shared/text-utils";
+import { toSlug } from "../host-shared/text-utils";
 
 export const AUTOMATION_FOLDER_NAME = ".automations";
 export const RUNS_FOLDER_NAME = "runs";
