@@ -32,7 +32,7 @@ function FileContextContent({ path }: { path: string }) {
 }
 
 function DiffContextContent({ path }: { path?: string }) {
-  const project = useCairnStore((state) => state.projects.find((candidate) => candidate.id === state.activeProjectId));
+  const project = useCairnStore((state) => state.getActiveProject());
   const [result, setResult] = useState<{ stat: { added: number; deleted: number }; diff: string } | null>(null);
   useEffect(() => {
     let cancelled = false;

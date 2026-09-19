@@ -64,16 +64,9 @@ import type { TerminalSessionsSlice } from "./slices/terminal-sessions";
 export type { AIConfig, AgentConfig, Theme, FontScale, FontFamilyId };
 export { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG } from "@/lib/constants";
 
-// ── SearchResult (used by SelectorsSlice and components) ─────────────────────
+// ── SearchResult (defined in the selectors slice, re-exported here) ──────────
 
-export interface SearchResult {
-  type: "note" | "card";
-  id: string;
-  title: string;
-  snippet: string;
-  projectId: string;
-  projectName: string;
-}
+export type { SearchResult } from "./slices/selectors";
 
 // ── Persisted shape ───────────────────────────────────────────────────────────
 

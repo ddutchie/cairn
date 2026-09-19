@@ -13,6 +13,7 @@ import type {
   GraphEdgeType,
 } from "@/types";
 import { nodeTypeToken } from "../../../shared/ui/graph";
+import { ipcAwait, ipcData } from "../ipc";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -67,12 +68,16 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
     set({ graphLoading: true, graphError: null });
     try {
       const filters = get().graphFilters;
-      const data = await window.electron!.graph.get(workspaceId, {
+      const data = await ipcData((e) => e.graph.get(workspaceId, {
         projectIds: filters.projectIds.length > 0 ? filters.projectIds : undefined,
         includeAuto: filters.includeAuto,
         nodeTypes: filters.nodeTypes,
         edgeTypes: filters.edgeTypes,
-      }) as KnowledgeGraph;
+      }) as Promise<KnowledgeGraph>);
+      if (!data) {
+        set({ graphError: "Not in Electron", graphLoading: false });
+        return;
+      }
       set({ graphData: data, graphLoading: false });
     } catch (e) {
       set({ graphError: e instanceof Error ? e.message : String(e), graphLoading: false });
@@ -80,12 +85,12 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
   },
 
   async recomputeGraphRelationships(workspaceId) {
-    await window.electron!.graph.recompute(workspaceId);
+    await ipcAwait((e) => e.graph.recompute(workspaceId));
     await get().loadGraph(workspaceId);
   },
 
   async recomputeGraphRelationshipsIncremental(workspaceId, entityIds) {
-    await window.electron!.graph.recompute(workspaceId, entityIds);
+    await ipcAwait((e) => e.graph.recompute(workspaceId, entityIds));
     await get().loadGraph(workspaceId);
   },
 

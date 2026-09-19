@@ -133,6 +133,23 @@ export function ipcAwait(
 }
 
 /**
+ * Awaitable IPC call that returns data (preload's invoke() already unwraps
+ * the { data } envelope and rejects on { error }).
+ *
+ * This is the read counterpart to ipc()/ipcAwait(): it applies the same
+ * isElectron guard but deliberately does NOT touch ownWriteGuard (reads must
+ * not suppress the db:changed echo protection) and does NOT toast (callers
+ * surface read errors in their own UI state, e.g. graphError). Rejections
+ * propagate to the caller; off-Electron resolves undefined.
+ */
+export function ipcData<T>(
+  fn: (e: NonNullable<Window["electron"]>) => Promise<T> | undefined
+): Promise<T | undefined> {
+  if (!isElectron() || !window.electron) return Promise.resolve(undefined);
+  return fn(window.electron) ?? Promise.resolve(undefined);
+}
+
+/**
  * Awaitable IPC call that returns the raw IpcResult<T>.
  * Use when the caller needs to inspect { error } (e.g. circular dep check).
  */

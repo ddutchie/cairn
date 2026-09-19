@@ -14,7 +14,7 @@
 
 import { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import { forgetSessionPrompts } from "../../lib/agent-prompt-guard";
+import { forgetSessionPrompts } from "./session-prompt-guard";
 import { id } from "../../lib/utils";
 
 // ── Per-session token buffer (perf) ──────────────────────────────────────────
