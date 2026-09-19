@@ -150,7 +150,7 @@ export function RunWatcherModal({
               )}
               <div className={cn("whitespace-pre-wrap min-w-0", assistant ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]")}>
                 {assistant || (isLive ? "…" : "")}
-                {isLive && assistant && <span className="inline-block w-1.5 h-3.5 bg-[var(--accent)] align-middle animate-pulse ml-0.5" />}
+                {isLive && assistant && <span aria-hidden="true" className="inline-block w-1.5 h-3.5 bg-[var(--accent)] align-middle animate-pulse ml-0.5" />}
               </div>
             </div>
           </div>
@@ -179,7 +179,7 @@ export function RunWatcherModal({
         )}
 
         {!recipe && !assistant && tools.length === 0 && (
-          <p className="text-xs text-[var(--text-tertiary)]">{isLive ? "Waiting for activity…" : "No live activity."}</p>
+          <p role="status" className="text-xs text-[var(--text-tertiary)]">{isLive ? "Waiting for activity…" : "No live activity."}</p>
         )}
       </div>
     </ModalShell>

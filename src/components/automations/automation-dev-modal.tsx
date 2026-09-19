@@ -166,7 +166,8 @@ function DevFilesPanel({ automationId }: { automationId: string }) {
               <Tooltip content={f.path}>
                 <span className="truncate flex-1 font-mono">{f.path}</span>
               </Tooltip>
-              {changed[f.path] && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0 animate-pulse" />}
+              {changed[f.path] && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0 animate-pulse" aria-hidden="true" />}
+              {changed[f.path] && <span className="sr-only">changed</span>}
             </div>
           ))
         )}

@@ -77,6 +77,36 @@ jobs:
       - name: Lint
         run: npm run lint -- --max-warnings 0
 
+  # ── Mobile (Expo companion) ─────────────────────────────────────────────────
+  # Root type-check/lint ignore mobile/** (separate RN-aware toolchain), so the
+  # companion app gets its own gate here instead of only at release time
+  # (scripts/releasemobile.sh). No package-lock in mobile/ — plain install.
+  mobile:
+    name: Mobile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Link shared package
+        run: node scripts/link-shared.js
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint -- --max-warnings 0
+
   # ── Unit / integration tests ─────────────────────────────────────────────────
   test:
     name: Unit tests

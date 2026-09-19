@@ -170,7 +170,10 @@ export function AgentEditor() {
               {isImage(filePath) && <ImageIcon size={10} className="flex-shrink-0 text-[var(--text-tertiary)]" />}
               <span className="max-w-[120px] truncate">{name}</span>
               {!isImage(filePath) && (isDirty || isSaving) && (
-                <StatusDot color={isSaving ? "var(--text-tertiary)" : "var(--accent)"} />
+                <>
+                  <StatusDot color={isSaving ? "var(--text-tertiary)" : "var(--accent)"} />
+                  <span className="sr-only">{isSaving ? "Saving…" : "Unsaved changes"}</span>
+                </>
               )}
               {/* Preview toggle for md files */}
               {isActive && isMarkdown(filePath) && (

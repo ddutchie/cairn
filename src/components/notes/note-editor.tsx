@@ -764,7 +764,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         {/* Meta */}
         <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
           {aiEnabled && (spawnLoading ? (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-2)] border border-[var(--border)]">
+            <div role="status" className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-2)] border border-[var(--border)]">
               <Spinner size={11} tone="accent" />
               <span className="text-[0.786rem] text-[var(--text-tertiary)]">
                 {spawnToolCalls.length === 0

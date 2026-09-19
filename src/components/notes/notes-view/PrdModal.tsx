@@ -217,7 +217,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
                   <div className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)]">
                     {toolCalls.length > 0
                       ? <Wrench size={10} className="animate-pulse flex-shrink-0" />
-                      : <Spinner size={10} className="flex-shrink-0" />}
+                      : <Spinner size={10} />}
                     <span>{toolCalls.length > 0 ? "Working…" : "Thinking…"}</span>
                   </div>
                 )}
