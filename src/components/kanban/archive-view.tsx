@@ -1,10 +1,13 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Search, Trash2, ArchiveX, ArchiveRestore } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { EmptyState } from "@/components/ui/empty-state";
+import { useConfirmAction } from "@/components/ui/confirm-button";
 import { stripMarkdown } from "@/components/notes/note-editor-utils";
 
 interface ArchiveViewProps {
@@ -36,17 +39,19 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
     : allArchived;
   const colMap = new Map(columns.map((c) => [c.id, c]));
 
-  // Permanent deletion is irreversible — gate every path behind a confirm.
-  const confirmDeleteAll = () => {
-    if (filtered.length === 0) return;
-    const msg = filter
-      ? `Permanently delete ${filtered.length} matching archived task${filtered.length !== 1 ? "s" : ""}? This cannot be undone.`
-      : `Permanently delete all ${filtered.length} archived task${filtered.length !== 1 ? "s" : ""}? This cannot be undone.`;
-    if (!window.confirm(msg)) return;
-    filtered.forEach((c) => deleteCard(c.id));
-  };
-  const confirmDeleteOne = (cardId: string, title: string) => {
-    if (!window.confirm(`Permanently delete "${title}"? This cannot be undone.`)) return;
+  // Permanent deletion is irreversible — every path is a two-step confirm.
+  // Delete-all uses the shared hook; per-card rows track the armed id (rows
+  // can't own hooks without extracting a row component).
+  const deleteAllConfirm = useConfirmAction();
+  const [armedDeleteId, setArmedDeleteId] = useState<string | null>(null);
+  const armedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (armedTimer.current) clearTimeout(armedTimer.current);
+  }, []);
+  const fireDeleteOne = (cardId: string) => {
+    if (armedTimer.current) clearTimeout(armedTimer.current);
+    armedTimer.current = null;
+    setArmedDeleteId(null);
     deleteCard(cardId);
   };
 
@@ -68,13 +73,25 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
           {filtered.length} task{filtered.length !== 1 ? "s" : ""}
         </span>
         {filtered.length > 0 && (
-          <Tooltip content={filter ? "Delete matching tasks permanently" : "Delete all archived tasks permanently"}>
+          <Tooltip content={deleteAllConfirm.armed ? "Click again to delete permanently" : (filter ? "Delete matching tasks permanently" : "Delete all archived tasks permanently")}>
             <button
-              onClick={confirmDeleteAll}
-              className="flex items-center gap-1.5 ml-auto px-2 py-1 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-colors"
+              onClick={() => {
+                if (deleteAllConfirm.armed) {
+                  deleteAllConfirm.fire();
+                  filtered.forEach((c) => deleteCard(c.id));
+                } else {
+                  deleteAllConfirm.arm();
+                }
+              }}
+              className={cn(
+                "flex items-center gap-1.5 ml-auto px-2 py-1 rounded text-xs transition-colors",
+                deleteAllConfirm.armed
+                  ? "text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
+              )}
             >
               <Trash2 size={11} />
-              Delete all
+              {deleteAllConfirm.armed ? "Confirm delete?" : "Delete all"}
             </button>
           </Tooltip>
         )}
@@ -82,12 +99,11 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
       {/* Archive card grid */}
       <div className="flex-1 overflow-y-auto p-5">
         {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <ArchiveX size={32} className="text-[var(--text-tertiary)] opacity-30" />
-            <p className="text-sm text-[var(--text-tertiary)]">
-              {filter ? "No archived tasks match your search" : "No archived tasks"}
-            </p>
-          </div>
+          <EmptyState
+            icon={ArchiveX}
+            title={filter ? "No archived tasks match your search" : "No archived tasks"}
+            className="h-full"
+          />
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
             {filtered.map((card) => {
@@ -161,11 +177,27 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
                         <ArchiveRestore size={12} aria-hidden="true" />
                       </button>
                     </Tooltip>
-                    <Tooltip content="Delete permanently">
+                    <Tooltip content={armedDeleteId === card.id ? `Click again to permanently delete "${card.title}"` : "Delete permanently"}>
                       <button
-                        onClick={() => confirmDeleteOne(card.id, card.title)}
-                        aria-label={`Delete "${card.title}" permanently`}
-                        className="p-1 rounded hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+                        onClick={() => {
+                          if (armedDeleteId === card.id) {
+                            fireDeleteOne(card.id);
+                          } else {
+                            if (armedTimer.current) clearTimeout(armedTimer.current);
+                            setArmedDeleteId(card.id);
+                            armedTimer.current = setTimeout(() => {
+                              armedTimer.current = null;
+                              setArmedDeleteId(null);
+                            }, 4000);
+                          }
+                        }}
+                        aria-label={armedDeleteId === card.id ? `Confirm delete "${card.title}" permanently` : `Delete "${card.title}" permanently`}
+                        className={cn(
+                          "p-1 rounded transition-colors",
+                          armedDeleteId === card.id
+                            ? "bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] text-[var(--danger)]"
+                            : "hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--text-tertiary)] hover:text-[var(--danger)]"
+                        )}
                       >
                         <Trash2 size={12} aria-hidden="true" />
                       </button>

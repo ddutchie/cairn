@@ -37,6 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { sortTagsByUsage, capTags } from "@/lib/tag-utils";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
@@ -852,7 +853,7 @@ export function ProjectOverview() {
                 </h2>
               </div>
               {flowColumns.length === 0 ? (
-                <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">No columns yet</p>
+                <EmptyState title="No columns yet" className="py-6" />
               ) : (
                 <div role="list" aria-label="Tasks by column">
                   {flowColumns.map((col, idx) => {
@@ -1010,7 +1011,7 @@ export function ProjectOverview() {
                 </button>
               </div>
               {notes.length === 0 ? (
-                <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">No notes yet — capture ideas to see them here</p>
+                <EmptyState title="No notes yet — capture ideas to see them here" className="py-6" />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
@@ -1078,7 +1079,7 @@ export function ProjectOverview() {
                 </span>
               </div>
               {activityByDay.length === 0 ? (
-                <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">No activity yet — LLM and MCP changes will appear here</p>
+                <EmptyState title="No activity yet — LLM and MCP changes will appear here" className="py-6" />
               ) : (
                 <div className="max-h-[320px] overflow-y-auto pr-1 -mr-1">
                   <RecentActivityFeed activityByDay={activityByDay} />
@@ -1099,7 +1100,7 @@ export function ProjectOverview() {
             >
               <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px rgba(0,0,0,.18)" }}>
                 {recentProjectRuns.length === 0 ? (
-                  <p className="text-sm text-[var(--text-tertiary)] py-4 text-center">No runs yet</p>
+                  <EmptyState title="No runs yet" className="py-4" />
                 ) : (
                   <RecentAutomationRunsFeed runs={recentProjectRuns.slice(0, 5)} setView={setView} />
                 )}

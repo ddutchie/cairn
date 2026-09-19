@@ -13,7 +13,8 @@
 
 import { useMemo, useState, useEffect, useCallback, useRef, useDeferredValue } from "react";
 import parseDiff from "parse-diff";
-import { Copy, Check, RefreshCw, FolderGit2, ChevronRight, ChevronDown } from "lucide-react";
+import { Copy, Check, FolderGit2, ChevronRight, ChevronDown } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useIsDark } from "@/hooks/useIsDark";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
@@ -184,7 +185,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
             loading && "opacity-50 cursor-default"
           )}
         >
-          <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
+          <RefreshSpin size={11} spinning={loading} />
         </button>
       </Tooltip>
     </div>

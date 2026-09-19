@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Footprints, Thermometer, Layers, Gauge, Loader2 } from "lucide-react";
+import { Footprints, Thermometer, Layers, Gauge } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { Toggle as UiToggle, type ToggleProps } from "@/components/ui/toggle";
 
@@ -226,7 +227,7 @@ export function StepperSettingsRow({
                 autoState === "loading" && "opacity-60 cursor-wait",
               )}
             >
-              {autoState === "loading" && <Loader2 size={10} className="animate-spin" />}
+              {autoState === "loading" && <Spinner size={10} />}
               Auto
             </button>
           )}

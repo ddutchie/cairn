@@ -2,8 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import * as d3 from "d3";
-import { RefreshCw, Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Sparkles } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import type { GraphNode } from "@/types";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
@@ -251,7 +251,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
               disabled={recomputing}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-[var(--surface)] text-xs font-medium hover:opacity-90 disabled:opacity-50"
             >
-              <RefreshCw size={12} className={cn(recomputing && "animate-spin")} />
+              <RefreshSpin size={12} spinning={recomputing} />
               {anyStale ? "Recompute projections" : "Compute projections"}
             </button>
           )}
@@ -398,7 +398,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
           title="Recompute projections"
           className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] rounded disabled:opacity-50"
         >
-          <RefreshCw size={12} className={cn(recomputing && "animate-spin")} />
+          <RefreshSpin size={12} spinning={recomputing} />
         </button>
       </div>
 

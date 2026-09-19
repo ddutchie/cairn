@@ -9,7 +9,8 @@
  */
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Loader2, CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
+import { CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 interface MigrationStatus {
   id: string;
@@ -125,7 +126,7 @@ export function MigrationModal() {
                     {isDone ? (
                       <CheckCircle2 size={16} className="text-[var(--success)]" />
                     ) : isActive && phase === "running" ? (
-                      <Loader2 size={16} className="animate-spin text-[var(--accent)]" />
+                      <Spinner size={16} tone="accent" />
                     ) : (
                       <div className="w-4 h-4 rounded-full border-2 border-[var(--border)]" />
                     )}

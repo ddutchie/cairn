@@ -27,6 +27,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { PRIORITY_OPTIONS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { ArchiveView } from "./archive-view";
 import { KanbanColumn } from "./column";
@@ -690,10 +691,7 @@ export function KanbanBoard() {
 
               {columns.length === 0 && (
                 <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center">
-                    <Kanban size={32} className="mx-auto mb-3 text-[var(--text-tertiary)] opacity-30" />
-                    <p className="text-sm text-[var(--text-tertiary)]">No columns yet</p>
-                  </div>
+                  <EmptyState icon={Kanban} title="No columns yet" />
                 </div>
               )}
             </div>

@@ -15,7 +15,8 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { ChevronsUpDown, Check, Loader2 } from "lucide-react";
+import { ChevronsUpDown, Check } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
 import {
@@ -139,7 +140,7 @@ export function ChatThemePicker({
           );
         })}
         {!loaded && (
-          <Loader2 size={12} className="animate-spin text-[var(--text-tertiary)] col-span-3 mt-0.5" />
+          <Spinner size={12} tone="muted" className="col-span-3 mt-0.5" />
         )}
       </div>
     );

@@ -3,7 +3,8 @@
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
-import { Download, Plus, Trash2, Sparkles, X, FolderOpen, RefreshCw, Server } from "lucide-react";
+import { Download, Plus, Trash2, Sparkles, X, FolderOpen, Server } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
@@ -164,7 +165,7 @@ function ChatPreviewSection() {
           disabled={loading}
           className={cn(loading && "opacity-50")}
         >
-          <RefreshCw size={11} className={cn(loading && "animate-spin")} />
+          <RefreshSpin size={11} spinning={loading} />
           Refresh
         </Button>
       </div>
@@ -209,7 +210,7 @@ function ChatPreviewSection() {
 
       {loading && (
         <div className="py-8 text-center">
-          <RefreshCw size={16} className="mx-auto animate-spin text-[var(--text-tertiary)] opacity-50" />
+          <RefreshSpin size={16} className="mx-auto text-[var(--text-tertiary)] opacity-50" />
         </div>
       )}
     </SettingsGroup>

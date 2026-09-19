@@ -7,6 +7,7 @@ import React from "react";
 import * as d3 from "d3";
 import { DAY_MS } from "./analyticsUtils";
 import { useFontScale } from "./analyticsHooks";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // ── CanvasEmptyState ──────────────────────────────────────────────────────────
 
@@ -15,11 +16,7 @@ interface EmptyStateProps {
 }
 
 export function CanvasEmptyState({ message = "No data to show." }: EmptyStateProps) {
-  return (
-    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-      <p className="text-xs text-[var(--text-tertiary)]">{message}</p>
-    </div>
-  );
+  return <EmptyState overlay title={message} />;
 }
 
 // ── CanvasTooltip ─────────────────────────────────────────────────────────────

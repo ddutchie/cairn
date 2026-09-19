@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { ALL_BUILTIN_COMMANDS, isReservedCommandName } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { Terminal } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { BrowseCommandsModal } from "./tools/BrowseCommandsModal";
 import type { CustomSlashCommand, SlashCommandScope } from "@/types";
 
@@ -116,13 +117,12 @@ export function CommandsSettings() {
         description="Custom slash commands available in this workspace's chat and agent inputs."
       >
         {workspaceCommands.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-6 text-center">
-            <SlashSquare size={20} className="text-[var(--text-tertiary)] opacity-40" />
-            <p className="text-sm text-[var(--text-tertiary)]">No custom commands yet.</p>
-            <p className="text-xs text-[var(--text-tertiary)]">
-              Add one above — type <span className="font-mono">/</span> in a chat to use it.
-            </p>
-          </div>
+          <EmptyState
+            icon={SlashSquare}
+            title="No custom commands yet."
+            description={<>Add one above — type <span className="font-mono">/</span> in a chat to use it.</>}
+            className="py-6"
+          />
         ) : (
           <div className="space-y-1.5">
             {workspaceCommands.map((cmd) => (

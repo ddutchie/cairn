@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -65,7 +66,7 @@ export function McpToolList({ server }: { server: McpServerConfig }) {
           </span>
         )}
         <span className="ml-auto flex items-center gap-1">
-          {loading && <Loader2 size={11} className="animate-spin text-[var(--text-tertiary)]" />}
+          {loading && <Spinner size={11} tone="muted" />}
           <span
             role="button"
             tabIndex={0}

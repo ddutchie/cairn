@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Bell, Check, CheckCheck, Zap, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -100,9 +101,12 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
       {/* List */}
       <div className="flex-1 overflow-y-auto max-h-80 pb-1">
         {notifications.length === 0 ? (
-          <p className="px-3 py-6 text-center text-[0.714rem] text-[var(--text-tertiary)]">
-            No notifications yet — automation completions and app activity will appear here.
-          </p>
+          <EmptyState
+            icon={Bell}
+            title="No notifications yet"
+            description="Automation completions and app activity will appear here."
+            className="py-6"
+          />
         ) : (
           sorted.map((n) => {
             // "approval"-targeted notifications are historical only — the DB

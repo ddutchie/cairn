@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   RefreshCw,
-  Loader2,
   Check,
   Download,
   ArrowUpCircle,
@@ -15,6 +14,7 @@ import {
   CheckCircle,
   X,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
@@ -295,7 +295,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
             disabled={refreshing}
             title="Refresh from the registry"
           >
-            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            {refreshing ? <Spinner size={13} /> : <RefreshCw size={13} />}
             Refresh
           </Button>
         </div>
@@ -346,7 +346,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
             )}
             {justInstalled.oauth && !justInstalled.connected && connecting && (
               <span className="flex items-center gap-1 text-[var(--text-tertiary)] ml-auto">
-                <Loader2 size={11} className="animate-spin" /> Waiting for browser…
+                <Spinner size={11} /> Waiting for browser…
               </span>
             )}
             <button
@@ -375,7 +375,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
       <div className="mt-3 flex flex-col gap-2 min-h-[8rem]">
         {loading ? (
           <div className="flex items-center justify-center py-10 text-[var(--text-tertiary)]">
-            <Loader2 size={18} className="animate-spin" />
+            <Spinner size={18} />
           </div>
         ) : filtered.length === 0 ? (
           <p className="text-xs text-[var(--text-tertiary)] py-10 text-center border border-dashed border-[var(--border)] rounded-lg">
@@ -433,7 +433,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
                       onClick={() => onInstallClick(e)}
                     >
                       {busy ? (
-                        <Loader2 size={12} className="animate-spin" />
+                        <Spinner size={12} />
                       ) : updatable ? (
                         <ArrowUpCircle size={12} />
                       ) : (
@@ -497,7 +497,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
               disabled={installing !== null || secretPrompt.names.some((n) => !secretValues[n]?.trim())}
               onClick={() => void runInstall(secretPrompt.entry, secretValues)}
             >
-              {installing ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+              {installing ? <Spinner size={12} /> : <Download size={12} />}
               Install
             </Button>
           </div>

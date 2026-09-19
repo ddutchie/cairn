@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity, FileText, Kanban, Sparkles, Plug } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, id } from "@/lib/utils";
@@ -16,6 +17,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { ModalShell } from "@/components/ui/modal-shell";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ScheduleBuilder } from "./schedule-builder";
 import { BrowseAutomationsContent } from "./browse-automations";
 import { TimePicker } from "@/components/ui/time-picker";
@@ -391,9 +393,11 @@ export function AutomationsView() {
           </div>
         )}
         {automations.length === 0 && (
-          <div className="rounded-lg border border-[var(--border)] p-10 text-center text-sm text-[var(--text-tertiary)]">
-            No automations yet. Create one to run scheduled tasks in the background.
-          </div>
+          <EmptyState
+            icon={Zap}
+            title="No automations yet."
+            description="Create one to run scheduled tasks in the background."
+          />
         )}
         {automations.map((a) => {
           const lastRun = lastRuns[a.id];
@@ -897,7 +901,7 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
           )}
           {onSyncFromManifest && (
             <Button variant="outline" size="sm" onClick={onSyncFromManifest} disabled={syncing}>
-              <RefreshCw size={12} className={cn("mr-1", syncing && "animate-spin")} /> {syncing ? "Syncing…" : "Sync from manifest"}
+              <RefreshSpin size={12} spinning={syncing} className="mr-1" /> {syncing ? "Syncing…" : "Sync from manifest"}
             </Button>
           )}
           {onRunNow && (
@@ -968,7 +972,7 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">Run history</span>
               <Button variant="ghost" size="xs" onClick={() => void refresh()} disabled={refreshing}>
-                <RefreshCw size={11} className={cn("mr-1", refreshing && "animate-spin")} /> Refresh
+                <RefreshSpin size={11} spinning={refreshing} className="mr-1" /> Refresh
               </Button>
             </div>
             <div className="space-y-1.5 max-h-56 overflow-y-auto">

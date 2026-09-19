@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
-import { Check, Download, Loader2, WifiOff } from "lucide-react";
+import { Check, Download, WifiOff } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { ProvidersFetchResult, RegistryProviderEntry } from "@/types";
@@ -131,7 +132,7 @@ export function ProviderGallery({ onPick }: Props) {
       <div className="h-[21rem] overflow-y-auto pr-0.5">
         {loading ? (
           <div className="flex items-center justify-center h-full text-[var(--text-tertiary)]">
-            <Loader2 size={18} className="animate-spin" />
+            <Spinner size={18} />
           </div>
         ) : providers.length === 0 ? (
           <div className="flex items-center justify-center h-full text-xs text-[var(--text-tertiary)] text-center border border-dashed border-[var(--border)] rounded-lg px-4">
@@ -182,7 +183,7 @@ export function ProviderGallery({ onPick }: Props) {
                         onClick={() => void runInstall(entry, keyValue)}
                         className="shrink-0 px-2 py-1 text-[0.65rem] rounded bg-[var(--accent)] text-[var(--accent-fg,#fff)] disabled:opacity-40"
                       >
-                        {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                        {busy ? <Spinner size={10} /> : <Check size={10} />}
                       </button>
                     </div>
                   ) : installed ? (
@@ -196,7 +197,7 @@ export function ProviderGallery({ onPick }: Props) {
                       onClick={() => onInstallClick(entry)}
                       className="mt-2 inline-flex items-center gap-1 px-2 py-1 text-[0.65rem] rounded bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-40"
                     >
-                      {busy ? <Loader2 size={10} className="animate-spin" /> : <Download size={10} />}
+                      {busy ? <Spinner size={10} /> : <Download size={10} />}
                       {def.needsApiKey ? "Add · key" : "Add"}
                     </button>
                   )}

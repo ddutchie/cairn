@@ -10,6 +10,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "@/store/slices/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NoteEditor } from "./note-editor";
@@ -670,19 +671,20 @@ export function NotesView() {
         {/* List */}
         <div className="flex-1 overflow-y-auto py-1">
           {notes.length === 0 && archivedNotes.length === 0 ? (
-            <div className="px-3 py-8 text-center">
-              <FileText size={20} className="mx-auto mb-2 text-[var(--text-tertiary)] opacity-40" />
-              <p className="text-xs text-[var(--text-tertiary)]">No notes yet</p>
-              <button onClick={() => handleCreateNote()} className="mt-2 text-xs text-[var(--accent)] hover:underline">
-                Create one
-              </button>
-            </div>
+            <EmptyState
+              icon={FileText}
+              title="No notes yet"
+              action={
+                <Button variant="ghost" size="xs" onClick={() => handleCreateNote()} className="text-[var(--accent)]">
+                  Create one
+                </Button>
+              }
+              className="py-8"
+            />
           ) : isFiltering ? (
             // Flat filtered list
             filtered.length === 0 ? (
-              <div className="px-3 py-8 text-center">
-                <p className="text-xs text-[var(--text-tertiary)]">No matching notes</p>
-              </div>
+              <EmptyState title="No matching notes" className="py-8" />
             ) : (
               filtered.map((note) => (
                 <NoteListItem

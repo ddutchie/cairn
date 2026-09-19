@@ -10,7 +10,8 @@
 import { useState, useEffect } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { PenLine, Sparkles, Trash2, Loader2, RefreshCw } from "lucide-react";
+import { PenLine, Sparkles, Trash2, RefreshCw } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { UserStyleWizardModal } from "./UserStyleWizardModal";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
@@ -177,7 +178,7 @@ export function UserStyleSettings() {
                   disabled={regenerating || !userStyle?.fullGuide}
                   className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
                 >
-                  {regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                  {regenerating ? <Spinner size={12} /> : <RefreshCw size={12} />}
                   Regenerate cheat sheet
                 </button>
                 <button

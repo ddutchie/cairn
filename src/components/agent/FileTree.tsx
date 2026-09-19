@@ -10,9 +10,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ChevronRight, ChevronDown, FolderOpen, Folder,
-  FileText, FileCode, FileJson, Settings, AlertCircle, Search, X, RefreshCw,
+  FileText, FileCode, FileJson, Settings, AlertCircle, Search, X,
 } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useCairnStore } from "@/store";
 import { modKey } from "@/components/layout/sidebar-utils";
 import { useShallow } from "zustand/react/shallow";
@@ -316,7 +318,7 @@ export function FileTree({ project }: FileTreeProps) {
             title="Refresh"
             aria-label="Refresh file tree"
           >
-            <RefreshCw size={11} className={refreshing ? "animate-spin" : undefined} />
+            <RefreshSpin size={11} spinning={refreshing} />
           </button>
           <button
             onClick={() => { setSearchActive(true); setTimeout(() => searchInputRef.current?.focus(), 0); }}
@@ -336,7 +338,7 @@ export function FileTree({ project }: FileTreeProps) {
               <p className="text-[0.714rem] text-[var(--text-tertiary)] px-3 py-2">Searching…</p>
             )}
             {!searching && searchQuery.trim() && searchResults.length === 0 && (
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] px-3 py-4 text-center">No files found</p>
+              <EmptyState title="No files found" />
             )}
             {!searching && !searchQuery.trim() && (
               <p className="text-[0.714rem] text-[var(--text-tertiary)] px-3 py-4 text-center">Type to search files</p>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CornerDownRight, GitBranch, Loader2, SendHorizonal, Square } from "lucide-react";
+import { CornerDownRight, GitBranch, SendHorizonal, Square } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { SessionProjection } from "@/../shared/agent/session-projection";
@@ -184,7 +185,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
           <div className="flex items-center justify-between px-1">
             <p className="text-[0.714rem] font-medium text-[var(--text-secondary)]">Subagents</p>
             <button onClick={() => void load()} className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
-              {loading ? <Loader2 size={10} className="animate-spin" /> : "Refresh"}
+              {loading ? <Spinner size={10} /> : "Refresh"}
             </button>
           </div>
           <div className="flex items-center gap-1.5 px-1" role="group" aria-label="Subagent scope">
@@ -251,7 +252,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
                     className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] disabled:opacity-40 transition-colors"
                     aria-label="Send message to subagent"
                   >
-                    {busy[entry.id] === "send" ? <Loader2 size={11} className="animate-spin" /> : <SendHorizonal size={11} />}
+                    {busy[entry.id] === "send" ? <Spinner size={11} /> : <SendHorizonal size={11} />}
                   </button>
                   {(entry.activity === "running" || entry.live) && (
                     <button
@@ -260,7 +261,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
                       className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] disabled:opacity-40 transition-colors"
                       aria-label="Stop subagent turn"
                     >
-                      {busy[entry.id] === "stop" ? <Loader2 size={11} className="animate-spin" /> : <Square size={11} />}
+                      {busy[entry.id] === "stop" ? <Spinner size={11} /> : <Square size={11} />}
                     </button>
                   )}
                 </div>

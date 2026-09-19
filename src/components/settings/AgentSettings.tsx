@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import {
-  Plus, Trash2, Star, FolderOpen, Check, BookOpen, RefreshCw, Download
+  Plus, Trash2, Star, FolderOpen, Check, BookOpen, Download
 } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { id, cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
 import type { CodingAgent } from "@/store/slices/coding-agents";
@@ -169,7 +171,7 @@ function CodingPreviewSection() {
           disabled={loading}
           className={cn(loading && "opacity-50")}
         >
-          <RefreshCw size={11} className={cn(loading && "animate-spin")} />
+          <RefreshSpin size={11} spinning={loading} />
           Refresh
         </Button>
       </div>
@@ -257,7 +259,7 @@ function CodingPreviewSection() {
 
       {loading && (
         <div className="py-8 text-center">
-          <RefreshCw size={16} className="mx-auto animate-spin text-[var(--text-tertiary)] opacity-50" />
+          <RefreshSpin size={16} className="mx-auto text-[var(--text-tertiary)] opacity-50" />
         </div>
       )}
     </SettingsGroup>
@@ -539,9 +541,10 @@ export function AgentSettings() {
         )}
 
         {agents.length === 0 && !adding && (
-          <p className="text-xs text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
-            No external agents configured yet. Click &quot;Add Agent CLI&quot; to register one.
-          </p>
+          <EmptyState
+            title="No external agents configured yet."
+            description='Click "Add Agent CLI" to register one.'
+          />
         )}
 
         {agents.map((agent) =>

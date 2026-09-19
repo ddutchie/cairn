@@ -12,7 +12,8 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { RefreshCw, Loader2, Check, Download, WifiOff, Search, ExternalLink } from "lucide-react";
+import { RefreshCw, Check, Download, WifiOff, Search, ExternalLink } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
@@ -147,7 +148,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
             disabled={refreshing}
             title="Refresh from the registry"
           >
-            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            {refreshing ? <Spinner size={13} /> : <RefreshCw size={13} />}
             Refresh
           </Button>
         </div>
@@ -181,7 +182,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
       <div className="mt-3 flex flex-col gap-2 min-h-[8rem]">
         {loading ? (
           <div className="flex items-center justify-center py-10 text-[var(--text-tertiary)]">
-            <Loader2 size={18} className="animate-spin" />
+            <Spinner size={18} />
           </div>
         ) : filtered.length === 0 ? (
           <p className="text-xs text-[var(--text-tertiary)] py-10 text-center border border-dashed border-[var(--border)] rounded-lg">
@@ -252,7 +253,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
                         disabled={busy}
                         onClick={() => void runInstall(entry)}
                       >
-                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                        {busy ? <Spinner size={12} /> : <Download size={12} />}
                         Add
                       </Button>
                     )}

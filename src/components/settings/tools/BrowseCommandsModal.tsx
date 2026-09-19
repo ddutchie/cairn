@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   RefreshCw,
-  Loader2,
   Check,
   Download,
   ArrowUpCircle,
@@ -11,6 +10,7 @@ import {
   Search,
   SlashSquare,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
@@ -63,6 +63,14 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
+  // Two-step confirm when updating an already-installed command: the update
+  // overwrites local values with the registry's, so the first click arms
+  // ("Confirm update") and the second fires. Auto-disarms after 4s.
+  const [armedUpdateId, setArmedUpdateId] = useState<string | null>(null);
+  const armedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (armedTimer.current) clearTimeout(armedTimer.current);
+  }, []);
 
   const load = useCallback(async (force: boolean) => {
     const reg = window.electron?.registry;
@@ -128,18 +136,9 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
 
   const runInstall = useCallback(
     async (entry: RegistryCommandEntry) => {
-      // Updating an already-installed command overwrites its local values with
-      // the registry's. Warn first so a user who tweaked the command locally
-      // isn't surprised — new installs and declined confirmations are unaffected.
-      const installed = installedRow(entry);
-      if (installed && isOutdated(installed, entry)) {
-        const ok =
-          typeof window === "undefined" ||
-          window.confirm(
-            `Updating /${entry.definition.name} will replace your local copy with the community version. Any changes you made to it will be lost. Continue?`
-          );
-        if (!ok) return;
-      }
+      if (armedTimer.current) clearTimeout(armedTimer.current);
+      armedTimer.current = null;
+      setArmedUpdateId(null);
       setInstalling(entry.id);
       setInstallError(null);
       try {
@@ -150,7 +149,7 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
         setInstalling(null);
       }
     },
-    [installCommunityCommand, installedRow]
+    [installCommunityCommand]
   );
 
   return (
@@ -187,7 +186,7 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
             disabled={refreshing}
             title="Refresh from the registry"
           >
-            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            {refreshing ? <Spinner size={13} /> : <RefreshCw size={13} />}
             Refresh
           </Button>
         </div>
@@ -226,7 +225,7 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
       <div className="mt-3 flex flex-col gap-2 min-h-[8rem]">
         {loading ? (
           <div className="flex items-center justify-center py-10 text-[var(--text-tertiary)]">
-            <Loader2 size={18} className="animate-spin" />
+            <Spinner size={18} />
           </div>
         ) : filtered.length === 0 ? (
           <p className="text-xs text-[var(--text-tertiary)] py-10 text-center border border-dashed border-[var(--border)] rounded-lg">
@@ -282,16 +281,28 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
                       size="sm"
                       variant={updatable ? "outline" : "default"}
                       disabled={busy || !activeWorkspaceId}
-                      onClick={() => void runInstall(entry)}
+                      title={updatable && armedUpdateId === entry.id ? "Click again — your local edits will be replaced by the community version" : undefined}
+                      onClick={() => {
+                        if (updatable && armedUpdateId !== entry.id) {
+                          if (armedTimer.current) clearTimeout(armedTimer.current);
+                          setArmedUpdateId(entry.id);
+                          armedTimer.current = setTimeout(() => {
+                            armedTimer.current = null;
+                            setArmedUpdateId(null);
+                          }, 4000);
+                          return;
+                        }
+                        void runInstall(entry);
+                      }}
                     >
                       {busy ? (
-                        <Loader2 size={12} className="animate-spin" />
+                        <Spinner size={12} />
                       ) : updatable ? (
                         <ArrowUpCircle size={12} />
                       ) : (
                         <Download size={12} />
                       )}
-                      {updatable ? "Update" : "Install"}
+                      {updatable ? (armedUpdateId === entry.id ? "Confirm update" : "Update") : "Install"}
                     </Button>
                   )}
                 </div>

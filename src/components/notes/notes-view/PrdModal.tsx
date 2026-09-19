@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Wand2, Loader2, Send, Wrench, CheckCircle2 } from "lucide-react";
+import { Wand2, Send, Wrench, CheckCircle2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useCairnStore } from "@/store";
@@ -209,7 +210,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
                   <div className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)]">
                     {toolCalls.length > 0
                       ? <Wrench size={10} className="animate-pulse flex-shrink-0" />
-                      : <Loader2 size={10} className="animate-spin flex-shrink-0" />}
+                      : <Spinner size={10} className="flex-shrink-0" />}
                     <span>{toolCalls.length > 0 ? "Working…" : "Thinking…"}</span>
                   </div>
                 )}
@@ -260,7 +261,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
                   disabled={isLoading || !input.trim()}
                   className="flex-shrink-0"
                 >
-                  {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                  {isLoading ? <Spinner size={13} /> : <Send size={13} />}
                 </Button>
               </div>
             </div>

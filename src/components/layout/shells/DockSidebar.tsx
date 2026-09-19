@@ -6,6 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, getDueDateStatus } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
 import { countOpenCardsByProject, modKey, buildShortcutMap } from "../sidebar-utils";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
@@ -389,10 +390,14 @@ export function DockSidebar() {
             </div>
           )}
           {projects.length === 0 && !creatingProject && (
-            <div className="mx-2 mt-2 p-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] text-center">
-              <FolderOpen size={16} className="mx-auto mb-1.5 text-[var(--text-tertiary)]" />
-              <p className="text-xs text-[var(--text-tertiary)]">No projects yet</p>
-              <button onClick={() => setCreatingProject(true)} className="mt-2 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-dim)] px-2 py-1 rounded transition-colors">Create one</button>
+            <div className="mx-2 mt-2 p-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)]">
+              <EmptyState
+                icon={FolderOpen}
+                title="No projects yet"
+                action={
+                  <button onClick={() => setCreatingProject(true)} className="mt-2 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-dim)] px-2 py-1 rounded transition-colors">Create one</button>
+                }
+              />
             </div>
           )}
 

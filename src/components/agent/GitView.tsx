@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, Check, X, ChevronDown, GitPullRequest } from "lucide-react";
+import { GitBranch, GitCommit, ArrowUp, Sparkles, Check, X, ChevronDown, GitPullRequest } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -242,10 +243,31 @@ export function GitView({ cwd }: GitViewProps) {
     }
   }
 
-  async function handleDiscard(paths: string[]) {
-    if (!window.electron?.git) return;
+  // Two-step discard confirm, keyed per trigger (per-file rows + the two
+  // bulk buttons). First click arms and shows the consequence message in the
+  // tooltip; second click fires. Auto-disarms after 4s.
+  const [armedDiscardKey, setArmedDiscardKey] = useState<string | null>(null);
+  const discardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (discardTimer.current) clearTimeout(discardTimer.current);
+  }, []);
+  const fireDiscard = (key: string, paths: string[]) => {
+    if (armedDiscardKey === key) {
+      if (discardTimer.current) clearTimeout(discardTimer.current);
+      discardTimer.current = null;
+      setArmedDiscardKey(null);
+      void handleDiscard(paths);
+    } else {
+      if (discardTimer.current) clearTimeout(discardTimer.current);
+      setArmedDiscardKey(key);
+      discardTimer.current = setTimeout(() => {
+        discardTimer.current = null;
+        setArmedDiscardKey(null);
+      }, 4000);
+    }
+  };
 
-    let confirmMessage = "";
+  function discardMessage(paths: string[]): string {
     if (paths.length === 1) {
       const p = paths[0];
       const isStaged = status?.staged.some((f) => f.path === p);
@@ -253,13 +275,13 @@ export function GitView({ cwd }: GitViewProps) {
       const isUntracked = status?.untracked.some((f) => f.path === p);
 
       if (isUntracked) {
-        confirmMessage = `Are you sure you want to delete the untracked file ${p}? This cannot be undone.`;
+        return `Delete the untracked file ${p}? This cannot be undone.`;
       } else if (isStaged && isUnstaged) {
-        confirmMessage = `Are you sure you want to discard unstaged changes in ${p}? Staged changes will be preserved.`;
+        return `Discard unstaged changes in ${p}? Staged changes will be preserved.`;
       } else if (isStaged) {
-        confirmMessage = `Are you sure you want to discard staged changes in ${p}? This will revert the file to its HEAD state.`;
+        return `Discard staged changes in ${p}? This will revert the file to its HEAD state.`;
       } else {
-        confirmMessage = `Are you sure you want to discard changes in ${p}? This cannot be undone.`;
+        return `Discard changes in ${p}? This cannot be undone.`;
       }
     } else {
       const containsUntracked = paths.some(p => status?.untracked.some(f => f.path === p));
@@ -267,15 +289,17 @@ export function GitView({ cwd }: GitViewProps) {
       const containsUnstaged = paths.some(p => status?.unstaged.some(f => f.path === p));
 
       if (containsUntracked && !containsStaged && !containsUnstaged) {
-        confirmMessage = `Are you sure you want to delete these ${paths.length} untracked files? This cannot be undone.`;
+        return `Delete these ${paths.length} untracked files? This cannot be undone.`;
       } else if (containsStaged && containsUnstaged) {
-        confirmMessage = `Are you sure you want to discard unstaged changes in these ${paths.length} files? Staged changes in partially staged files will be preserved.`;
+        return `Discard unstaged changes in these ${paths.length} files? Staged changes in partially staged files will be preserved.`;
       } else {
-        confirmMessage = `Are you sure you want to discard changes in these ${paths.length} files? This cannot be undone.`;
+        return `Discard changes in these ${paths.length} files? This cannot be undone.`;
       }
     }
+  }
 
-    if (!window.confirm(confirmMessage)) return;
+  async function handleDiscard(paths: string[]) {
+    if (!window.electron?.git) return;
 
     setLoading(true);
     setError(null);
@@ -587,7 +611,7 @@ export function GitView({ cwd }: GitViewProps) {
               onClick={refresh}
               className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
             >
-              <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+              <RefreshSpin size={12} spinning={loading} />
             </button>
           </Tooltip>
         </div>
@@ -661,7 +685,7 @@ export function GitView({ cwd }: GitViewProps) {
       <div className="flex-1 min-h-0 overflow-y-auto">
         {loading && !status ? (
           <div className="flex items-center justify-center py-16">
-            <RefreshCw size={16} className="animate-spin text-[var(--text-tertiary)]" />
+            <RefreshSpin size={16} className="text-[var(--text-tertiary)]" />
           </div>
         ) : !hasChanges ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -699,7 +723,8 @@ export function GitView({ cwd }: GitViewProps) {
                       path={file.path}
                       status={file.status}
                       onAction={() => handleUnstage([file.path])}
-                      onDiscard={() => handleDiscard([file.path])}
+                      onDiscard={() => fireDiscard(`file:${file.path}`, [file.path])}
+                      discardArmed={armedDiscardKey === `file:${file.path}`}
                       actionLabel="-"
                       actionColor="var(--danger)"
                       stat={fileDiffs[key]}
@@ -722,12 +747,12 @@ export function GitView({ cwd }: GitViewProps) {
                 onToggle={() => toggleSection("unstaged")}
                 action={
                   <div className="flex items-center gap-1.5">
-                    <Tooltip content="Discard all unstaged changes in modified files">
+                    <Tooltip content={armedDiscardKey === "unstaged-all" ? discardMessage(status.unstaged.map((f) => f.path)) : "Discard all unstaged changes in modified files"}>
                       <button
-                        onClick={() => handleDiscard(status.unstaged.map((f) => f.path))}
+                        onClick={() => fireDiscard("unstaged-all", status.unstaged.map((f) => f.path))}
                         className="text-[0.65rem] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
                       >
-                        Discard all
+                        {armedDiscardKey === "unstaged-all" ? "Confirm discard?" : "Discard all"}
                       </button>
                     </Tooltip>
                     <Tooltip content="Stage all modified files">
@@ -749,7 +774,8 @@ export function GitView({ cwd }: GitViewProps) {
                       path={file.path}
                       status={file.status}
                       onAction={() => handleStage([file.path])}
-                      onDiscard={() => handleDiscard([file.path])}
+                      onDiscard={() => fireDiscard(`file:${file.path}`, [file.path])}
+                      discardArmed={armedDiscardKey === `file:${file.path}`}
                       actionLabel="+"
                       actionColor="var(--success)"
                       stat={fileDiffs[key]}
@@ -772,12 +798,12 @@ export function GitView({ cwd }: GitViewProps) {
                 onToggle={() => toggleSection("untracked")}
                 action={
                   <div className="flex items-center gap-1.5">
-                    <Tooltip content="Permanently delete all untracked files">
+                    <Tooltip content={armedDiscardKey === "untracked-all" ? discardMessage(status.untracked.map((f) => f.path)) : "Permanently delete all untracked files"}>
                       <button
-                        onClick={() => handleDiscard(status.untracked.map((f) => f.path))}
+                        onClick={() => fireDiscard("untracked-all", status.untracked.map((f) => f.path))}
                         className="text-[0.65rem] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
                       >
-                        Clean all
+                        {armedDiscardKey === "untracked-all" ? "Confirm delete?" : "Clean all"}
                       </button>
                     </Tooltip>
                     <Tooltip content="Stage all untracked files">
@@ -799,7 +825,8 @@ export function GitView({ cwd }: GitViewProps) {
                       path={file.path}
                       status={file.status}
                       onAction={() => handleStage([file.path])}
-                      onDiscard={() => handleDiscard([file.path])}
+                      onDiscard={() => fireDiscard(`file:${file.path}`, [file.path])}
+                      discardArmed={armedDiscardKey === `file:${file.path}`}
                       actionLabel="+"
                       actionColor="var(--success)"
                       stat={fileDiffs[key]}

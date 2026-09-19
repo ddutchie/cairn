@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { History, RotateCcw, ChevronDown, ChevronRight, AlertTriangle, ArrowUpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { revealNote, revealCard } from "@/lib/events";
@@ -299,10 +300,11 @@ export function SyncActivityPanel() {
     behindPeers.length === 0
   ) {
     return (
-      <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-4">
-        No sync activity recorded yet. Once this device exchanges changes with your phone, decisions
-        show up here.
-      </p>
+      <EmptyState
+        title="No sync activity recorded yet."
+        description="Once this device exchanges changes with your phone, decisions show up here."
+        className="mt-4"
+      />
     );
   }
 

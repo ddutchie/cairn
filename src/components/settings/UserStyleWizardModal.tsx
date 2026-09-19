@@ -19,7 +19,8 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { Sparkles, Loader2, Plus, Trash2, X, FileText, PenLine, Check, Wand2, Copy } from "lucide-react";
+import { Sparkles, Plus, Trash2, X, FileText, PenLine, Check, Wand2, Copy } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -430,11 +431,11 @@ export function UserStyleWizardModal({
             />
             <div className="flex items-center gap-2">
               <Button variant="ghost" size="sm" disabled={busy || !fullGuide.trim()} onClick={() => void generate("optimize")}>
-                {busy ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                {busy ? <Spinner size={12} /> : <Wand2 size={12} />}
                 Optimize
               </Button>
               <Button size="sm" disabled={busy || !fullGuide.trim()} onClick={() => void generate("cheatsheet")}>
-                {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                {busy ? <Spinner size={12} /> : <Sparkles size={12} />}
                 Generate cheat sheet
               </Button>
             </div>
@@ -647,7 +648,7 @@ export function UserStyleWizardModal({
         <div className="flex items-center gap-2">
           {pasteMode && (
             <Button size="sm" disabled={busy || (!fullGuide.trim() && !cheatsheet.trim())} onClick={() => void savePasted()}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <X size={12} className="rotate-45" />}
+              {busy ? <Spinner size={12} /> : <X size={12} className="rotate-45" />}
               Save writing style
             </Button>
           )}
@@ -669,7 +670,7 @@ export function UserStyleWizardModal({
                 Skip for now
               </Button>
               <Button size="sm" disabled={busy || !canProceed(0)} onClick={() => void generate("full")}>
-                {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                {busy ? <Spinner size={12} /> : <Sparkles size={12} />}
                 Generate full guide
               </Button>
             </>
@@ -680,18 +681,18 @@ export function UserStyleWizardModal({
                 Skip for now
               </Button>
               <Button variant="ghost" size="sm" disabled={busy || !fullGuide.trim()} onClick={() => void generate("optimize")}>
-                {busy ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                {busy ? <Spinner size={12} /> : <Wand2 size={12} />}
                 Optimize
               </Button>
               <Button size="sm" disabled={busy || !fullGuide.trim()} onClick={() => void generate("cheatsheet")}>
-                {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                {busy ? <Spinner size={12} /> : <Sparkles size={12} />}
                 Generate cheat sheet
               </Button>
             </>
           )}
           {step === 4 && (
             <Button size="sm" disabled={busy || (!fullGuide.trim() && !cheatsheet.trim())} onClick={() => void save()}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <X size={12} className="rotate-45" />}
+              {busy ? <Spinner size={12} /> : <X size={12} className="rotate-45" />}
               Save writing style
             </Button>
           )}
@@ -713,7 +714,7 @@ function GenerationStatus({ streaming, streamTools }: { streaming: boolean; stre
     <div className="flex flex-col gap-1.5">
       {streaming && (
         <div className="flex items-center gap-1.5 text-[0.65rem] text-[var(--text-tertiary)]">
-          <Loader2 size={11} className="animate-spin" /> Generating…
+          <Spinner size={11} /> Generating…
         </div>
       )}
       {streamTools.length > 0 && (
@@ -727,7 +728,7 @@ function GenerationStatus({ streaming, streamTools }: { streaming: boolean; stre
               {t.done ? (
                 <Check size={10} className="text-[var(--success,var(--accent))]" />
               ) : (
-                <Loader2 size={10} className="animate-spin" />
+                <Spinner size={10} />
               )}
               {t.label}
             </span>

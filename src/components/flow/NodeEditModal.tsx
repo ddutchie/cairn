@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Search, FileText, CheckSquare, Layers, Loader2, DownloadCloud } from "lucide-react";
+import { Search, FileText, CheckSquare, Layers, DownloadCloud } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import type { IdeaNodeType } from "@/types";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -304,7 +305,7 @@ function UrlEditor({
             title="Fetch title & description from URL"
             className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] disabled:opacity-40 transition-colors shrink-0"
           >
-            {fetching ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={12} />}
+            {fetching ? <Spinner size={12} /> : <DownloadCloud size={12} />}
             {fetching ? "" : "Fetch"}
           </button>
         </div>

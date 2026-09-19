@@ -15,7 +15,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  RefreshCw,
   Boxes,
   FileCode,
   Layers,
@@ -31,6 +30,7 @@ import {
   Grid3x3,
   LayoutGrid,
 } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/labels";
@@ -352,7 +352,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             className="gap-1.5"
             title="Rebuild the codebase index"
           >
-            <RefreshCw size={13} className={cn(reindexing && "animate-spin")} />
+            <RefreshSpin size={13} spinning={reindexing} />
             {reindexing ? "Indexing…" : "Reindex"}
           </Button>
         </div>
@@ -366,7 +366,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
 
       {loading && !overview ? (
         <div className="flex-1 flex items-center justify-center text-sm text-[var(--text-tertiary)] gap-2">
-          <RefreshCw size={14} className="animate-spin" /> Loading index…
+          <RefreshSpin size={14} /> Loading index…
         </div>
       ) : isEmpty ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
@@ -376,7 +376,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             its classes, functions and their call graph here.
           </div>
           <Button size="sm" onClick={reindex} disabled={reindexing} className="gap-1.5">
-            <RefreshCw size={13} className={cn(reindexing && "animate-spin")} />
+            <RefreshSpin size={13} spinning={reindexing} />
             {reindexing ? "Indexing…" : "Build index"}
           </Button>
         </div>
@@ -386,7 +386,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
         <div className="flex-1 min-h-0 flex overflow-hidden">
           {graphLoading && !graph ? (
             <div className="flex-1 flex items-center justify-center text-sm text-[var(--text-tertiary)] gap-2">
-              <RefreshCw size={14} className="animate-spin" /> Building matrix…
+              <RefreshSpin size={14} /> Building matrix…
             </div>
           ) : (
             <DependencyMatrix
@@ -421,7 +421,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
         <div className="flex-1 min-h-0 flex overflow-hidden">
           {graphLoading && !graph ? (
             <div className="flex-1 flex items-center justify-center text-sm text-[var(--text-tertiary)] gap-2">
-              <RefreshCw size={14} className="animate-spin" /> Building graph…
+              <RefreshSpin size={14} /> Building graph…
             </div>
           ) : (
             <div className="flex-1 min-w-0 flex flex-col overflow-hidden">

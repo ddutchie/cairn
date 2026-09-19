@@ -2,7 +2,8 @@
 
 import { memo, useState, useCallback } from "react";
 import { Handle, Position, type NodeProps, useReactFlow } from "@xyflow/react";
-import { Sparkles, Loader2, RefreshCw } from "lucide-react";
+import { Sparkles, RefreshCw } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
@@ -85,7 +86,7 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
             title={!aiEnabled ? "AI features are disabled — enable in Settings → AI" : hasContent ? "Re-generate summary from connected nodes" : "Generate summary from connected nodes"}
           >
             {status === "loading" ? (
-              <Loader2 size={10} className="animate-spin" />
+              <Spinner size={10} />
             ) : (
               <RefreshCw size={10} />
             )}

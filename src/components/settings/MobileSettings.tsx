@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { RefreshCw, Key, Link, Shield, AlertCircle } from "lucide-react";
+import { Key, Link, Shield, AlertCircle } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
-import { cn } from "@/lib/utils";
 
 interface MobileStatus {
   running: boolean;
@@ -174,7 +174,7 @@ export function MobileSettings() {
                   onClick={handleRegeneratePin}
                   disabled={loading}
                 >
-                  <RefreshCw size={12} className={cn("transition-transform", loading && "animate-spin")} />
+                  <RefreshSpin size={12} spinning={loading} className="transition-transform" />
                 </Button>
               </div>
             )}

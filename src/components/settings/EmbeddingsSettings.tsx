@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  CheckCircle, RefreshCw, Trash2, Star, Cpu, Activity, Download, Power,
+  CheckCircle, Trash2, Star, Cpu, Activity, Download, Power,
 } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { useCairnStore } from "@/store";
 
@@ -309,7 +309,7 @@ export function EmbeddingsSettings() {
                       disabled={startingWorker}
                       className="p-1.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-tertiary)] disabled:opacity-50"
                     >
-                      <RefreshCw className={cn("w-3.5 h-3.5", startingWorker && "animate-spin")} />
+                      <RefreshSpin spinning={startingWorker} className="w-3.5 h-3.5" />
                     </button>
                   </Tooltip>
                 )}
@@ -417,7 +417,7 @@ export function EmbeddingsSettings() {
                 disabled={reindexing || !activeWorkspaceId}
                 className="text-xs px-2.5 py-1.5 rounded border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-3)] flex items-center gap-1.5 disabled:opacity-50"
               >
-                <RefreshCw className={cn("w-3 h-3", reindexing && "animate-spin")} />
+                <RefreshSpin spinning={reindexing} className="w-3 h-3" />
                 Reindex notes (embed + search)
               </button>
               <button

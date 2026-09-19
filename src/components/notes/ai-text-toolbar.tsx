@@ -2,10 +2,11 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Loader2, Wand2, RefreshCw, AlignLeft, Expand, SpellCheck, MessageSquare, X,
+  Wand2, RefreshCw, AlignLeft, Expand, SpellCheck, MessageSquare, X,
   Bold, Italic, Strikethrough, Code, Code2, Link, Link2, Quote, List, ListOrdered,
   Heading1, Heading2, Heading3, Highlighter, CheckSquare, Minus,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { modKey } from "@/components/layout/sidebar-utils";
@@ -128,7 +129,7 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
       {aiEnabled && <><div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--border)]">
         {loading ? (
           <div className="flex items-center gap-2 px-2 py-1 text-xs text-[var(--text-tertiary)]">
-            <Loader2 size={11} className="animate-spin" />
+            <Spinner size={11} />
             <span>Writing…</span>
           </div>
         ) : (

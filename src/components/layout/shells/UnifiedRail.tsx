@@ -6,11 +6,11 @@ import {
   Plus,
   Bell,
   Menu,
-  Loader2,
   FileText,
   Kanban,
   MessageSquare,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
@@ -187,7 +187,7 @@ export function UnifiedRail() {
               className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
               aria-label="Automations running"
             >
-              <Loader2 size={14} className="animate-spin" />
+              <Spinner size={14} />
             </button>
           </Tooltip>
         )}

@@ -13,7 +13,8 @@
 
 import { useState, useEffect } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -156,7 +157,7 @@ export function ProviderModelPicker({
                   disabled={modelsLoading}
                   className="flex items-center gap-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors disabled:opacity-50"
                 >
-                  <RefreshCw size={10} className={modelsLoading ? "animate-spin" : ""} />
+                  <RefreshSpin size={10} spinning={modelsLoading} />
                   Refresh
                 </button>
               )}
