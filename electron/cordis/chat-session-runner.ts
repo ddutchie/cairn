@@ -9,12 +9,11 @@ import { extractCairnRef } from "./session-replay";
 import { openCordisSessionAgent } from "./session-agent";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import { runCordisSession } from "./session-runner";
-import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore } from "./host-store";
+import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId } from "./host-store";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
 import { foldSessionUsage } from "./plugins/context-ring";
 import { foldSessionStats } from "./session-stats";
-import { setCurrentOpencodeSessionId } from "../lib/cairn-identity";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 

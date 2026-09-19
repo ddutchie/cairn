@@ -104,7 +104,7 @@ export { TOOL_SCHEMAS } from "../lib/tool-schemas";
 export { dlog, startPhaseTimer } from "../lib/debug-log";
 export { toolResultError } from "../lib/tool-result";
 export { aiWriteLock } from "../lib/ai-write-lock";
-export { CAIRN_APP_IDENTITY } from "../lib/cairn-identity";
+export { CAIRN_APP_IDENTITY, setCurrentOpencodeSessionId, getCurrentOpencodeSessionId } from "../lib/cairn-identity";
 export { isSecretFile, bashReferencesSecretFile } from "../lib/coding-tools/secrets";
 export { discoverSkills, loadSkill } from "../lib/skills";
 export type { SkillMeta, SkillContent } from "../lib/skills";

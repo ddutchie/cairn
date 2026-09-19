@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Captures memory, CPU, and disk metrics for Cairn runtime processes.
 # Run while Cairn (and optional LLM/embeddings workloads) are active.
-# Output: scripts/runtime-baselines/<label>-<timestamp>.txt
+# Output: scripts/runtime-baselines/<label>-<timestamp>.txt (gitignored by design —
+# baselines are machine-local artifacts; the directory is created on first run).
 # Usage: ./scripts/capture-runtime-baseline.sh [label]
 #
 # Captures:
