@@ -2,6 +2,11 @@
  * Cairn — Root Zustand store.
  * Combines workspace, project, notes, board, chat, and UI slices.
  * Persisted to localStorage via the storage abstraction.
+ *
+ * Barrel policy: this module exports the store hook (`useCairnStore`),
+ * shared types, and two constants — nothing else. Slice internals
+ * (creators, helpers, keys) live in `./slices/*` and are imported directly
+ * from there. Do not add value re-exports here.
  */
 
 import { create } from "zustand";
