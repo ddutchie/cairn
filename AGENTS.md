@@ -79,7 +79,7 @@ The What's New modal (`src/components/layout/NewFeatureModal.tsx`) is generated 
 
 **KnowledgeGraphView** (`src/components/graph/KnowledgeGraphView.tsx`) — Force-directed and Radial tree layouts only. Reads from `graphData` store slice (populated by `loadGraph()`). `GraphLayoutMode = "force" | "radial"`.
 
-**InsightsView** (`src/components/graph/InsightsView.tsx`) — hosts all seven analytics canvases (which live alongside it in `src/components/graph/`, next to the KnowledgeGraph canvases and the shared scaffold). Also calls `loadGraph()` on mount (same as KGV) because canvases scope data via `useScopedData(nodes)` which needs `graphData.nodes` populated. Local `InsightsLayout` type — not stored in the global store.
+**InsightsView** (`src/components/graph/InsightsView.tsx`) — hosts all eight analytics canvases (which live alongside it in `src/components/graph/`, next to the KnowledgeGraph canvases and the shared scaffold). Also calls `loadGraph()` on mount (same as KGV) because canvases scope data via `useScopeSets`/`useScopedData(nodes)` which needs `graphData.nodes` populated. Local `InsightsLayout` type — not stored in the global store.
 
 ## Analytics canvas architecture
 
@@ -96,15 +96,15 @@ InsightsView
 
 Shared modules:
 - `analyticsUtils.ts` — `PRIORITY_COLOR`, `CANVAS_PAD`, `truncateName`, `HOUR_MS`, `DAY_MS`, etc.
-- `analyticsHooks.ts` — `useContainerDims`, `useScopedData`, `useFontScale`
-- `AnalyticsShared.tsx` — `<CanvasEmptyState>`, `<CanvasTooltip>`, `<SvgTimeAxis>`
+- `analyticsHooks.ts` — `useContainerDims`, `useScopeSets`, `useScopedData`, `useFontScale`
+- `AnalyticsShared.tsx` — `<CanvasEmptyState>`, `<CanvasCallout>`, `<SvgTimeAxis>`
 - `analyticsUtils.ts` — shared constants (`PRIORITY_COLOR`, `CANVAS_PAD`), `resolveCssVar()` for canvas 2D context colour lookups, `truncateName`
 
 ## Store slices
 
 | Slice | File | Key exports |
 |-------|------|-------------|
-| UI | `slices/ui.ts` | `theme`, `setTheme`, `fontScale`, `setFontScale`, `activeView`, `setView`, `applyFontScale`, `applyTheme` |
+| UI | `slices/ui.ts` (composer over `ui-appearance` + `ui-ai-config` + `ui-layout`) | `theme`, `setTheme`, `fontScale`, `setFontScale`, `activeView`, `setView`, `applyFontScale`, `applyTheme` |
 | Workspace | `slices/workspace.ts` | `workspaces`, `projects`, `createProject`, `updateProject` |
 | Board | `slices/board.ts` | `columns`, `cards`, `createCard`, `updateCard`, `moveCard` |
 | Notes | `slices/notes.ts` | `notes`, `createNote`, `updateNote`, `deleteNote` |

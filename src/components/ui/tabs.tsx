@@ -1,5 +1,6 @@
 "use client";
 
+import React, { useRef } from "react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -34,17 +35,52 @@ export function Tabs<T extends string>({
   ariaLabel,
   className,
 }: TabsProps<T>) {
+  const btnRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const focusTab = (index: number) => {
+    const count = options.length;
+    const next = ((index % count) + count) % count;
+    btnRefs.current[next]?.focus();
+    if (options[next].value !== value) onChange(options[next].value);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent, index: number) => {
+    switch (e.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        e.preventDefault();
+        focusTab(index + 1);
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        e.preventDefault();
+        focusTab(index - 1);
+        break;
+      case "Home":
+        e.preventDefault();
+        focusTab(0);
+        break;
+      case "End":
+        e.preventDefault();
+        focusTab(options.length - 1);
+        break;
+    }
+  };
+
   return (
     <div role="tablist" aria-label={ariaLabel} className={cn("flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit", className)}>
-      {options.map((opt) => {
+      {options.map((opt, i) => {
         const active = opt.value === value;
         return (
           <button
             key={opt.value}
+            ref={(el) => { btnRefs.current[i] = el; }}
             role="tab"
             aria-selected={active}
+            tabIndex={active ? 0 : -1}
             title={opt.title}
             onClick={() => { if (!active) onChange(opt.value); }}
+            onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
               "font-medium rounded-md transition-colors flex items-center gap-1.5",
               size === "md" && "px-3 py-1.5 text-xs",

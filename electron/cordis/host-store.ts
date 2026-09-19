@@ -2,7 +2,7 @@
  * host-store — the SINGLE adapter between `electron/cordis/` and app I/O.
  *
  * Boundary rule: no file in `electron/cordis/` may import from `../db/*`,
- * `../lib/*`, or `node:child_process` — EXCEPT this file (and its test).
+ * `../lib/*`, or `node:child_process` — EXCEPT this file (and its tests).
  * Type-only imports (`import type …`) are exempt: they are erased at compile
  * time and cannot smuggle runtime behaviour across the boundary. Everything
  * else the Cordis runtime needs from the host goes through this module:

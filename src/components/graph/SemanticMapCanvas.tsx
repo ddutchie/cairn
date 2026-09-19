@@ -8,7 +8,7 @@ import type { GraphNode } from "@/types";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { truncateName } from "./analyticsUtils";
-import { useContainerDims, useScopedData, useFontScale, useRelativePointer } from "./analyticsHooks";
+import { useContainerDims, useScopeSets, useFontScale, useRelativePointer } from "./analyticsHooks";
 import { CanvasCallout } from "./AnalyticsShared";
 
 interface Props {
@@ -57,7 +57,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
   const fs = useFontScale();
   const dims = useContainerDims(containerRef);
   const relativePointer = useRelativePointer(containerRef);
-  const { activeProjects } = useScopedData(nodes);
+  const { activeProjects } = useScopeSets(nodes);
   const { notes, activeWorkspaceId } = useCairnStore(useShallow((s) => ({
     notes: s.notes,
     activeWorkspaceId: s.activeWorkspaceId,

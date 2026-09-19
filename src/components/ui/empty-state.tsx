@@ -59,6 +59,7 @@ export function EmptyState({
           >
             <Icon
               size={18}
+              aria-hidden="true"
               className={iconTone === "accent" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"}
             />
           </div>

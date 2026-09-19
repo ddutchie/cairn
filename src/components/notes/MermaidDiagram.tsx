@@ -220,6 +220,7 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
     <ModalShell
       onClose={onClose}
       size="full"
+      title={<span className="sr-only">Fullscreen Mermaid Diagram</span>}
       description="Fullscreen Mermaid Diagram. Detailed full-screen visualization of the rendered Mermaid chart."
       contentClassName="w-[90vw] h-[88vh] max-w-none flex flex-col p-6 animate-slide-in-up"
     >

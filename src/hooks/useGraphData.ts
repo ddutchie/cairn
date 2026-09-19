@@ -8,13 +8,17 @@
  * silently see an empty graph unless KGV/Insights had mounted first. This
  * hook triggers a load on first read when the graph is empty and idle —
  * filters are preserved because loadGraph reads them from the store.
+ *
+ * Pass `enabled=false` when the caller doesn't need the data on its current
+ * view (e.g. chat outside the graph view) to avoid a one-time load for users
+ * who never open graph views.
  */
 
 import { useEffect } from "react";
 import { useCairnStore } from "@/store";
 import type { KnowledgeGraph } from "@/types";
 
-export function useGraphData(): KnowledgeGraph {
+export function useGraphData(enabled = true): KnowledgeGraph {
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
   const graphData = useCairnStore((s) => s.graphData);
   const graphLoading = useCairnStore((s) => s.graphLoading);
@@ -22,10 +26,10 @@ export function useGraphData(): KnowledgeGraph {
   const loadGraph = useCairnStore((s) => s.loadGraph);
 
   useEffect(() => {
-    if (activeWorkspaceId && !graphLoaded && !graphLoading) {
+    if (enabled && activeWorkspaceId && !graphLoaded && !graphLoading) {
       void loadGraph(activeWorkspaceId);
     }
-  }, [activeWorkspaceId, graphLoaded, graphLoading, loadGraph]);
+  }, [enabled, activeWorkspaceId, graphLoaded, graphLoading, loadGraph]);
 
   return graphData;
 }

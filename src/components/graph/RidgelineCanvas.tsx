@@ -4,7 +4,7 @@ import React, { useMemo, useRef, useEffect, useState, useCallback } from "react"
 import * as d3 from "d3";
 import type { GraphNode } from "@/types";
 import { HOUR_MS, DAY_MS, floorHour, floorDay, truncateName, CANVAS_PAD } from "./analyticsUtils";
-import { useContainerDims, useScopedData, useFontScale, useRelativePointer, useNow } from "./analyticsHooks";
+import { useContainerDims, useScopeSets, useFontScale, useRelativePointer, useNow } from "./analyticsHooks";
 import { CanvasCallout, CanvasEmptyState, SvgTimeAxis } from "./AnalyticsShared";
 
 export type RidgelineMode = "ridgeline" | "overlay" | "iso";
@@ -41,7 +41,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
   const fs = useFontScale();
   const svgRef       = useRef<SVGSVGElement>(null);
   const dims = useContainerDims(containerRef);
-  const { activeProjects, scopedCardIds, cards } = useScopedData(nodes);
+  const { activeProjects, scopedCardIds, cards } = useScopeSets(nodes);
   const relativePointer = useRelativePointer(svgRef);
   const now = useNow();
 

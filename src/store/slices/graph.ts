@@ -18,6 +18,11 @@ import { ipcAwait, ipcData } from "../ipc";
 // (db:changed bursts). Module-level: never rendered, single store instance.
 let graphRefreshQueued = false;
 
+// Trailing debounce for db:changed-triggered refreshes (saves land ~300ms
+// apart while typing — without this every pause fires a full graph query).
+let graphRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+const GRAPH_REFRESH_DEBOUNCE_MS = 1200;
+
 // ── Slice interface ───────────────────────────────────────────────────────────
 
 export interface GraphSlice {
@@ -89,7 +94,9 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
         edgeTypes: filters.edgeTypes,
       }) as Promise<KnowledgeGraph>);
       if (!data) {
-        set({ graphError: "Not in Electron", graphLoading: false });
+        // Off-Electron (or empty backend): latch loaded so first-read hooks
+        // don't refetch in a loop; there is simply nothing to show.
+        set({ graphError: "Not in Electron", graphLoading: false, graphLoaded: true });
         return;
       }
       set({ graphData: data, graphLoading: false, graphLoaded: true });
@@ -109,11 +116,18 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
     if (!s.graphLoaded) return;
     const wsId = s.activeWorkspaceId;
     if (!wsId) return;
-    if (get().graphLoading) {
-      graphRefreshQueued = true;
-      return;
-    }
-    await get().loadGraph(wsId);
+    // Trailing debounce: db:changed fires per save while typing.
+    if (graphRefreshTimer) clearTimeout(graphRefreshTimer);
+    graphRefreshTimer = setTimeout(() => {
+      graphRefreshTimer = null;
+      const cur = get();
+      if (!cur.graphLoaded || !cur.activeWorkspaceId) return;
+      if (cur.graphLoading) {
+        graphRefreshQueued = true;
+        return;
+      }
+      void cur.loadGraph(cur.activeWorkspaceId);
+    }, GRAPH_REFRESH_DEBOUNCE_MS);
   },
 
   async recomputeGraphRelationships(workspaceId) {

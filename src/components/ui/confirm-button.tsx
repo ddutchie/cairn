@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, type ButtonProps } from "@/components/ui/button";
-
 const DEFAULT_DISARM_MS = 4000;
 
 interface ConfirmState {
@@ -80,6 +79,13 @@ export function ConfirmButton({
   ...buttonProps
 }: ConfirmButtonProps) {
   const { armed, arm, fire, disarm } = useConfirmAction();
+  const armedRef = useRef<HTMLButtonElement>(null);
+
+  // Move focus to the armed confirm so keyboard + screen-reader users land
+  // on the destructive action (mirrors native-dialog focus behavior).
+  useEffect(() => {
+    if (armed) armedRef.current?.focus();
+  }, [armed]);
 
   if (!armed) {
     return (
@@ -91,7 +97,15 @@ export function ConfirmButton({
 
   return (
     <>
-      <Button {...buttonProps} variant="danger" className={armedClassName ?? buttonProps.className} onClick={() => { fire(); onConfirm(); }}>
+      <Button
+        {...buttonProps}
+        ref={armedRef}
+        variant="danger"
+        className={armedClassName ?? buttonProps.className}
+        aria-live="polite"
+        onKeyDown={(e) => { if (e.key === "Escape") disarm(); }}
+        onClick={() => { fire(); onConfirm(); }}
+      >
         {confirmLabel}
       </Button>
       {showCancel && (

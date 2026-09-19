@@ -5,7 +5,7 @@ import * as d3 from "d3";
 import type { SimulationNodeDatum } from "d3";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, truncateName, CANVAS_PAD, DAY_MS } from "./analyticsUtils";
-import { useContainerDims, useScopedData, useFontScale, useRelativePointer } from "./analyticsHooks";
+import { useContainerDims, useScopeSets, useFontScale, useRelativePointer } from "./analyticsHooks";
 import { CanvasEmptyState, CanvasCallout, SvgTimeAxis } from "./AnalyticsShared";
 
 interface Props {
@@ -23,7 +23,7 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
   const fs = useFontScale();
   const dims = useContainerDims(containerRef);
   const relativePointer = useRelativePointer(containerRef);
-  const { activeProjects, scopedCardIds, cards } = useScopedData(nodes);
+  const { activeProjects, scopedCardIds, cards } = useScopeSets(nodes);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 

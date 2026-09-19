@@ -18,6 +18,6 @@ export function useLoadGraph(activeWorkspaceId: string | null | undefined): void
   const loadGraph = useCairnStore((s) => s.loadGraph);
 
   useEffect(() => {
-    if (activeWorkspaceId) loadGraph(activeWorkspaceId);
+    if (activeWorkspaceId) void loadGraph(activeWorkspaceId);
   }, [activeWorkspaceId, loadGraph]);
 }

@@ -54,6 +54,15 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, streamingContent, toolCalls, pendingQuestions]);
 
+  // Stop the run if the modal unmounts mid-stream (e.g. project switch) —
+  // otherwise the main-process run continues with no UI subscriber.
+  // stopStream is re-created per render, so mirror it into a ref (updated in
+  // an effect, never during render) that the once-registered unmount cleanup
+  // reads.
+  const stopStreamRef = useRef(() => {});
+  useEffect(() => { stopStreamRef.current = stopStream; });
+  useEffect(() => () => { stopStreamRef.current(); }, []);
+
   // Focus input on mount
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80); }, []);
 

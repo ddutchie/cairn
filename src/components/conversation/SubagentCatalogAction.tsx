@@ -172,7 +172,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
         <Popover.Trigger asChild>
           <button
             className="relative p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
-            aria-label="Subagent conversations"
+            aria-label={liveCount > 0 ? `Subagent conversations, ${liveCount} running` : "Subagent conversations"}
           >
             <GitBranch size={11} />
             {liveCount > 0 && (

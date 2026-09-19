@@ -6,7 +6,7 @@ import { sankey, sankeyLinkHorizontal, SankeyNode, SankeyLink } from "d3-sankey"
 import { X } from "lucide-react";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, PRIORITY_WEIGHT, truncateName } from "./analyticsUtils";
-import { useContainerDims, useScopedData, useFontScale } from "./analyticsHooks";
+import { useContainerDims, useScopeSets, useFontScale } from "./analyticsHooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
 
 interface Props {
@@ -33,7 +33,7 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fs = useFontScale();
   const dims = useContainerDims(containerRef);
-  const { activeProjects, scopedProjectIds, scopedCardIds, cards, columns } = useScopedData(nodes);
+  const { activeProjects, scopedProjectIds, scopedCardIds, cards, columns } = useScopeSets(nodes);
 
   const [hovered,     setHovered]     = useState<string | null>(null);
   const [selectedCol, setSelectedCol] = useState<string | null>(null);

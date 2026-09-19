@@ -10,9 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
  * modals: open/onClose binding, size, optional icon-in-title, sr-only description
  * (for a11y), scrollable body, and optional footer.
  *
- * Extracted in P3-1 of the cleanup plan. 6 of 8 modals share this pattern;
- * `MigrationModal` (blocking, non-dismissible) and `card-detail` (VisuallyHidden
- * title, two-column body) are structurally different and stay bespoke.
+ * Extracted in P3-1 of the cleanup plan. The standard chrome for all modal
+ * dialogs; `MigrationModal` (blocking, non-dismissible) and `card-detail`
+ * (VisuallyHidden title, two-column body) are structurally different and stay
+ * bespoke.
  */
 
 export interface ModalShellProps {

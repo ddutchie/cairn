@@ -144,8 +144,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   })));
 
   // Graph context for the system prompt — loaded on first read so chat never
-  // silently builds context from an empty graph (mount-order trap).
-  const graphData = useGraphData();
+  // silently builds context from an empty graph (mount-order trap). Only
+  // preloads on the graph view itself; elsewhere the cached graph is used
+  // as-is so non-graph users pay no load cost.
+  const graphData = useGraphData(isView(activeView, "graph"));
 
   // threadId is driven by the store so the tab bar can switch threads externally
   const threadId = activeChatThreadId;
