@@ -247,6 +247,7 @@ export function CardDetailSidebar({
           <ConfirmButton
             variant="ghost" size="xs"
             className="w-full justify-start text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
+            armedClassName="justify-start text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
             confirmLabel={<><Trash2 size={10} /> Confirm delete</>}
             showCancel
             onConfirm={onDelete}

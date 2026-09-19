@@ -93,7 +93,7 @@ export function ModalShell({
           {children}
         </div>
         {footer && (
-          <div className={scrollable ? "px-5 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-2" : undefined}>
+          <div className={scrollable ? "px-5 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-2" : "px-5 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-2"}>
             {footer}
           </div>
         )}

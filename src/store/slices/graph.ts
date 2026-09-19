@@ -98,7 +98,8 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
     } finally {
       if (graphRefreshQueued) {
         graphRefreshQueued = false;
-        await get().loadGraph(workspaceId);
+        // Re-read the workspace: it may have switched mid-load.
+        await get().loadGraph(get().activeWorkspaceId ?? workspaceId);
       }
     }
   },

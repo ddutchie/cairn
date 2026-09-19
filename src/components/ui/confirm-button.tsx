@@ -57,6 +57,12 @@ interface ConfirmButtonProps extends Omit<ButtonProps, "onClick"> {
   onConfirm: () => void;
   /** Render a Cancel button next to the armed confirm. */
   showCancel?: boolean;
+  /**
+   * Classes for the armed confirm button. Defaults to the trigger's
+   * `className` — pass this when the trigger carries layout classes (e.g.
+   * `w-full`) that must not apply to the armed state.
+   */
+  armedClassName?: string;
 }
 
 /**
@@ -69,6 +75,7 @@ export function ConfirmButton({
   confirmLabel = "Are you sure?",
   onConfirm,
   showCancel = false,
+  armedClassName,
   children,
   ...buttonProps
 }: ConfirmButtonProps) {
@@ -84,7 +91,7 @@ export function ConfirmButton({
 
   return (
     <>
-      <Button {...buttonProps} variant="danger" onClick={() => { fire(); onConfirm(); }}>
+      <Button {...buttonProps} variant="danger" className={armedClassName ?? buttonProps.className} onClick={() => { fire(); onConfirm(); }}>
         {confirmLabel}
       </Button>
       {showCancel && (

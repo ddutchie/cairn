@@ -11,7 +11,8 @@
 
 import type Database from "better-sqlite3";
 import { ts, newId } from "./utils";
-import { toWorkspace, toProject, j, type DbRow } from "../host-shared/db-mappers";import type { SessionProfileId } from "../../shared/agent/session-profile";
+import { toWorkspace, toProject, j, type DbRow } from "../host-shared/db-mappers";
+import type { SessionProfileId } from "../../shared/agent/session-profile";
 import { getOrCreateFlow } from "./flow-queries";
 
 export interface SessionProfileRow {

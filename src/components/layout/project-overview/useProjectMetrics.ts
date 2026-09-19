@@ -80,7 +80,7 @@ export function useProjectMetrics(projectId: string | null): ProjectMetrics | nu
   if (!project || !projectId) return null;
 
   const notes     = getProjectNotes(projectId);
-  const columns   = getProjectColumns(projectId).sort(
+  const columns   = getProjectColumns(projectId).slice().sort(
     (a, b) => COLUMN_TYPE_ORDER.indexOf(a.type) - COLUMN_TYPE_ORDER.indexOf(b.type)
   );
   const allCards  = getProjectCards(projectId);
