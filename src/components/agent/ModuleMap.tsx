@@ -19,7 +19,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import * as d3 from "d3";
-import { ChevronRight, RefreshCw, Home, Sparkles } from "lucide-react";
+import { ChevronRight, Home, Sparkles } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { useFontScale } from "../graph/analyticsHooks";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -277,7 +278,7 @@ export function ModuleMap({ cwd }: Props) {
             </button>
           </span>
         ))}
-        {loading && <RefreshCw size={12} className="animate-spin ml-2 text-[var(--text-tertiary)]" />}
+        {loading && <RefreshSpin size={12} className="ml-2 text-[var(--text-tertiary)]" />}
       </div>
 
       {/* Summary header — heuristic by default, replaced by the AI explanation. */}

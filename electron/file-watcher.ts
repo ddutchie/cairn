@@ -21,7 +21,7 @@ import path from "path";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import { parseNoteFile, adoptExternalNoteFile, importVaultProjects, isImportPathExcluded, reconcileOwnedNote, touchAdoptedBaseline, flushAdoptedLedger, readImportConfig } from "./notes-files";
-import { findNoteFilePath, noteDir } from "./shared/notes-io";
+import { findNoteFilePath, noteDir } from "./host-shared/notes-io";
 import * as q from "./db/queries";
 
 let watcher: FSWatcher | null = null;

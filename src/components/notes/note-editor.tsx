@@ -3,7 +3,9 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Code, Wand2, Loader2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, Maximize2, Minimize2, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
+import { Pin, PinOff, Calendar, Eye, Pencil, Code, Wand2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, Maximize2, Minimize2, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
+import { Spinner } from "@/components/ui/spinner";
+import { EmptyState } from "@/components/ui/empty-state";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -763,7 +765,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
           {aiEnabled && (spawnLoading ? (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-2)] border border-[var(--border)]">
-              <Loader2 size={11} className="animate-spin text-[var(--accent)] shrink-0" />
+              <Spinner size={11} tone="accent" />
               <span className="text-[0.786rem] text-[var(--text-tertiary)]">
                 {spawnToolCalls.length === 0
                   ? "Analysing…"
@@ -804,7 +806,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
                   )}
                 >
                   {exportState === "exporting"
-                    ? <Loader2 size={12} className="animate-spin" />
+                    ? <Spinner size={12} />
                     : exportState === "done"
                       ? <CheckCircle2 size={12} />
                       : <FileDown size={12} />}
@@ -939,9 +941,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
               color: "var(--accent)",
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 animate-spin" style={{ animationDuration: "1.5s" }}>
-              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-            </svg>
+            <Spinner size={12} className="[animation-duration:1.5s]" />
             AI is editing this note…
           </div>
         )}
@@ -1022,10 +1022,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
                   </ReactMarkdown>
                 </div>
               ) : (
-                <div className="flex flex-col items-center gap-2 py-8 text-center">
-                  <Eye size={20} className="text-[var(--text-tertiary)] opacity-40" />
-                  <p className="text-sm text-[var(--text-tertiary)]">Nothing to preview yet.</p>
-                </div>
+                <EmptyState icon={Eye} title="Nothing to preview yet." className="py-8" />
               )}
             </div>
           </div>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Sparkles, Send, Loader2, Server, Globe, ShieldAlert, X, KeyRound, Check } from "lucide-react";
+import { Sparkles, Send, Server, Globe, ShieldAlert, X, KeyRound, Check } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { id, cn } from "@/lib/utils";
@@ -171,7 +172,7 @@ export function ToolBuilderModal({ workspaceId, onClose }: { workspaceId: string
           if (item.role === "step") {
             return (
               <div key={i} className="flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)] font-mono pl-1">
-                <Loader2 size={11} className="opacity-50" /> {item.text}
+                <Spinner size={11} className="opacity-50" /> {item.text}
               </div>
             );
           }

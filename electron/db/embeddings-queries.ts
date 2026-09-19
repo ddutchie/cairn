@@ -8,7 +8,7 @@
  *
  * Same governance as db/queries.ts: NEVER construct a Database here — these run
  * on the already-constructed handle passed in by the caller (see db/queries.ts
- * header for the two ABI bootstrap sites). Vectors are stored as JSON-in-TEXT.
+ * header for the three ABI bootstrap sites). Vectors are stored as JSON-in-TEXT.
  */
 
 import type Database from "better-sqlite3";

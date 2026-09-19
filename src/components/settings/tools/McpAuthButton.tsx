@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, CheckCircle, XCircle, LogIn, LogOut } from "lucide-react";
+import { CheckCircle, XCircle, LogIn, LogOut } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 
 type ToolType = "mcp" | "service";
@@ -128,7 +129,7 @@ export function AuthButton({
       ) : busy ? (
         <>
           <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)]">
-            <Loader2 size={12} className="animate-spin" /> Waiting for browser…
+            <Spinner size={12} /> Waiting for browser…
           </span>
           <Button variant="ghost" size="sm" onClick={() => void cancel()}>
             Cancel

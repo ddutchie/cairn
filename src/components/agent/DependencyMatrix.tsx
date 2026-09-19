@@ -16,6 +16,7 @@
 
 import { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import { resolveCssVar, withAlpha } from "../graph/analyticsUtils";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useFontScale } from "../graph/analyticsHooks";
 
 export interface MatrixNode {
@@ -241,9 +242,7 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
 
   if (nodes.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-xs text-[var(--text-tertiary)]">
-        No file dependencies to chart yet.
-      </div>
+      <EmptyState title="No file dependencies to chart yet." />
     );
   }
 

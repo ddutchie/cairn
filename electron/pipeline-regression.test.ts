@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { iterSseData } from "./lib/sse";
-import { normalizeNoteTitle } from "./shared/text-utils";
-import { stripMarkdown } from "./shared/text-utils";
+import { normalizeNoteTitle } from "./host-shared/text-utils";
+import { stripMarkdown } from "./host-shared/text-utils";
 
 /**
  * Regression suite for the SSE → tool-arg → note-write pipeline.

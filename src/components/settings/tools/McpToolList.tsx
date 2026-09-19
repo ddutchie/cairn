@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { Badge } from "@/components/ui/badge";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -60,12 +62,17 @@ export function McpToolList({ server }: { server: McpServerConfig }) {
           {tools.length > 0 ? `${enabledCount} of ${tools.length} enabled` : "manage which tools the AI can use"}
         </span>
         {tokenLabel && (
-          <span className={`text-[0.643rem] font-mono px-1.5 py-0.5 rounded-full border ${isHeavy ? "bg-[color-mix(in_srgb,var(--warning)_12%,transparent)] text-[var(--warning)] border-[color-mix(in_srgb,var(--warning)_22%,transparent)]" : "bg-[var(--surface)] text-[var(--text-tertiary)] border-[var(--border)]"}`} title={`Estimated prompt tokens for the tool definitions (JSON length / 4 + overhead). Disable tools to reduce context.`}>
+          <Badge
+            size="xs"
+            color={isHeavy ? "var(--warning)" : undefined}
+            className="font-mono"
+            title={`Estimated prompt tokens for the tool definitions (JSON length / 4 + overhead). Disable tools to reduce context.`}
+          >
             {tokenLabel}
-          </span>
+          </Badge>
         )}
         <span className="ml-auto flex items-center gap-1">
-          {loading && <Loader2 size={11} className="animate-spin text-[var(--text-tertiary)]" />}
+          {loading && <Spinner size={11} tone="muted" />}
           <span
             role="button"
             tabIndex={0}

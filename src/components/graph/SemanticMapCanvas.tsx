@@ -2,14 +2,15 @@
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import * as d3 from "d3";
-import { RefreshCw, Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Sparkles } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import type { GraphNode } from "@/types";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { truncateName } from "./analyticsUtils";
-import { useContainerDims, useScopedData, useFontScale, useRelativePointer } from "./analyticsHooks";
-import { CanvasTooltip } from "./AnalyticsShared";
+import { useContainerDims, useScopeSets, useFontScale, useRelativePointer } from "./analyticsHooks";
+import { CanvasCallout } from "./AnalyticsShared";
 
 interface Props {
   nodes: GraphNode[];
@@ -57,7 +58,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
   const fs = useFontScale();
   const dims = useContainerDims(containerRef);
   const relativePointer = useRelativePointer(containerRef);
-  const { activeProjects } = useScopedData(nodes);
+  const { activeProjects } = useScopeSets(nodes);
   const { notes, activeWorkspaceId } = useCairnStore(useShallow((s) => ({
     notes: s.notes,
     activeWorkspaceId: s.activeWorkspaceId,
@@ -245,15 +246,16 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
               : "Try widening the project filter or reindexing notes for the selected projects."}
           </p>
           {projections.length === 0 && (anyStale || activeWorkspaceId) && (
-            <button
+            <Button
               type="button"
+              variant="accent"
+              size="sm"
               onClick={handleRecompute}
               disabled={recomputing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-[var(--surface)] text-xs font-medium hover:opacity-90 disabled:opacity-50"
             >
-              <RefreshCw size={12} className={cn(recomputing && "animate-spin")} />
+              <RefreshSpin size={12} spinning={recomputing} />
               {anyStale ? "Recompute projections" : "Compute projections"}
-            </button>
+            </Button>
           )}
           {recomputeProgress && (
             <div className="mt-4 space-y-1 text-left">
@@ -398,7 +400,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
           title="Recompute projections"
           className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] rounded disabled:opacity-50"
         >
-          <RefreshCw size={12} className={cn(recomputing && "animate-spin")} />
+          <RefreshSpin size={12} spinning={recomputing} />
         </button>
       </div>
 
@@ -432,7 +434,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
       )}
 
       {tooltip && (
-        <CanvasTooltip x={tooltip.x} y={tooltip.y} containerW={dims.width}>
+        <CanvasCallout x={tooltip.x} y={tooltip.y} containerW={dims.width}>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: tooltip.note.color }} />
             <span className="text-[0.786rem] font-medium text-[var(--text-primary)]">{tooltip.note.title}</span>
@@ -440,7 +442,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
           {tooltip.note.projectName && (
             <p className="text-[0.7rem] text-[var(--text-tertiary)] mt-0.5">in {tooltip.note.projectName}</p>
           )}
-        </CanvasTooltip>
+        </CanvasCallout>
       )}
     </div>
   );

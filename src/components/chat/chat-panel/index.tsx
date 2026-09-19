@@ -9,6 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
 import { useChatMessageQueue, useQueueDrain, type QueuedMessage } from "@/hooks/useChatMessageQueue";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
+import { useGraphData } from "@/hooks/useGraphData";
 import { ipcAwaitResult } from "@/store/ipc";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import { storage } from "@/lib/storage";
@@ -27,6 +28,7 @@ import { ConversationEmptyState } from "@/components/conversation/ConversationEm
 import { getCommandsForScope } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { cn, id } from "@/lib/utils";
+import { isView } from "@/lib/views";
 import { ChatTimeline, deriveSpansFromMessages } from "../ChatTimeline";
 import {
   getModelInfo,
@@ -112,7 +114,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     projects, workspaces,
     addMessage,
     chatMessages, chatThreads, aiConfig,
-    activeView, graphData, selectedGraphNodeId,
+    activeView, selectedGraphNodeId,
     clearThreadMessages,
     createNote,
     notes, cards,
@@ -130,7 +132,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     chatThreads:           s.chatThreads,
     aiConfig:              s.aiConfig,
     activeView:            s.activeView,
-    graphData:             s.graphData,
     selectedGraphNodeId:   s.selectedGraphNodeId,
     clearThreadMessages:   s.clearThreadMessages,
     createNote:            s.createNote,
@@ -141,6 +142,12 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     setActiveProject:      s.setActiveProject,
     customCommands:        s.customCommands,
   })));
+
+  // Graph context for the system prompt — loaded on first read so chat never
+  // silently builds context from an empty graph (mount-order trap). Only
+  // preloads on the graph view itself; elsewhere the cached graph is used
+  // as-is so non-graph users pay no load cost.
+  const graphData = useGraphData(isView(activeView, "graph"));
 
   // threadId is driven by the store so the tab bar can switch threads externally
   const threadId = activeChatThreadId;
@@ -551,7 +558,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     );
 
     let systemPrompt: string | undefined = undefined;
-    if (activeView === "graph") {
+    if (isView(activeView, "graph")) {
       const graphContext = buildGraphContext(graphData, selectedNode);
       const date = new Date().toLocaleDateString("en-US", {
         weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -771,7 +778,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           onAbort={stopStream}
           isLoading={isLoading}
           transcriptRef={chatVirtuosoRef}
-          centered={activeView === "chat"}
+          centered={isView(activeView, "chat")}
           title={popoutMode ? (
           <div ref={projectRef} className="relative flex-1">
             <button
@@ -801,7 +808,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           </div>
         ) : (
           <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-1 truncate">
-            {activeView === "graph" ? "Graph Assistant" : project?.name ?? workspace?.name ?? "AI Assistant"}
+            {isView(activeView, "graph") ? "Graph Assistant" : project?.name ?? workspace?.name ?? "AI Assistant"}
           </span>
         )}
           usage={activeThread?.lastUsage}
@@ -822,18 +829,18 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           projection={{ pendingQuestions }}
           showSessionStatus={!!threadId}
           onAnswerQuestions={(answers) => { if (!answerQuestions(answers)) void handleSend(answers); }}
-          emptyState={<ConversationEmptyState content={<SuggestedPrompts onSend={handleSend} disabled={isLoading || !threadId} prompts={activeView === "graph" ? graphPrompts : undefined} subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined} />} />}
+          emptyState={<ConversationEmptyState content={<SuggestedPrompts onSend={handleSend} disabled={isLoading || !threadId} prompts={isView(activeView, "graph") ? graphPrompts : undefined} subTitle={isView(activeView, "graph") ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined} />} />}
           transcriptFooter={ChatTranscriptPadding}
           composerBefore={(
-            <div className={cn("flex-shrink-0 border-t border-[var(--border)] bg-[var(--surface)]", activeView === "chat" && "max-w-3xl mx-auto w-full")}>
+            <div className={cn("flex-shrink-0 border-t border-[var(--border)] bg-[var(--surface)]", isView(activeView, "chat") && "max-w-3xl mx-auto w-full")}>
               {isLoading && <ConversationWorkingStatus label="Cairn is working — you can queue messages below" />}
               <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
               <ChatFooterSlot threadId={threadId ?? null} usage={activeThread?.lastUsage ? { ...activeThread.lastUsage, contextLimit: activeThread.lastUsage.contextLimit ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000, contextWindow: activeThread.lastUsage.contextWindow ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000 } : undefined} />
             </div>
           )}
           composerRef={inputRef}
-          placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
-          composerProps={{ centered: activeView === "chat", commands: chatCommands, suggestions: mentionSuggestions, allowImages, allowPdf, providerModelTarget: "ai", variant: activeView === "chat" ? "overview" : "default", showSparkles: activeView === "chat", statusText: isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send", queueWhileBusy: isLoading, queuedCount: queued.length }}
+          placeholder={isView(activeView, "graph") ? "Ask about your knowledge graph…" : "Ask about your project…"}
+          composerProps={{ centered: isView(activeView, "chat"), commands: chatCommands, suggestions: mentionSuggestions, allowImages, allowPdf, providerModelTarget: "ai", variant: isView(activeView, "chat") ? "overview" : "default", showSparkles: isView(activeView, "chat"), statusText: isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send", queueWhileBusy: isLoading, queuedCount: queued.length }}
         />
 
     </div>

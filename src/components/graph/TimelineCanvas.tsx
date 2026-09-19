@@ -2,9 +2,8 @@
 
 import React, { useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { useCairnStore } from "@/store";
-import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
+import { useScopeSets } from "./analyticsHooks";
 import { PRIORITY_COLOR, PRIORITY_SORT_ORDER } from "./analyticsUtils";
 import { CanvasEmptyState } from "./AnalyticsShared";
 
@@ -32,7 +31,7 @@ function formatDay(d: Date): string {
 }
 
 export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
-  const { projects, cards } = useCairnStore(useShallow((s) => ({ projects: s.projects, cards: s.cards })));
+  const { projects, cards } = useScopeSets(nodes);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Only cards — notes have no temporal meaning in a timeline

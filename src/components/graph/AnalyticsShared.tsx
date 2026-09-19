@@ -7,6 +7,7 @@ import React from "react";
 import * as d3 from "d3";
 import { DAY_MS } from "./analyticsUtils";
 import { useFontScale } from "./analyticsHooks";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // ── CanvasEmptyState ──────────────────────────────────────────────────────────
 
@@ -15,16 +16,14 @@ interface EmptyStateProps {
 }
 
 export function CanvasEmptyState({ message = "No data to show." }: EmptyStateProps) {
-  return (
-    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-      <p className="text-xs text-[var(--text-tertiary)]">{message}</p>
-    </div>
-  );
+  return <EmptyState overlay title={message} />;
 }
 
-// ── CanvasTooltip ─────────────────────────────────────────────────────────────
+// ── CanvasCallout ─────────────────────────────────────────────────────────────
+// Positioned D3 callout (NOT a hover tooltip — see ui/tooltip.tsx). Renamed
+// from CanvasTooltip to end the confusion between the two.
 
-interface TooltipProps {
+interface CalloutProps {
   x: number;
   y: number;
   containerW: number;
@@ -32,7 +31,7 @@ interface TooltipProps {
   maxW?: number;
 }
 
-export function CanvasTooltip({ x, y, containerW, maxW = 220, children }: TooltipProps) {
+export function CanvasCallout({ x, y, containerW, maxW = 220, children }: CalloutProps) {
   return (
     <div
       className="absolute pointer-events-none z-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg p-2.5 text-[0.786rem]"

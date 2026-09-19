@@ -147,8 +147,8 @@ export function ChatTimeline({ spans, range, onRangeChange, onSpanSelect, totalD
         {/* Range overlay */}
         {isFiltered && (
           <>
-            <div className="absolute inset-y-0 bg-black/20 pointer-events-none" style={{ left: 0, width: `${rangeStart * 100}%` }} />
-            <div className="absolute inset-y-0 bg-black/20 pointer-events-none" style={{ left: `${rangeEnd * 100}%`, right: 0 }} />
+            <div className="absolute inset-y-0 bg-[color-mix(in_srgb,black_20%,transparent)] pointer-events-none" style={{ left: 0, width: `${rangeStart * 100}%` }} />
+            <div className="absolute inset-y-0 bg-[color-mix(in_srgb,black_20%,transparent)] pointer-events-none" style={{ left: `${rangeEnd * 100}%`, right: 0 }} />
             <div
               className="absolute inset-y-0 border-x-2 border-[var(--accent)] bg-[var(--accent)]/10 pointer-events-none"
               style={{ left: `${rangeStart * 100}%`, width: `${(rangeEnd - rangeStart) * 100}%` }}

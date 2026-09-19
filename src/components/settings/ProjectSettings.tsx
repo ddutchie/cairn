@@ -6,6 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { Button } from "@/components/ui/button";
+import { StatusDot } from "@/components/ui/status-dot";
 import type { ProjectSettings } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -181,14 +182,14 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
           <div className="flex items-center gap-2">
             {repoTemplateExists ? (
               <>
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
+                <StatusDot color="var(--success)" />
                 <span className="text-[var(--text-secondary)]">
                   Discovered PR template in repository at <code className="font-mono text-[var(--accent)] bg-[var(--surface-3)] px-1 py-0.5 rounded">.github/PULL_REQUEST_TEMPLATE.md</code>
                 </span>
               </>
             ) : (
               <>
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-tertiary)] opacity-40" />
+                <StatusDot className="opacity-40" />
                 <span className="text-[var(--text-tertiary)]">
                   No PR template found in repository at <code className="font-mono text-[var(--text-tertiary)] bg-[var(--surface-3)] px-1 py-0.5 rounded">.github/PULL_REQUEST_TEMPLATE.md</code>
                 </span>

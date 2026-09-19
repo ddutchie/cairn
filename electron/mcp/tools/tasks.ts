@@ -2,7 +2,7 @@
 import Database from "better-sqlite3";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
-import { executeSearchTasks, executeListOverdueTasks, executeListTasksDue } from "../../shared/read-tools-pure";
+import { executeSearchTasks, executeListOverdueTasks, executeListTasksDue } from "../../host-shared/read-tools-pure";
 import {
   Snapshot,
   getCardVersion,

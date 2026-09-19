@@ -5,7 +5,7 @@ import { ChevronLeft } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
 import { resolveCssVar, withAlpha, tokenToCssVar } from "./analyticsUtils";
-import { useFontScale, useThemeRepaint } from "./analyticsHooks";
+import { useFontScale, useThemeRepaint, useContainerDims } from "./analyticsHooks";
 import {
   buildHierarchy as sharedBuildHierarchy,
   sunburstTypeToken,
@@ -44,7 +44,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fs = useFontScale();
 
-  const [dims, setDims] = useState({ width: 800, height: 600 });
+  const dims = useContainerDims(containerRef);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   // Breadcrumb label of the focused branch (null = at workspace root).
   const [focusLabel, setFocusLabel] = useState<string | null>(null);
@@ -380,19 +380,6 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     });
     return found;
   }, [root, targetArc, ringR]);
-
-  // ── resize observer ──
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const e = entries[0];
-      if (e) setDims({ width: e.contentRect.width, height: e.contentRect.height });
-    });
-    ro.observe(el);
-    setDims({ width: el.clientWidth, height: el.clientHeight });
-    return () => ro.disconnect();
-  }, []);
 
   // ── canvas sizing (DPR-aware) + geometry + (re)seed arcs ──
   useEffect(() => {

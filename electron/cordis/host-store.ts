@@ -2,7 +2,7 @@
  * host-store — the SINGLE adapter between `electron/cordis/` and app I/O.
  *
  * Boundary rule: no file in `electron/cordis/` may import from `../db/*`,
- * `../lib/*`, or `node:child_process` — EXCEPT this file (and its test).
+ * `../lib/*`, or `node:child_process` — EXCEPT this file (and its tests).
  * Type-only imports (`import type …`) are exempt: they are erased at compile
  * time and cannot smuggle runtime behaviour across the boundary. Everything
  * else the Cordis runtime needs from the host goes through this module:
@@ -104,7 +104,7 @@ export { TOOL_SCHEMAS } from "../lib/tool-schemas";
 export { dlog, startPhaseTimer } from "../lib/debug-log";
 export { toolResultError } from "../lib/tool-result";
 export { aiWriteLock } from "../lib/ai-write-lock";
-export { CAIRN_APP_IDENTITY } from "../lib/cairn-identity";
+export { CAIRN_APP_IDENTITY, setCurrentOpencodeSessionId, getCurrentOpencodeSessionId } from "../lib/cairn-identity";
 export { isSecretFile, bashReferencesSecretFile } from "../lib/coding-tools/secrets";
 export { discoverSkills, loadSkill } from "../lib/skills";
 export type { SkillMeta, SkillContent } from "../lib/skills";

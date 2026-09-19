@@ -10,6 +10,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "@/store/slices/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NoteEditor } from "./note-editor";
@@ -30,7 +31,8 @@ import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/n
 import { STARTER_TEMPLATES } from "../../../shared/notes/starter-templates";
 import { stripMarkdown } from "./note-editor-utils";
 import type { Note } from "@/types";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { DialogClose } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 
 // ── NotesView orchestrator ──────────────────────────────────────────────────
@@ -670,19 +672,20 @@ export function NotesView() {
         {/* List */}
         <div className="flex-1 overflow-y-auto py-1">
           {notes.length === 0 && archivedNotes.length === 0 ? (
-            <div className="px-3 py-8 text-center">
-              <FileText size={20} className="mx-auto mb-2 text-[var(--text-tertiary)] opacity-40" />
-              <p className="text-xs text-[var(--text-tertiary)]">No notes yet</p>
-              <button onClick={() => handleCreateNote()} className="mt-2 text-xs text-[var(--accent)] hover:underline">
-                Create one
-              </button>
-            </div>
+            <EmptyState
+              icon={FileText}
+              title="No notes yet"
+              action={
+                <Button variant="ghost" size="xs" onClick={() => handleCreateNote()} className="text-[var(--accent)]">
+                  Create one
+                </Button>
+              }
+              className="py-8"
+            />
           ) : isFiltering ? (
             // Flat filtered list
             filtered.length === 0 ? (
-              <div className="px-3 py-8 text-center">
-                <p className="text-xs text-[var(--text-tertiary)]">No matching notes</p>
-              </div>
+              <EmptyState title="No matching notes" className="py-8" />
             ) : (
               filtered.map((note) => (
                 <NoteListItem
@@ -871,11 +874,23 @@ export function NotesView() {
         />
       )}
 
-      <Dialog open={!!deleteNoteId} onOpenChange={(o) => { if (!o) setDeleteNoteId(null); }}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Delete note?</DialogTitle>
-          </DialogHeader>
+      <ModalShell
+        open={!!deleteNoteId}
+        onClose={() => setDeleteNoteId(null)}
+        size="sm"
+        title="Delete note?"
+        footer={<>
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm">Cancel</Button>
+          </DialogClose>
+          <Button
+            variant="danger" size="sm"
+            onClick={() => deleteNoteId && handleDelete(deleteNoteId)}
+          >
+            <Trash2 size={13} /> Delete
+          </Button>
+        </>}
+      >
           <div className="px-5 py-4 space-y-4">
             <p className="text-sm text-[var(--text-secondary)]">
               <strong className="text-[var(--text-primary)]">
@@ -883,21 +898,8 @@ export function NotesView() {
               </strong>{" "}
               will be permanently deleted. This cannot be undone.
             </p>
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost" size="sm">Cancel</Button>
-              </DialogClose>
-              <Button
-                variant="ghost" size="sm"
-                className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
-                onClick={() => deleteNoteId && handleDelete(deleteNoteId)}
-              >
-                <Trash2 size={13} /> Delete
-              </Button>
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ModalShell>
      </div>
    );
  }

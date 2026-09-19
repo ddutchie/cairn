@@ -24,7 +24,7 @@ import {
   executeGetProjectContextPack,
   executeSearchNotes as executeSearchNotesPure,
   executeSearchTasks as executeSearchTasksPure
-} from "../shared/read-tools-pure";
+} from "../host-shared/read-tools-pure";
 
 export { CairnSnapshot };
 

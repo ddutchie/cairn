@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { X, ChevronDown, MessageSquare, History, Pencil } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
+import { useConfirmAction } from "@/components/ui/confirm-button";
 
 interface AIChatTabProps {
   isActive: boolean;
@@ -73,7 +74,9 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
   }, [dropdownOpen]);
 
   function handleSwitchThread(threadId: string) {
-    console.log("[AIChatTab] handleSwitchThread", { from: activeChatThreadId, to: threadId, projectThreads: projectThreads.map((t) => t.id) });
+    if (process.env.NODE_ENV === "development") {
+      console.log("[AIChatTab] handleSwitchThread", { from: activeChatThreadId, to: threadId, projectThreads: projectThreads.map((t) => t.id) });
+    }
     setActiveChatThreadId(threadId);
     setDropdownOpen(false);
     setRenamingId(null);
@@ -89,13 +92,22 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     }
   }
 
+  // Two-step confirm for the destructive clear-all (replaces window.confirm).
+  const clearAllConfirm = useConfirmAction();
+
   async function handleClearAll(e: React.MouseEvent) {
     e.stopPropagation();
     if (!activeWorkspaceId) return;
     const count = chatThreads.filter((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId)).length;
     if (count === 0) return;
-    if (!confirm(`Clear all ${count} chat threads for this ${activeProjectId ? "project" : "workspace"}? This cannot be undone.`)) return;
-    console.log("[AIChatTab] clearAll", { ws: activeWorkspaceId, proj: activeProjectId, count });
+    if (!clearAllConfirm.armed) {
+      clearAllConfirm.arm();
+      return;
+    }
+    clearAllConfirm.fire();
+    if (process.env.NODE_ENV === "development") {
+      console.log("[AIChatTab] clearAll", { ws: activeWorkspaceId, proj: activeProjectId, count });
+    }
     if (clearAllThreads) {
       await clearAllThreads(activeWorkspaceId, activeProjectId ?? undefined);
     } else {
@@ -153,10 +165,15 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
             <div className="px-3 py-1.5 border-b border-[var(--border)] flex justify-end">
               <button
                 onClick={handleClearAll}
-                className="text-[0.643rem] font-medium text-[var(--text-tertiary)] hover:text-[var(--danger)] flex items-center gap-1 transition-colors"
-                title="Clear all threads for this project"
+                className={cn(
+                  "text-[0.643rem] font-medium flex items-center gap-1 transition-colors",
+                  clearAllConfirm.armed
+                    ? "text-[var(--danger)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--danger)]"
+                )}
+                title={clearAllConfirm.armed ? "Click again to delete all threads" : "Clear all threads for this project"}
               >
-                <X size={10} /> Clear all ({projectThreads.length})
+                <X size={10} /> {clearAllConfirm.armed ? "Confirm clear?" : `Clear all (${projectThreads.length})`}
               </button>
             </div>
           )}

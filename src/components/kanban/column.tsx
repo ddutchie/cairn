@@ -13,8 +13,9 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose,
+  DialogClose,
 } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { KanbanCard } from "./card";
 import type { BoardColumn, TaskCard } from "@/types";
 import { COLUMN_COLORS } from "@/lib/constants";
@@ -121,9 +122,24 @@ function KanbanColumnImpl({
 
   return (
     <>
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent size="sm">
-          <DialogHeader><DialogTitle>Delete column?</DialogTitle></DialogHeader>
+      <ModalShell
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        size="sm"
+        title="Delete column?"
+        footer={<>
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm">Cancel</Button>
+          </DialogClose>
+          <Button
+            variant="danger" size="sm"
+            onClick={() => { setDeleteDialogOpen(false); onDelete(); }}
+          >
+            <Trash2 size={13} />
+            Delete column
+          </Button>
+        </>}
+      >
           <div className="px-5 py-4 space-y-4">
             <p className="text-sm text-[var(--text-secondary)]">
               {(() => {
@@ -139,26 +155,15 @@ function KanbanColumnImpl({
                 </>;
               })()}
             </p>
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost" size="sm">Cancel</Button>
-              </DialogClose>
-              <Button
-                variant="ghost" size="sm"
-                className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
-                onClick={() => { setDeleteDialogOpen(false); onDelete(); }}
-              >
-                <Trash2 size={13} />
-                Delete column
-              </Button>
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ModalShell>
 
-      <Dialog open={limitDialogOpen} onOpenChange={setLimitDialogOpen}>
-        <DialogContent size="sm">
-          <DialogHeader><DialogTitle>WIP limit — {column.name}</DialogTitle></DialogHeader>
+      <ModalShell
+        open={limitDialogOpen}
+        onClose={() => setLimitDialogOpen(false)}
+        size="sm"
+        title={`WIP limit — ${column.name}`}
+      >
           <div className="px-5 py-4 space-y-4">
             <p className="text-sm text-[var(--text-secondary)]">
               Set a maximum number of cards for this column. Leave blank to remove the limit.
@@ -204,8 +209,7 @@ function KanbanColumnImpl({
               </div>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ModalShell>
 
       <div
         ref={setSortableRef}

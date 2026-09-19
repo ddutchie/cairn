@@ -1,15 +1,15 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { RefreshCw, Loader2, WifiOff, Search, Sparkles, ArrowLeft, ChevronDown, ChevronUp, Plug, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
+import { RefreshCw, WifiOff, Search, Sparkles, ArrowLeft, ChevronDown, ChevronUp, Plug, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { TagChip } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import type { AutomationsFetchResult, RegistryAutomationEntry, RegistryRequirement } from "@/types";
-
-const inputCls =
-  "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm pl-8 pr-3 py-2 focus:outline-none";
+import { CATALOG_SEARCH_INPUT_CLS as inputCls } from "@/components/ui/catalog-browser-shell";
 
 const KIND_LABEL: Record<string, string> = {
   cron: "Cron",
@@ -170,7 +170,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
         </div>
         <Tooltip content="Refresh from the registry">
           <Button variant="ghost" size="sm" onClick={() => void load(true)} disabled={refreshing}>
-            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            {refreshing ? <Spinner size={13} /> : <RefreshCw size={13} />}
             Refresh
           </Button>
         </Tooltip>
@@ -195,7 +195,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
       <div className="flex flex-col gap-2 min-h-[8rem]">
         {loading ? (
           <div className="flex items-center justify-center py-10 text-[var(--text-tertiary)]">
-            <Loader2 size={18} className="animate-spin" />
+            <Spinner size={18} />
           </div>
         ) : filtered.length === 0 ? (
           <p className="text-xs text-[var(--text-tertiary)] py-10 text-center border border-dashed border-[var(--border)] rounded-lg">
@@ -300,22 +300,6 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
           : "Fetched from the community registry (cache-first; stale content is refreshed in the background on open)."}
       </p>
     </div>
-  );
-}
-
-function TagChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "text-[0.65rem] rounded-full px-2 py-0.5 border transition-colors",
-        active
-          ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--text-primary)]"
-          : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-      )}
-    >
-      {label}
-    </button>
   );
 }
 

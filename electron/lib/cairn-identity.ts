@@ -1,14 +1,31 @@
 /**
- * Cairn — app identity for provider attribution.
+ * Cairn — app identity for provider attribution (desktop).
  *
- * Centralises the `User-Agent` product/version so the DSH harness
- * (dsh-llm) and Cairn's direct `fetch` paths send the same `cairn/<version>` string.
- * Version is read at runtime from the app's `package.json` via `app.getAppPath()` (Electron, dev + prod)
- * with a `process.cwd()` fallback for Vitest/standalone.
+ * Pure identity/header logic lives in `@cairn/shared` (`shared/agent/
+ * app-identity.ts`, shared with mobile). This module owns the Electron-only
+ * parts: version resolution (package.json via `app.getAppPath()`) and the
+ * global fetch wrapper that stamps `x-opencode-session` + `User-Agent` on
+ * opencode-bound LLM requests. Re-exports the shared API so existing
+ * importers (llm.ts, host-store.ts) keep working unchanged.
  */
 
 import * as fs from "fs";
 import * as path from "path";
+import {
+  createAppIdentity,
+  isOpencodeEndpoint,
+  getCurrentOpencodeSessionId,
+  setCurrentOpencodeSessionId,
+  opencodeSessionHeaders,
+  opencodeHeaders as sharedOpencodeHeaders,
+} from "../../shared/agent/app-identity";
+
+export {
+  isOpencodeEndpoint,
+  getCurrentOpencodeSessionId,
+  setCurrentOpencodeSessionId,
+  opencodeSessionHeaders,
+};
 
 function getCairnVersion(): string {
   try {
@@ -41,49 +58,13 @@ function getCairnVersion(): string {
   return "3.0.1";
 }
 
-const version = getCairnVersion();
+const { userAgent: CAIRN_USER_AGENT, identity: CAIRN_APP_IDENTITY } = createAppIdentity(getCairnVersion());
 
-export const CAIRN_USER_AGENT = `cairn/${version}`;
-
-export const CAIRN_APP_IDENTITY = {
-  product: "cairn",
-  version,
-  url: "https://github.com/ddutchie/cairn",
-} as const;
-
-/** True when the base URL targets the OpenCode Zen proxy (opencode.ai). */
-export function isOpencodeEndpoint(baseUrl: string): boolean {
-  return baseUrl.toLowerCase().includes("opencode.ai");
-}
-
-// ── Opencode session affinity ────────────────────────────────────────────
-// Opencode's Zen proxy expects `x-opencode-session` (stable per conversation)
-// for routing + prompt caching. The value is the DSH sessionId (`chat-<threadId>`
-// for chat, the coding attempt id for coding) or a one-shot's opts.sessionId.
-
-let currentOpencodeSessionId: string | null = null;
-
-export function setCurrentOpencodeSessionId(id: string | null): void {
-  currentOpencodeSessionId = id;
-}
-
-export function getCurrentOpencodeSessionId(): string | null {
-  return currentOpencodeSessionId;
-}
-
-export function opencodeSessionHeaders(sessionId?: string | null): Record<string, string> {
-  const id = sessionId ?? currentOpencodeSessionId;
-  return id ? { "x-opencode-session": id } : {};
-}
+export { CAIRN_USER_AGENT, CAIRN_APP_IDENTITY };
 
 /** Build the full opencode-aware headers for a request (User-Agent + session). */
 export function opencodeHeaders(baseUrl: string, sessionId?: string | null): Record<string, string> {
-  const headers: Record<string, string> = { "User-Agent": CAIRN_USER_AGENT };
-  if (isOpencodeEndpoint(baseUrl)) {
-    const sess = opencodeSessionHeaders(sessionId);
-    if (sess["x-opencode-session"]) headers["x-opencode-session"] = sess["x-opencode-session"];
-  }
-  return headers;
+  return sharedOpencodeHeaders(CAIRN_USER_AGENT, baseUrl, sessionId);
 }
 
 // Install a global fetch wrapper once so the DSH pi-ai path (which builds

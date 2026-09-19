@@ -1,13 +1,16 @@
 "use client";
 
 import React, { useMemo, useState, useEffect, useSyncExternalStore } from "react";
-import { RefreshCw, Percent, Trash2 } from "lucide-react";
+import { Percent, Trash2 } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useUsage, USAGE_RANGES } from "@/hooks/useUsage";
 import { UsageChart, type UsageMetric } from "./UsageChart";
 import { Select } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
+import { EmptyState } from "@/components/ui/empty-state";
+import { useConfirmAction } from "@/components/ui/confirm-button";
 import { cacheHitColor } from "@/lib/cache-metrics";
 import { fmtCompact, fmtFull, fmtDateTime } from "./usage-format";
 import { formatUsd } from "../../../shared/chat/provider-credits";
@@ -162,12 +165,7 @@ export function UsageView() {
   const range = USAGE_RANGES[rangeIdx];
   const { overview, recent, loading, refresh, clear } = useUsage(range.days, source, !includeEstimated);
   // Two-step destructive confirm for the clear action; auto-disarms after 4s.
-  const [confirmClear, setConfirmClear] = useState(false);
-  useEffect(() => {
-    if (!confirmClear) return;
-    const t = setTimeout(() => setConfirmClear(false), 4000);
-    return () => clearTimeout(t);
-  }, [confirmClear]);
+  const clearConfirm = useConfirmAction();
 
   // Load the models.dev catalog (for model/provider logos) and re-render when it
   // arrives or refreshes, so the icons appear once resolution is possible.
@@ -242,27 +240,27 @@ export function UsageView() {
             Estimates
           </button>
           <Tooltip
-            content={confirmClear ? "Click again to delete all recorded usage" : "Clear recorded usage data"}
+            content={clearConfirm.armed ? "Click again to delete all recorded usage" : "Clear recorded usage data"}
             side="bottom"
           >
             <button
               onClick={() => {
-                if (confirmClear) {
-                  setConfirmClear(false);
+                if (clearConfirm.armed) {
+                  clearConfirm.fire();
                   void clear();
                 } else {
-                  setConfirmClear(true);
+                  clearConfirm.arm();
                 }
               }}
               className={cn(
                 "flex items-center gap-1 px-1.5 py-1 rounded border transition-colors",
-                confirmClear
+                clearConfirm.armed
                   ? "border-[var(--danger)] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
                   : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-2)]"
               )}
             >
-              <Trash2 size={11} className={confirmClear ? "text-[var(--danger)]" : ""} />
-              {confirmClear && <span className="text-[0.643rem] font-medium">Confirm</span>}
+              <Trash2 size={11} className={clearConfirm.armed ? "text-[var(--danger)]" : ""} />
+              {clearConfirm.armed && <span className="text-[0.643rem] font-medium">Confirm</span>}
             </button>
           </Tooltip>
           <Tooltip content="Reload data" side="bottom">
@@ -270,7 +268,7 @@ export function UsageView() {
               onClick={refresh}
               className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
             >
-              <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
+              <RefreshSpin size={11} spinning={loading} />
             </button>
           </Tooltip>
         </div>
@@ -328,7 +326,7 @@ export function UsageView() {
               </div>
               <div className="p-4 flex flex-col gap-3">
                 {byModel.length === 0 ? (
-                  <div className="text-xs text-[var(--text-tertiary)]">No usage yet.</div>
+                  <EmptyState title="No usage yet." />
                 ) : (
                   byModel.slice(0, 6).map((m) => {
                     const color = modelColor(m.model);
@@ -373,9 +371,11 @@ export function UsageView() {
               <div className="px-4 pb-1 text-[0.643rem] text-[var(--text-tertiary)]">~ = estimated from models.dev pricing</div>
             )}
             {recent.length === 0 ? (
-              <div className="px-4 py-8 text-xs text-[var(--text-tertiary)]">
-                No LLM calls recorded yet — send a chat message or run an agent and it will appear here.
-              </div>
+              <EmptyState
+                title="No LLM calls recorded yet"
+                description="Send a chat message or run an agent and it will appear here."
+                className="py-8"
+              />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">

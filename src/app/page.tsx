@@ -20,7 +20,7 @@ import { KanbanBoard } from "@/components/kanban/board";
 import { CalendarView } from "@/components/calendar/CalendarView";
 import { IdeaFlowView } from "@/components/flow/flow-view";
 import { KnowledgeGraphView } from "@/components/graph/KnowledgeGraphView";
-import { InsightsView } from "@/components/insights/InsightsView";
+import { InsightsView } from "@/components/graph/InsightsView";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AutomationsView } from "@/components/automations/automations-view";
@@ -36,6 +36,7 @@ import { useSyncStatus, useConflictModalOpen, closeConflictModal } from "@/lib/s
 import { NewFeatureModal } from "@/components/layout/NewFeatureModal";
 import { AppTutorial } from "@/components/tutorial/AppTutorial";
 import { cn } from "@/lib/utils";
+import { isView } from "@/lib/views";
 import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 import { completeOnboarding } from "@/lib/complete-onboarding";
 
@@ -273,12 +274,20 @@ export default function Home() {
         // surrounding chat IPC also touched ownWriteGuard — but those changes
         // are NOT in Zustand, so we must hydrate to surface them in the open
         // editor. A recent AI note write overrides the own-write skip.
-        if (ownWriteGuard.isOwnWrite() && !hasRecentAiNoteWrite()) return;
+        if (ownWriteGuard.isOwnWrite() && !hasRecentAiNoteWrite()) {
+          // graphData has no optimistic path (unlike the entity slices), so
+          // refresh it here — no-op when the graph was never loaded.
+          void useCairnStore.getState().refreshGraphIfLoaded();
+          return;
+        }
         // Don't re-hydrate (and potentially reset onboardingState) while the
         // onboarding wizard is still in progress — folder selection and workspace
         // creation trigger db:changed but the wizard handles its own state.
         if (onboardingStateRef.current !== false) return;
         hydrateFromElectron(true);
+        // Entity slices hydrate above; the graph has no optimistic path, so it
+        // would otherwise go stale until a manual refresh.
+        void useCairnStore.getState().refreshGraphIfLoaded();
       });
 
       // Auto-updater listeners — events may arrive in any order
@@ -313,11 +322,11 @@ export default function Home() {
       const inInput = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable;
 
       if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
-      else if (mod && e.shiftKey && key.toLowerCase() === "f") { if (activeView !== "agent") { e.preventDefault(); toggleSearch(); } }
+      else if (mod && e.shiftKey && key.toLowerCase() === "f") { if (!isView(activeView, "agent")) { e.preventDefault(); toggleSearch(); } }
       else if (mod && key === "/") {
         e.preventDefault();
         if (!hiddenViews.has("chat")) {
-          if (activeView === "chat") {
+          if (isView(activeView, "chat")) {
             setView(lastContentView);
           } else {
             toggleChat();
@@ -372,7 +381,7 @@ export default function Home() {
 
   // Auto-activate Cairn Agent tab and auto-open right panel drawer if we switch to Agent view
   useEffect(() => {
-    if (activeView === "agent") {
+    if (isView(activeView, "agent")) {
       const state = useCairnStore.getState();
       if (!state.chatOpen) {
         state.toggleChat();

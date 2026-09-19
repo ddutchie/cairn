@@ -17,6 +17,7 @@ import {
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
+import { Tabs } from "@/components/ui/tabs";
 import { GeneralSettings } from "./GeneralSettings";
 import { AISettings } from "./AISettings";
 import { TagsSettings } from "./TagsSettings";
@@ -148,22 +149,32 @@ export function SettingsView() {
           )}
           {section === "ai" && (
             <div className="space-y-6">
-              <div role="tablist" aria-label="AI subsections" className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
-                <button role="tab" aria-selected={aiSubtab === "chat"} onClick={() => setAiSubtab("chat")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "chat" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Chat</button>
-                <button role="tab" aria-selected={aiSubtab === "agents"} onClick={() => setAiSubtab("agents")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "agents" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Coding Agents</button>
-                <button role="tab" aria-selected={aiSubtab === "mcp"} onClick={() => setAiSubtab("mcp")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", aiSubtab === "mcp" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>MCP</button>
-              </div>
+              <Tabs
+                ariaLabel="AI subsections"
+                value={aiSubtab}
+                onChange={setAiSubtab}
+                options={[
+                  { value: "chat", label: "Chat" },
+                  { value: "agents", label: "Coding Agents" },
+                  { value: "mcp", label: "MCP" },
+                ]}
+              />
               {aiSubtab === "chat" ? <AISettings /> : aiSubtab === "agents" ? <AgentSettings /> : <McpSettingsTab />}
             </div>
           )}
           {section === "embeddings" && <EmbeddingsSettings />}
           {section === "extensions" && (
             <div className="space-y-6">
-              <div role="tablist" aria-label="Extensions subsections" className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
-                <button role="tab" aria-selected={extensionsSubtab === "tools"} onClick={() => setExtensionsSubtab("tools")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5", extensionsSubtab === "tools" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Wrench size={12} /> Tools</button>
-                <button role="tab" aria-selected={extensionsSubtab === "commands"} onClick={() => setExtensionsSubtab("commands")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5", extensionsSubtab === "commands" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><SlashSquare size={12} /> Commands</button>
-                <button role="tab" aria-selected={extensionsSubtab === "plugins"} onClick={() => setExtensionsSubtab("plugins")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5", extensionsSubtab === "plugins" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Puzzle size={12} /> Plugins</button>
-              </div>
+              <Tabs
+                ariaLabel="Extensions subsections"
+                value={extensionsSubtab}
+                onChange={setExtensionsSubtab}
+                options={[
+                  { value: "tools", label: "Tools", icon: <Wrench size={12} /> },
+                  { value: "commands", label: "Commands", icon: <SlashSquare size={12} /> },
+                  { value: "plugins", label: "Plugins", icon: <Puzzle size={12} /> },
+                ]}
+              />
               {extensionsSubtab === "tools" && <ToolsSettings />}
               {extensionsSubtab === "commands" && <CommandsSettings />}
               {extensionsSubtab === "plugins" && <PluginsSettings />}
@@ -174,11 +185,16 @@ export function SettingsView() {
           {section === "sync" && <SyncSettings />}
           {section === "system" && (
             <div className="space-y-6">
-              <div role="tablist" aria-label="System subsections" className="flex gap-1 p-1 bg-[var(--surface-2)] rounded-lg w-fit">
-                <button role="tab" aria-selected={systemSubtab === "shortcuts"} onClick={() => setSystemSubtab("shortcuts")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", systemSubtab === "shortcuts" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Shortcuts</button>
-                <button role="tab" aria-selected={systemSubtab === "data"} onClick={() => setSystemSubtab("data")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", systemSubtab === "data" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>Data</button>
-                <button role="tab" aria-selected={systemSubtab === "about"} onClick={() => setSystemSubtab("about")} className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-colors", systemSubtab === "about" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}>About</button>
-              </div>
+              <Tabs
+                ariaLabel="System subsections"
+                value={systemSubtab}
+                onChange={setSystemSubtab}
+                options={[
+                  { value: "shortcuts", label: "Shortcuts" },
+                  { value: "data", label: "Data" },
+                  { value: "about", label: "About" },
+                ]}
+              />
               {systemSubtab === "shortcuts" && <ShortcutsSettings />}
               {systemSubtab === "data" && (
                 <DataSettings

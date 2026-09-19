@@ -39,7 +39,7 @@ export function ProjectHealthRadar({
   });
 
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 pl-6 md:p-[18px] md:pl-7" style={{ boxShadow: "0 8px 24px rgba(0,0,0,.28)" }}>
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 pl-6 md:p-[18px] md:pl-7" style={{ boxShadow: "0 8px 24px color-mix(in srgb, black 28%, transparent)" }}>
       <div className="flex items-center gap-2 mb-3">
         <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-[0.625rem]">⬢</span>
         <h2 className="text-[0.813rem] font-semibold tracking-tight">Project health</h2>
@@ -161,7 +161,7 @@ export function useRadarAxes(metrics: {
     { key: "completion", label: "Completion", short: "Done", value: completion, color: "var(--success)" },
     { key: "momentum", label: "Momentum", short: "Mome", value: momentum, color: "var(--accent)" },
     { key: "focus", label: "Focus", short: "Focus", value: focus, color: "var(--info)" },
-    { key: "knowledge", label: "Knowledge", short: "Know", value: knowledge, color: "#a78bfa" },
+    { key: "knowledge", label: "Knowledge", short: "Know", value: knowledge, color: "var(--node-project)" },
     { key: "flow", label: "Flow", short: "Flow", value: flow, color: "var(--warning)" },
     { key: "calm", label: "Calm", short: "Calm", value: calm, color: "var(--success)" },
   ];

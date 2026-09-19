@@ -18,7 +18,8 @@
  */
 
 import { useState, useEffect } from "react";
-import { Bell, Loader2 } from "lucide-react";
+import { Bell } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -86,7 +87,7 @@ export function TitleBar() {
               className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
               aria-label="Automations running"
             >
-              <Loader2 size={14} className="animate-spin" />
+              <Spinner size={14} />
             </button>
           </Tooltip>
         )}

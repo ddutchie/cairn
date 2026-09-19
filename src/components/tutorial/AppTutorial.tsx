@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronLeft, ChevronRight, X, Sparkles } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { Button } from "@/components/ui/button";
+import { isView } from "@/lib/views";
 
 interface TutorialStep {
   selector: string;
@@ -175,7 +177,7 @@ export function AppTutorial() {
   useEffect(() => {
     if (!tutorialActive || !currentStep) return;
 
-    if (activeView !== currentStep.view) {
+    if (!isView(activeView, currentStep.view)) {
       setView(currentStep.view);
     }
   }, [tutorialActive, tutorialStepIndex, activeView, setView, currentStep]);
@@ -374,13 +376,10 @@ export function AppTutorial() {
                 <span>Back</span>
               </button>
             )}
-            <button
-              onClick={handleNext}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[0.714rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:bg-[var(--accent-hover)] transition-colors cursor-pointer"
-            >
+            <Button variant="accent" size="sm" onClick={handleNext}>
               <span>{tutorialStepIndex === TUTORIAL_STEPS.length - 1 ? "Finish" : "Next"}</span>
               <ChevronRight size={11} />
-            </button>
+            </Button>
           </div>
         </div>
       </div>

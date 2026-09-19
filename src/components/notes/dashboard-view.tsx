@@ -299,7 +299,9 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
             </div>
             <div className="flex items-center gap-1">
               {aiEnabled && (
-                <button
+                <Button
+                  variant="danger"
+                  size="xs"
                   onClick={() => {
                     const errorSummary = errors.map((e) =>
                       `- ${e.message}${e.source ? ` (${e.source.split("/").pop()}:${e.line}:${e.col})` : ""}`
@@ -308,11 +310,10 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
                     window.dispatchEvent(CairnEvents.openChat(prefill));
                     setErrors([]);
                   }}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[0.786rem] text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
                 >
                   <Wand2 size={11} />
                   Fix with AI
-                </button>
+                </Button>
               )}
               <button
                 onClick={() => setErrors([])}
@@ -373,13 +374,10 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
                   <X size={11} />
                   Cancel
                 </button>
-                <button
-                  onClick={handleSaveHtml}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
-                >
+                <Button variant="accent" size="sm" onClick={handleSaveHtml}>
                   <Save size={11} />
                   Save & reload
-                </button>
+                </Button>
               </div>
             </div>
             {/* CodeMirror HTML editor */}

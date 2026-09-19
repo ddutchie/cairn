@@ -2,9 +2,10 @@
 
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import {
-  ChevronDown, RefreshCw, Check, Pencil, Star, Search, TriangleAlert,
+  ChevronDown, Check, Pencil, Star, Search, TriangleAlert,
   Type, Image as ImageIcon, FileText, Video, AudioLines,
 } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -272,7 +273,7 @@ export function ModelPicker({
             onSelect={(e) => { e.preventDefault(); onRefresh(); }}
             className="text-[var(--text-secondary)]"
           >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+            <RefreshSpin size={12} spinning={loading} />
             {loading ? "Refreshing…" : "Refresh models"}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setCustom(true)}>

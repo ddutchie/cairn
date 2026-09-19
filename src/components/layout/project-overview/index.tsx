@@ -37,6 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { sortTagsByUsage, capTags } from "@/lib/tag-utils";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
@@ -453,7 +454,7 @@ export function ProjectOverview() {
                 className="w-[52px] h-[52px] rounded-xl flex items-center justify-center flex-shrink-0 border border-[var(--border)]"
                 style={{
                   background: "linear-gradient(180deg, var(--surface-2), var(--surface-3))",
-                  boxShadow: "0 4px 12px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.06)",
+                  boxShadow: "0 4px 12px color-mix(in srgb, black 18%, transparent), inset 0 1px 0 color-mix(in srgb, white 6%, transparent)",
                   color: "var(--text-secondary)",
                 }}
                 aria-hidden="true"
@@ -536,7 +537,7 @@ export function ProjectOverview() {
               onMouseMove={tiltInstrument.onMove}
               onMouseLeave={tiltInstrument.onLeave}
               className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full lg:w-[360px] flex-shrink-0"
-              style={{ willChange: tiltInstrument.active ? "transform" : undefined, boxShadow: tiltInstrument.active ? "0 14px 36px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.06)" : "0 6px 20px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.04)", ...tiltInstrument.transform }}
+              style={{ willChange: tiltInstrument.active ? "transform" : undefined, boxShadow: tiltInstrument.active ? "0 14px 36px color-mix(in srgb, black 22%, transparent), inset 0 1px 0 color-mix(in srgb, white 6%, transparent)" : "0 6px 20px color-mix(in srgb, black 16%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)", ...tiltInstrument.transform }}
             >
               <div
                 aria-hidden="true"
@@ -568,7 +569,7 @@ export function ProjectOverview() {
                   className="w-[74px] h-[74px] rounded-full grid place-items-center flex-shrink-0 border border-[var(--border)] relative"
                   style={{
                     background: "radial-gradient(120px 80px at 30% 30%, var(--surface-3), var(--surface-2))",
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 4px 10px rgba(0,0,0,.22)",
+                    boxShadow: "inset 0 1px 0 color-mix(in srgb, white 6%, transparent), 0 4px 10px color-mix(in srgb, black 22%, transparent)",
                   }}
                   aria-hidden="true"
                 >
@@ -646,7 +647,7 @@ export function ProjectOverview() {
             ref={focusBarRef}
             className={cn(
               "sticky top-2 z-[5] flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] mb-4 flex-wrap transition-shadow",
-              isFocusPinned && "shadow-[0_8px_24px_rgba(0,0,0,.32),inset_0_1px_0_rgba(255,255,255,.04)]"
+              isFocusPinned && "shadow-[0_8px_24px_color-mix(in_srgb,black_32%,transparent),inset_0_1px_0_color-mix(in_srgb,white_4%,transparent)]"
             )}
             style={{ backdropFilter: "blur(8px)" }}
             role="group"
@@ -694,7 +695,7 @@ export function ProjectOverview() {
 
           <div id={overviewContentId}>
           {/* ── KPI strip — inline stats, not 4 template cards — shares one hairline container ── */}
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden divide-y sm:divide-y-0 sm:divide-x divide-[var(--border)] flex flex-col sm:flex-row mb-4" style={{ boxShadow: "0 4px 14px rgba(0,0,0,.18)" }}>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden divide-y sm:divide-y-0 sm:divide-x divide-[var(--border)] flex flex-col sm:flex-row mb-4" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
             <div className="flex-1 p-3.5 relative">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--danger)]" />
               <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">Needs attention</div>
@@ -780,7 +781,7 @@ export function ProjectOverview() {
                         : tone === "today"
                           ? "border-[var(--warning)]/25 hover:border-[var(--warning)]/40"
                           : "border-[var(--border)] hover:border-[var(--border)]",
-                      "bg-[var(--surface)] hover:translate-y-[-1px] hover:shadow-[0_10px_22px_rgba(0,0,0,.32)]",
+                      "bg-[var(--surface)] hover:translate-y-[-1px] hover:shadow-[0_10px_22px_color-mix(in_srgb,black_32%,transparent)]",
                     )}
                     style={{
                       background:
@@ -838,7 +839,7 @@ export function ProjectOverview() {
               onMouseMove={tiltFlow.onMove}
               onMouseLeave={tiltFlow.onLeave}
               className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]"
-              style={{ willChange: tiltFlow.active ? "transform" : undefined, boxShadow: tiltFlow.active ? "0 14px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04)" : "0 8px 24px rgba(0,0,0,.14)", ...tiltFlow.transform }}
+              style={{ willChange: tiltFlow.active ? "transform" : undefined, boxShadow: tiltFlow.active ? "0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)" : "0 8px 24px color-mix(in srgb, black 14%, transparent)", ...tiltFlow.transform }}
             >
               <div className="flex items-center gap-3 mb-3">
                 <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
@@ -852,7 +853,7 @@ export function ProjectOverview() {
                 </h2>
               </div>
               {flowColumns.length === 0 ? (
-                <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">No columns yet</p>
+                <EmptyState title="No columns yet" className="py-6" />
               ) : (
                 <div role="list" aria-label="Tasks by column">
                   {flowColumns.map((col, idx) => {
@@ -916,7 +917,7 @@ export function ProjectOverview() {
               onMouseMove={tiltPriority.onMove}
               onMouseLeave={tiltPriority.onLeave}
               className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]"
-              style={{ willChange: tiltPriority.active ? "transform" : undefined, boxShadow: tiltPriority.active ? "0 14px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04)" : "0 8px 24px rgba(0,0,0,.14)", ...tiltPriority.transform }}
+              style={{ willChange: tiltPriority.active ? "transform" : undefined, boxShadow: tiltPriority.active ? "0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)" : "0 8px 24px color-mix(in srgb, black 14%, transparent)", ...tiltPriority.transform }}
             >
               <div className="flex items-center gap-3 mb-3">
                 <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
@@ -945,7 +946,7 @@ export function ProjectOverview() {
                       style={{
                         background: bg,
                         borderColor: active ? (color === "var(--text-tertiary)" ? "var(--border)" : color) : "var(--border)",
-                        boxShadow: active && color !== "var(--text-tertiary)" ? `inset 0 1px 0 rgba(255,255,255,.06)` : undefined,
+                        boxShadow: active && color !== "var(--text-tertiary)" ? `inset 0 1px 0 color-mix(in srgb, white 6%, transparent)` : undefined,
                       }}
                     >
                       <div className="text-[1.35rem] font-bold leading-none tracking-tight" style={{ color: active ? color : "var(--text-tertiary)" }}>
@@ -981,7 +982,7 @@ export function ProjectOverview() {
             onMouseMove={tiltRadar.onMove}
             onMouseLeave={tiltRadar.onLeave}
             className="mb-3.5"
-            style={{ willChange: tiltRadar.active ? "transform" : undefined, ...tiltRadar.transform, filter: tiltRadar.active ? "drop-shadow(0 12px 24px rgba(0,0,0,.16))" : undefined }}
+            style={{ willChange: tiltRadar.active ? "transform" : undefined, ...tiltRadar.transform, filter: tiltRadar.active ? "drop-shadow(0 12px 24px color-mix(in srgb, black 16%, transparent))" : undefined }}
           >
             <ProjectHealthRadar axes={radarAxes} size={280} />
           </div>
@@ -993,7 +994,7 @@ export function ProjectOverview() {
               onMouseMove={tiltNotes.onMove}
               onMouseLeave={tiltNotes.onLeave}
               className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]"
-              style={{ willChange: tiltNotes.active ? "transform" : undefined, boxShadow: tiltNotes.active ? "0 12px 28px rgba(0,0,0,.18)" : "0 4px 14px rgba(0,0,0,.12)", ...tiltNotes.transform }}
+              style={{ willChange: tiltNotes.active ? "transform" : undefined, boxShadow: tiltNotes.active ? "0 12px 28px color-mix(in srgb, black 18%, transparent)" : "0 4px 14px color-mix(in srgb, black 12%, transparent)", ...tiltNotes.transform }}
             >
               <div className="flex items-center justify-between gap-3 mb-4">
                 <h2 className="text-[0.813rem] font-semibold flex items-center gap-2">
@@ -1010,7 +1011,7 @@ export function ProjectOverview() {
                 </button>
               </div>
               {notes.length === 0 ? (
-                <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">No notes yet — capture ideas to see them here</p>
+                <EmptyState title="No notes yet — capture ideas to see them here" className="py-6" />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
@@ -1065,7 +1066,7 @@ export function ProjectOverview() {
           </div>
           {/* ── activity log — full width, trace LLM/MCP changes ── */}
           <div className="mb-3.5">
-            <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px rgba(0,0,0,.18)", borderLeft: "2px solid color-mix(in srgb, var(--accent) 60%, transparent)" }}>
+            <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)", borderLeft: "2px solid color-mix(in srgb, var(--accent) 60%, transparent)" }}>
               <div className="flex items-center justify-between gap-3 mb-3">
                 <h2 className="text-[0.813rem] font-semibold flex items-center gap-2">
                   <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
@@ -1078,7 +1079,7 @@ export function ProjectOverview() {
                 </span>
               </div>
               {activityByDay.length === 0 ? (
-                <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">No activity yet — LLM and MCP changes will appear here</p>
+                <EmptyState title="No activity yet — LLM and MCP changes will appear here" className="py-6" />
               ) : (
                 <div className="max-h-[320px] overflow-y-auto pr-1 -mr-1">
                   <RecentActivityFeed activityByDay={activityByDay} />
@@ -1097,9 +1098,9 @@ export function ProjectOverview() {
               action={{ label: "All automations", onClick: () => setView("automations") }}
               collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">{recentProjectRuns.length} runs · last 5</span>}
             >
-              <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px rgba(0,0,0,.18)" }}>
+              <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
                 {recentProjectRuns.length === 0 ? (
-                  <p className="text-sm text-[var(--text-tertiary)] py-4 text-center">No runs yet</p>
+                  <EmptyState title="No runs yet" className="py-4" />
                 ) : (
                   <RecentAutomationRunsFeed runs={recentProjectRuns.slice(0, 5)} setView={setView} />
                 )}
@@ -1115,7 +1116,7 @@ export function ProjectOverview() {
               action={{ label: "Open sessions", onClick: () => { if (activeChatThreadId) openSession(activeChatThreadId, "chat", "center"); else setSessionPresentation("center"); setView("chat"); } }}
               collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">Resume where you left</span>}
             >
-              <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px rgba(0,0,0,.18)" }}>
+              <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
                 <SessionBrowser variant="preview" limit={4} activeSessionId={activeSessionId} />
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   <Button variant="default" size="sm" className="w-full" onClick={() => setView("chat")}>
@@ -1171,7 +1172,7 @@ export function ProjectOverview() {
                       : `Ask Cairn about ${project.name} — notes, tasks, or vault`;
           return (
             <div ref={bottomBarRef} className="absolute bottom-0 left-0 right-0 p-2 md:p-3 pointer-events-none z-10">
-              <div className="max-w-[1240px] mx-auto pointer-events-auto rounded-xl border border-[var(--border)] overflow-hidden supports-[backdrop-filter]:bg-[color-mix(in_srgb,var(--surface)_78%,transparent)] bg-[var(--surface)] backdrop-blur-xl" style={{ boxShadow: "0 12px 32px rgba(0,0,0,.38), 0 1px 4px rgba(0,0,0,.2)" }}>
+              <div className="max-w-[1240px] mx-auto pointer-events-auto rounded-xl border border-[var(--border)] overflow-hidden supports-[backdrop-filter]:bg-[color-mix(in_srgb,var(--surface)_78%,transparent)] bg-[var(--surface)] backdrop-blur-xl" style={{ boxShadow: "0 12px 32px color-mix(in srgb, black 38%, transparent), 0 1px 4px color-mix(in srgb, black 20%, transparent)" }}>
                 <div className="flex items-center gap-2 px-2.5 pt-2.5">
                   <div className="flex items-center gap-0.5 p-0.5 rounded-full bg-[var(--surface-2)] border border-[var(--border)]">
                     <button

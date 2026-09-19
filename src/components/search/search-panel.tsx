@@ -5,6 +5,7 @@ import { Search, SearchX, FileText, Kanban, X, ArrowRight, Sparkles } from "luci
 import { cn } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { Tooltip } from "@/components/ui/tooltip";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useCairnStore, type SearchResult } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
@@ -246,13 +247,13 @@ export function SearchPanel() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4">
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-[10px]" onClick={toggleSearch} aria-hidden="true" />
+      <div className="absolute inset-0 bg-[color-mix(in_srgb,black_55%,transparent)] backdrop-blur-[10px]" onClick={toggleSearch} aria-hidden="true" />
 
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Search notes and tasks"
-        className="relative w-full max-w-[640px] bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-[0_24px_64px_rgba(0,0,0,.55),inset_0_1px_0_rgba(255,255,255,.04)] overflow-hidden animate-slide-in-up"
+        className="relative w-full max-w-[640px] bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-[0_24px_64px_color-mix(in_srgb,black_55%,transparent),inset_0_1px_0_color-mix(in_srgb,white_4%,transparent)] overflow-hidden animate-slide-in-up"
       >
         <div className="flex items-center gap-3 px-4 h-[52px] border-b border-[var(--border)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_60%,transparent),transparent)]">
           <span className="w-8 h-8 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] flex-shrink-0">
@@ -333,13 +334,12 @@ export function SearchPanel() {
 
         <div className="max-h-[420px] overflow-y-auto">
           {query && filtered.length === 0 && (
-            <div className="px-6 py-10 text-center flex flex-col items-center gap-3">
-              <span className="w-10 h-10 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)]">
-                <SearchX size={16} />
-              </span>
-              <p className="text-sm font-medium text-[var(--text-secondary)]">No results for “{query}”</p>
-              <p className="text-xs text-[var(--text-tertiary)]">Try a different term or switch project filter</p>
-            </div>
+            <EmptyState
+              icon={SearchX}
+              title={`No results for “${query}”`}
+              description="Try a different term or switch project filter"
+              className="py-10"
+            />
           )}
 
           {filtered.length > 0 && (

@@ -3,7 +3,9 @@
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
-import { Download, Plus, Trash2, Sparkles, X, FolderOpen, RefreshCw, Server } from "lucide-react";
+import { Download, Plus, Trash2, Sparkles, X, FolderOpen, Server } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
+import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
@@ -164,7 +166,7 @@ function ChatPreviewSection() {
           disabled={loading}
           className={cn(loading && "opacity-50")}
         >
-          <RefreshCw size={11} className={cn(loading && "animate-spin")} />
+          <RefreshSpin size={11} spinning={loading} />
           Refresh
         </Button>
       </div>
@@ -209,7 +211,7 @@ function ChatPreviewSection() {
 
       {loading && (
         <div className="py-8 text-center">
-          <RefreshCw size={16} className="mx-auto animate-spin text-[var(--text-tertiary)] opacity-50" />
+          <RefreshSpin size={16} className="mx-auto text-[var(--text-tertiary)] opacity-50" />
         </div>
       )}
     </SettingsGroup>
@@ -528,9 +530,9 @@ export function AISettings() {
                         !isActive && "hover:bg-[var(--surface-2)]",
                       )}
                     >
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ background: p.brandColor ?? "var(--text-tertiary)" }}
+                      <StatusDot
+                        size="md"
+                        color={p.brandColor ?? "var(--text-tertiary)"}
                       />
                       <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 truncate">{p.name}</span>
                       {p.source === "custom" && (
@@ -597,7 +599,9 @@ export function AISettings() {
               >
                 Cancel
               </button>
-              <button
+              <Button
+                variant="accent"
+                size="sm"
                 disabled={!personaName.trim() || !personaPrompt.trim()}
                 onClick={() => {
                   const id = createCustomPersonality({
@@ -611,10 +615,9 @@ export function AISettings() {
                   setPersonaDescription("");
                   setPersonaPrompt("");
                 }}
-                className="px-2.5 py-1.5 text-[0.714rem] rounded-md bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
               >
                 <Sparkles size={12} /> Create
-              </button>
+              </Button>
             </div>
           </div>
         )}

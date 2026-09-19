@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sun, Moon, Monitor, CheckCircle, Loader2 } from "lucide-react";
+import { Sun, Moon, Monitor, CheckCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCairnStore, type Theme, type FontScale, type FontFamilyId } from "@/store";
@@ -145,7 +146,7 @@ function ChangeWorkspaceRow({ selectAndInitWorkspace }: { selectAndInitWorkspace
         {done ? (
           <><CheckCircle size={12} className="text-[var(--success)]" /> Changed</>
         ) : changing ? (
-          <><Loader2 size={12} className="animate-spin" /> Selecting…</>
+          <><Spinner size={12} /> Selecting…</>
         ) : (
           <>Change folder</>
         )}

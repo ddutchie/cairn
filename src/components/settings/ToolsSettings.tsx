@@ -5,6 +5,7 @@ import { Plus, Server, Globe, Sparkles, Download } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { id } from "@/lib/utils";
 import type { McpServerConfig, CustomServiceConfig } from "@/types";
 import { SettingsGroup } from "./shared";
@@ -201,9 +202,7 @@ export function ToolsSettings() {
         {addingMcp && <McpForm dev={isDev} onSave={handleSaveMcp} onCancel={() => setAddingMcp(false)} />}
 
         {mcpServers.length === 0 && !addingMcp && (
-          <p className="text-xs text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
-            No MCP servers configured yet.
-          </p>
+          <EmptyState icon={Server} title="No MCP servers configured yet." />
         )}
 
         {mcpServers.map((server) =>
@@ -274,9 +273,7 @@ export function ToolsSettings() {
         {addingSvc && <ServiceForm onSave={handleSaveSvc} onCancel={() => setAddingSvc(false)} />}
 
         {customServices.length === 0 && !addingSvc && (
-          <p className="text-xs text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
-            No custom services configured yet.
-          </p>
+          <EmptyState icon={Globe} title="No custom services configured yet." />
         )}
 
         {customServices.map((svc) =>

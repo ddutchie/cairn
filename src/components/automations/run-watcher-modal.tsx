@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Bot, CheckCircle2, Loader2, TerminalSquare, User, XCircle } from "lucide-react";
+import { Bot, CheckCircle2, TerminalSquare, User, XCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -89,7 +90,7 @@ export function RunWatcherModal({
           <span className="flex items-center gap-2">
             <TerminalSquare size={13} className="text-[var(--accent)]" />
             <span className="truncate">Watching: {automation.name}</span>
-            {isLive && <Loader2 size={11} className="animate-spin text-[var(--accent)]" />}
+            {isLive && <Spinner size={11} tone="accent" />}
           </span>
         ) : ""
       }
@@ -120,7 +121,7 @@ export function RunWatcherModal({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="font-mono text-[0.714rem] text-[var(--text-secondary)]">{t.label}</span>
-                {t.status === "running" && <Loader2 size={10} className="animate-spin text-[var(--accent)]" />}
+                {t.status === "running" && <Spinner size={10} tone="accent" />}
                 {t.status === "done" && <CheckCircle2 size={10} className="text-[var(--ok)]" />}
                 {t.status === "error" && <XCircle size={10} className="text-[var(--danger)]" />}
               </div>

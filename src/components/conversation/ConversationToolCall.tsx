@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle, ChevronDown, ChevronRight, Globe2, Loader2, ShieldAlert, XCircle } from "lucide-react";
+import { CheckCircle, ChevronDown, ChevronRight, Globe2, ShieldAlert, XCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { cn, prettifyToolLabel } from "@/lib/utils";
 import { CairnRefChip, ExternalRefChip, extractCairnRef } from "@/components/shared/cairn-ref-chip";
 import { ConnectorToolCard, type ConnectorMeta } from "@/components/shared/ConnectorToolCard";
@@ -77,7 +78,7 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
       <div className="mt-2 flex items-center justify-end gap-1.5 min-h-[28px]">
         {pending ? (
           <span className="flex items-center gap-1.5 text-[0.643rem] text-[var(--text-tertiary)]">
-            <Loader2 size={10} className="animate-spin" />
+            <Spinner size={10} />
             {pending === "deny" ? "Denied" : pending === "always" ? "Allowed — remembered for this workspace" : pending === "command" ? "Allowed — remembered for this command" : "Allowed — running…"}
           </span>
         ) : (
@@ -85,7 +86,7 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
             <button data-testid="approval-deny" onClick={() => respond(false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded">Deny</button>
             {command && <button data-testid="approval-allow-command" onClick={() => respond(true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow command</button>}
             {showAlwaysAllow && <button data-testid="approval-allow-always" onClick={() => respond(true, "workspace")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow</button>}
-            <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
+            <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
           </>
         )}
       </div>
@@ -171,7 +172,7 @@ export function ConversationToolCall({ toolCall, sessionId, connectors }: Conver
     })} />;
   }
   if (toolCall.confirmRequired) return <ApprovalCard toolCall={toolCall} sessionId={sessionId} connectors={connectors} />;
-  if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Loader2 size={9} className="text-[var(--accent)] animate-spin" /><span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;
+  if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Spinner size={9} tone="accent" /><span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;
   if (toolCall.name === "get_user_writing_style" && writingStyleNeedsSetup(toolCall.output)) return <WritingStylePromptChip output={toolCall.output} />;
   const ref = toolCall.cairnRef ?? extractCairnRef(toolCall.name, toolCall.output);
   if (ref) return <CairnRefChip toolName={toolCall.name} cairnRef={ref} ok={toolCall.ok} />;

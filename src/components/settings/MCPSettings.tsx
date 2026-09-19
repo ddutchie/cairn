@@ -7,6 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
+import { StatusDot } from "@/components/ui/status-dot";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
 import { SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
 
@@ -174,10 +175,7 @@ export function MCPSyncStatus() {
         ? "bg-[var(--success)]/5 border-[var(--success)]/20 text-[var(--success)]"
         : "bg-[var(--warning)]/5 border-[var(--warning)]/20 text-[var(--warning)]"
     )}>
-      <span className={cn(
-        "w-1.5 h-1.5 rounded-full flex-shrink-0",
-        hasData ? "bg-[var(--success)] animate-pulse" : "bg-[var(--warning)]"
-      )} />
+      <StatusDot color={hasData ? "var(--success)" : "var(--warning)"} pulse={hasData} />
       {hasData ? (
         <span>
           SQLite — {counts.workspaces}W · {counts.projects}P · {counts.notes}N · {counts.cards}C
