@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Tooltip } from "@/components/ui/tooltip";
+import { EmptyState } from "@/components/ui/empty-state";
 import { MicroLabel } from "@/components/ui/labels";
 import {
   type GitStatusData,
@@ -683,13 +684,12 @@ export function GitView({ cwd }: GitViewProps) {
             <RefreshSpin size={16} className="text-[var(--text-tertiary)]" />
           </div>
         ) : !hasChanges ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <GitCommit size={24} className="text-[var(--text-tertiary)] opacity-30 mb-2" />
-            <p className="text-xs text-[var(--text-tertiary)]">No changes in working tree</p>
-            <p className="text-[0.65rem] text-[var(--text-tertiary)] opacity-60 mt-1">
-              Edit files in the codebase to see changes here
-            </p>
-          </div>
+          <EmptyState
+            icon={GitCommit}
+            title="No changes in working tree"
+            description="Edit files in the codebase to see changes here."
+            className="py-16"
+          />
         ) : (
           <div className="py-2">
             {/* Staged */}

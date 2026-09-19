@@ -7,8 +7,9 @@ import { cn } from "@/lib/utils";
 interface EmptyStateProps {
   /** Optional icon rendered in a muted circle above the copy. */
   icon?: LucideIcon;
-  /** Accent-tinted icon circle (e.g. agent/product surfaces) vs default muted. */
-  iconTone?: "muted" | "accent";
+  /** Accent-tinted icon circle (e.g. agent/product surfaces), danger for
+   *  error states, muted default. */
+  iconTone?: "muted" | "accent" | "danger";
   title?: ReactNode;
   description?: ReactNode;
   /** CTA rendered below the copy (e.g. `<Button size="sm">…</Button>`). */
@@ -54,13 +55,21 @@ export function EmptyState({
               "w-10 h-10 rounded-full flex items-center justify-center",
               iconTone === "accent"
                 ? "bg-[var(--accent-dim)] border border-[color-mix(in_srgb,var(--accent)_20%,transparent)]"
-                : "bg-[var(--surface-2)]"
+                : iconTone === "danger"
+                  ? "bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] border border-[color-mix(in_srgb,var(--danger)_25%,transparent)]"
+                  : "bg-[var(--surface-2)]"
             )}
           >
             <Icon
               size={18}
               aria-hidden="true"
-              className={iconTone === "accent" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"}
+              className={
+                iconTone === "accent"
+                  ? "text-[var(--accent)]"
+                  : iconTone === "danger"
+                    ? "text-[var(--danger)]"
+                    : "text-[var(--text-tertiary)]"
+              }
             />
           </div>
         )}

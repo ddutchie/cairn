@@ -12,6 +12,21 @@ import { cn } from "@/lib/utils";
 export const CATALOG_SEARCH_INPUT_CLS =
   "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm pl-8 pr-3 py-2 focus:outline-none";
 
+/**
+ * True for safe external link targets. Registry entries are untrusted input —
+ * a malicious catalog could carry a `javascript:` homepage/apiKeyUrl, which
+ * would execute in the renderer context on click. Only http(s) links render.
+ */
+export function isSafeExternalUrl(url: string | undefined | null): boolean {
+  if (!url) return false;
+  try {
+    const scheme = new URL(url).protocol;
+    return scheme === "http:" || scheme === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** Category pill used by every registry browser (plus browse-automations). */
 export function TagChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (

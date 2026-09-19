@@ -8,7 +8,7 @@ import {
   KeyRound,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { CatalogBrowserShell } from "@/components/ui/catalog-browser-shell";
+import { CatalogBrowserShell, isSafeExternalUrl } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -255,7 +255,7 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
                   <div className="border-t border-[var(--border)] bg-[color-mix(in_srgb,var(--accent)_5%,transparent)] px-3 py-3 rounded-b-lg">
                     <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-2">
                       Stored securely in your OS keychain — never written to the app database or sent to the model.
-                      {def.apiKeyUrl && (
+                      {def.apiKeyUrl && isSafeExternalUrl(def.apiKeyUrl) && (
                         <>
                           {" "}
                           <a

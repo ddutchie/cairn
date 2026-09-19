@@ -12,6 +12,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { PenLine, Sparkles, Trash2, RefreshCw } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { UserStyleWizardModal } from "./UserStyleWizardModal";
@@ -86,12 +87,9 @@ export function UserStyleSettings() {
             </SettingsRow>
             <SettingsRow label="Get started">
               <div className="flex items-center gap-2 flex-wrap justify-end">
-                <button
-                  onClick={() => setWizardMode("guided")}
-                  className="px-3 py-1.5 text-[0.714rem] rounded-md bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90 transition-opacity flex items-center gap-1.5 cursor-pointer"
-                >
+                <Button variant="accent" size="sm" onClick={() => setWizardMode("guided")}>
                   <Sparkles size={12} /> Set up your writing style
-                </button>
+                </Button>
                 <button
                   onClick={() => setWizardMode("paste")}
                   className="px-3 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"

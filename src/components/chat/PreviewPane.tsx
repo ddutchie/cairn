@@ -8,6 +8,7 @@ import { NoteEditor } from "@/components/notes/note-editor";
 import { CardDetailPanel } from "@/components/kanban/card-detail-panel";
 import { revealNote, revealCard } from "@/lib/events";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { ContextPanel } from "@/types";
 
 const MIN_PREVIEW_WIDTH = 360;
@@ -215,18 +216,14 @@ export function PreviewPane() {
               <NoteEditor note={note} />
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center flex-1 p-6 text-center text-xs text-[var(--text-tertiary)]">
-              Note not found or deleted.
-            </div>
+            <EmptyState title="Note not found or deleted." />
           )
         )}
         {type === "task" && (
           card ? (
             <CardDetailPanel key={card.id} cardId={card.id} onClose={() => setActivePreviewItem(null)} />
           ) : (
-            <div className="flex flex-col items-center justify-center flex-1 p-6 text-center text-xs text-[var(--text-tertiary)]">
-              Task card not found or deleted.
-            </div>
+            <EmptyState title="Task card not found or deleted." />
           )
         )}
         {type === "file" && <FileContextContent key={`file:${panel.path}`} path={panel.path} />}

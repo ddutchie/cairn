@@ -23,6 +23,8 @@ import {
 } from "@xyflow/react";
 
 import { Plus, LayoutDashboard, Lightbulb } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { IdeaNodeType, ResolvedIdeaFlow } from "@/types";
@@ -787,12 +789,12 @@ function IdeaFlowCanvas() {
 
         {nodes.length === 0 && (
           <Panel position="top-center">
-            <div className="flex flex-col items-center gap-2 px-6 py-5 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-sm pointer-events-none">
-              <Lightbulb size={20} className="text-[var(--text-tertiary)] opacity-50" />
-              <p className="text-sm font-medium text-[var(--text-secondary)]">Your Idea Flow is empty</p>
-              <p className="text-xs text-[var(--text-tertiary)] text-center max-w-xs">
-                Double-click the canvas or use &ldquo;Add node&rdquo; to start capturing ideas.
-              </p>
+            <div className="px-6 py-5 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-sm pointer-events-none">
+              <EmptyState
+                icon={Lightbulb}
+                title="Your Idea Flow is empty"
+                description="Double-click the canvas or use “Add node” to start capturing ideas."
+              />
             </div>
           </Panel>
         )}
@@ -808,13 +810,10 @@ function IdeaFlowCanvas() {
               Arrange
             </button>
           <div className="relative" ref={addMenuRef}>
-            <button
-              onClick={() => setShowAddMenu((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-hover)] transition-colors"
-            >
+            <Button variant="accent" size="sm" onClick={() => setShowAddMenu((v) => !v)}>
               <Plus size={13} />
               Add node
-            </button>
+            </Button>
 
             {showAddMenu && (
               <div className="absolute right-0 top-9 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl py-1 min-w-[160px]">

@@ -33,6 +33,7 @@ import {
 import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SectionLabel } from "@/components/ui/labels";
 import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
@@ -369,17 +370,17 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
           <RefreshSpin size={14} /> Loading index…
         </div>
       ) : isEmpty ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
-          <FileCode size={28} className="text-[var(--text-tertiary)]" />
-          <div className="text-sm text-[var(--text-secondary)] max-w-sm">
-            This codebase hasn&apos;t been indexed yet. Build the index to explore
-            its classes, functions and their call graph here.
-          </div>
-          <Button size="sm" onClick={reindex} disabled={reindexing} className="gap-1.5">
-            <RefreshSpin size={13} spinning={reindexing} />
-            {reindexing ? "Indexing…" : "Build index"}
-          </Button>
-        </div>
+        <EmptyState
+          icon={FileCode}
+          title="This codebase hasn't been indexed yet."
+          description="Build the index to explore its classes, functions and their call graph here."
+          action={
+            <Button size="sm" onClick={reindex} disabled={reindexing} className="gap-1.5">
+              <RefreshSpin size={13} spinning={reindexing} />
+              {reindexing ? "Indexing…" : "Build index"}
+            </Button>
+          }
+        />
       ) : overview && view === "map" ? (
         <ModuleMap cwd={cwd} />
       ) : overview && view === "matrix" ? (

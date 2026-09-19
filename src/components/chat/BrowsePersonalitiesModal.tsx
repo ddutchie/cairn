@@ -14,7 +14,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Check, Download, ExternalLink } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { CatalogBrowserShell } from "@/components/ui/catalog-browser-shell";
+import { CatalogBrowserShell, isSafeExternalUrl } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -167,7 +167,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
                         </span>
                       )}
                       <span className="text-[0.65rem] text-[var(--text-tertiary)]">by {entry.author}</span>
-                      {entry.homepage && (
+                      {entry.homepage && isSafeExternalUrl(entry.homepage) && (
                         <a
                           href={entry.homepage}
                           target="_blank"

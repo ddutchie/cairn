@@ -18,6 +18,7 @@ import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
 import { useShallow } from "zustand/react/shallow";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Tooltip } from "@/components/ui/tooltip";
 import { StatusDot } from "@/components/ui/status-dot";
 import { FileEditorInner } from "./FileEditorInner";
@@ -120,11 +121,12 @@ export function AgentEditor() {
   // ── Empty state ──────────────────────────────────────────────────────────
   if (openEditorFiles.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center p-8">
-        <FileCode size={28} className="text-[var(--text-tertiary)]" />
-        <p className="text-sm text-[var(--text-tertiary)]">Select a file to edit</p>
-        <p className="text-xs text-[var(--text-tertiary)]">Click a file in the tree on the left</p>
-      </div>
+      <EmptyState
+        icon={FileCode}
+        title="Select a file to edit"
+        description="Click a file in the tree on the left"
+        className="p-8"
+      />
     );
   }
 

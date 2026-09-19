@@ -11,6 +11,7 @@
 
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { FileTree } from "./FileTree";
@@ -157,23 +158,21 @@ export function AgentView() {
   if (!codeDirectory) {
     return (
       <div className="flex flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <div className="w-12 h-12 rounded-full bg-[var(--accent-dim)] border border-[color-mix(in_srgb,var(--accent)_20%,transparent)] flex items-center justify-center">
-            <Bot size={20} className="text-[var(--accent)]" />
-          </div>
-          <div className="flex flex-col gap-1.5 max-w-xs">
-            <p className="text-sm font-semibold text-[var(--text-primary)]">No codebase connected</p>
-            <p className="text-xs text-[var(--text-tertiary)]">
-              This project has no code directory. Set one to launch the coding agent workspace. Chat is available in the side panel.
-            </p>
-          </div>
-          {project && (
-            <Button variant="accent" size="sm" onClick={handlePickCodeDir}>
-              <FolderOpen size={12} />
-              Choose folder
-            </Button>
-          )}
-        </div>
+        <EmptyState
+          icon={Bot}
+          iconTone="accent"
+          title="No codebase connected"
+          description="This project has no code directory. Set one to launch the coding agent workspace. Chat is available in the side panel."
+          action={
+            project ? (
+              <Button variant="accent" size="sm" onClick={handlePickCodeDir}>
+                <FolderOpen size={12} />
+                Choose folder
+              </Button>
+            ) : undefined
+          }
+          className="p-6"
+        />
       </div>
     );
   }

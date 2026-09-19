@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { GitMerge, FileText, ArrowRight, Check, X, Pencil } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { fetchConflicts, resolveConflict, type ConflictCopy } from "@/lib/sync-client";
 import { merge3 } from "@/lib/merge3";
@@ -109,13 +110,12 @@ export function ConflictResolutionModal({ open, onClose }: { open: boolean; onCl
       {loading ? (
         <div className="py-12 text-center text-sm text-[var(--text-tertiary)]">Loading…</div>
       ) : conflicts.length === 0 ? (
-        <div className="py-12 flex flex-col items-center gap-2 text-center">
-          <GitMerge size={28} className="text-[var(--text-tertiary)] opacity-50" />
-          <p className="text-sm font-medium text-[var(--text-secondary)]">No conflicts to resolve</p>
-          <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-xs">
-            When the same note is edited on two devices offline, the diverging copy is kept here so nothing is lost.
-          </p>
-        </div>
+        <EmptyState
+          icon={GitMerge}
+          title="No conflicts to resolve"
+          description="When the same note is edited on two devices offline, the diverging copy is kept here so nothing is lost."
+          className="py-12"
+        />
       ) : (
         <div className="space-y-4">
           {conflicts.map((c) => {

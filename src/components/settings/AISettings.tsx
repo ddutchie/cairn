@@ -599,7 +599,9 @@ export function AISettings() {
               >
                 Cancel
               </button>
-              <button
+              <Button
+                variant="accent"
+                size="sm"
                 disabled={!personaName.trim() || !personaPrompt.trim()}
                 onClick={() => {
                   const id = createCustomPersonality({
@@ -613,10 +615,9 @@ export function AISettings() {
                   setPersonaDescription("");
                   setPersonaPrompt("");
                 }}
-                className="px-2.5 py-1.5 text-[0.714rem] rounded-md bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
               >
                 <Sparkles size={12} /> Create
-              </button>
+              </Button>
             </div>
           </div>
         )}

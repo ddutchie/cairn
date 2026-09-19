@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Button } from "@/components/ui/button";
 import { Download, X, AlertCircle } from "lucide-react";
 import type { ErrorToast } from "@/hooks/useIpcErrorToasts";
 
@@ -28,12 +29,9 @@ export function UpdateBanner({
           : <>Downloading Cairn <strong className="text-[var(--text-primary)]">v{version}</strong>…</>}
       </span>
       {downloaded && (
-        <button
-          onClick={onInstall}
-          className="px-3 py-1 rounded-md text-xs font-medium bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-hover)] transition-colors"
-        >
+        <Button variant="accent" size="sm" onClick={onInstall}>
           Restart &amp; install
-        </button>
+        </Button>
       )}
       <button onClick={onDismiss} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
         <X size={12} />

@@ -5,6 +5,7 @@ import {
   CheckCircle, Trash2, Star, Cpu, Activity, Download, Power,
 } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { useCairnStore } from "@/store";
@@ -375,13 +376,10 @@ export function EmbeddingsSettings() {
                           Cancel
                         </button>
                       ) : (
-                        <button
-                          onClick={() => void handleInstall(model.id)}
-                          className="text-xs px-2 py-1 rounded bg-[var(--accent)] text-[var(--surface)] hover:opacity-90 flex items-center gap-1"
-                        >
+                        <Button variant="accent" size="xs" onClick={() => void handleInstall(model.id)}>
                           <Download className="w-3 h-3" />
                           Install (~{fmtSize(model.sizeBytes)})
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </div>

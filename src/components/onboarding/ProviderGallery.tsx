@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { Check, Download, WifiOff } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { ProvidersFetchResult, RegistryProviderEntry } from "@/types";
@@ -177,14 +178,16 @@ export function ProviderGallery({ onPick }: Props) {
                         }}
                         autoComplete="off"
                       />
-                      <button
+                      <Button
                         type="button"
+                        variant="accent"
+                        size="xs"
+                        className="shrink-0"
                         disabled={installing !== null || !keyValue.trim()}
                         onClick={() => void runInstall(entry, keyValue)}
-                        className="shrink-0 px-2 py-1 text-[0.65rem] rounded bg-[var(--accent)] text-[var(--accent-fg,#fff)] disabled:opacity-40"
                       >
                         {busy ? <Spinner size={10} /> : <Check size={10} />}
-                      </button>
+                      </Button>
                     </div>
                   ) : installed ? (
                     <div className="mt-2 flex items-center gap-1 text-[0.65rem] text-[var(--success,var(--accent))]">

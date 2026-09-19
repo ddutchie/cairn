@@ -5,6 +5,7 @@ import { Search, SearchX, FileText, Kanban, X, ArrowRight, Sparkles } from "luci
 import { cn } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { Tooltip } from "@/components/ui/tooltip";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useCairnStore, type SearchResult } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
@@ -333,13 +334,12 @@ export function SearchPanel() {
 
         <div className="max-h-[420px] overflow-y-auto">
           {query && filtered.length === 0 && (
-            <div className="px-6 py-10 text-center flex flex-col items-center gap-3">
-              <span className="w-10 h-10 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)]">
-                <SearchX size={16} />
-              </span>
-              <p className="text-sm font-medium text-[var(--text-secondary)]">No results for “{query}”</p>
-              <p className="text-xs text-[var(--text-tertiary)]">Try a different term or switch project filter</p>
-            </div>
+            <EmptyState
+              icon={SearchX}
+              title={`No results for “${query}”`}
+              description="Try a different term or switch project filter"
+              className="py-10"
+            />
           )}
 
           {filtered.length > 0 && (

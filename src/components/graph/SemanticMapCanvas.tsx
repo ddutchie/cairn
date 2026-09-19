@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import * as d3 from "d3";
 import { Sparkles } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import type { GraphNode } from "@/types";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
@@ -245,15 +246,16 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
               : "Try widening the project filter or reindexing notes for the selected projects."}
           </p>
           {projections.length === 0 && (anyStale || activeWorkspaceId) && (
-            <button
+            <Button
               type="button"
+              variant="accent"
+              size="sm"
               onClick={handleRecompute}
               disabled={recomputing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-[var(--surface)] text-xs font-medium hover:opacity-90 disabled:opacity-50"
             >
               <RefreshSpin size={12} spinning={recomputing} />
               {anyStale ? "Recompute projections" : "Compute projections"}
-            </button>
+            </Button>
           )}
           {recomputeProgress && (
             <div className="mt-4 space-y-1 text-left">

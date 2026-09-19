@@ -9,9 +9,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import type { AutomationsFetchResult, RegistryAutomationEntry, RegistryRequirement } from "@/types";
-
-const inputCls =
-  "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm pl-8 pr-3 py-2 focus:outline-none";
+import { CATALOG_SEARCH_INPUT_CLS as inputCls } from "@/components/ui/catalog-browser-shell";
 
 const KIND_LABEL: Record<string, string> = {
   cron: "Cron",

@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { CatalogBrowserShell } from "@/components/ui/catalog-browser-shell";
+import { CatalogBrowserShell, isSafeExternalUrl } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -314,7 +314,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
       </div>
       <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-3">
         Stored securely in your OS keychain — never written to the app database or sent to the model.
-        {entryMeta(secretPrompt.entry).homepage && (
+        {entryMeta(secretPrompt.entry).homepage && isSafeExternalUrl(entryMeta(secretPrompt.entry).homepage) && (
           <>
             {" "}
             <a
