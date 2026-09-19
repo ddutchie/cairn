@@ -48,7 +48,6 @@
       "./plugins/withAppleSigning",
       "./plugins/withICloudContainer",
       "./plugins/withPrivateCloudCompute",
-      "./plugins/withSceneLifecycle",
       "./plugins/withPodDeploymentTarget",
       "./plugins/withStatusBarStyle",
       "@react-native-community/datetimepicker",

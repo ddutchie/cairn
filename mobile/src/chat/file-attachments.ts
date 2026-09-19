@@ -1,6 +1,10 @@
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
-import * as MediaLibrary from "expo-media-library";
+// NOTE (SDK 58): legacy FileSystem/MediaLibrary functions imported from the
+// package root now throw at runtime — the supported path for unchanged
+// behavior is the /legacy subpath. New-API migration (File.text(), Asset
+// class) is a separate cleanup; see expo-file-system / expo-media-library docs.
+import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library/legacy";
 import type { Attachment } from "./agent";
 
 /**

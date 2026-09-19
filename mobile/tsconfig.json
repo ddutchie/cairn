@@ -2,6 +2,12 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // TEMP (SDK 58 beta): defer React Native Strict TypeScript API.
+    // RN 0.87 made strict types the default; our refs/styles predate it
+    // (47 errors across 18 files). Proper migration tracked for the 58 cycle —
+    // the legacy opt-out is removed after RN 0.88, so this must go before stable.
+    // See https://reactnative.dev/docs/strict-typescript-api#migration-guide
+    "customConditions": ["react-native", "react-native-legacy-deep-imports"],
     "paths": {
       "@/*": ["./src/*"],
       "@modules/*": ["./modules/*"],
