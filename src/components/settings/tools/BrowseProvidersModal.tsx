@@ -2,27 +2,20 @@
 
 import { useState, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import {
-  RefreshCw,
   Check,
   Download,
   ArrowUpCircle,
   KeyRound,
-  WifiOff,
-  Search,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { ModalShell } from "@/components/ui/modal-shell";
+import { CatalogBrowserShell } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn } from "@/lib/utils";
 import type { ProvidersFetchResult, RegistryProviderEntry } from "@/types";
 import { ConnectorLogo } from "./ConnectorLogo";
 import { endpointLogoSlug } from "../../../../shared/models/model-catalog";
 import { getOrFetchLogoSvg, subscribeModelCatalog, getModelCatalogVersion } from "@/lib/models-dev";
-
-const inputCls =
-  "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm pl-8 pr-3 py-2 focus:outline-none";
 
 const emptyResult: ProvidersFetchResult = {
   manifest: { version: 1, updatedAt: "", providers: [] },
@@ -152,81 +145,37 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <ModalShell
+    <CatalogBrowserShell
       onClose={onClose}
-      size="lg"
-      scrollable
       title={
         <span className="flex items-center gap-2">
           <Download size={16} /> Browse Community Providers
         </span>
       }
       description="Add a preset OpenAI-compatible AI provider — just enter your API key."
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search providers…"
+      refreshing={refreshing}
+      onRefresh={() => void load(true)}
+      categories={categories}
+      activeCategory={activeCategory}
+      onCategoryChange={setActiveCategory}
+      registryError={result?.error}
+      fromCache={result?.fromCache}
+      installError={installError}
+      loading={loading}
+      hasEntries={providers.length > 0}
+      hasResults={filtered.length > 0}
+      emptyText="No community providers available."
+      belowList={
+        <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
+          Added providers join your shared provider list. Select one in the provider
+          switcher above to use it in AI Chat or the coding agent.
+        </p>
+      }
     >
-      {/* Toolbar: search + refresh */}
-      <div className="flex flex-col gap-3 pb-3 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
-            />
-            <input
-              className={inputCls}
-              placeholder="Search providers…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void load(true)}
-            disabled={refreshing}
-            title="Refresh from the registry"
-          >
-            {refreshing ? <Spinner size={13} /> : <RefreshCw size={13} />}
-            Refresh
-          </Button>
-        </div>
-
-        {categories.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            <TagChip label="All" active={activeCategory === null} onClick={() => setActiveCategory(null)} />
-            {categories.map((cat) => (
-              <TagChip key={cat} label={cat} active={activeCategory === cat} onClick={() => setActiveCategory(cat)} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Provenance / error banner */}
-      {result?.error && (
-        <div className="mt-3 flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
-          <WifiOff size={12} />
-          {result.fromCache
-            ? "Showing the cached catalog — couldn't reach the registry."
-            : `Couldn't load the registry: ${result.error}`}
-        </div>
-      )}
-      {installError && (
-        <div className="mt-3 text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
-          {installError}
-        </div>
-      )}
-
-      {/* List */}
-      <div className="mt-3 flex flex-col gap-2 min-h-[8rem]">
-        {loading ? (
-          <div className="flex items-center justify-center py-10 text-[var(--text-tertiary)]">
-            <Spinner size={18} />
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="text-xs text-[var(--text-tertiary)] py-10 text-center border border-dashed border-[var(--border)] rounded-lg">
-            {providers.length === 0 ? "No community providers available." : "No matches."}
-          </p>
-        ) : (
-          filtered.map((entry) => {
+      {filtered.map((entry) => {
             const def = entry.definition;
             const installed = isInstalled(entry);
             const updatable = installed && isOutdated(entry);
@@ -350,30 +299,7 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             );
-          })
-        )}
-      </div>
-
-      <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
-        Added providers join your shared provider list. Select one in the provider
-        switcher above to use it in AI Chat or the coding agent.
-      </p>
-    </ModalShell>
-  );
-}
-
-function TagChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "text-[0.65rem] rounded-full px-2 py-0.5 border transition-colors",
-        active
-          ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--text-primary)]"
-          : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-      )}
-    >
-      {label}
-    </button>
+          })}
+    </CatalogBrowserShell>
   );
 }

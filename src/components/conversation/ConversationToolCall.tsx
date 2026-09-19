@@ -86,7 +86,7 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
             <button data-testid="approval-deny" onClick={() => respond(false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded">Deny</button>
             {command && <button data-testid="approval-allow-command" onClick={() => respond(true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow command</button>}
             {showAlwaysAllow && <button data-testid="approval-allow-always" onClick={() => respond(true, "workspace")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow</button>}
-            <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-white bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
+            <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
           </>
         )}
       </div>

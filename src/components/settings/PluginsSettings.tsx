@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Puzzle, FolderOpen, RefreshCw, Bot, Download, Trash2 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Toggle } from "@/components/ui/toggle";
 
@@ -171,14 +172,16 @@ export function PluginsSettings() {
               spellCheck={false}
               className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-mono rounded-lg border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
-            <button
+            <Button
+              variant="accent"
+              size="sm"
               onClick={() => void install()}
               disabled={installing || !spec.trim()}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-[var(--accent)] text-white disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity shrink-0"
+              className="shrink-0"
             >
               {installing ? <Spinner size={13} /> : <Download size={13} />}
               {installing ? "Installing…" : "Install"}
-            </button>
+            </Button>
           </div>
           <p className="text-[0.7rem] text-[var(--text-tertiary)] leading-relaxed">
             Installs a dsh-compatible plugin. Runs third-party code — install from{" "}

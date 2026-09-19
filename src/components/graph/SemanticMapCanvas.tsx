@@ -9,7 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { truncateName } from "./analyticsUtils";
 import { useContainerDims, useScopedData, useFontScale, useRelativePointer } from "./analyticsHooks";
-import { CanvasTooltip } from "./AnalyticsShared";
+import { CanvasCallout } from "./AnalyticsShared";
 
 interface Props {
   nodes: GraphNode[];
@@ -432,7 +432,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
       )}
 
       {tooltip && (
-        <CanvasTooltip x={tooltip.x} y={tooltip.y} containerW={dims.width}>
+        <CanvasCallout x={tooltip.x} y={tooltip.y} containerW={dims.width}>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: tooltip.note.color }} />
             <span className="text-[0.786rem] font-medium text-[var(--text-primary)]">{tooltip.note.title}</span>
@@ -440,7 +440,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
           {tooltip.note.projectName && (
             <p className="text-[0.7rem] text-[var(--text-tertiary)] mt-0.5">in {tooltip.note.projectName}</p>
           )}
-        </CanvasTooltip>
+        </CanvasCallout>
       )}
     </div>
   );

@@ -19,6 +19,7 @@ import { CairnEvents } from "@/lib/events";
 import { useShallow } from "zustand/react/shallow";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { Tooltip } from "@/components/ui/tooltip";
+import { StatusDot } from "@/components/ui/status-dot";
 import { FileEditorInner } from "./FileEditorInner";
 import { ImageViewer } from "./ImageViewer";
 import { modKey } from "@/components/layout/sidebar-utils";
@@ -167,7 +168,7 @@ export function AgentEditor() {
               {isImage(filePath) && <ImageIcon size={10} className="flex-shrink-0 text-[var(--text-tertiary)]" />}
               <span className="max-w-[120px] truncate">{name}</span>
               {!isImage(filePath) && (isDirty || isSaving) && (
-                <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", isSaving ? "bg-[var(--text-tertiary)]" : "bg-[var(--accent)]")} />
+                <StatusDot color={isSaving ? "var(--text-tertiary)" : "var(--accent)"} />
               )}
               {/* Preview toggle for md files */}
               {isActive && isMarkdown(filePath) && (

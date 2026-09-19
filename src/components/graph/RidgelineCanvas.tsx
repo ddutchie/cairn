@@ -5,7 +5,7 @@ import * as d3 from "d3";
 import type { GraphNode } from "@/types";
 import { HOUR_MS, DAY_MS, floorHour, floorDay, truncateName, CANVAS_PAD } from "./analyticsUtils";
 import { useContainerDims, useScopedData, useFontScale, useRelativePointer, useNow } from "./analyticsHooks";
-import { CanvasTooltip, CanvasEmptyState, SvgTimeAxis } from "./AnalyticsShared";
+import { CanvasCallout, CanvasEmptyState, SvgTimeAxis } from "./AnalyticsShared";
 
 export type RidgelineMode = "ridgeline" | "overlay" | "iso";
 
@@ -339,7 +339,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
 
       {/* Tooltip */}
       {hoveredBucket && hoveredBucket.tasks.length > 0 && (
-        <CanvasTooltip x={tooltipPos.x} y={tooltipPos.y} containerW={dims.width}>
+        <CanvasCallout x={tooltipPos.x} y={tooltipPos.y} containerW={dims.width}>
           <p className="text-[0.714rem] font-mono text-[var(--text-tertiary)] mb-1.5">
             {d3.timeFormat(bucketMs < DAY_MS ? "%b %d %H:%M" : "%b %d")(new Date(hoveredBucket.bucketMs))}
           </p>
@@ -359,7 +359,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
               <p className="text-[var(--text-tertiary)] text-[0.714rem]">+{hoveredBucket.tasks.length - 6} more</p>
             )}
           </div>
-        </CanvasTooltip>
+        </CanvasCallout>
       )}
 
       {rows.length === 0 && <CanvasEmptyState message="No tasks in this scope." />}

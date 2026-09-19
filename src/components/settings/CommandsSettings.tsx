@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { ALL_BUILTIN_COMMANDS, isReservedCommandName } from "@/lib/slash-commands";
 import { useRegistryCommands } from "@/hooks/useRegistryCommands";
 import { Terminal } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BrowseCommandsModal } from "./tools/BrowseCommandsModal";
 import type { CustomSlashCommand, SlashCommandScope } from "@/types";
@@ -172,19 +173,16 @@ export function CommandsSettings() {
             <span className="font-mono">cairn-community</span> registry, then tweak them under
             Your commands.
           </div>
-          <button
+          <Button
             type="button"
+            variant="accent"
+            size="sm"
             disabled={!activeWorkspaceId}
             onClick={() => setBrowseOpen(true)}
-            className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex-shrink-0",
-              activeWorkspaceId
-                ? "bg-[var(--accent)] text-white hover:bg-[color-mix(in_srgb,var(--accent)_90%,black)]"
-                : "bg-[var(--surface)] text-[var(--text-tertiary)] cursor-not-allowed"
-            )}
+            className="flex-shrink-0"
           >
             <Download size={13} /> Browse Community
-          </button>
+          </Button>
         </div>
       </SettingsGroup>
 
@@ -346,19 +344,15 @@ function CreateCommandForm({
         >
           Cancel
         </button>
-        <button
+        <Button
           type="button"
+          variant="accent"
+          size="sm"
           disabled={!canSubmit}
           onClick={submit}
-          className={cn(
-            "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-            canSubmit
-              ? "bg-[var(--accent)] text-white hover:bg-[color-mix(in_srgb,var(--accent)_90%,black)]"
-              : "bg-[var(--surface)] text-[var(--text-tertiary)] cursor-not-allowed"
-          )}
         >
           Add command
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -438,19 +432,15 @@ function CommandRow({
           >
             Cancel
           </button>
-          <button
+          <Button
             type="button"
+            variant="accent"
+            size="sm"
             onClick={save}
             disabled={insertText.trim().length === 0}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium",
-              insertText.trim().length === 0
-                ? "bg-[var(--surface)] text-[var(--text-tertiary)] cursor-not-allowed"
-                : "bg-[var(--accent)] text-white hover:bg-[color-mix(in_srgb,var(--accent)_90%,black)]"
-            )}
           >
             <Check size={12} /> Save
-          </button>
+          </Button>
         </div>
       </div>
     );

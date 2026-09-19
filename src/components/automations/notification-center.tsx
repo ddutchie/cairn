@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Bell, Check, CheckCheck, Zap, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CountBadge } from "@/components/ui/count-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
@@ -89,9 +90,7 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
         <Bell size={13} className="text-[var(--accent)]" />
         <span className="text-xs font-semibold text-[var(--text-primary)]">Notifications</span>
         {notificationUnreadCount > 0 && (
-          <span className="text-[0.65rem] px-1.5 py-0.5 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] font-semibold">
-            {notificationUnreadCount}
-          </span>
+          <CountBadge count={notificationUnreadCount} tone="accent" className="text-[0.65rem] px-1.5 py-0.5" />
         )}
         <Button variant="ghost" size="xs" className="ml-auto" onClick={() => void markAllNotificationsRead()} disabled={notificationUnreadCount === 0}>
           <CheckCheck size={12} className="mr-1" /> Mark all read

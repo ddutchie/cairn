@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
 import { Download, Plus, Trash2, Sparkles, X, FolderOpen, Server } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
+import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
@@ -529,9 +530,9 @@ export function AISettings() {
                         !isActive && "hover:bg-[var(--surface-2)]",
                       )}
                     >
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ background: p.brandColor ?? "var(--text-tertiary)" }}
+                      <StatusDot
+                        size="md"
+                        color={p.brandColor ?? "var(--text-tertiary)"}
                       />
                       <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 truncate">{p.name}</span>
                       {p.source === "custom" && (

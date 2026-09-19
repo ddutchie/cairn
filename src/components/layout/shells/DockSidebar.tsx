@@ -6,6 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, getDueDateStatus } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { CountBadge } from "@/components/ui/count-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
 import { countOpenCardsByProject, modKey, buildShortcutMap } from "../sidebar-utils";
@@ -488,7 +489,7 @@ export function DockSidebar() {
                   {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", activeView === "usage" ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}
                   <button onClick={() => setNotificationOpen(!notificationOpen)} data-notification-toggle aria-expanded={notificationOpen} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                     <Bell size={13} /><span>Notifications</span>
-                    {notificationUnreadCount > 0 && <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.625rem] leading-4 text-center font-semibold">{notificationUnreadCount}</span>}
+                    <CountBadge count={notificationUnreadCount} tone="accent" className="ml-auto min-w-4 h-4 px-1 text-[0.625rem] leading-4" />
                   </button>
                 </div>
               </div>

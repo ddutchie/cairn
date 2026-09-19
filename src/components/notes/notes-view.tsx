@@ -31,7 +31,8 @@ import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/n
 import { STARTER_TEMPLATES } from "../../../shared/notes/starter-templates";
 import { stripMarkdown } from "./note-editor-utils";
 import type { Note } from "@/types";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { DialogClose } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 
 // ── NotesView orchestrator ──────────────────────────────────────────────────
@@ -873,11 +874,23 @@ export function NotesView() {
         />
       )}
 
-      <Dialog open={!!deleteNoteId} onOpenChange={(o) => { if (!o) setDeleteNoteId(null); }}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Delete note?</DialogTitle>
-          </DialogHeader>
+      <ModalShell
+        open={!!deleteNoteId}
+        onClose={() => setDeleteNoteId(null)}
+        size="sm"
+        title="Delete note?"
+        footer={<>
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm">Cancel</Button>
+          </DialogClose>
+          <Button
+            variant="danger" size="sm"
+            onClick={() => deleteNoteId && handleDelete(deleteNoteId)}
+          >
+            <Trash2 size={13} /> Delete
+          </Button>
+        </>}
+      >
           <div className="px-5 py-4 space-y-4">
             <p className="text-sm text-[var(--text-secondary)]">
               <strong className="text-[var(--text-primary)]">
@@ -885,21 +898,8 @@ export function NotesView() {
               </strong>{" "}
               will be permanently deleted. This cannot be undone.
             </p>
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost" size="sm">Cancel</Button>
-              </DialogClose>
-              <Button
-                variant="ghost" size="sm"
-                className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
-                onClick={() => deleteNoteId && handleDelete(deleteNoteId)}
-              >
-                <Trash2 size={13} /> Delete
-              </Button>
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ModalShell>
      </div>
    );
  }

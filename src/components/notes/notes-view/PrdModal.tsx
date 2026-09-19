@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Wand2, Send, Wrench, CheckCircle2 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { useCairnStore } from "@/store";
 import { useChatStream } from "@/hooks/useChatStream";
 import { effectiveTemperatureForModel } from "@/lib/models-dev";
@@ -143,14 +143,12 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
   const waitingForUser = !isLoading && !done && messages.some((m) => m.role === "assistant");
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o && !isLoading) { stopStream(); onClose(); } }}>
-      <DialogContent size="md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Wand2 size={14} className="text-[var(--accent)]" />
-            Generate PRD
-          </DialogTitle>
-        </DialogHeader>
+    <ModalShell
+      onClose={() => { stopStream(); onClose(); }}
+      dismissGuard={() => !isLoading}
+      size="md"
+      title={<><Wand2 size={14} className="text-[var(--accent)]" /> Generate PRD</>}
+    >
 
         {/* ── Conversation area ── */}
         <div
@@ -169,7 +167,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
           {messages.map((msg, i) => (
             msg.role === "user" ? (
               <div key={i} className="flex justify-end">
-                <div className="max-w-[88%] px-3 py-2 rounded-xl rounded-tr-sm text-sm bg-[var(--accent)] text-white">
+                <div className="max-w-[88%] px-3 py-2 rounded-xl rounded-tr-sm text-sm bg-[var(--accent)] text-[var(--accent-fg)]">
                   <MarkdownContent content={msg.content} />
                 </div>
               </div>
@@ -267,8 +265,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+    </ModalShell>
   );
 }
 

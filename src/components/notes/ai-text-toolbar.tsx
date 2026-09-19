@@ -7,6 +7,7 @@ import {
   Heading1, Heading2, Heading3, Highlighter, CheckSquare, Minus,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { modKey } from "@/components/layout/sidebar-utils";
@@ -180,13 +181,14 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
             placeholder="Describe what to do with the text…"
             className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
           />
-          <button
+          <Button
             type="submit"
+            variant="accent"
+            size="xs"
             disabled={!customPrompt.trim()}
-            className="px-2 py-0.5 rounded text-[0.786rem] bg-[var(--accent)] text-white disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
           >
             Apply
-          </button>
+          </Button>
         </form>
       )}
       </>}

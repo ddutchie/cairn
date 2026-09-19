@@ -8,6 +8,7 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { id, cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
@@ -564,9 +565,9 @@ export function AgentSettings() {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-[var(--text-primary)]">{agent.name}</span>
                   {agent.isDefault && (
-                    <span className="text-[0.65rem] px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)]">
+                    <Badge size="xs" color="var(--accent)">
                       default
-                    </span>
+                    </Badge>
                   )}
                 </div>
                 <span className="text-[0.714rem] font-mono text-[var(--text-tertiary)] truncate block">
@@ -594,10 +595,9 @@ export function AgentSettings() {
                   Edit
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="danger"
                   size="xs"
                   onClick={() => deleteAgent(agent.id)}
-                  className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
                 >
                   <Trash2 size={11} />
                 </Button>

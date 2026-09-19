@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useState, useId, useCallback } from "react";
 import { Maximize2 } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { getIsDark } from "@/lib/utils";
 import { useIsDark } from "@/hooks/useIsDark";
 
@@ -217,19 +217,18 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
   }, [chart, modalId, isDark]);
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent size="full" className="w-[90vw] h-[88vh] max-w-none flex flex-col p-6 animate-slide-in-up" aria-describedby="mermaid-desc">
-        <DialogTitle className="sr-only">Fullscreen Mermaid Diagram</DialogTitle>
-        <div id="mermaid-desc" className="sr-only">
-          Detailed full-screen visualization of the rendered Mermaid chart.
-        </div>
+    <ModalShell
+      onClose={onClose}
+      size="full"
+      description="Fullscreen Mermaid Diagram. Detailed full-screen visualization of the rendered Mermaid chart."
+      contentClassName="w-[90vw] h-[88vh] max-w-none flex flex-col p-6 animate-slide-in-up"
+    >
         {/* Container fills all remaining space; SVG is told to fill it */}
         <div
           ref={containerRef}
           className="flex-1 flex justify-center items-center min-h-0 [&_svg]:w-full [&_svg]:h-full [&_svg]:max-w-full [&_svg]:max-h-full"
         />
-      </DialogContent>
-    </Dialog>
+    </ModalShell>
   );
 }
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { RefreshCw, WifiOff, Search, Sparkles, ArrowLeft, ChevronDown, ChevronUp, Plug, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { TagChip } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -301,22 +302,6 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
           : "Fetched from the community registry (cache-first; stale content is refreshed in the background on open)."}
       </p>
     </div>
-  );
-}
-
-function TagChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "text-[0.65rem] rounded-full px-2 py-0.5 border transition-colors",
-        active
-          ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--text-primary)]"
-          : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-      )}
-    >
-      {label}
-    </button>
   );
 }
 

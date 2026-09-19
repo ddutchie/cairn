@@ -129,7 +129,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
               className={cn(
                 "px-2 py-0.5 text-[0.714rem] transition-colors border-r last:border-r-0 border-[var(--border)]",
                 mode === m
-                  ? "bg-[var(--accent)] text-white"
+                  ? "bg-[var(--accent)] text-[var(--accent-fg)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
               )}
             >

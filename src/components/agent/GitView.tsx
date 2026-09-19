@@ -17,12 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { Tooltip } from "@/components/ui/tooltip";
 import { MicroLabel } from "@/components/ui/labels";
 import {
@@ -912,11 +907,7 @@ export function GitView({ cwd }: GitViewProps) {
       </div>
 
       {/* ── New Branch Dialog ──────────────────────────────────────────────── */}
-      <Dialog open={newBranchOpen} onOpenChange={setNewBranchOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Create New Branch</DialogTitle>
-          </DialogHeader>
+      <ModalShell open={newBranchOpen} onClose={() => setNewBranchOpen(false)} size="sm" title="Create New Branch">
           <form onSubmit={handleCreateBranch} className="p-4 space-y-4">
             <div className="space-y-2">
               <label htmlFor="branch-name" className="text-xs text-[var(--text-secondary)]">Branch Name</label>
@@ -938,8 +929,7 @@ export function GitView({ cwd }: GitViewProps) {
               </Button>
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+      </ModalShell>
     </div>
   );
 }

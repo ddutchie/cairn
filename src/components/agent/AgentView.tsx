@@ -10,6 +10,7 @@
  */
 
 import { useRef, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { FileTree } from "./FileTree";
@@ -167,13 +168,10 @@ export function AgentView() {
             </p>
           </div>
           {project && (
-            <button
-              onClick={handlePickCodeDir}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 transition-opacity"
-            >
+            <Button variant="accent" size="sm" onClick={handlePickCodeDir}>
               <FolderOpen size={12} />
               Choose folder
-            </button>
+            </Button>
           )}
         </div>
       </div>

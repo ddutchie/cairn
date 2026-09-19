@@ -4,7 +4,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { DialogClose } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { FolderNode } from "./buildFolderTree";
 
 interface FolderPickerDialogProps {
@@ -70,11 +72,16 @@ export function FolderPickerDialog({ folderTree, mode, currentFolder = "", onSel
   );
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent size="sm">
-        <DialogHeader>
-          <DialogTitle>{mode === "create" ? "New folder" : "Move to folder"}</DialogTitle>
-        </DialogHeader>
+    <ModalShell
+      onClose={onClose}
+      size="sm"
+      title={mode === "create" ? "New folder" : "Move to folder"}
+      footer={
+        <DialogClose asChild>
+          <Button variant="ghost" size="sm">Cancel</Button>
+        </DialogClose>
+      }
+    >
         <div className="px-5 pb-5 pt-1">
           <div className="rounded-lg border border-[var(--border)] overflow-hidden mb-3">
             <div className={cn(
@@ -100,7 +107,7 @@ export function FolderPickerDialog({ folderTree, mode, currentFolder = "", onSel
             {addingUnder === "" && inlineInput}
 
             {folderTree.length === 0 && addingUnder === null && (
-              <p className="px-3 py-3 text-[0.714rem] text-[var(--text-tertiary)]">No folders yet</p>
+              <EmptyState title="No folders yet" />
             )}
 
             {folderTree.map((node) => (
@@ -117,15 +124,8 @@ export function FolderPickerDialog({ folderTree, mode, currentFolder = "", onSel
               />
             ))}
           </div>
-
-          <div className="flex justify-end">
-            <DialogClose asChild>
-              <Button variant="ghost" size="sm">Cancel</Button>
-            </DialogClose>
-          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+    </ModalShell>
   );
 }
 

@@ -19,9 +19,11 @@ export function CanvasEmptyState({ message = "No data to show." }: EmptyStatePro
   return <EmptyState overlay title={message} />;
 }
 
-// ── CanvasTooltip ─────────────────────────────────────────────────────────────
+// ── CanvasCallout ─────────────────────────────────────────────────────────────
+// Positioned D3 callout (NOT a hover tooltip — see ui/tooltip.tsx). Renamed
+// from CanvasTooltip to end the confusion between the two.
 
-interface TooltipProps {
+interface CalloutProps {
   x: number;
   y: number;
   containerW: number;
@@ -29,7 +31,7 @@ interface TooltipProps {
   maxW?: number;
 }
 
-export function CanvasTooltip({ x, y, containerW, maxW = 220, children }: TooltipProps) {
+export function CanvasCallout({ x, y, containerW, maxW = 220, children }: CalloutProps) {
   return (
     <div
       className="absolute pointer-events-none z-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg p-2.5 text-[0.786rem]"

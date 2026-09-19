@@ -26,6 +26,8 @@ export interface ModalShellProps {
   size?: "sm" | "md" | "lg" | "xl" | "full";
   /** Title text (rendered inside `<DialogTitle>`). Pass ReactNode for icon + text. */
   title?: React.ReactNode;
+  /** Optional subtitle rendered under the title (e.g. a count or date line). */
+  subtitle?: React.ReactNode;
   /** Accessible description — rendered as sr-only text, auto-wired via `aria-describedby`. */
   description?: string;
   /** When `true`, content becomes a flex column with `max-h-[80vh]` and a scrollable body. */
@@ -43,6 +45,7 @@ export function ModalShell({
   dismissGuard,
   size = "md",
   title,
+  subtitle,
   description,
   scrollable = false,
   footer,
@@ -76,6 +79,9 @@ export function ModalShell({
             <DialogTitle className="flex items-center gap-2 text-sm font-semibold">
               {title}
             </DialogTitle>
+            {subtitle && (
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-0.5">{subtitle}</p>
+            )}
           </DialogHeader>
         )}
         {description && (

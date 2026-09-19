@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useContext, createContext } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { FontScale } from "@/store/slices/ui";
 
@@ -183,20 +184,16 @@ export function NavRow({
           Back
         </button>
       )}
-      <button
+      <Button
         type="button"
+        variant="accent"
+        size="md"
         onClick={onNext}
         disabled={nextDisabled}
-        className={cn(
-          "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-          nextDisabled
-            ? "bg-[var(--surface-2)] text-[var(--text-tertiary)] cursor-not-allowed"
-            : "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
-        )}
       >
         {nextLabel}
         {nextIcon ?? <ArrowRight size={13} />}
-      </button>
+      </Button>
     </div>
   );
 

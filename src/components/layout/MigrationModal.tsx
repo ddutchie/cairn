@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 
 interface MigrationStatus {
   id: string;
@@ -163,22 +164,14 @@ export function MigrationModal() {
         {/* Footer */}
         <div className="px-6 py-4 border-t border-[var(--border)] flex justify-end gap-2">
           {phase === "pending" && (
-            <button
-              onClick={handleRunAll}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
-              style={{ background: "var(--accent)" }}
-            >
+            <Button variant="accent" size="md" onClick={handleRunAll}>
               Start Migration
-            </button>
+            </Button>
           )}
           {phase === "done" && (
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
-              style={{ background: "var(--accent)" }}
-            >
+            <Button variant="accent" size="md" onClick={() => window.location.reload()}>
               Continue
-            </button>
+            </Button>
           )}
           {phase === "error" && (
             <button

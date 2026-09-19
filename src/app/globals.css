@@ -35,6 +35,7 @@
   --ok: #3ecf8e;
   --warning: #f59e0b;
   --danger: #ef4444;
+  --danger-fg: #ffffff;
   --info: #60a5fa;
   /* Knowledge-graph "Project" node colour. Fixed (accent-independent) so it
      never collides with Card/success green when the accent is a green preset. */
@@ -79,6 +80,7 @@
   --ok: #1a9e68;
   --warning: #d97706;
   --danger: #dc2626;
+  --danger-fg: #ffffff;
   --info: #2563eb;
   --node-project: #7c5cd6;
 }
