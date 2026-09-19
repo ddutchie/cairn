@@ -14,6 +14,10 @@ import type {
 import { nodeTypeToken } from "../../../shared/ui/graph";
 import { ipcAwait, ipcData } from "../ipc";
 
+// A refresh requested while a load is in flight re-runs once on completion
+// (db:changed bursts). Module-level: never rendered, single store instance.
+let graphRefreshQueued = false;
+
 // ── Slice interface ───────────────────────────────────────────────────────────
 
 export interface GraphSlice {
@@ -21,6 +25,8 @@ export interface GraphSlice {
   graphData: KnowledgeGraph;
   graphLoading: boolean;
   graphError: string | null;
+  /** True after the first successful loadGraph (gates refresh-if-loaded). */
+  graphLoaded: boolean;
 
   // View state
   graphLayout: GraphLayoutMode;
@@ -31,6 +37,14 @@ export interface GraphSlice {
   loadGraph: (workspaceId: string) => Promise<void>;
   recomputeGraphRelationships: (workspaceId: string) => Promise<void>;
   recomputeGraphRelationshipsIncremental: (workspaceId: string, entityIds: string[]) => Promise<void>;
+  /**
+   * Reload the graph if (and only if) it was loaded before — preserves the
+   * current filters. Called from the db:changed handler: entity slices are
+   * optimistic (so hydration is skipped for own writes), but graphData has no
+   * optimistic path and would otherwise go stale until a manual refresh.
+   * Coalesces bursts: a refresh requested mid-load re-runs once on completion.
+   */
+  refreshGraphIfLoaded: () => Promise<void>;
   setGraphLayout: (layout: GraphLayoutMode) => void;
   setGraphFilters: (patch: Partial<GraphFilters>) => void;
   setSelectedGraphNode: (id: string | null) => void;
@@ -58,6 +72,7 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
   graphData: { nodes: [], edges: [] },
   graphLoading: false,
   graphError: null,
+  graphLoaded: false,
 
   graphLayout: "force",
   graphFilters: DEFAULT_GRAPH_FILTERS,
@@ -77,10 +92,27 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
         set({ graphError: "Not in Electron", graphLoading: false });
         return;
       }
-      set({ graphData: data, graphLoading: false });
+      set({ graphData: data, graphLoading: false, graphLoaded: true });
     } catch (e) {
       set({ graphError: e instanceof Error ? e.message : String(e), graphLoading: false });
+    } finally {
+      if (graphRefreshQueued) {
+        graphRefreshQueued = false;
+        await get().loadGraph(workspaceId);
+      }
     }
+  },
+
+  async refreshGraphIfLoaded() {
+    const s = get();
+    if (!s.graphLoaded) return;
+    const wsId = s.activeWorkspaceId;
+    if (!wsId) return;
+    if (get().graphLoading) {
+      graphRefreshQueued = true;
+      return;
+    }
+    await get().loadGraph(wsId);
   },
 
   async recomputeGraphRelationships(workspaceId) {

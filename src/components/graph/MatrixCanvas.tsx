@@ -2,9 +2,8 @@
 
 import React, { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { useCairnStore } from "@/store";
-import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
+import { useScopedData } from "./analyticsHooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
 
 interface Props {
@@ -37,18 +36,16 @@ function tagColor(color: string | undefined | null, index: number): string {
 }
 
 export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
-  const { tags, notes, cards } = useCairnStore(useShallow((s) => ({ tags: s.tags, notes: s.notes, cards: s.cards })));
+  const { tags, notes, cards, scopedNodeIds } = useScopedData(nodes);
   const [hoveredCell, setHoveredCell] = useState<{ r: number; c: number } | null>(null);
   const [pinnedCell,  setPinnedCell]  = useState<{ r: number; c: number } | null>(null);
 
-  const scopedEntityIds = useMemo(() => new Set(nodes.map((n) => n.id)), [nodes]);
-
   const activeTags = useMemo(() => {
     const used = new Set<string>();
-    for (const n of notes) { if (!scopedEntityIds.has(n.id)) continue; for (const t of n.tagIds) used.add(t); }
-    for (const c of cards) { if (!scopedEntityIds.has(c.id)) continue; for (const t of c.tagIds) used.add(t); }
+    for (const n of notes) { if (!scopedNodeIds.has(n.id)) continue; for (const t of n.tagIds) used.add(t); }
+    for (const c of cards) { if (!scopedNodeIds.has(c.id)) continue; for (const t of c.tagIds) used.add(t); }
     return tags.filter((t) => used.has(t.id));
-  }, [tags, notes, cards, scopedEntityIds]);
+  }, [tags, notes, cards, scopedNodeIds]);
 
   const activeTagsKey = useMemo(() => activeTags.map((t) => t.id).join(","), [activeTags]);
   useEffect(() => {
@@ -67,22 +64,22 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
         for (let b = 0; b < indices.length; b++)
           m[indices[a]][indices[b]]++;
     }
-    for (const note of notes) if (scopedEntityIds.has(note.id)) processTagIds(note.tagIds);
-    for (const card of cards) if (scopedEntityIds.has(card.id)) processTagIds(card.tagIds);
+    for (const note of notes) if (scopedNodeIds.has(note.id)) processTagIds(note.tagIds);
+    for (const card of cards) if (scopedNodeIds.has(card.id)) processTagIds(card.tagIds);
     return m;
-  }, [activeTags, notes, cards, scopedEntityIds]);
+  }, [activeTags, notes, cards, scopedNodeIds]);
 
   function itemsWithBothTags(tagIdA: string, tagIdB: string): GraphNode[] {
     const result: GraphNode[] = [];
     for (const note of notes) {
-      if (!scopedEntityIds.has(note.id)) continue;
+      if (!scopedNodeIds.has(note.id)) continue;
       if (note.tagIds.includes(tagIdA) && note.tagIds.includes(tagIdB)) {
         const node = nodes.find((n) => n.id === note.id);
         if (node) result.push(node);
       }
     }
     for (const card of cards) {
-      if (!scopedEntityIds.has(card.id)) continue;
+      if (!scopedNodeIds.has(card.id)) continue;
       if (card.tagIds.includes(tagIdA) && card.tagIds.includes(tagIdB)) {
         const node = nodes.find((n) => n.id === card.id);
         if (node) result.push(node);

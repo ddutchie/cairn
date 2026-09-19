@@ -273,12 +273,20 @@ export default function Home() {
         // surrounding chat IPC also touched ownWriteGuard — but those changes
         // are NOT in Zustand, so we must hydrate to surface them in the open
         // editor. A recent AI note write overrides the own-write skip.
-        if (ownWriteGuard.isOwnWrite() && !hasRecentAiNoteWrite()) return;
+        if (ownWriteGuard.isOwnWrite() && !hasRecentAiNoteWrite()) {
+          // graphData has no optimistic path (unlike the entity slices), so
+          // refresh it here — no-op when the graph was never loaded.
+          void useCairnStore.getState().refreshGraphIfLoaded();
+          return;
+        }
         // Don't re-hydrate (and potentially reset onboardingState) while the
         // onboarding wizard is still in progress — folder selection and workspace
         // creation trigger db:changed but the wizard handles its own state.
         if (onboardingStateRef.current !== false) return;
         hydrateFromElectron(true);
+        // Entity slices hydrate above; the graph has no optimistic path, so it
+        // would otherwise go stale until a manual refresh.
+        void useCairnStore.getState().refreshGraphIfLoaded();
       });
 
       // Auto-updater listeners — events may arrive in any order

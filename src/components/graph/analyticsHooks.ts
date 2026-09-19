@@ -1,5 +1,18 @@
 /**
  * Shared React hooks for analytics canvas components.
+ *
+ * Canvas contract (cleanup Phase 6) — every canvas under InsightsView /
+ * KnowledgeGraphView derives its inputs from these hooks, never ad hoc:
+ * - useScopedData — the single source for scope (project/card/node id sets)
+ *   plus the entity arrays (projects, cards, columns, notes, tags). HTML-list
+ *   canvases (Timeline / Matrix / Table) subscribe for scope uniformity even
+ *   though they don't measure layout.
+ * - useFontScale — multiply ALL SVG `fontSize` attributes by its return.
+ *   HTML/rem-styled canvases don't need it (root font-size scales them).
+ * - useContainerDims — ResizeObserver dims for measured layouts (SVG viewBox,
+ *   canvas 2D + DPR sizing). HTML-flow canvases don't need it.
+ * ForceGraphCanvas / RadialTreeCanvas additionally keep a dimsRef mirror for
+ * their render loops — the observer itself still comes from useContainerDims.
  */
 import { useEffect, useState, useMemo, useCallback } from "react";
 import type { RefObject } from "react";
@@ -45,11 +58,16 @@ export function useContainerDims(ref: React.RefObject<HTMLElement | null>) {
 // ── useScopedData ─────────────────────────────────────────────────────────────
 
 /**
- * Derives the sets of project/card IDs that are in scope for the current
- * graph node selection, plus the sorted active project list.
+ * Derives the sets of project/card/node IDs that are in scope for the current
+ * graph node selection, plus the sorted active project list and the entity
+ * arrays canvases join against (cards, notes, tags).
  */
 export function useScopedData(nodes: GraphNode[]) {
-  const { projects, cards, columns } = useCairnStore(useShallow((s) => ({ projects: s.projects, cards: s.cards, columns: s.columns })));
+  const { projects, cards, columns, notes, tags } = useCairnStore(useShallow((s) => ({ projects: s.projects, cards: s.cards, columns: s.columns, notes: s.notes, tags: s.tags })));
+
+  const scopedNodeIds = useMemo(
+    () => new Set(nodes.map((n) => n.id)),
+    [nodes]);
 
   const scopedProjectIds = useMemo(
     () => new Set(nodes.filter((n) => n.type === "project").map((n) => n.id)),
@@ -69,7 +87,7 @@ export function useScopedData(nodes: GraphNode[]) {
     () => cards.filter((c) => scopedCardIds.has(c.id)),
     [cards, scopedCardIds]);
 
-  return { scopedProjectIds, scopedCardIds, activeProjects, scopedCards, projects, cards, columns };
+  return { scopedNodeIds, scopedProjectIds, scopedCardIds, activeProjects, scopedCards, projects, cards, columns, notes, tags };
 }
 
 // ── useRelativePointer ────────────────────────────────────────────────────────

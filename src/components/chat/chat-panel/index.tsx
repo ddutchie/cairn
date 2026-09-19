@@ -9,6 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
 import { useChatMessageQueue, useQueueDrain, type QueuedMessage } from "@/hooks/useChatMessageQueue";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
+import { useGraphData } from "@/hooks/useGraphData";
 import { ipcAwaitResult } from "@/store/ipc";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import { storage } from "@/lib/storage";
@@ -112,7 +113,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     projects, workspaces,
     addMessage,
     chatMessages, chatThreads, aiConfig,
-    activeView, graphData, selectedGraphNodeId,
+    activeView, selectedGraphNodeId,
     clearThreadMessages,
     createNote,
     notes, cards,
@@ -130,7 +131,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     chatThreads:           s.chatThreads,
     aiConfig:              s.aiConfig,
     activeView:            s.activeView,
-    graphData:             s.graphData,
     selectedGraphNodeId:   s.selectedGraphNodeId,
     clearThreadMessages:   s.clearThreadMessages,
     createNote:            s.createNote,
@@ -141,6 +141,10 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     setActiveProject:      s.setActiveProject,
     customCommands:        s.customCommands,
   })));
+
+  // Graph context for the system prompt — loaded on first read so chat never
+  // silently builds context from an empty graph (mount-order trap).
+  const graphData = useGraphData();
 
   // threadId is driven by the store so the tab bar can switch threads externally
   const threadId = activeChatThreadId;
