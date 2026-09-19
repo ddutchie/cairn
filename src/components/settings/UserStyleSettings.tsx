@@ -12,17 +12,10 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { PenLine, Sparkles, Trash2, RefreshCw } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { formatDate } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { UserStyleWizardModal } from "./UserStyleWizardModal";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
 
 export function UserStyleSettings() {
   const { userStyle, fetchUserStyle, clearUserStyle, saveUserStyle } = useCairnStore(

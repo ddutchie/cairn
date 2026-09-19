@@ -378,8 +378,6 @@ export function ModelSelectionRow({
   modelsLoading: boolean;
   testState: TestState;
   testError: string;
-  /** @deprecated retained for call-site compatibility; the picker labels itself. */
-  fetchLabel?: string;
   placeholder?: string;
   onModelChange: (model: string) => void;
   onFetch: () => void;

@@ -1,5 +1,8 @@
 # Cairn Cordis Runtime — Rollout Plan
 
+> **Superseded as a reference** — the chronological plan below is retained as
+> history. For the live picture see `docs/architecture-cordis.md` (canonical).
+
 Status: **Phase 1 + 1.5 + 2 COMPLETE; A (heartbeat full agent) + C (manual /compact) DONE; D (Electron QA e2e harness) IMPLEMENTED — remaining: Phase 3. Plugin-system port investigated (§10 backend Loader; §11 UI-bridge into Cairn's OWN frontend, NOT the dsh shell)** · Updated: 2026-08-20
 Owner: Cairn maintainer
 

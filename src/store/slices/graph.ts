@@ -10,7 +10,6 @@ import type {
   GraphLayoutMode,
   GraphFilters,
   GraphNodeType,
-  GraphEdgeType,
 } from "@/types";
 import { nodeTypeToken } from "../../../shared/ui/graph";
 import { ipcAwait, ipcData } from "../ipc";
@@ -146,21 +145,4 @@ export function filterGraphEdges(
 export function nodeTypeColor(type: GraphNodeType): string {
   const token = nodeTypeToken(type).replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
   return `var(--${token})`;
-}
-
-/** Edge type → display label */
-export function edgeTypeLabel(type: GraphEdgeType): string {
-  switch (type) {
-    case "note-note":      return "Note link";
-    case "note-card":      return "Note ↔ Card";
-    case "tag-member":     return "Tag";
-    case "project-member": return "Project";
-    case "flow-ref":       return "Flow ref";
-    case "flow-edge":      return "Flow edge";
-    case "co-mention":     return "Co-mention";
-    case "keyword":        return "Keyword";
-    case "assignee":       return "Assignee";
-    case "wikilink":       return "Wikilink";
-    case "semantic":       return "Semantic";
-  }
 }
