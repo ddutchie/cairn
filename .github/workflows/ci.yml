@@ -102,6 +102,18 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
 
+      - name: Cache root node_modules (type walk-up)
+        id: cache-root
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: node_modules
+          key: npm-deps-${{ runner.os }}-node-24-${{ hashFiles('package-lock.json') }}
+
+      - name: Install root dependencies (types only, no natives)
+        if: steps.cache-root.outputs.cache-hit != 'true'
+        working-directory: ${{ github.workspace }}
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Link shared package
         run: node scripts/link-shared.js
 
