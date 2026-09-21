@@ -95,8 +95,12 @@ jobs:
         with:
           node-version: 24
 
+      # --legacy-peer-deps: Expo 58 is a prerelease (58.0.0-preview.x) and
+      # prereleases don't satisfy plain peer ranges, so strict installs fail
+      # resolving e.g. datetimepicker's peerOptional expo@>=52.0.0. Revisit
+      # when SDK 58 goes stable.
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Link shared package
         run: node scripts/link-shared.js
