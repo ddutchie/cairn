@@ -104,6 +104,36 @@ exports.default = async function afterPack(context) {
   // 3. node-pty per-arch prebuilds (e.g. darwin-arm64 / darwin-x64).
   rm(path.join("node_modules", "node-pty", "prebuilds", `${platform}-${other}`));
 
+  // 4. koffi per-platform binaries (@koromix/koffi-<platform>-<arch>). Only
+  //    the target platform/arch package is loaded at runtime (absolute path
+  //    built from process.platform/process.arch), so the rest is dead weight
+  //    — e.g. 15 platform packages × ~1.2 MB each. Keep the target arch for
+  //    this platform plus the current-platform naming variants koffi probes
+  //    (darwin_*/linux musl triplets); drop everything else best-effort.
+  try {
+    const koromixDir = path.join(unpacked, "node_modules", "@koromix");
+    if (fs.existsSync(koromixDir)) {
+      for (const entry of fs.readdirSync(koromixDir)) {
+        if (!entry.startsWith("koffi-")) continue;
+        // Package names are koffi-<platform>-<arch> (arch may itself contain
+        // a dash, e.g. none today — split from the left: platform is the
+        // first segment after the prefix).
+        const rest = entry.slice("koffi-".length);
+        const dash = rest.indexOf("-");
+        if (dash === -1) continue;
+        const pkgPlatform = rest.slice(0, dash);
+        const pkgArch = rest.slice(dash + 1);
+        if (pkgPlatform !== platform) {
+          rm(path.join("node_modules", "@koromix", entry));
+        } else if (pkgArch !== target) {
+          rm(path.join("node_modules", "@koromix", entry));
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[afterPack] could not strip @koromix archs: ${err.message}`);
+  }
+
   console.log(
     `[afterPack] ${platform}/${target}: stripped ${other} arch → ` +
     (removed.length ? removed.join(", ") : "(nothing to remove)"),
