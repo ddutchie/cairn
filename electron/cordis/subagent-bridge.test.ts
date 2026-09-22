@@ -8,23 +8,32 @@ import { describe, it, expect } from "vitest";
 import { cairnSubagentPlugin } from "./cairn-plugins";
 
 type Handler = (session: unknown, event: unknown) => void;
+type FrameHandler = (payload: { frame?: unknown; agent?: unknown }) => void;
 
 interface Sent { channel: string; payload: Record<string, unknown> }
 
 function makeCtx() {
   let handler: Handler | null = null;
+  let frameHandler: FrameHandler | null = null;
   const sent: Sent[] = [];
   const ctx = {
-    on: (ev: string, fn: Handler) => {
-      if (ev === "session/event") handler = fn;
-      return () => { handler = null; };
+    on: (ev: string, fn: never) => {
+      if (ev === "session/event") handler = fn as Handler;
+      if (ev === "agent/assistant-stream") frameHandler = fn as FrameHandler;
+      return () => { handler = null; frameHandler = null; };
     },
   };
   const send = (channel: string, payload: Record<string, unknown>) => {
     sent.push({ channel, payload });
   };
   const emit = (session: unknown, event: unknown) => handler?.(session, event);
-  return { ctx, emit, sent, send };
+  // dsh ≥0.1.5 live deltas: dispatch frames, not assistant/chunk events.
+  const emitFrame = (agentSessionId: string, chunk: Record<string, unknown>) =>
+    frameHandler?.({
+      frame: { type: "chunk", chunk },
+      agent: { session: { id: agentSessionId, header: { origin: "subagent", parentSession: "parent-1" } } },
+    });
+  return { ctx, emit, emitFrame, sent, send };
 }
 
 const child = (id: string, parentSession = "parent-1") => ({
@@ -59,19 +68,19 @@ describe("cairnSubagentPlugin continuable messaging", () => {
   });
 
   it("resets streamed guards on turn/start so later turns are not skipped", () => {
-    const { ctx, emit, sent, send } = makeCtx();
+    const { ctx, emit, emitFrame, sent, send } = makeCtx();
     cairnSubagentPlugin(ctx as never, { send, sessionId: "parent-1" });
 
     emit(child("child-1"), userMessage("task"));
     // Turn 1 streams "AB" live, then the final message gap-fills nothing.
-    emit(child("child-1"), { type: "assistant/chunk", seq: 2, data: { chunk: { type: "text-delta", text: "AB" } } });
+    emitFrame("child-1", { type: "text-delta", text: "AB" });
     emit(child("child-1"), {
       type: "assistant/message", seq: 3,
       data: { message: { content: [{ type: "text", text: " Laters" }] } },
     });
     // Turn 2 (e.g. after a send_message follow-up): same text must stream again.
     emit(child("child-1"), { type: "turn/start", seq: 4, data: {} });
-    emit(child("child-1"), { type: "assistant/chunk", seq: 5, data: { chunk: { type: "text-delta", text: "AB" } } });
+    emitFrame("child-1", { type: "text-delta", text: "AB" });
 
     const deltas = traces(sent).filter((t) => t.trace === "token").map((t) => String(t.delta ?? ""));
     expect(deltas.filter((d) => d === "AB")).toHaveLength(2);

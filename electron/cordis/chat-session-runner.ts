@@ -14,6 +14,7 @@ import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loo
 import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
 import { foldSessionUsage } from "./plugins/context-ring";
 import { foldSessionStats } from "./session-stats";
+import { onAssistantStream } from "./assistant-stream-frames";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
@@ -55,19 +56,24 @@ function collect(events: readonly SessionEvent[], firstSeq: number): Collected {
     if (event.seq < firstSeq) continue;
     if (event.type === "turn/start") { started = true; continue; }
     if (!started) continue;
-    if (event.type === "assistant/chunk") {
-      const chunk = (event.data as { chunk?: { type?: string; text?: string; usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }).chunk;
-      if (chunk?.type === "text-delta" && chunk.text) text += chunk.text;
-      if (chunk?.type === "reasoning-delta" && chunk.text) reasoning += chunk.text;
-      if (chunk?.type === "usage" && chunk.usage) {
-        pt = Math.max(pt, chunk.usage.inputTokens ?? 0);
-        ct += chunk.usage.outputTokens ?? 0;
-        rt += chunk.usage.reasoningTokens ?? 0;
+    // dsh ≥0.1.5: `assistant/chunk` session events no longer exist. The
+    // durable log carries one settled `assistant/message` per attempt (full
+    // text + per-attempt usage) — fold those exactly as chunks accumulated.
+    if (event.type === "assistant/message") {
+      const msg = event.data as {
+        message?: { content?: Array<{ type?: string; text?: string }> };
+        usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
+      };
+      const content = Array.isArray(msg.message?.content) ? msg.message.content : [];
+      const textDelta = content.filter((b) => b.type === "text" && b.text).map((b) => b.text as string).join("");
+      if (textDelta) text += textDelta;
+      const reasoningDelta = content.filter((b) => b.type === "reasoning" && b.text).map((b) => b.text as string).join("");
+      if (reasoningDelta) reasoning += reasoningDelta;
+      if (msg.usage) {
+        pt = Math.max(pt, msg.usage.inputTokens ?? 0);
+        ct += msg.usage.outputTokens ?? 0;
+        rt += msg.usage.reasoningTokens ?? 0;
       }
-    }
-    if (event.type === "assistant/message" && !reasoning) {
-      const content = (event.data as { message?: { content?: Array<{ type?: string; text?: string }> } }).message?.content;
-      if (Array.isArray(content)) reasoning = content.filter((b) => b.type === "reasoning" && b.text).map((b) => b.text).join("");
     }
   }
   return { text, reasoning, pt, ct, rt };
@@ -268,12 +274,6 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
             markLog(`event ${event.type} (request assembled → about to hit provider)`, turnStart);
           }
         }
-        if (event.type === "assistant/chunk") {
-          const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
-          if (c?.type === "text-delta" && c.text) { noteFirstToken(); liveText += c.text; opts.onToken?.(c.text); }
-          else if (c?.type === "reasoning-delta" && c.text) { noteFirstToken(); liveReasoning += c.text; opts.onThought?.(c.text); }
-          return;
-        }
         if (event.type === "assistant/message" && !liveReasoning) {
           const content = (event.data as { message?: { content?: Array<{ type?: string; text?: string }> } }).message?.content;
           const value = Array.isArray(content) ? content.filter((b) => b.type === "reasoning" && b.text).map((b) => b.text).join("") : "";
@@ -300,6 +300,17 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         }
       });
       resources.add(streamDisposer);
+      // Live deltas (dsh ≥0.1.5): `assistant/chunk` session events no longer
+      // exist — deltas arrive as `agent/assistant-stream` dispatch frames.
+      // Same scoping as the event bridge above (this attempt, no subagents).
+      resources.add(onAssistantStream(
+        ctx,
+        (id, header) => id === currentAttemptSessionId && header?.origin !== "subagent",
+        {
+          onText: (t) => { noteFirstToken(); liveText += t; opts.onToken?.(t); },
+          onReasoning: (t) => { noteFirstToken(); liveReasoning += t; opts.onThought?.(t); },
+        },
+      ));
 
       const emitDone: NonNullable<RunCordisLoopOptions["emitToolCallDone"]> = (event) => {
         if (event.callId) doneIds.add(event.callId);

@@ -385,6 +385,18 @@ async function runCordisCodingSession(
                 callId: requestId,
                 questions: qs as Array<{ id: string; [k: string]: unknown }>,
               });
+              // Live path: the renderer has no listener for the raw
+              // session:ask-questions push — it renders from the folded
+              // tool-call event (questions + callId, but no nonce), so without
+              // this projection the answer is rejected on nonce and silently
+              // dropped. Mirror the chat path (chat.ts emitQuestions): emit a
+              // question projection carrying callId + nonce, which
+              // useSessionConversation already handles.
+              send("session:projection", makeSessionProjection(sessionId, "question", {
+                callId: requestId,
+                questions: qs,
+                nonce,
+              } as never));
             }
           }
           send(channel, { sessionId, ...p });
@@ -913,6 +925,10 @@ export function registerSessionRuntimeHandlers(
       mode: llmConfig.mode,
       sandboxMode: "workspace-write",
       role,
+      // Raw-event broadcast (same as the session:prompt path): without this,
+      // live deltas forwarded via onSessionEvent never reach the renderer on
+      // post-approval turns.
+      onSessionEvent: (sessionEvent: SessionEvent) => broadcastEvent("session:event", { sessionId, event: withToolResultView(withToolCallView(sessionEvent)) }),
     });
   });
 
@@ -1160,7 +1176,13 @@ export function registerSessionRuntimeHandlers(
       console.warn(`[session] respond-questions rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
     }
-    resolvePendingQuestionAnswer(sessionId, callId, answers);
+    if (!resolvePendingQuestionAnswer(sessionId, callId, answers)) {
+      // The tool is no longer waiting (timed out, aborted, or already
+      // settled) — the answer has nowhere to go. Warn loudly: a silent drop
+      // here strands the user with a submitted form and a hung turn.
+      console.warn(`[session] respond-questions dropped: no pending question for ${sessionId}/${callId}`);
+      return;
+    }
     dropAskNonce(sessionId, callId);
     // Drop the recovery registry entry: whether the user answered normally
     // or dismissed via { __dismissed__: true }, the ask has settled and a

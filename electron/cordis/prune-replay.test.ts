@@ -19,6 +19,7 @@ function appendToolStep(session: Session, turn: number, call: string, content: C
     {
       turn,
       step: 1,
+      stream: [],
       message: createMessage({
         role: "assistant",
         content: [{ type: "tool-call", id: callId, name: "bash", arguments: "{}" }],
@@ -45,6 +46,7 @@ function appendToolStep(session: Session, turn: number, call: string, content: C
     {
       turn,
       step: 2,
+      stream: [],
       message: createMessage({
         role: "assistant",
         content: [{ type: "text", text: `done ${call}` }],

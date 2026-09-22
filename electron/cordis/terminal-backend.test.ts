@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { Context } from "@deepseek-ai/cordis";
-import AgentRegistry, { Inbox } from "@deepseek-ai/dsh-agent";
+import AgentRegistry from "@deepseek-ai/dsh-agent";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { Session, SessionId } from "@deepseek-ai/dsh-session";
 import TerminalSessionService from "@deepseek-ai/dsh-terminal";
@@ -106,7 +106,7 @@ function stubAgent(ctx: Context, rawId: string): Agent {
     id,
     options: {},
     session,
-    inbox: new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+    inbox: undefined as never,
     status: "idle",
     ctx: scopeFiber.ctx,
     send: () => {},

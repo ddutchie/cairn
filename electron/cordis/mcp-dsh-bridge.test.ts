@@ -276,7 +276,7 @@ function seedServer(db: Database.Database, id: string, url: string, transport: "
 async function makeCtx(): Promise<Context> {
   const ctx = new Context();
   // tools injects systemPrompt (mount order mirrors cordis-context ENTRY_LIST).
-  await ctx.plugin(systemPromptPlugin, { persona: "", includeHarnessIdentity: false });
+  await ctx.plugin(systemPromptPlugin, { personaPrefix: "", includeHarnessIdentity: false });
   await ctx.plugin(toolsPlugin, { mode: "native" });
   return ctx;
 }

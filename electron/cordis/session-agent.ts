@@ -107,8 +107,12 @@ export async function openCordisSessionAgent(
 
   let exists = false;
   try {
-    const inspection = await ctx.sessionPersistence.inspect(stableId, signal);
-    exists = inspection.events.length > 0;
+    // stat() is the lightweight existence probe (inspect() was removed in
+    // dsh 0.1.5). eventCount is authoritative when present; an undefined
+    // count on an existing snapshot resumes (the create path below treats
+    // "already exists" as resume anyway, so both readings converge).
+    const snap = await ctx.sessionPersistence.stat(stableId, { signal });
+    exists = !!snap && (snap.eventCount ?? 1) > 0;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     // zstd-only backend throws encodingMismatch when a legacy plaintext .jsonl exists.

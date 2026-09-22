@@ -18,6 +18,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Context } from "@deepseek-ai/cordis";
 import CommandRuntime from "@deepseek-ai/dsh-commands";
+import { SessionPersistenceNotFoundError } from "@deepseek-ai/dsh-session-persistence";
+import { SESSION_LOG_FILENAME } from "@deepseek-ai/dsh-session-log-export";
 import {
   apply as sessionExportApply,
   inject as sessionExportInject,
@@ -35,13 +37,18 @@ const fixtureArtifact = [
   JSON.stringify({ type: "assistant/message", seq: 1, data: { message: { content: [{ type: "text", text: "export fixture reply" }] } } }),
 ].join("\n").concat("\n");
 
-/** Raw-artifact persistence stub with exactly one fixture session. */
+/** Persistence stub with exactly one fixture session (dsh ≥0.1.5 read-handle API). */
 function stubPersistence() {
   return {
-    supportsRawArtifacts: true,
-    readRaw: async (id: unknown) => {
-      if (String(id) !== SESSION_ID) return undefined;
-      return { filename: "session.jsonl", content: fixtureArtifact };
+    open: async (id: unknown) => {
+      if (String(id) !== SESSION_ID)
+        throw new SessionPersistenceNotFoundError(id as never);
+      const lines = fixtureArtifact.trim().split("\n").map((line) => JSON.parse(line));
+      return {
+        header: lines[0],
+        read: async () => ({ events: lines.slice(1) }),
+        close: async () => {},
+      };
     },
   };
 }
@@ -109,7 +116,7 @@ describe("exportSessionLog with a fixture session", () => {
       expect(raw[0]).toBe(0x50);
       expect(raw[1]).toBe(0x4b);
       // Entry names are stored plaintext: the root log is in the archive.
-      expect(raw.includes(Buffer.from("session.jsonl", "utf8"))).toBe(true);
+      expect(raw.includes(Buffer.from(SESSION_LOG_FILENAME, "utf8"))).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

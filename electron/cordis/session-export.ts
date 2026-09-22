@@ -30,10 +30,10 @@ import type { Context } from "@deepseek-ai/cordis";
 import "./ctx-augment";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import type { CommandResult } from "@deepseek-ai/dsh-commands";
-import type { SessionRawArtifact } from "@deepseek-ai/dsh-session-persistence";
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
+  readSessionLogText,
   sessionLogExportDeps,
   sessionLogZipFilename,
   streamSessionLogZip,
@@ -85,7 +85,7 @@ function readInvocationSessionId(invocation: ExportInvocationLike): string | und
  */
 export async function streamSessionLogToFile(
   ready: SessionLogExportReady,
-  root: SessionRawArtifact,
+  root: string,
   sessionId: ReturnType<typeof SessionId>,
   includeDescendants: boolean,
   filePath: string,
@@ -142,13 +142,8 @@ export async function exportSessionLog(
       "session log export is unavailable: missing session-query, session-persistence, or attachments service",
     );
   }
-  // Raw-artifact backends (JSONL) export verbatim; a future backend without
-  // per-session artifacts fails here instead of shipping a reconstruction.
-  if (!deps.sessionPersistence.supportsRawArtifacts) {
-    throw new Error(
-      "session log export is unavailable: the persistence backend does not expose per-session raw artifacts",
-    );
-  }
+  // dsh 0.1.5 reads through a persistence read handle (no raw-artifact
+  // capability gate — every backend supports it).
   const ready: SessionLogExportReady = {
     sessionQuery: deps.sessionQuery,
     sessionPersistence: deps.sessionPersistence,
@@ -159,7 +154,7 @@ export async function exportSessionLog(
   await flushLiveSessionLog(deps, sessionId, signal);
   // `undefined` is absence (unknown session); anything else thrown is a
   // backend failure — both reject, never an empty file.
-  const root = await deps.sessionPersistence.readRaw(sessionId, signal);
+  const root = await readSessionLogText(deps.sessionPersistence, sessionId, signal);
   if (root === undefined) throw new Error(`Session not found: "${sessionIdValue}"`);
   fs.mkdirSync(destDir, { recursive: true });
   const filePath = path.join(destDir, path.basename(sessionLogZipFilename(sessionIdValue)));

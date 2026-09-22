@@ -53,7 +53,7 @@ function callId(): ReturnType<typeof ToolCallId> {
 async function mountGlobals(ctx: Context): Promise<void> {
   await ctx.plugin(sessionPlugin as never, {} as never);
   await ctx.plugin(llmPlugin as never, {} as never);
-  await ctx.plugin(systemPromptPlugin as never, { persona: "", includeHarnessIdentity: false } as never);
+  await ctx.plugin(systemPromptPlugin as never, { personaPrefix: "", includeHarnessIdentity: false } as never);
   await ctx.plugin(agentPlugin as never, {} as never);
   await ctx.plugin(toolsPlugin as never, { mode: "native" } as never);
   const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection");

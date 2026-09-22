@@ -291,6 +291,37 @@ describe("bundle self-containment guard", () => {
   }
 });
 
+describe("import.meta stub guards (esbuild CJS breaks ESM import.meta.*)", () => {
+  const mainBundle = path.join(ROOT, "dist-electron/main.js");
+
+  it("no unshimmed import.meta.resolve in the main bundle", () => {
+    if (!fs.existsSync(mainBundle)) return;
+    const src = fs.readFileSync(mainBundle, "utf8");
+    // esbuild rewrites `import.meta.X` to `import_meta.X` / `import_meta2.X`
+    // stubs ({}). The banner+define in scripts/compile-electron.js replaces
+    // import.meta.url and import.meta.resolve with globals — any remaining
+    // stubbed `.resolve(` access throws "…resolve is not a function" at
+    // runtime (broke every sandboxed command on Windows via dsh-sandbox-local).
+    const offenders = src.match(/import_meta\d*\.resolve\s*\(/g) ?? [];
+    expect(
+      offenders,
+      `dist-electron/main.js calls a stubbed import.meta.resolve (${offenders.length}x). Add a define+banner shim in scripts/compile-electron.js (and the matching flags in scripts/build.js).`,
+    ).toHaveLength(0);
+  });
+
+  it("windows sandbox runner ships beside the bundle", () => {
+    // dsh-sandbox-local's Windows ACL runner is pinned via
+    // internals.windowsAclRunnerEntry (cordis-coding-tools.ts) — the file
+    // must exist in dist-electron/ (covered by the existing
+    // `dist-electron/**/*` ship glob in electron-builder.yml).
+    if (!fs.existsSync(mainBundle)) return;
+    expect(
+      fs.existsSync(path.join(ROOT, "dist-electron/windows-acl-runner.cjs")),
+      "dist-electron/windows-acl-runner.cjs missing — run `npm run compile` (scripts/compile-electron.js builds it from dsh-sandbox-windows-acl).",
+    ).toBe(true);
+  });
+});
+
 describe("allowlist drift checks", () => {
   const esbuildExternals = parseEsbuildExternals();
   const shipped = parseShippedPackages();

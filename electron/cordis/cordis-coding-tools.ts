@@ -22,6 +22,8 @@
  */
 import type { Context } from "@deepseek-ai/cordis";
 import "./ctx-augment";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 import sandboxLocalPlugin from "@deepseek-ai/dsh-sandbox-local";
 import sandboxPolicyPlugin from "@deepseek-ai/dsh-sandbox-policy";
@@ -108,6 +110,8 @@ async function plugFsChain(
   }
   // Ensure artifact remap is applied even when adopting an existing fs chain.
   try { remapChatArtifactDirs(ctx); } catch { /* best-effort */ }
+  // Pin the Windows sandbox runner (no-op off win32 / when already pinned).
+  try { pinWindowsAclRunnerEntry(ctx); } catch { /* best-effort */ }
 }
 
 /** Mount ONLY the fs/sandbox ownership trio — used by the chat loop so plugin
@@ -134,11 +138,35 @@ export async function mountFsChain(ctx: Context, opts: { cwd: string; mode?: "wo
   remapChatArtifactDirs(ctx);
 }
 
+/** Pin the Windows sandbox runner to the file shipped beside the bundle.
+ *
+ *  dsh-sandbox-local locates its Windows ACL runner via
+ *  `import.meta.resolve("@deepseek-ai/dsh-sandbox-windows-acl/runner")` —
+ *  which throws `import_meta2.resolve is not a function` in the esbuild CJS
+ *  bundle (same family as the koffi `import.meta.dirname` breakage in #147),
+ *  and would fail in the packaged app anyway (dsh packages are inlined, not
+ *  shipped on disk). The provider honours `internals.windowsAclRunnerEntry`,
+ *  so point it at `dist-electron/windows-acl-runner.cjs` (bundled standalone
+ *  by scripts/compile-electron.js and shipped with the rest of dist-electron).
+ *  No-op off win32 and when the file is
+ *  absent (vitest runs source TS directly — nothing to pin). Idempotent. */
+export function pinWindowsAclRunnerEntry(ctx: Context): void {
+  if (process.platform !== "win32") return;
+  const sandbox = ctx.get("sandbox") as { internals?: { windowsAclRunnerEntry?: string } } | undefined;
+  if (!sandbox || typeof sandbox.internals !== "object" || sandbox.internals.windowsAclRunnerEntry) return;
+  try {
+    // At runtime this module is bundled into dist-electron/main.js, so the
+    // runner ships alongside it. path.dirname(bundle) works in dev and in
+    // the packaged app (resources/app/dist-electron).
+    const entry = path.join(path.dirname(__filename), "windows-acl-runner.cjs");
+    if (fs.existsSync(entry)) sandbox.internals.windowsAclRunnerEntry = entry;
+  } catch { /* best-effort — the resolve() shim remains as fallback */ }
+}
+
 /** Instance-level patch on the mounted fs service: rewrite the well-known
  *  plugin-artifact prefix `viz(/…)` to `.chat/viz(…)`. Only the chat-mounted
  *  chain is patched (coding mounts its own per-turn and stays stock). Harmless
- *  under adoption: nothing legitimate writes a top-level `viz/`. Idempotent. */
-export function remapChatArtifactDirs(ctx: Context): void {
+ *  under adoption: nothing legitimate writes a top-level `viz/`. Idempotent. */export function remapChatArtifactDirs(ctx: Context): void {
   const fsSvc = ctx.get("fs") as
     | { resolve: (path: string, opts?: unknown) => Promise<unknown>; __cairnVizRemap?: boolean }
     | undefined;

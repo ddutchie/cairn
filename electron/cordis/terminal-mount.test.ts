@@ -37,7 +37,7 @@ async function baseContext(): Promise<Context> {
   const ctx = new Context();
   await ctx.plugin(sessionPlugin);
   await ctx.plugin(llmPlugin);
-  await ctx.plugin(systemPromptPlugin, { persona: "", includeHarnessIdentity: false });
+  await ctx.plugin(systemPromptPlugin, { personaPrefix: "", includeHarnessIdentity: false });
   await ctx.plugin(agentPlugin);
   await ctx.plugin(toolsPlugin, { mode: "native" });
   const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection");
