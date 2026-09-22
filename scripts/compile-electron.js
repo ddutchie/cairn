@@ -33,6 +33,15 @@ const mainPreload = {
     "onnxruntime-node",
     "ajv",
     "ajv-formats",
+    // koffi (native FFI, pulled in transitively by dsh-fs-local,
+    // dsh-sandbox-windows-acl, dsh-session-persistence-jsonl,
+    // dsh-subprocess-local, dsh-win32-process) resolves its prebuilt native
+    // binary at runtime relative to import.meta.dirname. Bundling it inlines
+    // that lookup into main.js, and esbuild replaces import.meta.dirname
+    // with undefined for a cjs/node target — koffi then can't find its
+    // native module and throws "Cannot find the native Koffi module" the
+    // first time a session flush (or any dsh fs/subprocess call) touches it.
+    "koffi",
   ],
   outdir: "dist-electron",
   format: "cjs",
