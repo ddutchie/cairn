@@ -57,14 +57,21 @@ run("node scripts/generate-features.js");
 run("cross-env ELECTRON_BUILD=true next build");
 
 // 3. Bundle Electron main + preload with esbuild (inlines all deps except native/dynamic ones)
-// The banner + define fix `import.meta.url` for ESM deps bundled into CJS (e.g.
-// @deepseek-ai/dsh-llm does `createRequire(import.meta.url)` at module scope;
-// esbuild stubs import.meta = {} in CJS, so we redirect it to a real file URL).
+// The banner + define fix `import.meta.url` AND `import.meta.resolve` for ESM
+// deps bundled into CJS (e.g. @deepseek-ai/dsh-llm does
+// `createRequire(import.meta.url)` at module scope; dsh-sandbox-local calls
+// `import.meta.resolve()` for its Windows runner — esbuild stubs import.meta
+// = {} in CJS, so we redirect both to real file-URL shims).
 run(
-  "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node24 --external:electron --external:better-sqlite3 --external:node-pty --external:@huggingface/transformers --external:onnxruntime-node --external:ajv --external:ajv-formats --outdir=dist-electron --format=cjs " +
-    "\"--banner:js=globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;\" " +
-    "--define:import.meta.url=globalThis.__cairnImportMetaUrl",
+  "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node24 --external:electron --external:better-sqlite3 --external:node-pty --external:@huggingface/transformers --external:onnxruntime-node --external:ajv --external:ajv-formats --external:koffi --outdir=dist-electron --format=cjs " +
+    "\"--banner:js=globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>require('url').pathToFileURL(require.resolve(s)).href;\" " +
+    "--define:import.meta.url=globalThis.__cairnImportMetaUrl " +
+    "--define:import.meta.resolve=globalThis.__cairnImportMetaResolve",
 );
+
+// 3a. Bundle the Windows sandbox runner as a standalone file (see
+// scripts/compile-electron.js for the full rationale).
+run("esbuild node_modules/@deepseek-ai/dsh-sandbox-windows-acl/lib/runner.js --bundle --platform=node --target=node24 --external:koffi --outfile=dist-electron/windows-acl-runner.cjs --format=cjs");
 
 // 3b. Bundle the runtime server (unified embeddings + LLM — runs as ELECTRON_RUN_AS_NODE child)
 run("esbuild electron/runtime/server.ts --bundle --platform=node --target=node24 --external:@huggingface/transformers --external:onnxruntime-node --outfile=dist-electron/runtime-server.bundle.js --format=cjs");

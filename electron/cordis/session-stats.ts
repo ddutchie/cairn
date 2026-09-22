@@ -4,7 +4,9 @@
  *
  * Whole-log semantics mirror upstream `sessionStatsProjectionDefinition`:
  *   - a step opens at `step/start` (turn+step+time),
- *   - first token = the first `isTokenDelta` `assistant/chunk` in that step,
+ *   - first token anchored on the first content-bearing `assistant/chunk`
+ *     (pre-0.1.5 logs), falling back to the settled `assistant/message`
+ *     time when the step carries no chunks (dsh ≥0.1.5 emits none),
  *   - the assembled `assistant/message` closes the step: model time =
  *     message.time − step.start; TTFT = firstToken − step.start; decode =
  *     message.time − firstToken (only when the step reports output tokens),
@@ -34,7 +36,8 @@
 /**
  * Inlined `isTokenDelta` (was `import { isTokenDelta } from
  * "@deepseek-ai/dsh-llm"` — removed upstream in `0.1.2-alpha.4`). Mirrors
- * `shared/session-stats.ts`; keep the two in sync.
+ * `shared/session-stats.ts`; keep the two in sync. Still used for pre-0.1.5
+ * logs replayed through the fold (dsh ≥0.1.5 emits no chunks live).
  */
 function isTokenDelta(chunk: unknown): boolean {
   if (!chunk || typeof chunk !== "object") return false;
@@ -50,7 +53,6 @@ function isTokenDelta(chunk: unknown): boolean {
   }
 }
 
-/** Whole-session aggregate throughput/latency totals. */
 export interface SessionStatsTotals {
   /** Distinct turns with ≥1 closed step. */
   turns: number;
@@ -123,7 +125,10 @@ export function foldSessionStats(events: readonly Ev[]): SessionStats | undefine
     const time = num(ev.time);
     const d = (ev.data ?? {}) as Record<string, unknown>;
 
-    switch (ev.type) {
+    // Loose comparison: dsh ≥0.1.5 no longer emits `assistant/chunk`, but
+    // persisted pre-0.1.5 logs still contain them and replay through this
+    // fold — keep honoring chunks when present for exact old-log TTFT.
+    switch (ev.type as string) {
       case "step/start": {
         const turn = num(d.turn); const step = num(d.step);
         if (time === null || turn === null || step === null) break;
@@ -151,6 +156,12 @@ export function foldSessionStats(events: readonly Ev[]): SessionStats | undefine
         const turn = num(d.turn); const step = num(d.step);
         if (turn !== openStep.turn || step !== openStep.step) break;
         totals.llmMs += Math.max(0, time - openStep.startTime);
+        // dsh ≥0.1.5 emits no per-token `assistant/chunk` events, so the
+        // first-token anchor never lands from the (removed) chunk case below:
+        // fall back to the settled message time. TTFT then reads as full-step
+        // latency and decode as 0 for the step — degraded but present, and
+        // exact again for any log that still carries chunks.
+        if (openStep.firstTokenTime === null) openStep.firstTokenTime = time;
 
         const tf = turnFolds.get(openStep.turn) ?? { firstStep: openStep.step, firstStepTtftMs: null, decodeMs: 0, outputTokens: 0, sampled: false };
         if (!turnFolds.has(openStep.turn)) turnFolds.set(openStep.turn, tf);

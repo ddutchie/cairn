@@ -193,7 +193,7 @@ export async function getContext(): Promise<Context> {
     const entries: Array<Record<string, unknown>> = [
       { id: "session", name: "cordis:dsh:session" },
       { id: "llm", name: "cordis:dsh:llm" },
-      { id: "system-prompt", name: "cordis:dsh:system-prompt", config: { persona: "", includeHarnessIdentity: false } },
+      { id: "system-prompt", name: "cordis:dsh:system-prompt", config: { personaPrefix: "", includeHarnessIdentity: false } },
       { id: "agent", name: "cordis:dsh:agent" },
       { id: "tools", name: "cordis:dsh:tools", config: { mode: "native" } },
       { id: "user-questions", name: "cordis:dsh:user-questions" },

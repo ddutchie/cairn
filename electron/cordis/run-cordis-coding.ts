@@ -37,7 +37,7 @@ import { runCordisSession } from "./session-runner";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
-import { makeSessionProjection } from "../../shared/agent/session-projection";
+import { onAssistantStream, syntheticChunkEvent } from "./assistant-stream-frames";
 import { describeTurnEndReason } from "../../shared/agent/turn-end-reason";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 
@@ -170,6 +170,10 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   const cairnToolsExclude = opts.role === "automation-dev"
     ? new Set(Object.keys(TOOL_SCHEMAS))
     : undefined;
+  // Stable dsh session id for this coding conversation (also the match key
+  // for event/frame bridging below). Hoisted here so setup-time subscribers
+  // (stream frames, questions) close over it — run() reuses the same value.
+  const attemptSessionId = SessionId(sessionId);
   return runCordisSession<RunCordisCodingResult>({
     ctx, db, req, sessionId, llmConfig: opts.llmConfig, signal,
       profileId: opts.role === "automation-dev" ? "automation-dev" : "coding",
@@ -185,7 +189,11 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       projectId: req.projectId,
       questions: questions ? {
       ...questions,
-       emitQuestions: (requestId, qs) => questions.send("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions: qs }) as never),
+       // Route through the shared ask-questions send so the nonce is minted,
+       // the recovery record is written, and the renderer gets the question
+       // projection (direct send() here would skip the nonce and the answer
+       // would be rejected — the ask_questions silent-drop bug).
+       emitQuestions: (requestId, qs) => questions.send("session:ask-questions", { callId: requestId, questions: qs }),
       } : undefined,
      onSessionEvent,
     setup: async ({ llmConfig, resources, mount }) => {
@@ -249,6 +257,26 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       throw e;
     }
     timer.mark("mountCodingStack (15 dsh plugins)");
+    // Live token streaming (dsh ≥0.1.5): `assistant/chunk` session events no
+    // longer exist — deltas arrive as `agent/assistant-stream` dispatch
+    // frames. Forward this attempt's deltas as renderer-fold-compatible
+    // synthetic chunks via the raw-event callback (transient: never appended
+    // to the log); the settled `assistant/message` fills any gap exactly as
+    // it did with real chunks. NOTE: not via send("session:event") — the
+    // session send wrapper terminates in loopSend, which drops every channel
+    // except session:projection. Scoped to this turn's attempt id
+    // (concurrent turns must not cross-talk) and excluding subagent children
+    // (bridged separately with traces).
+    try {
+      resources.add(onAssistantStream(
+        ctx,
+        (id, header) => id === attemptSessionId && header?.origin !== "subagent",
+        {
+          onText: (t) => onSessionEvent(syntheticChunkEvent("text-delta", t) as never),
+          onReasoning: (t) => onSessionEvent(syntheticChunkEvent("reasoning-delta", t) as never),
+        },
+      ));
+    } catch { /* streaming is decoration — never break the turn */ }
     let externalDisposers: Array<() => void> = [];
     try {
       // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF): when it
@@ -335,7 +363,6 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // session's materialized history on a remount (first use creates it). This
     // gives the coding agent stateful, resumable multi-turn sessions WITHOUT
     // storing transcripts in Cairn's SQLite (the DB is for MCP/tool access).
-    const attemptSessionId = SessionId(sessionId);
     // Route presentation projections to the renderer. Terminal resolution is
     // handled separately from the raw DSH event callback above.
     const terminal = new Promise<RunCordisCodingResult>((resolve) => { resolveTerminal = resolve; });

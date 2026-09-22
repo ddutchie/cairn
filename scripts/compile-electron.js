@@ -46,9 +46,20 @@ const mainPreload = {
   outdir: "dist-electron",
   format: "cjs",
   banner: {
-    js: "globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;",
+    js: "globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>require('url').pathToFileURL(require.resolve(s)).href;",
   },
-  define: { "import.meta.url": "globalThis.__cairnImportMetaUrl" },
+  define: {
+    "import.meta.url": "globalThis.__cairnImportMetaUrl",
+    // dsh-sandbox-local + dsh-workflow-worker-thread call import.meta.resolve()
+    // at runtime. esbuild stubs import.meta as {} in CJS output, so without
+    // this every sandboxed command on Windows throws
+    // "import_meta2.resolve is not a function". The primary fix is the
+    // internals.windowsAclRunnerEntry override in cordis-coding-tools.ts
+    // (avoids the call entirely); this shim is belt-and-braces for any other
+    // current/future resolve() use. Only resolves shipped externals —
+    // bundled dsh subpaths throw loudly instead of returning garbage.
+    "import.meta.resolve": "globalThis.__cairnImportMetaResolve",
+  },
 };
 
 const mcpServer = {
@@ -81,8 +92,25 @@ const runtimeServer = {
   format: "cjs",
 };
 
+// Windows sandbox runner (dsh-sandbox-windows-acl/lib/runner.js) as a real
+// file next to main.js. dsh-sandbox-local locates it via
+// import.meta.resolve() — broken in the CJS bundle AND unresolvable in the
+// packaged app (dsh packages are inlined, not shipped on disk). Cairn pins
+// this file via internals.windowsAclRunnerEntry (see cordis-coding-tools.ts)
+// so the resolve() call is never reached. koffi stays external (shipped since
+// #147); the runner requires it at runtime from app/node_modules.
+const windowsAclRunner = {
+  entryPoints: ["node_modules/@deepseek-ai/dsh-sandbox-windows-acl/lib/runner.js"],
+  bundle: true,
+  platform: "node",
+  target: "node24",
+  external: ["koffi"],
+  outfile: "dist-electron/windows-acl-runner.cjs",
+  format: "cjs",
+};
+
 async function main() {
-  const configs = [mainPreload, mcpServer, embeddingsServer, runtimeServer];
+  const configs = [mainPreload, mcpServer, embeddingsServer, runtimeServer, windowsAclRunner];
   if (watch) {
     const contexts = await Promise.all(configs.map((c) => esbuild.context(c)));
     await Promise.all(contexts.map((ctx) => ctx.watch()));

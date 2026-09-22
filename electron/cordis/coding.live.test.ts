@@ -25,7 +25,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cordis coding stack (gated on 
     const ctx = new Context();
     await ctx.plugin(sessionPlugin);
     await ctx.plugin(llmPlugin);
-    await ctx.plugin(systemPromptPlugin, { persona: "", includeHarnessIdentity: false });
+    await ctx.plugin(systemPromptPlugin, { personaPrefix: "", includeHarnessIdentity: false });
     await ctx.plugin(agentPlugin);
     await ctx.plugin(toolsPlugin, { mode: "native" });
     // sandbox-policy / tool-todo / agent-instructions inject

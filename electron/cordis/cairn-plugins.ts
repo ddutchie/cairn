@@ -17,6 +17,7 @@
  * deltas while the DB gets the durable record.
  */
 import type { Context } from "@deepseek-ai/cordis";
+import { onAssistantStream } from "./assistant-stream-frames";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import type Database from "better-sqlite3";
 import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
@@ -262,6 +263,34 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
   const streamedText = new Set<string>();
   const streamedReasoning = new Set<string>();
 
+  // Live child deltas (dsh ≥0.1.5): `assistant/chunk` session events no
+  // longer exist — deltas arrive as `agent/assistant-stream` dispatch frames.
+  // Same session scoping as the event bridge below (children of this mount's
+  // session only); keeps streamedText/Reasoning current so the final
+  // assistant/message gap-fill doesn't duplicate the brief.
+  onAssistantStream(
+    ctx,
+    (_id, header) =>
+      header?.origin === "subagent" &&
+      (header?.parentSession == null || String(header.parentSession) === sessionId),
+    {
+      onText: (text, info) => {
+        const childId = String(info.agentSessionId);
+        const parentSession =
+          info.header?.parentSession != null ? String(info.header.parentSession) : undefined;
+        streamedText.add(childId);
+        sendProjection(send, sessionId, "subagent-trace", { trace: "token", childId, parentSession, delta: text });
+      },
+      onReasoning: (text, info) => {
+        const childId = String(info.agentSessionId);
+        const parentSession =
+          info.header?.parentSession != null ? String(info.header.parentSession) : undefined;
+        streamedReasoning.add(childId);
+        sendProjection(send, sessionId, "subagent-trace", { trace: "thought", childId, parentSession, delta: text });
+      },
+    },
+  );
+
   ctx.on("session/event", (session: Session, event: SessionEvent) => {
     const header = (session as { header?: { origin?: string; parentSession?: unknown } }).header;
     const isChild = header?.origin === "subagent";
@@ -318,14 +347,6 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
         const text = eventText(event).trim();
         if (text) sendProjection(send, sessionId, "subagent-trace", { trace: "token", childId, parentSession, delta: `\n\n${text}` });
       }
-      return;
-    }
-
-    if (event.type === "assistant/chunk") {
-      const c = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
-      if (!c) return;
-       if (c.type === "text-delta" && c.text) { streamedText.add(childId); sendProjection(send, sessionId, "subagent-trace", { trace: "token", childId, parentSession, delta: c.text }); }
-       if (c.type === "reasoning-delta" && c.text) { streamedReasoning.add(childId); sendProjection(send, sessionId, "subagent-trace", { trace: "thought", childId, parentSession, delta: c.text }); }
       return;
     }
 
@@ -612,7 +633,6 @@ export interface CairnUsageConfig {
  */
 export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
   const { threadId, workspaceId, projectId, provider, model, baseUrl, source } = config;
-  let recordedInTurn = false;
 
   // Named rather than `typeof u`: a self-referential annotation narrows to never.
   type DshUsage = {
@@ -627,21 +647,17 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
   ctx.on("session/event", (session: Session, event: SessionEvent) => {
     let u: DshUsage | undefined = undefined;
 
-    if (event.type === "assistant/chunk") {
-      const chunk = (event.data as { chunk?: { type?: string; usage?: DshUsage } }).chunk;
-      if (chunk?.type === "usage" && chunk.usage) {
-        u = chunk.usage;
-      }
-    } else if (event.type === "assistant/message") {
+    // dsh ≥0.1.5 reports per-attempt usage on the settled assistant/message
+    // (the `assistant/chunk` usage deltas no longer exist). Every message
+    // with usage is its own row — one row per request, never merged.
+    if (event.type === "assistant/message") {
       const msgUsage = (event.data as { usage?: DshUsage }).usage;
-      if (msgUsage && !recordedInTurn) {
+      if (msgUsage) {
         u = msgUsage;
       }
-      recordedInTurn = false; // Reset for next step/turn
     }
 
     if (!u) return;
-    recordedInTurn = true;
 
     const rawInput = u.inputTokens ?? 0;
     const rawCacheRead = u.cacheReadTokens ?? 0;
@@ -713,11 +729,6 @@ export interface CairnCodingConfig {
   signal?: AbortSignal;
   /** Forward the raw DSH event without changing or flattening it. */
   onSessionEvent?: (event: SessionEvent) => void;
-}
-
-/** The dsh `todo/write` snapshot payload (TodoItem[]). */
-interface DshTodoWrite {
-  todos?: Array<{ content: string; status: string }>;
 }
 
 /**
@@ -793,6 +804,35 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       return;
     }
 
+    // ── todos: dsh-tool-todo appends a `todo/write` snapshot ({todos:
+    // [{content, status}]}) per write — map it to Cairn's session_todos +
+    // emit. NOTE: the tool RESULT is rendered text ("Updated todo list: …"),
+    // never JSON, so parsing the output (as the old tool/result branch did)
+    // always threw and the dock never populated. Read the snapshot event.
+    if (event.type === "todo/write") {
+      const host = getHost(ctx);
+      if (host) {
+        try {
+          const data = event.data as { todos?: Array<{ content?: unknown; status?: unknown }> };
+          const list = Array.isArray(data.todos)
+            ? data.todos
+                .filter((t) => typeof t?.content === "string")
+                .map((t) => ({
+                  content: t.content as string,
+                  status: (t.status === "in_progress" || t.status === "completed" ? t.status : "pending") as
+                    | "pending"
+                    | "in_progress"
+                    | "completed",
+                  priority: "medium" as const,
+                }))
+            : [];
+          host.saveSessionTodos(sessionId, list);
+          emit("todos", { todos: host.getSessionTodos(sessionId) });
+        } catch { /* non-critical */ }
+      }
+      return;
+    }
+
     // ── Tool result (after execution) ────────────────────────────────────────
     if (event.type === "tool/result") {
       const msg = (event.data as { message?: { source?: { callId?: string }; content?: Array<{ type?: string; isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } }).message;
@@ -822,22 +862,8 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
         } catch { /* non-JSON output — ignore */ }
       }
 
-      // ── todos: the dsh `todo_write` tool writes `todo/write` snapshots; map
-      // the latest to Cairn's session_todos + emit session:todos.
-      if (name === "todo_write" && host) {
-        try {
-          const parsed = JSON.parse(output) as DshTodoWrite;
-          const list = Array.isArray(parsed.todos)
-            ? parsed.todos.map((t) => ({
-                content: t.content,
-                status: (t.status === "in_progress" || t.status === "completed" || t.status === "pending" ? t.status : "pending") as "pending" | "in_progress" | "completed",
-                priority: "medium" as const,
-              }))
-            : [];
-          host.saveSessionTodos(sessionId, list);
-          emit("todos", { todos: host.getSessionTodos(sessionId) });
-        } catch { /* non-critical */ }
-      }
+      // (todos are handled from the `todo/write` snapshot event above — the
+      // tool result here is rendered text, not JSON.)
       return;
     }
 

@@ -30,12 +30,15 @@ function harness() {
   return { ctx, fire };
 }
 
-function usageChunk(inputTokens: number, outputTokens: number, reasoningTokens = 0): SessionEvent {
+function usageMessage(inputTokens: number, outputTokens: number, reasoningTokens = 0): SessionEvent {
   return {
-    type: "assistant/chunk",
+    type: "assistant/message",
     seq: 1,
     time: Date.now(),
-    data: { chunk: { type: "usage", usage: { inputTokens, outputTokens, reasoningTokens } } },
+    data: {
+      message: { content: [{ type: "text", text: "hi" }] },
+      usage: { inputTokens, outputTokens, reasoningTokens },
+    },
   } as unknown as SessionEvent;
 }
 
@@ -56,11 +59,12 @@ describe("cairnUsagePlugin — one row per request", () => {
     const { ctx, fire } = harness();
     cairnUsagePlugin(ctx as never, { threadId: "s1", workspaceId: "w1", model: "test-model", source: "chat" });
 
-    // The four steps of a real turn, as the provider reported them.
-    fire(usageChunk(8802, 151));
-    fire(usageChunk(11183, 67));
-    fire(usageChunk(11955, 135));
-    fire(usageChunk(13623, 625));
+    // The four steps of a real turn, as the provider reported them
+    // (dsh ≥0.1.5: per-attempt usage on the settled assistant/message).
+    fire(usageMessage(8802, 151));
+    fire(usageMessage(11183, 67));
+    fire(usageMessage(11955, 135));
+    fire(usageMessage(13623, 625));
 
     expect(rows().map((r) => [r.prompt_tokens, r.completion_tokens])).toEqual([
       [8802, 151], [11183, 67], [11955, 135], [13623, 625],
@@ -74,11 +78,11 @@ describe("cairnUsagePlugin — one row per request", () => {
     const { ctx, fire } = harness();
     cairnUsagePlugin(ctx as never, { threadId: "s1", workspaceId: "w1", model: "test-model", source: "chat" });
 
-    fire(usageChunk(0, 0));
-    fire(usageChunk(0, 0, 0));
+    fire(usageMessage(0, 0));
+    fire(usageMessage(0, 0, 0));
     expect(rows()).toHaveLength(0);
 
-    fire(usageChunk(10, 5));
+    fire(usageMessage(10, 5));
     expect(rows()).toHaveLength(1);
   });
 
@@ -86,7 +90,7 @@ describe("cairnUsagePlugin — one row per request", () => {
     const { ctx, fire } = harness();
     cairnUsagePlugin(ctx as never, { threadId: "s1", workspaceId: "w1", model: "test-model", source: "coding-agent" });
 
-    fire(usageChunk(100, 10));
+    fire(usageMessage(100, 10));
     expect(rows()[0].source).toBe("coding-agent");
   });
 
@@ -94,8 +98,8 @@ describe("cairnUsagePlugin — one row per request", () => {
     const { ctx, fire } = harness();
     cairnUsagePlugin(ctx as never, { threadId: "s1", workspaceId: "w1", model: "test-model", source: "coding-agent" });
 
-    fire(usageChunk(100, 10));                 // parent
-    fire(usageChunk(50, 5), "subagent");       // child
+    fire(usageMessage(100, 10));                 // parent
+    fire(usageMessage(50, 5), "subagent");       // child
 
     expect(rows().map((r) => r.source)).toEqual(["coding-agent", "coding-subagent"]);
   });
@@ -104,28 +108,20 @@ describe("cairnUsagePlugin — one row per request", () => {
     const { ctx, fire } = harness();
     cairnUsagePlugin(ctx as never, { threadId: "s1", workspaceId: "w1", model: "test-model", source: "chat" });
 
-    fire(usageChunk(50, 5), "subagent");
+    fire(usageMessage(50, 5), "subagent");
     expect(rows()[0].source).toBe("chat-subagent");
   });
 
-  it("falls back to assistant/message usage only when the step reported none", () => {
+  it("records every message's own usage — one row per request, never merged", () => {
     const { ctx, fire } = harness();
     cairnUsagePlugin(ctx as never, { threadId: "s1", workspaceId: "w1", model: "test-model", source: "chat" });
 
-    const message = (inputTokens: number, outputTokens: number): SessionEvent => ({
-      type: "assistant/message",
-      seq: 2,
-      time: Date.now(),
-      data: { usage: { inputTokens, outputTokens } },
-    } as unknown as SessionEvent);
-
-    // Chunk already reported → the message must not double-record.
-    fire(usageChunk(100, 10));
-    fire(message(100, 10));
+    // dsh ≥0.1.5 reports per-attempt usage on the settled message only
+    // (no chunk/message interplay anymore) — each message is its own row.
+    fire(usageMessage(100, 10));
     expect(rows()).toHaveLength(1);
 
-    // Next step reports nothing on the chunk → the message is the only source.
-    fire(message(200, 20));
+    fire(usageMessage(200, 20));
     expect(rows()).toHaveLength(2);
     expect(rows()[1]).toMatchObject({ prompt_tokens: 200, completion_tokens: 20 });
   });
