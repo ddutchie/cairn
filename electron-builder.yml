@@ -42,6 +42,14 @@ files:
   - node_modules/file-uri-to-path/**/*
   # node-pty — native PTY addon, must be present at runtime
   - node_modules/node-pty/**/*
+  # koffi — native FFI module (transitive via dsh-fs-local,
+  # dsh-session-persistence-jsonl, dsh-subprocess-local). Kept external to the
+  # main bundle so its runtime prebuild lookup (relative to its own package
+  # dir) keeps working. Ships the JS wrapper plus the per-platform binaries
+  # under @koromix/koffi-<platform>-<arch> (resolved via absolute path, not a
+  # bare require — hence a scope-wide glob; after-pack strips other arches).
+  - node_modules/koffi/**/*
+  - node_modules/@koromix/**/*
   # Runtime server externals — transformers.js + onnxruntime + sharp stub (in-process embeddings)
   - node_modules/@huggingface/transformers/**/*
   - node_modules/onnxruntime-node/**/*
@@ -58,7 +66,7 @@ files:
   - node_modules/json-schema-traverse/**/*
   - node_modules/require-from-string/**/*
   # Exclude everything else in node_modules
-  - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path|electron-updater|node-pty|@huggingface|onnxruntime-node|onnxruntime-common|sharp|umap-js|ajv|ajv-formats|fast-deep-equal|fast-uri|json-schema-traverse|require-from-string)/**"
+  - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path|electron-updater|node-pty|koffi|@koromix|@huggingface|onnxruntime-node|onnxruntime-common|sharp|umap-js|ajv|ajv-formats|fast-deep-equal|fast-uri|json-schema-traverse|require-from-string)/**"
   # Exclude source code, tests, and build intermediates from native modules to reduce size and signing overhead
   - "!node_modules/{better-sqlite3,node-pty}/{src,deps,docs,test,tests,obj,*.vcxproj,*.sln,*.vcxproj.filters}/**/*"
   - "!node_modules/{better-sqlite3,node-pty}/build/Release/*.{obj,pdb,lib,iobj,ipdb,tlog}"
@@ -81,6 +89,8 @@ asarUnpack:
   - node_modules/file-uri-to-path/**/*
   - node_modules/electron-updater/**/*
   - node_modules/node-pty/**/*
+  - node_modules/koffi/**/*
+  - node_modules/@koromix/**/*
   - node_modules/onnxruntime-node/**/*
 
 # Native modules are pre-rebuilt by `npm run rebuild` — skip the redundant

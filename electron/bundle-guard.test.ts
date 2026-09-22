@@ -80,6 +80,14 @@ const RUNTIME_SHIPPED = new Set([
 const SHIPPED_NATIVE = new Set([
   "better-sqlite3",
   "node-pty",
+  // koffi (native FFI, pulled in transitively by dsh-fs-local,
+  // dsh-session-persistence-jsonl, dsh-subprocess-local, …) resolves its
+  // prebuilt binary at runtime relative to its own package dir
+  // (node_modules/koffi + node_modules/@koromix/koffi-<platform>-<arch>).
+  // Bundling it inlines that lookup into main.js with a broken dirname, so
+  // it stays external like the other natives. Its platform binaries ship
+  // via electron-builder.yml (`node_modules/koffi` + `node_modules/@koromix`).
+  "koffi",
 ]);
 
 /**
@@ -176,17 +184,43 @@ function extractRequires(bundlePath: string): string[] {
 }
 
 /**
- * Parse all `--external:<pkg>` flags from the `compile` script in package.json.
- * Returns the set of package names that esbuild is told to leave external.
+ * Parse all externals esbuild is told to leave external.
+ * Legacy: `--external:<pkg>` flags from the `compile` script in package.json.
+ * Current: the `external: [...]` array in scripts/compile-electron.js (the
+ * esbuild JS API build — no shell flags involved). Both are collected so the
+ * drift check stays meaningful across the migration.
+ * Returns the set of package names that esbuild leaves external.
  */
 function parseEsbuildExternals(): Set<string> {
+  const out = new Set<string>();
   const pkgPath = path.join(ROOT, "package.json");
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
   const compileCmd = pkg.scripts?.compile ?? "";
   const re = /--external:([^\s]+)/g;
-  const out = new Set<string>();
   let m: RegExpExecArray | null;
   while ((m = re.exec(compileCmd)) !== null) out.add(m[1]);
+  // scripts/compile-electron.js — `external: [ "electron", "koffi", … ]`.
+  // Quoted strings inside an `external:` array literal.
+  try {
+    const compileJs = fs.readFileSync(
+      path.join(ROOT, "scripts", "compile-electron.js"),
+      "utf8",
+    );
+    const extRe = /external\s*:\s*\[([\s\S]*?)\]/g;
+    let em: RegExpExecArray | null;
+    while ((em = extRe.exec(compileJs)) !== null) {
+      // Strip line + block comments — they may contain quoted strings
+      // (e.g. "Cannot find the native Koffi module") that aren't externals.
+      const code = em[1]
+        .replace(/\/\/.*$/gm, "")
+        .replace(/\/\*[\s\S]*?\*\//g, "");
+      const strRe = /["']([^"']+)["']/g;
+      let sm: RegExpExecArray | null;
+      while ((sm = strRe.exec(code)) !== null) out.add(sm[1]);
+    }
+  } catch {
+    // compile script missing — package.json flags alone are the source.
+  }
   return out;
 }
 
@@ -194,7 +228,10 @@ function parseEsbuildExternals(): Set<string> {
  * Parse the names of packages that electron-builder.yml actually ships from
  * `node_modules/` — i.e. all `node_modules/<pkg>` paths in `files:` and
  * `asarUnpack:`, ignoring negation patterns. Handles scoped packages
- * (`@scope/name`) in addition to bare names (`better-sqlite3`).
+ * (`@scope/name`) in addition to bare names (`better-sqlite3`), plus
+ * scope-wide globs (`node_modules/@koromix/**`) which ship every package
+ * under that scope (used for koffi's per-platform `@koromix/koffi-*`
+ * binaries).
  */
 function parseShippedPackages(): Set<string> {
   const ymlPath = path.join(ROOT, "electron-builder.yml");
@@ -205,6 +242,22 @@ function parseShippedPackages(): Set<string> {
   const out = new Set<string>();
   let m: RegExpExecArray | null;
   while ((m = re.exec(yml)) !== null) out.add(m[1]);
+  // Scope-wide globs: `node_modules/@<scope>/**/*` ships the whole scope.
+  // Expand to every allowlisted package under that scope so drift checks
+  // don't demand one yml line per platform binary.
+  const scopeRe = /node_modules\/(@[a-z0-9_-]+)\/\*\*/gi;
+  let sm: RegExpExecArray | null;
+  while ((sm = scopeRe.exec(yml)) !== null) {
+    const scope = sm[1];
+    for (const pkg of ALLOWED_EXTERNALS) {
+      if (pkg.startsWith(`${scope}/`)) out.add(pkg);
+    }
+    // koffi's binaries live under @koromix but are resolved via an absolute
+    // path built at runtime (not a bare `require()`), so they never appear
+    // in ALLOWED_EXTERNALS — mark the scope itself as shipped so the
+    // SHIPPED_NATIVE check below can accept them.
+    out.add(`${scope}/*`);
+  }
   return out;
 }
 
@@ -231,7 +284,7 @@ describe("bundle self-containment guard", () => {
         });
         expect(
           offenders,
-          `Bundle ${bundleRel} contains \`require()\` calls for packages that are neither Node built-ins nor on the ALLOWED_EXTERNALS list. In a packaged Electron app these will fail with "Cannot find module". Either remove the \`--external:<pkg>\` flag from the esbuild command in package.json (so esbuild bundles the package), or add the package to ALLOWED_EXTERNALS and ship it via electron-builder.yml.\n  Offenders:\n    - ${offenders.join("\n    - ")}`,
+          `Bundle ${bundleRel} contains \`require()\` calls for packages that are neither Node built-ins nor on the ALLOWED_EXTERNALS list. In a packaged Electron app these will fail with "Cannot find module". Either remove the package from \`external\` in scripts/compile-electron.js (so esbuild bundles it), or add the package to ALLOWED_EXTERNALS and ship it via electron-builder.yml.\n  Offenders:\n    - ${offenders.join("\n    - ")}`,
         ).toHaveLength(0);
       });
     });
@@ -242,11 +295,27 @@ describe("allowlist drift checks", () => {
   const esbuildExternals = parseEsbuildExternals();
   const shipped = parseShippedPackages();
 
-  it("every --external flag in package.json compile script is in ALLOWED_EXTERNALS", () => {
+  it("every esbuild external (compile-electron.js + package.json flags) is in ALLOWED_EXTERNALS", () => {
     const drift = [...esbuildExternals].filter((x) => !ALLOWED_EXTERNALS.has(x));
     expect(
       drift,
-      "package.json \`compile\` script declares \`--external:<pkg>\` but <pkg> isn't in any allowlist group in bundle-guard.test.ts. Either add the package to the appropriate group (RUNTIME_PROVIDED / OPTIONAL_TRANSITIVE / SUBPROCESS_ONLY / SHIPPED_NATIVE) or remove the \`--external\` flag (and let esbuild bundle it in).\n  Untracked externals:\n    - " + drift.join("\n    - "),
+      "scripts/compile-electron.js `external: [...]` (or package.json `compile` `--external:<pkg>`) declares <pkg> but it isn't in any allowlist group in bundle-guard.test.ts. Either add the package to the appropriate group (RUNTIME_PROVIDED / OPTIONAL_TRANSITIVE / RUNTIME_SHIPPED / SHIPPED_NATIVE / MCP_SDK_SHIPPED) or remove the external (and let esbuild bundle it in).\n  Untracked externals:\n    - " + drift.join("\n    - "),
+    ).toHaveLength(0);
+  });
+
+  it("koffi native binaries ship via electron-builder.yml (koffi + @koromix scope)", () => {
+    // koffi's prebuilt .node files live in @koromix/koffi-<platform>-<arch>
+    // and are resolved via an absolute path at runtime — invisible to the
+    // `require()` scan. Without the scope-wide glob the packaged app throws
+    // "Cannot find the native Koffi module" on first session flush.
+    const missing: string[] = [];
+    if (!shipped.has("koffi")) missing.push("koffi (node_modules/koffi/**/*)");
+    if (!shipped.has("@koromix/*"))
+      missing.push("@koromix/* (node_modules/@koromix/**/*)");
+    expect(
+      missing,
+      "koffi is external but its runtime files don't ship. Add `node_modules/koffi/**/*` and `node_modules/@koromix/**/*` to electron-builder.yml `files` + `asarUnpack` and the negation-glob allowlist.\n  Missing:\n    - " +
+        missing.join("\n    - "),
     ).toHaveLength(0);
   });
 
