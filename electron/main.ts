@@ -262,6 +262,31 @@ app.whenReady().then(async () => {
   const sessionRoot = path.join(userDataPath, "sessions");
   fs.mkdirSync(sessionRoot, { recursive: true });
   setSessionRoot(sessionRoot);
+  // Writability probe: chat/coding transcripts only survive restarts if the
+  // dsh JSONL backend can write under sessionRoot. A backend failure is
+  // silent by design (best-effort flush), so record up front whether the
+  // directory itself accepts fsync'd writes — this separates "OS/volume
+  // won't let us write here" (permissions, AV locks, read-only profile)
+  // from "the directory is fine but the backend publish path fails".
+  try {
+    const probe = path.join(sessionRoot, `.write-probe-${process.pid}.tmp`);
+    const handle = fs.openSync(probe, "w");
+    try {
+      fs.writeFileSync(handle, "probe");
+      fs.fsyncSync(handle);
+    } finally {
+      fs.closeSync(handle);
+    }
+    const roundTrip = fs.readFileSync(probe, "utf-8") === "probe";
+    fs.rmSync(probe, { force: true });
+    dlog("main", "session root writability probe", { sessionRoot, writable: roundTrip });
+    if (!roundTrip) dlog("main", "session root probe round-trip mismatch — session writes may not persist", { sessionRoot });
+  } catch (err) {
+    dlog("main", "session root is NOT writable — chat history will not persist across restarts", {
+      sessionRoot,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Session-log retention (§ H16 from the pre-merge review): dsh's jsonl
   // session logs accumulate indefinitely — a heavy user (~20 sessions/day)
