@@ -62,7 +62,10 @@ export async function prepareReplayContext(pers: { inspect: (id: string) => Prom
       // Prefer the session's committed cwd; fall back to the current sessionRoot's
       // parent (workspace) rather than process.cwd() which may be the app bundle dir
       // and would over-permit the fs sandbox.
-      const fallbackCwd = cwd || getSessionRoot().replace(/\/sessions\/?$/, "") || process.cwd();
+      // Strip the trailing `sessions` dir cross-platform: on Windows the root
+      // ends with `\sessions`, which a forward-slash-only pattern would miss
+      // (leaving the fs sandbox rooted inside the sessions dir).
+      const fallbackCwd = cwd || getSessionRoot().replace(/[/\\]sessions[/\\]?$/, "") || process.cwd();
       const { mountFsChain } = await import("./cordis-coding-tools");
       await mountFsChain(ctx, { cwd: fallbackCwd });
     }

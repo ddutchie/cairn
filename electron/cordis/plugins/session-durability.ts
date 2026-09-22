@@ -17,15 +17,56 @@
  *              that helper for explicit call sites.
  *
  * All flushes are best-effort and never throw to the caller: missing session,
- * absent ctx.sessions (tests), or backend rejections are swallowed. Nested
- * subagent calls (exec.parent !== undefined) reuse the durable outer call and
- * are not flushed.
+ * absent ctx.sessions (tests), or backend rejections must not break dispatch
+ * or turn boundaries. They are NEVER swallowed silently, though: every failure
+ * is recorded to the persistent debug log (`dlog`, `<userData>/logs`) with a
+ * consecutive-failure counter, so a platform where the session backend can
+ * never write (e.g. chat history silently lost on every turn) leaves a trace
+ * instead of an empty sessions dir. Nested subagent calls
+ * (exec.parent !== undefined) reuse the durable outer call and are not flushed.
  */
 
 import type { Context } from "@deepseek-ai/cordis";
 import type { Session } from "@deepseek-ai/dsh-session";
+import { dlog } from "../../lib/debug-log";
 
 const TOOL_ABORTED_BEFORE_DISPATCH = "ABORTED_BEFORE_DISPATCH" as const;
+
+/**
+ * Fail-loud bookkeeping for session flushes. A single transient failure is
+ * normal (shutdown races, torn logs); a growing streak means the durable
+ * transcript is not being written at all — the "chats vanish on restart"
+ * signature. Surfaced via getSessionPersistenceHealth() so IPC/UI can report
+ * it instead of rendering an empty history with no explanation.
+ */
+let consecutiveFlushFailures = 0;
+let lastFlushError: string | null = null;
+let lastFlushErrorAt: string | null = null;
+
+export function getSessionPersistenceHealth(): {
+  consecutiveFlushFailures: number;
+  lastFlushError: string | null;
+  lastFlushErrorAt: string | null;
+} {
+  return { consecutiveFlushFailures, lastFlushError, lastFlushErrorAt };
+}
+
+function noteFlushSuccess(): void {
+  consecutiveFlushFailures = 0;
+}
+
+function noteFlushFailure(site: string, err: unknown): void {
+  consecutiveFlushFailures += 1;
+  const message = err instanceof Error ? err.message : String(err);
+  lastFlushError = message;
+  lastFlushErrorAt = new Date().toISOString();
+  // dlog mirrors to console and persists to <userData>/logs/cairn-debug.log,
+  // which is the only record available in a packaged app with no terminal.
+  dlog("session-durability", `session flush failed at ${site}`, {
+    error: message,
+    consecutiveFlushFailures,
+  });
+}
 
 /** Plugin mount — global, idempotent. */
 export function mountSessionDurability(ctx: Context): void {
@@ -39,9 +80,14 @@ export function mountSessionDurability(ctx: Context): void {
       if (session) {
         try {
           const sessions = (ctx as unknown as { sessions?: { flush: (s: Session) => Promise<boolean> } }).sessions;
-          if (sessions?.flush) await sessions.flush(session);
-        } catch {
-          // best-effort: disk, encoding, or shutdown errors must not break dispatch
+          if (sessions?.flush) {
+            await sessions.flush(session);
+            noteFlushSuccess();
+          }
+        } catch (err) {
+          // best-effort: disk, encoding, or shutdown errors must not break
+          // dispatch — but they must leave a trace (see header).
+          noteFlushFailure("pre-tool-dispatch", err);
         }
       }
       if (exec.signal?.aborted) {
@@ -63,7 +109,10 @@ export async function flushSession(ctx: Context, session: unknown): Promise<void
     const sessions = (ctx as unknown as { sessions?: { flush: (s: unknown) => Promise<boolean> } }).sessions;
     if (!sessions?.flush) return;
     await sessions.flush(session as Session);
-  } catch {
-    // best-effort — missing session, torn log, or shutdown must not throw at turn boundary
+    noteFlushSuccess();
+  } catch (err) {
+    // best-effort — missing session, torn log, or shutdown must not throw at
+    // turn boundary — but the failure is logged, never swallowed (see header).
+    noteFlushFailure("turn-end", err);
   }
 }
